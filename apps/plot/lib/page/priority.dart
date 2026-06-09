@@ -1359,6 +1359,7 @@ class _PriorityPageState extends State<PriorityPage>
                   // swap out. Drag (below) still targets the live context.
                   priorityContext: state.activeTabContext ?? state.context,
                   isAssociated: agendaActivity.isAssociated,
+                  isSearch: isSearching,
                 );
                 if (agendaActivity.pinned) {
                   // Pinned event row: not draggable, not a drop target —
@@ -1456,6 +1457,7 @@ class _ActivityFeedItem extends StatefulWidget {
     required this.focusNode,
     required this.priorityContext,
     this.isAssociated = false,
+    this.isSearch = false,
   });
 
   final Thread baseThread;
@@ -1464,6 +1466,7 @@ class _ActivityFeedItem extends StatefulWidget {
   final FocusNode focusNode;
   final Priority priorityContext;
   final bool isAssociated;
+  final bool isSearch;
 
   @override
   State<_ActivityFeedItem> createState() => _ActivityFeedItemState();
@@ -1519,6 +1522,7 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
           focusNode: widget.focusNode,
           context: widget.priorityContext,
           showSubPriority: true,
+          isSearch: widget.isSearch,
           showEventTiming: rep != null,
           isAssociated: widget.isAssociated,
         );

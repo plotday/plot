@@ -54,6 +54,7 @@ class ThreadWidget extends StatefulWidget {
     this.isAssociated = false,
     this.isOutsidePriority = false,
     this.showSubPriority = false,
+    this.isSearch = false,
     this.showEventTiming = false,
     this.bump = true,
     this.focusNode,
@@ -77,6 +78,12 @@ class ThreadWidget extends StatefulWidget {
   /// Outside-priority link-scheduled events are dimmed in the UI.
   final bool isOutsidePriority;
   final bool showSubPriority;
+
+  /// Whether this row is part of a global search result list. Search spans
+  /// every focus, so each result must carry its focus label — including
+  /// threads filed in the current focus and in the Inbox (root) — instead of
+  /// suppressing the label when the thread's focus matches [context].
+  final bool isSearch;
   final bool showEventTiming;
   final bool bump;
   final FocusNode? focusNode;
@@ -334,6 +341,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   bool get now => widget.now;
   bool get isNext => widget.isNext;
   bool get showSubPriority => widget.showSubPriority;
+  bool get isSearch => widget.isSearch;
   bool get showEventTiming => widget.showEventTiming;
   bool get bump => widget.bump;
   FocusNode? get focusNode => widget.focusNode;
@@ -381,10 +389,15 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
+    // In a focus feed the label is shown only for threads filed elsewhere
+    // (it would be redundant on threads already in the current focus). Search
+    // is global, so every result carries its focus label — including threads
+    // in the current focus and the Inbox (FocusLabel renders root as "Inbox").
     final hasSubPriorityLabel =
         showSubPriority &&
-        priorityContext != null &&
-        activity.priority.id != priorityContext!.id;
+        (isSearch ||
+            (priorityContext != null &&
+                activity.priority.id != priorityContext!.id));
 
     final hasEventTime =
         activity.at?.start != null &&
@@ -670,10 +683,22 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   ),
                   child: Builder(
                     builder: (context) {
-                      // Header segments in order: channel · focus · schedule.
-                      // Each present segment is joined to the previous with a
-                      // dot separator below.
+                      // Header segments in order: focus · channel ·
+                      // contacts/groups · schedule. The focus is a purely
+                      // static label (no tap-to-move affordance). Each present
+                      // segment is joined to the previous with a dot separator
+                      // below.
                       final segments = <Widget>[
+                        if (hasSubPriorityLabel)
+                          Flexible(
+                            child: FocusLabel(
+                              priority: activity.priority,
+                              color: headerFg,
+                              fontSize: context.theme.typography.xs.fontSize,
+                              height: 1,
+                              muted: headerFg == null,
+                            ),
+                          ),
                         if (hasChannelLabel)
                           Flexible(
                             child: Text(
@@ -690,15 +715,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               maxLines: 1,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        if (hasSubPriorityLabel)
-                          Flexible(
-                            child: _PriorityHoverArea(
-                              activity: activity,
-                              priorityContext: priorityContext,
-                              headerFg: headerFg,
-                              fontSize: context.theme.typography.xs.fontSize,
                             ),
                           ),
                         if (scheduleDate != null)
@@ -1489,75 +1505,6 @@ class _MoveHoverIconState extends State<_MoveHoverIcon> {
                   ? context.colour.foreground
                   : context.colour.muted,
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Wraps the priority label in the top-of-row meta strip with a hover state
-/// and a trailing veryMuted select icon. Hover unmutes the label and tints
-/// the select icon with the accent colour; clicking anywhere in the area
-/// opens the move modal.
-class _PriorityHoverArea extends StatefulWidget {
-  const _PriorityHoverArea({
-    required this.activity,
-    required this.priorityContext,
-    required this.headerFg,
-    required this.fontSize,
-  });
-
-  final Thread activity;
-  final Priority? priorityContext;
-  final Color? headerFg;
-  final double? fontSize;
-
-  @override
-  State<_PriorityHoverArea> createState() => _PriorityHoverAreaState();
-}
-
-class _PriorityHoverAreaState extends State<_PriorityHoverArea> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final command = MoveThreadToPriority(widget.activity);
-    final shortcutText = hasPhysicalKeyboard() && command.shortcut != null
-        ? formatShortcut(command.shortcut)
-        : '';
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: FTooltip(
-        tipBuilder: (ctx, controller) {
-          if (shortcutText.isNotEmpty) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(command.title),
-                Text(
-                  shortcutText,
-                  style: ctx.theme.typography.xs.copyWith(
-                    color: ctx.theme.colors.mutedForeground,
-                  ),
-                ),
-              ],
-            );
-          }
-          return Text(command.title);
-        },
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => context.run(command),
-          child: FocusLabel(
-            priority: widget.activity.priority,
-            color: widget.headerFg,
-            fontSize: widget.fontSize,
-            height: 1,
-            muted: widget.headerFg == null && !_hovered,
           ),
         ),
       ),
