@@ -65,7 +65,9 @@ class CreateGroup extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    final id = Uuid.generate();
     final companion = GroupsCompanion.insert(
+      id: Value(id),
       name: name,
       type: 'private',
       joinPolicy: 'member',
@@ -80,7 +82,7 @@ class CreateGroup extends Command {
       pending: const Value(2),
     );
     await Store.get.save(Store.get.groups, companion, GroupsBase());
-    return const CommandDone(message: 'Group created');
+    return CommandDone(message: 'Group created', createdId: id.toString());
   }
 }
 

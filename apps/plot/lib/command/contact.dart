@@ -39,7 +39,10 @@ class AddContact extends Command {
     // Pull the canonical row (and reconcile a same-email collapse) when
     // online; offline this is a no-op until connectivity returns.
     unawaited(SyncOrchestrator.instance.pull(SyncOrchestrator.actor));
-    return const CommandDone(message: 'Contact added');
+    return CommandDone(
+      message: 'Contact added',
+      createdId: id.toUuid().toString(),
+    );
   }
 }
 
