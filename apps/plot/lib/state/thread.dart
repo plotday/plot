@@ -291,7 +291,7 @@ class ThreadBloc extends Cubit<ThreadState> {
     final sharingModel = Thread.resolveSharingModel(links);
     if (sharingModel != SharingModel.message) return;
 
-    final cfg = links.isNotEmpty ? links.first.getTypeConfig() : null;
+    final cfg = Thread.primaryLink(links)?.getTypeConfig();
     final hiddenRoleIds = (cfg?.contactRoles ?? const <ContactRoleConfig>[])
         .where((r) => r.hidden)
         .map((r) => r.id)
