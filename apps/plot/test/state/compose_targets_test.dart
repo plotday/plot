@@ -1384,6 +1384,45 @@ void main() {
         isFalse,
       );
     });
+
+    test('connectionsForRoster with no group offers all DM-type connectors '
+        '(contacts + addresses)', () async {
+      await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      await _insertConnector(
+        store,
+        name: 'Slack (Acme)',
+        linkType: 'dm',
+        targets: 'contacts',
+        channelId: 'slack-default',
+      );
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final results = await bloc.connectionsForRoster(
+        contacts: const [],
+        groups: const [],
+        inviteEmails: const [],
+      );
+
+      final connectorTargets = results.where((t) => t.target != null).toList();
+      expect(
+        connectorTargets.any((t) => t.target!.compose.targets == 'addresses'),
+        isTrue,
+      );
+      expect(
+        connectorTargets.any((t) => t.target!.compose.targets == 'contacts'),
+        isTrue,
+      );
+    });
   });
 }
 
