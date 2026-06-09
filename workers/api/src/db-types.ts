@@ -202,6 +202,7 @@ export interface Device {
 export interface Domain {
   auto_join: Generated<boolean>;
   created_at: Generated<Timestamp>;
+  freemail: Generated<boolean>;
   id: Generated<Int8>;
   name: string;
   team_id: Int8 | null;
@@ -771,6 +772,7 @@ export interface Thread {
    */
   embedding: string | null;
   external_contacts: Generated<string[]>;
+  facets: Json | null;
   /**
    * Group IDs attached to this thread. Members of referenced groups gain visibility dynamically — new members automatically see past threads.
    */
@@ -939,6 +941,7 @@ export interface ThreadX {
   dropped_contacts: string[] | null;
   embedding: string | null;
   external_contacts: string[] | null;
+  facets: Json | null;
   groups: string[] | null;
   icon: string | null;
   id: string | null;
@@ -1610,7 +1613,6 @@ export interface UserPriority {
   created_by: string | null;
   early_notifications_enabled: boolean | null;
   early_notifications_enabled_set: boolean | null;
-  flat_title: string | null;
   global_path: string | null;
   icon: string | null;
   id: string | null;

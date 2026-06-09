@@ -16,6 +16,28 @@ import { deriveFacetFilters } from "../../state/derive-facet-filters";
 
 const priorities = new Hono<{ Bindings: Bindings }>();
 
+// Project a user.priority row for the wire. All clients are now on the flat
+// focus model (apiVersion >= 4): a flat list of focuses with no nesting. The
+// per-user root is labelled "Inbox"; every other focus uses its own `title`
+// verbatim.
+//
+// IMPORTANT: never substitute a derived/ancestry value into `title`. The
+// client stores whatever it receives as `title` and re-sends it on the next
+// save, and upsert_priority writes it straight back into priority.title. A
+// previous version projected an ancestry breadcrumb ("Plot › Marketing") into
+// `title`, which the client round-tripped — baking the breadcrumb into the
+// stored title and making renames appear to revert. `title` must stay the
+// raw, user-editable leaf name. (`flat_title` has been removed from the view.)
+export function projectPriority(row: any, apiVersion: number) {
+  // Defensive: tolerate a stale view that still carries flat_title during a
+  // deploy window — strip it so it never reaches the client as data.
+  const { flat_title: _flat, ...rest } = row;
+  if (apiVersion < 4) {
+    return rest;
+  }
+  return { ...rest, title: row.root ? "Inbox" : row.title };
+}
+
 // GET /sync/priorities
 priorities.get("/sync/priorities", async (c) => {
   const userId = c.var.user.id;
@@ -63,21 +85,11 @@ priorities.get("/sync/priorities", async (c) => {
     return { rows: fetchedRows, horizon: horizonValue };
   });
 
-  // Version-gated projection: flat (apiVersion >= 4) clients render priorities
-  // as a flat list of "focuses" with no nesting. Project the ancestry label
-  // (flat_title) as the title and label the per-user root "Inbox". Older
-  // (nested) clients get the row unchanged — they keep using `path`/`title`.
-  // flat_title is an internal computed column; strip it for flat clients.
+  // Flat (apiVersion >= 4) clients render priorities as a flat list of
+  // "focuses" with no nesting; the per-user root is labelled "Inbox". See
+  // projectPriority for why `title` must never carry a derived value.
   const apiVersion = c.var.apiVersion ?? 0;
-  const project = (row: any) => {
-    if (apiVersion < 4) {
-      const { flat_title: _flat, ...rest } = row;
-      return rest;
-    }
-    const { flat_title, ...rest } = row;
-    return { ...rest, title: row.root ? "Inbox" : (flat_title ?? row.title) };
-  };
-  const outRows = rows.map(project);
+  const outRows = rows.map((row) => projectPriority(row, apiVersion));
 
   if (useSeqCursor) {
     return c.json(seqEnvelope(outRows as any, limit, horizon) as any);

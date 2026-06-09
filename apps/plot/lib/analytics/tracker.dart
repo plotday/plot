@@ -5,8 +5,10 @@
 ///
 /// Supports multiple platforms:
 /// - iOS/Android/macOS: Uses posthog_flutter SDK
-/// - Web: Uses posthog_flutter SDK (native web support since v5.12.0)
-/// - Windows: Uses PostHog HTTP API directly
+/// - Web/Windows: Uses PostHog HTTP API directly. On web, posthog_flutter is
+///   only a thin wrapper over a `window.posthog` global that we don't load
+///   (no posthog-js snippet in web/index.html), so SDK capture calls silently
+///   no-op — the HTTP backend POSTs to the configured host instead.
 
 library;
 
@@ -240,9 +242,14 @@ class Tracker {
 
     _superProperties = _buildSuperProperties();
 
-    // Select backend based on platform
-    if (!kIsWeb && Platform.isWindows) {
-      _log.info('Initializing PostHog HTTP API backend (Windows)');
+    // Select backend based on platform. `kIsWeb` is checked first so the
+    // `dart:io` `Platform.isWindows` access (which throws on web) is never
+    // reached in a browser.
+    if (kIsWeb || Platform.isWindows) {
+      _log.info(
+        'Initializing PostHog HTTP API backend '
+        '(${kIsWeb ? 'web' : 'Windows'})',
+      );
       _backend = PostHogApiBackend(Env.posthogApiKey, Env.posthogHost);
     } else {
       _log.info('Initializing PostHog SDK backend (native)');
