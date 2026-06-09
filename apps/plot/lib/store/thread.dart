@@ -4765,24 +4765,44 @@ SELECT
     return contacts.where((c) => !droppedSet.contains(c)).toList();
   }
 
+  /// The thread's single canonical external link, or null when the thread has
+  /// no canonical link (Plot-native, or only note-scoped links). Defined once
+  /// here so every "primary link" consumer agrees:
+  ///
+  /// primary = the non-archived canonical (`note_scoped == false`) link with
+  /// the highest [Link.priority], ties broken by earliest `created_at`
+  /// (then link id for total determinism).
+  ///
+  /// The local `links` table has no `archived_at` — present rows are live
+  /// (connector removals arrive as hard-deleted `revoked` tombstones), so
+  /// "non-archived" reduces to "present and not note-scoped".
+  static Link? primaryLink(List<Link> links) {
+    final canonical = links.where((l) => !l.noteScoped).toList()
+      ..sort((a, b) {
+        final byPriority = b.priority.compareTo(a.priority); // highest first
+        if (byPriority != 0) return byPriority;
+        final byCreated = a.createdAt.compareTo(b.createdAt); // earliest first
+        if (byCreated != 0) return byCreated;
+        return a.id.toString().compareTo(b.id.toString());
+      });
+    return canonical.isEmpty ? null : canonical.first;
+  }
+
   /// Resolved sharing model for this thread, derived from the primary
-  /// (earliest-created) link's [LinkTypeConfig.sharingModel]. Threads
+  /// canonical link's [LinkTypeConfig.sharingModel]. Threads
   /// with no link default to [SharingModel.thread].
   ///
   /// The store layer caches links per thread, so this is a cheap
   /// in-memory lookup at the call site. Pass the list of links in
   /// rather than re-querying.
   static SharingModel resolveSharingModel(List<Link> links) {
-    if (links.isEmpty) return SharingModel.thread;
-    final primary = [...links]
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    final cfg = primary.first.getTypeConfig();
-    return cfg?.sharingModel ?? SharingModel.thread;
+    final primary = primaryLink(links);
+    return primary?.getTypeConfig()?.sharingModel ?? SharingModel.thread;
   }
 
   /// Whether this is a "Plot thread" — one created by a user or a
   /// non-connection twist, as opposed to one a connector created via a link.
-  /// Determined from the primary (earliest-created) link's creator: when that
+  /// Determined from the primary canonical link's creator: when that
   /// link was authored by a connection-source twist instance
   /// ([TwistInstance.isSource]) the thread originated from a connector and is
   /// not a Plot thread. Threads with no links, or whose primary link was
@@ -4793,10 +4813,9 @@ SELECT
   /// thread) — the stable default that keeps Plot-only affordances (e.g.
   /// Rename) visible rather than flickering them in once links resolve.
   static bool isPlotThread(List<Link> links) {
-    if (links.isEmpty) return true;
-    final primary = [...links]
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    final creator = primary.first.createdBy;
+    final primary = primaryLink(links);
+    if (primary == null) return true;
+    final creator = primary.createdBy;
     if (creator == null) return true;
     return !(TwistInstance.fromCache(creator)?.isSource ?? false);
   }
@@ -4805,18 +4824,20 @@ SELECT
   /// unified header avatar slot, or null when the thread is not in
   /// "assignment mode".
   ///
-  /// A thread is in assignment mode when its primary (earliest-created)
+  /// A thread is in assignment mode when its primary canonical
   /// link's [LinkTypeConfig] has BOTH `sharingModel == channel` AND
   /// `supportsAssignee == true`. Only the primary link participates; other
   /// qualifying links remain visible inside the thread page via the
   /// per-link assignee badge.
   static Link? resolvePrimaryAssignmentLink(List<Link> links) {
-    final qualifying = links.where((l) {
-      final cfg = l.getTypeConfig();
-      return cfg?.sharingModel == SharingModel.channel &&
-          cfg?.supportsAssignee == true;
-    }).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    return qualifying.isEmpty ? null : qualifying.first;
+    final primary = primaryLink(links);
+    if (primary == null) return null;
+    final cfg = primary.getTypeConfig();
+    if (cfg?.sharingModel == SharingModel.channel &&
+        cfg?.supportsAssignee == true) {
+      return primary;
+    }
+    return null;
   }
 
   /// Label for the per-message recipient-change feed line in a message-mode
