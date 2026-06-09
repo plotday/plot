@@ -16,6 +16,7 @@ import 'package:plot/api/twist_permission.dart' show PermissionFlag;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/widget/pro_badge.dart';
 import 'package:plot/widget/setup_link_channels.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
@@ -523,7 +524,7 @@ class _ActiveSourceRow extends StatelessWidget {
                 ),
                 if (item.premium) ...[
                   const SizedBox(width: 6),
-                  const _PremiumBadge(),
+                  const ProBadge(),
                 ],
                 const SizedBox(width: 8),
                 Flexible(
@@ -599,7 +600,7 @@ class _AvailableSourceRow extends StatelessWidget {
                 ),
                 if (item.twist.premium) ...[
                   const SizedBox(width: 6),
-                  const _PremiumBadge(),
+                  const ProBadge(),
                 ],
                 if (item.twist.environment != 'public') ...[
                   const SizedBox(width: 6),
@@ -820,33 +821,6 @@ class _EnvironmentBadge extends StatelessWidget {
         style: TextStyle(
           fontSize: theme.typography.xs.fontSize,
           color: theme.colors.mutedForeground,
-        ),
-      ),
-    );
-  }
-}
-
-/// Badge identifying a connector as "premium" (has a real per-connection
-/// cost — currently Unipile-backed integrations like LinkedIn). Drives
-/// plan-specific metering separately from the regular connection pool.
-class _PremiumBadge extends StatelessWidget {
-  const _PremiumBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.theme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: theme.colors.primary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        'Pro',
-        style: TextStyle(
-          fontSize: theme.typography.xs.fontSize,
-          color: theme.colors.primary,
-          fontWeight: FontWeight.w600,
         ),
       ),
     );
