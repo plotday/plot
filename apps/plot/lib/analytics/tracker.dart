@@ -22,6 +22,11 @@ import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
+// Not publicly exported, but this is the exact processor the native SDK uses to
+// build $exception_list for Error Tracking (posthog_flutter_io.dart:628). The
+// HTTP backend reuses it so web/Windows exceptions group identically to native.
+// ignore: implementation_imports
+import 'package:posthog_flutter/src/error_tracking/dart_exception_processor.dart';
 
 import '../api/api_exception.dart';
 import '../api/network_exception.dart';
@@ -181,11 +186,18 @@ class PostHogApiBackend implements AnalyticsBackend {
     StackTrace? stackTrace,
     Map<String, dynamic>? properties,
   }) async {
-    await capture('\$exception', {
-      ...?properties,
-      'error': error.toString(),
-      if (stackTrace != null) 'stack_trace': stackTrace.toString(),
-    });
+    // Build the PostHog Error Tracking payload ($exception_list +
+    // $exception_level, with parsed Dart stack frames) exactly as the native
+    // posthog_flutter SDK does, so issues group identically across platforms.
+    // A bare $exception event carrying flat error/stack_trace strings is
+    // ingested but rejected by Error Tracking ("serde error: missing field
+    // $exception_list") and never becomes a visible issue.
+    final exceptionProps = DartExceptionProcessor.processException(
+      error: error,
+      stackTrace: stackTrace,
+      properties: properties?.cast<String, Object>(),
+    );
+    await capture('\$exception', exceptionProps);
   }
 
   Future<void> _sendBatch() async {
