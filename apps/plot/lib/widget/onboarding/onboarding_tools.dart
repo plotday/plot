@@ -463,7 +463,7 @@ class _UpgradeCopyState extends State<_UpgradeCopy> {
           const TextSpan(text: ' for unlimited connections.'),
         ],
       ),
-      textAlign: TextAlign.center,
+      textAlign: TextAlign.left,
     );
   }
 }
