@@ -1,6 +1,6 @@
 BEGIN;
 SET LOCAL search_path = public, "user", extensions;
-SELECT plan(5);
+SELECT plan(6);
 
 DO $$
 DECLARE
@@ -45,6 +45,12 @@ SELECT ok(
     'union merges both keys with no duplicates');
 
 -- 3. Omitting the field (NULL) leaves dismissals AND onboarding intact.
+SELECT lives_ok($$
+    SELECT "user".upsert_user_settings(
+        user_id => (SELECT id FROM _u),
+        p_enter_behavior => NULL)
+$$, 'null-payload upsert succeeds');
+
 SELECT ok(
     (SELECT onboarding_completed FROM user_settings WHERE user_id = (SELECT id FROM _u)) = true
     AND jsonb_array_length(
