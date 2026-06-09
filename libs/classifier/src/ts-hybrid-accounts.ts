@@ -11,6 +11,7 @@ export type PriorityHierarchy = {
   title: string;
   path: string;
   breadcrumb: string;
+  description: string | null;
   /**
    * Depth-2 ancestor (the user-visible top-level bucket; depth-1 is the
    * synthetic root). Falls back to the priority itself when it's already
@@ -45,6 +46,7 @@ export async function fetchPriorityHierarchies(
     `SELECT p.id,
             p.title,
             p.path::text AS path,
+            p.description,
             ARRAY(
               SELECT pa.title
                 FROM public.priority pa
@@ -80,6 +82,7 @@ export async function fetchPriorityHierarchies(
     id: string;
     title: string;
     path: string;
+    description: string | null;
     breadcrumb_titles: string[];
     hierarchy_id: string | null;
     hierarchy_title: string | null;
@@ -89,6 +92,7 @@ export async function fetchPriorityHierarchies(
       id: r.id,
       title: r.title,
       path: r.path,
+      description: r.description,
       breadcrumb,
       hierarchyId: r.hierarchy_id ?? r.id,
       hierarchyTitle: r.hierarchy_title ?? r.title,

@@ -88,6 +88,7 @@ type PriorityRow = {
   id: string;
   path: string;
   title: string;
+  description: string | null;
 };
 
 // POST /sync/priorities/suggest
@@ -153,7 +154,7 @@ export async function runSuggestPriorities(
     userId,
     async (trx) => {
       const p = await sql<PriorityRow>`
-        SELECT p.id, p.path::text AS path, p.title
+        SELECT p.id, p.path::text AS path, p.title, p.description
         FROM public.priority p
         WHERE p.user_id = ${userId}::uuid
           AND p.archived_at IS NULL
@@ -495,7 +496,7 @@ How to use the inputs:
 - **Connections** anchor level 1. A Slack workspace named "Acme" → suggests an "Acme" priority. A Gmail account "kris@bigco.com" → suggests "BigCo". A personal Gmail with no org signal → "Personal".
 - **Channels** add level-2 detail. A "#design" Slack channel under Acme → "Acme > Design". A "Family" calendar → "Personal > Family".
 - **Sample thread titles** are evidence for whether a level-2 or level-3 deserves to exist. Look for repeating themes (a recurring client name, a recurring project codename, a recurring topic). Single-mention themes are not enough.
-- **Existing priorities** are the user's current tree. NEVER suggest a path that already exists. Suggestions should *extend* the tree (deeper levels under existing parents) or fill in gaps the tree doesn't yet cover.
+- **Existing priorities** are the user's current tree. NEVER suggest a path that already exists. Suggestions should *extend* the tree (deeper levels under existing parents) or fill in gaps the tree doesn't yet cover. When an existing priority has a "description" field, it explains what belongs in that focus — use it to understand the tree's intent and avoid suggesting something already covered.
 
 Output a flat list of paths. Each path is an array of 1-3 strings (root → leaf). When suggesting a deeper priority under an existing top-level priority, use the existing priority's title verbatim as the first element of the path.
 
@@ -587,7 +588,7 @@ function renderUserPrompt(
 ): string {
   const prioritiesBlock = priorities.length
     ? priorities
-        .map((p) => `  - path=${p.path} title=${JSON.stringify(p.title)}`)
+        .map((p) => `  - path=${p.path} title=${JSON.stringify(p.title)}${p.description ? ` description=${JSON.stringify(p.description)}` : ""}`)
         .join("\n")
     : "  (none — this is a fresh tree)";
 

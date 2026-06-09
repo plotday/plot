@@ -134,6 +134,7 @@ async function buildTieBreakerPrompt(
     if (!info) continue;
     lines.push(`- id: ${pid}`);
     lines.push(`  title: ${info.title}`);
+    if (info.description) lines.push(`  description: ${info.description}`);
     lines.push(`  path: ${info.breadcrumb}`);
     lines.push(`  hierarchy: ${info.hierarchyTitle}`);
     const exemplars = (exemplarsByPriority.get(pid) ?? []).slice(0, 3);

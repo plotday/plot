@@ -9,6 +9,7 @@ import {
   fetchUserLinkedContacts,
   labelAccount,
   renderAccountAffinityBlock,
+  type PriorityHierarchy,
 } from "./ts-hybrid-accounts";
 
 export type ColdStartInputs = {
@@ -69,6 +70,7 @@ type PriorityNode = {
   id: string;
   title: string;
   path: string;
+  description: string | null;
   key: string | null;
   depth: number;
 };
@@ -77,7 +79,7 @@ async function fetchPriorityTree(
   ctx: ClassifierContext
 ): Promise<PriorityNode[]> {
   const res = await ctx.rawQuery(
-    `SELECT id, title, path::text AS path, key, nlevel(path) AS depth
+    `SELECT id, title, path::text AS path, description, key, nlevel(path) AS depth
        FROM public.priority
       WHERE user_id = $1::uuid
         AND archived_at IS NULL
@@ -89,6 +91,7 @@ async function fetchPriorityTree(
       id: string;
       title: string;
       path: string;
+      description: string | null;
       key: string | null;
       depth: number;
     }[]
@@ -138,17 +141,7 @@ function tokenize(s: string): Set<string> {
 function renderColdStartPrompt(
   candidate: Candidate,
   pool: PriorityNode[],
-  hierarchies: Map<
-    string,
-    {
-      id: string;
-      title: string;
-      path: string;
-      breadcrumb: string;
-      hierarchyId: string;
-      hierarchyTitle: string;
-    }
-  >,
+  hierarchies: Map<string, PriorityHierarchy>,
   linkedContacts: ReturnType<typeof fetchUserLinkedContacts> extends Promise<
     infer T
   >
@@ -184,8 +177,9 @@ function renderColdStartPrompt(
     const info = hierarchies.get(p.id);
     const breadcrumb = info?.breadcrumb ?? p.path.replace(/\./g, " > ");
     const hierarchy = info?.hierarchyTitle ?? "(unknown)";
+    const description = info?.description ?? p.description;
     lines.push(
-      `- id: ${p.id}  title: ${p.title}  hierarchy: ${hierarchy}  path: ${breadcrumb}${p.key ? `  key: ${p.key}` : ""}`
+      `- id: ${p.id}  title: ${p.title}${description ? `  description: ${description}` : ""}  hierarchy: ${hierarchy}  path: ${breadcrumb}${p.key ? `  key: ${p.key}` : ""}`
     );
   }
   return lines.join("\n");

@@ -54,6 +54,7 @@ type PriorityRow = {
   id: string;
   path: string;
   title: string;
+  description: string | null;
 };
 
 /**
@@ -163,7 +164,7 @@ async function runRouter(
     userId,
     async (trx) => {
       const p = await sql<PriorityRow>`
-        SELECT p.id, p.path::text AS path, p.title
+        SELECT p.id, p.path::text AS path, p.title, p.description
         FROM public.priority p
         WHERE p.user_id = ${userId}::uuid
           AND p.archived_at IS NULL
@@ -378,7 +379,7 @@ How to weight signals, in order:
 3. **Channel title.** Literal matches ("Family Calendar" → 'Personal > Family'). But titles like "general", "Inbox", "My Drive", "IMPORTANT", "All" are CONTAINERS — they mean "everything for this account" and should not be used to pick a sub-priority on their own. For container-style channels, fall back to connector purpose + account label.
 4. **Sample titles (weakest).** The samples are a RANDOM draw from the channel's history — they are a character sketch, not a trend. Do not overfit to a few recent-looking titles; if the connector purpose and account already point somewhere, keep that assignment even if samples look off-theme. A general-purpose channel (My Drive, Inbox) will naturally have a long tail of random-looking titles.
 
-Priority hierarchy uses ltree paths (dot-separated labels from root to leaf). Paths closer to the root are broader; deeper paths are more specific. Prefer the most specific priority whose meaning encompasses the channel; fall back to a parent if no specific child fits.`;
+Priority hierarchy uses ltree paths (dot-separated labels from root to leaf). Paths closer to the root are broader; deeper paths are more specific. Prefer the most specific priority whose meaning encompasses the channel; fall back to a parent if no specific child fits. When a priority has a "description" field, it explains what belongs in that focus and should be used to disambiguate similarly-titled priorities.`;
 
   const userPrompt = renderUserPrompt(priorities, channels, samplesByChannel);
 
@@ -424,7 +425,7 @@ function renderUserPrompt(
   samplesByChannel: Map<number, string[]>
 ): string {
   const prioritiesBlock = priorities
-    .map((p) => `  - id=${p.id} path=${p.path} title=${JSON.stringify(p.title)}`)
+    .map((p) => `  - id=${p.id} path=${p.path} title=${JSON.stringify(p.title)}${p.description ? ` description=${JSON.stringify(p.description)}` : ""}`)
     .join("\n");
 
   const channelsBlock = channels

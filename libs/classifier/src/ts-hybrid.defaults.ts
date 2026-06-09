@@ -174,13 +174,13 @@ export const DEFAULTS_LLM: HybridParams = {
     // maxCandidates=5: kris cases frequently have the gold priority at
     // perPrioritySorted positions 3-5. With k=3 the tie-breaker had no way
     // to pick it; k=5 captures the realistic spread.
-    tieBreaker: { enabled: true, maxCandidates: 5, promptId: "tiebreaker-v2" },
-    coldStart: { enabled: true, maxPrioritiesInPrompt: 30, promptId: "coldstart-v2" },
+    tieBreaker: { enabled: true, maxCandidates: 5, promptId: "tiebreaker-v3" },
+    coldStart: { enabled: true, maxPrioritiesInPrompt: 30, promptId: "coldstart-v3" },
     topicAmbiguity: {
       enabled: true,
       maxTopicCandidates: 4,
       maxScoringCandidates: 3,
-      promptId: "topic-ambiguity-v2",
+      promptId: "topic-ambiguity-v3",
     },
     // Monthly pool absorbs the initial import unthrottled; the daily cap is
     // the post-exhaustion sustained rate. Paid is effectively unlimited for

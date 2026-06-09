@@ -190,6 +190,7 @@ function renderTopicPrompt(
     if (!p) continue;
     lines.push(`- id: ${t.priorityId}`);
     lines.push(`  title: ${p.title}`);
+    if (p.description) lines.push(`  description: ${p.description}`);
     lines.push(`  path: ${p.breadcrumb}`);
     lines.push(`  hierarchy: ${p.hierarchyTitle}`);
     lines.push(`  same-topic threads filed here: ${t.n}`);
@@ -210,7 +211,7 @@ function renderTopicPrompt(
       const p = hierarchies.get(s.priorityId);
       if (!p) continue;
       lines.push(
-        `- id: ${s.priorityId}  title: ${p.title}  hierarchy: ${p.hierarchyTitle}  score: ${s.score} (n=${s.neighborCount}, titleMatch=${s.titleMatch}, accountAff=${s.accountHierarchyAffinity})`
+        `- id: ${s.priorityId}  title: ${p.title}${p.description ? `  description: ${p.description}` : ""}  hierarchy: ${p.hierarchyTitle}  score: ${s.score} (n=${s.neighborCount}, titleMatch=${s.titleMatch}, accountAff=${s.accountHierarchyAffinity})`
       );
     }
   }
