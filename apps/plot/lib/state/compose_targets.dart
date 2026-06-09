@@ -126,6 +126,30 @@ List<RosterKey> orderPeopleByRecency(
   return [for (final k in keys) rosterByKey[k]!];
 }
 
+/// Sorts named people [matches] (contacts and groups together) alphabetically
+/// by display name, case-insensitive, and dedupes by roster keeping the first
+/// occurrence. Used by search synthesis to intermix contact and group matches
+/// rather than segregating them. Pure (no DB).
+List<ComposePeopleEntry> intermixPeopleByName(
+  List<({String name, ComposePeopleEntry entry})> matches,
+) {
+  final indexed = [for (var i = 0; i < matches.length; i++) (i, matches[i])];
+  indexed.sort((a, b) {
+    final byName = a.$2.name.toLowerCase().compareTo(b.$2.name.toLowerCase());
+    if (byName != 0) return byName;
+    return a.$1.compareTo(b.$1); // stable on equal names
+  });
+  final seen = <String>{};
+  final out = <ComposePeopleEntry>[];
+  for (final e in indexed) {
+    final entry = e.$2.entry;
+    final key = _rosterKey(entry.contacts, entry.groups, entry.inviteEmails);
+    if (!seen.add(key)) continue;
+    out.add(entry);
+  }
+  return out;
+}
+
 /// Transforms at-rest [sections] for **link mode** (a URL is in the picker):
 /// drops People & twists, keeps only link-supporting channels (Plot topics
 /// always qualify; connector channels qualify when their

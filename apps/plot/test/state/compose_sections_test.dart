@@ -123,4 +123,38 @@ void main() {
       expect(out.map((r) => r.contacts.first.toString()).toList(), [a, b]);
     });
   });
+
+  group('intermixPeopleByName', () {
+    const a = '00000000-0000-0000-0000-000000000001';
+    const b = '00000000-0000-0000-0000-000000000002';
+    const g = '00000000-0000-0000-0000-0000000000a0';
+
+    ComposePeopleEntry entry(String hex, {bool isGroup = false}) =>
+        ComposePeopleEntry(
+          contacts: isGroup ? const [] : [Uuid.fromString(hex)],
+          groups: isGroup ? [Uuid.fromString(hex)] : const [],
+          inviteEmails: const [],
+          display: const TopicPillData(''), // a stand-in ComposePillData
+        );
+
+    test('interleaves groups and contacts alphabetically, case-insensitive', () {
+      final out = intermixPeopleByName([
+        (name: 'Zoe', entry: entry(a)),
+        (name: 'marketing', entry: entry(g, isGroup: true)),
+        (name: 'Bob', entry: entry(b)),
+      ]);
+      // marketing < Bob < Zoe, case-insensitively → Bob, marketing, Zoe
+      expect(out[0].contacts.first.toString(), b); // Bob
+      expect(out[1].groups.first.toString(), g); // marketing
+      expect(out[2].contacts.first.toString(), a); // Zoe
+    });
+
+    test('dedupes by roster, keeping the first occurrence', () {
+      final out = intermixPeopleByName([
+        (name: 'Bob', entry: entry(b)),
+        (name: 'Bob (dup)', entry: entry(b)),
+      ]);
+      expect(out.length, 1);
+    });
+  });
 }
