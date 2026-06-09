@@ -96,6 +96,60 @@ List<RosterKey> dedupePeopleByRoster(List<ComposeTarget> targets) {
   return out;
 }
 
+/// Orders people [candidates] into a single true-MRU list. Each candidate is a
+/// roster paired with a recency timestamp (epoch ms). Duplicate rosters (the
+/// same roster surfaced from more than one source — e.g. an authored thread and
+/// the created/used people-MRU) collapse to one entry keeping the **largest**
+/// ms. The result is ordered by ms descending; equal-ms ties preserve
+/// first-seen order. Pure (no DB) so the MRU semantics are unit-testable.
+List<RosterKey> orderPeopleByRecency(
+  List<({RosterKey roster, int ms})> candidates,
+) {
+  // Best ms per roster + first-seen index for a stable tiebreak.
+  final bestMs = <String, int>{};
+  final firstSeen = <String, int>{};
+  final rosterByKey = <String, RosterKey>{};
+  var i = 0;
+  for (final c in candidates) {
+    final key = _rosterKey(c.roster.contacts, c.roster.groups, c.roster.inviteEmails);
+    rosterByKey[key] = c.roster;
+    firstSeen.putIfAbsent(key, () => i++);
+    final existing = bestMs[key];
+    if (existing == null || c.ms > existing) bestMs[key] = c.ms;
+  }
+  final keys = bestMs.keys.toList()
+    ..sort((a, b) {
+      final byMs = bestMs[b]!.compareTo(bestMs[a]!);
+      if (byMs != 0) return byMs;
+      return firstSeen[a]!.compareTo(firstSeen[b]!);
+    });
+  return [for (final k in keys) rosterByKey[k]!];
+}
+
+/// Sorts named people [matches] (contacts and groups together) alphabetically
+/// by display name, case-insensitive, and dedupes by roster keeping the first
+/// occurrence. Used by search synthesis to intermix contact and group matches
+/// rather than segregating them. Pure (no DB).
+List<ComposePeopleEntry> intermixPeopleByName(
+  List<({String name, ComposePeopleEntry entry})> matches,
+) {
+  final indexed = [for (var i = 0; i < matches.length; i++) (i, matches[i])];
+  indexed.sort((a, b) {
+    final byName = a.$2.name.toLowerCase().compareTo(b.$2.name.toLowerCase());
+    if (byName != 0) return byName;
+    return a.$1.compareTo(b.$1); // stable on equal names
+  });
+  final seen = <String>{};
+  final out = <ComposePeopleEntry>[];
+  for (final e in indexed) {
+    final entry = e.$2.entry;
+    final key = _rosterKey(entry.contacts, entry.groups, entry.inviteEmails);
+    if (!seen.add(key)) continue;
+    out.add(entry);
+  }
+  return out;
+}
+
 /// Transforms at-rest [sections] for **link mode** (a URL is in the picker):
 /// drops People & twists, keeps only link-supporting channels (Plot topics
 /// always qualify; connector channels qualify when their
@@ -278,6 +332,41 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       priorityId: priorityId,
     );
     prependToCache(target);
+  }
+
+  /// Record that the user just created/used a people roster outside an authored
+  /// thread (e.g. added a contact or created a group from the picker header).
+  /// Bumps it to the top of the People-list MRU. Pre-warms the contact/group
+  /// caches so the very next [loadSections] resolves a just-created entity that
+  /// hasn't been pulled yet. Idempotent on the roster key.
+  Future<void> recordPersonUsage({
+    required List<Uuid> contacts,
+    required List<Uuid> groups,
+    required List<String> inviteEmails,
+  }) async {
+    final key = _rosterKey(contacts, groups, inviteEmails);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _createdPeopleMru[key] = (
+      roster: (contacts: contacts, groups: groups, inviteEmails: inviteEmails),
+      ms: now,
+    );
+    if (_createdPeopleMru.length > _maxCreatedPeopleMru) {
+      final oldestKey = _createdPeopleMru.entries
+          .reduce((a, b) => a.value.ms <= b.value.ms ? a : b)
+          .key;
+      _createdPeopleMru.remove(oldestKey);
+    }
+    // Warm caches so the synchronous _peopleEntryFor resolve sees a just-created
+    // (un-pulled) contact/group. getOne is a cache hit after the first read;
+    // swallow not-found (a reconciled/removed id is simply dropped at render).
+    for (final cid in contacts) {
+      try {
+        await Actor.getOne(ActorId.fromUuid(cid));
+      } catch (_) {/* unresolved id is dropped at render time */}
+    }
+    for (final gid in groups) {
+      await Group.getOne(gid);
+    }
   }
 
   /// Focus suggestion for the two-step compose flow: the priority ids of
@@ -467,6 +556,15 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// Monotonic token used to discard a stale in-flight build whose result a
   /// later [_invalidateSearchContext] has superseded.
   int _contextToken = 0;
+
+  /// In-memory, session-scoped people-MRU for rosters created/used outside an
+  /// authored thread — a "+ Contact" / "+ Group" that has no thread yet. Keyed
+  /// by [_rosterKey]; value carries the roster (to resolve a pill) and the
+  /// recency ms. Merged (by max ms) with authored-thread recency in
+  /// [loadSections] so creation bumps the entry to the top of the People list.
+  /// Bounded; oldest entries are evicted past the cap.
+  final Map<String, ({RosterKey roster, int ms})> _createdPeopleMru = {};
+  static const int _maxCreatedPeopleMru = 50;
 
   /// Returns the cached search context, building (and caching) it on first use.
   Future<_ComposeSearchContext> _searchContextFor() {
@@ -726,28 +824,39 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
 
     final people = <ComposePeopleEntry>[];
     if (!linkMode) {
-      final usedSignatures = buildUsedTargetSignatures(scan.threads);
-      final rankedUsed = _prefs.rankSignaturesByMru(signatures: usedSignatures);
-      final rosterTargets = <ComposeTarget>[];
-      for (final sig in rankedUsed) {
-        final st = scan.bySignature[sig];
-        if (st == null) continue;
-        final t = _composeTargetForScanThread(
-          st,
-          templateBySignature: ctx.templateBySignature,
-          connectionCount: ctx.connectionCount,
-          hasTeams: ctx.hasTeams,
-          teamNames: ctx.teamNames,
-        );
-        if (t != null) rosterTargets.add(t);
+      // True MRU: gather candidate rosters with a recency timestamp from two
+      // sources, merged by max — authored threads (use, already persisted) and
+      // the in-memory created/used people-MRU (a "+ Contact"/"+ Group" with no
+      // thread yet). Either source bumps a roster toward the top.
+      final candidates = <({RosterKey roster, int ms})>[];
+      for (final st in scan.threads) {
+        if (st.contacts.isEmpty && st.groups.isEmpty) continue;
+        candidates.add((
+          roster: (
+            contacts: st.contacts,
+            groups: st.groups,
+            inviteEmails: const <String>[],
+          ),
+          ms: st.recencyMs,
+        ));
       }
-      // Dropping non-inviteable contacts in [_peopleEntryFor] can collapse two
-      // distinct rosters (e.g. {Greg} and {Greg, mailer-daemon}) to the same
-      // filtered set, so dedupe again on the resolved roster to avoid duplicate
-      // pills.
+      // Warm caches for pinned ids so just-created entities resolve, then add
+      // them to the candidate pool.
+      for (final e in _createdPeopleMru.values) {
+        for (final cid in e.roster.contacts) {
+          try {
+            await Actor.getOne(ActorId.fromUuid(cid));
+          } catch (_) {/* dropped at resolve */}
+        }
+        for (final gid in e.roster.groups) {
+          await Group.getOne(gid);
+        }
+        candidates.add((roster: e.roster, ms: e.ms));
+      }
+      // Resolve in MRU order, dropping unresolvable/collapsed rosters, capped.
       final seenRosters = <String>{};
-      for (final r in dedupePeopleByRoster(rosterTargets)) {
-        final entry = _peopleEntryFor(r);
+      for (final roster in orderPeopleByRecency(candidates)) {
+        final entry = _peopleEntryFor(roster);
         if (entry == null) continue;
         if (!seenRosters
             .add(_rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
@@ -806,27 +915,35 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     );
   }
 
+  /// Build a [ComposePeopleEntry] for a formal group from an already-resolved
+  /// [GroupRow], dropping non-inviteable members from the preview. Shared by
+  /// [_peopleEntryFor] (cache path) and search synthesis (row path), so a
+  /// just-created/un-cached group still resolves in search.
+  ComposePeopleEntry _groupPeopleEntry(GroupRow g, RosterKey r) {
+    final members = [
+      for (final id in (g.memberContactIds ?? const <Uuid>[]))
+        Actor.fromCache(ActorId.fromUuid(id)),
+    ].whereType<Actor>().where((a) => a.inviteable).toList();
+    return ComposePeopleEntry(
+      contacts: r.contacts,
+      groups: r.groups,
+      inviteEmails: r.inviteEmails,
+      display: GroupPillData(g, members),
+    );
+  }
+
   /// Resolve a deduped [RosterKey] into a presentable [ComposePeopleEntry], or
   /// null when nothing in the roster resolves (uncached group/contacts and no
   /// invites). A formal group wins; a single contact is a [ContactPillData];
   /// everything else (multiple contacts, or pending invites) is an ad-hoc group.
   ComposePeopleEntry? _peopleEntryFor(RosterKey r) {
     if (r.groups.isNotEmpty) {
-      final g = Group.fromCache(r.groups.first);
-      if (g == null) return null;
       // Drop non-inviteable members (noreply@, mailer-daemon@, and other
       // automated senders the server flagged via `contact.inviteable`) from
       // the group's member preview so they don't surface as people.
-      final members = [
-        for (final id in (g.memberContactIds ?? const <Uuid>[]))
-          Actor.fromCache(ActorId.fromUuid(id)),
-      ].whereType<Actor>().where((a) => a.inviteable).toList();
-      return ComposePeopleEntry(
-        contacts: r.contacts,
-        groups: r.groups,
-        inviteEmails: r.inviteEmails,
-        display: GroupPillData(g, members),
-      );
+      final g = Group.fromCache(r.groups.first);
+      if (g == null) return null;
+      return _groupPeopleEntry(g, r);
     }
 
     // Resolve roster contacts, dropping non-inviteable actors so automated
@@ -950,21 +1067,21 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       }
     }
 
-    // Synthesize single-contact entries for any matching correspondent not
-    // already surfaced by a recently-used roster, so search reaches the whole
-    // roster (not just recently-used). Reuses the lean name LIKE query
-    // [_searchByName] uses; self ids are excluded as elsewhere in the bloc.
+    // Synthesize matching contacts AND groups not already surfaced by a
+    // recently-used roster, so search reaches the whole address book. Contacts
+    // and groups are intermixed alphabetically by name.
     if (people.length < perSection) {
       final selfIds =
           Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
-      final matches = await Actor.get(
+      final matched = <({String name, ComposePeopleEntry entry})>[];
+
+      final contacts = await Actor.get(
         types: const [ActorType.user, ActorType.contact],
         search: trimmed,
         inviteable: true,
         primary: true,
       );
-      for (final a in matches) {
-        if (people.length >= perSection) break;
+      for (final a in contacts) {
         final uuid = a.id.toUuid();
         if (selfIds.contains(uuid)) continue;
         final entry = _peopleEntryFor((
@@ -972,9 +1089,26 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
           groups: const [],
           inviteEmails: const [],
         ));
-        if (entry != null &&
-            seenRosters.add(
-                _rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
+        if (entry != null) matched.add((name: a.nameOrEmail, entry: entry));
+      }
+
+      // Groups: query by name directly (the People list otherwise never reaches
+      // a group the user hasn't recently messaged). Build the entry straight
+      // from the row so a just-created/un-cached group still resolves.
+      final groupRows = await Group.getPostable(search: trimmed);
+      for (final g in groupRows) {
+        final entry = _groupPeopleEntry(g, (
+          contacts: const [],
+          groups: [g.id],
+          inviteEmails: const [],
+        ));
+        matched.add((name: g.name, entry: entry));
+      }
+
+      for (final entry in intermixPeopleByName(matched)) {
+        if (people.length >= perSection) break;
+        if (seenRosters
+            .add(_rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
           people.add(entry);
         }
       }
@@ -1315,6 +1449,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         groups: row.groups ?? const [],
         primaryLink: _primaryScanLink(links),
         priorityId: row.priorityId,
+        recencyMs: (row.lastNoteCreatedAt ?? row.bumpedAt ?? row.createdAt)
+            .millisecondsSinceEpoch,
       ));
     }
     return _ComposeScan(scanThreads);
@@ -1577,6 +1713,7 @@ class ComposeScanThread extends Equatable {
     this.groups = const [],
     this.primaryLink,
     required this.priorityId,
+    this.recencyMs = 0,
   });
 
   final BigInt? teamId;
@@ -1585,8 +1722,14 @@ class ComposeScanThread extends Equatable {
   final ComposeScanLink? primaryLink;
   final Uuid priorityId; // the thread's filed focus (non-null on ThreadRow)
 
+  /// Recency of this thread (epoch ms): `lastNoteCreatedAt ?? bumpedAt ??
+  /// createdAt`. Drives the People-list true-MRU ordering. Defaults to 0 for
+  /// pure-helper/test construction where recency is irrelevant.
+  final int recencyMs;
+
   @override
-  List<Object?> get props => [teamId, contacts, groups, primaryLink, priorityId];
+  List<Object?> get props =>
+      [teamId, contacts, groups, primaryLink, priorityId, recencyMs];
 }
 
 /// The primary-link facet of a [ComposeScanThread] needed to derive a

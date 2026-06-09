@@ -16,10 +16,16 @@ sealed class CommandReturn {
 
 // Command completed successfully
 class CommandDone extends CommandReturn {
-  const CommandDone({this.message});
+  const CommandDone({this.message, this.createdId});
 
   /// Optional success message to show as a toast
   final String? message;
+
+  /// Optional id of an entity the command just created (e.g. a contact or
+  /// group), as a canonical UUID string. Lets a caller react to the new id —
+  /// e.g. bump it in the new-thread People MRU — without a separate lookup.
+  /// A plain string (not `Uuid`) keeps store types out of `command/base.dart`.
+  final String? createdId;
 }
 
 // The user aborted the command (e.g. by pressing Escape)

@@ -1310,15 +1310,33 @@ class NewThreadPageState extends State<NewThreadPage> {
     await CommandModal(commands, rootContext: context).run(context);
   }
 
-  /// "+ Contact" header button → add a contact. Returns true if added.
+  /// "+ Contact" header button → add a contact. Returns true if added, and
+  /// bumps the new contact to the top of the People MRU.
   Future<bool> _addContact() async {
+    final bloc = context.read<ComposeTargetsBloc>();
     final result = await NewContact().run(context);
+    if (result is CommandDone && result.createdId != null) {
+      await bloc.recordPersonUsage(
+        contacts: [Uuid.fromString(result.createdId!)],
+        groups: const [],
+        inviteEmails: const [],
+      );
+    }
     return result is CommandDone;
   }
 
-  /// "+ Group" header button → create a group. Returns true if created.
+  /// "+ Group" header button → create a group. Returns true if created, and
+  /// bumps the new group to the top of the People MRU.
   Future<bool> _addGroup() async {
+    final bloc = context.read<ComposeTargetsBloc>();
     final result = await EditGroup().run(context);
+    if (result is CommandDone && result.createdId != null) {
+      await bloc.recordPersonUsage(
+        contacts: const [],
+        groups: [Uuid.fromString(result.createdId!)],
+        inviteEmails: const [],
+      );
+    }
     return result is CommandDone;
   }
 
