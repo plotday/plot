@@ -42,6 +42,8 @@ void main() {
         id: linkId,
         createdAt: DateTime.now(),
         sourceCreatedAt: DateTime.now(),
+        priority: 0,
+        noteScoped: false,
         revoked: true,
       );
       final processed = await LinksBase().processPulledRows(store, [incoming]);

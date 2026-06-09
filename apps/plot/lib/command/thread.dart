@@ -554,6 +554,8 @@ class AddThreadWithLink extends Command {
       sourceUrl: linkUrl,
       title: linkTitle,
       logo: linkFavicon,
+      priority: 0,
+      noteScoped: false,
       revoked: false,
     );
     await Store.get.save(
