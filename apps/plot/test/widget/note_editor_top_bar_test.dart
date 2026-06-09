@@ -25,7 +25,7 @@ void main() {
 
   group('NoteEditorTopBar — PillRowState', () {
     testWidgets('renders all pill labels', (tester) async {
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: PillRowState(
           pills: [pill('reply', 'Reply'), pill('task', 'Task'), pill('private', 'Private note')],
           activeId: 'reply',
@@ -39,7 +39,7 @@ void main() {
     });
 
     testWidgets('active tab label is heavier than inactive', (tester) async {
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: PillRowState(
           pills: [pill('a', 'A'), pill('b', 'B')],
           activeId: 'a',
@@ -56,7 +56,7 @@ void main() {
 
     testWidgets('tapping a pill invokes its onTap', (tester) async {
       var tapped = false;
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: PillRowState(
           pills: [TopBarPill(id: 'task', label: 'Task', onTap: () => tapped = true)],
           activeId: 'reply',
@@ -71,7 +71,7 @@ void main() {
 
   group('NoteEditorTopBar — ReplyingState', () {
     testWidgets('renders the reply chrome with quote preview', (tester) async {
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: const ReplyingState(quotePreview: 'Sounds good, ship Friday'),
         onClearReply: () {},
         onCancelEdit: () {},
@@ -82,7 +82,7 @@ void main() {
 
     testWidgets('tapping X invokes onClearReply', (tester) async {
       var cleared = false;
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: const ReplyingState(quotePreview: 'q'),
         onClearReply: () => cleared = true,
         onCancelEdit: () {},
@@ -94,7 +94,7 @@ void main() {
 
   group('NoteEditorTopBar — EditingState', () {
     testWidgets('renders the editing chrome with preview', (tester) async {
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: const EditingState(quotePreview: 'Old text'),
         onClearReply: () {},
         onCancelEdit: () {},
@@ -105,7 +105,7 @@ void main() {
 
     testWidgets('tapping X invokes onCancelEdit', (tester) async {
       var cancelled = false;
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: const EditingState(quotePreview: 'q'),
         onClearReply: () {},
         onCancelEdit: () => cancelled = true,
@@ -117,7 +117,7 @@ void main() {
 
   group('NoteEditorTopBar — pill affordances', () {
     testWidgets('renders leading icon and recipient count pill', (tester) async {
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: PillRowState(
           pills: [
             TopBarPill(
@@ -145,7 +145,7 @@ void main() {
         (tester) async {
       var tapped = false;
       var edited = false;
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: PillRowState(
           pills: [
             TopBarPill(
@@ -170,7 +170,7 @@ void main() {
     });
 
     testWidgets('no edit affordance when editIcon is null', (tester) async {
-      await tester.pumpWidget(host(NoteEditorTopBar(
+      await tester.pumpWidget(host(NoteEditorTopBar(roundTop: false, 
         state: PillRowState(
           pills: [TopBarPill(id: 'reply', label: 'Reply', onTap: () {})],
           activeId: 'reply',

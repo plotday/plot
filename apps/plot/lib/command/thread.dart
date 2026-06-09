@@ -2374,22 +2374,40 @@ class ShowThreadCommands extends ShowCommands {
     : super(
         title: 'More',
         icon: PlotIcon.menu,
-        commandsBuilder: (context) async {
-          // Capture the bloc here — `context` is the more-button's context,
-          // which lives inside the priority page's BlocProvider. Once the
-          // CommandModal opens, command dispatch may run with the modal's
-          // own context (in the global Overlay) where the bloc is not
-          // resolvable, so capture eagerly and pass it through.
-          final bloc = context.read<PriorityBloc?>();
-          return Commands(
-            groups: await threadCommandGroups(
-              thread,
-              open: open,
-              priorityBloc: bloc,
-            ),
-          );
-        },
+        commandsBuilder: _createBuilder(thread, open),
       );
+
+  static Future<Commands> Function(BuildContext) _createBuilder(
+    Thread thread,
+    bool open,
+  ) {
+    PriorityBloc? cachedBloc;
+    bool hasReadBloc = false;
+    return (context) async {
+      // Capture the bloc once — `context` is the more-button's context,
+      // which lives inside the priority page's BlocProvider. Once the
+      // CommandModal opens, command dispatch may run with the modal's
+      // own context (in the global Overlay) where the bloc is not
+      // resolvable, so capture eagerly and pass it through. If this
+      // builder is called again during a refresh, the original context
+      // may be unmounted, so we reuse the cached bloc.
+      if (!hasReadBloc) {
+        if (context.mounted) {
+          try {
+            cachedBloc = context.read<PriorityBloc?>();
+          } catch (_) {}
+        }
+        hasReadBloc = true;
+      }
+      return Commands(
+        groups: await threadCommandGroups(
+          thread,
+          open: open,
+          priorityBloc: cachedBloc,
+        ),
+      );
+    };
+  }
 }
 
 /// Opens the assignee picker for a thread. Title is "Reassign" when the thread
@@ -2439,8 +2457,9 @@ class PickThreadShared extends ShowCommands {
         final notes = sharingModel == SharingModel.message
             ? await Note.getForThread(thread.id)
             : null;
-        final roleConfigs =
-            Thread.primaryLink(links)?.getTypeConfig()?.contactRoles;
+        final roleConfigs = Thread.primaryLink(
+          links,
+        )?.getTypeConfig()?.contactRoles;
         return _buildSharedCommands(
           threadRef[0],
           onUpdate: onUpdate,

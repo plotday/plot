@@ -164,58 +164,74 @@ class ShowSettings extends ShowCommands {
     : super(
         title: 'Settings',
         icon: PlotIcon.settings,
-        commandsBuilder: (context) async {
-          final prioritiesState = context.read<PrioritiesBloc>().state;
-          final userState = context.read<UserBloc>().state;
-          final email = userState is UserReady
-              ? userState.user.primaryEmail
-              : null;
-          final showAllPriorities = context
-              .read<LocalPreferencesBloc>()
-              .state
-              .showAllPriorities;
-
-          // Fetch orgs and subscription in parallel
-          List<Map<String, dynamic>> adminOrgs = [];
-          bool hasTeams = false;
-          SubscriptionInfo? subscription;
-          try {
-            final results = await Future.wait([
-              api.get<List<dynamic>>('/team'),
-              UpgradeApi.getSubscription(),
-            ]);
-            final allOrgs = (results[0] as List<dynamic>)
-                .cast<Map<String, dynamic>>();
-            log.info(
-              'ShowSettings: /team returned ${allOrgs.length} orgs: $allOrgs',
-            );
-            hasTeams = allOrgs.isNotEmpty;
-            adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
-            log.info('ShowSettings: adminOrgs after role filter: $adminOrgs');
-            subscription = results[1] as SubscriptionInfo;
-          } catch (e, t) {
-            // Non-critical — settings still work without these
-            log.warning('Failed to fetch orgs/subscription for settings', e, t);
-          }
-
-          final groups = [
-            ...settingsCommandsFromState(
-              prioritiesState,
-              hasTeams: hasTeams,
-              email: email,
-              adminOrgs: adminOrgs,
-              subscription: subscription,
-              showAllPriorities: showAllPriorities,
-            ),
-          ];
-          final debugCmds = buildDebugCommands();
-          if (debugCmds != null) {
-            groups.add(debugCmds);
-          }
-          return Commands(groups: groups);
-        },
+        commandsBuilder: _createBuilder(),
         shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
       );
+
+  static Future<Commands> Function(BuildContext) _createBuilder() {
+    PrioritiesState? cachedPrioritiesState;
+    UserState? cachedUserState;
+    LocalPreferencesState? cachedPrefsState;
+    bool hasReadState = false;
+
+    return (context) async {
+      if (!hasReadState) {
+        if (context.mounted) {
+          try {
+            cachedPrioritiesState = context.read<PrioritiesBloc>().state;
+            cachedUserState = context.read<UserBloc>().state;
+            cachedPrefsState = context.read<LocalPreferencesBloc>().state;
+          } catch (_) {}
+        }
+        hasReadState = true;
+      }
+
+      final email = cachedUserState is UserReady
+          ? (cachedUserState as UserReady).user.primaryEmail
+          : null;
+      final showAllPriorities = cachedPrefsState?.showAllPriorities ?? false;
+
+      // Fetch orgs and subscription in parallel
+      List<Map<String, dynamic>> adminOrgs = [];
+      bool hasTeams = false;
+      SubscriptionInfo? subscription;
+      try {
+        final results = await Future.wait([
+          api.get<List<dynamic>>('/team'),
+          UpgradeApi.getSubscription(),
+        ]);
+        final allOrgs = (results[0] as List<dynamic>)
+            .cast<Map<String, dynamic>>();
+        log.info(
+          'ShowSettings: /team returned ${allOrgs.length} orgs: $allOrgs',
+        );
+        hasTeams = allOrgs.isNotEmpty;
+        adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
+        log.info('ShowSettings: adminOrgs after role filter: $adminOrgs');
+        subscription = results[1] as SubscriptionInfo;
+      } catch (e, t) {
+        // Non-critical — settings still work without these
+        log.warning('Failed to fetch orgs/subscription for settings', e, t);
+      }
+
+      final groups = [
+        if (cachedPrioritiesState != null)
+          ...settingsCommandsFromState(
+            cachedPrioritiesState!,
+            hasTeams: hasTeams,
+            email: email,
+            adminOrgs: adminOrgs,
+            subscription: subscription,
+            showAllPriorities: showAllPriorities,
+          ),
+      ];
+      final debugCmds = buildDebugCommands();
+      if (debugCmds != null) {
+        groups.add(debugCmds);
+      }
+      return Commands(groups: groups);
+    };
+  }
 }
 
 class ChangeAppearance extends ShowCommands {
