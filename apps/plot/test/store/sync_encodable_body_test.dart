@@ -56,5 +56,55 @@ void main() {
       // Encodes cleanly now.
       expect(jsonEncode(result), isNotEmpty);
     });
+
+    test('handles Iterables that are not Lists (like Set)', () {
+      final body = <String, dynamic>{
+        'tags': {'a', 'b', 'c'},
+      };
+      final result = toEncodableSyncValue(body) as Map<String, dynamic>;
+
+      expect(result['tags'], ['a', 'b', 'c']);
+      expect(jsonEncode(result), '{"tags":["a","b","c"]}');
+    });
+
+    test('handles DateTime explicitly', () {
+      final dt = DateTime.utc(2026, 6, 9, 12, 34, 56);
+      final body = <String, dynamic>{
+        'created_at': dt,
+      };
+      final result = toEncodableSyncValue(body) as Map<String, dynamic>;
+
+      expect(result['created_at'], '2026-06-09T12:34:56.000Z');
+      expect(jsonEncode(result), '{"created_at":"2026-06-09T12:34:56.000Z"}');
+    });
+
+    test('calls toJson() on custom objects', () {
+      final body = <String, dynamic>{
+        'custom': _CustomEncodable(),
+      };
+      final result = toEncodableSyncValue(body) as Map<String, dynamic>;
+
+      expect(result['custom'], {'id': '123'});
+      expect(jsonEncode(result), '{"custom":{"id":"123"}}');
+    });
+
+    test('falls back to toString() for unhandled types', () {
+      final body = <String, dynamic>{
+        'weird': _WeirdObject(),
+      };
+      final result = toEncodableSyncValue(body) as Map<String, dynamic>;
+
+      expect(result['weird'], 'Weird(42)');
+      expect(jsonEncode(result), '{"weird":"Weird(42)"}');
+    });
   });
+}
+
+class _CustomEncodable {
+  Map<String, dynamic> toJson() => {'id': '123'};
+}
+
+class _WeirdObject {
+  @override
+  String toString() => 'Weird(42)';
 }

@@ -177,17 +177,35 @@ enum _RevertOutcome { reverted, absentOnServer, fetchFailed }
 /// column is protected at this single sync chokepoint rather than per table.
 @visibleForTesting
 dynamic toEncodableSyncValue(dynamic value) {
+  if (value == null || value is String || value is num || value is bool) {
+    return value;
+  }
   if (value is BigInt) return value.toString();
+  if (value is DateTime) return value.toUtc().toIso8601String();
   if (value is Map) {
     return {
       for (final entry in value.entries)
         entry.key.toString(): toEncodableSyncValue(entry.value),
     };
   }
-  if (value is List) {
+  if (value is Iterable) {
     return [for (final element in value) toEncodableSyncValue(element)];
   }
-  return value;
+  
+  // Try calling toJson if the object has one
+  try {
+    // ignore: avoid_dynamic_calls
+    final json = (value as dynamic).toJson();
+    return toEncodableSyncValue(json);
+  } on NoSuchMethodError {
+    // Ignore and fall through to stringification
+  } catch (e, stack) {
+    log.warning('toEncodableSyncValue: toJson() threw on ${value.runtimeType}', e, stack);
+  }
+
+  // Fallback: stringify to prevent jsonEncode from crashing the batch push.
+  log.warning('toEncodableSyncValue: stringifying unhandled type ${value.runtimeType}');
+  return value.toString();
 }
 
 /// A table in the remote database that can be synced with the local database.
