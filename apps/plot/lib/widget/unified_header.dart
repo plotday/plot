@@ -29,6 +29,7 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/fading_underline.dart';
 import 'package:plot/widget/pomodoro_ring.dart';
+import 'package:plot/widget/primary_link_header_actions.dart';
 import 'package:plot/widget/thread_assignee.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/thread_sharing.dart';
@@ -537,6 +538,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     // Single-panel: thread actions live in the header (no squircle).
     final trailing = <Widget>[
       if (thread != null) _buildTodoToggle(context, thread),
+      if (thread != null) PrimaryLinkHeaderActions(thread: thread),
       if (thread != null && !thread.isReadOnly)
         ThreadSharing(thread: thread, tooltipBelow: true),
       if (thread != null && !thread.isReadOnly)
