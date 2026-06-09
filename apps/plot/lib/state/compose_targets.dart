@@ -1067,21 +1067,21 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       }
     }
 
-    // Synthesize single-contact entries for any matching correspondent not
-    // already surfaced by a recently-used roster, so search reaches the whole
-    // roster (not just recently-used). Reuses the lean name LIKE query
-    // [_searchByName] uses; self ids are excluded as elsewhere in the bloc.
+    // Synthesize matching contacts AND groups not already surfaced by a
+    // recently-used roster, so search reaches the whole address book. Contacts
+    // and groups are intermixed alphabetically by name.
     if (people.length < perSection) {
       final selfIds =
           Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
-      final matches = await Actor.get(
+      final matched = <({String name, ComposePeopleEntry entry})>[];
+
+      final contacts = await Actor.get(
         types: const [ActorType.user, ActorType.contact],
         search: trimmed,
         inviteable: true,
         primary: true,
       );
-      for (final a in matches) {
-        if (people.length >= perSection) break;
+      for (final a in contacts) {
         final uuid = a.id.toUuid();
         if (selfIds.contains(uuid)) continue;
         final entry = _peopleEntryFor((
@@ -1089,9 +1089,26 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
           groups: const [],
           inviteEmails: const [],
         ));
-        if (entry != null &&
-            seenRosters.add(
-                _rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
+        if (entry != null) matched.add((name: a.nameOrEmail, entry: entry));
+      }
+
+      // Groups: query by name directly (the People list otherwise never reaches
+      // a group the user hasn't recently messaged). Build the entry straight
+      // from the row so a just-created/un-cached group still resolves.
+      final groupRows = await Group.getPostable(search: trimmed);
+      for (final g in groupRows) {
+        final entry = _groupPeopleEntry(g, (
+          contacts: const [],
+          groups: [g.id],
+          inviteEmails: const [],
+        ));
+        matched.add((name: g.name, entry: entry));
+      }
+
+      for (final entry in intermixPeopleByName(matched)) {
+        if (people.length >= perSection) break;
+        if (seenRosters
+            .add(_rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
           people.add(entry);
         }
       }
