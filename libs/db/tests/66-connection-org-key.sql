@@ -60,28 +60,39 @@ BEGIN
         (v_ti_team, v_user, 'slack', gen_random_uuid()); -- synthetic actor: no contact row, so no resolvable email -> team fallback
 END $$;
 
+-- All twist_instance lookups are scoped to the test's freshly-created user
+-- (email 'me@acme.com', unique to this test) so the bare connection names
+-- below cannot collide with real connections in a populated dev DB.
+
 -- (1) Work Gmail -> org domain acme.com (acme.com is not a known freemail).
 SELECT is(
-    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Gmail')),
+    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Gmail'
+        AND owner_id = (SELECT id FROM "user" WHERE email='me@acme.com'))),
     'domain:acme.com',
     'work gmail resolves to its non-freemail account domain');
 
 -- (2) Work Slack -> SAME org key (same account email domain) -> transfer.
 SELECT is(
-    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Slack (work)')),
+    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Slack (work)'
+        AND owner_id = (SELECT id FROM "user" WHERE email='me@acme.com'))),
     'domain:acme.com',
     'work slack resolves to the same org domain as work gmail');
 
 -- (3) Personal Gmail (freemail) -> NULL (no merge across personal accounts).
 SELECT is(
-    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Gmail (personal)')),
+    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Gmail (personal)'
+        AND owner_id = (SELECT id FROM "user" WHERE email='me@acme.com'))),
     NULL,
     'personal freemail connection has no org key');
 
--- (4) Team connection with no resolvable email -> team fallback.
+-- (4) Team connection with no resolvable email -> team fallback. The expected
+-- team is derived from the seeded connection itself (not a bare team-name
+-- lookup) so it stays correct on a populated dev DB.
 SELECT is(
-    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Team Slack')),
-    'team:' || (SELECT id FROM team WHERE name='Acme')::text,
+    public.connection_org_key((SELECT id FROM twist_instance WHERE name='Team Slack'
+        AND owner_id = (SELECT id FROM "user" WHERE email='me@acme.com'))),
+    'team:' || (SELECT team_id FROM twist_instance WHERE name='Team Slack'
+        AND owner_id = (SELECT id FROM "user" WHERE email='me@acme.com'))::text,
     'team-owned connection without an account email falls back to team_id');
 
 -- (5) NULL / unknown twist_instance -> NULL (null-safe).
