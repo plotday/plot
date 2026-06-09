@@ -19,6 +19,7 @@ import 'package:plot/state/priority.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/util/channel_breadcrumb.dart';
+import 'package:plot/widget/status_icon_button.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1007,6 +1008,7 @@ class ThreadCommands extends HookWidget {
     final linksSnapshot = useStream<List<Link>>(
       useMemoized(() => Link.watchForThread(activity.id), [activity.id]),
     );
+    final primaryLink = Thread.primaryLink(linksSnapshot.data ?? const []);
     final conferencingActions = showEventButtons
         ? (linksSnapshot.data ?? [])
               .expand((link) => link.actions ?? <UserAction>[])
@@ -1088,6 +1090,8 @@ class ThreadCommands extends HookWidget {
         ...allButtons,
         for (final action in conferencingActions)
           _ConferencingIconButton(action: action),
+        if (primaryLink != null)
+          StatusIconButton(link: primaryLink),
         ?rsvpChip,
         // Persistent thread-level assignee avatar (any assigned thread).
         if (activity.assigneeId != null) ThreadAssignee(thread: activity),
