@@ -1336,6 +1336,54 @@ void main() {
       expect(target, isNull,
           reason: 'a removed connection must fall back to the connection step');
     });
+
+    test('connectionsForRoster offers email (addresses) connectors for a group '
+        'and carries the group onto the target, excluding contacts-type DMs',
+        () async {
+      await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      await _insertConnector(
+        store,
+        name: 'Slack (Acme)',
+        linkType: 'dm',
+        targets: 'contacts',
+        channelId: 'slack-default',
+      );
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final groupId = Uuid.generate();
+      final results = await bloc.connectionsForRoster(
+        contacts: const [],
+        groups: [groupId],
+        inviteEmails: const [],
+      );
+
+      final connectorTargets =
+          results.where((t) => t.target != null).toList();
+      // The addresses connector is offered...
+      expect(
+        connectorTargets.any((t) => t.target!.compose.targets == 'addresses'),
+        isTrue,
+      );
+      // ...and carries the group through to the created thread.
+      final addr = connectorTargets
+          .firstWhere((t) => t.target!.compose.targets == 'addresses');
+      expect(addr.groups, contains(groupId));
+      // The contacts-type DM connector is NOT offered for a group.
+      expect(
+        connectorTargets.any((t) => t.target!.compose.targets == 'contacts'),
+        isFalse,
+      );
+    });
   });
 }
 
