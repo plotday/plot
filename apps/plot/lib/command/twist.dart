@@ -945,6 +945,19 @@ Command? _premiumGateCommand({
   }
 }
 
+/// Onboarding-facing gate: the upgrade [Command] to run instead of opening
+/// setup for a premium connector, or null to proceed. Mirrors the preemptive
+/// gate [AddSourceDetail] applies — we only gate on the tile tap when the user
+/// has no team to fall back to; team-aware gating happens inside the setup
+/// modal. Pure (no context/IO) so it is unit-testable.
+Command? premiumOnboardingGate({
+  required UsageData usage,
+  required bool isPremium,
+}) {
+  if (!isPremium || usage.teams.isNotEmpty) return null;
+  return _premiumGateCommand(usage: usage, owner: 'personal', isPremium: true);
+}
+
 enum _PremiumGate { allowed, atLimit, blocked }
 
 /// Decide whether the selected scope can accept another premium connection.
