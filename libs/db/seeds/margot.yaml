@@ -363,7 +363,7 @@ threads:
         content: |
           Building the board deck. Lead with the benchmarking numbers, then the model, then the culture. Twelve slides, no more. Let the data carry the emotion — the values slide lands last, once they've already agreed with the maths.
 
-  # ---- A dated prep to-do (no time) — preparing for an event --------------
+  # ---- Scheduled to-dos (dated, no time) — prep ahead of later events -----
   - priority_ref: womens_team
     title: "Prep pack for Supporters' Trust sit-down"
     created: "-1d"
@@ -381,12 +381,26 @@ threads:
         mentions:
           - supporters_trust
 
+  - priority_ref: womens_team
+    title: "Rehearse the board talking points"
+    created: "-1d"
+    do_on: "+1d"
+    icon: notes
+    links:
+      - source_ref: slides
+        type: presentation
+        title: "Women's team — board deck v2"
+        source_url: "https://docs.google.com/presentation/d/wtdeck/edit"
+    notes:
+      - created: "-1d 14:30"
+        content: |
+          Run the deck out loud once before the dry run. Open on the data, not the dream. Time it to twelve minutes. The hardest discipline: don't say "Hank" until the very end, and only once.
+
   # ---- Scheduled (upcoming) — Google Calendar events (have times) ---------
   - ref: event_focus
     priority_ref: womens_team
     title: "Focus: Launch women's team"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -403,7 +417,6 @@ threads:
     priority_ref: womens_team
     title: "Women's team board strategy w/ Embry"
     created: "-1d"
-    state: scheduled
     tags:
       pinned: [user]
     links:
@@ -425,7 +438,6 @@ threads:
     priority_ref: womens_team
     title: "FA Women's Championship liaison call"
     created: "-1d"
-    state: scheduled
     icon: decision
     links:
       - source_ref: gcal
@@ -442,7 +454,6 @@ threads:
   - priority_ref: womens_team
     title: "Revenue model review block"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -457,7 +468,6 @@ threads:
   - priority_ref: womens_team
     title: "Board pre-brief dry run"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -474,7 +484,6 @@ threads:
   - priority_ref: womens_team
     title: "Supporters' Trust sit-down"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -810,13 +819,15 @@ threads:
           - perflab
 
   - priority_ref: mens_team
-    title: "Chelsea analysis deck"
+    title: "Chelsea (A) — coaching staff plan"
     created: "-1d"
     state: active
-    icon: notes
-    tags:
-      todo: [user]
+    icon: discussion
     links:
+      - source_ref: slack
+        type: message
+        title: "#coaching-staff — Chelsea plan"
+        source_url: "https://afcmarlow.slack.com/archives/C04coaching/p1801"
       - source_ref: slides
         type: presentation
         title: "Chelsea (A) — analysis deck"
@@ -825,7 +836,59 @@ threads:
       - author_ref: wes
         created: "-1d 17:45"
         content: |
-          Deck's ready for the prep meeting — shape, press triggers, set-piece book. Twelve slides. The lads only need three of them; the rest is for us.
+          Right, plan for Saturday is in the deck — same 4-2-3-1, high press early, Eli inside-left to pull their right back. The lads only need three of the twelve slides; the rest is for us. Have a look before the morning meeting.
+        mentions:
+          - wes
+          - eli
+          - murph
+      - author_ref: eli
+        created: "-1d 18:05"
+        content: |
+          Like it. One thing from Tuesday — when their 8 drops to receive, I drift into the half-space and it frees the fullback to overlap. And their keeper goes long every time he's pressed at 70%+ tempo. We can win those second balls all day.
+        mentions:
+          - eli
+      - author_ref: murph
+        created: "-1d 18:20"
+        content: |
+          Bodies are fresh — loads are green, no new knocks. Only flag: their bench changes the game after 70. We've drilled the triggers all week but legs will be the difference late. Don't want us pressing on empty at 75.
+        mentions:
+          - murph
+      - created: "-1d 18:35"
+        content: |
+          Honest question, not second-guessing: if we go a goal down early — and at Stamford Bridge it happens — what's the plan? I want to know what you three want from me in the box, which is mostly to sit still and not look panicked.
+        mentions:
+          - wes
+          - eli
+          - murph
+      - author_ref: wes
+        created: "-1d 18:50"
+        content: |
+          We don't chase it. We've conceded first and still played well four times this run — the difference was finishing, not shape. Stick to the press, trust the xG, take the chances we've been missing. If anything I'll push Eli higher, not deeper.
+        mentions:
+          - wes
+          - eli
+      - author_ref: eli
+        created: "-1d 19:05"
+        content: |
+          Suits me. And set-pieces — they concede from inswingers, I'll be on those near post. If we get three or four corners in good areas that's a goal in this game.
+        mentions:
+          - eli
+      - author_ref: murph
+        created: "-1d 19:15"
+        content: |
+          Travel's sorted — bus together at 08:30, Stamford Bridge 10:15, walkthrough 11:30. Lads on the coach as a group, no separate cars. Good for the heads before a big one.
+        mentions:
+          - murph
+      - created: "-1d 19:30"
+        content: |
+          That's everything I needed. I trust the three of you completely — this is your plan, not mine. The numbers say we're better than the table: possession up, shots up, xG up. The win is coming. Saturday's as good a day as any to prove it.
+        mentions:
+          - wes
+          - eli
+          - murph
+      - author_ref: wes
+        created: "-1d 19:40"
+        content: "Saturday we show it. See everyone at the ground."
         mentions:
           - wes
 
@@ -848,7 +911,7 @@ threads:
         mentions:
           - murph
 
-  # ---- A dated prep to-do (no time) — preparing for the match -------------
+  # ---- Scheduled to-dos (dated, no time) — prep ahead of later events -----
   - priority_ref: mens_team
     title: "Match-day prep — Chelsea notes"
     created: "-1d"
@@ -866,12 +929,44 @@ threads:
         mentions:
           - wes
 
+  - priority_ref: mens_team
+    title: "Prep the squad-review agenda"
+    created: "-1d"
+    do_on: "+1d"
+    icon: notes
+    links:
+      - source_ref: notion
+        type: document
+        title: "Squad review — agenda"
+        source_url: "https://notion.so/afcmarlow/squad-review-agenda"
+    notes:
+      - created: "-1d 12:00"
+        content: |
+          Put the squad-review agenda together the day before: how we handled Chelsea (win, lose or draw), minutes management for the run of fixtures, and one honest conversation about finishing. Keep it short — Wes runs it, I just listen.
+        mentions:
+          - wes
+
+  - priority_ref: mens_team
+    title: "Draft the post-match line with Posy"
+    created: "-1d"
+    do_on: "+1d"
+    links:
+      - source_ref: slack
+        type: message
+        title: "#media-comms — post-match line"
+        source_url: "https://afcmarlow.slack.com/archives/C04media/p1810"
+    notes:
+      - created: "-1d 12:30"
+        content: |
+          Have a holding line ready for after Chelsea — same message whatever the result: we back the team, the performance is there, results follow performance. Posy to polish. Never promise, never panic.
+        mentions:
+          - posy
+
   # ---- Scheduled (upcoming) — Google Calendar events (have times) ---------
   - ref: event_tactics
     priority_ref: mens_team
     title: "Chelsea match tactics"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -891,7 +986,6 @@ threads:
     priority_ref: mens_team
     title: "Match-day prep review"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -909,7 +1003,6 @@ threads:
   - priority_ref: mens_team
     title: "Team departs for Stamford Bridge"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -921,7 +1014,6 @@ threads:
   - priority_ref: mens_team
     title: "Pre-match meal"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -933,7 +1025,6 @@ threads:
   - priority_ref: mens_team
     title: "Chelsea vs Marlow"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -949,7 +1040,6 @@ threads:
   - priority_ref: mens_team
     title: "Squad review with Wes"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -966,7 +1056,6 @@ threads:
   - priority_ref: mens_team
     title: "Weekly football operations"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -1295,7 +1384,6 @@ threads:
   - priority_ref: facilities
     title: "Stadium ops walkthrough"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -1312,7 +1400,6 @@ threads:
     priority_ref: commercial
     title: "Lunch with Avenir sponsorship rep"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -1358,7 +1445,6 @@ threads:
     priority_ref: community
     title: "Sky Sports pre-match interview"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
@@ -1436,7 +1522,6 @@ threads:
   - priority_ref: personal
     title: "Evening walk — think time"
     created: "-1d"
-    state: scheduled
     links:
       - source_ref: gcal
         type: event
