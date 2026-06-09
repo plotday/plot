@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withDb, withUserDb, createDb } from "../../db";
+import { sql, withDb, withUserDb, createDb, type DB, type Kysely } from "../../db";
 import type { Bindings } from "../../env";
 import { rpc, rpcUser } from "../../rpc";
 import {
@@ -54,6 +54,39 @@ export function isDispatchableCreateLink(
   spec: CreateLinkSpec | undefined,
 ): spec is CreateLinkSpec & { twist_instance_id: string; type: string; status: string } {
   return Boolean(spec?.twist_instance_id && spec.type && spec.status);
+}
+
+/**
+ * Expand any addressed groups to their member contact ids and merge them with
+ * the directly-addressed contacts (deduped). Used by the create-link dispatch
+ * so email-accepting connectors receive a group's members as recipients.
+ *
+ * Reuses the permission-gated `expand_group_contacts` RPC. A group the caller
+ * can no longer address (or a missing group) RAISEs `P0001`, which is expected
+ * and skipped silently; any other failure is forwarded to `onUnexpectedError`.
+ * Expansion is ephemeral — callers do not write the result back to the thread.
+ */
+export async function expandGroupsToContactIds(
+  db: Kysely<DB>,
+  userId: string,
+  directContactIds: string[],
+  groupIds: string[],
+  onUnexpectedError?: (error: unknown) => void,
+): Promise<string[]> {
+  const ids = new Set<string>(directContactIds);
+  for (const groupId of groupIds) {
+    try {
+      const memberIds = (await rpc(db, "expand_group_contacts", {
+        p_user_id: userId,
+        p_group_id: groupId,
+      })) as string[] | null;
+      for (const id of memberIds ?? []) ids.add(id);
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (code !== "P0001") onUnexpectedError?.(error);
+    }
+  }
+  return [...ids];
 }
 
 const threads = new Hono<{ Bindings: Bindings }>();
@@ -879,6 +912,9 @@ threads.post("/sync/threads", async (c) => {
     const dispatchContactIds: string[] = Array.isArray(threadData.contacts)
       ? (threadData.contacts as string[])
       : [];
+    const dispatchGroupIds: string[] = Array.isArray(threadData.groups)
+      ? (threadData.groups as string[])
+      : [];
     const dispatchTitle = threadData.title as string;
     const dispatchThreadId = result.id;
     const dispatchInviteEmails = inviteEmails.slice();
@@ -891,7 +927,17 @@ threads.post("/sync/threads", async (c) => {
           // excluding every contact linked to the creating user so the author
           // isn't passed as a recipient.
           const contacts: Array<{ id: string; type: "contact" | "user"; email: string | null; name: string | null }> = [];
-          if (dispatchContactIds.length > 0) {
+          const resolveContactIds = await expandGroupsToContactIds(
+            db,
+            userId,
+            dispatchContactIds,
+            dispatchGroupIds,
+            (error) => {
+              console.error("[sync/threads] expand_group_contacts failed:", error);
+              c.var.tracker.captureException(error as Error);
+            },
+          );
+          if (resolveContactIds.length > 0) {
             const rows = await db
               .selectFrom("contact as c")
               .leftJoin("user_contact as uc", (join) =>
@@ -907,7 +953,7 @@ threads.post("/sync/threads", async (c) => {
                 "c.name",
                 "uc.user_id as linked_user_id",
               ])
-              .where("c.id", "in", dispatchContactIds)
+              .where("c.id", "in", resolveContactIds)
               .execute();
             for (const row of rows) {
               if (row.linked_user_id) continue;
