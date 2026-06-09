@@ -618,6 +618,12 @@ class MuteSimilarThreads extends Command {
       final muted = _thread.asInactive().copyWith(
         muteByThreadId: Value(_thread.id),
       );
+      // If this is the open thread, hold it at its current feed section so
+      // muting flips it inactive without yanking the row to Done until the
+      // user changes threads (mirrors the To do / Done toggle). Pin BEFORE
+      // the optimistic update so its overlay leaves the pin in place. See
+      // [PriorityBloc.pinTodoInPlace].
+      priorityBloc?.pinTodoInPlace(muted);
       priorityBloc?.optimisticallyUpdateThread(muted);
       await muted.save();
     }
