@@ -824,28 +824,39 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
 
     final people = <ComposePeopleEntry>[];
     if (!linkMode) {
-      final usedSignatures = buildUsedTargetSignatures(scan.threads);
-      final rankedUsed = _prefs.rankSignaturesByMru(signatures: usedSignatures);
-      final rosterTargets = <ComposeTarget>[];
-      for (final sig in rankedUsed) {
-        final st = scan.bySignature[sig];
-        if (st == null) continue;
-        final t = _composeTargetForScanThread(
-          st,
-          templateBySignature: ctx.templateBySignature,
-          connectionCount: ctx.connectionCount,
-          hasTeams: ctx.hasTeams,
-          teamNames: ctx.teamNames,
-        );
-        if (t != null) rosterTargets.add(t);
+      // True MRU: gather candidate rosters with a recency timestamp from two
+      // sources, merged by max — authored threads (use, already persisted) and
+      // the in-memory created/used people-MRU (a "+ Contact"/"+ Group" with no
+      // thread yet). Either source bumps a roster toward the top.
+      final candidates = <({RosterKey roster, int ms})>[];
+      for (final st in scan.threads) {
+        if (st.contacts.isEmpty && st.groups.isEmpty) continue;
+        candidates.add((
+          roster: (
+            contacts: st.contacts,
+            groups: st.groups,
+            inviteEmails: const <String>[],
+          ),
+          ms: st.recencyMs,
+        ));
       }
-      // Dropping non-inviteable contacts in [_peopleEntryFor] can collapse two
-      // distinct rosters (e.g. {Greg} and {Greg, mailer-daemon}) to the same
-      // filtered set, so dedupe again on the resolved roster to avoid duplicate
-      // pills.
+      // Warm caches for pinned ids so just-created entities resolve, then add
+      // them to the candidate pool.
+      for (final e in _createdPeopleMru.values) {
+        for (final cid in e.roster.contacts) {
+          try {
+            await Actor.getOne(ActorId.fromUuid(cid));
+          } catch (_) {/* dropped at resolve */}
+        }
+        for (final gid in e.roster.groups) {
+          await Group.getOne(gid);
+        }
+        candidates.add((roster: e.roster, ms: e.ms));
+      }
+      // Resolve in MRU order, dropping unresolvable/collapsed rosters, capped.
       final seenRosters = <String>{};
-      for (final r in dedupePeopleByRoster(rosterTargets)) {
-        final entry = _peopleEntryFor(r);
+      for (final roster in orderPeopleByRecency(candidates)) {
+        final entry = _peopleEntryFor(roster);
         if (entry == null) continue;
         if (!seenRosters
             .add(_rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
