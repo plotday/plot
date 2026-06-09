@@ -11,8 +11,9 @@
 --
 -- Algorithm (executed in order; first match wins):
 --   1. Load the thread's current signals (topic, embedding, contacts, groups,
---      created_by) from the thread row when p_thread_id is provided. Non-NULL
---      explicit parameters override what was loaded.
+--      created_by, twist_id) from the thread row when p_thread_id is provided.
+--      Non-NULL explicit parameters override what was loaded. (created_by and
+--      twist_id drive the connection-origin signal in step 3.)
 --   2. Topic short-circuit: if the candidate thread has a topic AND any of
 --      the user's moved threads share that topic, the user has already
 --      answered "threads with this topic belong here." Return the most-used
@@ -39,8 +40,15 @@
 --        sem = cosine similarity, thresholded at 0.5, scaled to [0,1], squared
 --        con = Jaccard on expanded contacts (linked-alias-aware), squared
 --        grp = Jaccard on groups, squared
---        combined = 0.5*sem + 0.35*con + 0.15*grp
---      Each per-signal score is squared so weak signals contribute near-zero.
+--        origin = connection-origin boost vs the example's source connection:
+--                 0.18 when the candidate shares the SAME originating
+--                 connection (twist_instance) as the moved example, else
+--                 0.09 when they share an org group (connection_org_key:
+--                 non-freemail account domain or owning team), else 0.
+--        combined = 0.5*sem + 0.30*con + 0.12*grp + origin
+--      The sem/con/grp signals are squared so weak overlaps contribute
+--      near-zero; the origin term is a flat additive boost riding inside
+--      combined (it does not bypass the facet gate below).
 --      Return the highest-scoring priority when its combined score >= 0.15.
 --      Focuses whose facet_filters this thread violates are excluded here
 --      (public.thread_facets_gated), unless the author is trusted for that
@@ -81,15 +89,21 @@ DECLARE
     v_groups uuid[];
     v_facets jsonb;
     v_author_id uuid;
+    v_created_by uuid;
+    v_twist_id bigint;
+    v_conn_id uuid;       -- candidate's originating connection (twist_instance) or NULL
+    v_org_key text;       -- candidate connection's coarse org-group key or NULL
     v_matched uuid;
     v_scores jsonb;
     v_channel_pk bigint;
     v_priority_key text;
 BEGIN
-    -- 1. Load thread signals when an id was supplied.
+    -- 1. Load the thread's signals when an id was supplied.
     IF p_thread_id IS NOT NULL THEN
-        SELECT t.embedding, t.topic, t.contacts, t.groups, t.facets, t.author_id
-        INTO v_embedding, v_topic, v_contacts, v_groups, v_facets, v_author_id
+        SELECT t.embedding, t.topic, t.contacts, t.groups, t.facets, t.author_id,
+               t.created_by, t.twist_id
+        INTO v_embedding, v_topic, v_contacts, v_groups, v_facets, v_author_id,
+             v_created_by, v_twist_id
         FROM public.thread t
         WHERE t.id = p_thread_id;
     END IF;
@@ -98,6 +112,12 @@ BEGIN
     v_topic     := COALESCE(p_topic, v_topic);
     v_contacts  := COALESCE(p_contacts, v_contacts, ARRAY[]::uuid[]);
     v_groups    := COALESCE(p_groups, v_groups, ARRAY[]::uuid[]);
+
+    -- Origin signal: a connector thread (twist_id IS NOT NULL) was created by a
+    -- connection; created_by is that twist_instance. User-authored threads have
+    -- no origin signal. Resolve the candidate's coarse org-group key once.
+    v_conn_id := CASE WHEN v_twist_id IS NOT NULL THEN v_created_by ELSE NULL END;
+    v_org_key := public.connection_org_key(v_conn_id);
 
     -- 2. Topic short-circuit on user_moved siblings.
     IF v_topic IS NOT NULL THEN
@@ -171,17 +191,28 @@ BEGIN
     END IF;
 
     -- 3. Score all moved threads when no topic match was available.
+    --    Adds an origin term: a user_moved example from the SAME connection
+    --    (exact, L1) or the same org group (L2) boosts the focus that has
+    --    already seen this mailbox/account. origin rides inside the combined
+    --    score — it does not bypass the facet gate or the structural stages.
     WITH moved AS (
         SELECT tp.priority_id,
                tp.thread_id,
                mt.embedding,
                mt.contacts,
-               mt.groups
+               mt.groups,
+               CASE WHEN mt.twist_id IS NOT NULL THEN mt.created_by END AS conn_id
         FROM public.thread_priority tp
         JOIN public.thread mt ON mt.id = tp.thread_id
         WHERE tp.user_id = p_user_id
           AND tp.user_moved = TRUE
           AND mt.archived_at IS NULL
+    ),
+    -- Resolve each distinct example connection to its org key once (avoids a
+    -- per-pair function call in the cross join below).
+    conn_key AS (
+        SELECT m.conn_id, public.connection_org_key(m.conn_id) AS org_key
+        FROM (SELECT DISTINCT conn_id FROM moved WHERE conn_id IS NOT NULL) m
     ),
     candidate AS (
         SELECT public.expand_contacts(v_contacts) AS exp_contacts,
@@ -208,6 +239,11 @@ BEGIN
             f.priority_id,
             f.thread_id,
             COALESCE(ng.neg_sim, 0) AS neg_sim,
+            CASE
+                WHEN v_conn_id IS NOT NULL AND f.conn_id = v_conn_id THEN 0.18
+                WHEN v_org_key IS NOT NULL AND ck.org_key = v_org_key THEN 0.09
+                ELSE 0
+            END AS origin,
             CASE
                 WHEN f.embedding IS NULL OR c.embedding IS NULL THEN 0
                 ELSE POWER(
@@ -246,6 +282,7 @@ BEGIN
         FROM moved f
         CROSS JOIN candidate c
         LEFT JOIN neg ng ON ng.priority_id = f.priority_id
+        LEFT JOIN conn_key ck ON ck.conn_id = f.conn_id
     )
     SELECT jsonb_build_object(
         'top', COALESCE(jsonb_agg(
@@ -255,9 +292,10 @@ BEGIN
                 'sem', round(top_scored.sem::numeric, 4),
                 'con', round(top_scored.con::numeric, 4),
                 'grp', round(top_scored.grp::numeric, 4),
-                'combined', round((0.5 * top_scored.sem + 0.35 * top_scored.con + 0.15 * top_scored.grp - 0.3 * top_scored.neg_sim)::numeric, 4)
+                'origin', round(top_scored.origin::numeric, 4),
+                'combined', round((0.5 * top_scored.sem + 0.30 * top_scored.con + 0.12 * top_scored.grp + top_scored.origin - 0.3 * top_scored.neg_sim)::numeric, 4)
             )
-            ORDER BY (0.5 * top_scored.sem + 0.35 * top_scored.con + 0.15 * top_scored.grp - 0.3 * top_scored.neg_sim) DESC
+            ORDER BY (0.5 * top_scored.sem + 0.30 * top_scored.con + 0.12 * top_scored.grp + top_scored.origin - 0.3 * top_scored.neg_sim) DESC
         ), '[]'::jsonb)
     )
     INTO v_scores
@@ -267,9 +305,10 @@ BEGIN
                scored.sem,
                scored.con,
                scored.grp,
+               scored.origin,
                scored.neg_sim
         FROM scored
-        ORDER BY (0.5 * scored.sem + 0.35 * scored.con + 0.15 * scored.grp - 0.3 * scored.neg_sim) DESC
+        ORDER BY (0.5 * scored.sem + 0.30 * scored.con + 0.12 * scored.grp + scored.origin - 0.3 * scored.neg_sim) DESC
         LIMIT 3
     ) top_scored;
 
