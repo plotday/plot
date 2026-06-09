@@ -869,16 +869,32 @@ class ToggleThreadActive extends _UpdateThreadCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final markingDone = thread.todo;
-    await saveOptimistically(
-      context,
-      thread.copyWith(
-        todo: !thread.todo,
-        unread: false,
-        readAt: thread.unread
-            ? Value(thread.contentTimestamp)
-            : const Value.absent(),
-      ),
+    final priorityBloc = context.read<PriorityBloc?>();
+    // If this re-activates a thread the user only just finished (a Done →
+    // To do round-trip on the open thread), restore its prior Doing slot so
+    // it returns to where it was instead of jumping to the top. Genuinely
+    // activating an inactive thread (no session original, or it wasn't
+    // Active at the start) keeps the default top-of-Doing placement.
+    final original = priorityBloc?.toggleOriginalFor(thread.id);
+    final restoreOrder = !thread.todo && (original?.todo ?? false)
+        ? original!.order
+        : null;
+    final updated = thread.copyWith(
+      todo: !thread.todo,
+      unread: false,
+      readAt: thread.unread
+          ? Value(thread.contentTimestamp)
+          : const Value.absent(),
+      order: restoreOrder,
     );
+    // If this is the open thread, hold it at its current feed section so the
+    // To do / Done toggle flips its icon without yanking the row to its new
+    // section until the user navigates away. Pin BEFORE saveOptimistically so
+    // the overlay it writes doesn't first bounce the row to its new section
+    // for a frame; pinTodoInPlace reads the pre-toggle section from the open
+    // thread and optimisticallyUpdateThread then leaves the pin in place.
+    priorityBloc?.pinTodoInPlace(updated);
+    await saveOptimistically(context, updated);
     // Marking the thread done also completes the user's todo notes on it
     // (matches FinishThread). Flipping back to todo leaves notes untouched.
     if (markingDone) {
@@ -980,6 +996,30 @@ class FinishThread extends _UpdateThreadCommand {
     final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
     final isAgenda =
         priorityBloc?.resolveThreadListSource() == ThreadListSource.agenda;
+    // Bump to the top of Done only when the thread was genuinely Active at the
+    // start of this toggle session. A To do → Done round-trip (the user marked
+    // it To do then immediately Done on the open thread) must return to its
+    // prior Activity slot, so suppress the bump. With no session original
+    // (e.g. finishing a standing todo straight from the feed) keep the
+    // caller's `bump`.
+    final original = priorityBloc?.toggleOriginalFor(thread.id);
+    final effectiveBump = original == null ? bump : (bump && original.todo);
+    final finished = thread.copyWith(
+      todo: false,
+      bump: effectiveBump,
+      unread: false,
+      readAt: thread.unread
+          ? Value(thread.contentTimestamp)
+          : const Value.absent(),
+    );
+    // When finishing the open thread, hold it at its current feed section so
+    // the Done toggle flips its icon immediately but the row only relocates
+    // to Activity once the grace window elapses after we navigate away (the
+    // OpenNextThread below). Must run before navigation so the resulting
+    // setThread schedules its sticky removal. See [PriorityBloc.pinTodoInPlace].
+    if (isCurrentThread) {
+      priorityBloc?.pinTodoInPlace(finished);
+    }
     CommandReturn? navigationResult;
     if (isCurrentThread && isAgenda) {
       navigationResult = await OpenNextThread().run(context);
@@ -1000,14 +1040,6 @@ class FinishThread extends _UpdateThreadCommand {
 
     if (!context.mounted) return const CommandDone();
     HapticFeedback.mediumImpact();
-    final finished = thread.copyWith(
-      todo: false,
-      bump: bump,
-      unread: false,
-      readAt: thread.unread
-          ? Value(thread.contentTimestamp)
-          : const Value.absent(),
-    );
     // Optimistically flip ThreadBloc's thread (when present) so the Finish
     // button on the open ThreadPage swaps to To-do instantly instead of
     // waiting for the SQLite save → Thread.watchOne stream to tick.

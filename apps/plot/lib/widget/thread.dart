@@ -101,6 +101,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   bool _rowHovered = false;
   BlockDragController? _dragController;
 
+  /// True for [_finishConfirmDuration] after this thread transitions
+  /// todo → done, so the leading icon flashes a filled `circleCheck` to
+  /// confirm the action before reverting to its resting (inactive) state.
+  /// Mirrors the feed's post-unfocus move grace window length.
+  bool _finishConfirm = false;
+  Timer? _finishConfirmTimer;
+  static const _finishConfirmDuration = Duration(milliseconds: 1500);
+
   /// Links for this thread, watched per-row so the header can show a channel
   /// breadcrumb when the primary link is channel-sharing. The breadcrumb
   /// decision feeds [_buildListTile]'s `hasTopLabel`/`labelOffset` (which keep
@@ -185,6 +193,22 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       _otherActors = const {};
       _otherContactsKey = null;
       _subscribeLinks();
+      // Recycled to a different thread — abandon any in-flight finish flash.
+      _finishConfirmTimer?.cancel();
+      _finishConfirm = false;
+    } else if (oldWidget.activity.todo && !widget.activity.todo) {
+      // Same thread just transitioned todo → done (here or from the open
+      // thread's Done button): flash circleCheck for a moment to confirm.
+      _finishConfirmTimer?.cancel();
+      _finishConfirm = true;
+      _finishConfirmTimer = Timer(_finishConfirmDuration, () {
+        if (!mounted) return;
+        setState(() => _finishConfirm = false);
+      });
+    } else if (widget.activity.todo && _finishConfirm) {
+      // Re-marked To do during the flash — drop the confirmation immediately.
+      _finishConfirmTimer?.cancel();
+      _finishConfirm = false;
     }
     _loadOtherActors();
   }
@@ -203,6 +227,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   @override
   void dispose() {
     _linksSub?.cancel();
+    _finishConfirmTimer?.cancel();
     _dragController?.removeListener(_onDragChanged);
     super.dispose();
   }
@@ -473,15 +498,20 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final isHovered = _isBlockDragging ? false : rawHovered;
         final leadingHovered = _isBlockDragging ? false : _leadingHovered;
         final bool isTodo = activity.todo;
+        // Brief post-finish confirmation: just after todo → done, flash a
+        // filled circleCheck before the icon reverts to its inactive resting
+        // state (see [_finishConfirm]).
+        final bool confirmingFinish = _finishConfirm && !isTodo;
 
         // Leading button: unified-feed state icon.
         //   - !active resting: nothing visible.
         //   - !active hovered: `circlePlus` with "To do" tooltip; tap sets
         //                      active=true (lands in Doing).
         //   - active resting:  `circle`.
-        //   - active hovered:  `circleCheck` with "Done" tooltip; tap
-        //                      clears active and marks read (lands in
-        //                      Activity).
+        //   - active hovered (leading button only): `circleCheck` with "Done"
+        //                      tooltip; tap clears active and marks read
+        //                      (lands in Activity).
+        //   - just finished:   `circleCheck` flashed for ~1.5s to confirm.
         void longPress() => buildContext.run(PickScheduleThread(activity));
 
         final Command leadingCommand;
@@ -517,7 +547,24 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;
-        if (!isTodo) {
+        if (confirmingFinish) {
+          // Just finished: flash a filled circleCheck (forced visible) for
+          // ~1.5s. Tapping it re-marks To do (leadingCommand is
+          // ToggleThreadActive while !isTodo).
+          todoIcon = Button.icon(
+            _ThreadLeadingCommand(
+              leadingCommand,
+              outlineIcon: FontAwesomeIcons.check,
+              iconHoverColor: threadColor,
+              hoverIcon: Value(FontAwesomeIcons.check),
+              title: leadingTitle,
+            ),
+            selected: true,
+            selectedColor: threadColor,
+            forceHover: true,
+            onLongPress: longPress,
+          );
+        } else if (!isTodo) {
           // Inactive: hidden at rest, circlePlus on hover.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
@@ -535,8 +582,9 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             onLongPress: longPress,
           );
         } else {
-          // Active: circle at rest; circleCheck on hover. Unread overlays
-          // a centered dot on the circle.
+          // Active: circle at rest; circleCheck only when hovering the leading
+          // button itself (not anywhere on the row). Unread overlays a
+          // centered dot on the circle.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
@@ -551,7 +599,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             ),
             selected: true,
             selectedColor: threadColor,
-            forceHover: isHovered,
+            forceHover: leadingHovered,
             onLongPress: longPress,
           );
         }

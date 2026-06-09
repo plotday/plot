@@ -6254,7 +6254,10 @@ SELECT
       tsActive = true;
       tsStateOn = Value(Thread.todoNowDate);
       tsStateAt = const Value(null);
-      tsStateOrder = Value(Order.first());
+      // Honor an explicitly-passed order so re-activating a thread (a
+      // Done → To do round-trip) can restore its prior Doing slot;
+      // otherwise a freshly-activated to-do lands at the top of Doing.
+      tsStateOrder = order != null ? Value(order) : Value(Order.first());
       stateDirty = true;
     }
 
