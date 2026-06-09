@@ -15,9 +15,9 @@ import {
 
 import { IconArrowRight, IconSearch, IconThumbUp } from "@tabler/icons-react";
 import { Link, useFetcher } from "react-router";
+import { mergeMeta } from "~/lib/meta";
 
 import { CATEGORIES, CONNECTIONS, type Connection } from "../data/connections";
-import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/connections";
 import classes from "./connections.module.css";
 
@@ -94,7 +94,11 @@ export function meta(_: Route.MetaArgs) {
         "Plot connects to the tools where your conversations live — calendars, email, chat, project tools, and more. Browse what's supported and vote for what's next.",
     },
     { property: "og:title", content: "Plot Connections" },
-    { property: "og:description", content: "Browse the tools Plot brings into one place — and vote for the integrations you want next." },
+    {
+      property: "og:description",
+      content:
+        "Browse the tools Plot brings into one place — and vote for the integrations you want next.",
+    },
   ]);
 }
 
@@ -132,7 +136,7 @@ function ConnectionCard({
         <span className={classes.badgeRow}>
           <span className={classes.availableBadge}>Available</span>
           {connection.premium && (
-            <span className={classes.premiumBadge}>Premium</span>
+            <span className={classes.premiumBadge}>Pro</span>
           )}
         </span>
       ) : (

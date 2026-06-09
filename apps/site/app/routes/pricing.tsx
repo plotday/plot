@@ -14,10 +14,10 @@ import {
 
 import { IconCheck } from "@tabler/icons-react";
 import { Link } from "react-router";
-
+import { mergeMeta } from "~/lib/meta";
 import { PLANS } from "~/lib/plans";
 import type { Billing } from "~/lib/plans";
-import { mergeMeta } from "~/lib/meta";
+
 import type { Route } from "./+types/pricing";
 import classes from "./pricing.module.css";
 
@@ -30,17 +30,17 @@ const FAQS = [
   {
     question: "What counts as a connection?",
     answer:
-      "A connection is one account linked to Plot via OAuth — for example, one Slack user in one workspace, one Google Calendar account, or one Linear account. Each sign-in counts as one connection, and you get access to everything within that account (all calendars, all projects, all channels). If two people on your team each connect their own Slack account, that's two connections. A small number of integrations — currently just LinkedIn — are premium connections, which work a little differently; see below.",
+      "A connection is one account linked to Plot via OAuth — for example, one Slack user in one workspace, one Google Calendar account, or one Linear account. Each sign-in counts as one connection, and you get access to everything within that account (all calendars, all projects, all channels). If two people on your team each connect their own Slack account, that's two connections. A small number of integrations are Pro connections, which work a little differently; see below.",
   },
   {
-    question: "What's a premium connection?",
+    question: "What's a Pro connection?",
     answer:
-      "Premium connections are integrations with a real per-connection cost for us to keep running — currently just LinkedIn, with more on the way. To cover that cost, premium connections work differently from the rest. On Pro, your plan includes one premium connection. On Team, each premium connection counts as 3 connections from your shared pool, since they cost us more to run. Free and Core don't include premium connections; upgrade to Pro to add one. We're planning paid add-ons for teams who need more premium connections than their plan includes.",
+      "Pro connections are a small number of integrations with additional, per-connection costs to operate. On Plot Pro, your plan includes one Pro connection. On Team, each Pro connection counts as 3 connections from your shared pool. We're planning a paid add-on for Plot Pro users who need more Pro connections.",
   },
   {
     question: "What happens if I hit my connection limit?",
     answer:
-      "On the Free plan, you'll be prompted to upgrade to Core or Pro. On Core, you can upgrade to Pro for unlimited connections. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle. Premium connections (like LinkedIn) follow different rules — see \"What's a premium connection?\" above.",
+      "On the Free plan, you'll be prompted to upgrade to Core or Pro. On Core, you can upgrade to Pro for unlimited connections. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle. Pro connections follow different rules — see \"What's a Pro connection?\" above.",
   },
   {
     question: "How far back does Plot import from my connected services?",
@@ -88,9 +88,17 @@ export function meta(_: Route.MetaArgs) {
         "Simple pricing with no per-seat fees. Bring your whole team in without thinking twice.",
     },
     { property: "og:title", content: "Plot Pricing" },
-    { property: "og:description", content: "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice." },
+    {
+      property: "og:description",
+      content:
+        "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice.",
+    },
     { name: "twitter:title", content: "Plot Pricing" },
-    { name: "twitter:description", content: "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice." },
+    {
+      name: "twitter:description",
+      content:
+        "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice.",
+    },
   ]);
 }
 

@@ -93,13 +93,12 @@ class BuyPlanCommand extends Command {
       case IapPurchaseStatus.canceled:
         return const CommandSkipped();
       case IapPurchaseStatus.pending:
-        context.showToast(
-          message: 'Purchase is pending approval.',
-        );
+        context.showToast(message: 'Purchase is pending approval.');
         return const CommandSkipped();
       case IapPurchaseStatus.serverError:
         context.showToast(
-          message: 'Purchase succeeded but we could not confirm it. '
+          message:
+              'Purchase succeeded but we could not confirm it. '
               'Try Restore Purchases in Settings.',
           isError: true,
         );
@@ -118,9 +117,9 @@ class BuyPlanCommand extends Command {
     final email = userState is UserReady ? userState.user.primaryEmail : null;
     final params = <String, String>{'plan': plan};
     if (email != null) params['email'] = email;
-    final uri = Uri.parse('${Env.siteRoot}/upgrade').replace(
-      queryParameters: params,
-    );
+    final uri = Uri.parse(
+      '${Env.siteRoot}/upgrade',
+    ).replace(queryParameters: params);
     await launchUrl(uri, mode: LaunchMode.externalApplication);
     return const CommandSkipped();
   }
@@ -185,7 +184,7 @@ class ShowUpgradeOptions extends Command {
             details: Text(
               isCore
                   ? 'Up to five connections'
-                  : 'Unlimited connections + 1 premium (LinkedIn)',
+                  : 'Unlimited connections (including 1 Pro connection)',
               style: context.theme.typography.sm.copyWith(
                 color: context.theme.plotColors.muted,
               ),

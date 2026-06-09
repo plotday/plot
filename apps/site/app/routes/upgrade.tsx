@@ -1,10 +1,8 @@
-import { useState, useEffect } from "react";
-
-import { SignIn, useAuth, useClerk, useUser } from "@clerk/react-router";
-import { Link, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
 
 import {
   Alert,
+  Badge,
   Box,
   Button,
   Checkbox,
@@ -16,13 +14,14 @@ import {
   Text,
   TextInput,
   Title,
-  Badge,
 } from "@mantine/core";
 
+import { SignIn, useAuth, useClerk, useUser } from "@clerk/react-router";
 import { IconCheck } from "@tabler/icons-react";
-
+import { Link, useSearchParams } from "react-router";
 import { PLANS, PRICES } from "~/lib/plans";
 import type { Billing } from "~/lib/plans";
+
 import type { Route } from "./+types/upgrade";
 import classes from "./upgrade.module.css";
 
@@ -110,19 +109,21 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     }
   }, [emailMismatch, signOut]);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(
-    null
+    null,
   );
   const [loading, setLoading] = useState(true);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<Billing>(
-    (searchParams.get("billing") as Billing) || "annual"
+    (searchParams.get("billing") as Billing) || "annual",
   );
   const [teamQuantity, setTeamQuantity] = useState("50");
   const [orgName, setOrgName] = useState("");
   const [domainAutoJoin, setDomainAutoJoin] = useState(true);
 
-  const emailDomain = user?.primaryEmailAddress?.emailAddress?.split("@")[1]?.toLowerCase();
+  const emailDomain = user?.primaryEmailAddress?.emailAddress
+    ?.split("@")[1]
+    ?.toLowerCase();
   const isFreemailDomain = !emailDomain || FREEMAIL_DOMAINS.has(emailDomain);
 
   // Reset loading state when page is restored from bfcache (browser back from Stripe)
@@ -184,17 +185,14 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         body.domainAutoJoin = isFreemailDomain ? false : domainAutoJoin;
       }
 
-      const res = await fetch(
-        `${loaderData.apiUrl}/app/upgrade/checkout`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        }
-      );
+      const res = await fetch(`${loaderData.apiUrl}/app/upgrade/checkout`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
 
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
@@ -204,9 +202,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Something went wrong"
-      );
+      setError(err instanceof Error ? err.message : "Something went wrong");
       setLoadingPlan(null);
     }
   };
@@ -237,9 +233,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Something went wrong"
-      );
+      setError(err instanceof Error ? err.message : "Something went wrong");
       setLoadingPlan(null);
     }
   };
@@ -305,15 +299,20 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     );
   }
 
-
   const personalPlan = subscription?.plan ?? "free";
-  const hasPersonalPaid = personalPlan !== "free" && subscription?.status === "active";
+  const hasPersonalPaid =
+    personalPlan !== "free" && subscription?.status === "active";
   const activeOrgs = (subscription?.teams ?? []).filter(
-    (o) => o.plan !== "free" && o.status === "active"
+    (o) => o.plan !== "free" && o.status === "active",
   );
   const hasAnySubscription = hasPersonalPaid || activeOrgs.length > 0;
 
-  const PLAN_TIER: Record<string, number> = { free: 0, core: 1, pro: 2, team: 3 };
+  const PLAN_TIER: Record<string, number> = {
+    free: 0,
+    core: 1,
+    pro: 2,
+    team: 3,
+  };
   const personalTier = PLAN_TIER[personalPlan] ?? 0;
 
   // Success alert org name lookup
@@ -329,20 +328,29 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const personalPlanButton = (planKey: "core" | "pro") => {
     const tier = PLAN_TIER[planKey];
     if (hasPersonalPaid && personalTier >= tier) {
-      return { label: personalPlan === planKey ? "Current plan" : "Included in your plan", disabled: true };
+      return {
+        label:
+          personalPlan === planKey ? "Current plan" : "Included in your plan",
+        disabled: true,
+      };
     }
-    return { label: `Upgrade to ${planKey === "core" ? "Core" : "Pro"}`, disabled: false };
+    return {
+      label: `Upgrade to ${planKey === "core" ? "Core" : "Pro"}`,
+      disabled: false,
+    };
   };
 
   return (
     <Container size="lg" mt="xl" mb="xl">
       <Stack gap="lg">
         <Stack align="center" ta="center" gap="xs">
-          <Title order={2}>{hasAnySubscription ? "Your plans" : "Choose your plan"}</Title>
+          <Title order={2}>
+            {hasAnySubscription ? "Your plans" : "Choose your plan"}
+          </Title>
           <Text c="dimmed">
             {hasAnySubscription
               ? "Manage your subscriptions or add a new plan."
-              : "Upgrade for unlimited connections and premium features."}
+              : "Upgrade for unlimited connections."}
           </Text>
         </Stack>
 
@@ -394,7 +402,8 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
                       Plot Team — {org.name}
                     </Text>
                     <Text c="dimmed" size="sm">
-                      {org.memberCount} {org.memberCount === 1 ? "member" : "members"}
+                      {org.memberCount}{" "}
+                      {org.memberCount === 1 ? "member" : "members"}
                     </Text>
                   </Stack>
                   <Badge color="green" variant="light">
@@ -429,9 +438,17 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         {hasAnySubscription && <Title order={4}>Add a plan</Title>}
 
         <Stack align="center">
-          <Box style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}>
+          <Box
+            style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}
+          >
             <Box />
-            <Box style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+            <Box
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginBottom: 6,
+              }}
+            >
               <Badge variant="light" color="green" size="sm">
                 Save 20%
               </Badge>
@@ -460,25 +477,18 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             gap="md"
           >
             <Text className={classes.planName}>{corePlan.name}</Text>
-            <Text className={classes.bestFor}>
-              {corePlan.bestFor}
-            </Text>
+            <Text className={classes.bestFor}>{corePlan.bestFor}</Text>
             <Stack gap="xs" className={classes.featureList}>
               {corePlan.features.map((f) => (
                 <Box key={f} className={classes.featureItem}>
-                  <IconCheck
-                    size={16}
-                    color="var(--mantine-color-brand-6)"
-                  />
+                  <IconCheck size={16} color="var(--mantine-color-brand-6)" />
                   <span>{f}</span>
                 </Box>
               ))}
             </Stack>
             <Box className={classes.priceDivider} />
             <Box className={classes.priceBox}>
-              <Text className={classes.planPrice}>
-                ${PRICES.core[billing]}
-              </Text>
+              <Text className={classes.planPrice}>${PRICES.core[billing]}</Text>
               <Text className={classes.planPricePeriod}>/mo</Text>
             </Box>
             {billing === "annual" && (
@@ -506,25 +516,18 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             gap="md"
           >
             <Text className={classes.planName}>{proPlan.name}</Text>
-            <Text className={classes.bestFor}>
-              {proPlan.bestFor}
-            </Text>
+            <Text className={classes.bestFor}>{proPlan.bestFor}</Text>
             <Stack gap="xs" className={classes.featureList}>
               {proPlan.features.map((f) => (
                 <Box key={f} className={classes.featureItem}>
-                  <IconCheck
-                    size={16}
-                    color="var(--mantine-color-brand-6)"
-                  />
+                  <IconCheck size={16} color="var(--mantine-color-brand-6)" />
                   <span>{f}</span>
                 </Box>
               ))}
             </Stack>
             <Box className={classes.priceDivider} />
             <Box className={classes.priceBox}>
-              <Text className={classes.planPrice}>
-                ${PRICES.pro[billing]}
-              </Text>
+              <Text className={classes.planPrice}>${PRICES.pro[billing]}</Text>
               <Text className={classes.planPricePeriod}>/mo</Text>
             </Box>
             {billing === "annual" && (
@@ -552,16 +555,11 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             gap="md"
           >
             <Text className={classes.planName}>{teamPlan.name}</Text>
-            <Text className={classes.bestFor}>
-              {teamPlan.bestFor}
-            </Text>
+            <Text className={classes.bestFor}>{teamPlan.bestFor}</Text>
             <Stack gap="xs" className={classes.featureList}>
               {teamPlan.features.map((f) => (
                 <Box key={f} className={classes.featureItem}>
-                  <IconCheck
-                    size={16}
-                    color="var(--mantine-color-brand-6)"
-                  />
+                  <IconCheck size={16} color="var(--mantine-color-brand-6)" />
                   <span>{f}</span>
                 </Box>
               ))}

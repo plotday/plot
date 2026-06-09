@@ -143,6 +143,7 @@ class _Overlay {
     this.watched = _OptimisticOverride._defaultWatched,
     this.catchUpSortKeys,
     this.sticky = false,
+    this.pinnedSection,
   });
 
   /// Expect the thread to drop out of the active tab. Settled when the
@@ -170,10 +171,38 @@ class _Overlay {
     sticky: true,
   );
 
+  /// Sticky-todo: the user toggled the To do / Done state of the thread
+  /// they currently have open. The leading icon should flip immediately
+  /// (so [expected] carries the post-toggle state), but the row must NOT
+  /// jump to its new section yet — it holds at the section it currently
+  /// renders in until [_stickyMoveDelay] after the user changes threads
+  /// (mirrors [_Overlay.stickyUnread]). Positioning is driven by
+  /// [pinnedSection] (consulted in [PriorityBloc._buildUnifiedFeedItems])
+  /// rather than `primarySectionFor(expected)`, so the icon and position
+  /// can disagree during the grace window. Never auto-settles.
+  factory _Overlay.stickyTodo(
+    Thread thread, {
+    required ActivitySection pinnedSection,
+    required ({int urgent, int importance, DateTime activityAt}) sortKeys,
+  }) => _Overlay(
+    expected: thread,
+    watched: const <_OverrideField>{},
+    catchUpSortKeys: sortKeys,
+    sticky: true,
+    pinnedSection: pinnedSection,
+  );
+
   final Thread? expected;
   final Set<_OverrideField> watched;
   final ({int urgent, int importance, DateTime activityAt})? catchUpSortKeys;
   final bool sticky;
+
+  /// When set (sticky-todo only), the feed builder buckets this row into
+  /// [pinnedSection] instead of `primarySectionFor(expected)`, holding it
+  /// in place while its post-toggle icon shows. Null for every other
+  /// overlay kind (including sticky-unread, which clusters via
+  /// [PriorityBloc._isStickyPinned]).
+  final ActivitySection? pinnedSection;
 
   /// True when [actual] (the stream's copy, or null) makes this overlay
   /// safe to drop. Sticky entries never settle implicitly.
@@ -675,12 +704,25 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// cancels its pending timer. Cancelled wholesale on overlay clear / close.
   final Map<ThreadId, Timer> _stickyRemovalTimers = {};
 
-  /// Whether [id] currently has a sticky-unread overlay entry. Sticky
-  /// entries are pinned into the unread cluster regardless of their live
+  /// Whether [id] currently has a sticky-unread overlay entry — i.e. one
+  /// that clusters into the unread Doing block regardless of its live
   /// `unread` flag, so a thread the user just read holds its pre-read
   /// position (with the dot already cleared) until its [_stickyMoveDelay]
-  /// elapses.
-  bool _isStickyPinned(ThreadId id) => _overlay[id]?.sticky ?? false;
+  /// elapses. Excludes sticky-*todo* pins, which hold at an explicit
+  /// [_Overlay.pinnedSection] instead (see [_pinnedSectionFor]).
+  bool _isStickyPinned(ThreadId id) {
+    final o = _overlay[id];
+    return o != null && o.sticky && o.pinnedSection == null;
+  }
+
+  /// The section a sticky-todo pin holds [id] in (see [_Overlay.stickyTodo]),
+  /// or null when there is no such pin. While set, the feed builder buckets
+  /// the row here rather than at `primarySectionFor`, so a To do / Done
+  /// toggle on the open thread flips its icon immediately without moving it.
+  ActivitySection? _pinnedSectionFor(ThreadId id) {
+    final o = _overlay[id];
+    return (o != null && o.sticky) ? o.pinnedSection : null;
+  }
 
   /// Live subscription for the currently-active activity-feed tab's
   /// per-tab query. Started in [_restartActiveTabSubscription], cancelled
@@ -1154,6 +1196,25 @@ class PriorityBloc extends Cubit<PriorityState> {
     final activity = <Thread>[];
 
     for (final t in merged) {
+      // Sticky-todo pin: the user just toggled To do / Done on this open
+      // thread. Its icon already reflects the new state, but it holds at
+      // the section it rendered in before the toggle until the post-unfocus
+      // grace window elapses — so it doesn't jump out from under the user.
+      final pinned = _pinnedSectionFor(t.id);
+      if (pinned != null) {
+        switch (pinned) {
+          case ActivitySection.doing:
+            readDoing.add(t);
+          case ActivitySection.scheduled:
+            scheduled.add(t);
+          case ActivitySection.activity:
+            activity.add(t);
+          case ActivitySection.eventAgenda:
+            break;
+        }
+        continue;
+      }
+
       if (t.unread || _isStickyPinned(t.id)) {
         // All unread threads cluster at the top of Doing — regardless
         // of whether they would otherwise be active, scheduled, or

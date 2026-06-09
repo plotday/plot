@@ -143,13 +143,9 @@ class ManageConnections extends Command {
       stream: TwistConnection.watchAll(),
       initialData: const [],
       builder: (context, snap) {
-        final needsReauth = (snap.data ?? const []).any(
-          (c) => c.needsReauth,
-        );
+        final needsReauth = (snap.data ?? const []).any((c) => c.needsReauth);
         return FaIcon(
-          needsReauth
-              ? PlotIcon.plugCircleExclamation
-              : PlotIcon.connection,
+          needsReauth ? PlotIcon.plugCircleExclamation : PlotIcon.connection,
           size: context.theme.iconSizes.base,
           color: needsReauth ? context.theme.colors.destructive : null,
         );
@@ -163,9 +159,7 @@ class ManageConnections extends Command {
       stream: TwistConnection.watchAll(),
       initialData: const [],
       builder: (context, snap) {
-        final needsReauth = (snap.data ?? const []).any(
-          (c) => c.needsReauth,
-        );
+        final needsReauth = (snap.data ?? const []).any((c) => c.needsReauth);
         if (!needsReauth) {
           return Text(
             description!,
@@ -231,8 +225,7 @@ class ManageConnections extends Command {
             await AddSourceDetail(item.twist).run(ctx);
             final connectedDraftId = AddSourceDetail.lastConnectedDraftId;
             final connectedTeamId = AddSourceDetail.lastConnectedTeamId;
-            final completedInSetup =
-                AddSourceDetail.lastActivatedInSetupModal;
+            final completedInSetup = AddSourceDetail.lastActivatedInSetupModal;
             AddSourceDetail.lastConnectedDraftId = null;
             AddSourceDetail.lastConnectedTeamId = null;
             AddSourceDetail.lastActivatedInSetupModal = false;
@@ -849,7 +842,7 @@ class _PremiumBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
-        'Premium',
+        'Pro',
         style: TextStyle(
           fontSize: theme.typography.xs.fontSize,
           color: theme.colors.primary,
@@ -907,15 +900,14 @@ enum _ResourceType { connections, twists }
 /// that picker triggers StoreKit IAP; on web/DMG it routes to
 /// `${Env.siteRoot}/upgrade`. Team limits route to a no-op toast since
 /// Team purchases are admin-only and not IAP-available.
-Command _connectionAtLimitCommand() => ShowUpgradeOptions(
-  title: 'Upgrade to add more connections',
-);
+Command _connectionAtLimitCommand() =>
+    ShowUpgradeOptions(title: 'Upgrade to add more connections');
 
 /// Returned when a Free/Core user tries to add a premium connection.
 Command _premiumBlockedCommand() => ShowUpgradeOptions(
-  title: 'Upgrade to Pro to add a premium connection',
+  title: 'Upgrade to Pro to add a Pro connection',
   subtitle:
-      'LinkedIn (and other premium connectors) are included with Pro. '
+      'LinkedIn (and other Pro connectors) are included with Pro. '
       'Your current plan only includes standard connections.',
 );
 
@@ -924,13 +916,13 @@ Command _premiumBlockedCommand() => ShowUpgradeOptions(
 /// (premium connections count as 3 from the team pool).
 Command _premiumAtLimitCommand({required bool isTeam}) => ShowUpgradeOptions(
   title: isTeam
-      ? 'Premium connection limit reached'
-      : "You've used your included premium connection",
+      ? 'Pro connection limit reached'
+      : "You've used your included Pro connection",
   subtitle: isTeam
-      ? "Premium connections count as 3 from your team's pool. "
+      ? "Pro connections count as 3 from your team's pool. "
             'Add another group of 50 connections to keep going. '
-            'Dedicated premium add-ons are coming soon.'
-      : 'Pro includes one premium connection. Premium add-ons are coming '
+            'Dedicated Pro add-ons are coming soon.'
+      : 'Pro includes one Pro connection. Pro add-ons are coming '
             "soon — we'll let you know.",
 );
 
@@ -998,9 +990,8 @@ _PremiumGate _evaluatePremium({
 }
 
 /// Returns the at-limit command for a twist-limit case.
-Command _twistAtLimitCommand() => ShowUpgradeOptions(
-  title: 'Upgrade to add more twists',
-);
+Command _twistAtLimitCommand() =>
+    ShowUpgradeOptions(title: 'Upgrade to add more twists');
 
 /// Message shown when the server returns plan_limit_exceeded for a connection.
 /// Team limits are admin-driven so we never reference "Upgrade" for
@@ -1019,10 +1010,7 @@ String _planLimitConnectionMessage({
 }
 
 /// Message shown when the server returns plan_limit_exceeded for a twist.
-String _planLimitTwistMessage({
-  required bool isTeam,
-  required bool isAdmin,
-}) {
+String _planLimitTwistMessage({required bool isTeam, required bool isAdmin}) {
   if (isTeam) {
     return isAdmin
         ? 'Your team has reached its twist limit.'
@@ -1050,7 +1038,7 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
     if (premium != null &&
         premium.policy == PremiumPolicy.credits &&
         premium.limit != null) {
-      parts.add('premium: ${premium.count} of ${premium.limit}');
+      parts.add('Pro: ${premium.count} of ${premium.limit}');
     }
     for (final org in usage.teams) {
       parts.add(
@@ -1107,19 +1095,13 @@ List<FormItem> _buildStandardSourceItems({
         key: 'team_id',
         label: 'Team',
         initialValue: initialTeamId,
-        items: (search) async => [
-          'personal',
-          ...teams.map((t) => t.id),
-        ],
+        items: (search) async => ['personal', ...teams.map((t) => t.id)],
         titleBuilder: (id) => id == 'personal'
             ? 'Personal'
             : teams.firstWhere((t) => t.id == id).name,
       ),
     if (showSyncMessage)
-      FormInfo(
-        key: 'sync_message',
-        text: 'Select what you\'d like to sync.',
-      ),
+      FormInfo(key: 'sync_message', text: 'Select what you\'d like to sync.'),
     FormChannelList(
       key: 'integrations',
       controller: channelListController,
@@ -1319,10 +1301,8 @@ class EditSource extends ShowForm {
       }
     }
 
-    Set<String> reauthProviderNames() => connections
-        .where((c) => c.needsReauth)
-        .map((c) => c.provider)
-        .toSet();
+    Set<String> reauthProviderNames() =>
+        connections.where((c) => c.needsReauth).map((c) => c.provider).toSet();
 
     List<StaticFormGroup> buildEditGroups() {
       // Prefer the server-fresh account_label from the integrations response
@@ -1381,7 +1361,8 @@ class EditSource extends ShowForm {
                 integrationChanges.selectedChannels.isNotEmpty,
             setupMode: isNewlyActivated,
             isAccountBased: isAccountBased,
-            showSyncMessage: isNewlyActivated &&
+            showSyncMessage:
+                isNewlyActivated &&
                 (integrations.accounts.isNotEmpty ||
                     integrations.channels.isNotEmpty),
             optionItems: optionItems,
@@ -1680,8 +1661,7 @@ bool shouldOpenChannelSetupAfterConnect({
   required String? connectedDraftId,
   required bool hasProviders,
   required bool completedInSetupModal,
-}) =>
-    connectedDraftId != null && hasProviders && !completedInSetupModal;
+}) => connectedDraftId != null && hasProviders && !completedInSetupModal;
 
 /// Shows source description and branded auth button for setup.
 class AddSourceDetail extends ShowForm {
@@ -1926,8 +1906,8 @@ class AddSourceDetail extends ShowForm {
       // hosted-auth draft already has an authenticated account, fall through
       // to the standard Label / Team / channels / options layout instead of
       // re-rendering the auth button.
-      final refreshedHostedHasAccount = refreshed.providers.isNotEmpty &&
-          refreshed.accounts.isNotEmpty;
+      final refreshedHostedHasAccount =
+          refreshed.providers.isNotEmpty && refreshed.accounts.isNotEmpty;
       final refreshedInitialLabel = _initialLabelFor(refreshed, teams);
       return [
         StaticFormGroup(
@@ -2026,8 +2006,7 @@ class AddSourceDetail extends ShowForm {
                         initialEnabledGroups:
                             scopeGroupSelections[provider.provider.name],
                         onScopeGroupsChanged: (groups) {
-                          scopeGroupSelections[provider.provider.name] =
-                              groups;
+                          scopeGroupSelections[provider.provider.name] = groups;
                         },
                         onSuccess: () async {
                           await _connectedAfterOAuth(
@@ -2121,8 +2100,8 @@ class AddSourceDetail extends ShowForm {
     // auth button and render the standard setup layout — Label, Team,
     // account, options — so the user finishes setup in one place rather
     // than re-triggering the hosted-auth flow.
-    final hostedHasAccount = integrations.providers.isNotEmpty &&
-        integrations.accounts.isNotEmpty;
+    final hostedHasAccount =
+        integrations.providers.isNotEmpty && integrations.accounts.isNotEmpty;
     final initialLabel = _initialLabelFor(integrations, teams);
 
     return FormData(
@@ -2224,8 +2203,7 @@ class AddSourceDetail extends ShowForm {
                         initialEnabledGroups:
                             scopeGroupSelections[provider.provider.name],
                         onScopeGroupsChanged: (groups) {
-                          scopeGroupSelections[provider.provider.name] =
-                              groups;
+                          scopeGroupSelections[provider.provider.name] = groups;
                         },
                         onSuccess: () async {
                           await _connectedAfterOAuth(
@@ -2836,10 +2814,8 @@ class ShowTwistDetails extends ShowForm {
             FormInfo(
               key: 'details',
               divider: false,
-              builder: (context) => TwistDetails(
-                twist: twist,
-                hasAiKeys: hasAiKeys,
-              ),
+              builder: (context) =>
+                  TwistDetails(twist: twist, hasAiKeys: hasAiKeys),
             ),
           ],
         ),
@@ -2931,18 +2907,15 @@ class ShowTwistInfo extends ShowForm {
             FormInfo(
               key: 'info',
               divider: true,
-              builder: (context) => TwistDetails(
-                twist: twist,
-                hasAiKeys: hasAiKeys,
-              ),
+              builder: (context) =>
+                  TwistDetails(twist: twist, hasAiKeys: hasAiKeys),
             ),
             if (!blocked)
               FormButton(
                 key: 'add',
                 isPrimary: true,
-                buildCommand: (_) => atTwistLimit
-                    ? _twistAtLimitCommand()
-                    : SetupTwist(twist),
+                buildCommand: (_) =>
+                    atTwistLimit ? _twistAtLimitCommand() : SetupTwist(twist),
               ),
           ],
         ),

@@ -174,9 +174,9 @@ Replying to a specific note from the feed replaces the pill row with a
 - PostHog: Event sync grouped by person, with event details as notes
 - OAuth ready: Atlassian, Monday.com, GitHub, Asana, HubSpot
 - API key connections: Connectors that use API keys instead of OAuth (e.g., PostHog)
-- WhatsApp (premium): two-way DMs and group chats — read, reply, react, compose new conversations
-- Instagram (premium): two-way DMs and message requests — read, reply, react, compose new conversations
-- LinkedIn (premium): two-way messages and connection requests
+- WhatsApp (pro): two-way DMs and group chats — read, reply, react, compose new conversations
+- Instagram (pro): two-way DMs and message requests — read, reply, react, compose new conversations
+- LinkedIn (pro): two-way messages and connection requests
 
 ### Upcoming Connections
 - 65+ upcoming connectors browsable in-app
