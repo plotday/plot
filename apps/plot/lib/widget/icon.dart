@@ -69,6 +69,8 @@ class PlotIcon {
     'plane': FontAwesomeIcons.plane,
     'mountain': FontAwesomeIcons.mountain,
     'globe': FontAwesomeIcons.globe,
+    'billboard': FontAwesomeIcons.billboard,
+    'handHoldingHeart': FontAwesomeIcons.handHoldingHeart,
   };
 
   /// Resolves a stored focus icon key to its glyph, falling back to the
@@ -82,15 +84,15 @@ class PlotIcon {
   /// as focus categories in the picker rather than literal glyph names.
   static const Map<String, String> focusIconLabels = {
     'receipt': 'Admin',
-    'balloons': 'Event',
-    'bullseyePointer': 'Goal',
+    'balloons': 'Social',
+    'bullseyePointer': 'Focus',
     'briefcase': 'Work',
     'userGroup': 'Team',
     'bookOpen': 'Reading',
     'userMagnifyingGlass': 'Hiring',
     'family': 'Family',
     'conveyorBelt': 'Operations',
-    'piggyBank': 'Finances',
+    'piggyBank': 'Finance',
     'house': 'Home',
     'user': 'Personal',
     'code': 'Engineering',
@@ -117,6 +119,8 @@ class PlotIcon {
     'bowlHot': 'Food',
     'mountain': 'Challenge',
     'globe': 'World',
+    'billboard': 'Promotions',
+    'handHoldingHeart': 'Volunteering',
   };
 
   /// The display label for a focus icon [key], falling back to a humanised
