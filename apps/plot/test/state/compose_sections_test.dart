@@ -77,4 +77,50 @@ void main() {
       expect(result.focuses.map((t) => t.priorityId.toString()), [p2, p1]);
     });
   });
+
+  group('orderPeopleByRecency', () {
+    const a = '00000000-0000-0000-0000-000000000001';
+    const b = '00000000-0000-0000-0000-000000000002';
+    const g = '00000000-0000-0000-0000-0000000000a0';
+
+    RosterKey contactRoster(String hex) => (
+          contacts: [Uuid.fromString(hex)],
+          groups: const <Uuid>[],
+          inviteEmails: const <String>[],
+        );
+    RosterKey groupRoster(String hex) => (
+          contacts: const <Uuid>[],
+          groups: [Uuid.fromString(hex)],
+          inviteEmails: const <String>[],
+        );
+
+    test('orders strictly by recency descending', () {
+      final out = orderPeopleByRecency([
+        (roster: contactRoster(a), ms: 100),
+        (roster: groupRoster(g), ms: 300),
+        (roster: contactRoster(b), ms: 200),
+      ]);
+      expect(out.map((r) => r.groups.isNotEmpty ? 'g' : r.contacts.first.toString()),
+          ['g', b, a]);
+    });
+
+    test('collapses duplicate rosters keeping the max ms', () {
+      final out = orderPeopleByRecency([
+        (roster: contactRoster(a), ms: 100),
+        (roster: contactRoster(b), ms: 250),
+        (roster: contactRoster(a), ms: 400), // newer dup of a → a wins overall
+      ]);
+      expect(out.length, 2);
+      expect(out.first.contacts.first.toString(), a);
+      expect(out.last.contacts.first.toString(), b);
+    });
+
+    test('equal ms keeps first-seen order', () {
+      final out = orderPeopleByRecency([
+        (roster: contactRoster(a), ms: 100),
+        (roster: contactRoster(b), ms: 100),
+      ]);
+      expect(out.map((r) => r.contacts.first.toString()).toList(), [a, b]);
+    });
+  });
 }

@@ -96,6 +96,36 @@ List<RosterKey> dedupePeopleByRoster(List<ComposeTarget> targets) {
   return out;
 }
 
+/// Orders people [candidates] into a single true-MRU list. Each candidate is a
+/// roster paired with a recency timestamp (epoch ms). Duplicate rosters (the
+/// same roster surfaced from more than one source — e.g. an authored thread and
+/// the created/used people-MRU) collapse to one entry keeping the **largest**
+/// ms. The result is ordered by ms descending; equal-ms ties preserve
+/// first-seen order. Pure (no DB) so the MRU semantics are unit-testable.
+List<RosterKey> orderPeopleByRecency(
+  List<({RosterKey roster, int ms})> candidates,
+) {
+  // Best ms per roster + first-seen index for a stable tiebreak.
+  final bestMs = <String, int>{};
+  final firstSeen = <String, int>{};
+  final rosterByKey = <String, RosterKey>{};
+  var i = 0;
+  for (final c in candidates) {
+    final key = _rosterKey(c.roster.contacts, c.roster.groups, c.roster.inviteEmails);
+    rosterByKey[key] = c.roster;
+    firstSeen.putIfAbsent(key, () => i++);
+    final existing = bestMs[key];
+    if (existing == null || c.ms > existing) bestMs[key] = c.ms;
+  }
+  final keys = bestMs.keys.toList()
+    ..sort((a, b) {
+      final byMs = bestMs[b]!.compareTo(bestMs[a]!);
+      if (byMs != 0) return byMs;
+      return firstSeen[a]!.compareTo(firstSeen[b]!);
+    });
+  return [for (final k in keys) rosterByKey[k]!];
+}
+
 /// Transforms at-rest [sections] for **link mode** (a URL is in the picker):
 /// drops People & twists, keeps only link-supporting channels (Plot topics
 /// always qualify; connector channels qualify when their
