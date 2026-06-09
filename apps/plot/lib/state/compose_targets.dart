@@ -334,6 +334,41 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     prependToCache(target);
   }
 
+  /// Record that the user just created/used a people roster outside an authored
+  /// thread (e.g. added a contact or created a group from the picker header).
+  /// Bumps it to the top of the People-list MRU. Pre-warms the contact/group
+  /// caches so the very next [loadSections] resolves a just-created entity that
+  /// hasn't been pulled yet. Idempotent on the roster key.
+  Future<void> recordPersonUsage({
+    required List<Uuid> contacts,
+    required List<Uuid> groups,
+    required List<String> inviteEmails,
+  }) async {
+    final key = _rosterKey(contacts, groups, inviteEmails);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _createdPeopleMru[key] = (
+      roster: (contacts: contacts, groups: groups, inviteEmails: inviteEmails),
+      ms: now,
+    );
+    if (_createdPeopleMru.length > _maxCreatedPeopleMru) {
+      final oldestKey = _createdPeopleMru.entries
+          .reduce((a, b) => a.value.ms <= b.value.ms ? a : b)
+          .key;
+      _createdPeopleMru.remove(oldestKey);
+    }
+    // Warm caches so the synchronous _peopleEntryFor resolve sees a just-created
+    // (un-pulled) contact/group. getOne is a cache hit after the first read;
+    // swallow not-found (a reconciled/removed id is simply dropped at render).
+    for (final cid in contacts) {
+      try {
+        await Actor.getOne(ActorId.fromUuid(cid));
+      } catch (_) {/* unresolved id is dropped at render time */}
+    }
+    for (final gid in groups) {
+      await Group.getOne(gid);
+    }
+  }
+
   /// Focus suggestion for the two-step compose flow: the priority ids of
   /// recent authored threads whose roster overlaps [contacts]/[groups], most-
   /// recent first and deduped. The first id is the MRU-top focus the compose
@@ -521,6 +556,15 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// Monotonic token used to discard a stale in-flight build whose result a
   /// later [_invalidateSearchContext] has superseded.
   int _contextToken = 0;
+
+  /// In-memory, session-scoped people-MRU for rosters created/used outside an
+  /// authored thread — a "+ Contact" / "+ Group" that has no thread yet. Keyed
+  /// by [_rosterKey]; value carries the roster (to resolve a pill) and the
+  /// recency ms. Merged (by max ms) with authored-thread recency in
+  /// [loadSections] so creation bumps the entry to the top of the People list.
+  /// Bounded; oldest entries are evicted past the cap.
+  final Map<String, ({RosterKey roster, int ms})> _createdPeopleMru = {};
+  static const int _maxCreatedPeopleMru = 50;
 
   /// Returns the cached search context, building (and caching) it on first use.
   Future<_ComposeSearchContext> _searchContextFor() {
@@ -860,27 +904,35 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     );
   }
 
+  /// Build a [ComposePeopleEntry] for a formal group from an already-resolved
+  /// [GroupRow], dropping non-inviteable members from the preview. Shared by
+  /// [_peopleEntryFor] (cache path) and search synthesis (row path), so a
+  /// just-created/un-cached group still resolves in search.
+  ComposePeopleEntry _groupPeopleEntry(GroupRow g, RosterKey r) {
+    final members = [
+      for (final id in (g.memberContactIds ?? const <Uuid>[]))
+        Actor.fromCache(ActorId.fromUuid(id)),
+    ].whereType<Actor>().where((a) => a.inviteable).toList();
+    return ComposePeopleEntry(
+      contacts: r.contacts,
+      groups: r.groups,
+      inviteEmails: r.inviteEmails,
+      display: GroupPillData(g, members),
+    );
+  }
+
   /// Resolve a deduped [RosterKey] into a presentable [ComposePeopleEntry], or
   /// null when nothing in the roster resolves (uncached group/contacts and no
   /// invites). A formal group wins; a single contact is a [ContactPillData];
   /// everything else (multiple contacts, or pending invites) is an ad-hoc group.
   ComposePeopleEntry? _peopleEntryFor(RosterKey r) {
     if (r.groups.isNotEmpty) {
-      final g = Group.fromCache(r.groups.first);
-      if (g == null) return null;
       // Drop non-inviteable members (noreply@, mailer-daemon@, and other
       // automated senders the server flagged via `contact.inviteable`) from
       // the group's member preview so they don't surface as people.
-      final members = [
-        for (final id in (g.memberContactIds ?? const <Uuid>[]))
-          Actor.fromCache(ActorId.fromUuid(id)),
-      ].whereType<Actor>().where((a) => a.inviteable).toList();
-      return ComposePeopleEntry(
-        contacts: r.contacts,
-        groups: r.groups,
-        inviteEmails: r.inviteEmails,
-        display: GroupPillData(g, members),
-      );
+      final g = Group.fromCache(r.groups.first);
+      if (g == null) return null;
+      return _groupPeopleEntry(g, r);
     }
 
     // Resolve roster contacts, dropping non-inviteable actors so automated
@@ -1369,6 +1421,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         groups: row.groups ?? const [],
         primaryLink: _primaryScanLink(links),
         priorityId: row.priorityId,
+        recencyMs: (row.lastNoteCreatedAt ?? row.bumpedAt ?? row.createdAt)
+            .millisecondsSinceEpoch,
       ));
     }
     return _ComposeScan(scanThreads);
@@ -1632,6 +1686,7 @@ class ComposeScanThread extends Equatable {
     this.groups = const [],
     this.primaryLink,
     required this.priorityId,
+    this.recencyMs = 0,
   });
 
   final BigInt? teamId;
@@ -1640,8 +1695,14 @@ class ComposeScanThread extends Equatable {
   final ComposeScanLink? primaryLink;
   final Uuid priorityId; // the thread's filed focus (non-null on ThreadRow)
 
+  /// Recency of this thread (epoch ms): `lastNoteCreatedAt ?? bumpedAt ??
+  /// createdAt`. Drives the People-list true-MRU ordering. Defaults to 0 for
+  /// pure-helper/test construction where recency is irrelevant.
+  final int recencyMs;
+
   @override
-  List<Object?> get props => [teamId, contacts, groups, primaryLink, priorityId];
+  List<Object?> get props =>
+      [teamId, contacts, groups, primaryLink, priorityId, recencyMs];
 }
 
 /// The primary-link facet of a [ComposeScanThread] needed to derive a
