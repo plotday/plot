@@ -2427,7 +2427,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 360;
+  int get schemaVersion => 361;
 
   @override
   MigrationStrategy get migration {
@@ -3889,6 +3889,12 @@ class Store extends _$Store {
         twistInstances,
         twistInstances.reactionCapabilities,
       );
+    }
+
+    if (from < 361) {
+      // Classifier description stored on the focus so it flows to the
+      // /sync/priorities upsert payload. Nullable; existing rows get NULL.
+      await _safeAddColumn(m, priorities, priorities.description);
     }
   }
 

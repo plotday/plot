@@ -27,6 +27,11 @@ class Priorities extends Table
   /// resolved to a glyph in the widget layer via `PlotIcon.focusIcon`. Null
   /// renders the default focus icon.
   TextColumn get icon => text().nullable()();
+
+  /// Human-readable description of what belongs in this focus. Used by the
+  /// classifier to match threads to the focus. Null for focuses created before
+  /// this field was introduced.
+  TextColumn get description => text().nullable()();
   TextColumn get key => text().nullable()();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
@@ -1015,6 +1020,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          pomodoro: row.pomodoro,
          color: row.color,
          icon: row.icon,
+         description: row.description,
          key: row.key,
          root: row.root,
          path: row.path,
@@ -1233,6 +1239,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
     Value<String?> icon = const Value.absent(),
+    Value<String?> description = const Value.absent(),
     Value<String?> key = const Value.absent(),
     bool? root,
     Priority? parent,
@@ -1277,6 +1284,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         pomodoro: pomodoro,
         color: color,
         icon: icon,
+        description: description,
         key: key,
         root: root,
         unread: unread,

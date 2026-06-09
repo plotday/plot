@@ -517,7 +517,10 @@ Priority _priorityFromValues(Map<String, dynamic> values, Priority root) {
     parent: root,
     color: values['color'] as ThemeColor?,
     draft: true,
-  ).copyWith(icon: Value(values['icon'] as String?));
+  ).copyWith(
+    icon: Value(values['icon'] as String?),
+    description: Value(values['description'] as String?),
+  );
 }
 
 /// Icon picker over the curated focus icon set ([PlotIcon.focusIcons]).
