@@ -187,35 +187,20 @@ class _OnboardingToolsState extends State<OnboardingTools> {
               minTile,
               280.0,
             );
+        // Activated connections render two-up regardless of the tile grid.
+        final connectedTileWidth = (available - spacing) / 2;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final source in connected)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _ConnectedRow(
-                  source: source,
-                  onTap: () => _editConnection(source),
-                ),
+            if (connected.isNotEmpty)
+              _ConnectedSection(
+                sources: connected,
+                tileWidth: connectedTileWidth,
+                spacing: spacing,
+                onTap: _editConnection,
               ),
-            if (connected.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 12),
-                child: Text(
-                  'Add more or continue below',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xCCFFFFFF),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    decoration: TextDecoration.none,
-                  ),
-                ),
-              ),
-            ],
             _ToolSection(
               title: 'Messaging',
               twists: messaging,
@@ -345,12 +330,71 @@ class _ToolSection extends StatelessWidget {
           Wrap(
             spacing: spacing,
             runSpacing: spacing,
-            alignment: WrapAlignment.center,
+            alignment: WrapAlignment.start,
             children: [
               for (final twist in twists)
                 SizedBox(
                   width: tileWidth,
                   child: _ToolTile(twist: twist, onTap: () => onTap(twist)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The user's already-activated connections, shown two-up under a
+/// "Your connections" heading. Renders nothing when there are none. Tapping a
+/// card opens [EditSource] for tweaks or archiving.
+class _ConnectedSection extends StatelessWidget {
+  const _ConnectedSection({
+    required this.sources,
+    required this.tileWidth,
+    required this.spacing,
+    required this.onTap,
+  });
+
+  final List<SourceSummary> sources;
+  final double tileWidth;
+  final double spacing;
+  final void Function(SourceSummary) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sources.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 12, bottom: 8, left: 2),
+            child: Text(
+              'Your connections',
+              style: TextStyle(
+                color: Color(0xFFFFFFFF),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ),
+          Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            alignment: WrapAlignment.start,
+            children: [
+              for (final source in sources)
+                SizedBox(
+                  width: tileWidth,
+                  child: _ConnectedRow(
+                    source: source,
+                    onTap: () => onTap(source),
+                  ),
                 ),
             ],
           ),
