@@ -4,10 +4,12 @@ import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/command/twist.dart';
 import 'package:plot/command/upgrade.dart' show ShowUpgradeOptions;
 import 'package:plot/widget/logo_image.dart';
+import 'package:plot/widget/pro_badge.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 
@@ -39,6 +41,7 @@ class _OnboardingToolsState extends State<OnboardingTools> {
   List<Twist>? _twists;
   List<SourceSummary> _connected = const [];
   bool _loading = true;
+  UsageData? _usage;
 
   @override
   void initState() {
@@ -51,11 +54,13 @@ class _OnboardingToolsState extends State<OnboardingTools> {
       final results = await Future.wait([
         TwistApi.getAllTwists(),
         TwistApi.getSourcesSummary(),
+        UpgradeApi.getUsage(),
       ]);
       if (!mounted) return;
       setState(() {
         _twists = results[0] as List<Twist>;
         _connected = results[1] as List<SourceSummary>;
+        _usage = results[2] as UsageData;
         _loading = false;
       });
     } catch (e, t) {
@@ -65,6 +70,19 @@ class _OnboardingToolsState extends State<OnboardingTools> {
   }
 
   Future<void> _openSetup(Twist twist) async {
+    // Pro connectors: gate before opening setup. If the user can't add another
+    // Pro connection (Free/Core, or a Pro user who used their included one),
+    // show the upgrade picker instead. Usage may be null if it failed to load —
+    // fall through to AddSourceDetail, whose own gate is the backstop.
+    final usage = _usage;
+    if (usage != null) {
+      final gate = premiumOnboardingGate(usage: usage, isPremium: twist.premium);
+      if (gate != null) {
+        await gate.run(context);
+        if (mounted) await _load(); // refresh so an upgraded user can proceed
+        return;
+      }
+    }
     await AddSourceDetail(twist, dismissable: true).run(context);
     // Mirror ManageConnections: after OAuth, AddSourceDetail leaves the
     // connection as a DRAFT and hands it off here. We open EditSource so the
@@ -281,6 +299,10 @@ class _ToolTile extends StatelessWidget {
                 ),
               ),
             ),
+            if (twist.premium) ...[
+              const SizedBox(width: 8),
+              const ProBadge(),
+            ],
           ],
         ),
       ),
