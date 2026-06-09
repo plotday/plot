@@ -6,7 +6,7 @@ describe("facet-registry", () => {
     expect(Object.keys(FACET_REGISTRY.format.values)).toContain("reading");
     expect(Object.keys(FACET_REGISTRY.format.values)).toContain("notification");
     for (const dim of ["format", "automation", "reach"] as const) {
-      for (const desc of Object.values(FACET_REGISTRY[dim].values)) {
+      for (const desc of Object.values<string>(FACET_REGISTRY[dim].values)) {
         expect(desc.length).toBeGreaterThan(0);
       }
     }
