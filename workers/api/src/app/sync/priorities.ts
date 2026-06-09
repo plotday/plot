@@ -122,6 +122,7 @@ priorities.post("/sync/priorities", async (c) => {
   const description = typeof body.description === "string" ? body.description : null;
   const isArchived = body.archived_at != null;
   if (priorityId && title && !isArchived) {
+    const tracker = c.var.tracker;
     c.executionCtx.waitUntil(
       (async () => {
         const db = createDb(c.env);
@@ -136,7 +137,7 @@ priorities.post("/sync/priorities", async (c) => {
               .execute();
           }
         } catch (error) {
-          c.var.tracker.captureException(error as Error);
+          tracker.captureException(error as Error);
         } finally {
           await db.destroy();
         }
