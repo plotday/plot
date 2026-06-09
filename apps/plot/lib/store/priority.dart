@@ -530,16 +530,20 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                   (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now)))),
     );
 
-    // Query 2: Per-user state on the thread row (active flag set, with
-    // a state_on/state_at in the past).
+    // Query 2: Per-user state on the thread row — an active to-do scheduled
+    // in the past or for today (mirrors `_watchActivePriorityIds`). A
+    // future-dated to-do is excluded; an active to-do with no explicit date
+    // counts as "now".
     final userQuery = Store.get.selectOnly(a)..addColumns([a.priorityId]);
     userQuery.where(
       a.priorityId.isIn(idBytes) &
           a.archivedAt.isNull() &
           a.draft.equals(false) &
           a.active.equals(true) &
-          ((a.stateOn.isSmallerOrEqualValue(today) & a.stateAt.isNull()) |
-              (a.stateAt.isSmallerOrEqualValue(now))),
+          (a.stateAt.isSmallerOrEqualValue(now) |
+              (a.stateAt.isNull() &
+                  (a.stateOn.isNull() |
+                      a.stateOn.isSmallerOrEqualValue(today)))),
     );
 
     final sharedResults = await sharedQuery.get();
@@ -716,6 +720,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       final today = Date.today().toString();
       return results
           .where((row) {
+            // A focus is bold when it has an active to-do scheduled in the
+            // past or for today. A timed/dated to-do counts only once its
+            // date arrives; a future one does not. An active to-do with no
+            // explicit date counts as "now" (the common case — marking a
+            // thread active without picking a day).
             final startAt = row.read(a.stateAt);
             final startOn = row.read(a.stateOn);
             if (startAt != null) {
@@ -724,7 +733,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             if (startOn != null) {
               return startOn.compareTo(today) <= 0;
             }
-            return false;
+            return true;
           })
           .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
           .toSet();
