@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart' show ThreadId;
 import 'package:plot/util/theme_color.dart';
-import 'package:plot/widget/onboarding/onboarding_roles.dart';
 import 'package:plot/widget/onboarding/onboarding_tools.dart';
 
 /// A single step in the onboarding flow.

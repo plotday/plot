@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'command.dart';
+import 'package:plot/command/focus_suggestions.dart';
 import 'package:plot/util/priority_nav.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -551,32 +552,6 @@ FormSelect<String> _focusIconSelect({String initial = 'bullseyePointer'}) {
     gridCellSize: 48,
     gridCellSpacing: 8,
   );
-}
-
-/// Pre-filled values for the [NewFocus] step-1 form. Onboarding uses this to
-/// open the create modal with a sample focus already populated, so a single
-/// tap surfaces an editable, ready-to-create focus.
-class FocusPrefill {
-  const FocusPrefill({
-    required this.title,
-    required this.description,
-    required this.iconKey,
-    this.color,
-  });
-
-  /// Focus name pre-filled into the title field.
-  final String title;
-
-  /// Description pre-filled into the (required) description field. Transient —
-  /// it feeds matching but isn't stored on the focus.
-  final String description;
-
-  /// Key into [PlotIcon.focusIcons] for the pre-selected icon.
-  final String iconKey;
-
-  /// Optional pre-selected colour. Null seeds the picker with the default
-  /// colour.
-  final ThemeColor? color;
 }
 
 /// Two-step focus creation. Step 1 collects the focus's name, description,
