@@ -567,6 +567,8 @@ export interface Priority {
   created_at: Generated<Timestamp>;
   created_by: string;
   default_thread_icon: string | null;
+  description: string | null;
+  facet_filters: Json | null;
   icon: string | null;
   id: Generated<string>;
   inherit_members: Generated<boolean>;

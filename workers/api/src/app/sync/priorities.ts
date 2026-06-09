@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import {
   parseReadParams,
@@ -12,6 +12,7 @@ import {
 import { rpcUser } from "../../rpc";
 import { enqueueChannelRouter } from "../../state/channel-router";
 import { notifySync, notifyUserSync } from "./notify";
+import { deriveFacetFilters } from "../../state/derive-facet-filters";
 
 const priorities = new Hono<{ Bindings: Bindings }>();
 
@@ -113,6 +114,35 @@ priorities.post("/sync/priorities", async (c) => {
       // Router enqueue failures are non-fatal for the priority upsert.
     })
   );
+
+  // Derive facet filters for the focus from its title + description (LLM, in
+  // the background so it never blocks the upsert). Skip archived focuses.
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const priorityId = typeof body.id === "string" ? body.id : null;
+  const description = typeof body.description === "string" ? body.description : null;
+  const isArchived = body.archived_at != null;
+  if (priorityId && title && !isArchived) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        const db = createDb(c.env);
+        try {
+          const filters = await deriveFacetFilters(c.env, title, description);
+          if (filters !== null) {
+            await db
+              .updateTable("priority")
+              .set({ facet_filters: filters as any })
+              .where("id", "=", priorityId)
+              .where("user_id", "=", userId)
+              .execute();
+          }
+        } catch (error) {
+          c.var.tracker.captureException(error as Error);
+        } finally {
+          await db.destroy();
+        }
+      })()
+    );
+  }
 
   return c.json(result as any);
 });

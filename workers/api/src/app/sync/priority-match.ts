@@ -8,6 +8,7 @@ import { createLogger } from "@plotday/worker-util";
 
 import { withUserDb } from "../../db";
 import type { Bindings } from "../../env";
+import { deriveFacetFilters } from "../../state/derive-facet-filters";
 
 const router = new Hono<{ Bindings: Bindings }>();
 
@@ -103,6 +104,13 @@ router.post("/sync/priorities/find-matching-threads", async (c) => {
 
   const logger = createLogger({ component: "priority-match", user_id: userId });
 
+  // Derive the focus's intrinsic facet filters so the preview drops items the
+  // focus will gate (e.g. notifications out of a Reading focus). Best-effort:
+  // null filters → no extra filtering. The per-focus trust filter is omitted
+  // here (the focus has no filed threads yet at preview time).
+  const derived = await deriveFacetFilters(c.env, title, description);
+  const facetFilterJson = derived ? JSON.stringify(derived) : null;
+
   // Embed the focus's title + description together (title adds a strong signal
   // for short descriptions). Fall back gracefully if embedding is unavailable.
   let queryEmbedding: number[];
@@ -133,7 +141,8 @@ router.post("/sync/priorities/find-matching-threads", async (c) => {
           t.contacts && "user".user_contact_ids(${userId}::uuid)
           OR t.groups && "user".user_group_ids(${userId}::uuid)
         )
-        ${exclude.length ? sql`AND t.id <> ALL(${sql.val(exclude)}::uuid[])` : sql``}`;
+        ${exclude.length ? sql`AND t.id <> ALL(${sql.val(exclude)}::uuid[])` : sql``}
+        ${facetFilterJson ? sql`AND NOT public.intrinsic_facets_violate(t.facets, ${facetFilterJson}::jsonb)` : sql``}`;
 
   const { vector, lexical } = await withUserDb(c.var.db, userId, async (trx) => {
     // Semantic candidates from the HNSW vector index.
