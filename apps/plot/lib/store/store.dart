@@ -2428,7 +2428,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 363;
+  int get schemaVersion => 364;
 
   @override
   MigrationStrategy get migration {
@@ -3910,6 +3910,41 @@ class Store extends _$Store {
       // Classifier description stored on the focus so it flows to the
       // /sync/priorities upsert payload. Nullable; existing rows get NULL.
       await _safeAddColumn(m, priorities, priorities.description);
+    }
+    if (from < 364) {
+      // Recover threads stranded by the published-note-on-draft-thread bug.
+      // A published note (draft=0) whose parent thread is still a local
+      // draft (draft=1) can never sync: the draft thread is excluded from
+      // push, so it has no server-side thread_priority and POST /sync/notes
+      // 403s forever. The push filter (Store._buildDraftFilter) now blocks
+      // such a note, which stops the loop but leaves its content stranded
+      // locally with `pending` set. Honor the user's publish intent: promote
+      // the parent thread to draft=0 so it — and the note — sync normally
+      // (the server's upsert_thread self-files thread_priority for a new
+      // user-created thread). Guarded to valid, non-archived threads that
+      // have a focus filing so we never push an invalid thread.
+      await m.database.customStatement('''
+        UPDATE threads
+        SET draft = 0, pending = 2
+        WHERE draft = 1
+          AND archived_at IS NULL
+          AND priority_id IS NOT NULL
+          AND id IN (
+            SELECT thread_id FROM notes
+            WHERE draft = 0 AND archived_at IS NULL AND thread_id IS NOT NULL
+          )
+      ''');
+      // Any note still sitting on a thread we could not promote (archived or
+      // missing a focus filing) is demoted back to draft so it stops being a
+      // stranded inconsistency and is correctly excluded from push. No
+      // content is deleted — the note stays editable locally.
+      await m.database.customStatement('''
+        UPDATE notes
+        SET draft = 1
+        WHERE draft = 0
+          AND archived_at IS NULL
+          AND thread_id IN (SELECT id FROM threads WHERE draft = 1)
+      ''');
     }
   }
 
