@@ -541,6 +541,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                         state.thread,
                         isPlotThread: Thread.isPlotThread(state.links),
                         sharingModel: Thread.resolveSharingModel(state.links),
+                        openInLink: Thread.primaryLink(state.links),
                         priorityBloc: priorityBloc,
                       ),
                     ];

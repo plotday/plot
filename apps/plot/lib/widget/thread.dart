@@ -892,6 +892,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               activity,
               isPlotThread: Thread.isPlotThread(_links),
               sharingModel: Thread.resolveSharingModel(_links),
+              openInLink: Thread.primaryLink(_links),
               priorityBloc: priorityBloc,
             )
             .map(

@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
+import 'package:plot/command/open_thread_link.dart';
 import 'package:plot/command/thread_merge.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/analytics/tracker.dart';
@@ -3594,12 +3595,14 @@ Future<List<StaticCommandGroup>> threadCommandGroups(
 }) async {
   final hasMerged = await SplitThread.hasMergedContent(thread.id);
   final links = await Link.getForThread(thread.id);
+  final primary = Thread.primaryLink(links);
   return threadCommandGroupsSync(
     thread,
     open: open,
     showSplitThread: hasMerged,
     isPlotThread: Thread.isPlotThread(links),
     sharingModel: Thread.resolveSharingModel(links),
+    openInLink: primary,
     priorityBloc: priorityBloc,
   );
 }
@@ -3612,6 +3615,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   bool showSplitThread = false,
   bool isPlotThread = true,
   SharingModel sharingModel = SharingModel.thread,
+  Link? openInLink,
   PriorityBloc? priorityBloc,
 }) {
   final commands = threadCommands(
@@ -3620,6 +3624,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
     showSplitThread: showSplitThread,
     isPlotThread: isPlotThread,
     sharingModel: sharingModel,
+    openInLink: openInLink,
     priorityBloc: priorityBloc,
   );
 
@@ -3638,6 +3643,7 @@ List<Command> threadCommands(
   bool showEventTiming = false,
   bool isPlotThread = true,
   SharingModel sharingModel = SharingModel.thread,
+  Link? openInLink,
   PriorityBloc? priorityBloc,
 }) {
   // Read-only viewers (announce-group-only access): no metadata edits, no
@@ -3669,6 +3675,13 @@ List<Command> threadCommands(
   final hideTrailingActions = showEventTiming && thread.isLinkScheduleInstance;
   return [
     if (open) ChangeCurrentThread(thread),
+    if (openInLink?.sourceUrl != null)
+      OpenThreadLink(
+        url: openInLink!.sourceUrl!,
+        connectorName: openInLink.createdBy == null
+            ? null
+            : TwistInstance.fromCache(openInLink.createdBy!)?.name,
+      ),
     ?primary,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
