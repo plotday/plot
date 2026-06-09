@@ -160,6 +160,36 @@ mixin UuidTable on Table {
 ///   as [absentOnServer]: keep local row, keep pending.
 enum _RevertOutcome { reverted, absentOnServer, fetchFailed }
 
+/// Recursively rewrite a sync push body into a form `jsonEncode` accepts.
+///
+/// Drift's default JSON serializer (used by every `DataClass.toJson`) only
+/// special-cases `DateTime`; every other Dart value is emitted as-is. For
+/// columns whose Dart type is not natively JSON-encodable this leaves a raw
+/// object in the map, and `jsonEncode` then throws "Converting object to an
+/// encodable object failed". During sync that aborts the push and silently
+/// strands the row forever (`pending` is never cleared).
+///
+/// The known offender is [Int64Column] → [BigInt] (e.g. `thread.team_id`),
+/// which has no JSON converter. We stringify any [BigInt] — lossless, and
+/// Postgres binds the string straight back to its bigint/numeric column. The
+/// walk also descends into maps and lists so converter-produced or
+/// subclass-added nested payloads are covered, and so any future raw-typed
+/// column is protected at this single sync chokepoint rather than per table.
+@visibleForTesting
+dynamic toEncodableSyncValue(dynamic value) {
+  if (value is BigInt) return value.toString();
+  if (value is Map) {
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): toEncodableSyncValue(entry.value),
+    };
+  }
+  if (value is List) {
+    return [for (final element in value) toEncodableSyncValue(element)];
+  }
+  return value;
+}
+
 /// A table in the remote database that can be synced with the local database.
 abstract class BaseTable {
   const BaseTable({
@@ -420,7 +450,12 @@ abstract class BaseTable {
 
     try {
       for (final row in rows) {
-        await api.post<Map<String, dynamic>>('/sync/$syncEndpoint', body: row);
+        // Guarantee the body is JSON-encodable before it reaches the API.
+        // Drift's serializer can leave non-encodable values (e.g. a raw BigInt
+        // from an Int64Column like thread.team_id) in the row; encoding those
+        // throws and would strand the row in sync. See [toEncodableSyncValue].
+        final body = toEncodableSyncValue(row) as Map<String, dynamic>;
+        await api.post<Map<String, dynamic>>('/sync/$syncEndpoint', body: body);
       }
     } catch (e) {
       if (Store._isAuthError(e)) {
