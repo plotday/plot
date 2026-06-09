@@ -647,6 +647,16 @@ Future<FormData> _buildFocusDetailsForm(
             required: true,
             initialValue: prefill?.title,
           ),
+          // Description last (just above the buttons): it feeds thread matching,
+          // so it reads as the lead-in to "Find matching threads".
+          FormTextInput(
+            key: 'description',
+            label: 'Description',
+            required: true,
+            maxLines: 3,
+            placeholder: 'What belongs in this focus?',
+            initialValue: prefill?.description,
+          ),
           _focusIconSelect(initial: prefill?.iconKey ?? 'bullseyePointer'),
           FormSelect<ThemeColor>(
             key: 'color',
@@ -663,16 +673,6 @@ Future<FormData> _buildFocusDetailsForm(
             titleBuilder: (c) => c.label,
             leadingBuilder: (c) => ColorDot(color: c),
           ),
-          // Description last (just above the buttons): it feeds thread matching,
-          // so it reads as the lead-in to "Find matching threads".
-          FormTextInput(
-            key: 'description',
-            label: 'Description',
-            required: true,
-            maxLines: 3,
-            placeholder: 'What kind of threads belong in this focus?',
-            initialValue: prefill?.description,
-          ),
           if (skipMatching)
             FormButton(
               key: 'create',
@@ -681,6 +681,11 @@ Future<FormData> _buildFocusDetailsForm(
                   AddPriority(Future.value(_priorityFromValues(values, root))),
             )
           else ...[
+            FormInfo(
+              key: 'editThis',
+              text:
+                  "Writing a good description and selecting matching threads ensures the right threads end up in this focus.",
+            ),
             FormButton(
               key: 'find',
               isPrimary: true,
