@@ -157,30 +157,29 @@ class OnboardingSteps {
     ),
     FullScreenStep(
       title: 'Connect your tools',
-      body:
-          'Add the message channels, calendars, and apps that hold your work.',
+      body: "Bring your work together for clarity and action.",
       background: const ThemeColor(1),
       contentMaxWidth: 640,
       contentBuilder: (context) => const OnboardingTools(),
     ),
     const HighlightStep(
-      title: 'Everything is a thread',
+      title: 'Built for action',
       body:
-          "Threads you create in Plot alongside everything from your connections lands in a focus (or your Inbox). "
-          "Updates appear at the top, followed by threads you've marked Active (something that needs your attention or action). "
-          "You can \"snooze\" threads to clear them from today and make sure you get back to them later.",
+          "Updates land at the top of Active. Read them and they'll move to Done.\n"
+          'Mark threads "To do" to keep them in Active until done.\n'
+          "Prioritize threads by dragging them, or snooze them for another day.",
       target: PanelTarget.feed,
-      overlay: ThemeColor(6), // Climax
+      overlay: ThemeColor(2),
     ),
     const HighlightStep(
-      title: 'Everything is a thread',
+      title: 'Start something good',
       body:
           'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
           'Threads are synced both ways so you see new messages in Plot and messages you add in Plot appear in your connection.',
-      target: NamedThreadTarget(threadTitle: 'Everything in its place'),
-      overlay: ThemeColor(2), // Rising Action — back into the arc
-      // The cutout is the right panel; pull the text block toward it so the
-      // copy reads as belonging to the thread that's highlighted.
+      target: PanelTarget.newThread,
+      overlay: ThemeColor(3),
+      // The cutout is the right panel (the new-thread compose page); pull the
+      // text block toward it so the copy reads as belonging to it.
       multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
     ),
     const HighlightStep(
@@ -213,7 +212,6 @@ class OnboardingSteps {
     FullScreenStep(
       title: "You're all set!",
       body:
-          "We've put added a few threads"
           "You're set up with your initial focuses and connections. Start simple — focus on one or two areas you most want to invest in."
           "\n\n"
           "Questions or stuck on something? Reply on the welcome thread in your Inbox — we read every one.",
