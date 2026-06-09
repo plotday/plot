@@ -5615,7 +5615,6 @@ export type Database = {
           created_by: string | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
-          flat_title: string | null
           global_path: unknown
           icon: string | null
           id: string | null
@@ -6557,7 +6556,6 @@ export type Database = {
           created_by: string | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
-          flat_title: string | null
           global_path: unknown
           icon: string | null
           id: string | null
