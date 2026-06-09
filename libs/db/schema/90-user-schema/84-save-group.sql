@@ -14,7 +14,9 @@
 --         INSERT, like public.create_group, since the creator is admin by
 --         construction.)
 --   privacy/type changes on update are ignored.
--- Rejects auto_maintained groups. Returns the group id.
+-- Rejects auto_maintained groups. The CREATE path (and the UPDATE add-path,
+-- via public.add_group_members) rejects members without an email via
+-- public.assert_group_members_have_email. Returns the group id.
 CREATE OR REPLACE FUNCTION "user".save_group (
     user_id uuid,
     p_group jsonb
@@ -56,6 +58,8 @@ BEGIN
 
         INSERT INTO group_admin (group_id, user_id)
         VALUES (v_group_id, save_group.user_id);
+
+        PERFORM public.assert_group_members_have_email(v_member_ids);
 
         IF cardinality(v_member_ids) > 0 THEN
             INSERT INTO group_member (group_id, contact_id)

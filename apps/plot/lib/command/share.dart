@@ -181,6 +181,12 @@ class ShareCandidatesCache {
 bool isValidShareEmail(String value) =>
     RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
 
+/// Whether [actor] can be added to a group. Group membership is restricted to
+/// emailable contacts so a group is always sendable through an email-accepting
+/// connection (and Plot's email notifications) without silently dropping anyone.
+bool actorHasEmail(Actor actor) =>
+    actor.email != null && actor.email!.trim().isNotEmpty;
+
 /// Builds the command list for a generic share picker operating on a
 /// [SharedSelection]. Callers pass the current selection and an [onUpdate]
 /// callback that persists the new selection.
@@ -199,6 +205,7 @@ Future<Commands> buildSharedSelectionCommands({
   String sharedSectionTitle = 'Shared',
   String threadSectionTitle = 'In this thread',
   String prompt = 'Share with contact or email',
+  bool requireEmail = false,
 }) async {
   // Resolve groups.
   final sharedGroups = <GroupRow>[];
@@ -295,6 +302,7 @@ Future<Commands> buildSharedSelectionCommands({
         onUpdate: onUpdate,
         candidates: candidates,
         priority: priority,
+        requireEmail: requireEmail,
         title: 'Share with',
       ),
     ],
@@ -313,6 +321,7 @@ class _SelectionShareSuggestionsGroup extends CommandGroup {
     required this.onUpdate,
     required this.candidates,
     required this.priority,
+    this.requireEmail = false,
     required String title,
   }) : super(title: title);
 
@@ -322,6 +331,7 @@ class _SelectionShareSuggestionsGroup extends CommandGroup {
   final Future<void> Function(SharedSelection) onUpdate;
   final ShareCandidatesCache candidates;
   final Priority? priority;
+  final bool requireEmail;
 
   @override
   Future<List<Command>> list({String? search}) async {
@@ -332,6 +342,7 @@ class _SelectionShareSuggestionsGroup extends CommandGroup {
       switch (candidate) {
         case ActorShareCandidate(:final actor):
           if (excludedActorIds.contains(actor.id)) continue;
+          if (requireEmail && !actorHasEmail(actor)) continue;
           commands.add(
             ShareSelectionActor(selection, actor, onUpdate: onUpdate),
           );
@@ -343,7 +354,7 @@ class _SelectionShareSuggestionsGroup extends CommandGroup {
       }
     }
 
-    if (search != null && isValidShareEmail(search)) {
+    if (!requireEmail && search != null && isValidShareEmail(search)) {
       final normalized = search.toLowerCase();
       final emailExists = sorted.any(
         (c) =>
@@ -520,6 +531,7 @@ class PickShared extends ShowCommands {
     String sharedSectionTitle = 'Shared',
     String threadSectionTitle = 'In this thread',
     String prompt = 'Share with contact or email',
+    bool requireEmail = false,
   }) {
     final ref = [selection];
     final cache = ShareCandidatesCache(includeGroupIds: includeGroupIds);
@@ -542,6 +554,7 @@ class PickShared extends ShowCommands {
         sharedSectionTitle: sharedSectionTitle,
         threadSectionTitle: threadSectionTitle,
         prompt: prompt,
+        requireEmail: requireEmail,
       ),
     );
   }

@@ -1405,6 +1405,7 @@ class FormShareSelect extends FormItem {
     super.label,
     this.placeholder,
     this.priority,
+    this.requireEmail = false,
     SharedSelection? initialValue,
   }) : _value = initialValue ?? const SharedSelection();
 
@@ -1414,6 +1415,10 @@ class FormShareSelect extends FormItem {
   /// Optional priority for scoping contact suggestions (ranks people the
   /// user typically shares with in this priority first).
   final Priority? priority;
+
+  /// When true, contacts without an email are hidden from the suggestion list
+  /// (group editing).
+  final bool requireEmail;
 
   SharedSelection _value;
   bool userModified = false;
@@ -1477,6 +1482,7 @@ class FormShareSelect extends FormItem {
     await PickShared(
       selection: _value,
       priority: priority,
+      requireEmail: requireEmail,
       title: label ?? key,
       onUpdate: (next) async {
         _value = next;

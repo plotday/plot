@@ -1123,7 +1123,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   }
 
   /// Connections that can reach [contacts]/[groups]/[inviteEmails], MRU-first.
-  /// Plot per applicable scope + DM-type connectors (only when no formal group).
+  /// Plot per applicable scope, plus DM-type connectors — all DM types when no
+  /// group is selected, email (addresses) connectors only when a group is.
   Future<List<ComposeTarget>> connectionsForRoster({
     required List<Uuid> contacts,
     required List<Uuid> groups,
@@ -1141,14 +1142,21 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         inviteEmails: inviteEmails,
       ));
     }
-    if (groups.isEmpty) {
-      for (final t in ctx.createTargets.where((t) => t.isDmType)) {
-        options.add(ComposeTarget.connector(
-          t,
-          connectionCount: ctx.connectionCount(t),
-          contacts: contacts,
-        ));
-      }
+    // DM-type connectors. With no group, offer all DM-type connectors
+    // (contacts + addresses) as before. With a group selected, offer only
+    // email-accepting (addresses) connectors — the group is expanded to member
+    // emails at dispatch, and every member is guaranteed to have an email.
+    // contacts-type DMs (e.g. Slack) are deferred until per-platform
+    // reachability is modelled.
+    for (final t in ctx.createTargets.where(
+      (t) => t.isDmType && (groups.isEmpty || t.compose.targets == 'addresses'),
+    )) {
+      options.add(ComposeTarget.connector(
+        t,
+        connectionCount: ctx.connectionCount(t),
+        contacts: contacts,
+        groups: groups,
+      ));
     }
     final ranked = _prefs.rankSignaturesByMru(
       signatures: options.map((o) => o.signature).toList(),

@@ -286,6 +286,7 @@ class EditGroup extends Command {
         key: 'members',
         label: 'Members',
         placeholder: 'Add people and groups',
+        requireEmail: true,
         initialValue: SharedSelection(contacts: initialMemberContactIds),
       ),
       FormButton(
