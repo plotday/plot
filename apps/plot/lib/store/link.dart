@@ -737,17 +737,32 @@ class Link extends Equatable {
     return rows.map((row) => Link(row)).toList();
   }
 
-  /// Watch links for a given thread.
+  /// Watch canonical (thread-level) links for a given thread.
   ///
-  /// Returns every link the user can see on this thread. Per-user link
-  /// visibility lives server-side in `user.link`: each user only receives
-  /// links from connector instances they own (plus user-authored links),
-  /// so two users' connections of the same external resource no longer
+  /// Returns only non-note-scoped links (`noteScoped == false`), ordered
+  /// primary-first: priority DESC, createdAt ASC, id ASC — matching
+  /// [Thread.primaryLink] so `.first` here IS the primary link.
+  ///
+  /// Note-scoped links (attached to a note via `note.link_id`) are excluded;
+  /// use [getForThread] when you need ALL links regardless of scope.
+  ///
+  /// Per-user link visibility lives server-side in `user.link`: each user
+  /// only receives links from connector instances they own (plus user-authored
+  /// links), so two users' connections of the same external resource no longer
   /// produce duplicate rows here.
   static Stream<List<Link>> watchForThread(ThreadId threadId) {
     final db = Store.get;
     return (db.select(db.links)
-          ..where((l) => l.threadId.equals(threadId.toBytes())))
+          ..where((l) =>
+              l.threadId.equals(threadId.toBytes()) &
+              l.noteScoped.equals(false))
+          ..orderBy([
+            // Primary-first: highest priority, then earliest created, then id
+            // — matches [Thread.primaryLink] so `.first` here IS the primary.
+            (l) => OrderingTerm.desc(l.priority),
+            (l) => OrderingTerm.asc(l.createdAt),
+            (l) => OrderingTerm.asc(l.id),
+          ]))
         .watch()
         .map((rows) {
           final links = rows.map(Link.new).toList();
