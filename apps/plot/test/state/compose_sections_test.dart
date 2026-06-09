@@ -143,7 +143,7 @@ void main() {
         (name: 'marketing', entry: entry(g, isGroup: true)),
         (name: 'Bob', entry: entry(b)),
       ]);
-      // marketing < Bob < Zoe, case-insensitively → Bob, marketing, Zoe
+      // Alphabetically: Bob < marketing < Zoe (case-insensitive) → Bob, marketing, Zoe
       expect(out[0].contacts.first.toString(), b); // Bob
       expect(out[1].groups.first.toString(), g); // marketing
       expect(out[2].contacts.first.toString(), a); // Zoe
