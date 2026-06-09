@@ -83,6 +83,39 @@ describe.skipIf(!DATABASE_URL)("save_group via rpcUser", () => {
     ).rejects.toThrow(/email/i);
   });
 
+  it("rejects adding a member without an email to an existing group", async () => {
+    const clientGroupId = randomUUID();
+    const goodMember = randomUUID();
+    const emaillessMember = randomUUID();
+    await expect(
+      withUser(async (trx, userId) => {
+        await sql`INSERT INTO contact (id, name, email)
+          VALUES (${goodMember}::uuid, 'Good', ${`g-${goodMember}@example.test`})`.execute(trx);
+        // Create the group with a valid roster.
+        await rpcUser(trx, "save_group", {
+          user_id: userId,
+          p_group: {
+            id: clientGroupId,
+            name: "Email Group",
+            privacy: "open",
+            member_contact_ids: [goodMember],
+          },
+        });
+        // Now try to ADD an emailless member via an update.
+        await sql`INSERT INTO contact (id, name) VALUES (${emaillessMember}::uuid, 'No Email')`.execute(trx);
+        return rpcUser(trx, "save_group", {
+          user_id: userId,
+          p_group: {
+            id: clientGroupId,
+            name: "Email Group",
+            privacy: "open",
+            member_contact_ids: [goodMember, emaillessMember],
+          },
+        });
+      }),
+    ).rejects.toThrow(/email/i);
+  });
+
   it("creates a group when every member has an email", async () => {
     const clientGroupId = randomUUID();
     const memberId = randomUUID();
