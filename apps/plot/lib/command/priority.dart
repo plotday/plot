@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -1034,49 +1036,49 @@ class MergeFocus extends PriorityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Capture whether we're viewing the source focus before any await, so we
-    // can follow the threads to the target after archiving the source.
-    final nowBloc = context.read<NowBloc?>();
-    final viewingSource =
-        nowBloc?.state is NowLoaded &&
-        (nowBloc!.state as NowLoaded).context?.id == _source.id;
+    final source = _source;
+    final target = _target;
 
-    try {
-      // Re-file every thread filed under the source — including archived
-      // threads and drafts — so nothing is stranded under the archived
-      // source. The thread save() is what syncs the re-filing (the mechanism
-      // MoveToPriority relies on). We intentionally skip the per-thread
-      // /sync/priority-moves learning signal: a bulk merge is a deliberate
-      // re-file, not N classifier-training events.
-      //
-      // Non-transactional by design for v1: a failure mid-loop leaves a
-      // partial re-file (some threads moved) with the source NOT archived,
-      // since archiving happens only after the loop completes. A future
-      // improvement could batch the saves or use a server-side merge endpoint.
-      final threads = await Thread.get(
-        priorityId: _source.id,
-        archived: null,
-        draft: null,
-      );
-      for (final thread in threads) {
-        await thread.copyWith(priority: _target).save();
+    // Re-file the threads and archive the source in the background so the
+    // modal closes and we navigate to the destination focus immediately —
+    // rather than holding the modal open with no feedback while every thread
+    // is re-filed (which can take seconds on a large focus). Re-filing is
+    // reactive (Drift streams), so the destination feed fills in live as
+    // saves land, and the source disappears once archived.
+    unawaited(() async {
+      try {
+        // Re-file every thread filed under the source — including archived
+        // threads and drafts — so nothing is stranded under the archived
+        // source. The thread save() is what syncs the re-filing (the mechanism
+        // MoveToPriority relies on). We intentionally skip the per-thread
+        // /sync/priority-moves learning signal: a bulk merge is a deliberate
+        // re-file, not N classifier-training events.
+        //
+        // Non-transactional by design for v1: a failure mid-loop leaves a
+        // partial re-file (some threads moved) with the source NOT archived,
+        // since archiving happens only after the loop completes. A future
+        // improvement could batch the saves or use a server-side merge
+        // endpoint.
+        final threads = await Thread.get(
+          priorityId: source.id,
+          archived: null,
+          draft: null,
+        );
+        for (final thread in threads) {
+          await thread.copyWith(priority: target).save();
+        }
+        // Archive the source focus.
+        await source.copyWith(archivedAt: Value(DateTime.now())).save();
+      } catch (e, stackTrace) {
+        Tracker.captureException(e, stackTrace);
       }
-      // Archive the source focus.
-      await _source.copyWith(archivedAt: Value(DateTime.now())).save();
-    } catch (e, stackTrace) {
-      Tracker.captureException(e, stackTrace);
-      return const CommandMessage(
-        'Could not merge focus. Please try again.',
-        isError: true,
-      );
-    }
+    }());
 
-    if (viewingSource) {
-      return CommandRoute(
-        PriorityRoute(priorityIdString: _target.id.toShortString()),
-      );
-    }
-    return const CommandDone();
+    // Always follow the threads to the destination focus. The source is being
+    // archived, so there is nothing to stay on.
+    return CommandRoute(
+      PriorityRoute(priorityIdString: target.id.toShortString()),
+    );
   }
 }
 
