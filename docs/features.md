@@ -43,6 +43,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Add a contact (name + email) or create a named group directly from the new-thread picker's "People and twists" header ("+ Contact" / "+ Group")
 - Edit a contact (rename, per-user) or a group (rename, change members) via a "…" menu on its row (hover or ⌘Enter); naming an ad-hoc set of selected people turns them into a reusable group
 - All contact/group edits are local-first and sync across devices; contact renames are per-user overrides that never change the name other people see
+- Groups work with email-accepting connections (e.g. Gmail): addressing a thread to a group and sending via an email connection expands the group to its members' email addresses on send. Group members are required to have an email address (the member picker hides contacts without one, and the server rejects adding one)
 
 ### Thread Sharing
 - Threads are shared by adding contacts via the "With" field at creation
