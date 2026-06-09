@@ -152,12 +152,12 @@ class OnboardingSteps {
     const FullScreenStep(
       title: "Your best work\nevery day",
       body:
-          "Plot is your collaboration hub. All your messages, meetings, and apps — organized and prioritized.",
-      background: ThemeColor(0), // Catalyst — opener
+          "Plot is your collaboration hub. Make real progress without the churn.",
+      background: ThemeColor(0),
     ),
     FullScreenStep(
       title: 'Connect your tools',
-      body: "Bring your work together for clarity and action.",
+      body: "All your work in one place, organized and prioritized.",
       background: const ThemeColor(1),
       contentMaxWidth: 640,
       contentBuilder: (context) => const OnboardingTools(),
@@ -172,10 +172,11 @@ class OnboardingSteps {
       overlay: ThemeColor(2),
     ),
     const HighlightStep(
-      title: 'Start something good',
+      title: 'Make something happen',
       body:
-          'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
-          'Threads are synced both ways so you see new messages in Plot and messages you add in Plot appear in your connection.',
+          'Start with the people you want to reach, then pick how to send your message.\n'
+          'Or create a post or app item using a channel.\n'
+          'Plot threads also hold private notes and tasks alongside the rest of your work.',
       target: PanelTarget.newThread,
       overlay: ThemeColor(3),
       // The cutout is the right panel (the new-thread compose page); pull the
@@ -183,45 +184,28 @@ class OnboardingSteps {
       multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
     ),
     const HighlightStep(
-      title: 'Choose your focus',
+      title: 'Focus on what matters',
       body:
-          "In Plot, a focus is a separate inbox with everything related to a role, activity, or project. Focuses are great for concentrating on your top priorities. They're also helpful for collecting low-urgency work to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
+          "Everything in one place can be a bit much. Create a focus to gather everything related to a role, activity, or project.\n"
+          "Creating focuses for low-urgency work is a great way to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
       target: PanelTarget.priorities,
-      overlay: ThemeColor(4), // Turning Point
+      overlay: ThemeColor(4),
       // In multi-panel the left panel stacks agenda on top of the focuses, so
       // anchor this step's text to the bottom — visually next to the focuses
       // list it describes.
       multiPanelAlignment: MultiPanelContentAlignment.top,
       // Sample-focus chips let the user spin up their first focuses right
       // here, beside the highlighted focuses panel they'll appear in.
-      contentBuilder: _buildRoles,
-    ),
-    const HighlightStep(
-      title: 'Your day',
-      body:
-          "See your day at glance. Easily add focus blocks to ensure you make progress on what matter most.",
-      target: PanelTarget.agenda,
-      overlay: ThemeColor(5), // Breakthrough
-      // Multi-panel: the agenda occupies the bottom half of the left panel
-      // (leftBottom), starting around the vertical midpoint. Center the text
-      // so it sits beside where the agenda begins rather than hugging the
-      // bottom edge. Single-panel: the overlay routes to /agenda and the
-      // mobile split layout handles placement.
-      multiPanelAlignment: MultiPanelContentAlignment.center,
     ),
     FullScreenStep(
-      title: "You're all set!",
+      title: "You're all set",
       body:
-          "You're set up with your initial focuses and connections. Start simple — focus on one or two areas you most want to invest in."
-          "\n\n"
-          "Questions or stuck on something? Reply on the welcome thread in your Inbox — we read every one.",
-      background: const ThemeColor(0), // Catalyst — bookend the opener
+          "We're eager to see what you'll do! Share your hopes, wins, and feedback with us any time.",
+      background: const ThemeColor(0),
       contentBuilder: _buildClosingQuote,
     ),
   ];
 }
-
-Widget _buildRoles(BuildContext context) => const OnboardingRoles();
 
 Widget _buildClosingQuote(BuildContext context) => const Padding(
   padding: EdgeInsets.only(top: 8),
