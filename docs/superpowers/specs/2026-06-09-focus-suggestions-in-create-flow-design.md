@@ -5,10 +5,11 @@
 
 ## Problem
 
-The suggested focuses (Project, Management, Reading, Recruiting, Admin, Personal
-Finance, Family, Personal) used to be surfaced as chips in onboarding's "Focus on
-what matters" step. Those chips have since been removed, so the curated
-suggestions are now dead code (`kSampleFocuses` + `OnboardingRoles` widget in
+The suggested focuses (Project, Customers, Operations, Management, Recruiting,
+Admin, Reading, Volunteering, Personal admin, Social, Promotions) used to be
+surfaced as chips in onboarding's "Focus on what matters" step. Those chips have
+since been removed, so the curated suggestions are now dead code (`kSampleFocuses`
++ `OnboardingRoles` widget in
 `apps/plot/lib/widget/onboarding/onboarding_roles.dart`).
 
 We want to bring the suggestions back, but as part of the **regular** focus
@@ -58,20 +59,48 @@ matched-threads). Cancelling the form records nothing.
 
 ### Suggestion data — single source of truth
 
-- Move the suggestion list out of the dead `onboarding_roles.dart` into
-  `apps/plot/lib/command/priority.dart` (alongside `FocusPrefill` / `NewFocus`),
-  renamed `kFocusSuggestions`.
-- Add a stable `key` to each suggestion (e.g. `'project'`, `'management'`,
-  `'reading'`, `'recruiting'`, `'admin'`, `'personal_finance'`, `'family'`,
-  `'personal'`). The **key**, not the title, drives dismissal so a future title
-  edit can't resurrect a dismissed suggestion.
-- Add `suggestionKey` (`String?`) to `FocusPrefill`. Suggestion-originated
-  prefills carry their key; the empty/custom path leaves it null.
+- Move the suggestion list out of the dead `onboarding_roles.dart` into a new
+  dedicated, maintenance-friendly file `apps/plot/lib/command/focus_suggestions.dart`,
+  exposed as `const List<FocusPrefill> kFocusSuggestions`. A standalone data file
+  (rather than burying it in the already-large `priority.dart`) makes the list
+  easy to grow and prune over time, which is an explicit goal.
+- Add `suggestionKey` (`String?`) to `FocusPrefill` (its definition stays in
+  `priority.dart`; the suggestions file imports it). Each suggestion sets an
+  **explicit, stable** key. The key — not the title or list position — drives
+  dismissal, so titles/descriptions/order can be edited freely and items can be
+  added or removed without disturbing existing users' dismissals.
+
+  Initial keys:
+
+  | Title | key |
+  |---|---|
+  | Project | `project` |
+  | Customers | `customers` |
+  | Operations | `operations` |
+  | Management | `management` |
+  | Recruiting | `recruiting` |
+  | Admin | `admin` |
+  | Reading | `reading` |
+  | Volunteering | `volunteering` |
+  | Personal admin | `personal_admin` |
+  | Social | `social` |
+  | Promotions | `promotions` |
+
+- The custom/empty path leaves `suggestionKey` null.
 - Delete the now-unused `OnboardingRoles` widget, `_SampleFocusChip`, the
   `onboarding_roles.dart` file, and its dead import in `onboarding_steps.dart`.
 
 Each suggestion entry is a `FocusPrefill` with `suggestionKey`, `title`,
 `description`, `iconKey`, and optional `color` (the existing fields).
+
+**Maintaining the list over time:**
+- *Adding* an item: append a new entry with a fresh unique key. It appears for
+  every user who hasn't dismissed that key (i.e. everyone, since the key is new).
+- *Removing* an item: delete the entry. Any stored dismissal of its key becomes a
+  harmless orphan — filtering ignores keys with no matching suggestion (see Edge
+  cases). No migration needed.
+- Keys must be unique and never reused for a different concept (a reused key
+  would inherit the old item's dismissals).
 
 ### The picker — new `AddFocus` command (`ShowCommands`)
 
@@ -176,7 +205,7 @@ implementation, matching how `thread.contacts` round-trips).
 
 ## Edge cases
 
-- **No `user_settings` row yet** (fresh user): dismissed set is empty → all 8
+- **No `user_settings` row yet** (fresh user): dismissed set is empty → all
   suggestions shown. First `add()` creates the row via `UserSettingsEntity.save`.
 - **Concurrent edits on two devices**: last-write-wins on the whole array (the
   existing `seq`/`updated_at` sync semantics). Acceptable — at worst a suggestion
@@ -199,7 +228,9 @@ implementation, matching how `thread.contacts` round-trips).
 
 ## Files touched
 
-- `apps/plot/lib/command/priority.dart` — `kFocusSuggestions`, `FocusPrefill.suggestionKey`,
+- `apps/plot/lib/command/focus_suggestions.dart` — **new**: `kFocusSuggestions`
+  list (the 11 entries with stable keys).
+- `apps/plot/lib/command/priority.dart` — `FocusPrefill.suggestionKey`,
   `AddFocus` + `_CreateCustomFocus` + `_CreateSuggestedFocus`, key threading into
   `AddPriority` / `_CreateFocusWithThreads`, `DismissedFocusSuggestions` helper
   (or its own file).
