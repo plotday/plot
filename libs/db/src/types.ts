@@ -4740,6 +4740,10 @@ export type Database = {
         Args: { p_created_by: string; p_filter?: Json; p_hard?: boolean }
         Returns: string[]
       }
+      assert_group_members_have_email: {
+        Args: { p_contact_ids: string[] }
+        Returns: undefined
+      }
       author_matches_org_domain: {
         Args: { p_author_id: string; p_user_id: string }
         Returns: boolean

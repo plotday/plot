@@ -1,3 +1,29 @@
+-- Reject if any of the given contacts has no email address. Group membership
+-- is restricted to emailable contacts so a group can always be sent through an
+-- email-accepting connection (Gmail) and Plot's email notifications without
+-- silently dropping anyone. Enforced only on user-facing member additions;
+-- auto-maintained groups (team groups) populate group_member via triggers and
+-- only ever add Plot users, who always have an email, so they are not checked.
+CREATE OR REPLACE FUNCTION public.assert_group_members_have_email (p_contact_ids uuid[])
+    RETURNS void
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path TO 'public'
+    AS $function$
+BEGIN
+    IF p_contact_ids IS NULL OR cardinality(p_contact_ids) = 0 THEN
+        RETURN;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM contact
+        WHERE id = ANY(p_contact_ids)
+          AND (email IS NULL OR btrim(email) = '')
+    ) THEN
+        RAISE EXCEPTION 'All group members must have an email address';
+    END IF;
+END;
+$function$;
+
 -- Create a new group. Creator automatically becomes admin.
 CREATE OR REPLACE FUNCTION public.create_group (
     p_user_id uuid,
@@ -36,6 +62,8 @@ BEGIN
 
     INSERT INTO group_admin (group_id, user_id)
     VALUES (v_group_id, p_user_id);
+
+    PERFORM public.assert_group_members_have_email(p_member_contact_ids);
 
     IF cardinality(p_member_contact_ids) > 0 THEN
         INSERT INTO group_member (group_id, contact_id)
@@ -88,6 +116,8 @@ BEGIN
             RAISE EXCEPTION 'Only members can add members to this group';
         END IF;
     END IF;
+
+    PERFORM public.assert_group_members_have_email(p_contact_ids);
 
     INSERT INTO group_member (group_id, contact_id)
     SELECT p_group_id, unnest(p_contact_ids)

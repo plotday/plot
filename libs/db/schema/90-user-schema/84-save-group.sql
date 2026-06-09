@@ -57,6 +57,8 @@ BEGIN
         INSERT INTO group_admin (group_id, user_id)
         VALUES (v_group_id, save_group.user_id);
 
+        PERFORM public.assert_group_members_have_email(v_member_ids);
+
         IF cardinality(v_member_ids) > 0 THEN
             INSERT INTO group_member (group_id, contact_id)
             SELECT v_group_id, unnest(v_member_ids)
