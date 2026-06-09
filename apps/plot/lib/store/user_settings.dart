@@ -8,6 +8,12 @@ class UserSettings extends Table with SyncableTable {
   BoolColumn get aiEnabled => boolean().nullable()();
   BoolColumn get onboardingCompleted => boolean().nullable()();
 
+  /// Stable keys of the curated focus suggestions the user has created a focus
+  /// from. Hides those suggestions in the "Add a focus" picker. Synced; the
+  /// server union-merges so dismissals are monotonic across devices.
+  TextColumn get dismissedFocusSuggestions =>
+      text().nullable().map(const StringListConverter())();
+
   /// When non-null, the user has paused time tracking since this instant.
   /// Drives the client tracker (skip [Session.resume] while paused) and
   /// the server event finalizer (skip occurrences inside the paused window).

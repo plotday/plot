@@ -27,6 +27,7 @@ import 'package:rxdart/rxdart.dart';
 import 'package:change_case/change_case.dart';
 
 import 'package:plot/util/string.dart';
+import 'package:plot/util/string_list_converter.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/util/theme_color.dart';
@@ -2428,7 +2429,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 363;
+  int get schemaVersion => 364;
 
   @override
   MigrationStrategy get migration {
@@ -3910,6 +3911,15 @@ class Store extends _$Store {
       // Classifier description stored on the focus so it flows to the
       // /sync/priorities upsert payload. Nullable; existing rows get NULL.
       await _safeAddColumn(m, priorities, priorities.description);
+    }
+    if (from < 364) {
+      // Cross-device record of which focus suggestions the user has created a
+      // focus from. Nullable; existing rows get NULL (= none dismissed).
+      await _safeAddColumn(
+        m,
+        userSettings,
+        userSettings.dismissedFocusSuggestions,
+      );
     }
   }
 
