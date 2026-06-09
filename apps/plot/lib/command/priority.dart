@@ -565,9 +565,9 @@ FormSelect<String> _focusIconSelect({String initial = 'bullseyePointer'}) {
 /// icon, colour and sharing. Step 2 surfaces the existing threads that match
 /// the description so the user can review and deselect before the focus is
 /// created with the kept ones filed in (and the deselected ones recorded as
-/// negative examples). [skipMatching] creates the focus straight from step 1 —
-/// used by onboarding, where no threads are synced yet. [prefill] opens step 1
-/// with its fields populated (also used by onboarding's sample focuses).
+/// negative examples). [skipMatching] creates the focus straight from step 1
+/// (no thread-matching step). [prefill] opens step 1 with its fields populated;
+/// the [AddFocus] picker uses this to seed the form from a curated suggestion.
 class NewFocus extends Command {
   NewFocus({this.skipMatching = false, this.prefill})
     : super(
