@@ -502,6 +502,33 @@ git commit -m "seed: document icon, groups, and channels"
 
 ---
 
+### Task A5: Emit `thread_state` for feed sectioning (gap found during execution)
+
+**Why:** The unified/sectioned feed buckets on the synced `active`/`unread`
+booleans, which come from a per-user `thread_state` row (`user.thread.active =
+ts.active`; `unread = ts.read_at IS NULL AND ts.user_id IS NOT NULL`). The
+generator emits no `thread_state`, so every seeded thread is `active=0,
+unread=0` → **Done**. To populate Active / Scheduled / Unread we emit
+`thread_state`. A thread with **no** row stays Done (the desired default for the
+done tail).
+
+**Section → seed representation:**
+- **Active (Doing)**: `state: active` → `thread_state(active=true, read_at set)`, no future schedule.
+- **Scheduled**: `state: scheduled` → `thread_state(active=true, read_at set)` + a future `schedule.at`.
+- **Unread (Updates cluster)**: `state: unread` → `thread_state(active=true, read_at NULL)`.
+- **Done**: omit `state` → no `thread_state` row (active=0, read).
+
+**Files:** Modify `libs/db/seeds/types.ts`, `libs/db/seeds/generate-seed.ts`.
+
+- [ ] **Step 1:** Add `state?: "active" | "scheduled" | "unread" | "done"` to `Thread`; add `GeneratedThreadState { user_id; thread_id; active; read_at; bumped_at; importance }`.
+- [ ] **Step 2:** Cleanup line: `DELETE FROM thread_state WHERE user_id = <userId>;`.
+- [ ] **Step 3:** In `processThread`, push a `GeneratedThreadState` when `state` is active/scheduled/unread (read_at = thread `created` offset or baseDate; bumped_at = read_at; importance 60; active true; read_at NULL only for `unread`).
+- [ ] **Step 4:** Emit `INSERT INTO thread_state (user_id, thread_id, active, read_at, bumped_at, importance, updated_at)`.
+- [ ] **Step 5:** Soft-validate `state` value in `validateThread`.
+- [ ] **Step 6:** Commit `seed: emit thread_state for feed sectioning (active/scheduled/unread)`.
+
+---
+
 ## Part B — Rewrite margot.yaml
 
 ### Task B1: Config, contacts, flat focuses, sources (with channels), twists, groups

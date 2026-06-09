@@ -44,6 +44,7 @@ import type {
   GeneratedSchedule,
   GeneratedThread,
   GeneratedThreadAssociation,
+  GeneratedThreadState,
   GeneratedThreadTag,
   Note,
   Priority,
@@ -1050,6 +1051,17 @@ function validateThread(
     }
   }
 
+  // Validate state (feed section)
+  if (thread.state) {
+    const validStates = ["active", "scheduled", "unread", "done"];
+    if (!validStates.includes(thread.state)) {
+      addError(
+        `${path}.state`,
+        `Invalid state: ${thread.state}. Valid values: ${validStates.join(", ")}`
+      );
+    }
+  }
+
   // Validate twist_ref
   if (thread.twist_ref && !twistRefs.has(thread.twist_ref)) {
     addError(`${path}.twist_ref`, `Unknown twist_ref: ${thread.twist_ref}`);
@@ -1291,6 +1303,8 @@ function generateSQL(
   lines.push(
     `UPDATE twist SET archived_at = now() WHERE user_id = ${sqlString(userId)} AND environment = 'personal' AND archived_at IS NULL;`
   );
+  // Per-user thread_state from prior seed runs (drives feed sectioning).
+  lines.push(`DELETE FROM thread_state WHERE user_id = ${sqlString(userId)};`);
   // Groups created by prior seed runs (cascades group_member/group_admin).
   lines.push(`DELETE FROM "group" WHERE created_by = ${sqlString(userId)};`);
   // Channels from prior seed runs (point at to-be-archived twist_instances).
@@ -1313,6 +1327,7 @@ function generateSQL(
   const priorities: GeneratedPriority[] = [];
   const prioritySettings: GeneratedPrioritySettings[] = [];
   const threads: GeneratedThread[] = [];
+  const threadStates: GeneratedThreadState[] = [];
   const threadTags: GeneratedThreadTag[] = [];
   const generatedLinks: GeneratedLink[] = [];
   const schedules: GeneratedSchedule[] = [];
@@ -1440,6 +1455,7 @@ function generateSQL(
         twistByRef,
         threadIdMap,
         threads,
+        threadStates,
         threadTags,
         generatedLinks,
         schedules,
@@ -1704,6 +1720,24 @@ WHERE t.created_by = ${sqlString(userId)}::uuid
   AND EXISTS (SELECT 1 FROM contact c WHERE c.id = arr.contact_id)
 ON CONFLICT (user_id, contact_id) DO NOTHING;`
     );
+    lines.push("");
+  }
+
+  // Thread state (per-user feed section: Active / Scheduled / Unread).
+  // Threads with no row read as Done.
+  if (threadStates.length > 0) {
+    lines.push("-- Thread state (feed sectioning)");
+    lines.push(
+      'INSERT INTO thread_state (user_id, thread_id, active, read_at, bumped_at, importance, updated_at)'
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < threadStates.length; i++) {
+      const ts = threadStates[i];
+      const comma = i < threadStates.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(ts.user_id)}, ${sqlString(ts.thread_id)}, ${ts.active}, ${sqlString(ts.read_at)}, ${sqlString(ts.bumped_at)}, ${ts.importance}, NOW())${comma}`
+      );
+    }
     lines.push("");
   }
 
@@ -2091,6 +2125,7 @@ function processThread(
   twistByRef: RefMap<SeedTwist>,
   threadIdMap: RefMap<string>,
   outThreads: GeneratedThread[],
+  outThreadStates: GeneratedThreadState[],
   outTags: GeneratedThreadTag[],
   outLinks: GeneratedLink[],
   outSchedules: GeneratedSchedule[],
@@ -2159,6 +2194,29 @@ function processThread(
       : null,
     contacts: Array.from(contactIds),
   });
+
+  // Per-user thread_state drives the unified feed's section partition
+  // (Unread / Active+Scheduled / Done). A thread with no row reads as Done
+  // (active=0, read). active/scheduled → active=true & read; unread →
+  // active=true & read_at NULL. See the section-seeding note in the plan.
+  if (
+    thread.state === "active" ||
+    thread.state === "scheduled" ||
+    thread.state === "unread"
+  ) {
+    const stateAt = thread.created
+      ? parseDateOffset(baseDate, thread.created).toISOString()
+      : parseDateOffset(baseDate, "+0d").toISOString();
+    const isUnread = thread.state === "unread";
+    outThreadStates.push({
+      user_id: userId,
+      thread_id: id,
+      active: true,
+      read_at: isUnread ? null : stateAt,
+      bumped_at: stateAt,
+      importance: isUnread ? 70 : 60,
+    });
+  }
 
   // If twist_ref is set, emit a post-insert UPDATE to resolve the twist icon.
   // Personal-fallback twists are created already archived (so they stay out

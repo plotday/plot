@@ -158,6 +158,10 @@ export interface Thread {
   author_ref?: string; // Default: "user" — only used to resolve note author defaults
   draft?: boolean; // Default: false
   archived_at?: string; // Date offset
+  // Unified-feed section this thread lands in. Drives an emitted thread_state
+  // row: active/scheduled → active=true (read); unread → active=true (unread);
+  // omitted/done → no thread_state row (thread reads as Done).
+  state?: "active" | "scheduled" | "unread" | "done";
   icon?: string; // Thread icon: "notes", "idea", "goal", "decision", "discussion", "announcement", "ask"
   twist_ref?: string; // Reference to a twist (sets icon to twist logo)
   shared_with?: string[]; // Contact refs the thread is shared with (in addition to refs auto-derived from author_ref / note authors / mentions)
@@ -325,6 +329,15 @@ export interface GeneratedThreadPriority {
   thread_id: string; // UUID
   user_id: string; // UUID
   priority_id: string; // UUID
+}
+
+export interface GeneratedThreadState {
+  user_id: string; // UUID
+  thread_id: string; // UUID
+  active: boolean;
+  read_at: string | null; // ISO timestamp; NULL = unread
+  bumped_at: string | null; // ISO timestamp (feed ordering for Doing/Done)
+  importance: number;
 }
 
 export interface GeneratedUserContact {
