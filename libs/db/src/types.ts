@@ -4782,6 +4782,10 @@ export type Database = {
         }[]
       }
       classify_visibility_window: { Args: never; Returns: string }
+      connection_org_key: {
+        Args: { p_twist_instance_id: string }
+        Returns: string
+      }
       count_not_null: { Args: { val: unknown }; Returns: number }
       create_group: {
         Args: {
@@ -5618,7 +5622,6 @@ export type Database = {
           created_by: string | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
-          flat_title: string | null
           global_path: unknown
           icon: string | null
           id: string | null
@@ -6560,7 +6563,6 @@ export type Database = {
           created_by: string | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
-          flat_title: string | null
           global_path: unknown
           icon: string | null
           id: string | null

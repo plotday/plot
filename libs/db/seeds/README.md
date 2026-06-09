@@ -59,6 +59,9 @@ worker's Cloudflare account) before running this.
 - **Nested structures**: Priorities use intuitive YAML nesting
 - **Ref-based linking**: Reference entities by name instead of UUIDs
 - **Source logos**: External services (Slack, Gmail, GitHub, etc.) with proper logo resolution
+- **Focus icons**: Priorities carry a curated `icon` key
+- **Groups**: Reusable contact sets for the new-thread picker
+- **Channels**: Enabled connection channels (e.g. Slack) for the new-thread picker
 - **LLM-friendly**: YAML format designed for LLM-generated seed data
 - **Validation**: Comprehensive validation with helpful error messages
 

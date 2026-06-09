@@ -1,87 +1,35 @@
--- Classify a thread into a priority for a specific user by scoring it against
--- the user's explicitly-moved threads (thread_priority.user_moved = TRUE).
---
--- Two entry points live in this file:
---   * classify_thread_for_user_explain — the canonical implementation. Returns
---     (priority_id, stage, scores) so callers that need attribution (eval
---     framework, tooling) can see which stage matched and the scoring detail.
---   * classify_thread_for_user — thin SQL wrapper that selects just the
---     priority_id. All existing call sites (triggers, API, twist tools) use
---     this entry point; their behavior is unchanged.
---
--- Algorithm (executed in order; first match wins):
---   1. Load the thread's current signals (topic, embedding, contacts, groups,
---      created_by, twist_id) from the thread row when p_thread_id is provided.
---      Non-NULL explicit parameters override what was loaded. (created_by and
---      twist_id drive the connection-origin signal in step 3.)
---   2. Topic short-circuit: if the candidate thread has a topic AND any of
---      the user's moved threads share that topic, the user has already
---      answered "threads with this topic belong here." Return the most-used
---      priority among those same-topic moves (mode; ties broken by most
---      recent). Topic match alone is a strong enough signal — we don't need
---      to also require contact/group/embedding overlap. This is the path
---      that carries siblings from a connector channel into the same priority
---      after one explicit user move.
---   2.3. Cross-user keyed priority match. If another user has filed this
---      thread under a priority that has a `key` (Using Plot is `@plot.app`,
---      Twist Development is `@plot.twist-dev`), prefer the recipient's
---      same-keyed priority. This makes "filed in Using Plot" propagate to
---      every recipient's Using Plot without requiring a topic convention,
---      and works for any current or future keyed priority. The recipient's
---      own user_moved short-circuit (step 2) ran first, so explicit moves
---      always win.
---   2.5. Channel default: if topic is of the form 'channel:<pk>' and the
---      channel has a non-archived default_priority_id, return it. Defaults
---      are LLM-assigned (per the channel router) and are always overridden
---      by a user_moved example (step 2 runs first). The caller is
---      responsible for stamping thread_priority.applied_default_channel_id
---      when this branch is taken.
---   3. When no user_moved example shares the topic, score every moved thread:
---        sem = cosine similarity, thresholded at 0.5, scaled to [0,1], squared
---        con = Jaccard on expanded contacts (linked-alias-aware), squared
---        grp = Jaccard on groups, squared
---        origin = connection-origin boost vs the example's source connection:
---                 0.18 when the candidate shares the SAME originating
---                 connection (twist_instance) as the moved example, else
---                 0.09 when they share an org group (connection_org_key:
---                 non-freemail account domain or owning team), else 0.
---        combined = 0.5*sem + 0.30*con + 0.12*grp + origin
---      The sem/con/grp signals are squared so weak overlaps contribute
---      near-zero; the origin term is a flat additive boost riding inside
---      combined (it does not bypass the facet gate below).
---      Return the highest-scoring priority when its combined score >= 0.15.
---      Focuses whose facet_filters this thread violates are excluded here
---      (public.thread_facets_gated), unless the author is trusted for that
---      focus. The earlier stages are never gated.
---   4. If neither path matched and thread.topic starts with
---      'priority:{KEY}[:...]', resolve that priority by (user_id, key). This
---      gives a caller-specified default (onboarding threads, twist logs)
---      that the user's own moves always override via the topic short-circuit.
---   5. Final fallback: return the user's root priority (oldest non-archived
---      depth-1). Focuses are team-agnostic — any focus can hold a thread of
---      any team — so classification no longer restricts candidates by team.
---      Team scope lives on thread.team_id and is enforced by the user.thread
---      visibility firewall, not by filing.
---
--- All signals are read live — nothing is frozen. Linking a new email alias
--- or updating a thread's contacts immediately shifts future classifications.
---
--- Stage values returned by classify_thread_for_user_explain:
---   topic_shortcircuit, keyed_priority, channel_default, scoring,
---   priority_prefix, root_fallback, none.
-
-CREATE OR REPLACE FUNCTION public.classify_thread_for_user_explain (
-    p_user_id uuid,
-    p_thread_id uuid DEFAULT NULL,
-    p_embedding halfvec DEFAULT NULL,
-    p_topic text DEFAULT NULL,
-    p_contacts uuid[] DEFAULT NULL,
-    p_groups uuid[] DEFAULT NULL
-)
-    RETURNS TABLE (priority_id uuid, stage text, scores jsonb)
-    LANGUAGE plpgsql
-    STABLE
-    AS $function$
+-- Create "connection_org_key" function
+CREATE FUNCTION "public"."connection_org_key" ("p_twist_instance_id" uuid) RETURNS text LANGUAGE sql STABLE AS $$
+SELECT CASE
+        WHEN acct.domain IS NOT NULL
+             AND acct.domain <> ''
+             AND NOT EXISTS (
+                 SELECT 1 FROM public.domain d
+                 WHERE d.name = acct.domain AND d.freemail
+             )
+            THEN 'domain:' || acct.domain
+        WHEN ti.team_id IS NOT NULL
+            THEN 'team:' || ti.team_id::text
+        ELSE NULL
+    END
+    FROM public.twist_instance ti
+    LEFT JOIN LATERAL (
+        SELECT lower(split_part(c.email, '@', 2)) AS domain
+        FROM public.twist_instance_connection tic
+        JOIN public.contact c ON c.id = tic.actor_id
+        WHERE tic.twist_instance_id = ti.id
+          AND tic.user_id = ti.owner_id
+          AND c.email IS NOT NULL
+          AND position('@' IN c.email) > 0
+        ORDER BY tic.connected_at DESC
+        LIMIT 1
+    ) acct ON TRUE
+    WHERE ti.id = p_twist_instance_id;
+$$;
+-- Set comment to function: "connection_org_key"
+COMMENT ON FUNCTION "public"."connection_org_key" IS 'Coarse org-group key for a connection (twist_instance): non-freemail account-email domain -> domain:<d>, else owning team -> team:<id>, else NULL. Used by classify_thread_for_user_explain as the L2 origin signal.';
+-- Modify "classify_thread_for_user_explain" function
+CREATE OR REPLACE FUNCTION "public"."classify_thread_for_user_explain" ("p_user_id" uuid, "p_thread_id" uuid DEFAULT NULL::uuid, "p_embedding" public.halfvec DEFAULT NULL::public.halfvec, "p_topic" text DEFAULT NULL::text, "p_contacts" uuid[] DEFAULT NULL::uuid[], "p_groups" uuid[] DEFAULT NULL::uuid[]) RETURNS TABLE ("priority_id" uuid, "stage" text, "scores" jsonb) LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_embedding halfvec;
     v_topic text;
@@ -374,33 +322,4 @@ BEGIN
                         '{}'::jsonb;
     RETURN;
 END;
-$function$;
-
-COMMENT ON FUNCTION public.classify_thread_for_user_explain IS 'Verbose classifier returning (priority_id, stage, scores). Same algorithm as classify_thread_for_user; the stage column attributes the match to one of: topic_shortcircuit, keyed_priority, channel_default, scoring, priority_prefix, root_fallback, none. Focuses are team-agnostic, so classification does not restrict candidates by team — team scope is enforced by the user.thread visibility firewall on thread.team_id.';
-
--- Thin wrapper used by all existing call sites. Identical signature and
--- return type to the pre-refactor function.
-CREATE OR REPLACE FUNCTION public.classify_thread_for_user (
-    p_user_id uuid,
-    p_thread_id uuid DEFAULT NULL,
-    p_embedding halfvec DEFAULT NULL,
-    p_topic text DEFAULT NULL,
-    p_contacts uuid[] DEFAULT NULL,
-    p_groups uuid[] DEFAULT NULL
-)
-    RETURNS uuid
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT priority_id
-    FROM public.classify_thread_for_user_explain(
-        p_user_id,
-        p_thread_id,
-        p_embedding,
-        p_topic,
-        p_contacts,
-        p_groups
-    );
-$function$;
-
-COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority. Thin wrapper around classify_thread_for_user_explain. Order: (1) topic short-circuit on user_moved siblings, (2) cross-user keyed priority match (file under recipient''s same-keyed priority when another user already filed there), (3) channel.default_priority_id when topic is ''channel:<pk>'', (4) semantic/contact/group scoring against user_moved examples, (5) priority:{KEY} prefix, (6) root priority fallback. Focuses are team-agnostic; team scope is enforced by the user.thread visibility firewall on thread.team_id.';
+$$;

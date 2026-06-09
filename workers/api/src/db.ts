@@ -82,9 +82,44 @@ function isTransientDbError(error: unknown): boolean {
   return msg.includes("shutting down") || msg.includes("connection terminated");
 }
 
+// SQLSTATE codes for transient transaction failures that Postgres resolves by
+// aborting (and fully rolling back) one transaction. Both are safe to retry.
+const RETRYABLE_TXN_SQLSTATES = new Set([
+  "40P01", // deadlock_detected
+  "40001", // serialization_failure
+]);
+
+function isRetryableTxnError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && RETRYABLE_TXN_SQLSTATES.has(code)) {
+      return true;
+    }
+    // Fallback for drivers/paths that don't surface the SQLSTATE code.
+    const msg = (error as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.includes("deadlock detected")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Randomized backoff (ms) to desynchronize the next lock-acquisition attempt
+ *  so the two transactions in a deadlock cycle don't immediately re-collide. */
+function txnRetryBackoffMs(attempt: number): number {
+  return attempt * 20 + Math.floor(Math.random() * 20);
+}
+
 /**
  * Run queries within a transaction.
  * Auth context is enforced in the API and SQL functions.
+ *
+ * Retries on deadlock (40P01) and serialization failure (40001). Postgres
+ * aborts and fully rolls back the victim transaction in these cases, leaving
+ * no committed state, so re-running the callback in a fresh transaction is
+ * safe. The callback must therefore be idempotent across attempts (it runs
+ * entirely inside the transaction, so any DB writes are discarded on rollback;
+ * avoid relying on non-transactional side effects firing exactly once).
  */
 export async function withUserDb<T>(
   db: Kysely<DB>,
@@ -92,7 +127,23 @@ export async function withUserDb<T>(
   fn: (trx: Kysely<DB>) => Promise<T>
 ): Promise<T> {
   void userId;
-  return db.transaction().execute(async (trx) => fn(trx));
+  const maxAttempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await db.transaction().execute(async (trx) => fn(trx));
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts && isRetryableTxnError(error)) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, txnRetryBackoffMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 /**

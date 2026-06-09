@@ -1180,17 +1180,21 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.root) EditPriorityCommand(priority),
   ShowEarlyNotificationsSettings(priority),
   ShowTimeLog(priority),
-  if (!priority.root) archiveOrMergeCommand(priority),
+  if (!priority.root) ...archiveOrMergeCommands(priority),
 ];
 
-/// The destructive slot on a focus menu. An archived focus offers Un-archive;
-/// an active focus with threads offers "Merge into…" (move its threads
-/// elsewhere, then archive); an active empty focus offers a one-click Archive.
-/// The Inbox (root) never reaches here (gated by the caller).
-Command archiveOrMergeCommand(Priority priority) {
-  if (priority.archivedAt != null) return TogglePriorityArchived(priority);
-  if (priority.hasThreads) return MergeFocusInto(priority);
-  return TogglePriorityArchived(priority);
+/// The destructive slot on a focus menu. An archived focus offers Un-archive.
+/// An active focus with threads offers "Merge into…" (move its threads
+/// elsewhere, then archive) followed by a plain Archive (hide the focus, leave
+/// its threads filed where they are — still findable via search/filter). An
+/// active empty focus offers a one-click Archive. The Inbox (root) never
+/// reaches here (gated by the caller).
+List<Command> archiveOrMergeCommands(Priority priority) {
+  if (priority.archivedAt != null) return [TogglePriorityArchived(priority)];
+  if (priority.hasThreads) {
+    return [MergeFocusInto(priority), TogglePriorityArchived(priority)];
+  }
+  return [TogglePriorityArchived(priority)];
 }
 
 List<Command> priorityCommands(Priority priority) => [

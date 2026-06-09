@@ -14,6 +14,7 @@ export interface SeedData {
   twists?: SeedTwist[];
   threads?: Thread[];
   priority_blocks?: SeedPriorityBlock[];
+  groups?: SeedGroup[];
 }
 
 /**
@@ -56,6 +57,7 @@ export interface Contact {
 export interface Priority {
   ref: string; // Unique reference string
   title: string;
+  icon?: string; // Curated kFocusIcons key (e.g. "rocket"). Written to priority.icon.
   root?: boolean; // Default: false
   archived_at?: string; // Date offset
   settings?: PrioritySettings;
@@ -78,6 +80,7 @@ export interface SeedSource {
   logo?: string; // Logo URL for the source itself
   logo_dark?: string; // Dark mode logo URL
   link_types: SeedLinkType[];
+  channels?: SeedChannel[]; // Enabled connection channels (e.g. Slack channels)
 }
 
 export interface SeedLinkType {
@@ -85,6 +88,50 @@ export interface SeedLinkType {
   label: string; // e.g., "Message", "Email", "Issue"
   logo: string; // Logo URL for this link type
   logo_dark?: string; // Dark mode logo URL
+}
+
+export interface SeedChannel {
+  channel_id: string; // Provider channel id (e.g. "C04general")
+  title: string; // Display title (e.g. "#general")
+  enabled?: boolean; // default true
+  link_types?: unknown; // Optional override; defaults to a Slack-style compose link type
+}
+
+// ============================================================================
+// Groups (reusable contact sets for the new-thread picker)
+// ============================================================================
+
+export interface SeedGroup {
+  ref: string;
+  name: string;
+  privacy?: "open" | "private"; // default "open"
+  members: string[]; // contact refs (the user is admin automatically)
+  admins?: string[]; // extra user refs to make admins (rarely needed)
+}
+
+export interface GeneratedGroup {
+  id: string; // UUID
+  name: string;
+  privacy: string;
+  created_by: string; // UUID (seed user)
+}
+
+export interface GeneratedGroupMember {
+  group_id: string;
+  contact_id: string;
+}
+
+export interface GeneratedGroupAdmin {
+  group_id: string;
+  user_id: string;
+}
+
+export interface GeneratedChannel {
+  twist_instance_id: string;
+  channel_id: string;
+  title: string;
+  enabled: boolean;
+  link_types: string; // JSON string
 }
 
 // ============================================================================
@@ -111,6 +158,10 @@ export interface Thread {
   author_ref?: string; // Default: "user" — only used to resolve note author defaults
   draft?: boolean; // Default: false
   archived_at?: string; // Date offset
+  // Unified-feed section this thread lands in. Drives an emitted thread_state
+  // row: active/scheduled → active=true (read); unread → active=true (unread);
+  // omitted/done → no thread_state row (thread reads as Done).
+  state?: "active" | "scheduled" | "unread" | "done";
   icon?: string; // Thread icon: "notes", "idea", "goal", "decision", "discussion", "announcement", "ask"
   twist_ref?: string; // Reference to a twist (sets icon to twist logo)
   shared_with?: string[]; // Contact refs the thread is shared with (in addition to refs auto-derived from author_ref / note authors / mentions)
@@ -214,6 +265,16 @@ export const TAG_IDS: Record<string, number> = {
   tada: 1003,
 };
 
+// Curated focus-icon keys. Mirrors kFocusIcons in
+// apps/plot/lib/widget/icon.dart. Used for a soft (warn-only) validation so
+// the seed never hard-fails when the app's icon set drifts.
+export const FOCUS_ICONS = [
+  "user", "family", "briefcase", "house", "code", "receipt", "bullhorn",
+  "handshake", "rocket", "building", "lightbulb", "heart", "flask",
+  "paintbrush", "dumbbell", "seedling", "balloons", "music", "plane",
+  "mountain", "globe", "billboard",
+] as const;
+
 // ============================================================================
 // Generated SQL entities (internal types used during generation)
 // ============================================================================
@@ -230,6 +291,7 @@ export interface GeneratedPriority {
   id: string; // UUID
   created_by: string; // UUID
   title: string;
+  icon: string | null;
   path: string; // ltree path
   archived_at: string | null; // ISO timestamp
 }
@@ -267,6 +329,15 @@ export interface GeneratedThreadPriority {
   thread_id: string; // UUID
   user_id: string; // UUID
   priority_id: string; // UUID
+}
+
+export interface GeneratedThreadState {
+  user_id: string; // UUID
+  thread_id: string; // UUID
+  active: boolean;
+  read_at: string | null; // ISO timestamp; NULL = unread
+  bumped_at: string | null; // ISO timestamp (feed ordering for Doing/Done)
+  importance: number;
 }
 
 export interface GeneratedUserContact {

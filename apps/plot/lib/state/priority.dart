@@ -3162,7 +3162,22 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     if (threadChanged) {
-      await thread.save();
+      // Never let a draft-save downgrade a thread that has already been
+      // published. A late _saveDraft from a NewThreadPage NoteEditor being
+      // torn down during the publish route-replace can fire while
+      // state.draft still points at the thread add() just published
+      // (draft=0). Persisting it back as a draft would exclude it from
+      // sync, stranding any published note on it in a permanent
+      // /sync/notes 403 loop. See Store._buildDraftFilter and the v364
+      // recovery migration.
+      if (await _isThreadPublished(thread.id)) {
+        log.warning(
+          '[updateDraft] Skipped draft-save that would downgrade published '
+          'thread ${thread.id} back to draft',
+        );
+      } else {
+        await thread.save();
+      }
     } else if (note != null && noteChanged) {
       // Note is changing but no thread-level fields are. The thread row
       // may still be in-memory only (Thread() constructs but updateDraft
@@ -3171,11 +3186,44 @@ class PriorityBloc extends Cubit<PriorityState> {
       await thread.ensurePersisted();
     }
     if (note != null && noteChanged) {
-      log.info(
-        '[updateDraft] Saving note: id=${note.id}, threadId=${note.threadId}, content length=${note.content?.length ?? 0}',
-      );
-      await note.save(pushToRemote: false);
+      // Symmetric guard: don't downgrade a published note back to draft
+      // either (same race as the thread above).
+      if (await _isNotePublished(note.id)) {
+        log.warning(
+          '[updateDraft] Skipped draft-save that would downgrade published '
+          'note ${note.id} back to draft',
+        );
+      } else {
+        log.info(
+          '[updateDraft] Saving note: id=${note.id}, threadId=${note.threadId}, content length=${note.content?.length ?? 0}',
+        );
+        await note.save(pushToRemote: false);
+      }
     }
+  }
+
+  /// Whether the thread row [id] exists on disk already published
+  /// (draft = false). Used to stop a late draft-save from downgrading a
+  /// just-published thread (see [updateDraft]).
+  Future<bool> _isThreadPublished(Uuid id) async {
+    if (!Store.isAvailable) return false;
+    final row = await (Store.get.select(Store.get.threads)
+          ..where((t) => t.id.equalsValue(id))
+          ..limit(1))
+        .getSingleOrNull();
+    return row != null && !row.draft;
+  }
+
+  /// Whether the note row [id] exists on disk already published
+  /// (draft = false). Used to stop a late draft-save from downgrading a
+  /// just-published note (see [updateDraft]).
+  Future<bool> _isNotePublished(Uuid id) async {
+    if (!Store.isAvailable) return false;
+    final row = await (Store.get.select(Store.get.notes)
+          ..where((t) => t.id.equalsValue(id))
+          ..limit(1))
+        .getSingleOrNull();
+    return row != null && !row.draft;
   }
 
   /// Gets an agenda item relative to the current thread by offset.

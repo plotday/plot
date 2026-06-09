@@ -1,4 +1,4 @@
-h1:wIXJSxUtF+MLb0YF2i2ZEm0+OFDFRoHoDuOdSMGk6c0=
+h1:C3Mxzqa24kToaGLP2vQYXqh18PqEqYVmwO0a6EZtYB0=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -503,4 +503,6 @@ h1:wIXJSxUtF+MLb0YF2i2ZEm0+OFDFRoHoDuOdSMGk6c0=
 20260609010003_gate_classifier_scoring_on_facets.sql h1:gsUEXIHh6q/pYikCGiImihai37ckV+/H4630E6/xWr4=
 20260609010004_persist_priority_description.sql h1:+MC/284kHJLO4u4D6uIYwk16j28sWjhJQ3UWB04Mx8E=
 20260609144755_group_member_email_required.sql h1:2XuA2jPaICN31EO29RuUJKBPNYf8lF53CLM4S1k0Eo4=
-20260609162525_add_dismissed_focus_suggestions.sql h1:gEr6OC/1HeGeTLQAnh0TlbSv+vOoDfiimypyTDcq1q8=
+20260609161504_remove_priority_flat_title.sql h1:fhy6ZhORkxN4QP6m0ZKgsJlYHRHlv7Wug1B+BEh6jFo=
+20260609162343_verify_sync.sql h1:xPz1FJmzb6vFkDmnUp9DnCQIcgNUwQ/LCuEM5hFZjLg=
+20260609162525_add_dismissed_focus_suggestions.sql h1:VzGAa4rjmayjvAgK4kVGmpWIGQY+MECZthD0/IG1YV4=

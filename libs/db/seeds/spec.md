@@ -95,6 +95,7 @@ Priorities are hierarchical (like folders/projects) and use a tree structure.
 
 - `ref` (required): Unique reference string
 - `title` (required): Display title
+- `icon` (optional): A curated focus-icon key (one of: user, family, briefcase, house, code, receipt, bullhorn, handshake, rocket, building, lightbulb, heart, flask, paintbrush, dumbbell, seedling, balloons, music, plane, mountain, globe, billboard). Written to `priority.icon`. Unknown keys warn but don't fail.
 - `root` (optional, default: false): Whether this is a root priority (only one per user)
 - `archived_at` (optional): Date offset when archived
 - `settings` (optional): User-specific settings (see below)
@@ -147,6 +148,14 @@ Sources define external services that provide link logos. Each source creates th
 - `logo` (optional): Logo URL for the source itself
 - `logo_dark` (optional): Dark mode logo URL for the source
 - `link_types` (required): Array of link type definitions
+- `channels` (optional): Array of enabled connection channels (e.g. Slack channels). Each surfaces in the new-thread picker's Channels section. A channel-bearing source is created as a live (non-archived) connection.
+
+**Channel fields:**
+
+- `channel_id` (required): Provider channel id (e.g. `C04general`)
+- `title` (required): Display title (e.g. `#general`)
+- `enabled` (optional, default `true`)
+- `link_types` (optional): Override the default compose-capable link type
 
 **Link type fields:**
 
@@ -221,6 +230,28 @@ threads:
   - title: "Revenue model assumptions"
     priority_ref: business_case
     twist_ref: chatgpt
+```
+
+## Groups
+
+Reusable named sets of contacts, surfaced in the new-thread picker's Groups
+section. The seed user is automatically an admin of every group (so it appears
+for them).
+
+**Fields:**
+
+- `ref` (required): Unique reference string
+- `name` (required): Display name
+- `privacy` (optional, default `open`): `open` (members see roster & can address) or `private` (only admins)
+- `members` (required): Array of contact refs
+- `admins` (optional): Extra user refs to make admins (rarely needed)
+
+```yaml
+groups:
+  - ref: coaching_staff_grp
+    name: Coaching staff
+    privacy: open
+    members: [wes, murph, eli]
 ```
 
 ## Threads
