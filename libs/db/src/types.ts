@@ -2750,6 +2750,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           auto_approve: boolean
+          category: string | null
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
@@ -2778,6 +2779,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           auto_approve?: boolean
+          category?: string | null
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
@@ -2806,6 +2808,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           auto_approve?: boolean
+          category?: string | null
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
@@ -4788,6 +4791,7 @@ export type Database = {
         Returns: {
           archived_at: string | null
           auto_approve: boolean
+          category: string | null
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]

@@ -71,3 +71,43 @@ describeDb("deployTwist reaction_capabilities write", () => {
     expect(stored).toBeNull();
   });
 });
+
+async function insertCategoryAndReadBack(category: string | null): Promise<unknown> {
+  const db = createDb({ DATABASE_URL } as unknown as Bindings);
+  let captured: unknown;
+  try {
+    await db.transaction().execute(async (trx: Kysely<DB>) => {
+      await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+      const row = await trx
+        .insertInto("twist")
+        .values({
+          twist_package_id: randomUUID(),
+          environment: "personal",
+          user_id: randomUUID(),
+          name: "Category Test Connector",
+          handle: "category-test",
+          version: Date.now().toString(),
+          category,
+        })
+        .returning("category")
+        .executeTakeFirstOrThrow();
+      captured = row.category;
+      throw new Rollback();
+    });
+  } catch (e) {
+    if (!(e instanceof Rollback)) throw e;
+  } finally {
+    await db.destroy();
+  }
+  return captured;
+}
+
+describeDb("deployTwist category write", () => {
+  it("persists a connector's category onto the twist row", async () => {
+    expect(await insertCategoryAndReadBack("messaging")).toBe("messaging");
+  });
+
+  it("writes null when the connector declares no category", async () => {
+    expect(await insertCategoryAndReadBack(null)).toBeNull();
+  });
+});

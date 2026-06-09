@@ -267,7 +267,20 @@ class OnboardingOverlay extends StatelessWidget {
         final pidStr = priority.id.toShortString();
         return (PriorityRoute(priorityIdString: pidStr), '/p/$pidStr');
       case PanelTarget.newThread:
-        return (null, null);
+        // The new-thread compose page lives at /p/:priorityId/new. Open it
+        // under the user's current (or default) priority so the single-panel
+        // highlight reveals NewThreadPage rather than the previous screen.
+        final nowState = context.read<NowBloc>().state;
+        if (nowState is! NowLoaded) return (null, null);
+        final priority = nowState.context ?? nowState.defaultPriority;
+        final pidStr = priority.id.toShortString();
+        return (
+          PriorityRoute(
+            priorityIdString: pidStr,
+            children: [NewThreadRoute()],
+          ),
+          '/p/$pidStr/new',
+        );
     }
   }
 

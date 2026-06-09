@@ -39,6 +39,10 @@ class Twist {
   final String? logoUrl;
   final String? logoUrlDark;
   final List<AuthProvider> providers;
+
+  /// Connector classification used to group connectors in the UI (e.g.
+  /// 'messaging', 'calendar'). Null when the connector declares no category.
+  final String? category;
   final bool aiRequired;
   final bool multipleInstances;
 
@@ -65,6 +69,7 @@ class Twist {
     this.logoUrl,
     this.logoUrlDark,
     this.providers = const [],
+    this.category,
     this.aiRequired = false,
     this.multipleInstances = false,
     this.premium = false,
@@ -140,6 +145,7 @@ class Twist {
       logoUrl: json['logo_url'] as String?,
       logoUrlDark: json['logo_url_dark'] as String?,
       providers: providers,
+      category: json['category'] as String?,
       aiRequired: aiRequired,
       multipleInstances: json['multiple_instances'] as bool? ?? false,
       premium: json['premium'] as bool? ?? false,

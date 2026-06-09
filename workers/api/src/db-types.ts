@@ -1018,6 +1018,7 @@ export interface TopicMemberOptout {
 export interface Twist {
   archived_at: Timestamp | null;
   auto_approve: Generated<boolean>;
+  category: string | null;
   created_at: Generated<Timestamp>;
   description: string | null;
   environment: Generated<TwistEnvironment>;

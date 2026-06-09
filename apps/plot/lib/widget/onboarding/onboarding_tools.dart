@@ -1,27 +1,28 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/command/twist.dart';
+import 'package:plot/command/upgrade.dart' show ShowUpgradeOptions;
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 
-/// Calendar connector twist_package_ids excluded from the tools step —
-/// those are handled by the dedicated "Connect your calendars" step.
-const _calendarPackageIds = <String>{
-  '2ed4fcf8-6524-410f-b318-f9316e71c8b0', // Google Calendar
-  'cf518010-30c1-4594-b3df-295a19d65459', // Outlook Calendar
-  '174bbfb4-97f5-49a7-abde-cb237675dd51', // Apple Calendar
-};
+/// `Twist.category` values that get their own onboarding section. Every other
+/// (or null) category falls through to the catch-all "Apps" section. These
+/// must match the strings connectors declare in their `package.json` and that
+/// the API persists to `twist.category`.
+const _messagingCategory = 'messaging';
+const _calendarCategory = 'calendar';
 
 /// Renders the content of the "Connect your other tools" onboarding step.
 ///
 /// Lists every source connector available to the user (Gmail, Slack, Linear,
-/// GitHub, Drive, etc.) — minus the calendar connectors that have their own
-/// step — as branded tiles. Tapping a tile opens the standard [AddSourceDetail]
+/// GitHub, Drive, calendars, etc.) grouped by category (Messaging / Calendars /
+/// Apps) as branded tiles. Tapping a tile opens the standard [AddSourceDetail]
 /// modal so the connector's own auth flow / options form runs unchanged.
 ///
 /// Already-connected sources of these types appear above the buttons in the
@@ -138,25 +139,33 @@ class _OnboardingToolsState extends State<OnboardingTools> {
               (t) =>
                   t.isSource &&
                   t.twistPackageId != null &&
-                  !_calendarPackageIds.contains(t.twistPackageId) &&
                   seenPackageIds.add(t.twistPackageId!),
             )
             .toList()
           ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+    // Bucket the available connectors into the three onboarding sections.
+    // Anything without a recognized category (including null) falls through
+    // to "Apps" so a new or uncategorized connector is never dropped.
+    final messaging =
+        tools.where((t) => t.category == _messagingCategory).toList();
+    final calendars =
+        tools.where((t) => t.category == _calendarCategory).toList();
+    final apps = tools
+        .where(
+          (t) =>
+              t.category != _messagingCategory &&
+              t.category != _calendarCategory,
+        )
+        .toList();
+
+    // Exclude drafts and partially-set-up sources (OAuth completed but
+    // EditSource closed without picking channels). They linger in
+    // /sources/summary but aren't real connections from the user's
+    // perspective. ManageConnections applies the same rule.
     final connected =
         _connected
-            .where(
-              (s) =>
-                  s.twistPackageId != null &&
-                  !_calendarPackageIds.contains(s.twistPackageId) &&
-                  // Exclude drafts and partially-set-up sources (OAuth
-                  // completed but EditSource closed without picking
-                  // channels). They linger in /sources/summary but aren't
-                  // real connections from the user's perspective.
-                  // ManageConnections applies the same rule.
-                  s.enabledCount > 0,
-            )
+            .where((s) => s.twistPackageId != null && s.enabledCount > 0)
             .toList();
 
     return LayoutBuilder(
@@ -178,50 +187,43 @@ class _OnboardingToolsState extends State<OnboardingTools> {
               minTile,
               280.0,
             );
+        // Activated connections render two-up regardless of the tile grid.
+        final connectedTileWidth = (available - spacing) / 2;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final source in connected)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _ConnectedRow(
-                  source: source,
-                  onTap: () => _editConnection(source),
-                ),
-              ),
-            if (connected.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 12),
-                child: Text(
-                  'Add more or continue below',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xCCFFFFFF),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    decoration: TextDecoration.none,
-                  ),
-                ),
-              ),
-            ],
-            Wrap(
+            _ToolSection(
+              title: 'Messaging',
+              twists: messaging,
+              tileWidth: tileWidth,
               spacing: spacing,
-              runSpacing: spacing,
-              alignment: WrapAlignment.center,
-              children: [
-                for (final twist in tools)
-                  SizedBox(
-                    width: tileWidth,
-                    child: _ToolTile(
-                      twist: twist,
-                      onTap: () => _openSetup(twist),
-                    ),
-                  ),
-              ],
+              onTap: _openSetup,
             ),
+            _ToolSection(
+              title: 'Calendars',
+              twists: calendars,
+              tileWidth: tileWidth,
+              spacing: spacing,
+              onTap: _openSetup,
+            ),
+            _ToolSection(
+              title: 'Apps',
+              twists: apps,
+              tileWidth: tileWidth,
+              spacing: spacing,
+              onTap: _openSetup,
+            ),
+            if (connected.isNotEmpty)
+              _ConnectedSection(
+                sources: connected,
+                tileWidth: connectedTileWidth,
+                spacing: spacing,
+                onTap: _editConnection,
+              ),
+            const SizedBox(height: 20),
+            const _UpgradeCopy(),
           ],
         );
       },
@@ -282,6 +284,186 @@ class _ToolTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A labeled group of connector tiles (e.g. "Messaging"). Renders nothing
+/// when [twists] is empty so empty sections disappear.
+class _ToolSection extends StatelessWidget {
+  const _ToolSection({
+    required this.title,
+    required this.twists,
+    required this.tileWidth,
+    required this.spacing,
+    required this.onTap,
+  });
+
+  final String title;
+  final List<Twist> twists;
+  final double tileWidth;
+  final double spacing;
+  final void Function(Twist) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (twists.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8, left: 2),
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFFFFFFFF),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ),
+          Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            alignment: WrapAlignment.start,
+            children: [
+              for (final twist in twists)
+                SizedBox(
+                  width: tileWidth,
+                  child: _ToolTile(twist: twist, onTap: () => onTap(twist)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The user's already-activated connections, shown two-up under a
+/// "Your connections" heading. Renders nothing when there are none. Tapping a
+/// card opens [EditSource] for tweaks or archiving.
+class _ConnectedSection extends StatelessWidget {
+  const _ConnectedSection({
+    required this.sources,
+    required this.tileWidth,
+    required this.spacing,
+    required this.onTap,
+  });
+
+  final List<SourceSummary> sources;
+  final double tileWidth;
+  final double spacing;
+  final void Function(SourceSummary) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sources.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 12, bottom: 8, left: 2),
+            child: Text(
+              'Your connections',
+              style: TextStyle(
+                color: Color(0xFFFFFFFF),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ),
+          Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            alignment: WrapAlignment.start,
+            children: [
+              for (final source in sources)
+                SizedBox(
+                  width: tileWidth,
+                  child: _ConnectedRow(
+                    source: source,
+                    onTap: () => onTap(source),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Plan-limit copy shown beneath the connector sections, with a tappable
+/// "Upgrade to Plot Pro" span that opens the standard upgrade flow
+/// (StoreKit on App Store builds, web upgrade URL elsewhere — handled by
+/// [ShowUpgradeOptions]).
+class _UpgradeCopy extends StatefulWidget {
+  const _UpgradeCopy();
+
+  @override
+  State<_UpgradeCopy> createState() => _UpgradeCopyState();
+}
+
+class _UpgradeCopyState extends State<_UpgradeCopy> {
+  late final TapGestureRecognizer _recognizer;
+
+  @override
+  void initState() {
+    super.initState();
+    _recognizer = TapGestureRecognizer()..onTap = _onUpgradeTap;
+  }
+
+  @override
+  void dispose() {
+    _recognizer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onUpgradeTap() async {
+    await ShowUpgradeOptions().run(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        style: const TextStyle(
+          color: Color(0xCCFFFFFF),
+          fontSize: 13,
+          height: 1.5,
+          fontWeight: FontWeight.w400,
+          decoration: TextDecoration.none,
+        ),
+        children: [
+          const TextSpan(
+            text:
+                'Add up to five connections on Plot Core, which you can try '
+                'for 30 days. You can always use two connections for free. ',
+          ),
+          TextSpan(
+            text: 'Upgrade to Plot Pro',
+            style: const TextStyle(
+              color: Color(0xFFFFFFFF),
+              fontWeight: FontWeight.w600,
+              decoration: TextDecoration.underline,
+            ),
+            recognizer: _recognizer,
+          ),
+          const TextSpan(text: ' for unlimited connections.'),
+        ],
+      ),
+      textAlign: TextAlign.left,
     );
   }
 }
