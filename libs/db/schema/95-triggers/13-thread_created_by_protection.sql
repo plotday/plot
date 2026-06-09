@@ -1,10 +1,14 @@
--- Protect created_by from unauthorized changes
+-- Protect author_id and created_by from unauthorized changes
+-- author_id is always immutable (except when filled on an older row that was missing it)
 -- created_by is only allowed to change when un-archiving a thread
 CREATE OR REPLACE FUNCTION public.protect_thread_created_by ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $function$
 BEGIN
+    -- author_id is immutable once set: preserve original value if it existed
+    NEW.author_id := COALESCE(OLD.author_id, NEW.author_id);
+
     -- Un-archiving: allow created_by update
     IF OLD.archived_at IS NOT NULL AND NEW.archived_at IS NULL THEN
         RETURN NEW;

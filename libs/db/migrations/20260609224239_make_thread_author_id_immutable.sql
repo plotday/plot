@@ -1,37 +1,22 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) — two instances of the same twist that
--- upsert the same key converge on the same thread across users. When the
--- matching row is archived because it was merged into another thread, the
--- lookup follows the merged_into_thread_id chain to reach the active target.
--- User-created threads (twist_id IS NULL) do not participate in cross-user
--- dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "protect_thread_created_by" function
+CREATE OR REPLACE FUNCTION "public"."protect_thread_created_by" () RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    -- author_id is immutable once set: preserve original value if it existed
+    NEW.author_id := COALESCE(OLD.author_id, NEW.author_id);
+
+    -- Un-archiving: allow created_by update
+    IF OLD.archived_at IS NOT NULL AND NEW.archived_at IS NULL THEN
+        RETURN NEW;
+    END IF;
+    -- Not archived: prevent created_by changes
+    IF OLD.archived_at IS NULL THEN
+        NEW.created_by := OLD.created_by;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -777,4 +762,4 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
