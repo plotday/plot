@@ -139,10 +139,14 @@ class _DesktopHighlight extends StatelessWidget {
                 ),
               ),
             ),
-            // X dismiss — upper right
+            // X dismiss — anchored to the upper-right of the onboarding
+            // content block (not the screen) so it reads as part of the
+            // onboarding rather than the highlighted panel. This matters when
+            // the cutout is the right panel and the content sits to its left,
+            // where a screen-pinned X would land on the highlighted panel.
             Positioned(
               top: 16,
-              right: 16,
+              right: size.width - (contentLeft + contentWidth),
               child: OnboardingHoverable(
                 onTap: onDismiss,
                 builder: (context, hovered) =>
