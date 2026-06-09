@@ -83,10 +83,12 @@ describe.skipIf(!DATABASE_URL)("expandGroupsToContactIds", () => {
 
   it("returns direct contacts unchanged when no groups are passed", async () => {
     const result = await withGroup((trx, ids) =>
-      expandGroupsToContactIds(trx, ids.userId, [ids.memberA], []),
+      expandGroupsToContactIds(trx, ids.userId, [ids.memberA], []).then((out) => ({
+        out,
+        memberA: ids.memberA,
+      })),
     );
-    expect(result).toEqual([result[0]]);
-    expect(result.length).toBe(1);
+    expect(result.out).toEqual([result.memberA]);
   });
 
   it("skips a group the user cannot address without throwing", async () => {

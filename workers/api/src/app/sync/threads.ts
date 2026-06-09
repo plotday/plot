@@ -918,6 +918,7 @@ threads.post("/sync/threads", async (c) => {
     const dispatchTitle = threadData.title as string;
     const dispatchThreadId = result.id;
     const dispatchInviteEmails = inviteEmails.slice();
+    const tracker = c.var.tracker;
 
     c.executionCtx.waitUntil(
       (async () => {
@@ -934,7 +935,7 @@ threads.post("/sync/threads", async (c) => {
             dispatchGroupIds,
             (error) => {
               console.error("[sync/threads] expand_group_contacts failed:", error);
-              c.var.tracker.captureException(error as Error);
+              tracker.captureException(error as Error);
             },
           );
           if (resolveContactIds.length > 0) {
@@ -991,7 +992,7 @@ threads.post("/sync/threads", async (c) => {
           });
         } catch (error) {
           console.error("[sync/threads] create_link dispatch failed:", error);
-          c.var.tracker.captureException(error as Error);
+          tracker.captureException(error as Error);
         } finally {
           await db.destroy();
         }
