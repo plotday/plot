@@ -88,12 +88,13 @@ export class PushNotify extends DurableObject<Bindings> {
     //   (b) is any of it urgent (which lets the alarm bypass the
     //       inactivity and min-interval gates).
     let hasUrgent = false;
-    let latestUnreadAt: string | null = null;
     let hadCandidates = false;
     try {
       const result = await withDb(this.env, async (db) => {
         const stateResult = await sql<{
-          any_urgent: boolean;
+          // BOOL_OR over an empty result set is NULL, which we use below to
+          // distinguish "no candidates" from "candidates but none urgent".
+          any_urgent: boolean | null;
         }>`
           SELECT
             BOOL_OR(ts.urgent) AS any_urgent
@@ -101,9 +102,14 @@ export class PushNotify extends DurableObject<Bindings> {
           JOIN thread t ON t.id = ts.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
           JOIN priority p ON p.id = tp.priority_id
+          JOIN priority focus ON focus.user_id = p.user_id
+            AND focus.path = subpath(p.path, 0, LEAST(2, nlevel(p.path)))
           WHERE ts.user_id = ${userId}::uuid AND ts.read_at IS NULL
             AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
-            AND (p.notification_cleared_at IS NULL OR ts.updated_at > p.notification_cleared_at)
+            AND (
+              focus.notification_cleared_at IS NULL
+              OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
+            )
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${userId}::uuid)
             AND (
@@ -135,6 +141,9 @@ export class PushNotify extends DurableObject<Bindings> {
       this.firstNotifyTime = 0;
       await this.ctx.storage.delete("hasUrgent");
       await this.ctx.storage.delete("firstNotifyTime");
+      // Purge the now-unused dedup key left by older DO instances. Re-notify
+      // suppression is handled by priority.notification_cleared_at, not this.
+      await this.ctx.storage.delete("lastNotifiedUnreadAt");
       return;
     }
 
@@ -234,10 +243,15 @@ export class PushNotify extends DurableObject<Bindings> {
           JOIN thread t ON t.id = ts.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
           JOIN priority p ON p.id = tp.priority_id
+          JOIN priority focus ON focus.user_id = p.user_id
+            AND focus.path = subpath(p.path, 0, LEAST(2, nlevel(p.path)))
           WHERE ts.user_id = ${this.userId!}::uuid
             AND ts.read_at IS NULL
             AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
-            AND (p.notification_cleared_at IS NULL OR ts.updated_at > p.notification_cleared_at)
+            AND (
+              focus.notification_cleared_at IS NULL
+              OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
+            )
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
             AND (
@@ -304,7 +318,8 @@ export class PushNotify extends DurableObject<Bindings> {
     this.firstNotifyTime = 0;
     await this.ctx.storage.delete("hasUrgent");
     await this.ctx.storage.delete("firstNotifyTime");
-    // Note: lastNotifiedUnreadAt and lastNotificationSentAt are NOT cleared —
-    // they persist across notification cycles to prevent re-notifying.
+    // Note: lastNotificationSentAt is NOT cleared — it persists across
+    // notification cycles to enforce the min-push-interval gate. Re-notify
+    // suppression now lives in priority.notification_cleared_at.
   }
 }

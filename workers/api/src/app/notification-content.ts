@@ -43,10 +43,19 @@ notificationContent.get("/notification-content", async (c) => {
       JOIN thread t ON t.id = tu.thread_id
       JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
       JOIN priority p ON p.id = tp.priority_id
+      -- The notification high-water mark lives on the first-level focus (the
+      -- grouping unit for notifications and the row we stamp below), so resolve
+      -- each thread's priority to its focus ancestor and read the watermark
+      -- there — not from the leaf, which is never stamped.
+      JOIN priority focus ON focus.user_id = p.user_id
+        AND focus.path = subpath(p.path, 0, LEAST(2, nlevel(p.path)))
       WHERE tu.user_id = ${userId}::uuid
         AND tu.read_at IS NULL
         AND (tu.importance >= 50 OR tu.urgent = TRUE)
-        AND (p.notification_cleared_at IS NULL OR tu.updated_at > p.notification_cleared_at)
+        AND (
+          focus.notification_cleared_at IS NULL
+          OR date_trunc('milliseconds', tu.updated_at) > focus.notification_cleared_at
+        )
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
         AND (

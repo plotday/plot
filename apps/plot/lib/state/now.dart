@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -13,8 +15,16 @@ part 'now_state.dart';
 class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListener {
   NowBloc() : super(const NowLoading()) {
     WidgetsBinding.instance.addObserver(this);
-    windowManager.addListener(this);
+    // window_manager is desktop-only; onWindowFocus never fires elsewhere and
+    // mobile/web rely on didChangeAppLifecycleState instead. Guard registration
+    // to match NotificationService and keep dart:io off the web path.
+    if (_isDesktop) {
+      windowManager.addListener(this);
+    }
   }
+
+  static bool get _isDesktop =>
+      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
   bool get loading => super.state is NowLoading;
   NowLoaded get loadedState => super.state as NowLoaded;
@@ -31,7 +41,7 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
 
   @override
   void onWindowFocus() {
-    if (this.state is NowLoaded) {
+    if (state is NowLoaded) {
       _clearWatermarkIfLoaded();
     }
   }
@@ -77,7 +87,9 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
   @override
   Future<void> close() {
     WidgetsBinding.instance.removeObserver(this);
-    windowManager.removeListener(this);
+    if (_isDesktop) {
+      windowManager.removeListener(this);
+    }
     stop();
     return super.close();
   }

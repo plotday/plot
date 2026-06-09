@@ -811,17 +811,20 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       final priority = priorityById[priorityIdStr];
       if (priority == null) continue;
 
-      // Filter out stale threads that were already cleared
-      final clearedAt = priority.notificationClearedAt;
-      if (clearedAt != null && !thread.updatedAt.isAfter(clearedAt)) {
-        continue;
-      }
-
       // Find the first-level priority (direct child of root)
       final firstLevel = _findFirstLevelPriority(
         priority.path.value, rootPath, allPriorities,
       );
       if (firstLevel == null) continue;
+
+      // Filter out stale threads already cleared at the focus level. The
+      // high-water mark lives on the first-level focus (matching how the
+      // server stamps it and how opening a focus clears it), so read it from
+      // the focus, not the leaf priority.
+      final clearedAt = firstLevel.notificationClearedAt;
+      if (clearedAt != null && !thread.updatedAt.isAfter(clearedAt)) {
+        continue;
+      }
 
       final firstLevelIdStr = firstLevel.id.value.toString();
 

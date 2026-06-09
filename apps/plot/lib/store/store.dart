@@ -2626,10 +2626,15 @@ class Store extends _$Store {
 
   static const _resyncSentinel = '1970-01-01T00:00:00.000Z';
 
-  /// Performs a full re-sync from the server without losing local data.
+  /// Advance the notification high-water mark for the focus containing the
+  /// given priority. This prevents stale notifications from being shown
+  /// locally or fetched from the server.
   ///
-  /// Advance the notification high-water mark for a given focus. This prevents
-  /// stale notifications from being shown locally or fetched from the server.
+  /// The watermark is stored on the first-level focus (direct child of root) —
+  /// the unit notifications are grouped by — so a nested priority resolves to
+  /// its focus ancestor before stamping. This keeps the client write target
+  /// consistent with the server (which stamps the focus) and the read path
+  /// (which reads the focus watermark).
   Future<void> updateNotificationWatermark(Uuid priorityId) async {
     final priority = await (select(priorities)
           ..where((p) => p.id.equals(priorityId.toBytes())))
@@ -2637,17 +2642,44 @@ class Store extends _$Store {
 
     if (priority == null) return;
 
+    final focus = await _firstLevelFocusFor(priority);
+    if (focus == null) return;
+
     final now = DateTime.now();
-    final current = priority.notificationClearedAt;
+    final current = focus.notificationClearedAt;
 
     // Only advance the timestamp (handles offline/sync edge cases).
     if (current == null || now.isAfter(current)) {
       await (update(priorities)
-            ..where((p) => p.id.equals(priorityId.toBytes())))
+            ..where((p) => p.id.equals(focus.id.toBytes())))
           .write(PrioritiesCompanion(notificationClearedAt: Value(now)));
     }
   }
 
+  /// Resolve the first-level focus (direct child of root) that contains the
+  /// given priority. Returns the priority itself when it is already a focus,
+  /// or `null` when it is the root (or above) and has no enclosing focus.
+  Future<PriorityRow?> _firstLevelFocusFor(PriorityRow priority) async {
+    final root = await (select(priorities)
+          ..where((p) => p.root.equals(true)))
+        .getSingleOrNull();
+    if (root == null) return null;
+
+    final rootSegments = root.path.value.split('.');
+    final pathSegments = priority.path.value.split('.');
+    if (pathSegments.length <= rootSegments.length) return null;
+
+    final firstLevelPath =
+        pathSegments.sublist(0, rootSegments.length + 1).join('.');
+    if (firstLevelPath == priority.path.value) return priority;
+
+    return (select(priorities)
+          ..where((p) => p.path.equalsValue(Path(firstLevelPath))))
+        .getSingleOrNull();
+  }
+
+  /// Performs a full re-sync from the server without losing local data.
+  ///
   /// Marks all existing rows with a sentinel updatedAt (epoch), clears sync
   /// state, re-pulls everything from the server (which overwrites the sentinel
   /// on items that still exist), then deletes orphaned rows that still have
