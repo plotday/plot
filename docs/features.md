@@ -1,16 +1,17 @@
 # Plot Product Features
 
-Internal catalog of product features for marketing content generation. Direct and terse - not user-facing.
+Internal catalog of product features for marketing content. Direct and terse - not user-facing.
 
 ## Positioning
 
-Plot is a unified workspace for human collaboration. It pulls together every conversation that needs a thoughtful human reply — email, team chat, and threads from the tools you use (Linear, Docs, etc.) — and organizes them by the projects, relationships, and areas they belong to, sorted by what's important and what's urgent. Newsletters, automated messages, and admin noise are excluded.
-
-Sessions, agenda, priorities, and tasks remain part of the product but are supporting capabilities, not the headline. Marketing copy should lead with collaboration and momentum (carry on, keep moving, nothing slips, end the day on something that mattered) and imply identity (the reader is a high-agency collaborator with important work outside their inbox) without naming it. Avoid administrative words like "filed."
+Plot is a unified workspace for human collaboration, focused on supporting you making things happen and staying on top of what others need from you. It pulls together every conversation that needs a thoughtful human reply — email, team chat, and colloration from the tools you use (Linear, Docs, etc.) — and organizes them by the projects, roles, and activities.
 
 ## Core Functionality
 
-### Activities
+### Connections
+
+### Threads
+
 - Three activity types: Notes, Actions, Events
 - Markdown-based rich content editor
 - AI-generated titles when not provided
@@ -20,6 +21,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - @-mentions for users, contacts, and twists
 
 ### Focuses
+
 - Per-user focuses — each user owns their own flat list of focuses (formerly "priorities"); no nesting, no shared folders
 - A focus has a name, a custom color, and an icon from a curated set
 - Inbox — the catch-all for threads not sorted into any focus; moving a thread into a focus removes it from the Inbox
@@ -34,19 +36,22 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Unread indicators per focus
 - Multi-thread notification taps open the focus on the Catch up tab (single-thread taps still jump straight to the thread)
 
-### Topics
-- Topics are Plot-only channels that own a stream of threads (e.g. "#eng-standup")
-- Created from the new-thread Channels section ("+ Topic"): name, optional team scope, and initial members (contacts + groups)
-- Membership = contacts + included groups, minus per-user opt-outs; posting a thread to a topic reaches the whole topic, so no per-thread recipients are picked
-- Topics appear alongside connector channels in the new-thread picker
-
 ### Contacts & Groups
+
 - Add a contact (name + email) or create a named group directly from the new-thread picker's "People and twists" header ("+ Contact" / "+ Group")
 - Edit a contact (rename, per-user) or a group (rename, change members) via a "…" menu on its row (hover or ⌘Enter); naming an ad-hoc set of selected people turns them into a reusable group
 - All contact/group edits are local-first and sync across devices; contact renames are per-user overrides that never change the name other people see
 - Groups work with email-accepting connections (e.g. Gmail): addressing a thread to a group and sending via an email connection expands the group to its members' email addresses on send. Group members are required to have an email address (the member picker hides contacts without one, and the server rejects adding one)
 
+### Topics
+
+- Topics are Plot-only channels that own a stream of threads (e.g. "#eng-standup")
+- Created from the new-thread Channels section ("+ Topic"): name, optional team scope, and initial members (contacts + groups)
+- Membership = contacts + included groups, minus per-user opt-outs; posting a thread to a topic reaches the whole topic, so no per-thread recipients are picked
+- Topics appear alongside connector channels in the new-thread picker
+
 ### Thread Sharing
+
 - Threads are shared by adding contacts via the "With" field at creation
 - Globally shareable thread URLs (/t/{id}) — no priority context needed
 - Each user's copy of a shared thread is filed into their own priority tree automatically
@@ -54,6 +59,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Every thread carries a team scope (or stays Personal); team membership gates access, so a thread shared within a team disappears for anyone who leaves it — except people explicitly added from outside the team (e.g. a customer), who keep their access
 
 ### Notes & Content
+
 - Full Markdown support with live preview
 - Rich formatting (bold, italics, lists, headers)
 - Multiple links per activity
@@ -115,6 +121,7 @@ Replying to a specific note from the feed replaces the pill row with a
 ## Time Management & Scheduling
 
 ### Scheduling
+
 - Dual scheduling modes:
   - Date-based (all-day activities)
   - DateTime-based (specific time slots)
@@ -127,6 +134,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Calendar integration with time blocking
 
 ### Time Intelligence
+
 - Dynamic views based on timing
 - Agenda view (chronological)
 - Date navigation (next/previous)
@@ -137,6 +145,7 @@ Replying to a specific note from the feed replaces the pill row with a
 ## Collaboration
 
 ### Multi-User
+
 - Shared priorities
 - Built-in contact database
 - Self-assigned note tasks (each person marks a shared note as their own task; everyone sees who's on it)
@@ -147,6 +156,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Real-time sync across users and devices
 
 ### Access Control
+
 - Priority-level sharing
 - Private content (activities and notes)
 - Priority contacts management
@@ -155,6 +165,7 @@ Replying to a specific note from the feed replaces the pill row with a
 ## Integrations (Twists & Tools)
 
 ### Twist System
+
 - Twist Creator SDK (Twister) for custom integrations
 - Development environments: Personal, Private, Review, Public
 - Twists with a `threadType` appear in the new-thread connection picker, so users can start a chat with the twist alongside picking a connector channel or a plain Plot thread
@@ -168,6 +179,7 @@ Replying to a specific note from the feed replaces the pill row with a
   - Contacts
 
 ### Available Tools for Twist Developers
+
 - Google: Calendar, Gmail, Chat, Contacts
 - Microsoft: Outlook Calendar, Teams (channels + DMs, two-way sync)
 - Slack integration
@@ -181,12 +193,14 @@ Replying to a specific note from the feed replaces the pill row with a
 - LinkedIn (pro): two-way messages and connection requests
 
 ### Upcoming Connections
+
 - 65+ upcoming connectors browsable in-app
 - Vote for connections you want — feeds into website vote counts
 - Get notified when voted connections become available
 - Categories: Calendar, Communication, Email, Project Management, Design, Documents, Development, CRM, Customer Support, Cloud Storage, Finance, HR, Marketing, Analytics, Notes, Productivity, Automation, E-commerce, Cloud, Security, Product
 
 ### Built-in Tool Capabilities
+
 - AI: Multiple LLM providers (OpenAI, Anthropic, Google, Workers AI, custom OpenAI-compatible endpoints)
   - Flexible provider configuration: add multiple providers and choose which to use for built-in features vs twist AI
   - Custom OpenAI-compatible endpoints: point to any API (local LLMs, proxies, alternative providers) with configurable model names
@@ -201,6 +215,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Callback: Webhook and event handling
 
 ### Twist Features
+
 - Auto-approve mode
 - Granular permission system
 - Callback links (interactive buttons)
@@ -211,6 +226,7 @@ Replying to a specific note from the feed replaces the pill row with a
 ## Data Sync & Offline
 
 ### Local-First Architecture
+
 - Full offline functionality
 - SQLite local storage (via Drift)
 - Automatic sync when connected
@@ -219,6 +235,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Cloud backup
 
 ### Sync Intelligence
+
 - Incremental sync (changes only)
 - Pull on demand (archived items, date ranges)
 - Pagination for large lists
@@ -227,6 +244,7 @@ Replying to a specific note from the feed replaces the pill row with a
 ## User Interface
 
 ### Navigation & Views
+
 - Bidirectional infinite scrolling
 - Calendar view
 - Agenda view
@@ -236,6 +254,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Resizable panels (draggable)
 
 ### Interactive Elements
+
 - Swipeable actions (mobile gestures)
 - Drag & drop reordering
 - Color dots (visual priority indicators)
@@ -244,6 +263,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Hoverable link previews
 
 ### Onboarding
+
 - Guided first-run flow with full-screen and highlight steps
 - Inline OAuth for Google and Microsoft Calendar — auth runs on the same brand-styled button without a separate modal
 - Responsive connector grid for the rest of the available tools — N-up on wide screens, single column on narrow
@@ -253,6 +273,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Back, dismiss, and replay (debug command) controls always available
 
 ### Editor Experience
+
 - Super Editor (markdown with live rendering)
 - Auto-detect @-mentions
 - Mention popover (quick selection)
@@ -263,6 +284,7 @@ Replying to a specific note from the feed replaces the pill row with a
 ## Organization
 
 ### Activity Management
+
 - Tags system:
   - Toggle tags (single state)
   - Count tags (multiple users)
@@ -274,7 +296,9 @@ Replying to a specific note from the feed replaces the pill row with a
 - Modify individual recurring occurrences
 
 ### Activity Tab Sections
+
 The Activity tab on each priority is the consolidated home for thread management, organized into four sections:
+
 - **Today** — Active threads (marked "Do today" via the sentinel, or scheduled for today/past)
 - **Scheduled** — One section per future day (Tomorrow, Friday, "Apr 28") for threads scheduled ahead
 - **New** — Unread threads that aren't active or scheduled
@@ -283,7 +307,9 @@ The Activity tab on each priority is the consolidated home for thread management
 Drag-and-drop moves threads between sections (drop on Today to make active, on a future day to schedule, on New to mark unread, on Done to finish) and reorders within Today / Scheduled. Drop slots expand to hold the dragged row's height so the surrounding list stays stable.
 
 ### Action Type Classification
+
 Each new thread is auto-classified by Plot's AI into one of five action types that drive which inbox tab it lives in:
+
 - **Respond** — needs a reply from the recipient (questions directed at them, asks that require an answer).
 - **Do** — needs an action (assigned task, a step that's clearly theirs to take).
 - **Read** — longer read-later material: newsletters, long corporate communications, documents to set aside time for.
@@ -293,12 +319,15 @@ Each new thread is auto-classified by Plot's AI into one of five action types th
 The user can drag a thread between tabs to override the AI's classification at any time. Respond / Do / Read also accept "do on this date" intent, surfacing the thread on that day in the agenda.
 
 ### Importance Threshold
+
 The AI scores each thread 0–100 for the recipient. Items below 50 (unsolicited material, promotional content, low-relevance updates) appear in Catch up but do not trigger push notifications, email digests, or priority unread indicators. Items ≥ 50 surface proactively. Strong relational signal and direct messages between known contacts score 60+; cold outreach 10–25.
 
 ### Urgent Flag
+
 Separate from importance, the AI flags a thread `urgent` only when the user should be notified before their next scheduled response window — time-sensitive items or messages clearly needing a quick response. Urgent threads bypass the per-priority `see_within` delay, the `notify_window` clamping, and the 10-minute inactivity gate that normally defers pushes.
 
 ### Priority Features
+
 - Unlimited nesting depth
 - Path syntax (Work/Projects/Q1)
 - 8+ theme colors with inheritance
@@ -309,6 +338,7 @@ Separate from importance, the AI flags a thread `urgent` only when the user shou
 ## Productivity
 
 ### Focus & Time Management
+
 - Pomodoro timer (customizable duration)
 - Do Now view (current and overdue)
 - Focus modes (filtered views)
@@ -316,6 +346,7 @@ Separate from importance, the AI flags a thread `urgent` only when the user shou
 - Duration tracking for time budgeting
 
 ### Daily Planning
+
 - Flag items as Do Now or Do Later to build your daily plan
 - Schedule activities with specific dates or times to block your calendar
 - Reassign timing on the fly — move items between Now/Later or reschedule with minimal friction
@@ -323,6 +354,7 @@ Separate from importance, the AI flags a thread `urgent` only when the user shou
 - Agenda view shows your day chronologically across all priorities
 
 ### Response Times
+
 Each priority carries two settings the user controls together under "Response times":
 
 - **Schedule time to respond** — master toggle plus a `respond_window` (active hours, e.g. weekdays 9–5) and a `respond_within` SLA (e.g. 4 hours). When enabled, the agenda automatically places a 15-minute response block per priority for unread respond-type threads (importance ≥ 50 or urgent), inside the configured hours and around existing calendar events. Block placement is window-aware, deterministic, and computed entirely on the client.
@@ -331,6 +363,7 @@ Each priority carries two settings the user controls together under "Response ti
 Both settings inherit by priority path: a sub-priority that matches its parent's value reverts to inheritance automatically on save.
 
 ### Smart Notifications
+
 - AI flags genuinely time-sensitive threads as urgent (direct requests, deadlines) — those fire immediately, even outside the notify window; everything else waits for the user's configured `see_within` or the next placed response block
 - Items with importance < 50 (promotional content, unsolicited outreach) never trigger a push, an auto-block, or an email digest on their own
 - Batched updates are summarized by AI, grouped by top-level priority, so you get one coherent digest instead of a flood of individual pings
@@ -338,6 +371,7 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 - Desktop notifications on macOS and Windows — native OS notifications triggered by real-time sync, with automatic suppression when the app is focused and respect for OS-level Focus/DnD modes
 
 ### Smart Features
+
 - AI-powered title generation
 - Auto-categorization (Now/Later/Done)
 - Unread intelligence across priorities
@@ -345,12 +379,14 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 - Quick priority switching (keyboard shortcuts)
 
 ### AI Chat
+
 - Built-in Chat connection for conversational AI within Plot
 - Supports top models: Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google)
 - Chat in the context of your priorities and threads
 - BYOK: use your own API keys for supported providers
 
 ### Automation (via Twists)
+
 - Calendar sync (Google/Outlook auto-import)
 - AI task detection in emails and chat messages (Gmail, Slack, Google Chat) — automatically creates to-dos when someone asks you to do something
 - Project sync (Linear, Asana, etc.)
@@ -359,6 +395,7 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 ## Unique/Differentiating Features
 
 ### Plot-Specific Innovations
+
 - Activity-first design (everything is an activity)
 - User-extensible twist ecosystem
 - Dual scheduling (date-based and time-based)
@@ -369,6 +406,7 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 - Local-first sync (offline + cloud)
 
 ### Developer-Friendly
+
 - Twist Creator SDK (complete TypeScript SDK)
 - Fully typed API
 - Rich toolset (AI, Network, Store, etc.)
@@ -379,6 +417,7 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 ## Design & Customization
 
 ### Visual
+
 - Theme modes: Light, dark, system-based
 - 8 customizable priority colors
 - Color inheritance (children inherit parents)
@@ -386,6 +425,7 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 - Responsive design (all screen sizes)
 
 ### Preferences
+
 - Per-priority settings
 - Global app preferences
 - Device-specific local settings
@@ -394,12 +434,14 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 ## Data & Privacy
 
 ### Security
+
 - Row-level security (database-level)
 - Private activities and notes
 - OAuth standards
 - Encrypted data transmission
 
 ### Data Management
+
 - PostgreSQL backend (GCP Cloud SQL, enterprise-grade)
 - SQLite local storage
 - Vector search (AI-powered similarity)
@@ -431,20 +473,3 @@ Both settings inherit by priority path: a sub-priority that matches its parent's
 - Effective plan resolution (highest tier across personal + org memberships)
 - Organization management page (members, domains, billing)
 - Team-firewalled priorities: threads under a team-tagged top-level priority are visible only to current team members; joining a team auto-creates a priority, and archiving your last team priority prompts to leave the team
-
-## Performance & Scalability
-
-### Optimization
-- Efficient pagination
-- Indexed database queries
-- Incremental sync (minimal data transfer)
-- Virtual scrolling
-- Lazy loading (archived/historical data)
-- Smart caching
-
-### Infrastructure
-- Cloudflare Workers (globally distributed API)
-- GCP Cloud SQL (scalable PostgreSQL)
-- Queue system (background processing)
-- Durable Objects (stateful twist runtime)
-- Webhook support (event-driven)
