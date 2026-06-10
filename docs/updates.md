@@ -1,3 +1,4 @@
+- Merging one focus into another is now instant and reliable. The merge happens in one step on the server — previously each thread moved one by one, which could leave a half-merged focus if interrupted and made Plot rethink the sorting of everything in your workspace, slowing things down for a while after a merge.
 - Fixed sync stalling for very large workspaces. Right after connecting tools with a big history (tens of thousands of threads), syncing could time out and stop bringing in updates entirely; thread sync is now fast no matter how much is coming in.
 - Switching between focuses is now much faster. Even in large workspaces with thousands of threads, a focus's feed appears in a fraction of a second instead of taking several seconds.
 - Changing a focus's color now updates everywhere at once. Previously the current event in your agenda could keep showing the focus's old color.

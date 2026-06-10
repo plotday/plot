@@ -6405,6 +6405,14 @@ export type Database = {
         Args: { priority_id: string; user_id: string }
         Returns: boolean
       }
+      merge_priority: {
+        Args: {
+          p_source_priority_id: string
+          p_target_priority_id: string
+          user_id: string
+        }
+        Returns: number
+      }
       root_priority_id: { Args: { p_user_id: string }; Returns: string }
       save_group: { Args: { p_group: Json; user_id: string }; Returns: string }
       save_user_contact: {

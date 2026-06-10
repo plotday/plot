@@ -24,6 +24,7 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/router.dart';
 
 abstract class PriorityCommand extends Command {
@@ -1119,38 +1120,34 @@ class MergeFocus extends PriorityCommand {
     final source = _source;
     final target = _target;
 
-    // Re-file the threads and archive the source in the background so the
-    // modal closes and we navigate to the destination focus immediately —
-    // rather than holding the modal open with no feedback while every thread
-    // is re-filed (which can take seconds on a large focus). Re-filing is
-    // reactive (Drift streams), so the destination feed fills in live as
-    // saves land, and the source disappears once archived.
+    // Merge in the background so the modal closes and we navigate to the
+    // destination focus immediately. The server endpoint re-files every
+    // filing from the source onto the target in one statement and archives
+    // the source — transactionally, and crucially WITHOUT the per-thread
+    // saves of the old client loop, each of which the API treated as an
+    // explicit user filing (classifier training signal + a retroactive
+    // reclassify sweep, which on a large workspace re-classified everything
+    // and overwhelmed sync). The pulls afterwards land the re-filed threads
+    // and the archived source in the local store; the destination feed fills
+    // in live via Drift streams.
     unawaited(() async {
       try {
-        // Re-file every thread filed under the source — including archived
-        // threads and drafts — so nothing is stranded under the archived
-        // source. The thread save() is what syncs the re-filing (the mechanism
-        // MoveToPriority relies on). We intentionally skip the per-thread
-        // /sync/priority-moves learning signal: a bulk merge is a deliberate
-        // re-file, not N classifier-training events.
-        //
-        // Non-transactional by design for v1: a failure mid-loop leaves a
-        // partial re-file (some threads moved) with the source NOT archived,
-        // since archiving happens only after the loop completes. A future
-        // improvement could batch the saves or use a server-side merge
-        // endpoint.
-        final threads = await Thread.get(
-          priorityId: source.id,
-          archived: null,
-          draft: null,
+        await api.post<Map<String, dynamic>>(
+          '/sync/priorities/merge',
+          body: {
+            'source_priority_id': source.id.toString(),
+            'target_priority_id': target.id.toString(),
+          },
         );
-        for (final thread in threads) {
-          await thread.copyWith(priority: target).save();
-        }
-        // Archive the source focus.
-        await source.copyWith(archivedAt: Value(DateTime.now())).save();
+        await Priority.pull();
+        await Thread.pull();
+      } on NetworkException {
+        // Offline: fall back to the local per-thread re-file loop so the
+        // merge still completes and syncs when a connection returns.
+        await _mergeFocusLocally(source, target);
       } catch (e, stackTrace) {
         Tracker.captureException(e, stackTrace);
+        await _mergeFocusLocally(source, target);
       }
     }());
 
@@ -1159,6 +1156,34 @@ class MergeFocus extends PriorityCommand {
     return CommandRoute(
       PriorityRoute(priorityIdString: target.id.toShortString()),
     );
+  }
+}
+
+/// Offline fallback for [MergeFocus]: the original client-side merge loop.
+///
+/// Re-files every thread filed under the source — including archived threads
+/// and drafts — so nothing is stranded under the archived source, then
+/// archives the source. Each thread save() syncs the re-filing when a
+/// connection returns (the mechanism MoveToPriority relies on).
+///
+/// Non-transactional: a failure mid-loop leaves a partial re-file with the
+/// source NOT archived (archiving happens after the loop). The server
+/// endpoint used on the happy path has neither problem — prefer it whenever
+/// the API is reachable, not least because the server treats each per-thread
+/// save as an explicit user filing (classifier training + reclassify sweep).
+Future<void> _mergeFocusLocally(Priority source, Priority target) async {
+  try {
+    final threads = await Thread.get(
+      priorityId: source.id,
+      archived: null,
+      draft: null,
+    );
+    for (final thread in threads) {
+      await thread.copyWith(priority: target).save();
+    }
+    await source.copyWith(archivedAt: Value(DateTime.now())).save();
+  } catch (e, stackTrace) {
+    Tracker.captureException(e, stackTrace);
   }
 }
 

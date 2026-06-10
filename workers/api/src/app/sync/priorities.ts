@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb, createDb } from "../../db";
+import { mapPgError, sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import {
   parseReadParams,
@@ -158,6 +158,60 @@ priorities.post("/sync/priorities", async (c) => {
   }
 
   return c.json(result as any);
+});
+
+// POST /sync/priorities/merge — merge one focus into another server-side.
+//
+// Re-files every thread_priority row from the source onto the target in a
+// single statement and archives the source (user.merge_priority). This
+// replaces the client-side per-thread re-file loop: each of those saves went
+// through POST /sync/threads, which treated it as a first-time explicit
+// filing (user_moved flip + retroactive mark_reclassify_candidates sweep), so
+// merging a focus mass-reclassified the user's whole workspace. A bulk merge
+// is a deliberate re-file, not N classifier-training events — no training
+// signal or reclassify sweep fires here.
+priorities.post("/sync/priorities/merge", async (c) => {
+  const userId = c.var.user.id;
+  const body = await c.req.json();
+  const sourceId = body.source_priority_id;
+  const targetId = body.target_priority_id;
+  if (typeof sourceId !== "string" || typeof targetId !== "string") {
+    return c.json(
+      { error: "source_priority_id and target_priority_id are required" },
+      400,
+    );
+  }
+
+  try {
+    const moved = await withUserDb(c.var.db, userId, async (trx) => {
+      return rpcUser(trx, "merge_priority", {
+        user_id: userId,
+        p_source_priority_id: sourceId,
+        p_target_priority_id: targetId,
+      });
+    });
+
+    // Wake the user's other devices: the source focus archived and the
+    // re-filed threads both flow through the normal sync cursors.
+    notifySync(c, sourceId);
+
+    // Archiving the source can shift which channel defaults to which focus.
+    c.executionCtx.waitUntil(
+      enqueueChannelRouter(c.env, userId).catch(() => {
+        // Router enqueue failures are non-fatal for the merge.
+      })
+    );
+
+    return c.json({ moved: moved as number });
+  } catch (e) {
+    // Expected RAISEs from user.merge_priority (self-merge, unknown or
+    // archived focus) → 4xx; anything else propagates to the global handler.
+    const mapped = mapPgError(e);
+    if (mapped) {
+      return c.json({ error: mapped.message }, mapped.status as 400 | 403 | 409 | 422);
+    }
+    throw e;
+  }
 });
 
 export default priorities;

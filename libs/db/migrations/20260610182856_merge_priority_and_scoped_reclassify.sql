@@ -1,39 +1,5 @@
--- Mark thread_priority rows pending after an explicit user move, so the
--- consumer Worker can re-classify them. Replaces reclassify_user_threads
--- in the hybrid-classifier production wiring; the worker pushes the
--- (user_id, thread_id) result rows onto the classify-thread queue.
---
--- Algorithm:
---   1. Same indexed candidate prefilter as the old function (topic, HNSW,
---      contact/group overlap). Onboarding threads (topic = 'onboarding') are
---      excluded from the HNSW/contact/group branches so they never leave the
---      Inbox on an unrelated move — they only move via the topic branch, i.e.
---      when the user explicitly moves one onboarding thread (then all follow).
---   2. UPDATE thread_priority SET classify_at = now() for each candidate
---      that's currently settled and non-sticky.
---   3. Return the (user_id, thread_id) pairs so the API can enqueue
---      ClassifyJob messages.
---
--- Sticky rows (user_moved = TRUE) are never touched; rows already pending
--- (priority_id IS NULL, or classify_at already set) are skipped so repeated
--- anchors don't re-enqueue the same work.
---
--- Scoping rules (each violated once in prod — June 2026 mass-reclassify
--- incident, where a focus merge marked a 30k-thread workspace repeatedly):
---   • The user's own linked contacts are stripped from the anchor's
---     contacts before the overlap match. Every visible thread contains the
---     user's own contact (visibility requires it), so without this the
---     contact branch matches the ENTIRE workspace on every move.
---   • Every branch is bounded by p_max_candidates (most recent threads
---     first), not just the HNSW branch.
-CREATE OR REPLACE FUNCTION public.mark_reclassify_candidates (
-    p_user_id uuid,
-    p_anchor_thread_id uuid,
-    p_max_candidates int DEFAULT 500
-)
-    RETURNS TABLE (user_id uuid, thread_id uuid)
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "mark_reclassify_candidates" function
+CREATE OR REPLACE FUNCTION "public"."mark_reclassify_candidates" ("p_user_id" uuid, "p_anchor_thread_id" uuid, "p_max_candidates" integer DEFAULT 500) RETURNS TABLE ("user_id" uuid, "thread_id" uuid) LANGUAGE plpgsql AS $$
 DECLARE
     v_topic text;
     v_embedding halfvec;
@@ -153,6 +119,51 @@ BEGIN
       AND c.id IS DISTINCT FROM p_anchor_thread_id
     RETURNING tp.user_id, tp.thread_id;
 END;
-$function$;
+$$;
+-- Create "merge_priority" function
+CREATE FUNCTION "user"."merge_priority" ("user_id" uuid, "p_source_priority_id" uuid, "p_target_priority_id" uuid) RETURNS integer LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+#variable_conflict use_column
+DECLARE
+    v_moved integer;
+BEGIN
+    IF p_source_priority_id = p_target_priority_id THEN
+        RAISE EXCEPTION 'Cannot merge a focus into itself';
+    END IF;
 
-COMMENT ON FUNCTION public.mark_reclassify_candidates IS 'After an explicit user move, mark candidate thread_priority rows pending re-classification. Returns (user_id, thread_id) of the marked rows so the API can enqueue ClassifyJobs. Replaces reclassify_user_threads in the hybrid-classifier wiring.';
+    -- Ownership checks: both focuses must belong to the calling user.
+    IF NOT EXISTS (
+        SELECT 1 FROM priority p
+        WHERE p.id = p_source_priority_id
+          AND p.user_id = merge_priority.user_id
+    ) THEN
+        RAISE EXCEPTION 'Source focus not found';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM priority p
+        WHERE p.id = p_target_priority_id
+          AND p.user_id = merge_priority.user_id
+          AND p.archived_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Target focus not found or archived';
+    END IF;
+
+    -- Re-file before archiving the source so no row ever observes an
+    -- archived filing (effective_priority_id would bounce it to root).
+    UPDATE thread_priority tp
+    SET priority_id = p_target_priority_id
+    WHERE tp.user_id = merge_priority.user_id
+      AND tp.priority_id = p_source_priority_id;
+    GET DIAGNOSTICS v_moved = ROW_COUNT;
+
+    UPDATE priority p
+    SET archived_at = now()
+    WHERE p.id = p_source_priority_id
+      AND p.user_id = merge_priority.user_id
+      AND p.archived_at IS NULL;
+
+    RETURN v_moved;
+END;
+$$;
+-- Set comment to function: "merge_priority"
+COMMENT ON FUNCTION "user"."merge_priority" IS 'Re-file all of one user''s thread filings from a source focus onto a target in a single statement, then archive the source. Replaces the client-side per-thread merge loop so a bulk merge generates no classifier-training signals and no retroactive reclassify sweeps.';
