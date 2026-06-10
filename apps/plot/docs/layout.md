@@ -14,28 +14,56 @@ The app uses a responsive layout system that adapts between **single-panel** (mo
 
 **Behavior:**
 
-- Bottom navigation bar with 2 tab routers:
-  - **Tab 0 (Priorities):** Shows `PrioritiesPage` - list of all priorities
-  - **Tab 1 (Activities):** Shows activity content (PriorityPage or ActivityPage)
-  - Tab 2 (More): Opens the menu modal (no real routing)
-- **Default tab:** Activities (index 1)
-- Activities tab shows:
-  - `PriorityPage` by default (via `PriorityOnlyRoute` initial route)
-  - `ActivityPage` when an activity is selected (full-screen)
-- Back navigation pops from ActivityPage → PriorityPage
+- Bottom navigation bar with five persistent tab stacks managed by `AutoTabsRouter`:
+  - **Tab 0 (Priorities):** Shows `PrioritiesPage` — the full focus list; bottom-nav label "Focus"
+  - **Tab 1 (Agenda):** Shows `AgendaPage` — only present when a calendar connection exists
+  - **Tab 2 (Activity):** Per-priority thread feed (`PriorityPage`), threads (`ThreadPage`), and new-thread (`/new`); this is the working-area stack (also used by multi-panel)
+  - **Tab 3 (Search):** Shows `SearchPage`; opening a search result pushes a `PriorityRoute` + `ThreadRoute` onto this stack, so Back returns to the results
+  - **Tab 4 (More):** Shows `MoreRoute` — settings rendered as a page
+- **Default tab:** Priorities (index 0, `homeIndex: _kTabPriorities`)
+- The Activity tab has no dedicated bottom-nav button. Navigation into it happens via the "New" slot (which uses the Activity stack) or via priority/thread taps from Focuses or Agenda.
+- Agenda slot is conditional — when no calendar connection exists it is hidden and the remaining slots shift left; `navSlotsFor(hasCalendar:)` computes the display-order list at runtime.
+- Bottom-nav visual slots (`NavSlot` enum): `focuses`, `agenda`, `newThread`, `search`, `more`
+
+**Tab navigation — key rules:**
+
+- Tapping a nav slot for a tab that is already active pops its inner stack to root (`_switchOrPopToRoot` / `stack.popUntilRoot()`). This is the standard "tap active tab = go home" idiom.
+- Tapping **New** uses the Activity (tab 2) stack. `_openNewThread` decides between three cases:
+  - `/new` is parked on the Activity stack while a different tab is showing → switch to Activity to **resume** the draft
+  - Already viewing `/new` on the Activity tab → **reset** to step 1 (tap-active = start over)
+  - No `/new` on the Activity stack → reset then push a fresh `NewThreadRoute`
+- Bottom-nav tab switches are recorded as `markUrlStateForReplace` so the browser/Cmd+[ history does not grow a frame per tap.
+
+**Bottom bar visibility:**
+
+The bar is **hidden** on full-screen routes and **shown** on `/new` (even though `/new` is an inner Activity-tab route, it keeps the bar — it is a top-level tab conceptually). `_isFullScreenRoute` rules:
+
+- `t/:id` (standalone thread) → always hidden
+- Path ending in `/new` → always **shown** (returns `false`)
+- `/p/:priorityId/:threadId` (3+ non-empty segments) → hidden
+- All other paths (focus list, agenda, search, more, `/p/:priorityId` with 2 segments) → shown
+
+**PriorityPage back button (single-panel):**
+
+`PriorityPage` (the thread feed for a specific focus) renders a visible `←` back button. Tapping it (or performing the back gesture via `PopScope`) calls `returnFromPriorityToSourceTab`, which returns the user to whichever tab they came from (`PrioritiesShell.sourceTab`) — typically the focus list, but Agenda for deep-link arrivals.
 
 **Widget Tree (Single-Panel):**
 
 ```
-AutoTabsRouter (in PrioritiesShell)
+AutoTabsRouter (in PrioritiesShell, homeIndex=0)
 ├─ Tab 0: PrioritiesRoute → PrioritiesPage
-└─ Tab 1: EmptyShellRoute → PriorityRoute
-           └─ PriorityWrapper
-              └─ ResizablePanelLayout
-                 └─ Right panel: AutoRouter renders:
-                    - PriorityOnlyRoute → PriorityOnlyPage → PriorityPage (initial route at '')
-                    - NewActivityRoute → NewActivityPage (at /new)
-                    - ActivityRoute → ActivityPage (at /:activityId)
+├─ Tab 1: EmptyShellRoute("AgendaShell") → AgendaRoute → AgendaPage
+├─ Tab 2: EmptyShellRoute("ActivityShell") [catch-all path '']
+│          └─ PriorityRoute (at /p/:priorityId)
+│             └─ PriorityWrapper → ResizablePanelLayout (panels hidden in single-panel)
+│                └─ Right panel AutoRouter renders:
+│                   ├─ PriorityOnlyRoute → PriorityOnlyPage → PriorityPage (initial route at '')
+│                   ├─ NewThreadRoute → NewThreadPage (at 'new')
+│                   └─ ThreadRoute → ThreadPage (at ':threadId')
+├─ Tab 3: EmptyShellRoute("SearchShell") → SearchRoute → SearchPage
+│          └─ (child) PriorityRoute (at /p/:priorityId)
+│             └─ ThreadRoute (at ':threadId')  [search result opens here]
+└─ Tab 4: EmptyShellRoute("MoreShell") → MoreRoute → MorePage
 ```
 
 ### Multi-Panel Mode (Desktop/Wide Windows)
@@ -48,29 +76,30 @@ AutoTabsRouter (in PrioritiesShell)
 - Up to 3 panels side-by-side:
   - **Left panel:** `PrioritiesPage` (toggleable, preserves state)
   - **Middle panel:** `PriorityPage` (toggleable, preserves state)
-  - **Right panel:** `NewActivityPage` or `ActivityPage` (always visible)
+  - **Right panel:** `NewThreadPage` or `ThreadPage` (always visible)
 - Right panel **always** has content in multi-panel mode
-- When no activity is selected:
-  - If middle panel is visible, `PriorityOnlyPage` detects this and automatically navigates to `NewActivityRoute`, showing `NewActivityPage` in the right panel
+- When no thread is selected:
+  - If middle panel is visible, `PriorityOnlyPage` detects this and automatically navigates to `NewThreadRoute`, showing `NewThreadPage` in the right panel
   - If middle panel is not visible, `PriorityOnlyPage` shows `PriorityPage` in the right panel
+- In multi-panel mode, the active tab is forced to Activity (tab 2) if it is not already there; if the Activity stack is empty, it is seeded with the current `PriorityRoute`
 - Panels can be toggled independently without affecting content
 - Panel visibility is tracked in `LayoutBloc` state
 
 **Widget Tree (Multi-Panel):**
 
 ```
-AutoTabsRouter (in PrioritiesShell) - no visible tabs
-└─ EmptyShellRoute → PriorityRoute
-   └─ PriorityWrapper
-      └─ ResizablePanelLayout
+AutoTabsRouter (in PrioritiesShell) — no visible tabs
+└─ Tab 2 (Activity): EmptyShellRoute("ActivityShell")
+   └─ PriorityRoute (at /p/:priorityId)
+      └─ PriorityWrapper → ResizablePanelLayout
          ├─ Left: PrioritiesPage (if leftPanelVisible)
          ├─ Middle: PriorityPage (if middlePanelVisible)
          └─ Right: AutoRouter → Shows:
             ├─ PriorityOnlyRoute → PriorityOnlyPage (initial route)
-            │  └─ If middlePanelVisible: LoadingPage + navigates to NewActivityRoute
+            │  └─ If middlePanelVisible: LoadingPage + navigates to NewThreadRoute
             │  └─ If !middlePanelVisible: PriorityPage
-            ├─ NewActivityRoute → NewActivityPage (after auto-navigation or manual)
-            └─ ActivityRoute → ActivityPage (when activity selected)
+            ├─ NewThreadRoute → NewThreadPage (after auto-navigation or manual)
+            └─ ThreadRoute → ThreadPage (when thread selected)
 ```
 
 ## Route Hierarchy
@@ -81,29 +110,38 @@ AppShellRoute
    ├─ PrioritiesRoute (Tab 0, at /priorities)
    │  └─ PrioritiesPage
    │
-   └─ EmptyShellRoute("PriorityShell") (Tab 1, wrapper)
-      └─ PriorityRoute (at /:priorityId)
-         └─ PriorityWrapper
-            └─ ResizablePanelLayout
-               ├─ Left panel: PrioritiesPage
-               ├─ Middle panel: PriorityPage
-               └─ Right panel (AutoRouter):
-                  ├─ PriorityOnlyRoute (initial route, at '') → PriorityOnlyPage
-                  │  └─ Layout-aware: shows PriorityPage or navigates to NewActivityRoute
-                  ├─ NewActivityRoute (at 'new') → NewActivityPage
-                  └─ ActivityRoute (at ':activityId') → ActivityPage
+   ├─ EmptyShellRoute("AgendaShell") (Tab 1, at /agenda)
+   │  └─ AgendaRoute → AgendaPage
+   │
+   ├─ EmptyShellRoute("ActivityShell") (Tab 2, catch-all at '')
+   │  ├─ PriorityRoute (at /p/:priorityId)
+   │  │  └─ PriorityWrapper → ResizablePanelLayout
+   │  │     └─ Right panel AutoRouter:
+   │  │        ├─ PriorityOnlyRoute (initial route, at '') → PriorityOnlyPage
+   │  │        ├─ NewThreadRoute (at 'new') → NewThreadPage
+   │  │        └─ ThreadRoute (at ':threadId') → ThreadPage
+   │  ├─ ThreadLookupRoute (at /t/:threadId)
+   │  └─ NotificationLandingRoute (at /n/:priorityId/:threadIds)
+   │
+   ├─ EmptyShellRoute("SearchShell") (Tab 3, at /search)
+   │  ├─ SearchRoute (at '') → SearchPage
+   │  └─ PriorityRoute (at /p/:priorityId)
+   │     └─ ThreadRoute (at ':threadId') → ThreadPage [search result]
+   │
+   └─ EmptyShellRoute("MoreShell") (Tab 4, at /more)
+      └─ MoreRoute (at '') → MorePage
 ```
 
 **Key Points:**
 
-- `PriorityRoute` wraps an `AutoRouter` that manages child routes in the right panel
+- `PriorityRoute` wraps an `AutoRouter` (via `PriorityWrapper` / `AutoRouteWrapper`) that manages child routes in the right panel
 - `PriorityOnlyRoute` is the initial/default route under `PriorityRoute`
 - `PriorityOnlyPage` is **layout-aware**: it uses `BlocConsumer<LayoutBloc, LayoutState>` to:
   - Show `PriorityPage` when `middlePanelVisible` is false (single-panel mode or middle panel hidden)
-  - Navigate to `NewActivityRoute` when `middlePanelVisible` is true (multi-panel mode with middle panel shown)
+  - Navigate to `NewThreadRoute` when `middlePanelVisible` is true (multi-panel mode with middle panel shown)
 - `ResizablePanelLayout` always renders all three panel widgets (left, middle, right)
 - Panel visibility is controlled by `LayoutBloc` state
-- In single-panel mode, only the right panel (AutoRouter content) is shown
+- In single-panel mode, only the right panel (AutoRouter content) is shown; the left/middle panels are hidden
 - In multi-panel mode, left and/or middle panels become visible alongside the right panel
 
 ## State Preservation
@@ -112,49 +150,63 @@ AppShellRoute
 
 **Critical:** `AutoTabsRouter` is **always** present in `PrioritiesShell`, even in multi-panel mode where tabs aren't visible.
 
-**Why?** This ensures state is preserved when transitioning between single and multi-panel modes.
+**Why?** This ensures state is preserved when transitioning between single and multi-panel modes, and keeps each tab's navigation stack alive independently.
 
 **Route Configuration:**
 
 ```dart
 AutoTabsRouter(
+  homeIndex: _kTabPriorities,  // 0
   routes: [
-    PrioritiesRoute(),           // Tab 0
-    PriorityRoute(...),          // Tab 1
+    PrioritiesRoute(),                        // Tab 0
+    EmptyShellRoute("AgendaShell")(),         // Tab 1
+    EmptyShellRoute("ActivityShell")(),       // Tab 2
+    EmptyShellRoute("SearchShell")(),         // Tab 3
+    EmptyShellRoute("MoreShell")(),           // Tab 4
   ],
 )
 ```
 
+**Tab index constants (in priorities_shell.dart):**
+
+```dart
+const int _kTabPriorities = 0;
+const int _kTabAgenda    = 1;
+const int _kTabActivity  = 2;
+const int _kTabSearch    = 3;
+const int _kTabMore      = 4;
+```
+
 **In multi-panel mode:**
 
-- Tab index is fixed at 1 (Activities tab)
-- Tab navigation is disabled
-- All panels are rendered simultaneously
+- Tab index is forced to 2 (Activity tab) via a post-frame callback if it isn't already
+- Tab navigation is disabled (no bottom nav rendered)
+- All panels are rendered simultaneously via `ResizablePanelLayout`
 
 **In single-panel mode:**
 
-- User can switch between tabs 0 and 1
+- User switches between tabs via the bottom nav
 - Active tab determines which content is shown
 
 ### Layout State Transitions
 
 **Single → Multi:**
 
-- If viewing an activity: Activity stays in right panel
-- If on `PriorityOnlyRoute` (showing `PriorityPage`): `PriorityOnlyPage` detects `middlePanelVisible` becoming true and automatically navigates to `NewActivityRoute`, moving the priority content to the middle panel and showing `NewActivityPage` in the right panel
-- Tabs become invisible but router stays on tab 1
+- If viewing a thread: Thread stays in right panel
+- If on `PriorityOnlyRoute` (showing `PriorityPage`): `PriorityOnlyPage` detects `middlePanelVisible` becoming true and automatically navigates to `NewThreadRoute`, moving the priority content to the middle panel and showing `NewThreadPage` in the right panel
+- Tabs become invisible but router stays on (or switches to) Activity tab 2
 - Left and/or middle panels become visible based on `LayoutBloc` state
 
 **Multi → Single:**
 
 - Current content from right panel becomes active
 - Tabs become visible
-- User is on Activities tab (tab 1)
+- User is on Activity tab (tab 2)
 
 **Panel Toggling (Multi-Panel Mode):**
 
-- If middle panel is hidden while on `NewActivityRoute`: Nothing changes, `NewActivityPage` remains in right panel
-- If middle panel is shown while on `PriorityOnlyRoute`: `PriorityOnlyPage` detects the change and automatically navigates to `NewActivityRoute`
+- If middle panel is hidden while on `NewThreadRoute`: Nothing changes, `NewThreadPage` remains in right panel
+- If middle panel is shown while on `PriorityOnlyRoute`: `PriorityOnlyPage` detects the change and automatically navigates to `NewThreadRoute`
 - If middle panel is hidden while on `PriorityOnlyRoute`: `PriorityOnlyPage` shows `PriorityPage` in the right panel
 - Panels preserve their state when hidden/shown
 - Content doesn't reload when panels are toggled
@@ -169,21 +221,14 @@ AutoTabsRouter(
 1. **NowBloc** stores the current priority as `nowState.priority`
 2. **PrioritiesShell** extracts the `priorityId` from `NowBloc` to construct the `PriorityRoute`
 3. **PrioritiesShell** passes routes to `AutoTabsRouter`:
-   - `PrioritiesRoute()` (Tab 0 - for single-panel mode)
-   - `EmptyShellRoute` wrapping `PriorityRoute(priorityIdString: priorityId)` (Tab 1)
+   - `PrioritiesRoute()` (Tab 0)
+   - `EmptyShellRoute("AgendaShell")()` (Tab 1)
+   - `EmptyShellRoute("ActivityShell")()` (Tab 2 — hosts `PriorityRoute(priorityIdString: priorityId)`)
+   - `EmptyShellRoute("SearchShell")()` (Tab 3)
+   - `EmptyShellRoute("MoreShell")()` (Tab 4)
 4. **PriorityWrapper** creates a `PriorityBloc` for the current priority
 5. **PrioritiesPage** watches `NowBloc` to determine which priority to highlight
 6. **PrioritiesList** uses the current priority from `NowBloc` to highlight the selected item
-
-**Implementation in PrioritiesShell:**
-
-```dart
-return AutoTabsRouter(
-  routes: [
-    PrioritiesRoute(),
-    EmptyShellRoute("PriorityShell")(),
-  ],
-```
 
 **Implementation in PriorityWrapper:**
 
@@ -209,13 +254,13 @@ class PriorityWrapper implements AutoRouteWrapper {
 **Panel Structure:**
 
 - **Left panel:** `PrioritiesPage` shows all priorities
-- **Middle panel:** `PriorityPage` shows activities for the current priority
-- **Right panel:** `AutoRouter` manages child routes (NewActivityPage/ActivityPage)
+- **Middle panel:** `PriorityPage` shows threads for the current priority
+- **Right panel:** `AutoRouter` manages child routes (`NewThreadPage`/`ThreadPage`)
 
 **State synchronization:**
 
 - `NowBloc` is the single source of truth for current priority
-- `PriorityBloc` manages the activities for the current priority
+- `PriorityBloc` manages the threads for the current priority
 - When priority changes, the router navigates to a new `PriorityRoute` with the updated `priorityId`
 
 ## Layout Behavior
@@ -225,41 +270,41 @@ The layout system adapts based on `LayoutState.middlePanelVisible`:
 **Single-Panel Mode:**
 
 - The `AutoRouter` in the right panel displays `PriorityOnlyRoute` by default (showing `PriorityPage`)
-- When the user taps an activity, navigation occurs to `ActivityRoute` (showing `ActivityPage`)
-- Back navigation returns to `PriorityOnlyRoute`
+- When the user taps a thread, navigation occurs to `ThreadRoute` (showing `ThreadPage`)
+- Back navigation returns to `PriorityOnlyRoute` (or triggers `returnFromPriorityToSourceTab` for the priority-level back button)
 
 **Multi-Panel Mode:**
 
 - Left and middle panels become visible alongside the right panel
 - The `AutoRouter` continues to manage routing in the right panel
-- **Initial state:** `PriorityOnlyRoute` is active, but `PriorityOnlyPage` detects `middlePanelVisible=true` and automatically navigates to `NewActivityRoute`, resulting in:
+- **Initial state:** `PriorityOnlyRoute` is active, but `PriorityOnlyPage` detects `middlePanelVisible=true` and automatically navigates to `NewThreadRoute`, resulting in:
   - Middle panel: `PriorityPage` (from `ResizablePanelLayout`)
-  - Right panel: `NewActivityPage` (from `NewActivityRoute`)
-- When the user clicks an activity, the right panel navigates to `ActivityRoute`
-- If the middle panel is toggled off while on `NewActivityRoute`, nothing changes (the route remains)
+  - Right panel: `NewThreadPage` (from `NewThreadRoute`)
+- When the user clicks a thread, the right panel navigates to `ThreadRoute`
+- If the middle panel is toggled off while on `NewThreadRoute`, nothing changes (the route remains)
 - If the user manually navigates back to `PriorityOnlyRoute` while middle panel is hidden, `PriorityPage` appears in the right panel
 
 ## Navigation Actions
 
 ### ChangeCurrentActivity
 
-**Purpose:** Navigate to a specific activity or back to the default view
+**Purpose:** Navigate to a specific thread or back to the default view
 
 **Location:** `lib/action/activity.dart`
 
 **Behavior:**
 
 ```dart
-if (activity == null) {
+if (thread == null) {
   // Navigate to PriorityRoute base (initial route is PriorityOnlyRoute)
   // In single-panel mode: Shows PriorityPage
-  // In multi-panel mode: PriorityOnlyPage auto-navigates to NewActivityRoute
+  // In multi-panel mode: PriorityOnlyPage auto-navigates to NewThreadRoute
   return ActionRoute(PriorityRoute(...));
 } else {
-  // Navigate to ActivityRoute
+  // Navigate to ThreadRoute
   return ActionRoute(
     PriorityRoute(
-      children: [ActivityRoute(activityIdString: ...)],
+      children: [ThreadRoute(threadId: ...)],
     ),
   );
 }
@@ -267,11 +312,11 @@ if (activity == null) {
 
 **Note:** Returns `ActionRoute` which the action system converts to actual navigation
 
-### NewActivity
+### NewThread
 
-**Purpose:** Navigate to new activity creation
+**Purpose:** Navigate to new thread creation
 
-**Returns:** `PriorityRoute` with `NewActivityRoute` as a child
+**Handled by:** `_openNewThread` in `PrioritiesShell` (see "Tab navigation — key rules" above)
 
 ## Common Pitfalls & Solutions
 
@@ -336,7 +381,7 @@ class LayoutState {
 **Problem it solves:**
 
 - Without it, `PriorityPage` would appear in both the middle panel AND the right panel when in multi-panel mode
-- It ensures the right panel always shows unique content (either `PriorityPage` OR `NewActivityPage`, never duplicating what's in the middle)
+- It ensures the right panel always shows unique content (either `PriorityPage` OR `NewThreadPage`, never duplicating what's in the middle)
 
 **Implementation:**
 
@@ -355,7 +400,7 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
         // Navigate when middle panel becomes visible
         if (layoutState.middlePanelVisible && !_hasNavigated) {
           _hasNavigated = true;
-          context.router.navigate(NewActivityRoute());
+          context.router.navigate(NewThreadRoute());
         }
       },
       builder: (context, layoutState) {
@@ -371,7 +416,7 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
 
 **Behavior:**
 
-- **Listener:** Detects when `middlePanelVisible` becomes true and automatically navigates to `NewActivityRoute`
+- **Listener:** Detects when `middlePanelVisible` becomes true and automatically navigates to `NewThreadRoute`
 - **Builder:** Shows different content based on layout state:
   - `middlePanelVisible == false`: Shows `PriorityPage` (single-panel mode or middle panel hidden)
   - `middlePanelVisible == true`: Shows `LoadingPage` during navigation transition
@@ -390,19 +435,25 @@ When making changes to layout/routing, verify:
 
 **Single-Panel Mode:**
 
-- [ ] Bottom nav shows Priorities and Activities tabs
-- [ ] Activities tab is default on first load
-- [ ] Clicking an activity navigates to full-screen ActivityPage
-- [ ] Back button returns to PriorityPage
-- [ ] Switching tabs preserves state
-- [ ] Current priority is highlighted in Priorities tab
+- [ ] Bottom nav shows Focus, New, Search, and More slots (plus Agenda when a calendar is connected)
+- [ ] Tapping Focus lands on the priorities list
+- [ ] Tapping a priority opens the thread feed; a `←` back button returns to the focus list
+- [ ] Tapping New opens the compose flow; the bottom bar remains visible
+- [ ] Back arrow in the new-thread compose step returns to step 1 (or exits /new)
+- [ ] Tapping Search opens the search page
+- [ ] Opening a search result pushes a thread inside the Search tab; Back returns to results
+- [ ] Tapping More opens the settings page
+- [ ] Tapping the active tab pops its stack to root
+- [ ] Switching tabs preserves each tab's scroll / content state
+- [ ] Bottom bar is hidden while viewing a thread; visible on /new
+- [ ] Current priority is highlighted in the Focus tab's list
 
 **Multi-Panel Mode:**
 
 - [ ] No bottom nav visible
-- [ ] Right panel always has content (NewActivityPage or ActivityPage)
-- [ ] Clicking activities updates right panel to ActivityPage
-- [ ] Clicking different activities switches right panel content
+- [ ] Right panel always has content (NewThreadPage or ThreadPage)
+- [ ] Clicking threads updates right panel to ThreadPage
+- [ ] Clicking different threads switches right panel content
 - [ ] Left/middle panels can be toggled independently
 - [ ] Toggling panels preserves their state
 - [ ] Current priority is highlighted in left panel (priorities sidebar)
@@ -410,40 +461,40 @@ When making changes to layout/routing, verify:
 **Priority Navigation:**
 
 - [ ] Clicking a priority in sidebar changes the current priority
-- [ ] Middle panel updates to show new priority's activities
+- [ ] Middle panel updates to show new priority's threads
 - [ ] Highlighting updates to show newly selected priority
 - [ ] **Known Issue:** Some flickering occurs during priority change (see below)
 
 **Transitions:**
 
-- [ ] Single → Multi while viewing activity: Activity stays visible in right panel
-- [ ] Single → Multi while on PriorityOnlyRoute: PriorityOnlyPage detects middlePanelVisible=true and automatically navigates to NewActivityRoute
+- [ ] Single → Multi while viewing thread: Thread stays visible in right panel
+- [ ] Single → Multi while on PriorityOnlyRoute: PriorityOnlyPage detects middlePanelVisible=true and automatically navigates to NewThreadRoute
 - [ ] Multi → Single: Last viewed content appears
 - [ ] No flashing/blank screens during transitions
 
 **PriorityOnlyPage Behavior:**
 
 - [ ] In single-panel mode: Shows PriorityPage content
-- [ ] In multi-panel mode with middle panel visible: Auto-navigates to NewActivityRoute
-- [ ] When toggling middle panel on: PriorityOnlyPage navigates to NewActivityRoute
-- [ ] When toggling middle panel off while on NewActivityRoute: No change (stays on NewActivityRoute)
+- [ ] In multi-panel mode with middle panel visible: Auto-navigates to NewThreadRoute
+- [ ] When toggling middle panel on: PriorityOnlyPage navigates to NewThreadRoute
+- [ ] When toggling middle panel off while on NewThreadRoute: No change (stays on NewThreadRoute)
 - [ ] No duplicate content between middle and right panels
 
 ## File Locations
 
 **Core files:**
 
-- `lib/router.dart` - Route definitions (NewActivityRoute, ActivityRoute, etc.)
-- `lib/widget/priorities_shell.dart` - AutoTabsRouter and tab management
-- `lib/page/priority.dart` - PriorityWrapper (AutoRouteWrapper that sets up ResizablePanelLayout)
-- `lib/page/priorities.dart` - PrioritiesPage (list of all priorities)
+- `lib/router.dart` - Route definitions (`NewThreadRoute`, `ThreadRoute`, `PriorityRoute`, `SearchRoute`, `MoreRoute`, etc.)
+- `lib/widget/priorities_shell.dart` - `AutoTabsRouter`, `NavSlot` enum, tab management (`_handleNavTap`, `_switchOrPopToRoot`, `_openNewThread`, `_isFullScreenRoute`, `_currentNavIndex`, `BottomNavInset`)
+- `lib/page/priority.dart` - `PriorityWrapper` (AutoRouteWrapper that sets up ResizablePanelLayout), `returnFromPriorityToSourceTab`
+- `lib/page/priorities.dart` - `PrioritiesPage` (list of all priorities)
 - `lib/widget/resizable_panel_layout.dart` - Three-panel layout with conditional visibility
-- `lib/state/layout.dart` - LayoutBloc (manages panel visibility and multi-panel state)
-- `lib/state/priority.dart` - PriorityBloc (manages activities for a specific priority)
-- `lib/state/now.dart` - NowBloc (single source of truth for current priority)
-- `lib/action/activity.dart` - Activity navigation actions (ChangeCurrentActivity, NewActivity, etc.)
-- `lib/action/priority.dart` - Priority actions (ChangeCurrentPriority, etc.)
-- `lib/action/navigation.dart` - Panel toggle actions (ToggleLeftSidebar, ToggleMiddleSidebar)
+- `lib/state/layout.dart` - `LayoutBloc` (manages panel visibility and multi-panel state)
+- `lib/state/priority.dart` - `PriorityBloc` (manages threads for a specific priority)
+- `lib/state/now.dart` - `NowBloc` (single source of truth for current priority)
+- `lib/action/activity.dart` - Thread navigation actions (`ChangeCurrentActivity`, etc.)
+- `lib/action/priority.dart` - Priority actions (`ChangeCurrentPriority`, etc.)
+- `lib/action/navigation.dart` - Panel toggle actions (`ToggleLeftSidebar`, `ToggleMiddleSidebar`)
 
 ## Making Changes Safely
 
@@ -458,7 +509,7 @@ When making changes to layout/routing, verify:
 ### Adding a new route
 
 1. Define route in `router.dart`
-2. Add to appropriate children array under `PriorityRoute`
+2. Add to appropriate children array under `PriorityRoute` (or the relevant shell)
 3. Run `flutter pub run build_runner build`
 4. Test navigation in both single and multi-panel modes
 
@@ -466,7 +517,7 @@ When making changes to layout/routing, verify:
 
 1. Identify if change affects single-panel, multi-panel, or both
 2. Update logic in appropriate location:
-   - Tab switching: `PrioritiesShell`
+   - Tab switching: `PrioritiesShell` (`_handleNavTap`, `_switchOrPopToRoot`, `_openNewThread`)
    - Panel visibility: `ResizablePanelLayout` and `LayoutBloc`
    - Routing: `router.dart` route definitions
    - User actions: `lib/action/*.dart`
@@ -478,7 +529,7 @@ When making changes to layout/routing, verify:
 ## Architecture Principles
 
 1. **Simplicity:** Keep routing and layout logic as simple as possible
-2. **State Preservation:** Keep routers and Blocs alive during layout changes
+2. **State Preservation:** Keep routers and Blocs alive during layout changes; each tab has its own independent navigator stack
 3. **Single Source of Truth:** LayoutBloc owns panel visibility state; NowBloc owns current priority
 4. **Separation of Concerns:** ResizablePanelLayout handles panel visibility; AutoRouter handles navigation
 5. **Layout-Aware Routing:** Use `BlocConsumer<LayoutBloc, LayoutState>` in route pages to adapt behavior based on layout state (see `PriorityOnlyPage`)
