@@ -5,7 +5,12 @@ CREATE TABLE "public"."publisher" (
     "created_by" uuid NOT NULL REFERENCES public."user" ("id") ON DELETE RESTRICT,
     "name" text NOT NULL,
     "email" text,
-    "url" text
+    "url" text,
+    -- When true, deploys from this publisher may target the 'public'
+    -- environment (end-user-visible). Granted to Plot's own publisher; all
+    -- others default false and must request access. Enforced in the deploy
+    -- route (workers/api/src/sdk/twist.ts).
+    "can_publish_public" boolean NOT NULL DEFAULT false
 );
 
 CREATE UNIQUE INDEX idx_publisher_name_lower ON "public"."publisher" (lower("name"));
