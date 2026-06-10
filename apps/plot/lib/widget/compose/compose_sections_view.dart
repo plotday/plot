@@ -61,7 +61,6 @@ class ComposeSectionsView extends StatefulWidget {
     this.onRowMore,
     this.onAddContact,
     this.onAddGroup,
-    this.onBack,
     this.autofocusSearch = true,
     this.activeListenable,
     this.pendingLink,
@@ -104,13 +103,6 @@ class ComposeSectionsView extends StatefulWidget {
   /// Opens the add-group form (People & twists header "+ Group"). Returns true
   /// when a group was created. Null hides the button.
   final Future<bool> Function()? onAddGroup;
-
-  /// Optional "go back" affordance. When provided, the search field's leading
-  /// slot becomes a back button (in place of the search icon) that invokes
-  /// this — used in single-panel mode where the global header no longer
-  /// carries a back button. Null in multi-panel, where the leading stays a
-  /// plain search icon.
-  final VoidCallback? onBack;
 
   /// Whether to autofocus the search field on mount. Enabled by default (the
   /// page's normal open); the host can disable it when restoring step 1 after
@@ -562,26 +554,6 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   @override
   Widget build(BuildContext context) {
     final spacing = context.theme.spacing;
-    final colors = context.theme.colors;
-
-    // Single-panel mode hands a back affordance down so it can stand in for
-    // the (now-dropped) global header back button; otherwise the leading
-    // slot is empty. The back button mirrors the step-2 connection picker's
-    // leading affordance (PlotIcon.left, muted).
-    final Widget? leading = widget.onBack != null
-        ? GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onBack,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-              child: Icon(
-                PlotIcon.left,
-                size: 18,
-                color: colors.mutedForeground,
-              ),
-            ),
-          )
-        : null;
 
     return CallbackShortcuts(
       bindings: {
@@ -611,7 +583,6 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
                 hintDetail: 'with a name, email, channel, or focus',
                 autofocus: widget.autofocusSearch && !_linkMode,
                 activeListenable: widget.activeListenable,
-                leading: leading,
                 onChanged: _onSearchChanged,
                 onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
                 onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),

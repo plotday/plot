@@ -159,6 +159,70 @@ final signedOutSettingsCommands = [
   StaticCommandGroup(title: 'App', commands: [CopyVersion()]),
 ];
 
+/// Builds the top-level settings command groups (the "Settings" and "App"
+/// groups plus debug commands), async-fetching the user's orgs and
+/// subscription from the API.
+///
+/// This is the single source of truth shared by [ShowSettings] (the desktop /
+/// multi-panel settings modal) and `MorePage` (the single-panel "More" tab
+/// that renders the same list as page content). Reading the blocs is optional
+/// — when no [PrioritiesBloc]/[UserBloc]/[LocalPreferencesBloc] is in scope
+/// (e.g. signed-out shells) the groups degrade gracefully.
+Future<List<StaticCommandGroup>> buildSettingsGroups(
+  BuildContext context,
+) async {
+  PrioritiesState? prioritiesState;
+  UserState? userState;
+  LocalPreferencesState? prefsState;
+  if (context.mounted) {
+    try {
+      prioritiesState = context.read<PrioritiesBloc>().state;
+      userState = context.read<UserBloc>().state;
+      prefsState = context.read<LocalPreferencesBloc>().state;
+    } catch (_) {}
+  }
+
+  final email = userState is UserReady ? userState.user.primaryEmail : null;
+  final showAllPriorities = prefsState?.showAllPriorities ?? false;
+
+  // Fetch orgs and subscription in parallel
+  List<Map<String, dynamic>> adminOrgs = [];
+  bool hasTeams = false;
+  SubscriptionInfo? subscription;
+  try {
+    final results = await Future.wait([
+      api.get<List<dynamic>>('/team'),
+      UpgradeApi.getSubscription(),
+    ]);
+    final allOrgs = (results[0] as List<dynamic>).cast<Map<String, dynamic>>();
+    log.info('Settings: /team returned ${allOrgs.length} orgs: $allOrgs');
+    hasTeams = allOrgs.isNotEmpty;
+    adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
+    log.info('Settings: adminOrgs after role filter: $adminOrgs');
+    subscription = results[1] as SubscriptionInfo;
+  } catch (e, t) {
+    // Non-critical — settings still work without these
+    log.warning('Failed to fetch orgs/subscription for settings', e, t);
+  }
+
+  final groups = [
+    if (prioritiesState != null)
+      ...settingsCommandsFromState(
+        prioritiesState,
+        hasTeams: hasTeams,
+        email: email,
+        adminOrgs: adminOrgs,
+        subscription: subscription,
+        showAllPriorities: showAllPriorities,
+      ),
+  ];
+  final debugCmds = buildDebugCommands();
+  if (debugCmds != null) {
+    groups.add(debugCmds);
+  }
+  return groups;
+}
+
 class ShowSettings extends ShowCommands {
   ShowSettings()
     : super(
@@ -169,66 +233,15 @@ class ShowSettings extends ShowCommands {
       );
 
   static Future<Commands> Function(BuildContext) _createBuilder() {
-    PrioritiesState? cachedPrioritiesState;
-    UserState? cachedUserState;
-    LocalPreferencesState? cachedPrefsState;
-    bool hasReadState = false;
+    // Cache the build context state so a refresh (CommandRefresh) re-runs the
+    // same async build. [buildSettingsGroups] reads the blocs itself, so the
+    // closure simply re-invokes it against the captured context.
+    BuildContext? cachedContext;
 
     return (context) async {
-      if (!hasReadState) {
-        if (context.mounted) {
-          try {
-            cachedPrioritiesState = context.read<PrioritiesBloc>().state;
-            cachedUserState = context.read<UserBloc>().state;
-            cachedPrefsState = context.read<LocalPreferencesBloc>().state;
-          } catch (_) {}
-        }
-        hasReadState = true;
-      }
-
-      final email = cachedUserState is UserReady
-          ? (cachedUserState as UserReady).user.primaryEmail
-          : null;
-      final showAllPriorities = cachedPrefsState?.showAllPriorities ?? false;
-
-      // Fetch orgs and subscription in parallel
-      List<Map<String, dynamic>> adminOrgs = [];
-      bool hasTeams = false;
-      SubscriptionInfo? subscription;
-      try {
-        final results = await Future.wait([
-          api.get<List<dynamic>>('/team'),
-          UpgradeApi.getSubscription(),
-        ]);
-        final allOrgs = (results[0] as List<dynamic>)
-            .cast<Map<String, dynamic>>();
-        log.info(
-          'ShowSettings: /team returned ${allOrgs.length} orgs: $allOrgs',
-        );
-        hasTeams = allOrgs.isNotEmpty;
-        adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
-        log.info('ShowSettings: adminOrgs after role filter: $adminOrgs');
-        subscription = results[1] as SubscriptionInfo;
-      } catch (e, t) {
-        // Non-critical — settings still work without these
-        log.warning('Failed to fetch orgs/subscription for settings', e, t);
-      }
-
-      final groups = [
-        if (cachedPrioritiesState != null)
-          ...settingsCommandsFromState(
-            cachedPrioritiesState!,
-            hasTeams: hasTeams,
-            email: email,
-            adminOrgs: adminOrgs,
-            subscription: subscription,
-            showAllPriorities: showAllPriorities,
-          ),
-      ];
-      final debugCmds = buildDebugCommands();
-      if (debugCmds != null) {
-        groups.add(debugCmds);
-      }
+      cachedContext ??= context;
+      final ctx = cachedContext!.mounted ? cachedContext! : context;
+      final groups = await buildSettingsGroups(ctx);
       return Commands(groups: groups);
     };
   }

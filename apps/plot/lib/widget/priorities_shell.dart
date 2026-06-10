@@ -6,7 +6,6 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
-import 'package:plot/command/command.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
@@ -21,6 +20,8 @@ import 'package:plot/widget/thread_header_notifier.dart';
 const int _kTabPriorities = 0;
 const int _kTabAgenda = 1;
 const int _kTabActivity = 2;
+const int _kTabSearch = 3;
+const int _kTabMore = 4;
 
 /// Bottom-nav slots in display order. [agenda] is present only when the user
 /// has an active calendar connection (see
@@ -121,11 +122,14 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   /// bottom nav should disappear.
   bool _isFullScreenRoute(BuildContext context) {
     final currentPath = context.router.currentPath;
-    if (currentPath.endsWith('/new')) return true;
     final pathSegments =
         currentPath.split('/').where((s) => s.isNotEmpty).toList();
-    return pathSegments.length >= 3 ||
-        (pathSegments.isNotEmpty && pathSegments.first == 't');
+    // Standalone thread (/t/:id) always full-screen.
+    if (pathSegments.isNotEmpty && pathSegments.first == 't') return true;
+    // The new-thread flow KEEPS the bottom bar (it's a top-level tab).
+    if (currentPath.endsWith('/new')) return false;
+    // A thread under a priority (/p/:id/:threadId — 3+ segments) hides the bar.
+    return pathSegments.length >= 3;
   }
 
   /// Maps the active tab + URL to the visual nav index. Priorities and
@@ -151,8 +155,12 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         return slots.indexOf(NavSlot.focuses);
       case _kTabAgenda:
         return slots.indexOf(NavSlot.agenda);
+      case _kTabSearch:
+        return slots.indexOf(NavSlot.search);
+      case _kTabMore:
+        return slots.indexOf(NavSlot.more);
       default:
-        // Activity tab (or anything else) — no bottom-nav highlight.
+        // Activity tab — no highlight unless on /new (handled above).
         return -1;
     }
   }
@@ -165,143 +173,112 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   ) {
     if (index < 0 || index >= slots.length) return;
     final slot = slots[index];
-    // Navigating away from the current page should leave search closed —
-    // otherwise coming back via Search would toggle the stale state closed
-    // instead of opening it fresh. More just opens a modal, so it leaves
-    // search alone.
-    if (slot != NavSlot.search && slot != NavSlot.more) {
+
+    // Search is its own tab now (tapping it navigates rather than toggling an
+    // overlay, so collapsing the inline search would be wrong). More opens a
+    // settings page/modal rather than navigating the main content, so it also
+    // shouldn't force-close a (multi-panel) inline search. All other slots do
+    // navigate away, so any stale inline-search toggle must be dismissed.
+    if (slot != NavSlot.more && slot != NavSlot.search) {
       LayoutBloc.instance?.requestSearchClose();
     }
+
     switch (slot) {
       case NavSlot.focuses:
-        // Bottom nav is "replace" — back from /priorities should exit
-        // the app, not return to whatever cross-tab origin was tracked.
-        // [markUrlStateForReplace] is consumed by the next URL state
-        // emission (triggered by setActiveIndex → notifyAll →
-        // rebuildUrl) so the URL-history entry replaces the previous
-        // one instead of pushing. That keeps browser back / Cmd+[
-        // walking only the meaningful navigation steps.
-        PrioritiesShell.sourceTab = null;
-        context.router.root.navigationHistory.markUrlStateForReplace();
-        tabsRouter.setActiveIndex(_kTabPriorities);
+        _switchOrPopToRoot(context, tabsRouter, _kTabPriorities);
         return;
       case NavSlot.agenda:
-        PrioritiesShell.sourceTab = null;
-        context.router.root.navigationHistory.markUrlStateForReplace();
-        tabsRouter.setActiveIndex(_kTabAgenda);
+        _switchOrPopToRoot(context, tabsRouter, _kTabAgenda);
         return;
       case NavSlot.newThread:
+        // New uses the Activity stack. _openNewThread handles resume vs reset
+        // vs fresh-push semantics; after sending, the send path opens the
+        // resulting thread on the same Activity stack.
         _openNewThread(context, tabsRouter);
         return;
       case NavSlot.search:
-        _openSearch(context, tabsRouter);
+        _switchOrPopToRoot(context, tabsRouter, _kTabSearch);
         return;
       case NavSlot.more:
-        ShowSettings().run(context);
+        _switchOrPopToRoot(context, tabsRouter, _kTabMore);
         return;
     }
   }
 
-  /// Bottom-nav Search button. Search lives on a [PriorityRoute] — so
-  /// when the user is on the Priorities or Agenda tab (or any non-priority
-  /// route) we first switch to the Activity tab, navigating to the user's
-  /// default/root priority if its stack is empty. If we're already on a
-  /// priority page, the existing header just expands its search inline.
-  ///
-  /// Single-panel search runs across the Everything feed, so switch to it
-  /// up front — before any query is typed — so the results span every
-  /// thread. This method only runs from the single-panel bottom nav. In
-  /// multi-panel the priorities sidebar swaps to the global-view
-  /// focus-as-filter panel whenever a query or filter is active; results are
-  /// global regardless of the selected focus (driven by
-  /// `PriorityBloc.globalViewScope`), so no context switch or restore is
-  /// needed there.
-  void _openSearch(BuildContext context, TabsRouter tabsRouter) {
-    final layoutBloc = LayoutBloc.instance;
-    final onActivityTab = tabsRouter.activeIndex == _kTabActivity;
-
-    final nowBloc = context.read<NowBloc>();
-    final nowState = nowBloc.state;
-    if (nowState is NowLoaded && !nowState.everything) {
-      nowBloc.setContext(nowState.defaultPriority, everything: true);
-    }
-
-    if (onActivityTab &&
-        layoutBloc != null &&
-        layoutBloc.hasSearchToggle) {
-      layoutBloc.requestSearchToggle();
+  /// Switches to [targetTab]. If that tab is already active, pops its inner
+  /// stack to its root instead (the universal "tap active tab = go to root"
+  /// idiom). Focuses/Agenda/Search/More all participate; New is handled by
+  /// [_openNewThread] because its reset semantics differ.
+  void _switchOrPopToRoot(
+    BuildContext context,
+    TabsRouter tabsRouter,
+    int targetTab,
+  ) {
+    if (tabsRouter.activeIndex == targetTab) {
+      final stack = tabsRouter.stackRouterOfIndex(targetTab);
+      if (stack != null && stack.canPop()) {
+        stack.popUntilRoot();
+      }
       return;
     }
-
-    final activityRouter = tabsRouter.stackRouterOfIndex(_kTabActivity);
-    if (activityRouter != null && activityRouter.stack.isNotEmpty) {
-      // Activity tab already has a priority page on its stack — just
-      // surface it and let its header pick up the toggle request.
-      tabsRouter.setActiveIndex(_kTabActivity);
-      _expandSearchWhenReady(context, attempt: 0);
-      return;
-    }
-
-    final priorityIdString = _activityPriorityIdString(context);
-    if (priorityIdString == null) return;
-    context.router.navigate(
-      PriorityRoute(priorityIdString: priorityIdString),
-    );
-    _expandSearchWhenReady(context, attempt: 0);
-  }
-
-  /// Polls across frames until a unified_header registers its toggle
-  /// handler with [LayoutBloc] (which happens in its first
-  /// didChangeDependencies). Mirrors [_pushNewThreadWhenInnerReady]'s
-  /// frame budget for parity with the New-thread cold-start path.
-  void _expandSearchWhenReady(BuildContext context, {required int attempt}) {
-    if (!context.mounted) return;
-    final layoutBloc = LayoutBloc.instance;
-    if (layoutBloc != null && layoutBloc.hasSearchToggle) {
-      layoutBloc.requestSearchToggle();
-      return;
-    }
-    if (attempt >= 120) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _expandSearchWhenReady(context, attempt: attempt + 1);
-    });
+    // Bottom-nav switches are "replace" so browser/Cmd+[ history doesn't
+    // grow a frame per tab tap (mirrors the prior Focus/Agenda behavior).
+    PrioritiesShell.sourceTab = null;
+    context.router.root.navigationHistory.markUrlStateForReplace();
+    tabsRouter.setActiveIndex(targetTab);
   }
 
   void _openNewThread(BuildContext context, TabsRouter tabsRouter) {
-    // Always start a fresh new-thread flow. AutoRoute reuses an already-mounted
-    // NewThreadPage (it does not build a new State), so a page sitting on
-    // step 2 would otherwise reappear mid-compose. A live page resets to
-    // step 1 with a fresh draft; a fresh mount ignores this bump.
-    NewThreadPageState.requestReset();
-
-    // Always lands on the Activity tab — NewThreadRoute lives there.
+    // New lands on the Activity tab — NewThreadRoute lives there. The inner
+    // stack must end up as [PriorityOnlyRoute, NewThreadRoute] so that back
+    // from /new pops to the priority page (not an empty navigator).
     //
-    // The inner stack must end up as [PriorityOnlyRoute, NewThreadRoute]
-    // so that back from /new pops to the priority page (not an empty
-    // navigator). Two paths get us there:
+    // Reset vs resume vs fresh depends on where we already are:
     //
-    // 1. PriorityRoute is already mounted (we're on it now, or it's
-    //    alive on the Activity stack while another tab is active) →
-    //    push NewThreadRoute on the existing inner router.
-    // 2. PriorityRoute isn't mounted yet (first cold-start activation
-    //    from Agenda/Priorities) → navigate to PriorityRoute (which
-    //    seeds the inner stack with the empty-path PriorityOnlyRoute)
-    //    and push NewThreadRoute on top once the inner router appears.
+    // - An in-progress /new is parked on the Activity stack while a DIFFERENT
+    //   tab is showing → just switch to the Activity tab to RESUME the draft
+    //   (no reset — the design preserves a draft across tab switches).
+    // - We're ALREADY viewing /new (Activity tab active) and the user taps New
+    //   again → reset to step 1 with a fresh draft (tap-active = start over).
+    // - No /new on the stack (we're on the feed or a thread) → push a FRESH
+    //   NewThreadRoute and reset so the new mount starts clean.
     //
-    // Avoid `navigate(PriorityRoute(children:[New]))` (drops the inner
-    // child if PriorityRoute is already on the Activity stack) and
-    // `navigatePath('/p/:pid/new')` (sets the inner stack to
-    // [NewThreadRoute] only, with nothing to pop back to).
+    // AutoRoute reuses an already-mounted NewThreadPage (it does not build a
+    // new State), so a live page sitting on step 2 would otherwise reappear
+    // mid-compose; requestReset() resets it to step 1 with a fresh draft, and a
+    // fresh mount ignores the bump.
+    //
+    // Avoid `navigate(PriorityRoute(children:[New]))` (drops the inner child if
+    // PriorityRoute is already on the Activity stack) and
+    // `navigatePath('/p/:pid/new')` (sets the inner stack to [NewThreadRoute]
+    // only, with nothing to pop back to).
     final innerRouter = _findPriorityInnerRouter(context.router.root);
     if (innerRouter != null) {
+      final onNewThread = innerRouter.current.name == NewThreadRoute.name;
+      if (onNewThread) {
+        if (tabsRouter.activeIndex == _kTabActivity) {
+          // Already viewing /new → tap-active starts over at step 1.
+          NewThreadPageState.requestReset();
+        } else {
+          // /new parked while another tab is active → resume the draft.
+          tabsRouter.setActiveIndex(_kTabActivity);
+        }
+        return;
+      }
+      // No /new on the stack — fresh compose: reset then push.
+      NewThreadPageState.requestReset();
       if (tabsRouter.activeIndex != _kTabActivity) {
         tabsRouter.setActiveIndex(_kTabActivity);
       }
-      if (innerRouter.current.name != NewThreadRoute.name) {
-        innerRouter.push(NewThreadRoute());
-      }
+      innerRouter.push(NewThreadRoute());
       return;
     }
+
+    // Cold-start path: PriorityRoute isn't mounted yet (first activation from
+    // Agenda/Priorities). Navigate to PriorityRoute (which seeds the inner
+    // stack with the empty-path PriorityOnlyRoute) and push NewThreadRoute on
+    // top once the inner router appears. A fresh mount, so reset to be safe.
+    NewThreadPageState.requestReset();
 
     final priorityIdString = _activityPriorityIdString(context);
     if (priorityIdString == null) return;
@@ -372,6 +349,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         PrioritiesRoute(),
         EmptyShellRoute("AgendaShell")(),
         EmptyShellRoute("ActivityShell")(),
+        EmptyShellRoute("SearchShell")(),
+        EmptyShellRoute("MoreShell")(),
       ],
       transitionBuilder: (context, child, animation) => child,
       builder: (context, child) {

@@ -5,6 +5,8 @@ export 'animated_removal.dart';
 export 'autofocus_reclaim.dart';
 export 'avatar.dart';
 export 'thread.dart';
+export 'activity_feed_thread_row.dart';
+export 'search_footer.dart';
 export 'alert.dart';
 export 'note.dart';
 export 'note_editor.dart';

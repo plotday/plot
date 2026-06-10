@@ -127,6 +127,13 @@ publisher row. Regenerate and commit `libs/db/src/types.ts`.
   publisher-token branches, lines 438–483), when `environment === 'public'`, load
   the publisher and return `403` unless `can_publish_public` is `true`. This is
   one uniform rule for every environment (prod and local dev).
+- **The `403` must carry a clear, actionable message** so a non-approved
+  publisher attempting a public deploy understands why and what to do — e.g.
+  `Forbidden: publisher "<name>" is not approved to publish to the public
+  environment. Contact Plot to request public-publish access.` (Name the
+  publisher; do not return a generic "Forbidden".) This surfaces through the CLI's
+  existing non-2xx error handler (`deploy.ts` "Upload failed" path), so the
+  message reaches the operator's terminal verbatim.
 
 Local dev sets the flag on the seeded Plot publisher once (seed/fixture update),
 so local `plot deploy -e public` keeps working without the old shortcut.

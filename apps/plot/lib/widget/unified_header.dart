@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:auto_route/auto_route.dart';
-// OutlineInputBorder is used to give the single-panel full-takeover search
-// field square corners (BorderRadius.zero). Imported with `show` per the
+// OutlineInputBorder is used to give the multi-panel header search field
+// square corners (BorderRadius.zero). Imported with `show` per the
 // established pattern in widget/compose/compose_search_field.dart.
 import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/scheduler.dart' show Ticker;
@@ -61,9 +61,20 @@ const double _kHeaderHeight = 44.0;
 /// outer resize divider naturally runs top-to-bottom of the window without
 /// the header content having to be split across regions.
 class UnifiedHeader extends StatefulWidget {
-  const UnifiedHeader({this.variant = HeaderVariant.single, super.key});
+  const UnifiedHeader({
+    this.variant = HeaderVariant.single,
+    this.onBack,
+    super.key,
+  });
 
   final HeaderVariant variant;
+
+  /// Single-panel only: invoked by the leading ← back button rendered on the
+  /// bare priority page (`/p/:id`). Performs the same return-to-source-tab
+  /// action as the OS back gesture. Null in multi-panel mode (the header is
+  /// laid out as panels there) and ignored on thread/new pages, which have
+  /// their own back affordances.
+  final VoidCallback? onBack;
 
   @override
   State<UnifiedHeader> createState() => _UnifiedHeaderState();
@@ -121,9 +132,22 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _panelController = ActivityPanelControllerProvider.maybeOf(context);
-    _panelController?.registerSearchToggle(_toggleSearch);
-    LayoutBloc.instance?.registerSearchToggle(_toggleSearch);
-    LayoutBloc.instance?.registerSearchClose(_closeSearchIfOpen);
+    // The inline header search field only exists in multi-panel mode — on
+    // desktop it's the only way to search (there's no bottom-nav). In
+    // single-panel mode search is a dedicated bottom-nav tab, so the `single`
+    // header variant must NOT register a toggle handler: that keeps
+    // [LayoutBloc.hasSearchToggle] false and
+    // [PriorityShortcutsProviderState._searchToggleCallback] null, so the `/`
+    // shortcut and any bottom-nav requestSearchToggle/Close cleanly no-op.
+    // The `single` variant is only ever rendered in single-panel mode (see
+    // priority.dart), so gating on the variant is equivalent to gating on
+    // multiPanel here but stable across resize (didChangeDependencies doesn't
+    // re-run on width changes).
+    if (widget.variant != HeaderVariant.single) {
+      _panelController?.registerSearchToggle(_toggleSearch);
+      LayoutBloc.instance?.registerSearchToggle(_toggleSearch);
+      LayoutBloc.instance?.registerSearchClose(_closeSearchIfOpen);
+    }
     // No PriorityBloc when the header is used on the Priorities tab
     // (single-panel root view). That path renders the no-priority header
     // and has nothing to wire up here.
@@ -162,6 +186,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     // route-change notification while the header is deactivated, where the
     // context ancestor lookup would throw.
     return _rootRouter?.currentPath.endsWith('/new') ?? false;
+  }
+
+  /// True when the active route is the bare priority page itself —
+  /// `/p/:id` (exactly two path segments, first `p`). False for a thread
+  /// (`/p/:id/:threadId`, which has its own back) and for the new-thread
+  /// page (`/p/:id/new`, whose back affordance lives inside the page). This
+  /// gates the leading ← back button so it only shows on the focus feed.
+  /// Mirrors the inverse of priorities_shell's `_isFullScreenRoute` path
+  /// check; reads the cached root router for the same deactivation-safety
+  /// reason as [_computeIsNewThreadRoute].
+  bool get _isBarePriorityRoute {
+    final path = _rootRouter?.currentPath;
+    if (path == null) return false;
+    final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+    return segments.length == 2 && segments.first == 'p';
   }
 
   void _onRouteChanged() {
@@ -490,38 +529,41 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       ),
     );
 
-    // Single-panel search takes over the entire header: the input runs
-    // edge-to-edge (no header page padding) as a borderless prompt with a
-    // fading underline, and the back / more buttons are dropped — the in-field
-    // ✕ closes search and restores them. Only the macOS traffic-light gutter is
-    // reserved.
-    if (_searchVisible) {
-      return _wrapHeader(
-        context,
-        layoutState,
-        [
-          if (resolvedToolbarPadding.left != 0)
-            SizedBox(width: resolvedToolbarPadding.left),
-          _buildSearchField(
-            context,
-            layoutState,
-            state,
-            notifier,
-            fullWidth: true,
-          ),
-        ],
-        suffixes: <Widget>[
-          if (resolvedToolbarPadding.right != 0)
-            SizedBox(width: resolvedToolbarPadding.right),
-        ],
-        decoration: decoration,
-        contentPadding: EdgeInsets.zero,
-      );
-    }
+    // Single-panel mode has no inline header search — search is a dedicated
+    // bottom-nav tab. The search field and its toggle registration are gated
+    // to the multi-panel `main` variant (see didChangeDependencies and
+    // _buildMainHeader), so `_searchVisible` is never true here.
+
+    // Leading ← back button: returns from the focus feed to the bottom-nav
+    // tab the user came from (the same action as the OS back gesture — see
+    // [returnFromPriorityToSourceTab]). Shown only on the bare `/p/:id`
+    // priority page in single-panel mode. Threads have their own back
+    // button (the [ChangeCurrentThread] arrow below); the new-thread page
+    // carries its own affordance. Styled like the new-thread / connection
+    // picker back chevron (PlotIcon.left, ~18px, muted). A GestureDetector
+    // (not a hover button) keeps the default desktop arrow cursor.
+    final bool showPriorityBack =
+        widget.onBack != null &&
+        !layoutState.multiPanel &&
+        !hasActivity &&
+        _isBarePriorityRoute;
 
     final List<Widget> leading = [
       if (resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
+      if (showPriorityBack)
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onBack,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: Icon(
+              PlotIcon.left,
+              size: 18,
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ),
       if (hasActivity)
         Button.icon(
           CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
@@ -817,11 +859,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
-    ThreadHeaderNotifier? notifier, {
-    // Single-panel takeover: drop the centered max-width cap so the borderless
-    // prompt + underline run the full width of the header band.
-    bool fullWidth = false,
-  }) {
+    ThreadHeaderNotifier? notifier,
+  ) {
     final typography = context.theme.typography;
     final colors = context.theme.colors;
     List<Command> buildFilters(BuildContext ctx) {
@@ -1029,9 +1068,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       },
     );
 
-    if (fullWidth) {
-      return Expanded(child: prompt);
-    }
     return Expanded(
       child: Align(
         alignment: Alignment.centerLeft,
