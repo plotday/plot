@@ -28,6 +28,9 @@ notificationContent.get("/notification-content", async (c) => {
       priority_id: string;
       priority_path: string;
       priority_title: string;
+      has_been_read: boolean;
+      original_author_name: string | null;
+      unread_author_names: string | null;
     }>`
       SELECT
         tu.urgent,
@@ -38,7 +41,33 @@ notificationContent.get("/notification-content", async (c) => {
         t.preview AS thread_preview,
         p.id::text AS priority_id,
         p.path::text AS priority_path,
-        p.title AS priority_title
+        p.title AS priority_title,
+        EXISTS (
+          SELECT 1 FROM thread_read tr
+          WHERE tr.thread_id = t.id AND tr.user_id = ${userId}::uuid
+        ) AS has_been_read,
+        (
+          SELECT a.name FROM actor a
+          WHERE a.id = COALESCE(
+            t.author_id,
+            (
+              SELECT n.author_id FROM note n
+              WHERE n.thread_id = t.id AND n.archived_at IS NULL
+              ORDER BY n.created_at ASC LIMIT 1
+            )
+          )
+        ) AS original_author_name,
+        (
+          SELECT string_agg(DISTINCT COALESCE(a.name, 'Someone'), ',')
+          FROM note n
+          JOIN actor a ON a.id = n.author_id
+          LEFT JOIN thread_read tr ON tr.thread_id = t.id AND tr.user_id = ${userId}::uuid
+          WHERE n.thread_id = t.id
+            AND n.archived_at IS NULL
+            AND n.draft = false
+            AND NOT (n.author_id = ANY("user".user_contact_ids(${userId}::uuid)))
+            AND (tr.read_at IS NULL OR n.created_at > tr.read_at)
+        ) AS unread_author_names
       FROM thread_state tu
       JOIN thread t ON t.id = tu.thread_id
       JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
@@ -62,6 +91,7 @@ notificationContent.get("/notification-content", async (c) => {
           t.contacts && "user".user_contact_ids(${userId}::uuid)
           OR t.groups && "user".user_group_ids(${userId}::uuid)
         )
+        AND COALESCE(t.facets ->> 'format', '') NOT IN ('notification', 'promotion')
       ORDER BY tu.urgent DESC, tu.importance DESC
     `.execute(db);
 
@@ -102,6 +132,9 @@ notificationContent.get("/notification-content", async (c) => {
         id: string;
         title: string | null;
         preview: string | null;
+        has_been_read?: boolean;
+        original_author_name?: string | null;
+        unread_author_names?: string | null;
       }>;
       urgent: boolean;
       maxUpdatedAt: Date;
@@ -134,6 +167,9 @@ notificationContent.get("/notification-content", async (c) => {
         id: row.thread_id,
         title: row.thread_title,
         preview: row.thread_preview,
+        has_been_read: row.has_been_read,
+        original_author_name: row.original_author_name,
+        unread_author_names: row.unread_author_names,
       });
 
       if (row.urgent) batch.urgent = true;

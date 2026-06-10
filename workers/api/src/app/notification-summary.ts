@@ -14,7 +14,40 @@ const ThreadSchema = z.object({
   id: z.string(),
   title: z.string().nullable(),
   preview: z.string().nullable(),
+  has_been_read: z.boolean().optional(),
+  original_author_name: z.string().nullable().optional(),
+  unread_author_names: z.string().nullable().optional(),
 });
+
+export function formatSingleThreadNotification(
+  title: string,
+  hasBeenRead?: boolean,
+  originalAuthorName?: string | null,
+  unreadAuthorNames?: string | null
+): string {
+  if (hasBeenRead) {
+    if (unreadAuthorNames) {
+      const names = unreadAuthorNames.split(",").map((n) => n.trim()).filter(Boolean);
+      if (names.length === 1) {
+        return `${names[0]} replied to: ${title}`;
+      } else if (names.length === 2) {
+        return `${names[0]} and ${names[1]} replied to: ${title}`;
+      } else if (names.length > 2) {
+        return `${names[0]}, ${names[1]}, and more replied to: ${title}`;
+      }
+    }
+    return `New reply to: ${title}`;
+  } else {
+    const author = originalAuthorName || unreadAuthorNames;
+    if (author) {
+      const names = author.split(",").map((n) => n.trim()).filter(Boolean);
+      if (names.length > 0) {
+        return `${names[0]}: ${title}`;
+      }
+    }
+    return title;
+  }
+}
 
 const BatchSchema = z.object({
   first_level_priority_id: z.string(),
@@ -78,16 +111,24 @@ export async function generateSummary(
   const ai = env.AI;
   // For a single thread with a title, just use it directly
   if (threads.length === 1 && threads[0].title) {
-    return threads[0].title;
+    return formatSingleThreadNotification(
+      threads[0].title,
+      threads[0].has_been_read,
+      threads[0].original_author_name,
+      threads[0].unread_author_names
+    );
   }
 
-  // Build a simple description of the updates
+  // Build a simple description of the updates including author context for the LLM
   const descriptions = threads
     .slice(0, 5)
     .map((t) => {
       const title = t.title || "Untitled";
+      const authorCtx = t.has_been_read
+        ? (t.unread_author_names ? ` [unread replies from ${t.unread_author_names}]` : "")
+        : (t.original_author_name || t.unread_author_names ? ` [by ${t.original_author_name || t.unread_author_names}]` : "");
       const preview = t.preview ? `: ${t.preview.slice(0, 100)}` : "";
-      return `- ${title}${preview}`;
+      return `- ${title}${authorCtx}${preview}`;
     })
     .join("\n");
 
@@ -145,7 +186,14 @@ export async function generateSummary(
 
 export function fallbackSummary(threads: z.infer<typeof ThreadSchema>[]): string {
   if (threads.length === 1) {
-    return threads[0].title || "1 new update";
+    return threads[0].title
+      ? formatSingleThreadNotification(
+          threads[0].title,
+          threads[0].has_been_read,
+          threads[0].original_author_name,
+          threads[0].unread_author_names
+        )
+      : "1 new update";
   }
   const top = threads[0].title;
   if (top) {

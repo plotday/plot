@@ -71,6 +71,7 @@ export async function selectDigestThreads(
         OR t.groups && "user".user_group_ids(${userId}::uuid)
       )
       AND t.twist_id IS NULL
+      AND COALESCE(t.facets ->> 'format', '') NOT IN ('notification', 'promotion')
       AND EXISTS (
         SELECT 1 FROM note n
         WHERE n.thread_id = t.id
