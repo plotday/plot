@@ -72,6 +72,21 @@ class ChangeCurrentThread extends ThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Closing a thread that was opened from the Search tab must pop the
+    // LOCAL Search stack, not run the usual ChangeCurrentThread(null)
+    // logic. The Search tab opens a tapped result IN-TAB as
+    // `/search/p/:id/:tid` (a PriorityRoute → ThreadRoute pushed onto the
+    // SearchShell stack). The generic close path below resolves its target
+    // router with a root-DFS for the first PriorityRoute inner router; that
+    // DFS visits the Activity tab (index 2) before Search (index 3), so it
+    // would operate on the Activity stack instead and the Search thread's
+    // back affordance would no-op. Pop the SearchShell stack down to the
+    // results page instead. (The Activity-tab close path is unchanged.)
+    if (thread == null) {
+      final searchPop = _maybeCloseSearchThread(context);
+      if (searchPop != null) return searchPop;
+    }
+
     // Read blocs once to avoid multiple lookups
     final priorityBloc = context.read<PriorityBloc>();
     final nowBloc = context.read<NowBloc>();
@@ -207,6 +222,36 @@ class ChangeCurrentThread extends ThreadCommand {
     );
 
     return CommandRoute(route);
+  }
+
+  /// When the active route is a thread opened inside the Search tab
+  /// (`/search/p/:id/:tid`), pops the local SearchShell stack back to the
+  /// search results ([SearchRoute]) and returns a completed [CommandReturn].
+  /// Returns null when the current thread is NOT in the Search stack, so the
+  /// caller falls through to the normal Activity-tab close behavior.
+  ///
+  /// Why a local pop instead of [ChangeCurrentThread]'s usual router
+  /// resolution: the Search PriorityRoute declares only a [ThreadRoute] child
+  /// (no [PriorityOnlyRoute]), so the thread renders as the entire
+  /// PriorityRoute inner stack. The Activity tab unwinds a thread by clearing
+  /// it back to the priority feed (PriorityOnlyRoute), but Search has no such
+  /// landing — the correct "back" is to pop the PriorityRoute page off the
+  /// SearchShell stack, revealing the results page underneath. We detect the
+  /// Search stack via the router's internal path (unaffected by the
+  /// `/t/:id` browser-URL override, which only rewrites the address bar).
+  CommandReturn? _maybeCloseSearchThread(BuildContext context) {
+    // The browser-URL override never touches auto_route's internal urlState,
+    // so the root controller's path still carries the real nested shape.
+    if (!context.router.root.currentPath.startsWith('/search')) return null;
+
+    // Find the SearchShell stack router and pop everything above the results
+    // page. The SearchShell stack is `[SearchRoute, PriorityRoute→ThreadRoute]`,
+    // so popUntil unwinds the PriorityRoute page and lands directly on
+    // SearchRoute (the results) — never on an empty PriorityRoute placeholder.
+    final searchRouter = _findInnerRouter(context.router.root, 'SearchShell');
+    if (searchRouter == null) return null;
+    searchRouter.popUntilRouteWithName(SearchRoute.name);
+    return const CommandDone();
   }
 
   /// Returns the inner [StackRouter] hosted by the active [PriorityRoute],
