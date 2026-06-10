@@ -15,13 +15,14 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/router.dart';
-import 'package:plot/widget/spinner.dart';
-import 'package:plot/widget/thread.dart';
+import 'package:plot/widget/activity_feed_thread_row.dart';
+import 'package:plot/widget/search_footer.dart';
 
 /// Global Search tab (single-panel). Hosts its own [PriorityBloc] scoped to
 /// the default/root priority in `everything: true` mode, so search spans every
 /// focus. The bloc's query/search machinery produces the results we render as
-/// a flat list of [ThreadWidget] rows.
+/// a flat list of [ActivityFeedThreadRow] rows (so calendar-event results get
+/// the same representative-occurrence resolution as the activity feed).
 ///
 /// The bloc is provided with `setContext: false` so merely mounting this page
 /// (or emitting search results) never publishes a current-focus to [NowBloc] —
@@ -34,8 +35,11 @@ class SearchPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PriorityBlocProvider(
-      // Scope to the user's default (root) priority. `everything: true` is
-      // applied by [_SearchView] once mounted so results span all focuses.
+      // Scope to the user's default (root) priority via the intentional
+      // `useDefault` path (no priorityId/threadId, no error fallback, no
+      // WARNING on mount). `everything: true` is applied by [_SearchView]
+      // once mounted so results span all focuses.
+      useDefault: true,
       setContext: false,
       child: const _SearchView(),
     );
@@ -55,10 +59,15 @@ class _SearchViewState extends State<_SearchView> {
   Timer? _debounceTimer;
   String _lastSearchText = '';
 
-  /// Reused per result row so [ThreadWidget] always has a non-null focus node
-  /// (it expects one for keyboard handling). A single shared node is fine for a
-  /// tap-driven flat list — we don't run arrow-key navigation across rows here.
-  final FocusNode _rowFocusNode = FocusNode();
+  /// One [FocusNode] per result row, keyed by thread id. [ActivityFeedThreadRow]
+  /// (and the [ThreadWidget] it wraps) expects a non-null focus node for
+  /// keyboard handling, and giving each row its own node avoids the focus
+  /// thrash a single shared node would cause. Created lazily as rows build and
+  /// disposed together in [dispose].
+  final Map<ThreadId, FocusNode> _rowFocusNodes = {};
+
+  FocusNode _focusNodeFor(ThreadId threadId) =>
+      _rowFocusNodes.putIfAbsent(threadId, FocusNode.new);
 
   @override
   void initState() {
@@ -84,7 +93,9 @@ class _SearchViewState extends State<_SearchView> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _rowFocusNode.dispose();
+    for (final node in _rowFocusNodes.values) {
+      node.dispose();
+    }
     _debounceTimer?.cancel();
     super.dispose();
   }
@@ -179,19 +190,22 @@ class _SearchViewState extends State<_SearchView> {
       itemCount: threads.length + (showFooter ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == threads.length) {
-          return _SearchFooter(state: state);
+          return SearchFooter(state: state);
         }
         final thread = threads[index];
+        // The opaque GestureDetector intercepts the tap to push the Search
+        // tab's own PriorityRoute→ThreadRoute stack (see [_openThread]),
+        // overriding the inner ThreadWidget's default ChangeCurrentThread.
         return GestureDetector(
+          key: ValueKey('search_thread_${thread.id}'),
           behavior: HitTestBehavior.opaque,
           onTap: () => _openThread(thread),
-          child: ThreadWidget(
-            key: ValueKey('search_thread_${thread.id}'),
-            activity: thread,
-            context: thread.priority,
+          child: ActivityFeedThreadRow(
+            baseThread: thread,
+            selected: false,
             now: false,
-            focusNode: _rowFocusNode,
-            showSubPriority: true,
+            focusNode: _focusNodeFor(thread.id),
+            priorityContext: thread.priority,
             isSearch: true,
           ),
         );
@@ -290,62 +304,5 @@ class _SearchField extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Search footer mirroring [PriorityPage]'s `_SearchFooter`: spinner while a
-/// remote search is in flight, an archived-matches hint, or an offline note.
-class _SearchFooter extends StatelessWidget {
-  const _SearchFooter({required this.state});
-
-  final PriorityState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.theme.plotColors;
-    final padding = EdgeInsets.symmetric(
-      horizontal: context.contentPaddingH,
-      vertical: context.theme.spacing.md,
-    );
-
-    if (state.remoteSearchInProgress) {
-      return Padding(
-        padding: padding,
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [Spinner()],
-        ),
-      );
-    }
-
-    if (state.hasArchivedMatches && !state.showArchived) {
-      return Padding(
-        padding: padding,
-        child: Align(
-          alignment: Alignment.center,
-          child: FButton(
-            variant: FButtonVariant.ghost,
-            onPress: () => context.read<PriorityBloc>().toggleShowArchived(),
-            child: const Text('View archived items matching this search'),
-          ),
-        ),
-      );
-    }
-
-    if (state.remoteSearchOffline) {
-      return Padding(
-        padding: padding,
-        child: Text(
-          'Offline — showing local matches only',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: colors.veryMuted,
-            fontSize: context.theme.typography.sm.fontSize,
-          ),
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
   }
 }

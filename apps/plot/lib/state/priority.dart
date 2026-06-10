@@ -4318,6 +4318,7 @@ class PriorityBlocProvider extends StatefulWidget {
     this.priorityId,
     this.threadId,
     this.priority,
+    this.useDefault = false,
     this.setContext = true,
     required this.child,
     super.key,
@@ -4326,6 +4327,14 @@ class PriorityBlocProvider extends StatefulWidget {
   final PriorityId? priorityId;
   final ThreadId? threadId;
   final Priority? priority;
+
+  /// When true, load the user's default (root) priority directly instead of a
+  /// specific priority/thread. This is an intentional, warning-free path for
+  /// universal views like the global Search tab that span every focus and have
+  /// no single priority to target. Distinct from the error-fallback default:
+  /// supplying none of [priorityId]/[threadId]/[priority] without this flag is
+  /// a misuse and is surfaced as an error.
+  final bool useDefault;
 
   /// When true (default), the loaded priority is published to [NowBloc] as
   /// the user's current context. Universal views like the agenda — which
@@ -4403,6 +4412,11 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
           ? Priority.getOne(widget.priorityId!)
           : widget.threadId != null
           ? Thread.getOne(widget.threadId!).then((thread) => thread.priority)
+          // Intentional default-priority path (e.g. global Search). Load the
+          // default directly so universal views don't trip the error fallback
+          // (which would log a WARNING on every mount).
+          : widget.useDefault
+          ? Priority.getDefault()
           : Future<Priority>.error(
               'Either priorityId or threadId must be provided',
             ));

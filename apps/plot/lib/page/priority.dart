@@ -1257,7 +1257,7 @@ class _PriorityPageState extends State<PriorityPage>
           return null;
         }
         if (index == footerIndex) {
-          return _SearchFooter(state: state);
+          return SearchFooter(state: state);
         }
         final current = displayItems[index];
         final dropAbove = boundaries.before[index];
@@ -1360,7 +1360,7 @@ class _PriorityPageState extends State<PriorityPage>
                         'feed_activitywidget_${baseThread.id}_assoc_${agendaActivity.associationParentId ?? ''}',
                       )
                     : ValueKey('feed_activitywidget_${baseThread.id}');
-                final item = _ActivityFeedItem(
+                final item = ActivityFeedThreadRow(
                   key: rowKey,
                   baseThread: baseThread,
                   selected:
@@ -1404,144 +1404,6 @@ class _PriorityPageState extends State<PriorityPage>
     return BlockDragScope(
       controller: _activityFeedDragController,
       child: ScrollEdgeFade(background: context.colour.background, child: list),
-    );
-  }
-}
-
-class _SearchFooter extends StatelessWidget {
-  const _SearchFooter({required this.state});
-
-  final PriorityState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.theme.plotColors;
-    final padding = EdgeInsets.symmetric(
-      horizontal: context.contentPaddingH,
-      vertical: context.theme.spacing.md,
-    );
-
-    if (state.remoteSearchInProgress) {
-      return Padding(
-        padding: padding,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [const Spinner()],
-        ),
-      );
-    }
-
-    if (state.hasArchivedMatches && !state.showArchived) {
-      return Padding(
-        padding: padding,
-        child: Align(
-          alignment: Alignment.center,
-          child: FButton(
-            variant: FButtonVariant.ghost,
-            onPress: () => context.read<PriorityBloc>().toggleShowArchived(),
-            child: const Text('View archived items matching this search'),
-          ),
-        ),
-      );
-    }
-
-    if (state.remoteSearchOffline) {
-      return Padding(
-        padding: padding,
-        child: Text(
-          'Offline — showing local matches only',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: colors.veryMuted,
-            fontSize: context.theme.typography.sm.fontSize,
-          ),
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
-  }
-}
-
-class _ActivityFeedItem extends StatefulWidget {
-  const _ActivityFeedItem({
-    super.key,
-    required this.baseThread,
-    required this.selected,
-    required this.now,
-    required this.focusNode,
-    required this.priorityContext,
-    this.isAssociated = false,
-    this.isSearch = false,
-  });
-
-  final Thread baseThread;
-  final bool selected;
-  final bool now;
-  final FocusNode focusNode;
-  final Priority priorityContext;
-  final bool isAssociated;
-  final bool isSearch;
-
-  @override
-  State<_ActivityFeedItem> createState() => _ActivityFeedItemState();
-}
-
-class _ActivityFeedItemState extends State<_ActivityFeedItem> {
-  late Future<Thread?> _representative;
-
-  @override
-  void initState() {
-    super.initState();
-    _representative = context.read<PriorityBloc>().loadRepresentativeForFeed(
-      widget.baseThread,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _ActivityFeedItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.baseThread.id != widget.baseThread.id ||
-        oldWidget.baseThread.scheduleId != widget.baseThread.scheduleId ||
-        oldWidget.baseThread.currentUserRsvp !=
-            widget.baseThread.currentUserRsvp) {
-      _representative = context.read<PriorityBloc>().loadRepresentativeForFeed(
-        widget.baseThread,
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<Thread?>(
-      future: _representative,
-      builder: (context, snapshot) {
-        final rep = snapshot.data;
-        // Compose the live baseThread with the cached representative's
-        // picked schedule + flags so the row reflects up-to-date sync
-        // state (unread, title, tags, …) instead of the snapshot taken
-        // when the representative was resolved. See
-        // PriorityBloc._representativeCache for why we cache.
-        final display = rep != null
-            ? widget.baseThread.withRepresentativeFrom(rep)
-            : widget.baseThread;
-        // Key intentionally excludes the resolved scheduleId — including
-        // it would change identity once the Future resolves and force
-        // every ThreadWidget to remount, dropping focus and re-running
-        // layout.
-        return ThreadWidget(
-          key: ValueKey('feed_activitywidget_${widget.baseThread.id}'),
-          activity: display,
-          selected: widget.selected,
-          now: widget.now,
-          focusNode: widget.focusNode,
-          context: widget.priorityContext,
-          showSubPriority: true,
-          isSearch: widget.isSearch,
-          showEventTiming: rep != null,
-          isAssociated: widget.isAssociated,
-        );
-      },
     );
   }
 }
