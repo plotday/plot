@@ -23,6 +23,10 @@ jobs:
     name: Deploy
     needs: refresh-secrets
     runs-on: ubuntu-latest
+    # Mapped to a job-level env so steps can gate on it: the `secrets` context
+    # is not available in step `if:` conditionals, but `env` is.
+    env:
+      POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_KEY }}
 
     steps:
       - name: Generate GitHub App Token
@@ -63,6 +67,15 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Write app.env file
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
@@ -90,6 +103,14 @@ jobs:
 
       - name: Cache-bust web font URLs
         run: cd apps/plot && bash scripts/cache-bust-fonts.sh
+
+      - name: Inject and upload source maps to PostHog
+        if: ${{ env.POSTHOG_CLI_TOKEN != '' }}
+        env:
+          POSTHOG_CLI_ENV_ID: ${{ secrets.POSTHOG_PROJECT }}
+        run: |
+          pnpm exec posthog-cli sourcemap inject --directory apps/plot/build/web --project plot --version "${{ steps.version.outputs.build_number }}"
+          pnpm exec posthog-cli sourcemap upload --directory apps/plot/build/web --project plot --version "${{ steps.version.outputs.build_number }}"
 
       - name: Smoke test web build
         run: |
