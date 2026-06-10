@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/priorities_shell.dart' show BottomNavInset;
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 
@@ -1935,17 +1936,22 @@ class NewThreadPageState extends State<NewThreadPage> {
       onRowMore: _rowMore,
       onAddContact: _addContact,
       onAddGroup: _addGroup,
-      // Single-panel mode drops the global header back button; the picker's
-      // search-field leading slot carries the back affordance instead and
-      // closes the new-thread page. Multi-panel keeps a plain search icon.
-      onBack: multiPanel ? null : () => context.run(ChangeCurrentThread(null)),
+      // Step 1 has no back affordance: the bottom-nav tab is the exit now
+      // (tapping another tab parks the draft), and in multi-panel the
+      // new-thread flow is the default right-panel so there's nothing to exit.
       pendingLink: _pendingLink,
       onClearLink: _clearPendingLink,
     );
 
     if (!multiPanel) {
+      // Reserve the overlaid bottom-nav height so the sections list clears the
+      // bar (single-panel keeps the bar on /new). Returns 0 in multi-panel.
       return Padding(
-        padding: EdgeInsets.symmetric(horizontal: context.contentPaddingH),
+        padding: EdgeInsets.only(
+          left: context.contentPaddingH,
+          right: context.contentPaddingH,
+          bottom: BottomNavInset.of(context),
+        ),
         child: picker,
       );
     }
@@ -1984,8 +1990,14 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
 
     if (!multiPanel) {
+      // Reserve the overlaid bottom-nav height (single-panel keeps the bar on
+      // /new). Mirrors [_buildTargetPickerStep].
       return Padding(
-        padding: EdgeInsets.symmetric(horizontal: context.contentPaddingH),
+        padding: EdgeInsets.only(
+          left: context.contentPaddingH,
+          right: context.contentPaddingH,
+          bottom: BottomNavInset.of(context),
+        ),
         child: view,
       );
     }
@@ -2000,6 +2012,36 @@ class NewThreadPageState extends State<NewThreadPage> {
           SizedBox(height: context.theme.spacing.lg),
           Expanded(child: view),
         ],
+      ),
+    );
+  }
+
+  /// Top-left "go back" chevron for the compose step (single-panel). Returns to
+  /// the previous step — the connection picker when a recipient was chosen for
+  /// this target, else the sections picker — via [_backFromCompose] (the same
+  /// handler the Connection field tap and Escape use). Mirrors the leading
+  /// chevron style of steps 1/2 (PlotIcon.left, muted, plain GestureDetector —
+  /// no pointer cursor). Left-aligned so it lines up with the field icons below.
+  Widget _buildComposeBackChevron(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: context.contentPaddingH,
+          bottom: context.theme.spacing.xs,
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _backFromCompose,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: Icon(
+              PlotIcon.left,
+              size: 18,
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2194,44 +2236,67 @@ class NewThreadPageState extends State<NewThreadPage> {
                             // extra `contentPaddingH` wrapper here would only
                             // indent the fields, breaking that alignment.
                             if (!layoutState.multiPanel) {
-                              return FocusTraversalGroup(
-                                policy: WidgetOrderTraversalPolicy(),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _buildComposeSurface(context, state),
-                                    SizedBox(height: context.theme.spacing.md),
-                                    Flexible(
-                                      child: EditableArea(
-                                        padding: false,
-                                        position: EditableAreaPosition.bottom,
-                                        flushToBottom: true,
-                                        builder: (context, _) => Focus(
-                                          canRequestFocus: false,
-                                          skipTraversal: true,
-                                          onKeyEvent: _handleEditorKeys,
-                                          child: NoteEditor(
-                                            key: _threadEditorKey,
-                                            bodyOnly: true,
-                                            draft: state.draftNote,
-                                            thread: state.draft,
-                                            onDraftChanged: _handleDraftChanged,
-                                            flushToBottom: true,
-                                            showScheduleActions: false,
-                                            hint: _computeEditorHint(state),
-                                            sendLabel: _computeSendLabel(state),
-                                            additionalMentions: _twistMentions,
-                                            onSubmitted: _onChatSubmitted,
-                                            submitValidator: _validateDmSubmit,
-                                            selectedTwist: _selectedTwist,
-                                            onTwistSelected: _selectTwist,
-                                            onTwistMentioned: _onTwistMentioned,
+                              // Reserve the overlaid bottom-nav height so the
+                              // editor / action row sits above the bar when the
+                              // keyboard is down. When the keyboard is up,
+                              // viewInsets.bottom already pushes content past the
+                              // bar (which the keyboard covers), so subtract it to
+                              // avoid stacking a second gap on top of the keyboard.
+                              final keyboardInset =
+                                  MediaQuery.of(context).viewInsets.bottom;
+                              final barInset = BottomNavInset.of(context);
+                              final reserve = (barInset - keyboardInset)
+                                  .clamp(0.0, barInset);
+                              return Padding(
+                                padding: EdgeInsets.only(bottom: reserve),
+                                child: FocusTraversalGroup(
+                                  policy: WidgetOrderTraversalPolicy(),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildComposeBackChevron(context),
+                                      _buildComposeSurface(context, state),
+                                      SizedBox(
+                                        height: context.theme.spacing.md,
+                                      ),
+                                      Flexible(
+                                        child: EditableArea(
+                                          padding: false,
+                                          position: EditableAreaPosition.bottom,
+                                          flushToBottom: true,
+                                          builder: (context, _) => Focus(
+                                            canRequestFocus: false,
+                                            skipTraversal: true,
+                                            onKeyEvent: _handleEditorKeys,
+                                            child: NoteEditor(
+                                              key: _threadEditorKey,
+                                              bodyOnly: true,
+                                              draft: state.draftNote,
+                                              thread: state.draft,
+                                              onDraftChanged:
+                                                  _handleDraftChanged,
+                                              flushToBottom: true,
+                                              showScheduleActions: false,
+                                              hint: _computeEditorHint(state),
+                                              sendLabel: _computeSendLabel(
+                                                state,
+                                              ),
+                                              additionalMentions:
+                                                  _twistMentions,
+                                              onSubmitted: _onChatSubmitted,
+                                              submitValidator:
+                                                  _validateDmSubmit,
+                                              selectedTwist: _selectedTwist,
+                                              onTwistSelected: _selectTwist,
+                                              onTwistMentioned:
+                                                  _onTwistMentioned,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               );
                             }

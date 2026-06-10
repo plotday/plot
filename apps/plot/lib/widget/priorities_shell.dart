@@ -122,11 +122,14 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   /// bottom nav should disappear.
   bool _isFullScreenRoute(BuildContext context) {
     final currentPath = context.router.currentPath;
-    if (currentPath.endsWith('/new')) return true;
     final pathSegments =
         currentPath.split('/').where((s) => s.isNotEmpty).toList();
-    return pathSegments.length >= 3 ||
-        (pathSegments.isNotEmpty && pathSegments.first == 't');
+    // Standalone thread (/t/:id) always full-screen.
+    if (pathSegments.isNotEmpty && pathSegments.first == 't') return true;
+    // The new-thread flow KEEPS the bottom bar (it's a top-level tab).
+    if (currentPath.endsWith('/new')) return false;
+    // A thread under a priority (/p/:id/:threadId — 3+ segments) hides the bar.
+    return pathSegments.length >= 3;
   }
 
   /// Maps the active tab + URL to the visual nav index. Priorities and
