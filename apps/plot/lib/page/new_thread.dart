@@ -1014,19 +1014,37 @@ class NewThreadPageState extends State<NewThreadPage> {
     final bloc = _priorityBloc;
     if (bloc == null) return;
 
+    // Advance to compose immediately, before any of the store-backed work
+    // below. The compose surface reads the draft reactively, so the connection,
+    // roster, and focus applied afterward land a frame or two later without
+    // blocking the screen switch. Flipping the step first is also what stops the
+    // step-1 picker from visibly twitching: each draft mutation below emits a
+    // PriorityBloc state, and while step 1 was still mounted every emit rebuilt
+    // it — and because ComposeSectionsView hands PillGrid a freshly-built
+    // (identity-distinct) section list on each rebuild, PillGrid reset its
+    // keyboard highlight to the first row every time, so the selection snapped
+    // back to the top a couple of times before the switch finally happened.
     setState(() {
       _selectedTarget = target;
       // Picking any target through the normal flow leaves feedback mode; the
       // Help & Feedback path passes feedback: true to keep its placeholder.
       _feedbackMode = feedback;
+      _step = _ComposeStep.compose;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _threadEditorKey.currentState?.focus();
     });
 
     // 1. Connection: reuse the established apply path so a connector target's
     //    CreateLinkUserAction (or a twist selection) is attached identically to
-    //    the legacy picker. _loadConnections refresh first so the step-2
-    //    Connection field can resolve the action back to a label.
-    await _loadConnections();
-    if (!mounted) return;
+    //    the legacy picker. The Connection field resolves the action back to a
+    //    label from the create-targets already loaded on mount, so refresh them
+    //    in the background (never blocking the transition) instead of awaiting a
+    //    full re-enumeration of every enabled channel on every pick — that
+    //    redundant scan was the bulk of the switch delay. The connection apply
+    //    itself emits its draft change synchronously, so the compose surface
+    //    shows the right connection on its first build (no flash).
+    unawaited(_loadConnections());
     await _applyConnectionChoice(target.toConnectionChoice());
     if (!mounted) return;
 
@@ -1102,19 +1120,13 @@ class NewThreadPageState extends State<NewThreadPage> {
       if (!mounted) return;
     }
 
-    // 3. Advance to step 2 immediately and focus the editor. The focus
-    //    suggestion below runs asynchronously and updates the focus field /
-    //    picker order reactively when it resolves — no need to block the
-    //    transition on a DB scan.
-    setState(() => _step = _ComposeStep.compose);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _threadEditorKey.currentState?.focus();
-    });
-
-    // 4. Suggest a concrete focus for this target's roster (MRU-top first).
-    //    Skipped in feedback mode: Help & Feedback forces the Inbox focus
-    //    (applied by [_applyFeedbackMode] after this returns), so an MRU
-    //    suggestion would only be overwritten.
+    // 3. Suggest a concrete focus for this target's roster (MRU-top first).
+    //    The step already flipped to compose above; this resolves
+    //    asynchronously and updates the focus field / picker order reactively
+    //    when it lands — no need to block the transition on a DB scan. Skipped
+    //    in feedback mode: Help & Feedback forces the Inbox focus (applied by
+    //    [_applyFeedbackMode] after this returns), so an MRU suggestion would
+    //    only be overwritten.
     if (!feedback) await _suggestFocusForTarget(target);
   }
 
