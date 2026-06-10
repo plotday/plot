@@ -11,6 +11,8 @@ export type DigestThreadRow = {
   priority_id: string;
   priority_path: string;
   priority_title: string;
+  author_names: string | null;
+  note_count: number;
 };
 
 /**
@@ -37,7 +39,24 @@ export async function selectDigestThreads(
       tu.updated_at::text AS thread_updated_at,
       p.id::text AS priority_id,
       p.path::text AS priority_path,
-      p.title AS priority_title
+      p.title AS priority_title,
+      (
+        SELECT string_agg(DISTINCT COALESCE(a.name, 'Someone'), ',')
+        FROM note n
+        JOIN actor a ON a.id = n.author_id
+        WHERE n.thread_id = t.id
+          AND n.link_id IS NULL
+          AND n.archived_at IS NULL
+          AND NOT (n.author_id = ANY("user".user_contact_ids(${userId}::uuid)))
+      ) AS author_names,
+      (
+        SELECT count(n.id)::int
+        FROM note n
+        WHERE n.thread_id = t.id
+          AND n.link_id IS NULL
+          AND n.archived_at IS NULL
+          AND NOT (n.author_id = ANY("user".user_contact_ids(${userId}::uuid)))
+      ) AS note_count
     FROM thread_state tu
     JOIN thread t ON t.id = tu.thread_id
     JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid

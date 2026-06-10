@@ -150,14 +150,15 @@ notificationContent.get("/notification-content", async (c) => {
       [...batchMap.values()].map(async (batch) => {
         const targetPriorityId = batch.firstLevelPriorityId;
         const threadList = batch.threads.slice(0, 10);
+        const displayTitle = batch.priorityTitle === "Everything" ? "Inbox" : batch.priorityTitle;
 
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env, threadList, c.var.user.name, batch.priorityTitle, c.var.user.id)
+          ? await generateSummary(c.env, threadList, c.var.user.name, displayTitle, c.var.user.id)
           : fallbackSummary(threadList);
 
         return {
           first_level_priority_id: batch.firstLevelPriorityId,
-          title: batch.priorityTitle,
+          title: displayTitle,
           body,
           target_priority_id: targetPriorityId,
           urgent: batch.urgent,

@@ -270,7 +270,7 @@ export class EmailNotify extends DurableObject<Bindings> {
           const group = priorityMap.get(fl.path);
           if (group) {
             group.priorityId = fl.id;
-            group.title = fl.title;
+            group.title = fl.title === "Everything" ? "Inbox" : fl.title;
           }
         }
 
@@ -297,8 +297,22 @@ export class EmailNotify extends DurableObject<Bindings> {
           })
         );
 
+        // Collect unique author names and sum total qualifying note/message count
+        const allAuthorNames = new Set<string>();
+        let totalNoteCount = 0;
+        for (const row of rows) {
+          totalNoteCount += row.note_count;
+          if (row.author_names) {
+            const names = row.author_names.split(",");
+            for (const name of names) {
+              const trimmed = name.trim();
+              if (trimmed) allAuthorNames.add(trimmed);
+            }
+          }
+        }
+
         // Generate subject line
-        const subject = this.formatSubject(priorities.map((p) => p.title));
+        const subject = this.formatSubject([...allAuthorNames], totalNoteCount);
 
         const unsubscribeUrl = emailToken
           ? `${this.env.SITE_ROOT}/unsubscribe?t=${emailToken}`
@@ -340,14 +354,20 @@ export class EmailNotify extends DurableObject<Bindings> {
     }
   }
 
-  private formatSubject(priorityTitles: string[]): string {
-    if (priorityTitles.length === 0) return "New activity in Plot";
-    if (priorityTitles.length === 1) return `Activity in ${priorityTitles[0]}`;
-    if (priorityTitles.length === 2)
-      return `Activity in ${priorityTitles[0]} and ${priorityTitles[1]}`;
-    const last = priorityTitles[priorityTitles.length - 1];
-    const rest = priorityTitles.slice(0, -1).join(", ");
-    return `Activity in ${rest}, and ${last}`;
+  private formatSubject(authorNames: string[], totalNoteCount: number): string {
+    if (authorNames.length === 0) {
+      return "New activity in Plot";
+    }
+    if (authorNames.length === 1) {
+      const name = authorNames[0];
+      return totalNoteCount === 1
+        ? `${name} sent you a message`
+        : `${name} sent you messages`;
+    }
+    if (authorNames.length === 2) {
+      return `${authorNames[0]} and ${authorNames[1]} sent you messages`;
+    }
+    return `${authorNames[0]}, ${authorNames[1]}, and more sent you messages`;
   }
 
   private async clearPending(): Promise<void> {

@@ -44,12 +44,13 @@ notificationSummary.post("/notification-summary", async (c) => {
 
     const summaries = await Promise.all(
       batches.map(async (batch) => {
+        const displayPriorityTitle = batch.priority_title === "Everything" ? "Inbox" : batch.priority_title;
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env, batch.threads, user_name, batch.priority_title, c.var.user.id)
+          ? await generateSummary(c.env, batch.threads, user_name, displayPriorityTitle, c.var.user.id)
           : fallbackSummary(batch.threads);
         return {
           first_level_priority_id: batch.first_level_priority_id,
-          title: batch.priority_title ?? "Updates",
+          title: displayPriorityTitle ?? "Updates",
           body,
           target_priority_id: batch.target_priority_id,
           thread_ids: batch.threads.map((t) => t.id),

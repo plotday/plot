@@ -62,6 +62,11 @@ async function seedAndSelect(opts: SeedOpts) {
 
       for (const n of opts.notes) {
         const author = n.bySelf ? contactId : n.authorId ?? randomUUID();
+        if (author !== contactId) {
+          const authorName = n.authorId ? `Author ${n.authorId.slice(0, 8)}` : "Test Author";
+          await sql`INSERT INTO contact (id, name, email)
+            VALUES (${author}::uuid, ${authorName}, 'author-' || ${author}::text || '@example.test')`.execute(trx);
+        }
         await sql`INSERT INTO note (id, thread_id, author_id, created_by, link_id, archived_at)
           VALUES (${randomUUID()}::uuid, ${threadId}::uuid, ${author}::uuid, ${userId}::uuid,
                   ${n.linkId}, ${n.archived ? sql`now()` : null})`.execute(trx);
@@ -152,5 +157,24 @@ describe.skipIf(!DATABASE_URL)("selectDigestThreads", () => {
       notes: [{ authorId: randomUUID(), linkId: null, archived: true }],
     });
     expect(rows.map((r) => r.thread_id)).not.toContain(threadId);
+  });
+
+  it("populates author_names and note_count correctly", async () => {
+    const authorA = randomUUID();
+    const authorB = randomUUID();
+    const { threadId, rows } = await seedAndSelect({
+      twistId: null,
+      notes: [
+        { authorId: authorA, linkId: null },
+        { authorId: authorB, linkId: null },
+        { bySelf: true, linkId: null },
+      ],
+    });
+    expect(rows.map((r) => r.thread_id)).toContain(threadId);
+    const row = rows.find((r) => r.thread_id === threadId);
+    expect(row).toBeDefined();
+    expect(row!.note_count).toBe(2);
+    expect(row!.author_names).toContain(`Author ${authorA.slice(0, 8)}`);
+    expect(row!.author_names).toContain(`Author ${authorB.slice(0, 8)}`);
   });
 });
