@@ -110,6 +110,10 @@ jobs:
           POSTHOG_CLI_ENV_ID: ${{ secrets.POSTHOG_PROJECT }}
         run: |
           pnpm exec posthog-cli sourcemap inject --directory apps/plot/build/web --project plot --version "${{ steps.version.outputs.build_number }}"
+          # dart2js maps omit sourcesContent; embed the original source text so
+          # PostHog shows code, not just file:line. Runs after inject (so its
+          # chunk-id edits are preserved) and before upload.
+          python3 apps/plot/scripts/inline-web-source-content.py apps/plot/build/web
           pnpm exec posthog-cli sourcemap upload --directory apps/plot/build/web --project plot --version "${{ steps.version.outputs.build_number }}"
 
       - name: Smoke test web build
