@@ -1507,6 +1507,7 @@ function generateSQL(
         priority_id: priorityId,
         order_value: pb.order_value,
         effective_at: parseDateOffset(baseDate, pb.effective_at).toISOString(),
+        duration: pb.duration || null,
       });
     }
   }
@@ -1867,14 +1868,15 @@ ON CONFLICT (user_id, contact_id) DO NOTHING;`
   if (priorityBlocks.length > 0) {
     lines.push("-- Priority blocks (per-gap priority order)");
     lines.push(
-      "INSERT INTO priority_block (id, user_id, created_by, priority_id, order_value, effective_at, created_at, updated_at)"
+      "INSERT INTO priority_block (id, user_id, created_by, priority_id, order_value, effective_at, duration, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < priorityBlocks.length; i++) {
       const pb = priorityBlocks[i];
       const comma = i < priorityBlocks.length - 1 ? "," : ";";
+      const durationSql = pb.duration ? `${sqlString(pb.duration)}::interval` : "NULL";
       lines.push(
-        `  (${sqlString(pb.id)}, ${sqlString(pb.user_id)}, ${sqlString(pb.user_id)}, ${sqlString(pb.priority_id)}, ${pb.order_value}, ${sqlString(pb.effective_at)}, NOW(), NOW())${comma}`
+        `  (${sqlString(pb.id)}, ${sqlString(pb.user_id)}, ${sqlString(pb.user_id)}, ${sqlString(pb.priority_id)}, ${pb.order_value}, ${sqlString(pb.effective_at)}, ${durationSql}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");

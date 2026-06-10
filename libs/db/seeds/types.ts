@@ -30,6 +30,7 @@ export interface SeedPriorityBlock {
   priority_ref: string;
   effective_at: string; // Date offset (e.g., "+0d 10:30")
   order_value: number; // Lower sorts earlier within the gap
+  duration?: string; // Postgres interval string (e.g., "1 hour", "30 minutes")
 }
 
 export interface Config {
@@ -445,6 +446,7 @@ export interface GeneratedPriorityBlock {
   priority_id: string; // UUID
   order_value: number;
   effective_at: string; // ISO timestamp
+  duration: string | null; // interval SQL format
 }
 
 // ============================================================================

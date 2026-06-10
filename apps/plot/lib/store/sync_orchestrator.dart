@@ -138,6 +138,14 @@ class SyncOrchestrator {
     },
   );
 
+  /// PriorityBlock entity (depends on priority and actor)
+  static final priorityBlock = SyncEntity(
+    debugName: 'priority_block',
+    dependsOn: [priority, actor],
+    pushFn: PriorityBlock.push,
+    pullFn: PriorityBlock.pull,
+  );
+
   /// Session entity (depends on priority)
   static final session = SyncEntity(
     debugName: 'session',
@@ -165,6 +173,7 @@ class SyncOrchestrator {
     teamUser,
     userSettings,
     priority,
+    priorityBlock,
     twistInstance,
     channel,
     twistConnection,
@@ -236,6 +245,7 @@ class SyncOrchestrator {
     actor,
     userSettings,
     priority,
+    priorityBlock,
     _threadCritical,
     _twistInstanceCritical,
   ];
@@ -257,6 +267,7 @@ class SyncOrchestrator {
       'user_team_user' || 'team_user' => teamUser,
       'user_settings' => userSettings,
       'user_priority' || 'priority' => priority,
+      'user_priority_block' || 'priority_block' || 'priority_blocks' => priorityBlock,
       'user_twist' || 'twist_instance' => twistInstance,
       'user_channel' || 'channel' => channel,
       'user_twist_connection' || 'twist_connection' => twistConnection,

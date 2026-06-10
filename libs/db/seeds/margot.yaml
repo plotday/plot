@@ -56,7 +56,7 @@ priorities:
         title: Launch women's team
         icon: rocket
         settings:
-          color: 2
+          color: 0
       - ref: mens_team
         title: Men's team
         icon: dumbbell
@@ -132,19 +132,19 @@ sources:
   - ref: sheets
     name: Google Sheets
     priority_ref: everything
-    logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%230F9D58"
+    logo: "https://upload.wikimedia.org/wikipedia/commons/5/50/Google_Sheets_Logo_05.2026.png"
     link_types:
       - type: spreadsheet
         label: Spreadsheet
-        logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%230F9D58"
+        logo: "https://upload.wikimedia.org/wikipedia/commons/5/50/Google_Sheets_Logo_05.2026.png"
   - ref: slides
     name: Google Slides
     priority_ref: everything
-    logo: "https://api.iconify.design/logos/google-slides.svg"
+    logo: "https://upload.wikimedia.org/wikipedia/commons/4/4f/Google_Slides_icon_%282026%29.svg"
     link_types:
       - type: presentation
         label: Presentation
-        logo: "https://api.iconify.design/logos/google-slides.svg"
+        logo: "https://upload.wikimedia.org/wikipedia/commons/4/4f/Google_Slides_icon_%282026%29.svg"
   - ref: whatsapp
     name: WhatsApp
     priority_ref: everything
@@ -184,9 +184,8 @@ threads:
   # ---- Active (Doing now) — connector-backed, varied sources --------------
   - priority_ref: womens_team
     title: "Women's team proposal — vision and viability"
-    created: "-1d"
+    created: "-0d 09:00"
     state: active
-    icon: goal
     tags:
       pinned: [user]
       goal: [user]
@@ -281,20 +280,19 @@ threads:
 
   - priority_ref: womens_team
     title: "Marlow Trust pre-brief — women's team announcement"
-    created: "-1d"
+    created: "-0d 08:40"
     state: active
-    icon: notes
     tags:
       todo: [user]
     links:
-      - source_ref: notion
-        type: document
-        title: "Marlow Trust pre-brief"
-        source_url: "https://notion.so/afcmarlow/marlow-trust-prebrief"
       - source_ref: slack
         type: message
         title: "#womens-team-launch — Trust briefing tone"
         source_url: "https://afcmarlow.slack.com/archives/C04womens/p1802"
+      - source_ref: notion
+        type: document
+        title: "Marlow Trust pre-brief"
+        source_url: "https://notion.so/afcmarlow/marlow-trust-prebrief"
     notes:
       - created: "-1d 10:35"
         content: |
@@ -305,16 +303,15 @@ threads:
 
   - priority_ref: womens_team
     title: "Coaching candidate criteria — tighten"
-    created: "-1d"
+    created: "-0d 08:10"
     state: active
-    icon: notes
     tags:
       todo: [user]
     links:
-      - source_ref: notion
-        type: document
-        title: "Coaching candidate criteria"
-        source_url: "https://notion.so/afcmarlow/coaching-candidates"
+      - source_ref: slack
+        type: message
+        title: "#coaching-staff — candidate criteria"
+        source_url: "https://afcmarlow.slack.com/archives/C04coaching/p1822"
       - source_ref: sheets
         type: spreadsheet
         title: "Long-list — Championship coaches 2026"
@@ -326,7 +323,7 @@ threads:
 
   - priority_ref: womens_team
     title: "Founding-partner shortlist"
-    created: "-1d"
+    created: "-0d 08:20"
     state: active
     tags:
       todo: [user]
@@ -348,9 +345,8 @@ threads:
 
   - priority_ref: womens_team
     title: "Board deck — women's team launch"
-    created: "-1d"
+    created: "-0d 07:40"
     state: active
-    icon: notes
     tags:
       todo: [user]
     links:
@@ -366,7 +362,8 @@ threads:
   # ---- Scheduled to-dos (dated, no time) — prep ahead of later events -----
   - priority_ref: womens_team
     title: "Prep pack for Supporters' Trust sit-down"
-    created: "-1d"
+    created: "-0d 08:50"
+    state: active
     do_on: "+1d"
     icon: notes
     links:
@@ -383,7 +380,8 @@ threads:
 
   - priority_ref: womens_team
     title: "Rehearse the board talking points"
-    created: "-1d"
+    created: "-0d 08:00"
+    state: active
     do_on: "+1d"
     icon: notes
     links:
@@ -397,22 +395,6 @@ threads:
           Run the deck out loud once before the dry run. Open on the data, not the dream. Time it to twelve minutes. The hardest discipline: don't say "Hank" until the very end, and only once.
 
   # ---- Scheduled (upcoming) — Google Calendar events (have times) ---------
-  - ref: event_focus
-    priority_ref: womens_team
-    title: "Focus: Launch women's team"
-    created: "-1d"
-    links:
-      - source_ref: gcal
-        type: event
-        title: "Focus: Launch women's team"
-        source_url: "https://calendar.google.com/calendar/event?eid=morningfocus"
-    schedule:
-      at: "+0d 08:00 / +0d 09:00"
-    notes:
-      - created: "-1d 21:45"
-        content: |
-          Tomorrow morning, before anyone arrives: confirm the scarf order with Manchester, lock the revenue model, and draft the board talking points. Three things. One hour. Let's go.
-
   - ref: event_embry
     priority_ref: womens_team
     title: "Women's team board strategy w/ Embry"
@@ -616,8 +598,9 @@ threads:
           Who could coach a Marlow women's team? Understands women's football; believes in development over winning; gets the culture; Championship-level tactically. Not a big name building their own empire, not someone treating this as a stepping stone. Hire for culture first, résumé second.
 
   - priority_ref: womens_team
-    title: "Gus Vellum — potential feature story"
-    created: "-2d"
+    title: "potential feature story"
+    created: "-0d 08:30"
+    state: active
     tags:
       idea: [user]
     links:
@@ -635,7 +618,8 @@ threads:
 
   - priority_ref: womens_team
     title: "Board dinner — informal soundings"
-    created: "-2d"
+    created: "-0d 07:50"
+    state: active
     links:
       - source_ref: notion
         type: document
@@ -683,7 +667,7 @@ threads:
         title: "Women's locker room — scope & quote"
         source_url: "https://notion.so/afcmarlow/womens-locker-room"
     notes:
-      - created: "-3d 14:00"
+      - created: "+0d 17:08"
         content: "£150K to bring the second locker room up to standard, folded into the 2026 expansion. Comfortable."
 
   - priority_ref: womens_team
@@ -707,7 +691,7 @@ threads:
         title: "Founding-partner NDA — final"
         source_url: "mailto:legal@afcmarlow.com"
     notes:
-      - created: "-5d 09:30"
+      - created: "+0d 17:02"
         content: "Legal cleared the NDA so we can share the model under wraps. Ready when the warm leads are."
 
   - priority_ref: womens_team
@@ -719,7 +703,7 @@ threads:
         title: "Borough schools — launch-week invites"
         source_url: "mailto:community@afcmarlow.com"
     notes:
-      - created: "-5d 16:00"
+      - created: "+0d 16:30"
         content: "Drafted invites to the four partner schools for launch week. Lands the announcement on receptive ground."
 
   - priority_ref: womens_team
@@ -769,7 +753,6 @@ threads:
     title: "Review coaching strategy with Wes and Murph"
     created: "-1d"
     state: active
-    icon: discussion
     tags:
       todo: [user]
     links:
@@ -786,7 +769,6 @@ threads:
     title: "Supporter communication on current form"
     created: "-1d"
     state: active
-    icon: decision
     tags:
       todo: [user]
     links:
@@ -1550,3 +1532,21 @@ threads:
         content: "Off the clock. Mostly. We got three sentences into the scarf before we both gave up pretending it was a social evening."
         mentions:
           - posy
+
+priority_blocks:
+  - priority_ref: womens_team
+    effective_at: "+0d 08:00"
+    duration: "1 hour 15 minutes"
+    order_value: 0
+  - priority_ref: facilities
+    effective_at: "+0d 09:45"
+    duration: "1 hour 30 minutes"
+    order_value: 0
+  - priority_ref: commercial
+    effective_at: "+0d 14:30"
+    duration: "30 minutes"
+    order_value: 0
+  - priority_ref: community
+    effective_at: "+0d 15:30"
+    duration: "2 hours 30 minutes"
+    order_value: 0
