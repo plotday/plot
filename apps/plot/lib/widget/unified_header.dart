@@ -132,9 +132,22 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _panelController = ActivityPanelControllerProvider.maybeOf(context);
-    _panelController?.registerSearchToggle(_toggleSearch);
-    LayoutBloc.instance?.registerSearchToggle(_toggleSearch);
-    LayoutBloc.instance?.registerSearchClose(_closeSearchIfOpen);
+    // The inline header search field only exists in multi-panel mode — on
+    // desktop it's the only way to search (there's no bottom-nav). In
+    // single-panel mode search is a dedicated bottom-nav tab, so the `single`
+    // header variant must NOT register a toggle handler: that keeps
+    // [LayoutBloc.hasSearchToggle] false and
+    // [PriorityShortcutsProviderState._searchToggleCallback] null, so the `/`
+    // shortcut and any bottom-nav requestSearchToggle/Close cleanly no-op.
+    // The `single` variant is only ever rendered in single-panel mode (see
+    // priority.dart), so gating on the variant is equivalent to gating on
+    // multiPanel here but stable across resize (didChangeDependencies doesn't
+    // re-run on width changes).
+    if (widget.variant != HeaderVariant.single) {
+      _panelController?.registerSearchToggle(_toggleSearch);
+      LayoutBloc.instance?.registerSearchToggle(_toggleSearch);
+      LayoutBloc.instance?.registerSearchClose(_closeSearchIfOpen);
+    }
     // No PriorityBloc when the header is used on the Priorities tab
     // (single-panel root view). That path renders the no-priority header
     // and has nothing to wire up here.
@@ -511,34 +524,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       ),
     );
 
-    // Single-panel search takes over the entire header: the input runs
-    // edge-to-edge (no header page padding) as a borderless prompt with a
-    // fading underline, and the back / more buttons are dropped — the in-field
-    // ✕ closes search and restores them. Only the macOS traffic-light gutter is
-    // reserved.
-    if (_searchVisible) {
-      return _wrapHeader(
-        context,
-        layoutState,
-        [
-          if (resolvedToolbarPadding.left != 0)
-            SizedBox(width: resolvedToolbarPadding.left),
-          _buildSearchField(
-            context,
-            layoutState,
-            state,
-            notifier,
-            fullWidth: true,
-          ),
-        ],
-        suffixes: <Widget>[
-          if (resolvedToolbarPadding.right != 0)
-            SizedBox(width: resolvedToolbarPadding.right),
-        ],
-        decoration: decoration,
-        contentPadding: EdgeInsets.zero,
-      );
-    }
+    // Single-panel mode has no inline header search — search is a dedicated
+    // bottom-nav tab. The search field and its toggle registration are gated
+    // to the multi-panel `main` variant (see didChangeDependencies and
+    // _buildMainHeader), so `_searchVisible` is never true here.
 
     // Leading ← back button: returns from the focus feed to the bottom-nav
     // tab the user came from (the same action as the OS back gesture — see
@@ -865,11 +854,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
-    ThreadHeaderNotifier? notifier, {
-    // Single-panel takeover: drop the centered max-width cap so the borderless
-    // prompt + underline run the full width of the header band.
-    bool fullWidth = false,
-  }) {
+    ThreadHeaderNotifier? notifier,
+  ) {
     final typography = context.theme.typography;
     final colors = context.theme.colors;
     List<Command> buildFilters(BuildContext ctx) {
@@ -1077,9 +1063,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       },
     );
 
-    if (fullWidth) {
-      return Expanded(child: prompt);
-    }
     return Expanded(
       child: Align(
         alignment: Alignment.centerLeft,
