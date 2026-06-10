@@ -565,8 +565,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
           ),
         ),
       if (hasActivity)
-        Button.icon(
-          CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => context.run(ChangeCurrentThread(null)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: Icon(
+              PlotIcon.left,
+              size: 18,
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
         ),
     ];
 

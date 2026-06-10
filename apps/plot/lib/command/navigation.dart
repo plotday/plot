@@ -15,7 +15,7 @@ class PageBackCommand extends Command {
         title: 'Page back',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
-        icon: PlotIcon.back,
+        icon: PlotIcon.left,
         shortcut: platformSingleActivator(LogicalKeyboardKey.bracketLeft),
       );
 
@@ -175,7 +175,7 @@ class BackToPrioritiesTabCommand extends Command {
         title: 'Focuses',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
-        icon: PlotIcon.back,
+        icon: PlotIcon.left,
       );
 
   @override

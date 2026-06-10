@@ -2016,36 +2016,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  /// Top-left "go back" chevron for the compose step (single-panel). Returns to
-  /// the previous step — the connection picker when a recipient was chosen for
-  /// this target, else the sections picker — via [_backFromCompose] (the same
-  /// handler the Connection field tap and Escape use). Mirrors the leading
-  /// chevron style of steps 1/2 (PlotIcon.left, muted, plain GestureDetector —
-  /// no pointer cursor). Left-aligned so it lines up with the field icons below.
-  Widget _buildComposeBackChevron(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: context.contentPaddingH,
-          bottom: context.theme.spacing.xs,
-        ),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _backFromCompose,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-            child: Icon(
-              PlotIcon.left,
-              size: 18,
-              color: context.theme.colors.mutedForeground,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   /// Step-2 compose surface. Field order is **Connection → Focus → Contacts →
   /// Title** (the two-step redesign): the chosen connection sits at the top
   /// (tapping it re-opens the target picker), then the auto-suggested focus,
@@ -2247,57 +2217,106 @@ class NewThreadPageState extends State<NewThreadPage> {
                               final barInset = BottomNavInset.of(context);
                               final reserve = (barInset - keyboardInset)
                                   .clamp(0.0, barInset);
-                              return Padding(
-                                padding: EdgeInsets.only(bottom: reserve),
-                                child: FocusTraversalGroup(
-                                  policy: WidgetOrderTraversalPolicy(),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _buildComposeBackChevron(context),
-                                      _buildComposeSurface(context, state),
-                                      SizedBox(
-                                        height: context.theme.spacing.md,
-                                      ),
-                                      Flexible(
-                                        child: EditableArea(
-                                          padding: false,
-                                          position: EditableAreaPosition.bottom,
-                                          flushToBottom: true,
-                                          builder: (context, _) => Focus(
-                                            canRequestFocus: false,
-                                            skipTraversal: true,
-                                            onKeyEvent: _handleEditorKeys,
-                                            child: NoteEditor(
-                                              key: _threadEditorKey,
-                                              bodyOnly: true,
-                                              draft: state.draftNote,
-                                              thread: state.draft,
-                                              onDraftChanged:
-                                                  _handleDraftChanged,
-                                              flushToBottom: true,
-                                              showScheduleActions: false,
-                                              hint: _computeEditorHint(state),
-                                              sendLabel: _computeSendLabel(
-                                                state,
-                                              ),
-                                              additionalMentions:
-                                                  _twistMentions,
-                                              onSubmitted: _onChatSubmitted,
-                                              submitValidator:
-                                                  _validateDmSubmit,
-                                              selectedTwist: _selectedTwist,
-                                              onTwistSelected: _selectTwist,
-                                              onTwistMentioned:
-                                                  _onTwistMentioned,
-                                            ),
+                              // Outer column: back chevron header pinned at
+                              // top, then Expanded area with the compose
+                              // fields + editor bottom-aligned (preserving
+                              // the keyboard-inset padding logic).
+                              return Column(
+                                children: [
+                                  // Top header row with back chevron.
+                                  Padding(
+                                    padding: EdgeInsets.only(
+                                      left: context.contentPaddingH,
+                                      top: context.theme.spacing.xs,
+                                      bottom: context.theme.spacing.xs,
+                                    ),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: _backFromCompose,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 2,
+                                            vertical: 4,
+                                          ),
+                                          child: Icon(
+                                            PlotIcon.left,
+                                            size: 18,
+                                            color: context
+                                                .theme.colors.mutedForeground,
                                           ),
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                ),
+                                  // Remaining space: compose fields + editor,
+                                  // bottom-aligned with keyboard-inset reserve.
+                                  Expanded(
+                                    child: Padding(
+                                      padding: EdgeInsets.only(bottom: reserve),
+                                      child: FocusTraversalGroup(
+                                        policy: WidgetOrderTraversalPolicy(),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            _buildComposeSurface(
+                                              context,
+                                              state,
+                                            ),
+                                            SizedBox(
+                                              height: context.theme.spacing.md,
+                                            ),
+                                            Flexible(
+                                              child: EditableArea(
+                                                padding: false,
+                                                position:
+                                                    EditableAreaPosition.bottom,
+                                                flushToBottom: true,
+                                                builder: (context, _) => Focus(
+                                                  canRequestFocus: false,
+                                                  skipTraversal: true,
+                                                  onKeyEvent: _handleEditorKeys,
+                                                  child: NoteEditor(
+                                                    key: _threadEditorKey,
+                                                    bodyOnly: true,
+                                                    draft: state.draftNote,
+                                                    thread: state.draft,
+                                                    onDraftChanged:
+                                                        _handleDraftChanged,
+                                                    flushToBottom: true,
+                                                    showScheduleActions: false,
+                                                    hint: _computeEditorHint(
+                                                      state,
+                                                    ),
+                                                    sendLabel:
+                                                        _computeSendLabel(
+                                                          state,
+                                                        ),
+                                                    additionalMentions:
+                                                        _twistMentions,
+                                                    onSubmitted:
+                                                        _onChatSubmitted,
+                                                    submitValidator:
+                                                        _validateDmSubmit,
+                                                    selectedTwist:
+                                                        _selectedTwist,
+                                                    onTwistSelected:
+                                                        _selectTwist,
+                                                    onTwistMentioned:
+                                                        _onTwistMentioned,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               );
                             }
 

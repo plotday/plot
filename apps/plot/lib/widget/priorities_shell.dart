@@ -657,6 +657,9 @@ class _PersistentBottomNav extends StatelessWidget {
         builder: (context) => DecoratedBox(
           decoration: BoxDecoration(
             color: context.theme.colors.background,
+            border: Border(
+              top: BorderSide(color: context.theme.colors.border),
+            ),
           ),
           child: SafeArea(
             top: false,
