@@ -12,6 +12,7 @@ import 'package:plot/state/user.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/priorities_list.dart';
+import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/scroll_edge_fade.dart';
@@ -39,12 +40,22 @@ class PrioritiesPage extends StatelessWidget {
       scrollable: false,
       body: context.isMultiPanel
           ? const PrioritiesPanelContent()
-          : const SafeArea(
+          : SafeArea(
               top: true,
               bottom: false,
               left: false,
               right: false,
-              child: PrioritiesPanelContent(),
+              // The bottom nav is overlaid on top of the page (see
+              // _MobileShellChrome's Stack), so reserve its measured height
+              // as bottom padding. Otherwise the pinned Inbox/Everything
+              // tiles at the bottom of the focuses Column are painted under
+              // the nav and become unreachable when many focuses fill the
+              // list. The inset already includes the bottom safe-area, which
+              // is why SafeArea keeps bottom: false.
+              child: Padding(
+                padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
+                child: const PrioritiesPanelContent(),
+              ),
             ),
     );
   }

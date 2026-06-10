@@ -30,10 +30,10 @@ enum NavSlot { focuses, agenda, newThread, search, more }
 
 /// The ordered nav slots for the current state.
 List<NavSlot> navSlotsFor({required bool hasCalendar}) => [
-      NavSlot.focuses,
       if (hasCalendar) NavSlot.agenda,
-      NavSlot.newThread,
+      NavSlot.focuses,
       NavSlot.search,
+      NavSlot.newThread,
       NavSlot.more,
     ];
 
@@ -450,7 +450,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Icon(PlotIcon.priorities),
+                  Icon(PlotIcon.focusDefault),
                   if (hasUnread)
                     Positioned(
                       top: -2,
@@ -468,7 +468,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
               );
             },
           ),
-          label: _buildNavLabel('Threads'),
+          label: _buildNavLabel('Focus'),
         );
       case NavSlot.agenda:
         return FBottomNavigationBarItem(
