@@ -52,23 +52,31 @@ class CloseModalCommand extends Command {
 }
 
 class ToggleLeftSidebarCommand extends Command {
-  ToggleLeftSidebarCommand({required this.isVisible})
+  ToggleLeftSidebarCommand({required this.isVisible, this.asDrawer = false})
     : super(
-        title: isVisible
-            ? 'Hide agenda and focuses'
-            : 'Open sidebar',
+        title: asDrawer
+            ? 'Show focuses'
+            : (isVisible ? 'Hide agenda and focuses' : 'Open sidebar'),
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
-        icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,
+        // In the two-panel band the sidebar opens as an overlay drawer rather
+        // than docking, so the affordance reads as a menu (bars) rather than
+        // a panel-expand arrow.
+        icon: asDrawer
+            ? PlotIcon.hamburgerMenu
+            : (isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen),
       );
 
   final bool isVisible;
 
+  /// When true the command reflects the overlay-drawer affordance (menu icon,
+  /// "Show focuses"). Behaviour is identical — [LayoutBloc.toggleSidebar]
+  /// decides whether to dock the panel or open the drawer based on width.
+  final bool asDrawer;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final layoutBloc = context.read<LayoutBloc>();
-    final currentState = layoutBloc.state;
-    layoutBloc.setLeftPanelVisible(!currentState.leftPanelVisible);
+    context.read<LayoutBloc>().toggleSidebar();
     return const CommandDone();
   }
 }
@@ -108,13 +116,20 @@ class CyclePanelsCommand extends Command {
   static String _title(LayoutState layoutState) {
     // Multi-panel mode is always 2 (no left sidebar) or 3 (with left
     // sidebar) panels — the middle is always visible. The only thing to
-    // cycle is the left sidebar.
+    // cycle is the left sidebar. In the two-panel band it surfaces as an
+    // overlay drawer rather than a docked column.
+    if (layoutState.sidebarIsOverlay) {
+      return layoutState.drawerOpen ? 'Hide focuses' : 'Show focuses';
+    }
     return layoutState.leftPanelVisible
         ? 'Hide agenda and focuses'
         : 'Open sidebar';
   }
 
   static IconData _icon(LayoutState layoutState) {
+    if (layoutState.sidebarIsOverlay) {
+      return PlotIcon.hamburgerMenu;
+    }
     return layoutState.leftPanelVisible
         ? PlotIcon.sidebarClose
         : PlotIcon.sidebarOpen;
@@ -122,9 +137,7 @@ class CyclePanelsCommand extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final layoutBloc = context.read<LayoutBloc>();
-    final state = layoutBloc.state;
-    layoutBloc.setLeftPanelVisible(!state.leftPanelVisible);
+    context.read<LayoutBloc>().toggleSidebar();
     return const CommandDone();
   }
 }
@@ -142,9 +155,7 @@ class ToggleSidebarCommand extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final layoutBloc = LayoutBloc.instance;
-    if (layoutBloc == null) return const CommandDone();
-    layoutBloc.setLeftPanelVisible(!layoutBloc.state.leftPanelVisible);
+    LayoutBloc.instance?.toggleSidebar();
     return const CommandDone();
   }
 }

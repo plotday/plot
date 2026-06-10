@@ -76,6 +76,11 @@ class LayoutBloc extends Cubit<LayoutState> {
   // User has requested middle panel visibility.
   // If there's insufficient width, it will still be hidden.
   bool middlePanelRequested;
+  // Whether the overlay sidebar drawer is open. Transient UI state — not
+  // persisted — and only meaningful in the two-panel band (multi-panel but
+  // too narrow to dock the sidebar). Force-closed whenever the layout leaves
+  // that band (see [_recalculate]).
+  bool _drawerOpen = false;
 
   /// Update layout based on available width
   void _setWidth(double width) {
@@ -85,6 +90,7 @@ class LayoutBloc extends Cubit<LayoutState> {
 
   void _recalculate({bool explicit = false}) {
     final isMulti = LayoutState.isMultiPanel(width);
+    final canDock = width >= LayoutState.threePanelMinWidth;
     bool effectiveLeftVisible = false;
     bool effectiveMiddleVisible = false;
     if (isMulti) {
@@ -92,8 +98,7 @@ class LayoutBloc extends Cubit<LayoutState> {
       // sidebar) panels. The middle (priorities feed) is always visible;
       // only the left sidebar toggles. Left needs room for all three.
       effectiveMiddleVisible = true;
-      final canShowThree = width >= LayoutState.threePanelMinWidth;
-      effectiveLeftVisible = leftPanelRequested && canShowThree;
+      effectiveLeftVisible = leftPanelRequested && canDock;
       if (explicit) {
         leftPanelRequested = effectiveLeftVisible;
       }
@@ -101,11 +106,22 @@ class LayoutBloc extends Cubit<LayoutState> {
       effectiveMiddleVisible = false;
     }
 
+    // The overlay drawer only exists in the two-panel band (multi-panel but
+    // too narrow to dock a third column). Outside that band — single-panel
+    // (focuses live in the bottom nav) and three-panel (the sidebar docks) —
+    // force it closed so it can't linger after a resize.
+    final sidebarIsOverlay = isMulti && !canDock;
+    if (!sidebarIsOverlay) {
+      _drawerOpen = false;
+    }
+
     emit(
       state.copyWith(
         multiPanel: isMulti,
         leftPanelVisible: effectiveLeftVisible,
         middlePanelVisible: effectiveMiddleVisible,
+        canDockSidebar: canDock,
+        drawerOpen: _drawerOpen,
       ),
     );
   }
@@ -114,6 +130,27 @@ class LayoutBloc extends Cubit<LayoutState> {
     leftPanelRequested = visible;
     _recalculate(explicit: true);
     _persistState();
+  }
+
+  /// Open or close the overlay sidebar drawer. Only has effect in the
+  /// two-panel band ([LayoutState.sidebarIsOverlay]); [_recalculate] clears
+  /// it elsewhere.
+  void setDrawerOpen(bool open) {
+    if (_drawerOpen == open) return;
+    _drawerOpen = open;
+    _recalculate();
+  }
+
+  /// Width-aware sidebar toggle used by every "open/hide sidebar" affordance.
+  /// In the two-panel band the sidebar can't dock, so toggle the overlay
+  /// drawer instead of the (always-hidden) docked panel; otherwise toggle the
+  /// docked left panel as before.
+  void toggleSidebar() {
+    if (state.sidebarIsOverlay) {
+      setDrawerOpen(!_drawerOpen);
+    } else {
+      setLeftPanelVisible(!state.leftPanelVisible);
+    }
   }
 
   void setMiddlePanelVisible(bool visible) {

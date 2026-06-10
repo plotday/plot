@@ -1,20 +1,26 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/command/navigation.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/note_viewer.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/util/profile_preferences.dart';
+import 'button.dart';
 import 'note_viewer.dart';
 import 'header.dart';
 import 'panel_content_clip.dart';
 import 'unified_header.dart';
+import 'window.dart';
 
 /// Outer inset around the squircle panel cards in multi-panel mode (window
 /// edges and bottom). The header has no inset above the squircles so they
@@ -32,6 +38,11 @@ const double _halfGap = 10.0;
 
 /// Corner radius for the squircle panel cards.
 const double _panelRadius = 14.0;
+
+/// Height of the overlay drawer's slim header strip. Matches the unified
+/// header band so the drawer's collapse button lines up with the main
+/// column's header controls and clears the macOS traffic lights.
+const double _drawerHeaderHeight = 44.0;
 
 /// Drop shadow used under a squircle panel card. Stronger in dark mode (the
 /// card is darker than the frame, so a softer/longer shadow gives depth
@@ -403,6 +414,49 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     );
   }
 
+  /// Content of the overlay drawer used in the two-panel band. Reuses the
+  /// same priorities-list + agenda body as the docked sidebar, but with a
+  /// lightweight header (just a collapse button, no [UnifiedHeader]) so it
+  /// doesn't duplicate the main column's title/search registration or
+  /// tracking pill. The collapse button routes through
+  /// [LayoutBloc.toggleSidebar], which closes the drawer in this band.
+  Widget _buildDrawerContent(BuildContext context) {
+    final resolvedToolbarPadding = Window.toolbarPadding.resolve(
+      TextDirection.ltr,
+    );
+    // The priorities list styles itself for the left sidebar (compact `sm`
+    // font, rounded monochrome selection) only when it finds a
+    // [PanelPositionProvider] of [HeaderPosition.left] above it — the docked
+    // sidebar gets this from the resizable region builder. The overlay drawer
+    // is a sibling of the main column, so provide it explicitly or the rows
+    // render with the larger middle/right-panel styling.
+    return PanelPositionProvider(
+      position: HeaderPosition.left,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: _drawerHeaderHeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  // Reserve the macOS traffic-light gutter — the drawer slides
+                  // over the window's top-left corner where they sit.
+                  if (resolvedToolbarPadding.left != 0)
+                    SizedBox(width: resolvedToolbarPadding.left),
+                  const Spacer(),
+                  Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
+                ],
+              ),
+            ),
+          ),
+          Expanded(child: _buildSidebarBody(context)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMainColumn(
     BuildContext context, {
     required bool hasLeftSidebar,
@@ -443,7 +497,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                   buildWhen: (previous, current) =>
                       previous.multiPanel != current.multiPanel ||
                       previous.leftPanelVisible != current.leftPanelVisible ||
-                      previous.middlePanelVisible != current.middlePanelVisible,
+                      previous.middlePanelVisible !=
+                          current.middlePanelVisible ||
+                      previous.drawerOpen != current.drawerOpen ||
+                      previous.canDockSidebar != current.canDockSidebar,
                   builder: (context, layoutState) {
                     if (!layoutState.multiPanel) {
                       // Single-panel: the page-level header is rendered
@@ -481,10 +538,39 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                     // NewThreadRoute, wiping the open thread. Keeping the
                     // tree shape stable preserves the thread panel's state.
                     if (!leftVisible) {
-                      return _buildMainColumn(
+                      final mainColumn = _buildMainColumn(
                         context,
                         hasLeftSidebar: false,
                         viewedNote: viewedNote,
+                      );
+                      // Two-panel band: the sidebar is too wide to dock as a
+                      // third column, so it's reachable as an overlay drawer
+                      // stacked over the two panels (opened from the main
+                      // header's menu button). Outside that band there's no
+                      // drawer — single-panel uses the bottom nav, three-panel
+                      // docks the sidebar.
+                      if (!layoutState.sidebarIsOverlay) return mainColumn;
+                      final double drawerWidth = _leftPanelWidth
+                          .clamp(
+                            LayoutState.leftPanelMinWidth,
+                            math.max(
+                              LayoutState.leftPanelMinWidth,
+                              totalWidth * 0.85,
+                            ),
+                          )
+                          .toDouble();
+                      return Stack(
+                        children: [
+                          mainColumn,
+                          _SidebarDrawerOverlay(
+                            open: layoutState.drawerOpen,
+                            width: drawerWidth,
+                            onDismiss: () => context
+                                .read<LayoutBloc>()
+                                .setDrawerOpen(false),
+                            sidebar: _buildDrawerContent(context),
+                          ),
+                        ],
                       );
                     }
                     return _OuterHoverableResizable(
@@ -1027,6 +1113,174 @@ class _LeftPanelVerticalSplit extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Overlay sidebar drawer for the two-panel band (multi-panel mode too narrow
+/// to dock a third column). Slides [sidebar] in from the left over a tappable
+/// scrim. [open] drives the slide/scrim animation in both directions, so every
+/// dismissal path — scrim tap, Esc, the drawer's collapse button, or selecting
+/// a focus — animates out before the widget is torn down. When fully closed it
+/// paints nothing and captures no pointer events, leaving the panels behind
+/// fully interactive.
+class _SidebarDrawerOverlay extends StatefulWidget {
+  const _SidebarDrawerOverlay({
+    required this.open,
+    required this.width,
+    required this.sidebar,
+    required this.onDismiss,
+  });
+
+  final bool open;
+  final double width;
+  final Widget sidebar;
+
+  /// Requests a close (typically `setDrawerOpen(false)` on the LayoutBloc).
+  /// Flipping [open] to false drives the exit animation.
+  final VoidCallback onDismiss;
+
+  @override
+  State<_SidebarDrawerOverlay> createState() => _SidebarDrawerOverlayState();
+}
+
+class _SidebarDrawerOverlayState extends State<_SidebarDrawerOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  final FocusNode _focusNode = FocusNode(debugLabel: 'SidebarDrawer');
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+      value: widget.open ? 1.0 : 0.0,
+    );
+    if (widget.open) _focusSoon();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SidebarDrawerOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.open != oldWidget.open) {
+      if (widget.open) {
+        _controller.forward();
+        _focusSoon();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  // Focus the drawer once it's mounted so Esc closes it even before the user
+  // touches anything inside.
+  void _focusSoon() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.open) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Selecting a focus inside the drawer changes the context priority — close
+    // the drawer so the chosen focus's threads are visible in the panel behind.
+    return BlocListener<PriorityBloc, PriorityState>(
+      listenWhen: (previous, current) =>
+          widget.open && previous.context.id != current.context.id,
+      listener: (context, state) => widget.onDismiss(),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          // Fully closed and at rest: paint nothing and — crucially — capture
+          // no pointer events over the panels behind.
+          if (!widget.open && _controller.isDismissed) {
+            return const SizedBox.shrink();
+          }
+          final t = _controller.value;
+          final scrimT = Curves.easeOut.transform(t);
+          final slideT = Curves.easeOutCubic.transform(t);
+          // Match the modal backdrop exactly: forui's FDialogRoute barrier is
+          // a composed filter — a blur ramping to sigma 5 plus a
+          // transparent→barrier colour tint — rather than a flat scrim. Drive
+          // both with the open/close animation.
+          final barrier = context.theme.colors.barrier;
+          final backdropFilter = ui.ImageFilter.compose(
+            outer: ui.ImageFilter.blur(sigmaX: scrimT * 5, sigmaY: scrimT * 5),
+            inner: ui.ColorFilter.mode(
+              Color.lerp(const Color(0x00000000), barrier, scrimT)!,
+              BlendMode.srcOver,
+            ),
+          );
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !widget.open,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.onDismiss,
+                    child: BackdropFilter(
+                      filter: backdropFilter,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                bottom: 0,
+                left: 0,
+                child: FractionalTranslation(
+                  translation: Offset(slideT - 1.0, 0),
+                  child: Focus(
+                    focusNode: _focusNode,
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent &&
+                          event.logicalKey == LogicalKeyboardKey.escape) {
+                        widget.onDismiss();
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: SizedBox(
+                      width: widget.width,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          // Solid surface — the docked sidebar is transparent
+                          // over the (translucent) window frame, but an overlay
+                          // must be opaque so the blurred backdrop behind it
+                          // doesn't bleed through. Matches the modal content
+                          // surface.
+                          color: context.colour.background,
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF000000).withValues(
+                                alpha: 0.28,
+                              ),
+                              blurRadius: 24,
+                              offset: const Offset(4, 0),
+                              spreadRadius: -4,
+                            ),
+                          ],
+                        ),
+                        child: widget.sidebar,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
