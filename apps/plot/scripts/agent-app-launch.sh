@@ -1,29 +1,36 @@
 #!/usr/bin/env bash
-# Launch Plot.app in the isolated "agent" profile and report the DTD URI an
-# agent can hand to dart-mcp via mcp__dart-mcp__connect_dart_tooling_daemon.
+# Launch Plot.app in this workspace's isolated agent profile and report the
+# DTD URI an agent can hand to dart-mcp via
+# mcp__dart-mcp__connect_dart_tooling_daemon.
+#
+# The agent profile name is derived per-workspace (the repo/worktree directory
+# basename), e.g. "agent-plot" for the main checkout and "agent-<worktree>"
+# for a worktree, so two agents running concurrently in different worktrees do
+# not collide on the same profile, InstanceLock, DB, or /tmp state files.
+# Override with $PLOT_AGENT_PROFILE if you need a specific name.
 #
 # Why this script exists:
 #   `flutter run -d macos --machine --print-dtd` is the only flutter_tools
-#   path that (a) forwards CLI args to the Dart entrypoint (so --profile=agent
-#   reaches CliArgs.init) and (b) hands back a DTD URI. It is otherwise
-#   well-behaved, but its VM-service discovery on macOS goes through mDNS,
-#   which is intermittently slow enough to time out before the agent app
-#   publishes its observatory. When that happens the daemon emits app.stop
-#   with no app.dtd, then the daemon process dies on its own — leaving the
-#   spawned Plot.app alive and unattached. From there the next launch
-#   collides on the InstanceLock and the agent is stuck.
+#   path that (a) forwards CLI args to the Dart entrypoint (so the
+#   --profile=<agent-profile> arg reaches CliArgs.init) and (b) hands back a
+#   DTD URI. It is otherwise well-behaved, but its VM-service discovery on
+#   macOS goes through mDNS, which is intermittently slow enough to time out
+#   before the agent app publishes its observatory. When that happens the
+#   daemon emits app.stop with no app.dtd, then the daemon process dies on its
+#   own — leaving the spawned Plot.app alive and unattached. From there the
+#   next launch collides on the InstanceLock and the agent is stuck.
 #
 #   This script wraps the launch with: bootstrap, run, wait for app.dtd,
 #   on failure clean up and retry, repeat up to N times.
 #
-# Outputs:
-#   /tmp/plot-agent-run.log       Full flutter run --machine output (last attempt).
-#   /tmp/plot-agent-run.pid       PID of the flutter run daemon (still alive on success).
-#   /tmp/plot-agent-dtd.uri       DTD URI on success — feed this to dart-mcp.
+# Outputs (paths include the agent profile so concurrent workspaces differ):
+#   /tmp/plot-<agent-profile>-run.log   Full flutter run --machine output.
+#   /tmp/plot-<agent-profile>-run.pid   PID of the flutter run daemon (alive on success).
+#   /tmp/plot-<agent-profile>-dtd.uri   DTD URI on success — feed this to dart-mcp.
 #
 # Exit codes:
-#   0  app.dtd received; DTD URI written to /tmp/plot-agent-dtd.uri.
-#   1  all attempts failed; see /tmp/plot-agent-run.log for the last attempt.
+#   0  app.dtd received; DTD URI written to the -dtd.uri file (printed on success).
+#   1  all attempts failed; see the -run.log file (printed on failure).
 #
 # Usage:
 #   bash apps/plot/scripts/agent-app-launch.sh [source-profile]
@@ -33,9 +40,19 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 APP_DIR="$REPO_ROOT/apps/plot"
 BOOTSTRAP="$APP_DIR/scripts/agent-app-bootstrap.sh"
-LOG=/tmp/plot-agent-run.log
-PID_FILE=/tmp/plot-agent-run.pid
-DTD_FILE=/tmp/plot-agent-dtd.uri
+
+# Per-workspace agent profile. Must match the derivation in the bootstrap
+# script; pass it through explicitly so both halves agree even if the
+# defaulting logic ever diverges.
+sanitize_token() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' \
+    | sed -E 's/-+/-/g; s/^-//; s/-$//'
+}
+AGENT_PROFILE="${PLOT_AGENT_PROFILE:-agent-$(sanitize_token "$(basename "$REPO_ROOT")")}"
+
+LOG=/tmp/plot-$AGENT_PROFILE-run.log
+PID_FILE=/tmp/plot-$AGENT_PROFILE-run.pid
+DTD_FILE=/tmp/plot-$AGENT_PROFILE-dtd.uri
 
 MAX_ATTEMPTS=${PLOT_AGENT_LAUNCH_RETRIES:-3}
 # 120s is enough for a cold incremental build on this repo plus mDNS
@@ -45,16 +62,18 @@ TIMEOUT_SECS=${PLOT_AGENT_LAUNCH_TIMEOUT:-120}
 
 rm -f "$DTD_FILE"
 
+ORPHAN_RE="(flutter_tools.*--profile=$AGENT_PROFILE|Plot\.app.*--profile=$AGENT_PROFILE)"
+
 kill_orphans() {
   local self=$$
   local orphans
-  orphans=$(pgrep -f '(flutter_tools.*--profile=agent|Plot\.app.*--profile=agent)' 2>/dev/null \
+  orphans=$(pgrep -f "$ORPHAN_RE" 2>/dev/null \
     | grep -v "^$self\$" || true)
   if [[ -n "$orphans" ]]; then
     # shellcheck disable=SC2086
     kill $orphans 2>/dev/null || true
     sleep 1
-    orphans=$(pgrep -f '(flutter_tools.*--profile=agent|Plot\.app.*--profile=agent)' 2>/dev/null \
+    orphans=$(pgrep -f "$ORPHAN_RE" 2>/dev/null \
       | grep -v "^$self\$" || true)
     if [[ -n "$orphans" ]]; then
       # shellcheck disable=SC2086
@@ -75,8 +94,8 @@ extract_dtd_uri() {
 attempt=0
 while (( attempt < MAX_ATTEMPTS )); do
   attempt=$((attempt + 1))
-  echo "[launch attempt $attempt/$MAX_ATTEMPTS] bootstrapping agent profile..."
-  if ! bash "$BOOTSTRAP" "${1:-dev}"; then
+  echo "[launch attempt $attempt/$MAX_ATTEMPTS] bootstrapping agent profile $AGENT_PROFILE..."
+  if ! bash "$BOOTSTRAP" "${1:-dev}" "$AGENT_PROFILE"; then
     echo "bootstrap failed; aborting." >&2
     exit 1
   fi
@@ -93,7 +112,7 @@ while (( attempt < MAX_ATTEMPTS )); do
     # without this flag, so it is safe to pass unconditionally for the
     # agent profile.
     nohup flutter run -d macos \
-      -a --profile=agent \
+      -a --profile="$AGENT_PROFILE" \
       -a --enable-driver-extension \
       --print-dtd --machine \
       > "$LOG" 2>&1 &
@@ -136,7 +155,9 @@ while (( attempt < MAX_ATTEMPTS )); do
       else
         echo "$uri" > "$DTD_FILE"
         echo "[launch attempt $attempt/$MAX_ATTEMPTS] OK — DTD URI: $uri"
+        echo "  profile:    $AGENT_PROFILE"
         echo "  daemon pid: $daemon_pid (kept alive; kill -INT to stop)"
+        echo "  pid file:   $PID_FILE"
         echo "  log:        $LOG"
         echo "  dtd uri:    $DTD_FILE"
         exit 0

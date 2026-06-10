@@ -4,9 +4,10 @@
 
 - **Lint**: `cd apps/plot && flutter analyze`
 - **Run / test the app from an agent**: invoke the `run-app` skill. It launches
-  Plot.app in an isolated `agent` profile (its own DB + Clerk session) so the
-  developer's daily debug/release instances keep running and the agent can
-  drive the app via dart-mcp without `InstanceLock` collisions. Key gotchas
+  Plot.app in an isolated, per-workspace agent profile (`agent-<workspace>`,
+  its own DB + Clerk session) so the developer's daily debug/release instances
+  keep running, two agents in different worktrees don't collide, and the agent
+  can drive the app via dart-mcp without `InstanceLock` collisions. Key gotchas
   the skill encodes: `mcp__dart-mcp__launch_app` does not forward `--profile`
   or other entrypoint args (so a naive call collides with the dev profile);
   the DTD URI it returns is a placeholder; the real one is the `app.dtd`

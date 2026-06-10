@@ -1,6 +1,6 @@
 ---
 name: run-app
-description: Launch the macOS Plot.app in an isolated "agent" profile and connect dart-mcp to it for hot reload, widget tree, runtime errors, and flutter_driver. Use when the user asks you to run, launch, test, or drive the Flutter app — including verifying UI changes, taking screenshots, or reproducing a bug.
+description: Launch the macOS Plot.app in an isolated, per-workspace agent profile and connect dart-mcp to it for hot reload, widget tree, runtime errors, and flutter_driver. Use when the user asks you to run, launch, test, or drive the Flutter app — including verifying UI changes, taking screenshots, or reproducing a bug.
 ---
 
 # Run the Plot app for testing via dart-mcp
@@ -17,12 +17,37 @@ The reliable path is to launch via `apps/plot/scripts/agent-app-launch.sh`,
 which wraps `flutter run -d macos --machine --print-dtd` with bootstrap,
 orphan cleanup, and retry-on-transient-failure (see "Failure modes" below).
 
+## Concurrent agents — the profile is per-workspace
+
+The launcher derives its agent profile name from the workspace directory:
+`agent-plot` for the main checkout and `agent-<worktree>` for a worktree (the
+sanitized basename of the repo/worktree root). Everything keyed on that name —
+the `InstanceLock`, the cached Clerk session, the local Drift DB, the
+`/tmp/plot-<profile>-*` state files, and the orphan-cleanup process match — is
+therefore isolated per workspace, so **two agents running concurrently in
+different worktrees do not collide**. You normally don't need to think about
+the name; just run the launcher from your workspace. Override with
+`PLOT_AGENT_PROFILE=<name>` only if you need a specific profile (e.g. two
+worktrees whose directory basenames happen to collide).
+
+Two consequences worth knowing:
+
+- Each profile has its **own empty Drift DB** on first launch and does a full
+  initial sync from the server — same as the old single `agent` profile, just
+  one per workspace. Expect a few seconds of first-run sync.
+- All agent profiles **share the developer's underlying Clerk session** (copied
+  from `dev`). This is the same session dev + agent already share today, so
+  parallel use is fine in practice.
+
 ## Prerequisites (one-time per machine)
 
 The agent profile needs a cached Clerk session. If the developer has signed in
-to the dev profile at least once, the launcher will copy it automatically.
-If they have NEVER signed in (no `clerk_profile_dev` exists), tell them to
-sign in once via their normal Debug Plot.app, then re-run.
+to the dev profile at least once, the launcher copies it into this workspace's
+profile automatically. If they have NEVER signed in (no `clerk_profile_dev`
+exists), tell them to sign in once via their normal Debug Plot.app, then
+re-run. (As a fallback for a missing/expired dev session you can pass
+credentials directly — see "Why this is the only reliable recipe" — but the
+copied session is simpler and needs no password.)
 
 ## Launch flow
 
@@ -33,19 +58,23 @@ idempotent and handles its own cleanup, so you can re-run it freely.
 bash apps/plot/scripts/agent-app-launch.sh
 ```
 
-On success (exit 0) it prints the DTD URI and leaves three files:
+On success (exit 0) it prints the resolved profile name, the DTD URI, and the
+paths of three per-profile files:
 
-- `/tmp/plot-agent-run.log` — full `flutter run --machine` log
-- `/tmp/plot-agent-run.pid` — daemon PID (kept alive for hot reload)
-- `/tmp/plot-agent-dtd.uri` — the DTD URI to feed dart-mcp
+- `/tmp/plot-<profile>-run.log` — full `flutter run --machine` log
+- `/tmp/plot-<profile>-run.pid` — daemon PID (kept alive for hot reload)
+- `/tmp/plot-<profile>-dtd.uri` — the DTD URI to feed dart-mcp
 
-Connect dart-mcp:
+`<profile>` is the per-workspace name (e.g. `agent-plot`) — read it from the
+launcher's `profile:` / `dtd uri:` output lines rather than hardcoding it.
+
+Connect dart-mcp by passing the printed DTD URI straight to
+`mcp__dart-mcp__connect_dart_tooling_daemon` (`uri=ws://…`). If you prefer to
+read it from the file, use the `dtd uri:` path the launcher printed, e.g.:
 
 ```bash
-DTD_URI=$(cat /tmp/plot-agent-dtd.uri)
+DTD_URI=$(cat /tmp/plot-agent-plot-dtd.uri)   # path is profile-specific
 ```
-
-Then call `mcp__dart-mcp__connect_dart_tooling_daemon` with `uri=$DTD_URI`.
 
 After connect succeeds you can use any dart-mcp tool: `hot_reload`,
 `get_widget_tree`, `flutter_driver`, etc. The Mac window opens on top of the
@@ -167,7 +196,8 @@ mcp__dart-mcp__flutter_driver
   `lib/driver_binding.dart` exists.
 - **All finder commands time out, `get_health` succeeds.** Frame sync was
   not disabled. The launcher writes the flutter run log to
-  `/tmp/plot-agent-run.log`; grep it for `set_frame_sync` errors. The
+  `/tmp/plot-<profile>-run.log` (path printed on launch); grep it for
+  `set_frame_sync` errors. The
   `DriverBinding.initServiceExtensions` dispatches `set_frame_sync=false`
   in its first `addPostFrameCallback`, so the disable only takes effect
   after the root widget mounts — if you launched the agent app on the
@@ -184,26 +214,30 @@ mcp__dart-mcp__flutter_driver
 ## Cleanup
 
 When done, kill the flutter run daemon AND the spawned Plot.app. Killing
-the daemon alone leaves Plot.app holding the `agent` profile InstanceLock,
+the daemon alone leaves Plot.app holding this profile's InstanceLock,
 which blocks the next launch — the launcher will clean that up on the
-next run, but doing it now is tidier:
+next run, but doing it now is tidier. Use this workspace's profile name
+(the launcher printed it; e.g. `agent-plot`) so you only kill your own app,
+not a concurrent agent's:
 
 ```bash
-kill -INT "$(cat /tmp/plot-agent-run.pid)" 2>/dev/null
+PROFILE=agent-plot   # the profile the launcher printed for THIS workspace
+kill -INT "$(cat /tmp/plot-$PROFILE-run.pid)" 2>/dev/null
 sleep 1
-pgrep -f 'Plot\.app.*--profile=agent' | xargs -r kill
+pgrep -f "Plot\.app.*--profile=$PROFILE" | xargs -r kill
 ```
 
-The cached Clerk session and `plot-*-agent.sqlite` DB persist, so subsequent
+The cached Clerk session and `plot-*-$PROFILE.sqlite` DB persist, so subsequent
 runs reuse the same signed-in state.
 
 ## Failure modes the launcher handles
 
 1. **Orphan Plot.app from a prior agent run.** Killing the flutter run
-   daemon does not propagate to the spawned `Plot.app --profile=agent`, so
-   the InstanceLock stays held and the next `flutter run` collides. The
-   bootstrap step kills orphans before starting, then re-verifies the lock
-   is releasable.
+   daemon does not propagate to the spawned `Plot.app --profile=<profile>`,
+   so the InstanceLock stays held and the next `flutter run` collides. The
+   bootstrap step kills orphans **for this workspace's profile only** before
+   starting (a concurrent agent's app in another worktree is left alone),
+   then re-verifies the lock is releasable.
 
 2. **mDNS-discovery timeout (the original "no `app.dtd` ever" bug).**
    `flutter run --machine` on macOS discovers the VM service via Bonjour.
@@ -235,9 +269,9 @@ Environment variables (rarely needed):
   pass command-line args to `main(args)`, so `--user`/`--password` auto sign-in
   can't be triggered, and the agent stalls on the OAuth popup.
 - **`flutter run -t lib/main_agent.dart`** (a wrapper entrypoint that calls
-  `run(['--profile=agent', ...args])`) does NOT switch entrypoints reliably on
-  macOS — the build cache reuses the existing kernel snapshot for `main.dart`.
-  `-a --profile=agent` is the supported path.
+  `run(['--profile=agent-…', ...args])`) does NOT switch entrypoints reliably
+  on macOS — the build cache reuses the existing kernel snapshot for
+  `main.dart`. `-a --profile=<agent-profile>` is the supported path.
 - **`-a --user=... -a --password=...`** also works (see
   `lib/auto_sign_in.dart`) if you need to bypass a stale Clerk cache, but
   requires a real password — the launcher's auto-refresh of the cached
