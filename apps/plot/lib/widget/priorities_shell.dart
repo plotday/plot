@@ -174,8 +174,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     if (index < 0 || index >= slots.length) return;
     final slot = slots[index];
 
-    // Search is its own tab now; leaving any page should not strand a
-    // stale inline-search toggle (multi-panel only registers one).
+    // Search is its own tab now (tapping it navigates rather than toggling an
+    // overlay, so collapsing the inline search would be wrong). More opens a
+    // settings page/modal rather than navigating the main content, so it also
+    // shouldn't force-close a (multi-panel) inline search. All other slots do
+    // navigate away, so any stale inline-search toggle must be dismissed.
     if (slot != NavSlot.more && slot != NavSlot.search) {
       LayoutBloc.instance?.requestSearchClose();
     }
@@ -188,7 +191,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         _switchOrPopToRoot(context, tabsRouter, _kTabAgenda);
         return;
       case NavSlot.newThread:
-        // New stays on the Activity stack (a later task owns reset/post-send).
+        // New uses the Activity stack. _openNewThread handles resume vs reset
+        // vs fresh-push semantics; after sending, the send path opens the
+        // resulting thread on the same Activity stack.
         _openNewThread(context, tabsRouter);
         return;
       case NavSlot.search:
@@ -202,7 +207,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
 
   /// Switches to [targetTab]. If that tab is already active, pops its inner
   /// stack to its root instead (the universal "tap active tab = go to root"
-  /// idiom). Threads/Agenda/Search/More all participate; New is handled by
+  /// idiom). Focuses/Agenda/Search/More all participate; New is handled by
   /// [_openNewThread] because its reset semantics differ.
   void _switchOrPopToRoot(
     BuildContext context,

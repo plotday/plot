@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:auto_route/auto_route.dart';
-// OutlineInputBorder is used to give the single-panel full-takeover search
-// field square corners (BorderRadius.zero). Imported with `show` per the
+// OutlineInputBorder is used to give the multi-panel header search field
+// square corners (BorderRadius.zero). Imported with `show` per the
 // established pattern in widget/compose/compose_search_field.dart.
 import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/scheduler.dart' show Ticker;
