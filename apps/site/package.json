@@ -10,8 +10,8 @@
   },
   "scripts": {
     "get-env": "bash ../../scripts/get-env",
-    "build": "react-router build",
-    "dev": "react-router dev",
+    "build": "node scripts/sync-internal-docs.mjs && react-router build",
+    "dev": "node scripts/sync-internal-docs.mjs && react-router dev",
     "start:local": "wrangler dev",
     "deploy": "bash -c 'if [[ -v DEPLOY_VARS ]]; then wrangler deploy --var $DEPLOY_VARS; else wrangler deploy --keep-vars; fi'",
     "types": "react-router typegen && tsc",
@@ -26,6 +26,7 @@
     "@react-router/serve": "^7.9.2",
     "@tabler/icons-react": "^3.34.1",
     "isbot": "^5.1.30",
+    "marked": "^18.0.5",
     "posthog-js": "^1.313.0",
     "react": "^19.1.2",
     "react-dom": "^19.1.2",

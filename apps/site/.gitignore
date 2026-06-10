@@ -8,3 +8,4 @@
 # Cloudflare
 .mf
 .wrangler
+/app/lib/internal-docs/
