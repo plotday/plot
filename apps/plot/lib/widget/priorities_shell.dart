@@ -6,7 +6,6 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
-import 'package:plot/command/command.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
@@ -21,6 +20,8 @@ import 'package:plot/widget/thread_header_notifier.dart';
 const int _kTabPriorities = 0;
 const int _kTabAgenda = 1;
 const int _kTabActivity = 2;
+const int _kTabSearch = 3;
+const int _kTabMore = 4;
 
 /// Bottom-nav slots in display order. [agenda] is present only when the user
 /// has an active calendar connection (see
@@ -151,8 +152,12 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         return slots.indexOf(NavSlot.focuses);
       case _kTabAgenda:
         return slots.indexOf(NavSlot.agenda);
+      case _kTabSearch:
+        return slots.indexOf(NavSlot.search);
+      case _kTabMore:
+        return slots.indexOf(NavSlot.more);
       default:
-        // Activity tab (or anything else) — no bottom-nav highlight.
+        // Activity tab — no highlight unless on /new (handled above).
         return -1;
     }
   }
@@ -165,106 +170,54 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   ) {
     if (index < 0 || index >= slots.length) return;
     final slot = slots[index];
-    // Navigating away from the current page should leave search closed —
-    // otherwise coming back via Search would toggle the stale state closed
-    // instead of opening it fresh. More just opens a modal, so it leaves
-    // search alone.
-    if (slot != NavSlot.search && slot != NavSlot.more) {
+
+    // Search is its own tab now; leaving any page should not strand a
+    // stale inline-search toggle (multi-panel only registers one).
+    if (slot != NavSlot.more && slot != NavSlot.search) {
       LayoutBloc.instance?.requestSearchClose();
     }
+
     switch (slot) {
       case NavSlot.focuses:
-        // Bottom nav is "replace" — back from /priorities should exit
-        // the app, not return to whatever cross-tab origin was tracked.
-        // [markUrlStateForReplace] is consumed by the next URL state
-        // emission (triggered by setActiveIndex → notifyAll →
-        // rebuildUrl) so the URL-history entry replaces the previous
-        // one instead of pushing. That keeps browser back / Cmd+[
-        // walking only the meaningful navigation steps.
-        PrioritiesShell.sourceTab = null;
-        context.router.root.navigationHistory.markUrlStateForReplace();
-        tabsRouter.setActiveIndex(_kTabPriorities);
+        _switchOrPopToRoot(context, tabsRouter, _kTabPriorities);
         return;
       case NavSlot.agenda:
-        PrioritiesShell.sourceTab = null;
-        context.router.root.navigationHistory.markUrlStateForReplace();
-        tabsRouter.setActiveIndex(_kTabAgenda);
+        _switchOrPopToRoot(context, tabsRouter, _kTabAgenda);
         return;
       case NavSlot.newThread:
+        // New stays on the Activity stack (a later task owns reset/post-send).
         _openNewThread(context, tabsRouter);
         return;
       case NavSlot.search:
-        _openSearch(context, tabsRouter);
+        _switchOrPopToRoot(context, tabsRouter, _kTabSearch);
         return;
       case NavSlot.more:
-        ShowSettings().run(context);
+        _switchOrPopToRoot(context, tabsRouter, _kTabMore);
         return;
     }
   }
 
-  /// Bottom-nav Search button. Search lives on a [PriorityRoute] — so
-  /// when the user is on the Priorities or Agenda tab (or any non-priority
-  /// route) we first switch to the Activity tab, navigating to the user's
-  /// default/root priority if its stack is empty. If we're already on a
-  /// priority page, the existing header just expands its search inline.
-  ///
-  /// Single-panel search runs across the Everything feed, so switch to it
-  /// up front — before any query is typed — so the results span every
-  /// thread. This method only runs from the single-panel bottom nav. In
-  /// multi-panel the priorities sidebar swaps to the global-view
-  /// focus-as-filter panel whenever a query or filter is active; results are
-  /// global regardless of the selected focus (driven by
-  /// `PriorityBloc.globalViewScope`), so no context switch or restore is
-  /// needed there.
-  void _openSearch(BuildContext context, TabsRouter tabsRouter) {
-    final layoutBloc = LayoutBloc.instance;
-    final onActivityTab = tabsRouter.activeIndex == _kTabActivity;
-
-    final nowBloc = context.read<NowBloc>();
-    final nowState = nowBloc.state;
-    if (nowState is NowLoaded && !nowState.everything) {
-      nowBloc.setContext(nowState.defaultPriority, everything: true);
-    }
-
-    if (onActivityTab &&
-        layoutBloc != null &&
-        layoutBloc.hasSearchToggle) {
-      layoutBloc.requestSearchToggle();
+  /// Switches to [targetTab]. If that tab is already active, pops its inner
+  /// stack to its root instead (the universal "tap active tab = go to root"
+  /// idiom). Threads/Agenda/Search/More all participate; New is handled by
+  /// [_openNewThread] because its reset semantics differ.
+  void _switchOrPopToRoot(
+    BuildContext context,
+    TabsRouter tabsRouter,
+    int targetTab,
+  ) {
+    if (tabsRouter.activeIndex == targetTab) {
+      final stack = tabsRouter.stackRouterOfIndex(targetTab);
+      if (stack != null && stack.canPop()) {
+        stack.popUntilRoot();
+      }
       return;
     }
-
-    final activityRouter = tabsRouter.stackRouterOfIndex(_kTabActivity);
-    if (activityRouter != null && activityRouter.stack.isNotEmpty) {
-      // Activity tab already has a priority page on its stack — just
-      // surface it and let its header pick up the toggle request.
-      tabsRouter.setActiveIndex(_kTabActivity);
-      _expandSearchWhenReady(context, attempt: 0);
-      return;
-    }
-
-    final priorityIdString = _activityPriorityIdString(context);
-    if (priorityIdString == null) return;
-    context.router.navigate(
-      PriorityRoute(priorityIdString: priorityIdString),
-    );
-    _expandSearchWhenReady(context, attempt: 0);
-  }
-
-  /// Polls across frames until a unified_header registers its toggle
-  /// handler with [LayoutBloc] (which happens in its first
-  /// didChangeDependencies). Mirrors [_pushNewThreadWhenInnerReady]'s
-  /// frame budget for parity with the New-thread cold-start path.
-  void _expandSearchWhenReady(BuildContext context, {required int attempt}) {
-    if (!context.mounted) return;
-    final layoutBloc = LayoutBloc.instance;
-    if (layoutBloc != null && layoutBloc.hasSearchToggle) {
-      layoutBloc.requestSearchToggle();
-      return;
-    }
-    if (attempt >= 120) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _expandSearchWhenReady(context, attempt: attempt + 1);
-    });
+    // Bottom-nav switches are "replace" so browser/Cmd+[ history doesn't
+    // grow a frame per tab tap (mirrors the prior Focus/Agenda behavior).
+    PrioritiesShell.sourceTab = null;
+    context.router.root.navigationHistory.markUrlStateForReplace();
+    tabsRouter.setActiveIndex(targetTab);
   }
 
   void _openNewThread(BuildContext context, TabsRouter tabsRouter) {
@@ -372,6 +325,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         PrioritiesRoute(),
         EmptyShellRoute("AgendaShell")(),
         EmptyShellRoute("ActivityShell")(),
+        EmptyShellRoute("SearchShell")(),
+        EmptyShellRoute("MoreShell")(),
       ],
       transitionBuilder: (context, child, animation) => child,
       builder: (context, child) {
