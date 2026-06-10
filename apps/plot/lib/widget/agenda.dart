@@ -1440,49 +1440,148 @@ class _BlockHeaderState extends State<_BlockHeader> {
           final targetPriorityIdString = eventThread.priority.id
               .toShortString();
           final targetThreadIdString = eventThread.id.toShortString();
-          // Same-priority fast path: when PriorityRoute(target) is already
-          // mounted on the Activity tab, `root.navigate(PriorityRoute(X,
-          // children: [ThreadRoute(...)]))` hits auto_route's in-place
-          // params update — it drops the existing inner route
-          // (PriorityOnlyRoute / ThreadRoute) without mounting the new
-          // ThreadRoute, leaving the inner AutoRouter empty so it falls
-          // back to LoadingPage → forever spinner. Skip the navigate and
-          // drive the inner stack explicitly.
-          if (isSamePriorityAtActivityTop(
+          _openThreadOnActivityStack(
             tabsRouter: tabsRouter,
             targetPriorityIdString: targetPriorityIdString,
-            priorityRouteName: PriorityRoute.name,
-          )) {
-            if (tabsRouter!.activeIndex != PriorityTabs.activity) {
-              tabsRouter.setActiveIndex(PriorityTabs.activity);
-            }
-            final innerRouter = findPriorityInnerRouter(
-              context.router.root,
-              PriorityRoute.name,
-            );
-            if (innerRouter != null) {
-              innerRouter.replaceAll([
-                ThreadRoute(threadIdString: targetThreadIdString),
-              ]);
-              return;
-            }
-          }
-          // Use the root router: when triggered from the Agenda tab,
-          // `context.router` is the agenda's nested StackRouter which has
-          // no PriorityRoute in its tree (PriorityRoute lives under the
-          // Activity tab's ActivityShell), so a scoped navigate throws
-          // `Failed to navigate to PriorityRoute`. The root navigator
-          // resolves the cross-tab path and handles the tab swap.
-          context.router.root.navigate(
-            PriorityRoute(
-              priorityIdString: targetPriorityIdString,
-              children: [ThreadRoute(threadIdString: targetThreadIdString)],
-            ),
+            targetThreadIdString: targetThreadIdString,
           );
         },
         child: child,
       ),
     );
+  }
+
+  /// Opens [targetThreadIdString] as a thread on the Activity tab's stack,
+  /// deterministically — for both same- and cross-priority agenda taps.
+  ///
+  /// With [PriorityRoute] mounted under BOTH the Activity tab and the Search
+  /// tab, a by-name `root.navigate(PriorityRoute(...))` resolves ambiguously
+  /// (it can land on the Search subtree) and, for an already-mounted
+  /// PriorityRoute, auto_route's in-place params update drops the
+  /// `children: [ThreadRoute]` — leaving an empty inner AutoRouter that falls
+  /// back to LoadingPage (forever spinner, no back affordance).
+  ///
+  /// Instead we drive the ACTIVITY tab explicitly:
+  ///  1. switch to the Activity tab;
+  ///  2. if its top PriorityRoute already targets this priority, just
+  ///     replace its inner stack with the ThreadRoute (fast path);
+  ///  3. otherwise navigate the Activity-scoped stack router to
+  ///     PriorityRoute(target) (seeding PriorityOnlyRoute), then poll for the
+  ///     target's inner router to appear and replaceAll([ThreadRoute]) on it.
+  ///
+  /// The result is a proper `/p/:id/:threadId` route on the Activity stack:
+  /// the thread renders, the bar hides, the header shows the back affordance,
+  /// and ChangeCurrentThread(null) back returns to the priority feed.
+  void _openThreadOnActivityStack({
+    required TabsRouter? tabsRouter,
+    required String targetPriorityIdString,
+    required String targetThreadIdString,
+  }) {
+    // No tabs router in scope (e.g. multi-panel) — fall back to the root
+    // navigate. Multi-panel has a single PriorityRoute mount, so the
+    // ambiguity that breaks single-panel doesn't apply there.
+    if (tabsRouter == null) {
+      context.router.root.navigate(
+        PriorityRoute(
+          priorityIdString: targetPriorityIdString,
+          children: [ThreadRoute(threadIdString: targetThreadIdString)],
+        ),
+      );
+      return;
+    }
+
+    if (tabsRouter.activeIndex != PriorityTabs.activity) {
+      tabsRouter.setActiveIndex(PriorityTabs.activity);
+    }
+
+    // Fast path: the Activity tab's top PriorityRoute already targets this
+    // priority — just drive its inner stack to the ThreadRoute.
+    if (isSamePriorityAtActivityTop(
+      tabsRouter: tabsRouter,
+      targetPriorityIdString: targetPriorityIdString,
+      priorityRouteName: PriorityRoute.name,
+    )) {
+      final innerRouter = findActivityPriorityInnerRouter(
+        tabsRouter,
+        PriorityRoute.name,
+      );
+      if (innerRouter != null) {
+        innerRouter.replaceAll([
+          ThreadRoute(threadIdString: targetThreadIdString),
+        ]);
+        return;
+      }
+    }
+
+    // Cross-priority (or PriorityRoute not yet mounted): navigate the
+    // ACTIVITY-scoped stack router to the target priority (NOT root — that
+    // would re-introduce the Search-subtree ambiguity), then drive the
+    // inner ThreadRoute once the inner router becomes available.
+    final activityRouter = tabsRouter.stackRouterOfIndex(
+      PriorityTabs.activity,
+    );
+    if (activityRouter == null) {
+      // Shouldn't happen once the Activity tab exists; fall back to root.
+      context.router.root.navigate(
+        PriorityRoute(
+          priorityIdString: targetPriorityIdString,
+          children: [ThreadRoute(threadIdString: targetThreadIdString)],
+        ),
+      );
+      return;
+    }
+    activityRouter.navigate(
+      PriorityRoute(priorityIdString: targetPriorityIdString),
+    );
+    _replaceWithThreadWhenInnerReady(
+      tabsRouter: tabsRouter,
+      targetPriorityIdString: targetPriorityIdString,
+      targetThreadIdString: targetThreadIdString,
+      attempt: 0,
+    );
+  }
+
+  /// PriorityWrapper builds the inner AutoRouter only after its priority-load
+  /// future resolves (a cold-start DB read of 200ms+). Poll across frames for
+  /// the Activity-scoped inner router to appear for the TARGET priority, then
+  /// replace its stack with the ThreadRoute. Mirrors
+  /// `_pushNewThreadWhenInnerReady` in priorities_shell.dart. The ~2s budget
+  /// (120 frames) covers slow disks while still bailing out on failure.
+  void _replaceWithThreadWhenInnerReady({
+    required TabsRouter tabsRouter,
+    required String targetPriorityIdString,
+    required String targetThreadIdString,
+    required int attempt,
+  }) {
+    if (!mounted) return;
+    // Only act once the Activity top PriorityRoute is the TARGET priority —
+    // a stale inner router from the previous priority would otherwise get the
+    // ThreadRoute, opening the thread under the wrong priority.
+    if (isSamePriorityAtActivityTop(
+      tabsRouter: tabsRouter,
+      targetPriorityIdString: targetPriorityIdString,
+      priorityRouteName: PriorityRoute.name,
+    )) {
+      final innerRouter = findActivityPriorityInnerRouter(
+        tabsRouter,
+        PriorityRoute.name,
+      );
+      if (innerRouter != null) {
+        innerRouter.replaceAll([
+          ThreadRoute(threadIdString: targetThreadIdString),
+        ]);
+        return;
+      }
+    }
+    if (attempt >= 120) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _replaceWithThreadWhenInnerReady(
+        tabsRouter: tabsRouter,
+        targetPriorityIdString: targetPriorityIdString,
+        targetThreadIdString: targetThreadIdString,
+        attempt: attempt + 1,
+      );
+    });
   }
 
   @override

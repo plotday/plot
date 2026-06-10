@@ -28,6 +28,7 @@ class ActivityFeedThreadRow extends StatefulWidget {
     required this.priorityContext,
     this.isAssociated = false,
     this.isSearch = false,
+    this.onActivate,
   });
 
   final Thread baseThread;
@@ -37,6 +38,11 @@ class ActivityFeedThreadRow extends StatefulWidget {
   final Priority priorityContext;
   final bool isAssociated;
   final bool isSearch;
+
+  /// Overrides the row's tap-to-open behaviour. Forwarded to [ThreadWidget].
+  /// When null, the default [ChangeCurrentThread] navigation runs (the
+  /// behaviour the priority feed relies on).
+  final VoidCallback? onActivate;
 
   @override
   State<ActivityFeedThreadRow> createState() => _ActivityFeedThreadRowState();
@@ -95,6 +101,7 @@ class _ActivityFeedThreadRowState extends State<ActivityFeedThreadRow> {
           isSearch: widget.isSearch,
           showEventTiming: rep != null,
           isAssociated: widget.isAssociated,
+          onActivate: widget.onActivate,
         );
       },
     );

@@ -193,21 +193,20 @@ class _SearchViewState extends State<_SearchView> {
           return SearchFooter(state: state);
         }
         final thread = threads[index];
-        // The opaque GestureDetector intercepts the tap to push the Search
-        // tab's own PriorityRoute→ThreadRoute stack (see [_openThread]),
-        // overriding the inner ThreadWidget's default ChangeCurrentThread.
-        return GestureDetector(
+        // [onActivate] routes the row's own tap to [_openThread], which pushes
+        // the Search tab's PriorityRoute→ThreadRoute stack — replacing the
+        // ThreadWidget's default ChangeCurrentThread navigation (which would
+        // resolve against the wrong/ambiguous PriorityRoute from the Search
+        // stack and no-op).
+        return ActivityFeedThreadRow(
           key: ValueKey('search_thread_${thread.id}'),
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _openThread(thread),
-          child: ActivityFeedThreadRow(
-            baseThread: thread,
-            selected: false,
-            now: false,
-            focusNode: _focusNodeFor(thread.id),
-            priorityContext: thread.priority,
-            isSearch: true,
-          ),
+          baseThread: thread,
+          selected: false,
+          now: false,
+          focusNode: _focusNodeFor(thread.id),
+          priorityContext: thread.priority,
+          isSearch: true,
+          onActivate: () => _openThread(thread),
         );
       },
     );

@@ -110,3 +110,23 @@ StackRouter? findPriorityInnerRouter(
   }
   return null;
 }
+
+/// Like [findPriorityInnerRouter], but scoped to the Activity tab's stack
+/// router so it never resolves the Search tab's [PriorityRoute] mount.
+///
+/// With [PriorityRoute] mounted under BOTH the Activity tab (tab 2) and the
+/// Search tab (tab 3), the root-rooted DFS in [findPriorityInnerRouter] is
+/// ambiguous: it may return the Search subtree's inner router. Cross-tab
+/// thread-opens from the Agenda must target the ACTIVITY stack explicitly,
+/// so they walk from `tabsRouter.stackRouterOfIndex(activity)` instead of
+/// the root. Returns null when the Activity tab has no [PriorityRoute]
+/// mounted yet (cold start).
+StackRouter? findActivityPriorityInnerRouter(
+  TabsRouter tabsRouter,
+  String priorityRouteName,
+) {
+  final activityRouter =
+      tabsRouter.stackRouterOfIndex(PriorityTabs.activity);
+  if (activityRouter == null) return null;
+  return findPriorityInnerRouter(activityRouter, priorityRouteName);
+}

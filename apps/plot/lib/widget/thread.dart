@@ -63,6 +63,7 @@ class ThreadWidget extends StatefulWidget {
     this.onSwipeExit,
     this.onDesktopFinish,
     this.onMobileFinish,
+    this.onActivate,
     super.key,
   });
 
@@ -98,6 +99,13 @@ class ThreadWidget extends StatefulWidget {
   /// Called before a finish command runs on mobile (toggle tap path).
   /// Should trigger collapse-only removal animation.
   final Future<void> Function()? onMobileFinish;
+
+  /// Overrides the row's tap-to-open behaviour. When non-null, tapping the
+  /// row runs this callback instead of the default [ChangeCurrentThread]
+  /// navigation. Used by the Search tab to open results on its own
+  /// PriorityRoute→ThreadRoute stack rather than the current priority's.
+  /// When null, the default in-place [ChangeCurrentThread] navigation runs.
+  final VoidCallback? onActivate;
 
   @override
   State<ThreadWidget> createState() => _ThreadWidgetState();
@@ -480,14 +488,22 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     );
 
     final listTile = ListTile(
-      command: CommandWrapper(ChangeCurrentThread(activity), icon: Value(null)),
+      // When [onActivate] is provided (e.g. Search results), the row's tap
+      // must run that callback INSTEAD of the default ChangeCurrentThread.
+      // Pass no command so the command path can't fire ChangeCurrentThread,
+      // and route the tap straight to onActivate.
+      command: widget.onActivate != null
+          ? null
+          : CommandWrapper(ChangeCurrentThread(activity), icon: Value(null)),
       // Bypass ListTile's run() spinner tracking. The command returns
       // CommandDone immediately (navigation is fire-and-forget), but routing
       // it through context.run directly keeps the spinner machinery out of
       // the hot tap path entirely.
-      onTap: () {
-        buildContext.run(ChangeCurrentThread(activity));
-      },
+      onTap:
+          widget.onActivate ??
+          () {
+            buildContext.run(ChangeCurrentThread(activity));
+          },
       // Menu opens via long-left swipe on touch (see Swipeable wrapper
       // below) and via right-click on desktop (see ContextMenu wrapper
       // below). Long-press is reserved for starting a reorder drag.
