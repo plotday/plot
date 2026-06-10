@@ -1075,12 +1075,22 @@ class Thread extends Equatable implements Comparable<Thread> {
       await (Store.get.update(Store.get.threads)
             ..where((t) => t.id.isIn(allIds)))
           .write(const ThreadsCompanion(readAt: Value(null)));
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (e is ApiException && Store._isPermanentError(e)) {
-        // Permanent error — clear readAt to stop retrying
+        // Permanent error — clear readAt to stop retrying. Report it: a
+        // permanent rejection here means these read receipts will never
+        // sync, which is a bug we want to see in error tracking rather than
+        // only in user logs.
         log.warning(
           'Permanent error pushing thread-unread, '
           'clearing ${readActivities.length} records: $e',
+        );
+        Tracker.captureException(
+          StateError(
+            'Permanent error pushing thread-unread, '
+            'clearing ${readActivities.length} records: $e',
+          ),
+          stackTrace,
         );
         final allIds = readActivities.map((a) => a.id.toBytes()).toList();
         await (Store.get.update(Store.get.threads)
