@@ -8,6 +8,7 @@ import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/scaffold.dart';
+import 'package:plot/widget/spinner.dart';
 
 /// Single-panel "More" tab. Renders the same top-level settings command
 /// groups that [ShowSettings] shows as a modal, but as the tab's page body.
@@ -26,19 +27,17 @@ class MorePage extends StatefulWidget {
 }
 
 class _MorePageState extends State<MorePage> {
-  /// Bumped to force [FutureBuilder] to re-run [buildSettingsGroups] after a
-  /// command changes settings state (e.g. toggling archived focuses), so the
-  /// list reflects the new state — mirroring the modal's refresh.
-  int _refreshKey = 0;
+  late Future<List<StaticCommandGroup>> _groupsFuture;
 
-  late Future<List<StaticCommandGroup>> _groupsFuture = buildSettingsGroups(
-    context,
-  );
+  @override
+  void initState() {
+    super.initState();
+    _groupsFuture = buildSettingsGroups(context);
+  }
 
   void _refresh() {
     if (!mounted) return;
     setState(() {
-      _refreshKey++;
       _groupsFuture = buildSettingsGroups(context);
     });
   }
@@ -59,9 +58,31 @@ class _MorePageState extends State<MorePage> {
         child: Padding(
           padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
           child: FutureBuilder<List<StaticCommandGroup>>(
-            key: ValueKey(_refreshKey),
             future: _groupsFuture,
             builder: (context, snapshot) {
+              // Show a spinner on first load only; keep the old list visible
+              // during subsequent refreshes to avoid a flicker.
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(height: context.theme.spacing.md),
+                    Padding(
+                      padding: context.theme.spacing.paddingSm,
+                      child: Text(
+                        'Settings',
+                        style: context.theme.typography.xl.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const Expanded(
+                      child: Center(child: Spinner()),
+                    ),
+                  ],
+                );
+              }
               final groups = snapshot.data ?? const <StaticCommandGroup>[];
               return SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
@@ -93,7 +114,11 @@ class _MorePageState extends State<MorePage> {
                           ),
                         ),
                       for (final command in group.commands)
-                        _SettingsRow(command: command, onRefresh: _refresh),
+                        _SettingsRow(
+                          command: command,
+                          onRefresh: _refresh,
+                          pageContext: context,
+                        ),
                     ],
                     SizedBox(height: context.theme.spacing.xl),
                   ],
@@ -112,10 +137,19 @@ class _MorePageState extends State<MorePage> {
 /// and a state-changing result refreshes the page list — the same dispatch the
 /// command modal uses, minus the modal's own pop (a page has nothing to pop).
 class _SettingsRow extends StatelessWidget {
-  const _SettingsRow({required this.command, required this.onRefresh});
+  const _SettingsRow({
+    required this.command,
+    required this.onRefresh,
+    required this.pageContext,
+  });
 
   final Command command;
   final VoidCallback onRefresh;
+
+  /// Stable page-level context used as [rootContext] for navigation commands
+  /// (e.g. [HelpAndFeedback]). Row contexts are short-lived children of the
+  /// FutureBuilder subtree and can be unmounted before navigation fires.
+  final BuildContext pageContext;
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +161,7 @@ class _SettingsRow extends StatelessWidget {
           rowContext,
           result,
           command,
-          rootContext: rowContext,
+          rootContext: pageContext,
           onRefresh: () async => onRefresh(),
         );
         // The page is not a modal, so never report "should close".
