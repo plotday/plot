@@ -31,4 +31,9 @@ export default [
     route("unsubscribe", "routes/unsubscribe.tsx"),
     route("twister/login", "routes/twister.login.tsx"),
   ]),
+  layout("./components/internal-layout.tsx", [
+    route("internal", "routes/internal._index.tsx"),
+    route("internal/features", "routes/internal.features.tsx"),
+    route("internal/updates", "routes/internal.updates.tsx"),
+  ]),
 ] satisfies RouteConfig;
