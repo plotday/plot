@@ -18,7 +18,6 @@ FROM
 WHERE
     a.draft = FALSE
     AND pt.archived_at IS NULL
-    AND tu.read_at IS NOT NULL
     AND tu.updated_at > pt.created_at
 ORDER BY
     tu.updated_at ASC;
