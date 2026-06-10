@@ -132,6 +132,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Strip source maps before Pages deploy
+        # The source maps were already uploaded to PostHog above, so they don't
+        # need to ship to the public CDN. inline-web-source-content.py embeds the
+        # full Dart/Flutter/package source into main.dart.js.map, which pushes it
+        # past Cloudflare Pages' 25 MiB per-file limit and fails the deploy. Drop
+        # the .map files (a dangling sourceMappingURL just 404s harmlessly when
+        # devtools is open). Runs unconditionally — even when the PostHog upload
+        # step is skipped (no token), the oversized maps must not be deployed.
+        run: find apps/plot/build/web -name '*.map' -delete
+
       - name: Install wrangler
         run: pnpm install -w wrangler --ignore-scripts
 
