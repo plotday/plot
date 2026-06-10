@@ -360,6 +360,16 @@ When the tunnel is active, use these public URLs:
 
 ## Worktree Development
 
+### Assume Concurrent Agents — Choosing Your Workspace
+
+**Assume other agents may be working in this repo at the same time, each on a different change.** Pick your workspace so you don't disrupt them:
+
+- **Never change the main repo's checked-out branch** (`git checkout`, `git switch`, `git switch -c`, `git reset --hard`, rebase, etc.) **unless the user explicitly directs you to, or you ask first.** Switching the branch shifts the working tree and HEAD under any other agent operating in the main folder, corrupting their context mid-task. This is the one hard rule.
+- **Localized changes can be made directly in the main repo folder.** When your change is small and self-contained — a few files, easy to test in place, no long-running migration or schema churn — work in the main folder on the current branch for speed and simple testing. Committing on the current branch is fine when directed; just don't switch branches out from under others.
+- **Use a worktree for anything that needs a stable environment.** If the work requires an isolated branch, a separate database (schema/migration changes), a long-running build, or otherwise benefits from insulation from concurrent edits, create a worktree (see `superpowers:using-git-worktrees`). Worktrees get their own branch and isolated Postgres port, so your migrations, branch switches, and resets can't disturb other agents.
+
+When in doubt about whether a change is "localized" enough for the main folder, prefer a worktree — the isolation is cheap insurance against trampling a concurrent agent.
+
 Worktrees are automatically set up via WorktreeCreate/WorktreeRemove hooks in
 `.claude/settings.json`. The hooks handle: git worktree creation, submodule init,
 env file copying, and pnpm install. Submodule init uses `--reference` to borrow
