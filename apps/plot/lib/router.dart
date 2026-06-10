@@ -266,6 +266,30 @@ class AppRouter extends RootStackRouter {
                 ),
               ],
             ),
+            // Tab 3: Search — its own stack so results/scroll/query survive tab switches.
+            AutoRoute(
+              page: EmptyShellRoute("SearchShell"),
+              path: 'search',
+              children: [
+                AutoRoute(
+                  page: SearchRoute.page,
+                  path: '',
+                  guards: [AuthGuard(userBloc)],
+                ),
+              ],
+            ),
+            // Tab 4: More — settings rendered as pushable pages on mobile.
+            AutoRoute(
+              page: EmptyShellRoute("MoreShell"),
+              path: 'more',
+              children: [
+                AutoRoute(
+                  page: MoreRoute.page,
+                  path: '',
+                  guards: [AuthGuard(userBloc)],
+                ),
+              ],
+            ),
           ],
         ),
       ],
