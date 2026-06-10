@@ -144,6 +144,7 @@ class _Overlay {
     this.catchUpSortKeys,
     this.sticky = false,
     this.pinnedSection,
+    this.pinnedInUnread = false,
   });
 
   /// Expect the thread to drop out of the active tab. Settled when the
@@ -184,18 +185,21 @@ class _Overlay {
     Thread thread, {
     required ActivitySection pinnedSection,
     required ({int urgent, int importance, DateTime activityAt}) sortKeys,
+    bool pinnedInUnread = false,
   }) => _Overlay(
     expected: thread,
     watched: const <_OverrideField>{},
     catchUpSortKeys: sortKeys,
     sticky: true,
     pinnedSection: pinnedSection,
+    pinnedInUnread: pinnedInUnread,
   );
 
   final Thread? expected;
   final Set<_OverrideField> watched;
   final ({int urgent, int importance, DateTime activityAt})? catchUpSortKeys;
   final bool sticky;
+  final bool pinnedInUnread;
 
   /// When set (sticky-todo only), the feed builder buckets this row into
   /// [pinnedSection] instead of `primarySectionFor(expected)`, holding it
@@ -742,6 +746,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     return (o != null && o.sticky) ? o.pinnedSection : null;
   }
 
+  /// Whether [id] has a sticky-todo pin that was pinned in the unread cluster.
+  bool _isPinnedInUnread(ThreadId id) {
+    final o = _overlay[id];
+    return o != null && o.sticky && o.pinnedInUnread;
+  }
+
   /// Live subscription for the currently-active activity-feed tab's
   /// per-tab query. Started in [_restartActiveTabSubscription], cancelled
   /// and re-started on tab / filter / scope / priority changes. `null`
@@ -1221,15 +1231,19 @@ class PriorityBloc extends Cubit<PriorityState> {
       // grace window elapses — so it doesn't jump out from under the user.
       final pinned = _pinnedSectionFor(t.id);
       if (pinned != null) {
-        switch (pinned) {
-          case ActivitySection.doing:
-            readDoing.add(t);
-          case ActivitySection.scheduled:
-            scheduled.add(t);
-          case ActivitySection.activity:
-            activity.add(t);
-          case ActivitySection.eventAgenda:
-            break;
+        if (_isPinnedInUnread(t.id)) {
+          unreadDoing.add(t);
+        } else {
+          switch (pinned) {
+            case ActivitySection.doing:
+              readDoing.add(t);
+            case ActivitySection.scheduled:
+              scheduled.add(t);
+            case ActivitySection.activity:
+              activity.add(t);
+            case ActivitySection.eventAgenda:
+              break;
+          }
         }
         continue;
       }
@@ -1426,8 +1440,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// flat "Everything" feed sorts purely by `activity_at` via
   /// [_flatFeedCompare] instead.
   int _catchUpCompare(Thread a, Thread b) {
-    final aUn = (a.unread || _isStickyPinned(a.id)) ? 1 : 0;
-    final bUn = (b.unread || _isStickyPinned(b.id)) ? 1 : 0;
+    final aUn = (a.unread || _isStickyPinned(a.id) || _isPinnedInUnread(a.id)) ? 1 : 0;
+    final bUn = (b.unread || _isStickyPinned(b.id) || _isPinnedInUnread(b.id)) ? 1 : 0;
     if (aUn != bUn) return bUn.compareTo(aUn);
 
     final aUrg = a.urgent ? 1 : 0;
@@ -3054,7 +3068,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// `primarySectionFor`. Used to capture where a row sits *before* a To do
   /// / Done toggle so [pinTodoInPlace] can hold it there.
   ActivitySection _renderedSectionFor(Thread t) {
-    if (t.unread || _isStickyPinned(t.id)) return ActivitySection.doing;
+    if (t.unread || _isStickyPinned(t.id) || _isPinnedInUnread(t.id)) return ActivitySection.doing;
     return primarySectionFor(t);
   }
 
@@ -3090,6 +3104,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     final section = firstToggle
         ? _renderedSectionFor(current)
         : _pinnedSectionFor(newState.id)!;
+    final pinnedInUnread = firstToggle
+        ? (current.unread || _isStickyPinned(current.id))
+        : _isPinnedInUnread(newState.id);
     // Snapshot the pre-toggle thread on the first toggle so the To do / Done
     // commands can distinguish a genuine state change from a round-trip and
     // keep the persisted sort position stable across toggles ([_toggleOriginal]).
@@ -3102,6 +3119,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         importance: newState.importance,
         activityAt: newState.activityAt,
       ),
+      pinnedInUnread: pinnedInUnread,
     );
     _rebuildActiveTabSection();
   }
