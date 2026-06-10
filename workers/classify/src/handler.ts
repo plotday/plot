@@ -4,6 +4,8 @@ import {
 } from "@plotday/classifier-runtime";
 import type { Candidate } from "@plotday/classifier";
 
+import { retryOnTxnConflict } from "@plotday/worker-util";
+
 import { sql, type ClassifyDb } from "./db";
 
 export type ClassifyJob = { userId: string; threadId: string };
@@ -129,14 +131,16 @@ export async function handleClassifyJob(
   if (snapshot == null) {
     // Case A: write the classified priority, clear classify_at.
     // Guard with priority_id IS NULL so a concurrent user move wins.
-    const updated = await db
-      .updateTable("thread_priority")
-      .set({ priority_id: target, classify_at: null })
-      .where("user_id", "=", job.userId)
-      .where("thread_id", "=", job.threadId)
-      .where("priority_id", "is", null)
-      .where("user_moved", "=", false)
-      .executeTakeFirst();
+    const updated = await settlePriority(db, job, (trx) =>
+      trx
+        .updateTable("thread_priority")
+        .set({ priority_id: target, classify_at: null })
+        .where("user_id", "=", job.userId)
+        .where("thread_id", "=", job.threadId)
+        .where("priority_id", "is", null)
+        .where("user_moved", "=", false)
+        .executeTakeFirst()
+    );
     return {
       status: updated.numUpdatedRows > 0n ? "settled" : "skipped",
       ...telemetry,
@@ -144,14 +148,16 @@ export async function handleClassifyJob(
   } else if (target !== snapshot) {
     // Cases B-D with a different classifier result. Guard with the
     // snapshot so concurrent moves win.
-    const updated = await db
-      .updateTable("thread_priority")
-      .set({ priority_id: target, classify_at: null })
-      .where("user_id", "=", job.userId)
-      .where("thread_id", "=", job.threadId)
-      .where("priority_id", "=", snapshot)
-      .where("user_moved", "=", false)
-      .executeTakeFirst();
+    const updated = await settlePriority(db, job, (trx) =>
+      trx
+        .updateTable("thread_priority")
+        .set({ priority_id: target, classify_at: null })
+        .where("user_id", "=", job.userId)
+        .where("thread_id", "=", job.threadId)
+        .where("priority_id", "=", snapshot)
+        .where("user_moved", "=", false)
+        .executeTakeFirst()
+    );
     return {
       status: updated.numUpdatedRows > 0n ? "moved" : "skipped",
       ...telemetry,
@@ -167,6 +173,35 @@ export async function handleClassifyJob(
       .execute();
     return { status: "same", ...telemetry };
   }
+}
+
+/**
+ * Run a priority_id-changing thread_priority update with deadlock-safe lock
+ * ordering. The update fires the thread_priority_bump_parent trigger, which
+ * UPDATEs the parent thread row — so a bare statement acquires locks
+ * thread_priority → thread, the OPPOSITE of upsert_thread (connector saves
+ * and client sync), which locks thread first and then writes thread_priority
+ * via its filing triggers. With both writers racing on the same thread right
+ * after creation (every connector thread immediately enqueues a classify
+ * job), that opposite order deadlocks. Locking the parent thread row first
+ * makes every writer acquire thread → thread_priority.
+ *
+ * retryOnTxnConflict is kept as defense for cycles this ordering doesn't
+ * cover; the update is guarded/idempotent so re-running is safe.
+ */
+async function settlePriority<T>(
+  db: ClassifyDb,
+  job: ClassifyJob,
+  update: (trx: ClassifyDb) => Promise<T>
+): Promise<T> {
+  return retryOnTxnConflict(() =>
+    db.transaction().execute(async (trx) => {
+      await sql`SELECT 1 FROM public.thread WHERE id = ${job.threadId}::uuid FOR NO KEY UPDATE`.execute(
+        trx
+      );
+      return update(trx);
+    })
+  );
 }
 
 function parseEmbedding(text: string | null): number[] | null {

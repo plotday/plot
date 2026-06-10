@@ -268,6 +268,34 @@ CREATE TRIGGER bump_parent_on_child_insert
 
 **Also bump on schema changes that add view columns.** When a migration adds a column to a `user.*` view, existing rows still have stale `seq` values. Add a one-shot `UPDATE parent SET updated_at = now();` at the end of the migration so clients re-pull and pick up the new column.
 
+### Deadlock warning: child-first writers must lock the parent first
+
+The bump trigger makes every child-table write also take a row lock on the
+parent (child → parent order). Writers that start from the parent — e.g.
+`upsert_thread`, whose filing triggers write `thread_priority` — acquire the
+same two locks in the opposite order (parent → child). Two such writers
+racing on the same parent row deadlock (SQLSTATE 40P01); this is guaranteed
+to happen eventually for `thread`/`thread_priority` because every
+connector-created thread immediately enqueues a classify job that updates
+its `thread_priority` row.
+
+Any background/worker code that UPDATEs a bump-triggering child column must
+acquire the parent row lock **first**, in an explicit transaction, before
+touching the child:
+
+```sql
+BEGIN;
+SELECT 1 FROM public.thread WHERE id = $1 FOR NO KEY UPDATE;  -- parent first
+UPDATE thread_priority SET priority_id = ... WHERE thread_id = $1 ...;
+COMMIT;
+```
+
+See `settlePriority` in `workers/classify/src/handler.ts` for the canonical
+TS implementation. Wrap the transaction in `retryOnTxnConflict` (from
+`@plotday/worker-util`) as defense for cycles the ordering doesn't cover —
+Postgres fully rolls back the deadlock victim, so retrying a guarded,
+idempotent transaction is safe.
+
 ## Database Infrastructure
 
 The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `docker-compose.yml`. Key details:
