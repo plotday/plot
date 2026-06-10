@@ -7,6 +7,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState;
+import 'package:plot/page/search.dart' show SearchPage;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
@@ -198,6 +199,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         return;
       case NavSlot.search:
         _switchOrPopToRoot(context, tabsRouter, _kTabSearch);
+        // Re-focus the search field on every entry (the kept-alive tab won't
+        // re-run its first-mount autofocus).
+        SearchPage.requestFocus();
         return;
       case NavSlot.more:
         _switchOrPopToRoot(context, tabsRouter, _kTabMore);
@@ -651,25 +655,36 @@ class _PersistentBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Border color from the OUTER (un-darkened) theme — the bar darkens its
+    // own theme by 2 steps, so reading `border` inside that FTheme yields a
+    // near-black line on the near-black bar (invisible). The outer border is
+    // the same visible separator the agenda divider uses.
+    final borderColor = context.theme.colors.border;
     return FTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) => DecoratedBox(
-          decoration: BoxDecoration(
-            color: context.theme.colors.background,
-            border: Border(
-              top: BorderSide(color: context.theme.colors.border),
-            ),
-          ),
-          child: SafeArea(
-            top: false,
-            left: false,
-            right: false,
-            child: FBottomNavigationBar(
-              index: currentIndex,
-              onChange: onChange,
-              children: items,
-            ),
+          decoration: BoxDecoration(color: context.theme.colors.background),
+          // Draw the top hairline as a sibling ABOVE the bar, not as a
+          // BoxDecoration border: a background-position border paints behind
+          // the opaque FBottomNavigationBar and is hidden. A first-child
+          // Container is painted on top and is visible (same approach as the
+          // agenda's mobile top divider).
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(height: 1, color: borderColor),
+              SafeArea(
+                top: false,
+                left: false,
+                right: false,
+                child: FBottomNavigationBar(
+                  index: currentIndex,
+                  onChange: onChange,
+                  children: items,
+                ),
+              ),
+            ],
           ),
         ),
       ),

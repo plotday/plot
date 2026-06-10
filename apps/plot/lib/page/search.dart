@@ -32,6 +32,17 @@ import 'package:plot/widget/search_footer.dart';
 class SearchPage extends StatelessWidget {
   const SearchPage({super.key});
 
+  /// Bumped by the bottom-nav "Search" tap so the field (re)focuses each time
+  /// the tab is shown. The Search tab is kept alive by [AutoTabsRouter], so the
+  /// field's first-mount autofocus (in [_SearchViewState.initState]) fires only
+  /// once — this re-triggers focus on every subsequent entry.
+  static final ValueNotifier<int> focusRequest = ValueNotifier<int>(0);
+
+  /// Request the Search field take focus (when its query is empty). Called from
+  /// the bottom-nav Search slot. Safe to call when the page isn't mounted yet —
+  /// the first mount focuses on its own.
+  static void requestFocus() => focusRequest.value++;
+
   @override
   Widget build(BuildContext context) {
     return PriorityBlocProvider(
@@ -80,16 +91,30 @@ class _SearchViewState extends State<_SearchView> {
     // (empty query) — not when resuming a tab that already has a search.
     _searchController.text = bloc.state.search;
     _lastSearchText = bloc.state.search;
-    if (bloc.state.search.isEmpty) {
+    // Focus on first mount (only when there's no resumed query), and again
+    // every time the Search tab is re-entered (the bottom-nav bumps
+    // [SearchPage.focusRequest], since the kept-alive tab never re-runs
+    // initState).
+    _focusFieldIfEmpty();
+    SearchPage.focusRequest.addListener(_focusFieldIfEmpty);
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  /// Request focus on the search field, but only when the query is empty — a
+  /// resumed tab with an existing search keeps its results visible without the
+  /// keyboard popping back open.
+  void _focusFieldIfEmpty() {
+    if (!mounted) return;
+    if (_searchController.text.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocusNode.requestFocus();
       });
     }
-    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
+    SearchPage.focusRequest.removeListener(_focusFieldIfEmpty);
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
