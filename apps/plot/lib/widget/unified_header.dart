@@ -61,9 +61,20 @@ const double _kHeaderHeight = 44.0;
 /// outer resize divider naturally runs top-to-bottom of the window without
 /// the header content having to be split across regions.
 class UnifiedHeader extends StatefulWidget {
-  const UnifiedHeader({this.variant = HeaderVariant.single, super.key});
+  const UnifiedHeader({
+    this.variant = HeaderVariant.single,
+    this.onBack,
+    super.key,
+  });
 
   final HeaderVariant variant;
+
+  /// Single-panel only: invoked by the leading ← back button rendered on the
+  /// bare priority page (`/p/:id`). Performs the same return-to-source-tab
+  /// action as the OS back gesture. Null in multi-panel mode (the header is
+  /// laid out as panels there) and ignored on thread/new pages, which have
+  /// their own back affordances.
+  final VoidCallback? onBack;
 
   @override
   State<UnifiedHeader> createState() => _UnifiedHeaderState();
@@ -162,6 +173,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     // route-change notification while the header is deactivated, where the
     // context ancestor lookup would throw.
     return _rootRouter?.currentPath.endsWith('/new') ?? false;
+  }
+
+  /// True when the active route is the bare priority page itself —
+  /// `/p/:id` (exactly two path segments, first `p`). False for a thread
+  /// (`/p/:id/:threadId`, which has its own back) and for the new-thread
+  /// page (`/p/:id/new`, whose back affordance lives inside the page). This
+  /// gates the leading ← back button so it only shows on the focus feed.
+  /// Mirrors the inverse of priorities_shell's `_isFullScreenRoute` path
+  /// check; reads the cached root router for the same deactivation-safety
+  /// reason as [_computeIsNewThreadRoute].
+  bool get _isBarePriorityRoute {
+    final path = _rootRouter?.currentPath;
+    if (path == null) return false;
+    final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+    return segments.length == 2 && segments.first == 'p';
   }
 
   void _onRouteChanged() {
@@ -514,9 +540,36 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       );
     }
 
+    // Leading ← back button: returns from the focus feed to the bottom-nav
+    // tab the user came from (the same action as the OS back gesture — see
+    // [returnFromPriorityToSourceTab]). Shown only on the bare `/p/:id`
+    // priority page in single-panel mode. Threads have their own back
+    // button (the [ChangeCurrentThread] arrow below); the new-thread page
+    // carries its own affordance. Styled like the new-thread / connection
+    // picker back chevron (PlotIcon.left, ~18px, muted). A GestureDetector
+    // (not a hover button) keeps the default desktop arrow cursor.
+    final bool showPriorityBack =
+        widget.onBack != null &&
+        !layoutState.multiPanel &&
+        !hasActivity &&
+        _isBarePriorityRoute;
+
     final List<Widget> leading = [
       if (resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
+      if (showPriorityBack)
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onBack,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: Icon(
+              PlotIcon.left,
+              size: 18,
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ),
       if (hasActivity)
         Button.icon(
           CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),

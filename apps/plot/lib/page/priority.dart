@@ -28,6 +28,18 @@ import 'package:plot/style/spacing.dart';
 import 'priorities.dart';
 import 'loading.dart';
 
+/// Returns from a single-panel PriorityPage to the bottom-nav tab the user
+/// came from (the focus list, or Agenda for deep-link arrivals). Shared by
+/// the back gesture (PopScope) and the visible header back button so both
+/// behave identically.
+void returnFromPriorityToSourceTab(BuildContext context) {
+  final back = computeBackTabFromPriority(
+    currentSourceTab: PrioritiesShell.sourceTab,
+  );
+  PrioritiesShell.sourceTab = back.nextSourceTab;
+  AutoTabsRouter.of(context).setActiveIndex(back.targetTab);
+}
+
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper implements AutoRouteWrapper {
   PriorityWrapper({@PathParam("priorityId") required this.priorityIdString})
@@ -218,7 +230,16 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
                               right: false,
                               child: Column(
                                 children: [
-                                  const UnifiedHeader(),
+                                  // Single-panel only: hand the header a back
+                                  // action so it can show a visible ← that
+                                  // mirrors the OS back gesture
+                                  // (returnFromPriorityToSourceTab). The header
+                                  // decides whether to render it (only on the
+                                  // bare /p/:id priority page, not thread/new).
+                                  UnifiedHeader(
+                                    onBack: () =>
+                                        returnFromPriorityToSourceTab(context),
+                                  ),
                                   Expanded(child: panelLayout),
                                 ],
                               ),
@@ -701,15 +722,9 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
               );
               if (shortcuts != null && shortcuts.tryCloseSearch()) return;
               // Return to whichever bottom-nav tab the user came from
-              // when they tapped the priority chip. Cleared by the
-              // bottom-nav handler when the user taps Priorities/Agenda
-              // (so back from a tab-arrival exits the app cleanly).
-              // Falls back to Agenda for deep-link arrivals.
-              final back = computeBackTabFromPriority(
-                currentSourceTab: PrioritiesShell.sourceTab,
-              );
-              PrioritiesShell.sourceTab = back.nextSourceTab;
-              AutoTabsRouter.of(context).setActiveIndex(back.targetTab);
+              // when they tapped the priority chip. Shared with the
+              // visible header back button so both behave identically.
+              returnFromPriorityToSourceTab(context);
             },
             child: PriorityPage(priorityId: priorityId),
           );
