@@ -305,4 +305,96 @@ describe("processEmailThreads — no status set", () => {
     // status must be absent (undefined) — not "archived", not any other value
     expect(saved.status).toBeUndefined();
   });
+
+  describe("two-way unread status sync", () => {
+    it("initialSync sets unread=false but caches current Gmail unread state", async () => {
+      const { gmail, saveLink } = makeGmail();
+      const thread = makeGmailThread(["INBOX", "UNREAD"]);
+
+      await (gmail as any).processEmailThreads([thread], true, "INBOX");
+
+      expect(saveLink).toHaveBeenCalledTimes(1);
+      const saved = saveLink.mock.calls[0][0];
+      expect(saved.unread).toBe(false);
+
+      const cached = await (gmail as any).tools.store.get(`unread:${thread.id}`);
+      expect(cached).toBe(true);
+    });
+
+    it("incrementalSync sets unread=false if thread wasn't seen and is read in Gmail", async () => {
+      const { gmail, saveLink } = makeGmail();
+      const thread = makeGmailThread(["INBOX"]);
+
+      await (gmail as any).processEmailThreads([thread], false, "INBOX");
+
+      expect(saveLink).toHaveBeenCalledTimes(1);
+      const saved = saveLink.mock.calls[0][0];
+      expect(saved.unread).toBe(false);
+
+      const cached = await (gmail as any).tools.store.get(`unread:${thread.id}`);
+      expect(cached).toBe(false);
+    });
+
+    it("incrementalSync leaves unread=undefined if thread wasn't seen and is unread in Gmail (receipt-default)", async () => {
+      const { gmail, saveLink } = makeGmail();
+      const thread = makeGmailThread(["INBOX", "UNREAD"]);
+
+      await (gmail as any).processEmailThreads([thread], false, "INBOX");
+
+      expect(saveLink).toHaveBeenCalledTimes(1);
+      const saved = saveLink.mock.calls[0][0];
+      expect(saved.unread).toBeUndefined();
+
+      const cached = await (gmail as any).tools.store.get(`unread:${thread.id}`);
+      expect(cached).toBe(true);
+    });
+
+    it("incrementalSync propagates change and sets unread=false when thread changes from unread to read", async () => {
+      const { gmail, saveLink } = makeGmail();
+      const thread = makeGmailThread(["INBOX"]);
+
+      const store = (gmail as any).tools.store;
+      await store.set(`unread:${thread.id}`, true);
+
+      await (gmail as any).processEmailThreads([thread], false, "INBOX");
+
+      expect(saveLink).toHaveBeenCalledTimes(1);
+      const saved = saveLink.mock.calls[0][0];
+      expect(saved.unread).toBe(false);
+
+      const cached = await store.get(`unread:${thread.id}`);
+      expect(cached).toBe(false);
+    });
+
+    it("incrementalSync propagates change and sets unread=true when thread changes from read to unread", async () => {
+      const { gmail, saveLink } = makeGmail();
+      const thread = makeGmailThread(["INBOX", "UNREAD"]);
+
+      const store = (gmail as any).tools.store;
+      await store.set(`unread:${thread.id}`, false);
+
+      await (gmail as any).processEmailThreads([thread], false, "INBOX");
+
+      expect(saveLink).toHaveBeenCalledTimes(1);
+      const saved = saveLink.mock.calls[0][0];
+      expect(saved.unread).toBe(true);
+
+      const cached = await store.get(`unread:${thread.id}`);
+      expect(cached).toBe(true);
+    });
+
+    it("incrementalSync suppresses echo (leaves unread=undefined) when unread status has not changed", async () => {
+      const { gmail, saveLink } = makeGmail();
+      const thread = makeGmailThread(["INBOX", "UNREAD"]);
+
+      const store = (gmail as any).tools.store;
+      await store.set(`unread:${thread.id}`, true);
+
+      await (gmail as any).processEmailThreads([thread], false, "INBOX");
+
+      expect(saveLink).toHaveBeenCalledTimes(1);
+      const saved = saveLink.mock.calls[0][0];
+      expect(saved.unread).toBeUndefined();
+    });
+  });
 });

@@ -1338,9 +1338,25 @@ export class Gmail extends Connector<Gmail> {
 
         if (plotThread.notes.length === 0) continue;
 
+        const isUnread = thread.messages?.some((m) => m.labelIds?.includes("UNREAD")) ?? false;
+
         if (initialSync) {
           plotThread.unread = false;
           plotThread.archived = false;
+          await this.set(`unread:${thread.id}`, isUnread);
+        } else {
+          const wasUnread = await this.get<boolean>(`unread:${thread.id}`);
+          if (wasUnread == null) {
+            // First time seeing this thread incrementally.
+            // If it is already read in Gmail, align Plot's state.
+            if (!isUnread) {
+              plotThread.unread = false;
+            }
+          } else if (isUnread !== wasUnread) {
+            // The unread state changed in Gmail, so write it to Plot.
+            plotThread.unread = isUnread;
+          }
+          await this.set(`unread:${thread.id}`, isUnread);
         }
 
         // Inject channel ID for priority routing and sync metadata
@@ -1590,6 +1606,9 @@ export class Gmail extends Connector<Gmail> {
     if (!threadId) return;
 
     const api = await this.getApi(channelId);
+
+    // Cache the new unread state before modifying Gmail to prevent echo loops
+    await this.set(`unread:${threadId}`, unread);
 
     if (unread) {
       await api.modifyThread(threadId, ["UNREAD"]);
