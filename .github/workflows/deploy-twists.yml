@@ -164,9 +164,10 @@ jobs:
             fi
           done
 
-          # Discover connectors: directories in public/connectors/ with a plotTwistId in package.json
+          # Discover connectors: directories in connectors/ or public/connectors/
+          # with a plotTwistId in package.json
           ALL_CONNECTORS=()
-          for dir in public/connectors/*/package.json; do
+          for dir in connectors/*/package.json public/connectors/*/package.json; do
             [ -f "$dir" ] || continue
             if jq -e '.plotTwistId' "$dir" > /dev/null 2>&1; then
               ALL_CONNECTORS+=("$(basename "$(dirname "$dir")")")
@@ -181,6 +182,23 @@ jobs:
           ALL_CONNECTORS_CSV=$(IFS=,; echo "${ALL_CONNECTORS[*]}")
           echo "all_twists=$ALL_TWISTS_CSV" >> $GITHUB_OUTPUT
           echo "all_connectors=$ALL_CONNECTORS_CSV" >> $GITHUB_OUTPUT
+
+          # Validate connectors/deploy.json: every listed package must be discovered.
+          if [ -f connectors/deploy.json ]; then
+            DISCOVERED_NAMES=""
+            for dir in connectors/*/package.json public/connectors/*/package.json; do
+              [ -f "$dir" ] || continue
+              jq -e '.plotTwistId' "$dir" > /dev/null 2>&1 && DISCOVERED_NAMES+="$(jq -r '.name' "$dir")"$'\n'
+            done
+            MISSING=0
+            for name in $(jq -r '.public[]' connectors/deploy.json); do
+              if ! printf '%s' "$DISCOVERED_NAMES" | grep -qxF "$name"; then
+                echo "::error::connectors/deploy.json lists unknown connector: $name"
+                MISSING=1
+              fi
+            done
+            [ "$MISSING" -eq 0 ] || exit 1
+          fi
 
       - name: Check for affected twists and connectors
         id: filter
@@ -223,10 +241,10 @@ jobs:
               IFS=',' read -ra INPUT_LIST <<< "$MANUAL_CONNECTORS"
               for connector in "${INPUT_LIST[@]}"; do
                 connector=$(echo "$connector" | xargs)
-                if [ -d "public/connectors/$connector" ]; then
+                if [ -d "connectors/$connector" ] || [ -d "public/connectors/$connector" ]; then
                   CONNECTORS_TO_DEPLOY+=("$connector")
                 else
-                  echo "Warning: connector '$connector' not found in public/connectors/"
+                  echo "Warning: connector '$connector' not found in connectors/ or public/connectors/"
                 fi
               done
             else
@@ -407,13 +425,23 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Read connector package name
+      - name: Locate connector directory
         id: locate
         env:
           CONNECTOR: ${{ matrix.connector }}
         run: |
-          NAME=$(jq -r '.name' "public/connectors/$CONNECTOR/package.json")
+          if [ -d "connectors/$CONNECTOR" ]; then
+            DIR="connectors/$CONNECTOR"
+          elif [ -d "public/connectors/$CONNECTOR" ]; then
+            DIR="public/connectors/$CONNECTOR"
+          else
+            echo "ERROR: connector $CONNECTOR not found in connectors/ or public/connectors/"
+            exit 1
+          fi
+          NAME=$(jq -r '.name' "$DIR/package.json")
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Found connector $NAME at $DIR"
 
       # Install from the root workspace so a stale public/pnpm-lock.yaml in
       # any other connector/twist can't block this deploy. Twister must be
@@ -436,6 +464,14 @@ jobs:
         run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="${PKG}..."
 
       - name: Deploy ${{ matrix.connector }} connector
+        env:
+          NAME: ${{ steps.locate.outputs.name }}
         run: |
-          cd public/connectors/${{ matrix.connector }}
-          pnpm plot deploy -e review
+          if jq -e --arg n "$NAME" '.public | index($n)' connectors/deploy.json > /dev/null; then
+            TARGET_ENV=public
+          else
+            TARGET_ENV=review
+          fi
+          echo "Deploying $NAME to $TARGET_ENV"
+          cd ${{ steps.locate.outputs.dir }}
+          pnpm plot deploy -e "$TARGET_ENV"
