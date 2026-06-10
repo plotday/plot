@@ -1,3 +1,4 @@
+- Fixed sync stalling for very large workspaces. Right after connecting tools with a big history (tens of thousands of threads), syncing could time out and stop bringing in updates entirely; thread sync is now fast no matter how much is coming in.
 - Switching between focuses is now much faster. Even in large workspaces with thousands of threads, a focus's feed appears in a fraction of a second instead of taking several seconds.
 - Changing a focus's color now updates everywhere at once. Previously the current event in your agenda could keep showing the focus's old color.
 - When you add a focus, Plot now suggests common focuses (like Customers, Reading, or Social) you can create with one tap — pick one to open the create form already filled in, or choose **Create a custom focus** to start from scratch. Once you've made a focus from a suggestion it drops off the list, on every device you use.

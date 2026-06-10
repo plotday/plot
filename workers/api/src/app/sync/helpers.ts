@@ -129,6 +129,50 @@ export function parseReadParams(c: Context<{ Bindings: Bindings }>): ReadParams 
   };
 }
 
+/** Pagination key of one row in a seq-cursor page (xid8 decimal string + id). */
+export type SeqPageKey = { seq: string; id: string };
+
+/**
+ * Assemble the final page of a two-phase seq-cursor pull.
+ *
+ * Phase 1 fetched only the (id, seq) keys of the page (cheap — the planner
+ * prunes the view's expensive computed columns); phase 2 projected the full
+ * row shape for those ids. This merges the visible entries with the redacted
+ * stubs, sorts by (seq, id) numerically, and slices to the limit.
+ *
+ * Phase-1 keys are authoritative for pagination: a concurrent commit between
+ * the two statements can bump a row's seq past the horizon (or revoke the row
+ * entirely), and deriving next_page from the newer value could advance the
+ * cursor past rows the client never received. A vanished row therefore keeps
+ * its key in `pageKeys` (preserving `more`/next_page semantics) while
+ * contributing no row; its bumped seq re-enters a later horizon window.
+ */
+export function assembleSeqPage<Row extends { id: string; seq: string }>(
+  visibleKeys: SeqPageKey[],
+  visibleRowsById: Map<string, Row>,
+  redactedRows: Row[],
+  limit: number,
+): { rows: Row[]; pageKeys: SeqPageKey[] } {
+  const entries = [
+    ...visibleKeys.map((k) => ({ key: k, row: visibleRowsById.get(k.id) })),
+    ...redactedRows.map((r) => ({
+      key: { seq: String(r.seq ?? "0"), id: r.id },
+      row: r as Row | undefined,
+    })),
+  ];
+  entries.sort((a, b) => {
+    const as = BigInt(a.key.seq ?? "0");
+    const bs = BigInt(b.key.seq ?? "0");
+    if (as !== bs) return as < bs ? -1 : 1;
+    return a.key.id < b.key.id ? -1 : a.key.id > b.key.id ? 1 : 0;
+  });
+  const page = entries.slice(0, limit);
+  return {
+    rows: page.flatMap((e) => (e.row === undefined ? [] : [e.row])),
+    pageKeys: page.map((e) => e.key),
+  };
+}
+
 /**
  * Build the response envelope for a seq-based pull. New clients (those that
  * sent `?seq_since=...`) get `{rows, next_page, next_horizon}`; old clients

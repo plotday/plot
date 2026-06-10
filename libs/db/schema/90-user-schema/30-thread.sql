@@ -20,11 +20,6 @@
 CREATE OR REPLACE VIEW "user"."thread"
 --
 AS
-WITH link_agg AS (
-    SELECT thread_id, MAX(source_created_at) AS source_created_at
-    FROM link
-    GROUP BY thread_id
-)
 SELECT
     tp.user_id,
     a.id,
@@ -85,11 +80,20 @@ SELECT
     ts."order" AS state_order,
     ts."on" AS state_on,
     ts."at" AS state_at,
-    -- activity_at: feed ordering timestamp
+    -- activity_at: feed ordering timestamp.
+    -- The latest-link timestamp is a correlated scalar subquery (indexed,
+    -- per emitted row) rather than a join to a GROUP BY over link: Postgres
+    -- cannot push join quals into a grouped subquery, so the previous
+    -- `WITH link_agg` LEFT JOIN hash-aggregated the ENTIRE link table on
+    -- every query against this view. As a scalar subquery the planner also
+    -- prunes it (with the other computed columns) when a caller selects
+    -- only cheap columns, which the two-phase /sync/threads fetch relies on.
     COALESCE(
         GREATEST(
             a.last_note_source_created_at,
-            la.source_created_at,
+            (SELECT MAX(l_agg.source_created_at)
+             FROM link l_agg
+             WHERE l_agg.thread_id = a.id),
             ts.bumped_at,
             (SELECT CASE
                 WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz) <= now()
@@ -193,7 +197,6 @@ FROM
         AND upe.priority_id = "user".effective_priority_id(tp.priority_id, tp.user_id)
     LEFT JOIN thread_state ts ON ts.user_id = tp.user_id
         AND ts.thread_id = a.id
-    LEFT JOIN link_agg la ON la.thread_id = a.id
 WHERE
     -- Access-loss rows flow through user.thread_redacted, not here.
     tp.revoked_at IS NULL

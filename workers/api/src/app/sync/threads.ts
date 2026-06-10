@@ -14,6 +14,7 @@ import { cleanTitle } from "../../twist/tools/plot/thread";
 import { titleFromContent, createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
 import { summarize } from "../summary";
 import {
+  assembleSeqPage,
   parseReadParams,
   readSafeHorizon,
   seqEnvelope,
@@ -122,7 +123,7 @@ threads.get("/sync/threads", async (c) => {
     ? seqSince === "0"
     : !updatedSince || updatedSince === "1970-01-01T00:00:00.000Z";
 
-  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
+  const { rows, horizon, pageKeys } = await withUserDb(c.var.db, userId, async (trx) => {
     const buildQuery = (view: "user.thread" | "user.thread_redacted") => {
       let query = trx
         .selectFrom(view)
@@ -221,11 +222,54 @@ threads.get("/sync/threads", async (c) => {
       return query;
     };
 
+    // Seq-cursor pulls fetch in two phases. The user.thread SELECT list is
+    // expensive — agenda_at / activity_at each run correlated subqueries per
+    // row — and Postgres evaluates it for EVERY row passing the cursor
+    // filter, below the Sort/Limit, not just for the rows returned. When a
+    // backlog of rows sits above the client's cursor (e.g. a connector
+    // import being classified bumps the whole workspace), a single pull
+    // projected tens of thousands of rows and blew the 30s statement
+    // timeout, permanently wedging that client's sync. Phase 1 selects only
+    // (id, seq) — the planner prunes the unused expensive columns — and
+    // phase 2 projects the full row shape for at most `limit` ids.
+    if (useSeqCursor) {
+      const horizonValue = await readSafeHorizon(trx);
+      const keys = (await buildQuery("user.thread")
+        .clearSelect()
+        .select(["id", "seq"])
+        .execute()) as { id: string; seq: string }[];
+      const full =
+        keys.length === 0
+          ? []
+          : await trx
+              .selectFrom("user.thread")
+              .selectAll()
+              .where("user_id", "=", userId)
+              .where(
+                "id",
+                "in",
+                keys.map((k) => k.id),
+              )
+              .execute();
+      const redacted = isInitialSync
+        ? []
+        : await buildQuery("user.thread_redacted").execute();
+      const page = assembleSeqPage(
+        keys,
+        new Map(full.map((r) => [r.id as string, r])),
+        redacted as any[],
+        limit,
+      );
+      return { rows: page.rows, horizon: horizonValue, pageKeys: page.pageKeys };
+    }
+
+    // Legacy updated_since / custom-sort paths: single query (the unbounded
+    // legacy initial pull cannot two-phase — there is no limit to bound the
+    // phase-2 id list).
     const visible = await buildQuery("user.thread").execute();
-    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
 
     if (isInitialSync) {
-      return { rows: visible, horizon: horizonValue };
+      return { rows: visible, horizon: "0", pageKeys: null };
     }
 
     const redacted = await buildQuery("user.thread_redacted").execute();
@@ -234,27 +278,16 @@ threads.get("/sync/threads", async (c) => {
     // Each server-side query is already bounded by `limit`; the redacted set
     // is typically tiny (only rows where the user lost access since last sync).
     const merged = [...visible, ...redacted];
-    if (useSeqCursor) {
-      merged.sort((a, b) => {
-        const as = (a as any).seq ?? "0";
-        const bs = (b as any).seq ?? "0";
-        if (as !== bs) return as < bs ? -1 : 1;
-        const aid = (a as any).id ?? "";
-        const bid = (b as any).id ?? "";
-        return aid < bid ? -1 : aid > bid ? 1 : 0;
-      });
-    } else {
-      merged.sort((a, b) => {
-        const au = (a as any).updated_at ? (a as any).updated_at.getTime() : 0;
-        const bu = (b as any).updated_at ? (b as any).updated_at.getTime() : 0;
-        if (au !== bu) return au - bu;
-        const aid = (a as any).id ?? "";
-        const bid = (b as any).id ?? "";
-        return aid < bid ? -1 : aid > bid ? 1 : 0;
-      });
-    }
-    const limitToApply = !initial || useSeqCursor ? limit : merged.length;
-    return { rows: merged.slice(0, limitToApply), horizon: horizonValue };
+    merged.sort((a, b) => {
+      const au = (a as any).updated_at ? (a as any).updated_at.getTime() : 0;
+      const bu = (b as any).updated_at ? (b as any).updated_at.getTime() : 0;
+      if (au !== bu) return au - bu;
+      const aid = (a as any).id ?? "";
+      const bid = (b as any).id ?? "";
+      return aid < bid ? -1 : aid > bid ? 1 : 0;
+    });
+    const limitToApply = !initial ? limit : merged.length;
+    return { rows: merged.slice(0, limitToApply), horizon: "0", pageKeys: null };
   });
 
   await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
@@ -279,7 +312,11 @@ threads.get("/sync/threads", async (c) => {
   const outRows = rows.map(transform);
 
   if (useSeqCursor) {
-    return c.json(seqEnvelope(outRows as any, limit, horizon) as any);
+    // next_page / `more` derive from the phase-1 page keys, not the returned
+    // rows: a row that vanished or re-seq'd between the two fetch phases must
+    // not move the cursor past rows the client never received.
+    const envelope = seqEnvelope(pageKeys ?? [], limit, horizon);
+    return c.json({ ...envelope, rows: outRows } as any);
   }
   return c.json(outRows as any);
 });
