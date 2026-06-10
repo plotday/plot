@@ -211,3 +211,13 @@ migration setting Plot's publisher flag is idempotent. No contract migration.
 - **Stale review rows.** Connectors that are now public still have old `review`
   rows (with `auto_approve = t`) in prod. They become inert under this model.
   Optional cleanup, not required.
+- **`auto_approve` bypass — verified safe (2026-06-10).** `deployment.ts:430`
+  still auto-promotes a `review` deploy to `public` when the row has
+  `auto_approve = true`, which is NOT gated by `can_publish_public`. This is only
+  a hole if a connector that is *absent* from the manifest (so CI deploys it to
+  `review`) carries `auto_approve = true`. Verified against prod: every connector
+  with `auto_approve = true` already has a `public` row and is in the manifest;
+  the non-manifest connectors (apple-calendar, asana, fellow, jira) have
+  `auto_approve = false`, and instagram/whatsapp have no twist rows at all. So no
+  connector can reach `public` via the auto-approve path while bypassing the new
+  grant. Re-verify if a connector is removed from the manifest in future.
