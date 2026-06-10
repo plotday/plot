@@ -36,9 +36,13 @@ export async function requireTeamMember(
     publishableKey: env.CLERK_PUBLISHABLE_KEY,
   });
   const user = await client.users.getUser(auth.userId);
-  const email = user.primaryEmailAddress?.emailAddress ?? "";
+  const primary = user.primaryEmailAddress;
+  const email = primary?.emailAddress ?? "";
+  const verified = primary?.verification?.status === "verified";
 
-  if (!email.toLowerCase().endsWith(ALLOWED_DOMAIN)) {
+  // Fail closed: only a verified @plot.day primary email grants access, so a
+  // user cannot gain access by setting an unverified address they don't control.
+  if (!verified || !email.toLowerCase().endsWith(ALLOWED_DOMAIN)) {
     throw new Response("Forbidden", { status: 403 });
   }
 
