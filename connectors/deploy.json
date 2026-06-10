@@ -1,0 +1,19 @@
+{
+  "//": "Source of truth for which connectors deploy to the end-user-visible 'public' environment. Anything not listed deploys to 'review'. See docs/superpowers/specs/2026-06-10-git-driven-connector-publishing-design.md",
+  "public": [
+    "@plotday/connector-airtable",
+    "@plotday/connector-attio",
+    "@plotday/connector-github",
+    "@plotday/connector-gmail",
+    "@plotday/connector-google-calendar",
+    "@plotday/connector-google-chat",
+    "@plotday/connector-google-contacts",
+    "@plotday/connector-google-drive",
+    "@plotday/connector-google-tasks",
+    "@plotday/connector-granola",
+    "@plotday/connector-linear",
+    "@plotday/connector-outlook-calendar",
+    "@plotday/connector-slack",
+    "@plotday/connector-linkedin"
+  ]
+}
