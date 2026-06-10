@@ -1,475 +1,247 @@
 # Plot Product Features
 
-Internal catalog of product features for marketing content. Direct and terse - not user-facing.
+Internal source document for the marketing team. Organized by benefit pillar: scan the pillar intros for the story, dig into the subsections for specifics. Descriptions are accurate to the shipping product but written at the user level — this is source material, not user-facing copy.
 
 ## Positioning
 
-Plot is a unified workspace for human collaboration, focused on supporting you making things happen and staying on top of what others need from you. It pulls together every conversation that needs a thoughtful human reply — email, team chat, and colloration from the tools you use (Linear, Docs, etc.) — and organizes them by the projects, roles, and activities.
+Plot is a unified workspace for human collaboration, focused on supporting you in making things happen and staying on top of what others need from you. It pulls together every conversation that needs a thoughtful human reply — email, team chat, and collaboration from the tools you use (Linear, Docs, etc.) — and organizes it by your projects, roles, and activities.
 
-## Core Functionality
+### Messaging guidance
+
+- **Lead with collaboration and momentum**: make things happen, carry on, keep moving, nothing slips, end the day on something that mattered.
+- **Imply identity without naming it**: the reader is a high-agency collaborator whose important work lives outside their inbox.
+- **Supporting capabilities stay supporting**: the agenda, scheduling, and to-dos enable the story; they are not the headline.
+- **Avoid administrative words** like "filed", "triage", or "inbox zero" framing. Plot is about momentum, not paperwork.
+- **Use current product terminology** (below). Older terms — "priority", "activity", "Do Now / Do Later", "connector" (in user copy) — no longer appear in the product.
+
+### Terminology
+
+| Term | Meaning |
+| --- | --- |
+| **Thread** | A single conversation or item in Plot — an email thread, a Slack conversation, a Linear issue, or a plain Plot note. Made up of notes. Never "activity". |
+| **Note** | One message or piece of content on a thread. |
+| **Focus** | A user's own grouping for threads — a project, role, or area (e.g. Customers, Recruiting). Flat list, per-user. Never "priority". |
+| **Inbox** | The catch-all for threads not yet in any focus. |
+| **Everything** | A single unscoped view of all threads across the Inbox and every focus. |
+| **Connection** | One external account linked to Plot (e.g. one Gmail account, one Slack workspace login). "Connector" is the internal/developer term for the package behind it. |
+| **Twist** | An optional extension — automation, AI agent, or custom workflow — installed into Plot. |
+| **Topic** | A Plot-only shared channel that owns a stream of threads (e.g. "#eng-standup"). |
+| **Group** | A reusable, named set of contacts. |
+| **Agenda** | The chronological day view: calendar events plus scheduled threads. |
+| **To do / Done / Snooze** | The thread actions: flag it as yours to do, finish it, or push it to a later day. |
+| **Team** | A shared scope on an organization: threads can belong to a team or stay Personal. |
+
+---
+
+## 1. Everything that needs you, in one place
+
+Email, team chat, and the comment threads inside your work tools all arrive as threads in Plot — one place to keep up, with the noise kept out. Plot's AI recognizes what each thread actually needs from you, so newsletters, receipts, and cold outreach never interrupt the conversations that matter.
 
 ### Connections
 
-### Threads
+- One connection = one account linked to Plot (e.g. one Gmail account, one Slack user in one workspace, one Linear account).
+- Available today: Google (Gmail, Calendar, Chat, Contacts, Drive), Microsoft (Outlook Calendar, Teams channels + DMs), Slack, Linear, Notion (pages and comments), PostHog, Apple Calendar.
+- Pro connections: WhatsApp (two-way DMs and group chats), Instagram (two-way DMs and message requests), LinkedIn (two-way messages and connection requests) — read, reply, react, and start new conversations.
+- Each connection describes what you can actually do with it (e.g. "See your schedule, respond to invites, and add notes and to-dos to events") when you add it.
+- Smart defaults on connect: Plot turns on the channels you'd want (your own calendars, your inbox and sent mail) and leaves the noise off (holiday calendars, other people's shared calendars); big containers like a whole GitHub org wait for you to pick. Everything is toggleable.
+- Connections sync quietly in the background, recover automatically if interrupted, and prompt you to reconnect if a permission is missing — no silent failures.
+- Removing a connection cleanly clears its items from all devices; re-adding brings them back without duplicates.
 
-- Three activity types: Notes, Actions, Events
-- Markdown-based rich content editor
-- AI-generated titles when not provided
-- Activity preview text for quick scanning
-- Draft mode for work-in-progress
-- Private activities (visible only to creator)
-- @-mentions for users, contacts, and twists
+### Upcoming connections
+
+- 65+ upcoming connections browsable in-app, across categories from project management and CRM to design, finance, and support.
+- Vote for the connections you want (votes show on the website) and get notified when they ship.
+
+### Threads, unified
+
+- Every conversation is a thread: an email exchange, a Slack discussion, a Linear issue, a calendar event, or a plain Plot note — all with the same reading, replying, and organizing experience.
+- Threads show who started the conversation first, the faces of everyone on it, and a clean preview line (invisible newsletter spacer-text is stripped).
+- Rich notes: full Markdown with live rendering, links, @-mentions of people and twists, speech dictation, and extensive keyboard shortcuts.
+- AI-generated titles when a thread doesn't have one.
+- Private notes on any shared thread, visible only to you.
+
+### The noise stays out
+
+- Plot's AI reads each incoming thread and recognizes what it needs from you: a reply, an action, time to read, or nothing at all.
+- Genuinely passive records — receipts, sign-in confirmations, system acknowledgements — never show an unread indicator or send a notification.
+- Low-importance material (promotions, unsolicited pitches, cold outreach) is kept available but never pings you, never lands in a digest, and never lights up a focus.
+- Truly time-sensitive threads are flagged urgent and notify you right away — even outside your normal notification hours.
+- You stay in control: drag a thread to reclassify it, and Plot honors the correction.
+
+### Getting set up
+
+- Guided first-run flow connects your tools in minutes, grouped into Messaging, Calendars, and Apps.
+- Inline OAuth for Google and Microsoft — sign in from the same brand-styled button, no detours.
+- Plan-aware: the setup flow shows your plan's connection limits and offers an upgrade when you hit them.
+
+## 2. Organized around what you're trying to do
+
+Threads land in the focuses they belong to — your projects, roles, and areas — sorted by what's important. You always know where to look and what to move forward next.
 
 ### Focuses
 
-- Per-user focuses — each user owns their own flat list of focuses (formerly "priorities"); no nesting, no shared folders
-- A focus has a name, a custom color, and an icon from a curated set
-- Inbox — the catch-all for threads not sorted into any focus; moving a thread into a focus removes it from the Inbox
-- Everything — a single unscoped view of all threads across the Inbox and every focus, with no sections
-- Two-step focus creation: describe what belongs in the focus, then review the existing threads Plot matches to that description (semantic + AI) and deselect any that don't fit before creating. Deselected matches (and threads later moved out) are recorded as negative examples that sharpen future matching
-- Focus suggestions: "Add a focus" opens a picker with "Create a custom focus" plus a curated "Suggestions" section (Project, Customers, Operations, Management, Recruiting, Admin, Reading, Volunteering, Personal admin, Social, Promotions). Picking a suggestion opens the two-step create form with its name, icon, color, and description pre-filled. Once you've created a focus from a suggestion it's hidden from the picker on every device (recorded in `user_settings.dismissed_focus_suggestions`, union-merged server-side so dismissals are monotonic); when all suggestions are used the picker is skipped and the create form opens directly
-- Facet-aware sorting: every incoming thread is tagged with lightweight facets from its source — its format (chat, message, long-form reading, notification, receipt, invoice, promotion), whether it's human- or system-generated, and whether it was sent to you directly or to a list. A focus can filter on these (configured by AI from the focus's name and description), so a thread that matches a focus by topic but not by kind is kept out (e.g. app notifications stay out of a Reading focus). Filtering fails open and honors your moves: move an excluded sender's thread into a focus and that sender is admitted thereafter, and a focus can restrict to senders you actually engage with (or colleagues in your own email domain). A focus's description also helps the classifier tell similar focuses apart when sorting.
-- Archiving a focus releases its threads to the Inbox without losing the assignment, so un-archiving restores them
-- Merging a focus: the focus menu offers "Merge into…" when the focus has threads — pick a destination focus and all threads move there; the now-empty source focus is archived. An empty focus archives directly in one tap
-- Drag to reorder focuses; a "More" affordance collapses a long list down to the active/unread focuses
-- Per-focus Pomodoro timer settings (default 25 min)
-- Unread indicators per focus
-- Multi-thread notification taps open the focus on the Catch up tab (single-thread taps still jump straight to the thread)
+- Each user has their own flat list of focuses, each with a name, color, and icon. Your focuses are yours — collaborators on the same threads organize them their own way.
+- The Inbox catches anything not yet in a focus; Everything shows it all in one view.
+- Unread indicators per focus, drag to reorder, and a "More" affordance that collapses a long list down to the active ones.
+- Merge one focus into another in a single step, or archive a focus to tuck it away without touching its threads — un-archive any time.
 
-### Contacts & Groups
+### AI sorting that learns from you
 
-- Add a contact (name + email) or create a named group directly from the new-thread picker's "People and twists" header ("+ Contact" / "+ Group")
-- Edit a contact (rename, per-user) or a group (rename, change members) via a "…" menu on its row (hover or ⌘Enter); naming an ad-hoc set of selected people turns them into a reusable group
-- All contact/group edits are local-first and sync across devices; contact renames are per-user overrides that never change the name other people see
-- Groups work with email-accepting connections (e.g. Gmail): addressing a thread to a group and sending via an email connection expands the group to its members' email addresses on send. Group members are required to have an email address (the member picker hides contacts without one, and the server rejects adding one)
+- Describe what a focus is for and Plot matches threads to it — by meaning, not just keywords.
+- Two-step creation: describe the focus, then review the threads Plot proposes and deselect any that don't fit. Your deselections teach the matcher.
+- Plot sorts by the *kind* of message and who it's from, not just topic: newsletters and long reads stay clear of app notifications, receipts, and promotions; a people-focused focus can favor those you actually correspond with over cold outreach.
+- Threads route by the account they arrived through, too — a receipt to your work email lands in your work focus; the same receipt to your personal email lands in your personal one.
+- Move a thread into a focus and that sender is welcome there from then on. Every correction makes the sorting better.
+- Focus suggestions: adding a focus offers curated starting points (Customers, Recruiting, Reading, Social, …) you can create with one tap, pre-filled and ready to adjust.
+
+### Your list, your order
+
+- Within a focus, threads group by when they need you: today, the coming days, new arrivals, and done.
+- Drag a thread between groups to make it a to-do, schedule it for a day, mark it unread, or finish it — and reorder within a day by hand.
+
+### Search
+
+- Truly global search: same results from anywhere, with one tap to narrow to a single focus and back to Everything.
+- Full-text across titles and content, with tag and type filters.
+
+## 3. Act without switching apps
+
+Plot isn't a read-only digest. Reply to an email, comment on a Linear issue, answer a Slack thread, change a status, reassign a task — from Plot, and it lands back in the source tool as if you'd done it there.
+
+### Replies that post back
+
+- Reply to any connected thread and the reply goes out through the source — email recipients, Slack channels and threads, Linear comments, Teams chats.
+- Email replies give you a labelled **Reply all** (with a count of who's on it) and a plain **Reply** to the original sender, plus per-message recipient editing.
+- Threads you start from Plot into a connected channel keep working both ways — follow-up replies post back just like the first message.
+- Reactions sync two-way too, including the full standard emoji set with skin tones and Slack workspace custom emoji.
+
+### Status and assignment, two-way
+
+- A thread from a tool that tracks status (a Linear issue, a calendar event) shows one clear status icon — in the header and on the row — and tapping it changes the status right from Plot.
+- Assign any thread to yourself or a teammate from the header or hover actions, and filter your list by assignee. For connected tools with assignees (like Linear), changes sync both directions.
+- Meeting threads show a **Join** button in the header; every connected thread has an **Open in [app]** action when you do want the source.
+
+### Start anything from one place
+
+- One searchable "Start a thread" picker covers everything: a private note in a focus, a shared Plot thread, a message to a person on whatever connection reaches them, a Slack channel, an email, a Linear issue, a topic, or a chat with a twist — ordered by what you use most.
+- Type a name to see the recent ways you've reached that person; type email addresses (even several at once) to message or invite anyone, with unknown addresses becoming pending invites.
+- Pick a person and Plot asks how you'd like to reach them, most-used connection first; pick a channel or focus and you're straight into writing.
+
+### To-dos from your messages
+
+- Flagging any note or thread **To do** puts it on your list; **Done** clears it — one consistent language across Plot threads, emails, and connected tools.
+- AI task detection (via twists) creates to-dos automatically when someone asks you to do something in Gmail, Slack, or Google Chat.
+- Starring a message in Gmail still adds it to your to-dos; unstarring clears it.
+
+## 4. Your time stays yours
+
+Plot bounds your inbox time to deliberate windows so you can respond, then carry on with the work only you can do. Urgent things still surface; the rest waits its turn.
+
+### Notifications on your schedule
+
+- You set when interruptions are allowed and how long a thread can wait before you see it; Plot holds everything else to those windows. No manual do-not-disturb rules to maintain.
+- Genuinely urgent threads — direct requests, deadlines — bypass the windows and notify immediately.
+- Batched updates arrive as one AI-summarized digest grouped by focus, instead of a flood of pings.
+- Low-importance material never triggers a push, a digest, or an unread dot on its own.
+- Native desktop notifications on macOS and Windows, auto-suppressed when the app is focused and respectful of OS Focus/DnD modes.
+
+### Time to respond, on the calendar
+
+- Turn on "Schedule time to respond" for a focus and Plot places short response blocks in your agenda — inside your chosen hours, around your existing events — sized to the threads waiting for a reply.
+- Notifications can wait for the block instead of interrupting you mid-flow.
+
+### Agenda and snooze
+
+- The Agenda shows your day chronologically: calendar events and scheduled threads together. (It stays hidden until you connect a calendar.)
+- Snooze any thread to a later day; schedule with a date or a specific time.
+- Recurring events just work — including editing a single occurrence without touching the series.
+
+## 5. Built for working together
+
+Collaboration in Plot is free — no per-seat fees, ever. Share a thread with anyone, and each person organizes it into their own focuses while the conversation stays one conversation.
+
+### Shared threads
+
+- Share a thread by adding people when you create it, or send anyone its link — thread URLs are globally shareable.
+- Each participant files the thread into their own focuses; your organization never dictates theirs.
+- On a team, every thread is either team-scoped or Personal. Team threads follow team membership — leave the team, lose access — while explicitly added outsiders (like a customer) keep theirs.
+- Step away from any thread with **Leave thread**; the sharing count shows the actual people involved (not you, and groups counted by their members).
 
 ### Topics
 
-- Topics are Plot-only channels that own a stream of threads (e.g. "#eng-standup")
-- Created from the new-thread Channels section ("+ Topic"): name, optional team scope, and initial members (contacts + groups)
-- Membership = contacts + included groups, minus per-user opt-outs; posting a thread to a topic reaches the whole topic, so no per-thread recipients are picked
-- Topics appear alongside connector channels in the new-thread picker
-
-### Thread Sharing
-
-- Threads are shared by adding contacts via the "With" field at creation
-- Globally shareable thread URLs (/t/{id}) — no priority context needed
-- Each user's copy of a shared thread is filed into their own priority tree automatically
-- Connector-created threads are filed via priority matching per user
-- Every thread carries a team scope (or stays Personal); team membership gates access, so a thread shared within a team disappears for anyone who leaves it — except people explicitly added from outside the team (e.g. a customer), who keep their access
-
-### Notes & Content
-
-- Full Markdown support with live preview
-- Rich formatting (bold, italics, lists, headers)
-- Multiple links per activity
-- @-mentions with auto-extraction
-- Threading (multiple notes per activity)
-- Note authorship tracking
-- Private notes (author-only visibility)
-- Full-text search across titles and content
-
-### Composing notes
-
-New threads start from a single searchable **target picker**. Each option is a
-two-line row: the **connection** on top — tinted by the focus you most often use
-it for (a neutral tone when there's no history) — with its **people** (an avatar
-group followed by names) or **channel** shown below. Plot's own items are your
-**focuses** (start a plain note in any focus, including your Inbox), the
-**people** you message (a shared thread), or a **twist**; the old generic
-"Note"/"Chat" rows are gone. Connected apps appear as their connection (a Slack
-channel, a Gmail thread, a Linear issue, a LinkedIn DM, a Google Task, …). The
-list is ordered by most-recent use.
-
-Typing a name surfaces the recent ways you've reached that correspondent. Typing
-one or more email addresses — separated by spaces, commas, or semicolons, and
-accepting the `Name <email>` form — offers a Plot chat carrying all of them plus
-every connection that can message them; an unknown address becomes a pending
-invite, and a `Name <email>` invite creates a **named** contact when the thread
-is sent. When two correspondents share a display name, the row shows the email
-that tells them apart (only on the less-used address), and hovering any row
-reveals everyone's full name and address.
-
-Choosing a target opens the composer with the editor focused, the focus
-pre-selected (a focus-note pre-selects its own focus), and any recipients filled
-in; the body editor's placeholder reflects what you're creating. On a team, you
-also choose whether each thread belongs to that team or stays Personal.
-
-Inside a thread, the editor's top bar shows the active **mode** as a pill:
-
-- **Plot threads (unshared)** — Note · Task
-- **Plot threads (shared)** — Reply · Task · Private note, plus a one-click
-  "Reply to {original author}" shortcut when there are 3+ people on the thread.
-- **Gmail-style threads** — Reply · Private note. Tap the avatars on Reply to
-  choose who receives a specific message (per-message recipient picker).
-- **Linear-style channels** — Comment · Private note.
-- **Personal connectors** (Google Keep–style) — just the mode pill (no Private
-  needed because the connector is already personal).
-
-Replying to a specific note from the feed replaces the pill row with a
-"Replying to: …" chrome; clicking the X returns to the pill row.
-
-## Platform Support
-
-- Web application (full-featured)
-- Desktop: macOS, Windows (native apps)
-- Mobile: iOS, Android (native apps)
-- Share target: receive links from other apps via the share sheet (iOS, Android)
-- Consistent experience across all platforms
-- Platform-specific native UI elements
-
-## Time Management & Scheduling
-
-### Scheduling
-
-- Dual scheduling modes:
-  - Date-based (all-day activities)
-  - DateTime-based (specific time slots)
-- Duration tracking
-- Recurring activities (full RRULE support)
-  - Weekly, daily, monthly patterns
-  - Custom recurrence dates
-  - Exception dates for skipped occurrences
-- Smart categorization: "Do Now", "Do Later", "Done"
-- Calendar integration with time blocking
-
-### Time Intelligence
-
-- Dynamic views based on timing
-- Agenda view (chronological)
-- Date navigation (next/previous)
-- Range filtering
-- Completion tracking
-- Automatic time accrual from calendar events — events you accepted, or did not decline, contribute their non-overlapping duration to the priority's running total without requiring you to start a session
-
-## Collaboration
-
-### Multi-User
-
-- Shared priorities
-- Built-in contact database
-- Self-assigned note tasks (each person marks a shared note as their own task; everyone sees who's on it)
-- Thread assignment: any thread can be assigned to a contact — assign from the thread header or a row's hover actions, filter your list by assignee. For connector-backed threads (e.g. Linear issues), the assignee syncs two-way: changes in Plot write back to the source, and changes in the source flow into Plot
-- Author tracking (activities and notes)
-- @-mentions for notifications
-- Per-user unread tracking
-- Real-time sync across users and devices
-
-### Access Control
-
-- Priority-level sharing
-- Private content (activities and notes)
-- Priority contacts management
-- Invitation system with codes
-
-## Integrations (Twists & Tools)
-
-### Twist System
-
-- Twist Creator SDK (Twister) for custom integrations
-- Development environments: Personal, Private, Review, Public
-- Twists with a `threadType` appear in the new-thread connection picker, so users can start a chat with the twist alongside picking a connector channel or a plain Plot thread
-- The new-thread connection field defaults to the connection last used in that priority (falling back to the most recent across priorities) — a connector channel, a twist chat, or a plain Plot thread — so repeat workflows skip re-picking; share-intent captures stay a plain Plot thread
-- Built-in twists:
-  - Plot — general-purpose AI assistant (available as "Plot AI chat" in the connection picker). Responds conversationally to any request like ChatGPT/Claude/Gemini; searches the web for up-to-date information; reads and reasons over the user's own Plot data (notes, threads, priorities) to answer questions about their workspace; and can propose organization plans (move/archive/rename threads and priorities) for approval. Mention @Plot anywhere or start a Plot AI chat.
-  - Calendar Sync
-  - Message Tasks
-  - Project Sync
-  - Chat
-  - Contacts
-
-### Available Tools for Twist Developers
-
-- Google: Calendar, Gmail, Chat, Contacts
-- Microsoft: Outlook Calendar, Teams (channels + DMs, two-way sync)
-- Slack integration
-- Linear integration
-- Notion: Page and comment sync
-- PostHog: Event sync grouped by person, with event details as notes
-- OAuth ready: Atlassian, Monday.com, GitHub, Asana, HubSpot
-- API key connections: Connectors that use API keys instead of OAuth (e.g., PostHog)
-- WhatsApp (pro): two-way DMs and group chats — read, reply, react, compose new conversations
-- Instagram (pro): two-way DMs and message requests — read, reply, react, compose new conversations
-- LinkedIn (pro): two-way messages and connection requests
-
-### Upcoming Connections
-
-- 65+ upcoming connectors browsable in-app
-- Vote for connections you want — feeds into website vote counts
-- Get notified when voted connections become available
-- Categories: Calendar, Communication, Email, Project Management, Design, Documents, Development, CRM, Customer Support, Cloud Storage, Finance, HR, Marketing, Analytics, Notes, Productivity, Automation, E-commerce, Cloud, Security, Product
-
-### Built-in Tool Capabilities
-
-- AI: Multiple LLM providers (OpenAI, Anthropic, Google, Workers AI, custom OpenAI-compatible endpoints)
-  - Flexible provider configuration: add multiple providers and choose which to use for built-in features vs twist AI
-  - Custom OpenAI-compatible endpoints: point to any API (local LLMs, proxies, alternative providers) with configurable model names
-  - Text generation and analysis
-  - Structured output with schemas
-  - Tool calling support (multi-step agentic loops via `maxSteps`)
-  - Provider-native web search (Anthropic/Google) for up-to-date information, with cited sources
-  - BYOK (Bring Your Own Key): Users can add their own API keys per provider, scoped to personal or organization priorities
-- Network: HTTP requests for external APIs
-- Store: Persistent key-value storage
-- Task Queue: Background processing
-- Callback: Webhook and event handling
-
-### Twist Features
-
-- Auto-approve mode
-- Granular permission system
-- Callback links (interactive buttons)
-- Auth links (OAuth flows)
-- Source-based deduplication
-- Activity upserts (smart updates vs. creates)
-
-## Data Sync & Offline
-
-### Local-First Architecture
-
-- Full offline functionality
-- SQLite local storage (via Drift)
-- Automatic sync when connected
-- Conflict resolution
-- Multi-device sync via PostgreSQL (GCP Cloud SQL)
-- Cloud backup
-
-### Sync Intelligence
-
-- Incremental sync (changes only)
-- Pull on demand (archived items, date ranges)
-- Pagination for large lists
-- Real-time updates broadcast
-
-## User Interface
-
-### Navigation & Views
-
-- Bidirectional infinite scrolling
-- Calendar view
-- Agenda view
-- Priority list (hierarchical tree)
-- Global search interface
-- Command modal (keyboard-driven)
-- Resizable panels (draggable)
-
-### Interactive Elements
-
-- Swipeable actions (mobile gestures)
-- Drag & drop reordering
-- Color dots (visual priority indicators)
-- Unread badges
-- Smart time display (relative/absolute)
-- Hoverable link previews
+- Topics are shared channels that live entirely in Plot — "#eng-standup" without needing Slack.
+- Create one where you start a thread: name it, scope it to a team if you have one, and pick the people and groups who belong.
+- Post to a topic and it reaches everyone in it — no per-thread recipient picking.
 
-### Onboarding
+### Contacts and groups
 
-- Guided first-run flow with full-screen and highlight steps
-- Inline OAuth for Google and Microsoft Calendar — auth runs on the same brand-styled button without a separate modal
-- Responsive connector grid for the rest of the available tools — N-up on wide screens, single column on narrow
-- Tabs in the priority shell switch automatically as the highlight steps advance, so the panel beneath the spotlight always shows the right view
-- Highlights resolve seeded threads by title (e.g. "Everything in its place" in the Inbox) so the per-user thread id doesn't need to be hardcoded
-- Plan-limit aware: when a user is at their connection cap, the setup modal swaps "Add connection" for "Upgrade to add more connections"
-- Back, dismiss, and replay (debug command) controls always available
+- Add a contact or create a named group right where you start a thread; picked several people together? Name them once and they're a reusable group.
+- Contact renames are per-user — your label for someone never changes what others see — and names from new connections only ever get more complete, never clobbered.
+- Groups work over email connections: address a group via Gmail and Plot expands it to every member's address on send.
 
-### Editor Experience
+### Working as a team
 
-- Super Editor (markdown with live rendering)
-- Auto-detect @-mentions
-- Mention popover (quick selection)
-- Inline link management
-- Speech dictation (voice-to-text)
-- Extensive keyboard shortcuts
+- Assign threads to teammates and filter by assignee (two-way with connected tools — see pillar 3).
+- @-mentions notify the right person; per-user read tracking means your "read" never marks it read for anyone else.
+- Self-assigned note tasks: each person can mark a shared note as their own to-do, and everyone sees who's on it.
+- Real-time sync across all users and devices.
 
-## Organization
+## 6. Yours to trust and extend
 
-### Activity Management
+Plot is local-first, runs everywhere, keeps private things private, and is built to be extended — from picking your own AI models to installing or building twists.
 
-- Tags system:
-  - Toggle tags (single state)
-  - Count tags (multiple users)
-  - System tags (Now, Later, Done, Archived)
-- Filtering (tags, dates, priorities)
-- Multiple sort orders (chronological, manual, priority)
-- Archiving (non-destructive)
-- Full-text search
-- Modify individual recurring occurrences
+### Local-first and everywhere
 
-### Activity Tab Sections
+- Fully functional offline: read, write, organize, and complete with no connection; everything syncs when you're back online, across all your devices, with cloud backup.
+- Web, macOS, Windows, iOS, and Android — a consistent experience with platform-native touches.
+- Share into Plot from other apps via the system share sheet (iOS, Android).
+- Fast, calm UI: keyboard-driven command modal, swipe actions on mobile, drag-and-drop everywhere, light/dark/system themes that follow you across devices.
 
-The Activity tab on each priority is the consolidated home for thread management, organized into four sections:
+### Private and secure
 
-- **Today** — Active threads (marked "Do today" via the sentinel, or scheduled for today/past)
-- **Scheduled** — One section per future day (Tomorrow, Friday, "Apr 28") for threads scheduled ahead
-- **New** — Unread threads that aren't active or scheduled
-- **Done** — Inactive threads (read, no active todo)
+- Private threads and notes are visible only to you — even on shared threads.
+- Connections use standard OAuth; data is encrypted in transit; access control is enforced at the database level.
 
-Drag-and-drop moves threads between sections (drop on Today to make active, on a future day to schedule, on New to mark unread, on Done to finish) and reorders within Today / Scheduled. Drop slots expand to hold the dragged row's height so the surrounding list stays stable.
+### Plot AI
 
-### Action Type Classification
+- A built-in AI assistant: chat with it like ChatGPT or Claude, mention @Plot on any thread, or start a Plot AI chat.
+- It searches the web with cited sources, reads and reasons over your own workspace (threads, notes, focuses) to answer questions, and can propose organization plans — moves, renames, archives — for your approval.
+- Choose your models: Claude (Anthropic), ChatGPT (OpenAI), or Gemini (Google), with bring-your-own-key support and custom OpenAI-compatible endpoints (local models, proxies).
 
-Each new thread is auto-classified by Plot's AI into one of five action types that drive which inbox tab it lives in:
+### Twists
 
-- **Respond** — needs a reply from the recipient (questions directed at them, asks that require an answer).
-- **Do** — needs an action (assigned task, a step that's clearly theirs to take).
-- **Read** — longer read-later material: newsletters, long corporate communications, documents to set aside time for.
-- **Update** — default. Worth knowing about but no follow-up required. FYIs, mentions without a clear ask, unsolicited pitches and cold outreach all land here.
-- **None** — clearly passive records (receipts, account sign-in confirmations, system acknowledgements). Surfaces in the All tab only; no unread indicator, no notification.
+- Twists are optional extensions — automations, AI agents, and custom workflows — that run securely inside Plot with granular, per-permission consent.
+- Built-in twists handle calendar sync, AI task detection from messages, project sync, contacts, and chat.
+- Twists can present interactive buttons on threads and update items in place instead of duplicating them.
 
-The user can drag a thread between tabs to override the AI's classification at any time. Respond / Do / Read also accept "do on this date" intent, surfacing the thread on that day in the agenda.
+### Build your own
 
-### Importance Threshold
+- The Twist Creator (Twister) is a fully typed TypeScript SDK with CLI tooling, real-time logs, and an open marketplace — anyone can build and publish a twist or connector.
+- A no-code twist builder is included on Pro and Team plans.
 
-The AI scores each thread 0–100 for the recipient. Items below 50 (unsolicited material, promotional content, low-relevance updates) appear in Catch up but do not trigger push notifications, email digests, or priority unread indicators. Items ≥ 50 surface proactively. Strong relational signal and direct messages between known contacts score 60+; cold outreach 10–25.
+---
 
-### Urgent Flag
+## Plans and pricing
 
-Separate from importance, the AI flags a thread `urgent` only when the user should be notified before their next scheduled response window — time-sensitive items or messages clearly needing a quick response. Urgent threads bypass the per-priority `see_within` delay, the `notify_window` clamping, and the 10-minute inactivity gate that normally defers pushes.
+- Simple pricing, no per-seat fees: everyone collaborates in Plot for free; you pay only for the connections that bring your conversations together.
+- **Free** — 2 connections, 1 twist. For individuals and teams using a few core tools.
+- **Core** — 5 connections, 2 twists. $15/mo, or $12/mo billed annually.
+- **Pro** — unlimited connections and twists, no-code twist builder. $25/mo, or $20/mo annually.
+- **Team** — shared org connections (per 50), unlimited twists, no-code twist builder. $124/mo, or $99/mo annually; scales per 50 connections.
+- 30-day Core trial for new signups, with reminders and a graceful downgrade.
+- Annual billing saves 20%. Stripe-powered checkout and self-service subscription management.
+- Plan changes propagate instantly to all devices.
 
-### Priority Features
+### Organizations
 
-- Unlimited nesting depth
-- Path syntax (Work/Projects/Q1)
-- 8+ theme colors with inheritance
-- Activity counts (active and unread)
-- Breadcrumb navigation
-- Per-priority settings
+- Create an organization for team billing and shared limits, with admin and member roles.
+- Invite by email (pending invites auto-apply on signup) or let anyone with your email domain join automatically.
+- Members get the highest plan across their personal subscription and org memberships.
 
-## Productivity
+---
 
-### Focus & Time Management
+## In the product, not yet in the story
 
-- Pomodoro timer (customizable duration)
-- Do Now view (current and overdue)
-- Focus modes (filtered views)
-- Manual reordering for prioritization
-- Duration tracking for time budgeting
+Real, shipping features the team hasn't yet decided how (or whether) to market. Don't lead with these; don't deny them either.
 
-### Daily Planning
-
-- Flag items as Do Now or Do Later to build your daily plan
-- Schedule activities with specific dates or times to block your calendar
-- Reassign timing on the fly — move items between Now/Later or reschedule with minimal friction
-- Do Now view surfaces everything current and overdue in one place
-- Agenda view shows your day chronologically across all priorities
-
-### Response Times
-
-Each priority carries two settings the user controls together under "Response times":
-
-- **Schedule time to respond** — master toggle plus a `respond_window` (active hours, e.g. weekdays 9–5) and a `respond_within` SLA (e.g. 4 hours). When enabled, the agenda automatically places a 15-minute response block per priority for unread respond-type threads (importance ≥ 50 or urgent), inside the configured hours and around existing calendar events. Block placement is window-aware, deterministic, and computed entirely on the client.
-- **Early notifications** — master toggle plus a `notify_window` (when interruptions are allowed, e.g. 8am–8pm any day) and a `see_within` deadline (max delay before a thread notifies, e.g. 30 minutes). Notifications fire at the earlier of the placed block-start or the see-within deadline. Block-start notifications are always honoured. Early notifications are clamped to the next opening when the window is closed; urgent threads bypass both the batching delay and the window.
-
-Both settings inherit by priority path: a sub-priority that matches its parent's value reverts to inheritance automatically on save.
-
-### Smart Notifications
-
-- AI flags genuinely time-sensitive threads as urgent (direct requests, deadlines) — those fire immediately, even outside the notify window; everything else waits for the user's configured `see_within` or the next placed response block
-- Items with importance < 50 (promotional content, unsolicited outreach) never trigger a push, an auto-block, or an email digest on their own
-- Batched updates are summarized by AI, grouped by top-level priority, so you get one coherent digest instead of a flood of individual pings
-- No manual do-not-disturb rules needed — the system infers what matters based on content and your preferences
-- Desktop notifications on macOS and Windows — native OS notifications triggered by real-time sync, with automatic suppression when the app is focused and respect for OS-level Focus/DnD modes
-
-### Smart Features
-
-- AI-powered title generation
-- Auto-categorization (Now/Later/Done)
-- Unread intelligence across priorities
-- Active actions filtering
-- Quick priority switching (keyboard shortcuts)
-
-### AI Chat
-
-- Built-in Chat connection for conversational AI within Plot
-- Supports top models: Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google)
-- Chat in the context of your priorities and threads
-- BYOK: use your own API keys for supported providers
-
-### Automation (via Twists)
-
-- Calendar sync (Google/Outlook auto-import)
-- AI task detection in emails and chat messages (Gmail, Slack, Google Chat) — automatically creates to-dos when someone asks you to do something
-- Project sync (Linear, Asana, etc.)
-- Custom workflows with Twister
-
-## Unique/Differentiating Features
-
-### Plot-Specific Innovations
-
-- Activity-first design (everything is an activity)
-- User-extensible twist ecosystem
-- Dual scheduling (date-based and time-based)
-- Source-based upserts (intelligent deduplication)
-- Hierarchical priorities with path navigation
-- Per-user unread (collaborative read tracking)
-- Callback system (interactive twist functions)
-- Local-first sync (offline + cloud)
-
-### Developer-Friendly
-
-- Twist Creator SDK (complete TypeScript SDK)
-- Fully typed API
-- Rich toolset (AI, Network, Store, etc.)
-- Open ecosystem with public marketplace
-- CLI tools for twist management
-- Real-time logs for debugging
-
-## Design & Customization
-
-### Visual
-
-- Theme modes: Light, dark, system-based
-- 8 customizable priority colors
-- Color inheritance (children inherit parents)
-- Platform-native interface elements
-- Responsive design (all screen sizes)
-
-### Preferences
-
-- Per-priority settings
-- Global app preferences
-- Device-specific local settings
-- Cross-device theme persistence
-
-## Data & Privacy
-
-### Security
-
-- Row-level security (database-level)
-- Private activities and notes
-- OAuth standards
-- Encrypted data transmission
-
-### Data Management
-
-- PostgreSQL backend (GCP Cloud SQL, enterprise-grade)
-- SQLite local storage
-- Vector search (AI-powered similarity)
-- Full-text search (FTS5-based)
-- Data portability via standard APIs
-
-## Subscription Management
-
-- Four plans: Free, Core, Pro, Team
-- Free: 2 connections, 1 twist
-- Core: 5 connections, 2 twists ($15/mo or $12/mo annual)
-- Pro: Unlimited connections and twists, no-code Twist builder ($25/mo or $20/mo annual)
-- Team: Shared org connections (50 per group), unlimited twists, no-code Twist builder ($124/mo or $99/mo annual)
-- 30-day Core plan trial for new signups with automated reminders and downgrade
-- Connection-based pricing (no per-seat fees)
-- Monthly and annual billing options (20% annual discount)
-- Stripe Checkout integration for secure payments
-- Stripe Customer Portal for self-service subscription management
-- Team plan scales per 50 connections
-- Real-time plan sync — plan changes propagate instantly to all connected devices
-
-## Organizations
-
-- Create organizations for team billing and shared limits
-- Organization admin and member roles
-- Invite members by email (pending invitations auto-applied on signup)
-- Email domain auto-join (anyone with matching domain can join automatically)
-- Organization-level Stripe billing (separate from personal subscription)
-- Effective plan resolution (highest tier across personal + org memberships)
-- Organization management page (members, domains, billing)
-- Team-firewalled priorities: threads under a team-tagged top-level priority are visible only to current team members; joining a team auto-creates a priority, and archiving your last team priority prompts to leave the team
+- **Sessions and time tracking** — A focus timer (pomodoro-style, customizable length) with a progress ring in the header; time tracked per focus, including automatic accrual from calendar events you attended; manual adjustment of a day's tracked time. Fits the "your time stays yours" story but the team is still deciding if/where it belongs in marketing copy.
