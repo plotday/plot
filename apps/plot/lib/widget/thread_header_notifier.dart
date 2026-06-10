@@ -18,6 +18,26 @@ class ThreadHeaderNotifier extends ChangeNotifier {
   static final ValueNotifier<bool> pendingNewThreadIntent =
       ValueNotifier(false);
 
+  /// The current step-back handler for the single-panel new-thread flow, or
+  /// null when there's no back affordance (step 1 / sections, where the
+  /// bottom-nav tab is the exit). Published by [NewThreadPage] as the compose
+  /// flow advances between steps; consumed by [UnifiedHeader]'s single-panel
+  /// new-thread branch to render the back chevron in the header strip (so the
+  /// back aligns with the PriorityPage / ThreadPage backs rather than sitting
+  /// one line below in the page body).
+  ///
+  /// Mutated via [setNewThreadBack] so the change drives [notifyListeners] and
+  /// the header (a dependent of [ThreadHeaderNotifierProvider]) rebuilds.
+  VoidCallback? newThreadBack;
+
+  /// Update [newThreadBack] and notify listeners (so the header rebuilds for
+  /// the new step). No-ops when the handler is unchanged.
+  void setNewThreadBack(VoidCallback? handler) {
+    if (identical(newThreadBack, handler)) return;
+    newThreadBack = handler;
+    notifyListeners();
+  }
+
   void Function(String)? onSearchChanged;
   void Function()? onSearchClosed;
   List<(Tag, int)> tags = const [];
@@ -50,6 +70,7 @@ class ThreadHeaderNotifier extends ChangeNotifier {
   void unregister() {
     onSearchChanged = null;
     onSearchClosed = null;
+    newThreadBack = null;
     tags = const [];
     filter = const [];
     reactions = const [];

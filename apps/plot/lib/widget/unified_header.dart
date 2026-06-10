@@ -492,17 +492,23 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
         ThreadHeaderNotifier.pendingNewThreadIntent.value;
     final hasActivity = thread != null || isThreadVisible;
 
-    // NewThreadPage in single-panel mode: chrome lives inside the page
-    // (the back affordance is the leading slot of the page's own search
-    // field — see [ComposeSectionsView]), so the global header drops out
-    // entirely rather than showing a redundant bare back-button row.
+    // NewThreadPage in single-panel mode: the new-thread back affordance now
+    // lives HERE in the header strip (aligned with the PriorityPage / ThreadPage
+    // backs) rather than inside the page body. [NewThreadPage] publishes the
+    // current step's back handler to [ThreadHeaderNotifier.newThreadBack]:
+    //   * step 1 (sections) → null (no back; exit via the bottom-nav tab)
+    //   * step 2 (connection) / step 3 (compose) → the step-back handler
+    // The header is a dependent of [ThreadHeaderNotifierProvider], so a step
+    // change calls notifyListeners() and rebuilds this branch.
     //
-    // On desktop single-panel (a narrow window) the macOS traffic lights
-    // still need a gutter to sit in, so keep a minimal strip whenever
-    // there's toolbar padding to reserve. On mobile (no traffic lights,
-    // zero toolbar padding) the header collapses to nothing.
+    // When there's no back handler (step 1) we keep the prior behavior: on
+    // desktop single-panel the macOS traffic lights still need a gutter, so a
+    // minimal strip stays whenever there's toolbar padding to reserve; on mobile
+    // (no traffic lights, zero toolbar padding) the header collapses to nothing.
     if (isNewThread) {
-      if (resolvedToolbarPadding.left == 0 &&
+      final VoidCallback? newThreadBack = notifier?.newThreadBack;
+      if (newThreadBack == null &&
+          resolvedToolbarPadding.left == 0 &&
           resolvedToolbarPadding.right == 0) {
         return const SizedBox.shrink();
       }
@@ -512,6 +518,19 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
         [
           if (resolvedToolbarPadding.left != 0)
             SizedBox(width: resolvedToolbarPadding.left),
+          if (newThreadBack != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: newThreadBack,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                child: Icon(
+                  PlotIcon.left,
+                  size: 18,
+                  color: context.theme.colors.mutedForeground,
+                ),
+              ),
+            ),
           const Expanded(child: SizedBox.shrink()),
         ],
         suffixes: <Widget>[
@@ -674,7 +693,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       if (showOpenSidebar && resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
       if (showOpenSidebar)
-        Button.icon(ToggleLeftSidebarCommand(isVisible: false)),
+        Button.icon(
+          ToggleLeftSidebarCommand(
+            isVisible: false,
+            // In the two-panel band the sidebar can't dock — the button
+            // opens an overlay drawer, so render it as a menu (bars) icon.
+            asDrawer: layoutState.sidebarIsOverlay,
+          ),
+        ),
     ];
 
     final Widget titleSection = _searchVisible

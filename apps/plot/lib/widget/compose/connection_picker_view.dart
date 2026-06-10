@@ -30,6 +30,7 @@ class ConnectionPickerView extends StatefulWidget {
     required this.onPickConnection,
     required this.onBack,
     this.autofocusSearch = true,
+    this.showBackButton = true,
   });
 
   /// The chosen recipient from step 1. Drives the leading chip and the roster
@@ -57,6 +58,15 @@ class ConnectionPickerView extends StatefulWidget {
 
   /// Whether to autofocus the search field on mount. Enabled by default.
   final bool autofocusSearch;
+
+  /// Whether to render the in-field back chevron (the search field's leading
+  /// slot). In single-panel mode the new-thread back lives in the header strip
+  /// (UnifiedHeader's new-thread branch, fed by
+  /// [ThreadHeaderNotifier.newThreadBack]), so the page passes false to avoid a
+  /// redundant in-field chevron; multi-panel has no header back, so it keeps
+  /// the in-field one (the default). [onBack] / Escape still return to step 1
+  /// either way.
+  final bool showBackButton;
 
   @override
   State<ConnectionPickerView> createState() => _ConnectionPickerViewState();
@@ -202,19 +212,23 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
     final spacing = context.theme.spacing;
 
     // A back button at the start of the input returns to step 1 (the same
-    // affordance as Escape, wired through onBack below).
-    final backButton = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onBack,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        child: Icon(
-          PlotIcon.left,
-          size: 18,
-          color: context.theme.colors.mutedForeground,
-        ),
-      ),
-    );
+    // affordance as Escape, wired through onBack below). Shown only when
+    // [showBackButton] is set (multi-panel) — in single-panel the back moves to
+    // the header strip; see the field doc.
+    final Widget? backButton = widget.showBackButton
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onBack,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              child: Icon(
+                PlotIcon.left,
+                size: 18,
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+          )
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

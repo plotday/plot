@@ -285,6 +285,31 @@ class NewThreadPageState extends State<NewThreadPage> {
         _pickerSearchController.text.trim().isNotEmpty;
   }
 
+  /// Publishes the current step's back handler to the shared
+  /// [ThreadHeaderNotifier] so [UnifiedHeader] can render the new-thread back
+  /// chevron in the (single-panel) header strip — aligned with the
+  /// PriorityPage / ThreadPage backs — instead of inside the page body.
+  ///
+  ///   * sections (step 1) → null (no back; the bottom-nav tab is the exit)
+  ///   * connection (step 2) → [_returnToSectionsStep]
+  ///   * compose (step 3) → [_backFromCompose] (→ connection if a recipient was
+  ///     picked, else sections)
+  ///
+  /// Call after every `_step` mutation. Cleared to null on dispose / leaving
+  /// `/new` via [ThreadHeaderNotifier.unregister].
+  void _publishHeaderBack() {
+    final notifier = _headerNotifier;
+    if (notifier == null) return;
+    switch (_step) {
+      case _ComposeStep.sections:
+        notifier.setNewThreadBack(null);
+      case _ComposeStep.connection:
+        notifier.setNewThreadBack(_returnToSectionsStep);
+      case _ComposeStep.compose:
+        notifier.setNewThreadBack(_backFromCompose);
+    }
+  }
+
   /// Filter-controller listener: the filter text contributes to [_active] (any
   /// text keeps the panel active), so recompute whenever it changes. Typing also
   /// lifts an Escape-dismiss.
@@ -516,6 +541,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       _focusSuggestionOrder = const [];
       _feedbackMode = false;
     });
+    // Reset returns to step 1 — clear the header back affordance.
+    _publishHeaderBack();
 
     // Re-focus the inline filter after the rebuild. AutoRoute reuses the same
     // ComposeSectionsView instance, so its `autofocus` won't re-fire on this
@@ -575,6 +602,8 @@ class NewThreadPageState extends State<NewThreadPage> {
         filter: const [],
         isNewThread: true,
       );
+      // Seed the header back handler for the current step (sections → none).
+      _publishHeaderBack();
       _provider?.registerActivityPanel(
         // This callback is the new-thread page's "restore editor focus" hook,
         // invoked by the search-close / Escape focus-restore path
@@ -1032,6 +1061,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       _feedbackMode = feedback;
       _step = _ComposeStep.compose;
     });
+    _publishHeaderBack();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _threadEditorKey.currentState?.focus();
     });
@@ -1182,6 +1212,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       _selectedRecipient = entry;
       _step = _ComposeStep.connection;
     });
+    _publishHeaderBack();
     _focusPickerSearch(_ComposeStep.connection);
   }
 
@@ -1357,6 +1388,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _returnToSectionsStep() {
     _pickerSearchController.text = _stashedSectionsQuery;
     setState(() => _step = _ComposeStep.sections);
+    _publishHeaderBack();
     // Claim focus (drops-then-requests so it engages even though the shared
     // node was just focused on step 2).
     _focusPickerSearch(_ComposeStep.sections);
@@ -1381,6 +1413,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _backFromCompose() {
     if (_selectedRecipient != null) {
       setState(() => _step = _ComposeStep.connection);
+      _publishHeaderBack();
       _focusPickerSearch(_ComposeStep.connection);
     } else {
       _returnToSectionsStep();
@@ -1987,6 +2020,10 @@ class NewThreadPageState extends State<NewThreadPage> {
       searchFocusNode: _pickerSearchFocusNode,
       onPickConnection: (t) => unawaited(_applyTarget(t)),
       onBack: _returnToSectionsStep,
+      // Single-panel: the back lives in the header strip (fed by
+      // ThreadHeaderNotifier.newThreadBack), so drop the in-field chevron.
+      // Multi-panel has no header back, so keep it.
+      showBackButton: multiPanel,
     );
 
     if (!multiPanel) {
@@ -2217,106 +2254,57 @@ class NewThreadPageState extends State<NewThreadPage> {
                               final barInset = BottomNavInset.of(context);
                               final reserve = (barInset - keyboardInset)
                                   .clamp(0.0, barInset);
-                              // Outer column: back chevron header pinned at
-                              // top, then Expanded area with the compose
-                              // fields + editor bottom-aligned (preserving
-                              // the keyboard-inset padding logic).
-                              return Column(
-                                children: [
-                                  // Top header row with back chevron.
-                                  Padding(
-                                    padding: EdgeInsets.only(
-                                      left: context.contentPaddingH,
-                                      top: context.theme.spacing.xs,
-                                      bottom: context.theme.spacing.xs,
-                                    ),
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: _backFromCompose,
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 2,
-                                            vertical: 4,
-                                          ),
-                                          child: Icon(
-                                            PlotIcon.left,
-                                            size: 18,
-                                            color: context
-                                                .theme.colors.mutedForeground,
+                              // Compose fields + editor, bottom-aligned with
+                              // the keyboard-inset reserve. The back affordance
+                              // for this step lives in the header strip now
+                              // (UnifiedHeader's single-panel new-thread branch,
+                              // fed by ThreadHeaderNotifier.newThreadBack), so
+                              // the page body fills its whole area with no
+                              // in-page header row.
+                              return Padding(
+                                padding: EdgeInsets.only(bottom: reserve),
+                                child: FocusTraversalGroup(
+                                  policy: WidgetOrderTraversalPolicy(),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildComposeSurface(context, state),
+                                      SizedBox(
+                                        height: context.theme.spacing.md,
+                                      ),
+                                      Flexible(
+                                        child: EditableArea(
+                                          padding: false,
+                                          position: EditableAreaPosition.bottom,
+                                          flushToBottom: true,
+                                          builder: (context, _) => Focus(
+                                            canRequestFocus: false,
+                                            skipTraversal: true,
+                                            onKeyEvent: _handleEditorKeys,
+                                            child: NoteEditor(
+                                              key: _threadEditorKey,
+                                              bodyOnly: true,
+                                              draft: state.draftNote,
+                                              thread: state.draft,
+                                              onDraftChanged: _handleDraftChanged,
+                                              flushToBottom: true,
+                                              showScheduleActions: false,
+                                              hint: _computeEditorHint(state),
+                                              sendLabel: _computeSendLabel(state),
+                                              additionalMentions: _twistMentions,
+                                              onSubmitted: _onChatSubmitted,
+                                              submitValidator: _validateDmSubmit,
+                                              selectedTwist: _selectedTwist,
+                                              onTwistSelected: _selectTwist,
+                                              onTwistMentioned: _onTwistMentioned,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                  // Remaining space: compose fields + editor,
-                                  // bottom-aligned with keyboard-inset reserve.
-                                  Expanded(
-                                    child: Padding(
-                                      padding: EdgeInsets.only(bottom: reserve),
-                                      child: FocusTraversalGroup(
-                                        policy: WidgetOrderTraversalPolicy(),
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.end,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            _buildComposeSurface(
-                                              context,
-                                              state,
-                                            ),
-                                            SizedBox(
-                                              height: context.theme.spacing.md,
-                                            ),
-                                            Flexible(
-                                              child: EditableArea(
-                                                padding: false,
-                                                position:
-                                                    EditableAreaPosition.bottom,
-                                                flushToBottom: true,
-                                                builder: (context, _) => Focus(
-                                                  canRequestFocus: false,
-                                                  skipTraversal: true,
-                                                  onKeyEvent: _handleEditorKeys,
-                                                  child: NoteEditor(
-                                                    key: _threadEditorKey,
-                                                    bodyOnly: true,
-                                                    draft: state.draftNote,
-                                                    thread: state.draft,
-                                                    onDraftChanged:
-                                                        _handleDraftChanged,
-                                                    flushToBottom: true,
-                                                    showScheduleActions: false,
-                                                    hint: _computeEditorHint(
-                                                      state,
-                                                    ),
-                                                    sendLabel:
-                                                        _computeSendLabel(
-                                                          state,
-                                                        ),
-                                                    additionalMentions:
-                                                        _twistMentions,
-                                                    onSubmitted:
-                                                        _onChatSubmitted,
-                                                    submitValidator:
-                                                        _validateDmSubmit,
-                                                    selectedTwist:
-                                                        _selectedTwist,
-                                                    onTwistSelected:
-                                                        _selectTwist,
-                                                    onTwistMentioned:
-                                                        _onTwistMentioned,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               );
                             }
 
