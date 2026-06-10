@@ -221,40 +221,56 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   }
 
   void _openNewThread(BuildContext context, TabsRouter tabsRouter) {
-    // Always start a fresh new-thread flow. AutoRoute reuses an already-mounted
-    // NewThreadPage (it does not build a new State), so a page sitting on
-    // step 2 would otherwise reappear mid-compose. A live page resets to
-    // step 1 with a fresh draft; a fresh mount ignores this bump.
-    NewThreadPageState.requestReset();
-
-    // Always lands on the Activity tab — NewThreadRoute lives there.
+    // New lands on the Activity tab — NewThreadRoute lives there. The inner
+    // stack must end up as [PriorityOnlyRoute, NewThreadRoute] so that back
+    // from /new pops to the priority page (not an empty navigator).
     //
-    // The inner stack must end up as [PriorityOnlyRoute, NewThreadRoute]
-    // so that back from /new pops to the priority page (not an empty
-    // navigator). Two paths get us there:
+    // Reset vs resume vs fresh depends on where we already are:
     //
-    // 1. PriorityRoute is already mounted (we're on it now, or it's
-    //    alive on the Activity stack while another tab is active) →
-    //    push NewThreadRoute on the existing inner router.
-    // 2. PriorityRoute isn't mounted yet (first cold-start activation
-    //    from Agenda/Priorities) → navigate to PriorityRoute (which
-    //    seeds the inner stack with the empty-path PriorityOnlyRoute)
-    //    and push NewThreadRoute on top once the inner router appears.
+    // - An in-progress /new is parked on the Activity stack while a DIFFERENT
+    //   tab is showing → just switch to the Activity tab to RESUME the draft
+    //   (no reset — the design preserves a draft across tab switches).
+    // - We're ALREADY viewing /new (Activity tab active) and the user taps New
+    //   again → reset to step 1 with a fresh draft (tap-active = start over).
+    // - No /new on the stack (we're on the feed or a thread) → push a FRESH
+    //   NewThreadRoute and reset so the new mount starts clean.
     //
-    // Avoid `navigate(PriorityRoute(children:[New]))` (drops the inner
-    // child if PriorityRoute is already on the Activity stack) and
-    // `navigatePath('/p/:pid/new')` (sets the inner stack to
-    // [NewThreadRoute] only, with nothing to pop back to).
+    // AutoRoute reuses an already-mounted NewThreadPage (it does not build a
+    // new State), so a live page sitting on step 2 would otherwise reappear
+    // mid-compose; requestReset() resets it to step 1 with a fresh draft, and a
+    // fresh mount ignores the bump.
+    //
+    // Avoid `navigate(PriorityRoute(children:[New]))` (drops the inner child if
+    // PriorityRoute is already on the Activity stack) and
+    // `navigatePath('/p/:pid/new')` (sets the inner stack to [NewThreadRoute]
+    // only, with nothing to pop back to).
     final innerRouter = _findPriorityInnerRouter(context.router.root);
     if (innerRouter != null) {
+      final onNewThread = innerRouter.current.name == NewThreadRoute.name;
+      if (onNewThread) {
+        if (tabsRouter.activeIndex == _kTabActivity) {
+          // Already viewing /new → tap-active starts over at step 1.
+          NewThreadPageState.requestReset();
+        } else {
+          // /new parked while another tab is active → resume the draft.
+          tabsRouter.setActiveIndex(_kTabActivity);
+        }
+        return;
+      }
+      // No /new on the stack — fresh compose: reset then push.
+      NewThreadPageState.requestReset();
       if (tabsRouter.activeIndex != _kTabActivity) {
         tabsRouter.setActiveIndex(_kTabActivity);
       }
-      if (innerRouter.current.name != NewThreadRoute.name) {
-        innerRouter.push(NewThreadRoute());
-      }
+      innerRouter.push(NewThreadRoute());
       return;
     }
+
+    // Cold-start path: PriorityRoute isn't mounted yet (first activation from
+    // Agenda/Priorities). Navigate to PriorityRoute (which seeds the inner
+    // stack with the empty-path PriorityOnlyRoute) and push NewThreadRoute on
+    // top once the inner router appears. A fresh mount, so reset to be safe.
+    NewThreadPageState.requestReset();
 
     final priorityIdString = _activityPriorityIdString(context);
     if (priorityIdString == null) return;

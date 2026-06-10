@@ -484,6 +484,12 @@ class AddThreadWithNote extends Command {
       // Prime the cache so ThreadBlocProvider builds synchronously, skipping
       // a redundant Thread.getOne and the LoadingPage flash.
       priorityBloc.setThread(savedThread);
+      // Reset the new-thread flow to step 1 for next time. In single-panel the
+      // replace below disposes NewThreadPage so this is a harmless no-op (the
+      // next New tap pushes a fresh mount). In multi-panel the page can be
+      // reused (PriorityOnlyPage re-navigates to /new), so this ensures it
+      // starts clean rather than re-showing the just-sent compose state.
+      NewThreadPageState.requestReset();
       await context.router.replace(
         ThreadRoute(threadIdString: savedThread.id.toShortString()),
       );
