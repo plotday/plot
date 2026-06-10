@@ -87,22 +87,27 @@ jobs:
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "Created release branch: $RELEASE_BRANCH"
 
-      - name: Bump main to next build number
+      - name: Stamp changelog and bump main to next build number
         run: |
           git checkout main
+
+          RELEASE_VERSION="${{ steps.version.outputs.release_version }}"
+          STAMP_DATE="$(date -u +%Y-%m-%d)"
+          node scripts/stamp-updates.mjs "$RELEASE_VERSION" "$STAMP_DATE"
 
           cd apps/plot
           NEXT_BUILD_NUMBER=$((${{ steps.version.outputs.build_number }} + 1))
           NEXT_VERSION="${{ steps.version.outputs.version_name }}+${NEXT_BUILD_NUMBER}"
           sed -i "s/version: .*/version: ${NEXT_VERSION}/" pubspec.yaml
+          cd ..
 
           git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
           git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
-          git add pubspec.yaml
-          git commit -m "Bump version to ${NEXT_VERSION} [skip ci]"
+          git add apps/plot/pubspec.yaml docs/updates.md
+          git commit -m "Release ${RELEASE_VERSION}: stamp changelog + bump to ${NEXT_VERSION} [skip ci]"
           git push
 
-          echo "Bumped main to: $NEXT_VERSION"
+          echo "Stamped changelog for $RELEASE_VERSION; bumped main to: $NEXT_VERSION"
 
       - name: Summary
         run: |
