@@ -276,6 +276,24 @@ class AppRouter extends RootStackRouter {
                   path: '',
                   guards: [AuthGuard(userBloc)],
                 ),
+                // Opening a search result pushes a PriorityRoute + ThreadRoute
+                // onto this (Search) stack so the thread stays inside the
+                // Search tab. PriorityWrapper supplies every provider ThreadPage
+                // needs; Back pops past the priority route to the results. Only
+                // ThreadRoute is declared here — search opens threads, never the
+                // new-thread or priority-only landings.
+                AutoRoute(
+                  page: PriorityRoute.page,
+                  path: 'p/:priorityId',
+                  children: [
+                    AutoRoute(
+                      page: ThreadRoute.page,
+                      path: ':threadId',
+                      type: _threadRouteType,
+                      usesPathAsKey: true,
+                    ),
+                  ],
+                ),
               ],
             ),
             // Tab 4: More — settings rendered as pushable pages on mobile.
