@@ -4437,6 +4437,14 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     // it in sync afterwards via setEverything.
     final nowBloc = context.read<NowBloc>();
     final everything = nowBloc.everything;
+    // Snapshot the switch generation at load-initiation. If a newer switch
+    // arrives via didUpdateWidget while Priority.getOne is in flight,
+    // `_switchGen` advances past this value and the deferred setContext
+    // calls below must bail — otherwise this stale initial priority
+    // clobbers NowBloc.context after the newer switch already set it,
+    // reverting the sidebar to the previous focus. Mirrors the `_switchGen`
+    // guard in didUpdateWidget.
+    final myGen = _switchGen;
     // PriorityState eagerly creates a Note.draft (which reads Base.actorId!),
     // so ensure identity is complete before constructing the bloc. An
     // incomplete identity (userId present but actorId missing) usually means
@@ -4475,9 +4483,10 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       // Success - update theme and create bloc
       if (widget.setContext) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            context.read<NowBloc>().setContext(priority);
-          }
+          // Drop this initial-load context publish if a newer switch
+          // superseded it while getOne was in flight (see `myGen` above).
+          if (myGen != _switchGen || !mounted) return;
+          context.read<NowBloc>().setContext(priority);
         });
       }
 
@@ -4510,9 +4519,9 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         // Update theme with fallback priority
         if (widget.setContext) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              context.read<NowBloc>().setContext(defaultPriority);
-            }
+            // Same stale-switch guard as the success path above.
+            if (myGen != _switchGen || !mounted) return;
+            context.read<NowBloc>().setContext(defaultPriority);
           });
         }
 
