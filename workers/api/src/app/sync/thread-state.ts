@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
 import { mapPgError } from "../../db";
 import type { Bindings } from "../../env";
@@ -6,6 +6,32 @@ import { rpcUser } from "../../rpc";
 import { notifySync, notifyUserSync, getPriorityForThread } from "./notify";
 
 const threadState = new Hono<{ Bindings: Bindings }>();
+
+// Fan out sync notifications after a batch of thread_state writes: refresh the
+// user's own sync stream, then notify each affected priority's TwistSync so
+// connector onThreadRead / onThreadToDo callbacks fire. Shared by the live
+// POST /sync/thread-state handler and the legacy POST /sync/thread-unread shim
+// (./thread-unread.ts) so both endpoints notify identically.
+export async function notifyThreadStateChange(
+  c: Context<{ Bindings: Bindings }>,
+  userId: string,
+  succeededThreadIds: string[],
+): Promise<void> {
+  notifyUserSync(c, userId);
+
+  const priorityIds = new Set<string>();
+  for (const threadId of succeededThreadIds) {
+    try {
+      const priorityId = await getPriorityForThread(c.var.db, threadId, userId);
+      priorityIds.add(priorityId);
+    } catch {
+      // Thread may not exist; skip
+    }
+  }
+  for (const priorityId of priorityIds) {
+    notifySync(c, priorityId);
+  }
+}
 
 // POST /sync/thread-state - Write per-user thread_state.
 //
@@ -91,21 +117,7 @@ threadState.post("/sync/thread-state", async (c) => {
     }
   }
 
-  notifyUserSync(c, userId);
-
-  // Notify TwistSync for source onThreadRead / onThreadToDo callbacks
-  const priorityIds = new Set<string>();
-  for (const threadId of succeededThreadIds) {
-    try {
-      const priorityId = await getPriorityForThread(c.var.db, threadId, c.var.user.id);
-      priorityIds.add(priorityId);
-    } catch {
-      // Thread may not exist; skip
-    }
-  }
-  for (const priorityId of priorityIds) {
-    notifySync(c, priorityId);
-  }
+  await notifyThreadStateChange(c, userId, succeededThreadIds);
 
   if (failed.length > 0) {
     return c.json({ ok: true, failed });

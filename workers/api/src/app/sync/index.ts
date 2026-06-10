@@ -25,6 +25,7 @@ import userSettings from "./user-settings";
 import priorityAttention from "./priority-attention";
 import threadAssociations from "./thread-associations";
 import threadState from "./thread-state";
+import threadUnread from "./thread-unread";
 import groups from "./groups";
 import topics from "./topics";
 import priorityMoves from "./priority-moves";
@@ -54,6 +55,9 @@ sync.route("/", sessions);
 sync.route("/", userSettings);
 sync.route("/", threadRead);
 sync.route("/", threadState);
+// Backwards-compat shim for clients predating the thread_unread → thread_state
+// rename. Must stay registered while old clients exist. See ./thread-unread.ts.
+sync.route("/", threadUnread);
 sync.route("/", priorityAttention);
 sync.route("/", threadAssociations);
 sync.route("/", groups);
