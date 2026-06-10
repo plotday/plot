@@ -507,7 +507,7 @@ class ThreadsBase extends BaseTable {
 
       // Preserve a locally-bumped `bumpedAt` that the server hasn't echoed
       // back yet. Without this, a pull that races our push (which happens
-      // on the next sync tick via `/sync/thread-unread`) replaces the
+      // on the next sync tick via `/sync/thread-read`) replaces the
       // local NOW value with the server's older one and the finished
       // thread drops from the top of Done to its prior activity position.
       if (local != null && local.bumpedAt != null) {
@@ -1056,7 +1056,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           .toList();
 
       final response = await api.post<dynamic>(
-        '/sync/thread-unread',
+        '/sync/thread-read',
         body: records,
       );
 
@@ -1065,7 +1065,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         final failedIds = (response['failed'] as List).cast<String>();
         if (failedIds.isNotEmpty) {
           log.warning(
-            'Server rejected ${failedIds.length} thread-unread records: $failedIds',
+            'Server rejected ${failedIds.length} thread-read records: $failedIds',
           );
         }
       }
@@ -1082,15 +1082,15 @@ class Thread extends Equatable implements Comparable<Thread> {
         // sync, which is a bug we want to see in error tracking rather than
         // only in user logs.
         log.warning(
-          'Permanent error pushing thread-unread, '
+          'Permanent error pushing thread-read, '
           'clearing ${readActivities.length} records: $e',
         );
         // Keep the message grouping-stable (the record count goes to a
         // property, not the message, so occurrences fold into one issue).
         Store._reportSyncFailure(
           'Permanent sync push rejected',
-          table: 'thread_unread',
-          endpoint: 'thread-unread',
+          table: 'thread_read',
+          endpoint: 'thread-read',
           outcome: 'cleared',
           error: e,
           stackTrace: stackTrace,
@@ -1102,7 +1102,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             .write(const ThreadsCompanion(readAt: Value(null)));
       } else {
         // Transient error — readAt stays, retry on next push cycle
-        log.warning('Failed to push thread-unread changes: $e');
+        log.warning('Failed to push thread-read changes: $e');
         rethrow;
       }
     }
@@ -1434,6 +1434,9 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// navigate up or down inside Work and keep editing the same draft, while
   /// switching to a sibling branch (e.g. Personal) yields a fresh draft.
   static Future<Thread?> getDraftInChain(Priority priority) async {
+    // `draft = 1 AND archived_at IS NULL` is served by the partial index
+    // idx_threads_draft (see Store._createPerfIndexes), so this is an index
+    // seek over the handful of draft rows rather than a full threads scan.
     final drafts = await _get(
       draft: true,
       archived: false,
@@ -4113,75 +4116,6 @@ SELECT
         );
   }
 
-  /// Efficiently gets which activity IDs from the given list are active.
-  /// An activity is active if it's an action assigned to current user,
-  /// not done, not archived, and scheduled for now/past or unscheduled.
-  static Future<Set<ThreadId>> _getActiveThreadIds(List<ThreadId> ids) async {
-    if (ids.isEmpty) return {};
-    if (!Store.isAvailable) return {};
-
-    final now = Time.now();
-    final today = Date.today().toString();
-
-    // Get all user contact IDs from Actor cache
-    final userActorIds = Actor._cache.values
-        .where((actor) => actor.self)
-        .map((actor) => actor.id.toBytes())
-        .toList();
-
-    // Fallback to primary contact if cache is empty
-    if (userActorIds.isEmpty) {
-      final id = Base.actorIdOrNull;
-      if (id != null) {
-        userActorIds.add(id.toBytes());
-      } else {
-        return {};
-      }
-    }
-
-    final a = Store.get.threads;
-    final s = Store.get.schedules;
-    final query = Store.get.selectOnly(a)..addColumns([a.id]);
-
-    query.join([leftOuterJoin(s, s.threadId.equalsExp(a.id))]);
-
-    // Convert ThreadId (Uuid) to Uint8List for isIn query
-    final idBytes = ids.map((id) => id.toBytes()).toList();
-
-    query.where(
-      a.id.isIn(idBytes) &
-          a.archivedAt.isNull() &
-          (
-          // DateTime scheduled
-          (s.startAt.isSmallerOrEqualValue(now) & s.startOn.isNull()) |
-              // Date scheduled
-              (s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
-              // Unscheduled (no schedule row at all)
-              (s.startAt.isNull() & s.startOn.isNull())),
-    );
-
-    final results = await query.get();
-    return results.map((row) => Uuid.fromBytes(row.read(a.id)!)).toSet();
-  }
-
-  /// Efficiently gets which activity IDs from the given list are unread.
-  /// An activity is unread if server says unread and we haven't overridden it locally.
-  static Future<Set<ThreadId>> _getUnreadThreadIds(List<ThreadId> ids) async {
-    if (ids.isEmpty) return {};
-    if (!Store.isAvailable) return {};
-
-    final a = Store.get.threads;
-    final query = Store.get.selectOnly(a)..addColumns([a.id]);
-
-    // Convert ThreadId (Uuid) to Uint8List for isIn query
-    final idBytes = ids.map((id) => id.toBytes()).toList();
-
-    query.where(a.id.isIn(idBytes) & a.unread.equals(true) & a.readAt.isNull());
-
-    final results = await query.get();
-    return results.map((row) => Uuid.fromBytes(row.read(a.id)!)).toSet();
-  }
-
   /// Maps database query results to Activity objects.
   ///
   /// This function handles both regular and recurring activities:
@@ -4221,10 +4155,15 @@ SELECT
       activityGroups.putIfAbsent(activityId, () => []).add(result);
     }
 
-    // Compute which activities are active and unread (efficient bulk queries)
-    final activityIds = activityGroups.keys.toList();
-    final activeIds = await _getActiveThreadIds(activityIds);
-    final unreadIds = await _getUnreadThreadIds(activityIds);
+    // Unread is computed in-memory from the already-hydrated thread row —
+    // it's exactly `unread AND read_at IS NULL`, the same columns the old
+    // `_getUnreadThreadIds` bulk query read back from the database. The old
+    // `_getActiveThreadIds` bulk query fed only `Thread.inActiveBucket`,
+    // which has no consumers, so it isn't computed at all anymore. Together
+    // those two queries ran on every map call (~10-15× per focus switch,
+    // with multi-thousand-id IN lists from the no-limit watches) and each
+    // waited on the single serialized SQLite connection — they were the
+    // largest avoidable contributor to switch latency.
 
     // Separate recurring activities from non-recurring and collect schedule occurrences
     final threadList = <Thread>[];
@@ -4235,6 +4174,7 @@ SELECT
         // Skip activities with missing priority (e.g., priority was deleted or archived)
         continue;
       }
+      final unreadComputed = activityRow.unread && activityRow.readAt == null;
 
       // Read the base schedule (first row without an occurrence, or just the first).
       // Per-user state lives on the thread row itself (activityRow), so we
@@ -4294,8 +4234,7 @@ SELECT
         priority: priority,
         schedule: effectiveScheduleRow,
         tags: tagsRow,
-        active: activeIds.contains(activityRow.id),
-        unreadComputed: unreadIds.contains(activityRow.id),
+        unreadComputed: unreadComputed,
         linkSourceCreatedAt: linkSourceCreatedAt,
         rsvpInheritedFromSeries: false,
       );
@@ -4366,8 +4305,7 @@ SELECT
                 priority: priority,
                 tags: result.readTableOrNull(tags),
                 schedule: scheduleRow,
-                active: activeIds.contains(activityRow.id),
-                unreadComputed: unreadIds.contains(activityRow.id),
+                unreadComputed: unreadComputed,
                 linkSourceCreatedAt: linkSourceCreatedAt,
                 rsvpInheritedFromSeries: false,
               );
@@ -4425,8 +4363,7 @@ SELECT
               priority: priority,
               schedule: baseRecurring,
               tags: tagsRow,
-              active: activeIds.contains(activityRow.id),
-              unreadComputed: unreadIds.contains(activityRow.id),
+              unreadComputed: unreadComputed,
               isLinkScheduleInstance: true,
               linkSourceCreatedAt: linkSourceCreatedAt,
               rsvpInheritedFromSeries: false,
@@ -4456,8 +4393,7 @@ SELECT
                   priority: priority,
                   schedule: overrideRow,
                   tags: tagsRow,
-                  active: activeIds.contains(activityRow.id),
-                  unreadComputed: unreadIds.contains(activityRow.id),
+                  unreadComputed: unreadComputed,
                   isLinkScheduleInstance: true,
                   linkSourceCreatedAt: linkSourceCreatedAt,
                   rsvpInheritedFromSeries: false,
@@ -4476,8 +4412,7 @@ SELECT
                 priority: priority,
                 schedule: linkScheduleRow,
                 tags: tagsRow,
-                active: activeIds.contains(activityRow.id),
-                unreadComputed: unreadIds.contains(activityRow.id),
+                unreadComputed: unreadComputed,
                 isLinkScheduleInstance: true,
                 linkSourceCreatedAt: linkSourceCreatedAt,
                 rsvpInheritedFromSeries: false,
@@ -4977,10 +4912,11 @@ SELECT
       entry.key: Actor.dedupeByIdentity(entry.value),
   };
 
-  /// Whether this thread is in the per-tab "active bucket" computed by the
-  /// SQL `is_active` column (today vs scheduled, etc). Set by the per-tab
-  /// query path; null elsewhere. Kept as `inActiveBucket` to avoid clashing
-  /// with the per-user `active` state boolean exposed on the thread row.
+  /// Legacy per-tab "active bucket" flag. No call sites consume this and
+  /// `_mapResultsToThreads` no longer computes it (its `_getActiveThreadIds`
+  /// bulk query was pure overhead on the focus-switch hot path), so it is
+  /// always false for store-built threads. Kept only because `_active` still
+  /// passes through copyWith-style constructors; remove with the field.
   bool get inActiveBucket => _active ?? false;
 
   /// Returns true if this activity is unread (considering local overrides)
@@ -6085,7 +6021,7 @@ SELECT
         title.present) {
       activityDirty = true;
       // Read-state fields (unread, readAt, bumpedAt) sync via
-      // /sync/thread-unread, not the regular thread push. Only mark remote
+      // /sync/thread-read, not the regular thread push. Only mark remote
       // dirty when non-read-state fields change.
       activityRemoteDirty =
           priority != null ||
@@ -6307,7 +6243,7 @@ SELECT
     //      what defines the transition, not the call site.
     //   2. Done transition (active → inactive via `bump: true,
     //      todo: false`).
-    // Synced via /sync/thread-unread (read-state fields), so this path
+    // Synced via /sync/thread-read (read-state fields), so this path
     // does not need activityRemoteDirty.
     final willBeActive = todo == false ? false : _thread.active;
     final isReadTransition = unread == false && _thread.unread && !willBeActive;
@@ -7146,6 +7082,14 @@ SELECT
     );
   }
 
+  /// Memoized raw RRULE expansions for [generateOccurrences], keyed by the
+  /// exact inputs of `RecurrenceRule.getInstances` (rule, series start,
+  /// window bounds). Values are pure functions of their key, so entries
+  /// never go stale; the map is bounded by
+  /// [_occurrenceExpansionCacheLimit] with insertion-order eviction.
+  static final Map<String, List<DateTime>> _occurrenceExpansionCache = {};
+  static const int _occurrenceExpansionCacheLimit = 512;
+
   List<Thread> generateOccurrences(BoundedDateRange range) {
     // For non-recurring activities, return just this activity
     if (!recurring) {
@@ -7169,14 +7113,39 @@ SELECT
       return [];
     }
 
-    // Generate instances within the range using the rrule package
-    final instances = recurrenceRule!.getInstances(
-      start: start.copyWith(isUtc: true),
-      after: (start.isAfter(dateTimeRange.start) ? start : dateTimeRange.start)
-          .copyWith(isUtc: true),
-      includeAfter: true,
-      before: dateTimeRange.end.copyWith(isUtc: true),
-    );
+    // Generate instances within the range using the rrule package. The
+    // expansion is cached: `getInstances` iterates from the SERIES start, so
+    // a years-old weekly series costs hundreds of iterations to reach
+    // today's window, and the agenda / today-event streams re-expand every
+    // recurring thread on every emission (several times per focus switch) —
+    // profiled at 100–500ms of main-isolate time per emission. The key
+    // captures every input of the expansion, so entries are deterministic
+    // and can never go stale; exdate filtering happens below, outside the
+    // cache. The cache is bounded and evicts in insertion order.
+    final cacheKey =
+        '${recurrenceRule!}'
+        '|${start.microsecondsSinceEpoch}'
+        '|${dateTimeRange.start.microsecondsSinceEpoch}'
+        '|${dateTimeRange.end.microsecondsSinceEpoch}';
+    var instances = _occurrenceExpansionCache[cacheKey];
+    if (instances == null) {
+      instances = recurrenceRule!
+          .getInstances(
+            start: start.copyWith(isUtc: true),
+            after:
+                (start.isAfter(dateTimeRange.start)
+                        ? start
+                        : dateTimeRange.start)
+                    .copyWith(isUtc: true),
+            includeAfter: true,
+            before: dateTimeRange.end.copyWith(isUtc: true),
+          )
+          .toList();
+      if (_occurrenceExpansionCache.length >= _occurrenceExpansionCacheLimit) {
+        _occurrenceExpansionCache.remove(_occurrenceExpansionCache.keys.first);
+      }
+      _occurrenceExpansionCache[cacheKey] = instances;
+    }
 
     // Convert instances to a set for efficient exclusion checking
     final instanceSet = Set<DateTime>.from(

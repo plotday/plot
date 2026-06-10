@@ -107,7 +107,12 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
           Priority.watchDefault(),
           ScheduledDay.watchToday(),
           Session.watchCurrent(),
-          Priority.watch(archived: false),
+          // Raw watch: [NowLoaded.priorities] only resolves focus-block
+          // priority ids to Priority objects (identity/display fields). The
+          // enriched [Priority.watch] adds three thread-table scans that
+          // re-run on every thread write — wasted SQLite-connection load
+          // (the sidebar's enriched list comes from PrioritiesBloc).
+          Priority.watchRaw(archived: false),
           streamPriorityBlocksGroupedByPriority(),
           UserSettingsEntity.watch(),
           (priority, day, session, priorities, blocksByPriority, settings) {

@@ -289,17 +289,70 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return _enrichWithStatus(priorities);
   }
 
+  /// Live snapshot of every priority (archived + active, sorted), kept fresh
+  /// by [_rawAllWatch]. Serves [getRaw]'s `archived: null` form, which
+  /// Thread._mapResultsToThreads issues on every feed/agenda emission (~15×
+  /// per focus switch); re-querying it each time piled onto the single SQLite
+  /// connection and starved the activity feed.
+  static List<Priority>? _rawAllSnapshot;
+  static StreamSubscription<List<Priority>>? _rawAllWatch;
+
+  /// Drops the cached all-priorities snapshot and its keep-fresh watch. Call
+  /// on sign-out / store reset (mirrors [Actor.clearCache]).
+  static void clearCache() {
+    _rawAllWatch?.cancel();
+    _rawAllWatch = null;
+    _rawAllSnapshot = null;
+  }
+
   /// Lightweight priority lookup that skips the `pullArchived` network sync
   /// and `_enrichWithStatus` (two extra SQL queries that compute
   /// active/unread flags). Use this on hot read paths that only need
   /// priority identity / path / display fields, not the unread/active dot
   /// state. Callers that render the priority list itself should keep using
   /// [get].
+  ///
+  /// The `archived: null` (all priorities), sorted form — issued on every
+  /// feed/agenda emission — is served from [_rawAllSnapshot], a live snapshot
+  /// kept current by a single watch, so the many concurrent callers during a
+  /// focus switch don't each re-scan the priorities table.
   static Future<List<Priority>> getRaw({
     bool? archived = false,
     PriorityOrder order = PriorityOrder.sorted,
+  }) async {
+    final useSnapshot = archived == null && order == PriorityOrder.sorted;
+    if (useSnapshot) {
+      final snap = _rawAllSnapshot;
+      if (snap != null) return snap;
+      // First access: start the keep-fresh watch. Its emissions (initial +
+      // every later priority write, local or remote) update the snapshot, so
+      // it never goes stale. Use `_get(...).watch()` directly (not the public
+      // [watch]) to keep getRaw's no-network contract. Fall through to a
+      // direct load so the first caller gets an immediate result instead of
+      // waiting on the watch's first async emission.
+      _rawAllWatch ??= _get(archived: null, order: PriorityOrder.sorted)
+          .watch()
+          .listen((rows) => _rawAllSnapshot = rows);
+    }
+    final result = await _get(archived: archived, order: order).get();
+    if (useSnapshot && _rawAllSnapshot == null) _rawAllSnapshot = result;
+    return result;
+  }
+
+  /// Raw (no-enrichment) live watch of priorities. Unlike [watch] this skips
+  /// `pullArchived` and — crucially — the active/unread/non-empty status
+  /// streams, each of which scans the threads table and re-fires on every
+  /// thread write. Use for consumers that only need identity / path / display
+  /// fields kept live (e.g. an id→Priority lookup map); the sidebar list,
+  /// which renders the bold/unread dot state, must keep using [watch].
+  static Stream<List<Priority>> watchRaw({
+    bool? archived = false,
+    PriorityOrder order = PriorityOrder.sorted,
   }) {
-    return _get(archived: archived, order: order).get();
+    if (!Injector.appInstance.exists<Store>()) {
+      return Stream.value([]);
+    }
+    return _get(archived: archived, order: order).watch();
   }
 
   static Stream<List<Priority>> watch({

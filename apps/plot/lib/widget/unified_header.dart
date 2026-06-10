@@ -217,6 +217,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       _closeSearch();
       return;
     }
+    // The filter dropdown lives inside the search field, so opening search is
+    // the first moment its (global) tag/reaction/icon-count data is needed.
+    // Load it lazily here rather than on every focus switch — see
+    // PriorityBloc.ensureFilterData.
+    context.read<PriorityBloc>().ensureFilterData();
     setState(() {
       _searchExpanded = true;
       _panelController?.updateSearchExpanded(true);

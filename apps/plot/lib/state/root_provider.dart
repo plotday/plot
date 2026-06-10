@@ -226,6 +226,7 @@ class RootProviderState extends State<RootProvider> {
               TwistInstance.stopGlobalWatch();
               Actor.clearCache();
               Link.clearCache();
+              Priority.clearCache();
               // Set theme to Catalyst when signed out
               themeBloc.setPriorityColor(ThemeColor(0));
               await router.replaceAll([SignInRoute()]);

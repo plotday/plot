@@ -1058,6 +1058,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         if (isClosed) return;
         _activeTabHeadReceived = true;
         _rebuildActiveTabSection();
+        _firePendingFeedSync();
       });
       return;
     }
@@ -1147,6 +1148,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       if (isClosed) return;
       _activeTabHeadReceived = true;
       _rebuildActiveTabSection();
+      _firePendingFeedSync();
     });
   }
 
@@ -2397,6 +2399,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     _reactionsSubscription?.cancel();
     _iconCountsSubscription?.cancel();
     _activeTabSubscription?.cancel();
+    _pendingFeedSyncFallback?.cancel();
+    _pendingFeedSync = null;
     for (final timer in _stickyRemovalTimers.values) {
       timer.cancel();
     }
@@ -2736,8 +2740,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscriptions.clear();
     _threadSubscription?.cancel();
     _watchingThreadId = null;
-    _tagsSubscription?.cancel();
-    _reactionsSubscription?.cancel();
+    // NOTE: the tags / reactions / icon-count filter subscriptions are
+    // deliberately NOT cancelled here. They're global (focus-independent) and
+    // loaded once via [ensureFilterData]; tearing them down per switch only to
+    // re-run identical global scans was the largest switch-burst cost.
 
     // Drop optimistic overrides — they apply to the old priority's streams
     // and won't naturally settle in the new one. The per-tab overlay is
@@ -2817,8 +2823,9 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Re-init priority-scoped subscriptions (drafts, tags, icons,
     // activity feed). reloadAgenda: false skips the global agenda
-    // subscription — it's still alive from the initial load.
-    _loadPriority(profile: profile, reloadAgenda: false);
+    // subscription — it's still alive from the initial load. loadDraft:
+    // false because the chain-draft lookup below owns the draft emit.
+    _loadPriority(profile: profile, reloadAgenda: false, loadDraft: false);
     profile.mark('_loadPriority returned (subscriptions started)');
     // Per-tab subscription is priority-scoped — restart so the active
     // tab reloads for the new priority.
@@ -2886,22 +2893,34 @@ class PriorityBloc extends Cubit<PriorityState> {
   ) async {
     try {
       // Clean up duplicate drafts at the chosen draft's priority (legacy).
-      // This used the heavy Thread._get JOIN, which the profile showed
-      // could take >1.5s with a full thread table — pushing it off the
-      // agenda's critical path makes the spinner phase the agenda query
-      // alone.
-      final sameIdDrafts = await Thread.get(
-        priorityId: newDraft.priority.id,
-        draft: true,
-        archived: false,
+      // The heavy Thread._get hydration here was ~200ms–1s on populated
+      // workspaces, so first run a cheap index-backed count
+      // (idx_threads_draft covers `draft = 1 AND archived_at IS NULL AND
+      // priority_id = ?`) and only pay for the full query + delete when
+      // there's actually more than one draft to dedupe. The common case is
+      // exactly one, which now skips the heavy query entirely.
+      final draftCountQuery = Store.get.selectOnly(Store.get.threads)
+        ..addColumns([Store.get.threads.id]);
+      draftCountQuery.where(
+        Store.get.threads.draft.equals(true) &
+            Store.get.threads.archivedAt.isNull() &
+            Store.get.threads.priorityId.equalsValue(newDraft.priority.id),
       );
-      if (sameIdDrafts.length > 1) {
-        sameIdDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-        log.info(
-          '[setPriority] Cleaning up ${sameIdDrafts.length - 1} extra drafts for priority ${newDraft.priority.id}',
+      final draftRowCount = (await draftCountQuery.get()).length;
+      if (draftRowCount > 1) {
+        final sameIdDrafts = await Thread.get(
+          priorityId: newDraft.priority.id,
+          draft: true,
+          archived: false,
         );
-        for (final stale in sameIdDrafts.skip(1)) {
-          if (stale.id != newDraft.id) await stale.delete();
+        if (sameIdDrafts.length > 1) {
+          sameIdDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          log.info(
+            '[setPriority] Cleaning up ${sameIdDrafts.length - 1} extra drafts for priority ${newDraft.priority.id}',
+          );
+          for (final stale in sameIdDrafts.skip(1)) {
+            if (stale.id != newDraft.id) await stale.delete();
+          }
         }
       }
       profile.mark('drafts deduped (background)');
@@ -3436,13 +3455,60 @@ class PriorityBloc extends Cubit<PriorityState> {
     return ThreadListSource.activityFeed;
   }
 
+  /// Lazily subscribe the global filter-data streams (tags, reactions, icon
+  /// counts) that populate the header filter dropdown. These are global
+  /// (`priorityPath=null`) and feed only the filter UI, so their results are
+  /// identical for every focus. They're loaded once — on first search-open —
+  /// instead of being recomputed on every focus switch, where the three
+  /// global threads scans were the largest switch-burst cost.
+  ///
+  /// Idempotent: a no-op once subscribed. The subscriptions live for the
+  /// bloc's lifetime and are cancelled in [close]; they are never torn down on
+  /// a focus switch because the data does not change with focus.
+  void ensureFilterData() {
+    if (_tagsSubscription != null) return;
+
+    _tagsSubscription = Thread.watchTagsForPriority().listen((tags) {
+      // Common tags (excluding action/compute tags)
+      final commonTagsFiltered = tags
+          .where((tagData) => tagData.$1.type != .compute && tagData.$1.addable)
+          .map((tagData) => tagData.$1)
+          .toList();
+      final commonTagSet = commonTagsFiltered.toSet();
+      final otherTags = Tag.getAll(onlyAddable: true)
+          .where((tag) => tag.type != .compute && !commonTagSet.contains(tag))
+          .toList();
+      final tagSuggestions = [...commonTagsFiltered, ...otherTags];
+      emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
+    });
+
+    _reactionsSubscription = Thread.watchReactionsForPriority().listen((
+      reactions,
+    ) {
+      emit(state.copyWith(reactions: reactions));
+    });
+
+    _iconCountsSubscription = Thread.watchIconCountsForPriority().listen((
+      counts,
+    ) {
+      final iconCounts = [...counts]..sort((a, b) => b.$2.compareTo(a.$2));
+      emit(state.copyWith(iconCounts: iconCounts));
+    });
+  }
+
   void _loadPriority({
     _PriorityLoadProfile? profile,
     bool reloadAgenda = true,
+    bool loadDraft = true,
   }) {
     final priorityToLoad = state.context;
 
-    _loadDraft(priorityToLoad);
+    // [setPriority] passes loadDraft: false — it owns the chain-draft lookup
+    // itself (including the auto-file re-file and fresh-draft fallback that
+    // [_loadDraft] doesn't do), so running both would issue the same
+    // chain-draft and draft-note queries twice per switch and race the two
+    // draft emits against each other.
+    if (loadDraft) _loadDraft(priorityToLoad);
 
     for (final subscription in _subscriptions) {
       subscription.cancel();
@@ -3489,7 +3555,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     _priorityBlocksSubscription?.cancel();
     _priorityBlocksSubscription = Rx.combineLatest2(
       streamPriorityBlocksGroupedByPriority(),
-      Priority.watch(archived: false),
+      // Raw watch: this subscription only needs the id→Priority lookup map
+      // for the agenda model. The enriched [Priority.watch] additionally
+      // computes active/unread/non-empty id sets via three thread-table
+      // scans that re-run on every thread write — needless load on the
+      // single SQLite connection during a focus switch (the sidebar gets its
+      // enriched state from PrioritiesBloc, not from here).
+      Priority.watchRaw(archived: false),
       (
         Map<PriorityId, List<PriorityBlockRow>> grouped,
         List<Priority> priorities,
@@ -3500,47 +3572,13 @@ class PriorityBloc extends Cubit<PriorityState> {
       _rebuildAgendaModel();
     });
 
-    // Watch tags globally. Header search is global (no priority scoping),
-    // so the filter chips it offers are drawn from every priority too.
-    _tagsSubscription?.cancel();
-    _tagsSubscription = Thread.watchTagsForPriority().listen(
-      (tags) {
-        // Common tags (excluding action tags)
-        final commonTagsFiltered = tags
-            .where(
-              (tagData) => tagData.$1.type != .compute && tagData.$1.addable,
-            )
-            .map((tagData) => tagData.$1)
-            .toList();
-
-        // All tags excluding action tags and common tags
-        final commonTagSet = commonTagsFiltered.toSet();
-        final otherTags = Tag.getAll(onlyAddable: true)
-            .where((tag) => tag.type != .compute && !commonTagSet.contains(tag))
-            .toList();
-
-        // Combine: common tags first, then other tags
-        final tagSuggestions = [...commonTagsFiltered, ...otherTags];
-
-        emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
-      },
-    );
-
-    // Watch reactions globally (thread-level only) to match global search.
-    _reactionsSubscription?.cancel();
-    _reactionsSubscription = Thread.watchReactionsForPriority().listen((
-      reactions,
-    ) {
-      emit(state.copyWith(reactions: reactions));
-    });
-
-    // Watch icon counts globally to match global search.
-    _iconCountsSubscription?.cancel();
-    _iconCountsSubscription =
-        Thread.watchIconCountsForPriority().listen((counts) {
-          final iconCounts = [...counts]..sort((a, b) => b.$2.compareTo(a.$2));
-          emit(state.copyWith(iconCounts: iconCounts));
-        });
+    // Tags / reactions / icon-count filter data is GLOBAL (priorityPath=null)
+    // and feeds only the header filter dropdown, so it is byte-identical
+    // across focuses. It is loaded lazily and exactly once via
+    // [ensureFilterData] when the user first opens search — NOT here, where it
+    // would re-run three global threads scans on every focus switch (the
+    // single biggest switch-burst cost). The subscriptions then live for the
+    // bloc's lifetime; do not re-subscribe or cancel them on switch.
 
     // Watch all active user twists (workspace-level, no longer per-priority)
     _subscriptions.add(
@@ -3572,9 +3610,36 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     _activityFeedSyncNoMore = false;
-    // Trigger the server-side feed sync (still needed to populate the
-    // local DB that per-tab queries read from).
-    unawaited(_triggerActivityFeedSync(state.context));
+    // Defer the server-side feed sync (still needed to populate the local DB
+    // that per-tab queries read from) until the feed's first emission has
+    // rendered. Firing it at switch start made the pull's network decode and
+    // row writes race the very queries the user is waiting on — the cold
+    // switch (where the accumulated pull is largest) was gated on it. The
+    // feed renders from local data first; the sync lands moments later and
+    // the live streams pick its rows up. The fallback timer covers any path
+    // where the tab-head stream doesn't emit promptly.
+    _pendingFeedSync = state.context;
+    _pendingFeedSyncFallback?.cancel();
+    _pendingFeedSyncFallback = Timer(
+      const Duration(milliseconds: 1500),
+      _firePendingFeedSync,
+    );
+  }
+
+  /// Focus whose activity-feed sync is owed once the feed has rendered (or
+  /// the fallback timer fires). Overwritten by a newer [_loadPriority] —
+  /// only the most recent focus is synced.
+  Priority? _pendingFeedSync;
+  Timer? _pendingFeedSyncFallback;
+
+  void _firePendingFeedSync() {
+    final priority = _pendingFeedSync;
+    if (priority == null) return;
+    _pendingFeedSync = null;
+    _pendingFeedSyncFallback?.cancel();
+    _pendingFeedSyncFallback = null;
+    if (isClosed) return;
+    unawaited(_triggerActivityFeedSync(priority));
   }
 
   ThreadId? _watchingThreadId;

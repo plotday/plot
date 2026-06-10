@@ -16,7 +16,9 @@ import 'package:flutter/widgets.dart'
         visibleForTesting;
 import 'package:logging/logging.dart';
 import 'package:drift/drift.dart';
-import 'package:drift_flutter/drift_flutter.dart';
+
+import 'open_connection_native.dart'
+    if (dart.library.js_interop) 'open_connection_web.dart';
 import 'package:collection/collection.dart';
 import 'package:injector/injector.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -2511,20 +2513,11 @@ class Store extends _$Store {
   @visibleForTesting
   Store.forTesting(super.executor);
 
-  Store._(User user)
-    : super(
-        driftDatabase(
-          name: _databaseName(user.id),
-          // Skip setting sqlite3.tempDirectory — resolving the
-          // sqlite3_temp_directory symbol can crash on Android with native
-          // assets, and the system sqlite3 handles temp files on its own.
-          native: DriftNativeOptions(tempDirectoryPath: () async => null),
-          web: DriftWebOptions(
-            sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-            driftWorker: Uri.parse('drift_worker.js'),
-          ),
-        ),
-      );
+  // Platform-split connection. Native opens with WAL + a read pool so the
+  // focus-switch query burst doesn't serialize behind sync-write commits;
+  // web keeps the original drift_flutter wasm setup. See
+  // open_connection_native.dart for the full rationale.
+  Store._(User user) : super(openPlotConnection(_databaseName(user.id)));
 
   static String _databaseName(String userId) {
     final profile = CliArgs.profile;
@@ -2535,7 +2528,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 366;
+  int get schemaVersion => 367;
 
   @override
   MigrationStrategy get migration {
@@ -4118,6 +4111,15 @@ class Store extends _$Store {
     if (from < 366) {
       await _safeAddColumn(m, priorities, priorities.notificationClearedAt);
     }
+
+    if (from < 367) {
+      // Backfill idx_threads_draft. The chain-draft lookup and the
+      // duplicate-draft cleanup that run on every focus switch were
+      // full-scanning the threads table for `draft = 1 AND archived_at IS
+      // NULL` (no index supported that predicate) — ~200ms–1s per scan,
+      // twice per switch, on populated workspaces. No data migration.
+      await _createPerfIndexes(m.database);
+    }
   }
 
   /// Foreign-key indexes used by the activity-feed and search queries.
@@ -4140,6 +4142,28 @@ class Store extends _$Store {
     await db.customStatement(
       'CREATE INDEX IF NOT EXISTS idx_threads_priority_id '
       'ON threads(priority_id)',
+    );
+    // Draft lookup on focus switch. `getDraftInChain` (find the chain draft)
+    // and the per-switch duplicate-draft cleanup both query
+    // `WHERE draft = 1 AND archived_at IS NULL` (the cleanup also adds
+    // `priority_id = ?`). Nothing indexed that predicate, so each switch
+    // full-scanned the threads table — measured 200ms–1s per scan on a
+    // populated workspace, and it runs twice per switch.
+    //
+    // `draft` is the LEADING indexed column (not the partial predicate):
+    // Drift emits `draft = ?` as a bound parameter, and SQLite cannot prove a
+    // parameter equals the constant in a partial-index predicate, so it would
+    // refuse a `WHERE draft = 1` partial index. Equality on an indexed
+    // *column* binds fine, so a leading `draft` column lets the planner seek
+    // straight to the tiny `draft = 1` slice (even when there's no
+    // `priority_id` filter, as in getDraftInChain). `archived_at IS NULL` is
+    // the partial predicate because that term IS non-parameterized and keeps
+    // the index small. `priority_id` second covers the cleanup's
+    // `priority_id = ?`. The trailing ANALYZE teaches the planner to prefer it
+    // (same reasoning as the partial `pending` indices below).
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_threads_draft '
+      'ON threads(draft, priority_id) WHERE archived_at IS NULL',
     );
     // notes.thread_id is the hot path for ThreadPage: every open runs
     // `WHERE thread_id = ? ORDER BY source_created_at DESC` (Note.watch).

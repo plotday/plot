@@ -1,3 +1,4 @@
+- Switching between focuses is now much faster. Even in large workspaces with thousands of threads, a focus's feed appears in a fraction of a second instead of taking several seconds.
 - Changing a focus's color now updates everywhere at once. Previously the current event in your agenda could keep showing the focus's old color.
 - When you add a focus, Plot now suggests common focuses (like Customers, Reading, or Social) you can create with one tap — pick one to open the create form already filled in, or choose **Create a custom focus** to start from scratch. Once you've made a focus from a suggestion it drops off the list, on every device you use.
 - Threads now land in the right focus based on which account they arrived through — a receipt to your work email goes to your work focus, while the same kind of receipt to your personal email goes to your personal one. Plot learns this automatically from how you file threads.

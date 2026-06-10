@@ -17,12 +17,21 @@ class ScheduledDay extends Equatable {
     String? search,
   }) {
     return Rx.combineLatest2(
+      // Events only (same flags as the agenda's events stream). The default
+      // `includeUnscheduled: true` admitted EVERY unscheduled thread, so this
+      // global watch hydrated and mapped the entire threads table (~5.6k join
+      // rows) on every table write — the single biggest work unit competing
+      // for the SQLite connection during a focus switch. Every consumer of
+      // [ScheduledDay] only reads [scheduled] (timed, non-todo events), so
+      // the unscheduled rows were fetched just to be filtered out.
       Thread.watch(
         range: today.toDateRange(),
         priorityPath: context?.path,
         archived: archived,
         filter: filter,
         search: search,
+        includeUnscheduled: false,
+        eventsOnly: true,
       ).map((result) => result.threads),
       Priority.watchDefault(),
       (List<Thread> allThreads, Priority defaultPriority) =>
