@@ -33,6 +33,7 @@ import '../api/network_exception.dart';
 import '../app_info.dart';
 import '../env.dart';
 import 'conventions.dart';
+import 'exception_throttle.dart';
 import 'properties.dart';
 
 export 'conventions.dart';
@@ -239,6 +240,11 @@ class Tracker {
   late final AnalyticsBackend _backend;
   bool _initialized = false;
 
+  /// Throttles exception reporting so a crash loop (e.g. the CanvasKit WASM
+  /// module aborting and rethrowing on every frame) can't flood PostHog —
+  /// one such loop produced 318K identical events in 3 hours.
+  final ExceptionThrottle _exceptionThrottle = ExceptionThrottle();
+
   /// Properties merged into every event and onto the person profile on
   /// identify. Built once from [AppInfo] at init time. Uses PostHog's
   /// `$app_*` standard names where they apply so the UI surfaces them.
@@ -325,11 +331,7 @@ class Tracker {
     FlutterError.onError = (FlutterErrorDetails details) async {
       if (!_shouldIgnore(details.exception, details.stack)) {
         _log.severe('Uncaught Flutter error', details.exception, details.stack);
-        await _backend.captureException(
-          error: details.exception,
-          stackTrace: details.stack,
-          properties: _superProperties,
-        );
+        await _captureException(details.exception, details.stack);
       }
       FlutterError.presentError(details);
     };
@@ -340,11 +342,7 @@ class Tracker {
         .onError = (Object error, StackTrace stackTrace) {
       if (!_shouldIgnore(error, stackTrace)) {
         _log.severe('Uncaught async error', error, stackTrace);
-        _backend.captureException(
-          error: error,
-          stackTrace: stackTrace,
-          properties: _superProperties,
-        );
+        _captureException(error, stackTrace);
       }
       return true; // Marks the error as handled
     };
@@ -614,12 +612,15 @@ class Tracker {
     StackTrace? stackTrace, [
     Map<String, dynamic>? properties,
   ]) async {
+    // Suppress repeats of the same error (and global floods). When a
+    // heartbeat is admitted after suppression, it carries suppressed_count
+    // so the issue's true volume stays visible in PostHog.
+    final throttleProperties = _exceptionThrottle.admit(error, DateTime.now());
+    if (throttleProperties == null) return;
     await _backend.captureException(
       error: error,
       stackTrace: stackTrace,
-      properties: properties == null
-          ? _superProperties
-          : {..._superProperties, ...properties},
+      properties: {..._superProperties, ...?properties, ...throttleProperties},
     );
   }
 }
