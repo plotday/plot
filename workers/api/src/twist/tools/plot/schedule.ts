@@ -180,6 +180,9 @@ export async function createLinkSchedules(
 
   // Create schedules
   if (schedules?.length) {
+    let maxRecurringEnd: string | "infinite" | null = null;
+    let hasRecurring = false;
+
     for (const schedule of schedules) {
       const dbSchedule = convertScheduleToDb(schedule, target);
       const result = await rpcUser(plot.db, "upsert_schedule", {
@@ -189,6 +192,19 @@ export async function createLinkSchedules(
 
       if (result?.id) {
         scheduleIds.push(result.id);
+
+        if (schedule.recurrenceRule) {
+          hasRecurring = true;
+          const rangeStr = (dbSchedule.at as string) || (dbSchedule.on as string);
+          const rangeParsed = parseRange(rangeStr);
+          if (rangeParsed.end) {
+            if (!maxRecurringEnd || (maxRecurringEnd !== "infinite" && rangeParsed.end > maxRecurringEnd)) {
+              maxRecurringEnd = rangeParsed.end;
+            }
+          } else {
+            maxRecurringEnd = "infinite";
+          }
+        }
 
         // Process contacts if present
         if (schedule.contacts?.length) {
@@ -200,6 +216,27 @@ export async function createLinkSchedules(
           );
         }
       }
+    }
+
+    // Clean up out-of-bounds occurrence overrides.
+    // When a series is truncated, the provider updates the UNTIL bound
+    // on the master event but often doesn't send explicit cancellations
+    // for overrides that now fall outside the new bounds.
+    if (hasRecurring) {
+      if (maxRecurringEnd !== "infinite" && maxRecurringEnd !== null) {
+        await plot.db
+          .deleteFrom("schedule")
+          .where("link_id", "=", linkId)
+          .where("occurrence", ">=", maxRecurringEnd)
+          .execute();
+      }
+    } else {
+      // If no schedules are recurring, all occurrence overrides are invalid.
+      await plot.db
+        .deleteFrom("schedule")
+        .where("link_id", "=", linkId)
+        .where("occurrence", "is not", null)
+        .execute();
     }
   }
 
@@ -221,7 +258,7 @@ export async function createLinkSchedules(
       const cancelled = occ.cancelled ?? legacyArchived;
 
       // Cancelled occurrences are skipped — add an exdate to the base schedule.
-      // Archive any existing occurrence row (e.g. RSVP override) but don't create one.
+      // Delete any existing occurrence row (e.g. RSVP override) but don't create one.
       if (cancelled) {
         const occDate =
           occ.occurrence instanceof Date
@@ -229,12 +266,10 @@ export async function createLinkSchedules(
             : occ.occurrence;
         exdatesToAdd.push(occDate);
 
-        // Archive existing occurrence schedule row if one exists
+        // Delete existing occurrence schedule row if one exists
         await plot.db
-          .updateTable("schedule")
-          .set({ archived_at: new Date().toISOString() })
+          .deleteFrom("schedule")
           .where("occurrence", "=", occDate)
-          .where("archived_at", "is", null)
           .where("link_id", "=", linkId)
           .execute();
 
