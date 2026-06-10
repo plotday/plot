@@ -387,6 +387,28 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
               if (tabsRouter.activeIndex != _kTabActivity) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!context.mounted) return;
+                  // On a single-panel cold start RootPage lands on the
+                  // Priorities tab (tab 0) and never seeds the Activity
+                  // tab (tab 2) — the stack where PriorityRoute/threads
+                  // live. Force-switching to an empty Activity stack
+                  // renders a blank navigator (the multi-panel working
+                  // area has nothing in it). If it's empty, seed it with
+                  // the current priority first; navigate() both pushes
+                  // PriorityRoute and activates the Activity tab. This
+                  // mirrors RootPage's multi-panel branch, which only
+                  // runs when the app cold-starts wide.
+                  final activityStack =
+                      tabsRouter.stackRouterOfIndex(_kTabActivity);
+                  if (activityStack == null || activityStack.stack.isEmpty) {
+                    final priorityIdString =
+                        _activityPriorityIdString(context);
+                    if (priorityIdString != null) {
+                      context.router.navigate(
+                        PriorityRoute(priorityIdString: priorityIdString),
+                      );
+                      return;
+                    }
+                  }
                   tabsRouter.setActiveIndex(_kTabActivity);
                 });
               }
