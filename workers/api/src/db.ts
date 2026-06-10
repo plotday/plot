@@ -111,6 +111,35 @@ function txnRetryBackoffMs(attempt: number): number {
 }
 
 /**
+ * Run `fn`, retrying on deadlock (40P01) and serialization failure (40001).
+ * Only safe when each attempt leaves no committed state behind: a whole
+ * explicit transaction, or a single autocommit statement (whose implicit
+ * transaction Postgres fully rolls back when it picks it as the victim).
+ * Never wrap an individual statement that runs INSIDE an explicit
+ * transaction — the surrounding transaction is aborted and must be retried
+ * as a unit instead.
+ */
+export async function retryOnTxnConflict<T>(fn: () => Promise<T>): Promise<T> {
+  const maxAttempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts && isRetryableTxnError(error)) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, txnRetryBackoffMs(attempt))
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Run queries within a transaction.
  * Auth context is enforced in the API and SQL functions.
  *
@@ -127,23 +156,9 @@ export async function withUserDb<T>(
   fn: (trx: Kysely<DB>) => Promise<T>
 ): Promise<T> {
   void userId;
-  const maxAttempts = 3;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await db.transaction().execute(async (trx) => fn(trx));
-    } catch (error) {
-      lastError = error;
-      if (attempt < maxAttempts && isRetryableTxnError(error)) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, txnRetryBackoffMs(attempt))
-        );
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw lastError;
+  return retryOnTxnConflict(() =>
+    db.transaction().execute(async (trx) => fn(trx))
+  );
 }
 
 /**

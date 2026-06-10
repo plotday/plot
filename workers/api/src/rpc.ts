@@ -1,6 +1,7 @@
 import type { Database } from "@plotday/db";
 import { type Kysely, sql } from "kysely";
 
+import { retryOnTxnConflict } from "./db";
 import type { DB } from "./db-types";
 
 type PublicFns = Database["public"]["Functions"];
@@ -47,11 +48,20 @@ async function rpcWithSchema(
       ? sql`SELECT * FROM ${sql.raw(qualified)}(${sql.join(params, sql`, `)})`
       : sql`SELECT * FROM ${sql.raw(qualified)}()`;
 
+  // Autocommit calls (e.g. the twist runtime's `plot.db`) get the same
+  // deadlock/serialization retry as withUserDb transactions: Postgres fully
+  // rolls back the victim statement's implicit transaction, so re-executing
+  // it is safe. Inside an explicit transaction the statement must NOT be
+  // retried — the whole transaction is aborted, and the enclosing
+  // withUserDb retry re-runs it as a unit.
+  const result = db.isTransaction
+    ? await query.execute(db)
+    : await retryOnTxnConflict(() => query.execute(db));
+
   // Unwrap scalar function results: SELECT * FROM scalar_fn() returns { fn_name: value }
   // We unwrap single-column rows so callers get the value directly.
   // This applies to both scalar functions (RETURNS type) and table functions
   // with a single column (RETURNS TABLE (col type)).
-  const result = await query.execute(db);
   const firstRow = result.rows[0];
   if (
     firstRow &&
