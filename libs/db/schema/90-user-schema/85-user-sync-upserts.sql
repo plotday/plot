@@ -844,6 +844,22 @@ BEGIN
             updated_at = now()
     RETURNING * INTO v_row;
 
+    -- Also clear the per-user thread_state read marker, which is the source
+    -- of truth for the `unread` flag on user.thread. The legacy thread_read
+    -- table above is retained only to feed twist onThreadRead callbacks
+    -- (twist_instance_thread_read); the rename to thread_state migrated the
+    -- /sync/thread-unread shim but missed this /sync/thread-read path, so a
+    -- passive read (opening a non-active thread) used to update thread_read
+    -- alone and never cleared the user's unread state. Routing through
+    -- clear_thread_state applies the same race-safe guard (only marks read
+    -- when read_at IS NULL and p_read_at is at/after the latest content).
+    PERFORM "user".clear_thread_state(
+        upsert_thread_read.user_id,
+        p_thread_id,
+        COALESCE(p_read_at, now()),
+        p_bumped_at
+    );
+
     RETURN v_row;
 END;
 $function$;
