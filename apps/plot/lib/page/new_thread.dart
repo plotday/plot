@@ -2184,9 +2184,15 @@ class NewThreadPageState extends State<NewThreadPage> {
                             }
 
                             // Single panel mode: editor at bottom, edge-to-edge.
-                            // The compose fields keep their horizontal inset, but
-                            // the editor itself runs full-bleed (no horizontal
-                            // padding) so the note surface reaches both edges.
+                            // Both the compose fields and the editor run
+                            // full-bleed (no outer horizontal padding) so they
+                            // share the same origin: each ComposeFieldRow's
+                            // `composeIconLeft` gutter then lands the field icons
+                            // at the same x as the NoteEditor's toolbar icons
+                            // below — the same relative geometry as multi-panel
+                            // (where both sit inside one shared Padding). An
+                            // extra `contentPaddingH` wrapper here would only
+                            // indent the fields, breaking that alignment.
                             if (!layoutState.multiPanel) {
                               return FocusTraversalGroup(
                                 policy: WidgetOrderTraversalPolicy(),
@@ -2194,15 +2200,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: context.contentPaddingH,
-                                      ),
-                                      child: _buildComposeSurface(
-                                        context,
-                                        state,
-                                      ),
-                                    ),
+                                    _buildComposeSurface(context, state),
                                     SizedBox(height: context.theme.spacing.md),
                                     Flexible(
                                       child: EditableArea(
