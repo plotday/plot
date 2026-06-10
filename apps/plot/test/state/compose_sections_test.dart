@@ -78,6 +78,40 @@ void main() {
     });
   });
 
+  group('canonicalGroupRoster', () {
+    const c1 = '00000000-0000-0000-0000-000000000001';
+    const g1 = '00000000-0000-0000-0000-0000000000a0';
+
+    test('drops incidental contacts/invites, keeping only the group(s)', () {
+      final canonical = canonicalGroupRoster((
+        contacts: [Uuid.fromString(c1)],
+        groups: [Uuid.fromString(g1)],
+        inviteEmails: const ['x@y.test'],
+      ));
+      expect(canonical.contacts, isEmpty);
+      expect(canonical.inviteEmails, isEmpty);
+      expect(canonical.groups.map((u) => u.toString()).toList(), [g1]);
+    });
+
+    test('two rosters for the same group canonicalize identically', () {
+      String keyOf(RosterKey r) =>
+          '${r.contacts.map((u) => u.toString()).toList()..sort()}|'
+          '${r.groups.map((u) => u.toString()).toList()..sort()}|'
+          '${r.inviteEmails.toList()..sort()}';
+      final a = canonicalGroupRoster((
+        contacts: [Uuid.fromString(c1)],
+        groups: [Uuid.fromString(g1)],
+        inviteEmails: const [],
+      ));
+      final b = canonicalGroupRoster((
+        contacts: const [],
+        groups: [Uuid.fromString(g1)],
+        inviteEmails: const [],
+      ));
+      expect(keyOf(a), keyOf(b));
+    });
+  });
+
   group('orderPeopleByRecency', () {
     const a = '00000000-0000-0000-0000-000000000001';
     const b = '00000000-0000-0000-0000-000000000002';

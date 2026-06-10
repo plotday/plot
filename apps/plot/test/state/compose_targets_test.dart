@@ -714,6 +714,119 @@ void main() {
     });
 
     test(
+        'loadSections collapses a group filed across threads with differing '
+        'participant sets to a single People row', () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      final bob = Uuid.generate();
+      final groupId = Uuid.generate();
+      final priorityId = Uuid.generate();
+
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await _insertActor(store, bob, name: 'Bob Jones');
+      await Actor.get(self: true);
+      await Actor.get();
+      await _insertGroup(store, groupId,
+          name: 'Acme Team', memberContactIds: [greg, bob]);
+
+      // Three authored threads to the SAME group, each carrying a DIFFERENT set
+      // of incidental participants — the shape that produced repeated identical
+      // "Plot Team" rows. The group pill ignores these contacts, so all three
+      // must collapse to one entry.
+      final rosters = [
+        [self],
+        [self, greg],
+        [self, bob],
+      ];
+      for (var i = 0; i < rosters.length; i++) {
+        final t = Uuid.generate();
+        await _insertThread(store, t,
+            priorityId: priorityId,
+            contacts: rosters[i],
+            groups: [groupId],
+            createdAt: DateTime(2026, 5, 1 + i));
+        await _insertNote(store, t, author: self);
+      }
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final sections = await bloc.loadSections();
+      final groupEntries = sections.people.where((e) => e.hasGroup).toList();
+      expect(groupEntries, hasLength(1),
+          reason: 'the same group must surface as one row regardless of the '
+              'per-thread participant sets');
+      // And it carries only the group — incidental contacts are dropped.
+      expect(groupEntries.single.contacts, isEmpty);
+      expect(groupEntries.single.groups, [groupId]);
+    });
+
+    test(
+        'loadSections dedupes a single-instance builtin twist that has two '
+        'instances (e.g. Plot AI + the synthetic Plot Team sender)', () async {
+      final self = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+
+      // Two instances of the SAME builtin twist (same twistId), both exposing
+      // the same "Plot AI chat" thread type and not allowing multiple
+      // instances — the user's "Plot" instance and the synthetic "Plot Team"
+      // system sender.
+      final sharedTwistId = BigInt.from(600);
+      await _insertChatTwist(store,
+          name: 'Plot', threadType: 'Plot AI chat', twistId: sharedTwistId);
+      await _insertChatTwist(store,
+          name: 'Plot Team', threadType: 'Plot AI chat', twistId: sharedTwistId);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final sections = await bloc.loadSections();
+      final chatRows =
+          sections.twists.where((t) => t.label == 'Plot AI chat').toList();
+      expect(chatRows, hasLength(1),
+          reason: 'a single-instance twist surfaces once even with two '
+              'instances in the store');
+    });
+
+    test(
+        'loadSections keeps every instance of a multi-instance twist', () async {
+      final self = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+
+      final sharedTwistId = BigInt.from(700);
+      await _insertChatTwist(store,
+          name: 'Assistant A',
+          threadType: 'AI chat',
+          twistId: sharedTwistId,
+          multipleInstances: true);
+      await _insertChatTwist(store,
+          name: 'Assistant B',
+          threadType: 'AI chat',
+          twistId: sharedTwistId,
+          multipleInstances: true);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final sections = await bloc.loadSections();
+      final headers = sections.twists.map((t) => t.twistHeader).toSet();
+      expect(headers, containsAll(['Assistant A', 'Assistant B']),
+          reason: 'multi-instance twists must each keep their own row');
+    });
+
+    test(
         'per-keystroke search reuses a cached context; refresh() invalidates it',
         () async {
       // Guards the search-performance optimization: a name search must NOT
@@ -1590,16 +1703,19 @@ Future<Uuid> _insertChatTwist(
   Store store, {
   required String name,
   String threadType = 'AI chat',
+  BigInt? twistId,
+  bool multipleInstances = false,
 }) async {
   final instanceId = Uuid.generate();
   await store.into(store.twistInstances).insert(
         TwistInstancesCompanion(
           id: Value(instanceId),
-          twistId: Value(BigInt.from(name.hashCode & 0x7fffffff)),
+          twistId: Value(twistId ?? BigInt.from(name.hashCode & 0x7fffffff)),
           twistEnvironment: const Value('test'),
           isSource: const Value(false),
           name: Value(name),
           threadType: Value(threadType),
+          multipleInstances: Value(multipleInstances),
           config: const Value(<String, dynamic>{}),
         ),
       );

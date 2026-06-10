@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/state/compose_targets.dart' show chatTwistInstances;
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/store/store.dart' show TwistInstance;
 import 'package:plot/style/plot_colors.dart';
@@ -122,10 +123,10 @@ class ConnectionPickerModal {
     final targets = await loadCreateTargets();
     if (!context.mounted) return null;
 
-    // Only twists that opt in via `threadType` appear as chat targets.
-    final chatTwists = twists
-        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
-        .toList();
+    // Only twists that opt in via `threadType` appear as chat targets, deduped
+    // so a single-instance builtin (e.g. Plot AI, which also exists as the
+    // synthetic "Plot Team" sender) surfaces once rather than twice.
+    final chatTwists = chatTwistInstances(twists);
 
     final choices = <ConnectionChoice>[
       ConnectionChoice.plotDefault,

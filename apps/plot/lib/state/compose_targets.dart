@@ -126,6 +126,38 @@ List<RosterKey> orderPeopleByRecency(
   return [for (final k in keys) rosterByKey[k]!];
 }
 
+/// The canonical roster identity for a **group** people-entry: the group(s)
+/// alone. A group pill renders only the group and its own members, so the
+/// incidental per-thread participant [contacts] (and any invite emails) carried
+/// in from an authored thread are display-invisible. Keeping them on the entry
+/// fragmented the People-list MRU dedup — the same group, filed across many
+/// threads with differing participant sets, produced several identical rows
+/// (e.g. "Plot Team" appearing four times). Pure (no DB) so it's unit-testable.
+RosterKey canonicalGroupRoster(RosterKey r) => (
+      contacts: const <Uuid>[],
+      groups: r.groups,
+      inviteEmails: const <String>[],
+    );
+
+/// Chat-capable twist instances (those that opt in via a non-empty `threadType`
+/// and aren't connector sources), deduped so a twist that doesn't allow
+/// multiple instances surfaces **once** even when the store carries two
+/// instances of it. The builtin Plot AI twist, for example, exists both as the
+/// user's own instance and as the synthetic system "Plot Team" sender; both
+/// expose the same "Plot AI chat" thread type, so without this they render as
+/// two identical rows. Twists that allow multiple instances keep every
+/// instance. First-seen order preserved. Pure (no DB) so it's unit-testable.
+List<TwistInstance> chatTwistInstances(List<TwistInstance> twists) {
+  final seenSingletonTwistIds = <BigInt>{};
+  final out = <TwistInstance>[];
+  for (final t in twists) {
+    if (t.isSource || (t.threadType?.isEmpty ?? true)) continue;
+    if (!t.multipleInstances && !seenSingletonTwistIds.add(t.twistId)) continue;
+    out.add(t);
+  }
+  return out;
+}
+
 /// Sorts named people [matches] (contacts and groups together) alphabetically
 /// by display name, case-insensitive, and dedupes by roster keeping the first
 /// occurrence. Used by search synthesis to intermix contact and group matches
@@ -779,9 +811,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// row. Matches the `chatTwists` filter in connection_chip.dart.
   Future<List<ComposeTarget>> _twistTargets(_ComposeSearchContext ctx) async {
     final twists = await TwistInstance.get();
-    final chatTwists = twists
-        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
-        .toList();
+    final chatTwists = chatTwistInstances(twists);
     return [
       for (final twist in chatTwists)
         ComposeTarget.twist(
@@ -924,10 +954,15 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       for (final id in (g.memberContactIds ?? const <Uuid>[]))
         Actor.fromCache(ActorId.fromUuid(id)),
     ].whereType<Actor>().where((a) => a.inviteable).toList();
+    // The entry's identity is the group itself, not the authored thread's
+    // incidental participants — so every thread filed to the group collapses to
+    // one People row (and picking it composes to the group, which expands to its
+    // members at dispatch).
+    final roster = canonicalGroupRoster(r);
     return ComposePeopleEntry(
-      contacts: r.contacts,
-      groups: r.groups,
-      inviteEmails: r.inviteEmails,
+      contacts: roster.contacts,
+      groups: roster.groups,
+      inviteEmails: roster.inviteEmails,
       display: GroupPillData(g, members),
     );
   }
