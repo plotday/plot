@@ -596,19 +596,30 @@ class Tracker {
     await _backend.reset();
   }
 
-  /// Capture an exception
+  /// Capture an exception.
+  ///
+  /// [properties] are merged over the standard super-properties and attached to
+  /// the PostHog event, so they're filterable in Error Tracking (e.g. sync
+  /// failures attach the table, endpoint, row id, HTTP status, and pg code).
   static Future<void> captureException(
     Object error,
-    StackTrace? stackTrace,
-  ) async {
-    await _instance._captureException(error, stackTrace);
+    StackTrace? stackTrace, {
+    Map<String, dynamic>? properties,
+  }) async {
+    await _instance._captureException(error, stackTrace, properties);
   }
 
-  Future<void> _captureException(Object error, StackTrace? stackTrace) async {
+  Future<void> _captureException(
+    Object error,
+    StackTrace? stackTrace, [
+    Map<String, dynamic>? properties,
+  ]) async {
     await _backend.captureException(
       error: error,
       stackTrace: stackTrace,
-      properties: _superProperties,
+      properties: properties == null
+          ? _superProperties
+          : {..._superProperties, ...properties},
     );
   }
 }

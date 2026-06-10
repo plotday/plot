@@ -796,6 +796,47 @@ class Store extends _$Store {
     return e.toString();
   }
 
+  /// Report an unexpected sync-push failure to PostHog error tracking with the
+  /// structured context needed to debug it.
+  ///
+  /// Only failures that discard or strand a local change reach here — a
+  /// permanent server rejection (the local edit is reverted to remote or kept
+  /// pending forever) or a row we can't even serialize to push. Transient
+  /// network errors and expected auth sign-outs are handled elsewhere and are
+  /// deliberately not reported.
+  ///
+  /// [reason] is the human-readable failure class and, together with the
+  /// endpoint and error description, forms the exception message PostHog groups
+  /// on — keep it stable per bug (no row ids or counts). Per-occurrence detail
+  /// (row id, status, pg code) goes into [properties] so it stays filterable
+  /// without fragmenting the issue.
+  static void _reportSyncFailure(
+    String reason, {
+    required String table,
+    required String endpoint,
+    required String outcome,
+    required Object error,
+    required StackTrace stackTrace,
+    String? rowId,
+    Map<String, dynamic> extraProperties = const {},
+  }) {
+    final api = error is ApiException ? error : null;
+    Tracker.captureException(
+      StateError('$reason ($endpoint): ${_describeError(error)}'),
+      stackTrace,
+      properties: {
+        'sync_table': table,
+        'sync_endpoint': endpoint,
+        'sync_row_id': ?rowId,
+        'sync_outcome': outcome,
+        if (api != null) 'http_status': api.statusCode,
+        if (api?.pgCode != null) 'pg_code': api!.pgCode,
+        if (api?.code != null) 'error_code': api!.code,
+        ...extraProperties,
+      },
+    );
+  }
+
   /// Attempts to revert a local row to its server-side version. Never deletes
   /// the local row — if the server doesn't have this id, returns
   /// [_RevertOutcome.absentOnServer] and leaves the local copy alone so the
@@ -1188,29 +1229,29 @@ class Store extends _$Store {
                     "${outcome.name}",
                   );
 
+                  // A permanent server rejection is always a sync bug: either
+                  // we discard the user's local edit (reverted to remote) or
+                  // strand it (kept pending and retried forever). Report every
+                  // case with full context so we can debug it from error
+                  // tracking rather than relying on user logs.
+                  _reportSyncFailure(
+                    'Permanent sync push rejected',
+                    table: baseTable.name,
+                    endpoint: baseTable.syncEndpoint,
+                    rowId: rowId,
+                    outcome: outcome.name,
+                    error: e,
+                    stackTrace: stackTrace,
+                  );
+
                   if (outcome == _RevertOutcome.reverted) {
                     await customUpdate(
                       'UPDATE ${table.actualTableName} SET pending = NULL WHERE id = ?',
                       variables: [Variable(row.data['id'])],
                       updates: {table},
                     );
-                  } else {
-                    // absentOnServer / fetchFailed: the row stays pending and
-                    // will be retried on every push. If the server keeps
-                    // rejecting it with a permanent error, that's a bug — the
-                    // local row will loop forever silently. Report so we can
-                    // see it in error tracking instead of relying on user
-                    // logs.
-                    Tracker.captureException(
-                      StateError(
-                        'Permanent sync error with no remote version '
-                        '(${baseTable.syncEndpoint} row $rowId, '
-                        'outcome=${outcome.name}): ${_describeError(e)}',
-                      ),
-                      stackTrace,
-                    );
                   }
-                  // For absentOnServer / fetchFailed: leave `pending` set —
+                  // else absentOnServer / fetchFailed: leave `pending` set —
                   // the row stays in the queue and the next push retries.
                   // Don't set success = true (this wasn't a successful push).
                 } else {
@@ -1225,6 +1266,18 @@ class Store extends _$Store {
                 }
               }
             } catch (e, stackTrace) {
+              // We couldn't even serialize this row to push it — it will stay
+              // pending and never sync. That's an unexpected bug (e.g. an
+              // unencodable value reached the row), so report it with context.
+              _reportSyncFailure(
+                'Sync row serialize failed',
+                table: baseTable.name,
+                endpoint: baseTable.syncEndpoint,
+                rowId: rowId,
+                outcome: 'serialize_error',
+                error: e,
+                stackTrace: stackTrace,
+              );
               log.warning(
                 "Error parsing ${baseTable.name} row $rowId "
                 "(${jsonEncode(row.data)})",

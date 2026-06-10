@@ -1085,12 +1085,16 @@ class Thread extends Equatable implements Comparable<Thread> {
           'Permanent error pushing thread-unread, '
           'clearing ${readActivities.length} records: $e',
         );
-        Tracker.captureException(
-          StateError(
-            'Permanent error pushing thread-unread, '
-            'clearing ${readActivities.length} records: $e',
-          ),
-          stackTrace,
+        // Keep the message grouping-stable (the record count goes to a
+        // property, not the message, so occurrences fold into one issue).
+        Store._reportSyncFailure(
+          'Permanent sync push rejected',
+          table: 'thread_unread',
+          endpoint: 'thread-unread',
+          outcome: 'cleared',
+          error: e,
+          stackTrace: stackTrace,
+          extraProperties: {'record_count': readActivities.length},
         );
         final allIds = readActivities.map((a) => a.id.toBytes()).toList();
         await (Store.get.update(Store.get.threads)
