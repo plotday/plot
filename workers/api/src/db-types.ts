@@ -576,6 +576,7 @@ export interface Priority {
   id: Generated<string>;
   inherit_members: Generated<boolean>;
   key: string | null;
+  notification_cleared_at: Timestamp | null;
   path: string;
   seq: Generated<string>;
   sync_depth: number | null;
@@ -624,6 +625,7 @@ export interface PrioritySettingInherited {
 }
 
 export interface Publisher {
+  can_publish_public: Generated<boolean>;
   created_at: Generated<Timestamp>;
   created_by: string;
   email: string | null;
@@ -1618,6 +1620,7 @@ export interface UserPriority {
   id: string | null;
   inherit_members: boolean | null;
   key: string | null;
+  notification_cleared_at: Timestamp | null;
   notify_window: Json | null;
   notify_window_set: boolean | null;
   order: number | null;
@@ -1697,6 +1700,7 @@ export interface UserSchedule {
 
 export interface UserSettings {
   ai_enabled: boolean | null;
+  dismissed_focus_suggestions: Generated<Json | null>;
   email_frequency: EmailFrequency | null;
   email_token: string | null;
   enter_behavior: EnterBehavior | null;

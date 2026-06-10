@@ -30,6 +30,10 @@ BEGIN
 
     SELECT id INTO v_publisher_id FROM "public"."publisher" WHERE lower(name) = 'plot' LIMIT 1;
 
+    -- Grant Plot's publisher the right to deploy connectors to 'public'.
+    UPDATE "public"."publisher" SET can_publish_public = true
+    WHERE id = v_publisher_id AND can_publish_public = false;
+
     -- 3. Plot twist definitions (review + public environments, keyed on
     --    twist_package_id from twists/plot/package.json)
     INSERT INTO "public"."twist" (twist_package_id, publisher_id, environment, name, handle, version, is_source, shared, logo_url, auto_approve)

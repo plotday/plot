@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Bindings } from "../env";
 import { createDb } from "../db";
 import { deployTwist } from "../twist/deployment";
+import { checkPublicDeployAllowed } from "../twist/public-deploy-auth";
 import {
   createPublisher,
   getAccessiblePublishers,
@@ -13,8 +14,6 @@ import { handleValidationError } from "../utils/validation";
 import { createLogger } from "@plotday/worker-util";
 import { deploymentRateLimiter } from "../middleware/rate-limit";
 import { getEffectivePlan } from "../utils/plan";
-
-declare const ENV: string;
 
 const twist = new Hono<{ Bindings: Bindings }>();
 
@@ -393,31 +392,6 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
       );
     }
 
-    // Direct deploys to "public" are a dev-only shortcut for @plot.day users.
-    // In production, public must be reached via the review → auto-approve flow.
-    if (environment === "public") {
-      const isDevelopment = typeof ENV !== "undefined" && ENV === "development";
-      if (!isDevelopment) {
-        return new Response(
-          "Forbidden: direct public deploys are only allowed in development",
-          { status: 403 }
-        );
-      }
-      if (!userToken || !user) {
-        return new Response(
-          "Unauthorized: user token required for public deploys",
-          { status: 401 }
-        );
-      }
-      const email = user.email?.toLowerCase() ?? "";
-      if (!email.endsWith("@plot.day")) {
-        return new Response(
-          "Forbidden: only @plot.day users can deploy directly to public",
-          { status: 403 }
-        );
-      }
-    }
-
     // Determine the publisher that owns this package. If any non-personal
     // twist row already exists for this package, its publisher_id pins the
     // publisher for this deploy.
@@ -481,6 +455,18 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     } else {
       return new Response("Unauthorized", { status: 401 });
     }
+  }
+
+  // Authorize public deploys: only publishers granted can_publish_public may
+  // target the public environment. Replaces the former dev-only @plot.day
+  // shortcut so the same rule applies in prod and dev.
+  const publicDeployCheck = await checkPublicDeployAllowed(
+    db,
+    environment,
+    resolvedPublisherId,
+  );
+  if (!publicDeployCheck.ok) {
+    return new Response(publicDeployCheck.message, { status: 403 });
   }
 
   // Check if client wants streaming response

@@ -1423,6 +1423,7 @@ export type Database = {
       }
       publisher: {
         Row: {
+          can_publish_public: boolean
           created_at: string
           created_by: string
           email: string | null
@@ -1432,6 +1433,7 @@ export type Database = {
           url: string | null
         }
         Insert: {
+          can_publish_public?: boolean
           created_at?: string
           created_by: string
           email?: string | null
@@ -1441,6 +1443,7 @@ export type Database = {
           url?: string | null
         }
         Update: {
+          can_publish_public?: boolean
           created_at?: string
           created_by?: string
           email?: string | null
