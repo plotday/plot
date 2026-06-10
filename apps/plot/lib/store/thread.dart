@@ -5657,15 +5657,6 @@ SELECT
     return restored.copyWith(unread: false, readAt: Value(contentTimestamp));
   }
 
-  /// Returns a copy in the "new (unread-only)" state — flips `unread` to
-  /// true and marks any per-user state as read so the thread isn't
-  /// classed as active or scheduled.
-  Thread asUnread() {
-    final hasState = _thread.active;
-    final base = hasState ? withScheduleArchived() : this;
-    return base.copyWith(unread: true, readAt: const Value(null));
-  }
-
   /// Returns a copy positioned in the unread cluster at the top of the
   /// Doing section. Marks unread and sets the bucket fields (urgent,
   /// importance) plus stateOrder so the thread sorts to a specific slot
