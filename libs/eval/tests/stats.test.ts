@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wilsonInterval, mcnemarExact } from "../src/scoring/stats.js";
+import { wilsonInterval, mcnemarExact } from "../src/scoring/stats";
 
 describe("wilsonInterval", () => {
   it("8 of 10 ≈ {lo: 0.49, hi: 0.943}", () => {
