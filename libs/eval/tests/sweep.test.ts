@@ -245,6 +245,8 @@ function rr(
     llmUsage: null,
     rankOfGold: null,
     goldMargin: null,
+    tags: [],
+    goldSource: null,
     ...over,
   };
 }

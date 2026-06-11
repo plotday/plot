@@ -1,6 +1,8 @@
+import { getVariantParams } from "../classifiers/registry";
 import type { Corpus } from "../corpus/schema";
 import type { BaselineComparison, BaselineFile } from "../runner/baseline";
 import type { RunResult, RunSummary } from "../runner/run";
+import { estimateCostUsd } from "./cost";
 import { mcnemarExact, wilsonInterval } from "./stats";
 
 export type ReportFormat = "console" | "json" | "markdown";
@@ -49,7 +51,7 @@ export function formatReport(
       );
     case "markdown":
       return (
-        renderMarkdown(summary, results, lookup) +
+        renderMarkdown(corpus, summary, results, lookup) +
         (baseline
           ? "\n\n" + renderBaselineComparison(baseline, corpus)
           : "")
@@ -57,7 +59,7 @@ export function formatReport(
     case "console":
     default:
       return (
-        renderConsole(summary, results, lookup) +
+        renderConsole(corpus, summary, results, lookup) +
         (baseline
           ? "\n\n" + renderBaselineComparison(baseline, corpus)
           : "")
@@ -128,12 +130,14 @@ export function renderBaselineComparison(
 }
 
 function renderConsole(
+  corpus: Corpus,
   summary: RunSummary,
   results: RunResult[],
   lookup: PriorityLookup
 ): string {
   const lines: string[] = [];
-  lines.push(`Corpus: ${summary.corpus} (${summary.totalCases} cases)`);
+  lines.push(headerLine(corpus, summary));
+  lines.push(...warningLines(corpus, results));
   const selfExcluded = new Set(
     results.filter((r) => r.selfExcluded).map((r) => r.caseId)
   ).size;
@@ -143,26 +147,7 @@ function renderConsole(
     );
   }
   lines.push("");
-  lines.push(
-    "Classifier           Training         Gold     Expected  Regress  LLM/case  Hit%   AvgMs"
-  );
-  lines.push(
-    "-------------------- ---------------  -------  --------  -------  --------  -----  -----"
-  );
-  for (const c of summary.perClassifierTraining) {
-    lines.push(
-      [
-        c.classifier.padEnd(20),
-        c.trainingSet.padEnd(15),
-        pct(c.goldAccuracy).padStart(7),
-        pct(c.expectedAccuracy).padStart(8),
-        String(c.regressions).padStart(7),
-        c.llmCallsPerCase.toFixed(2).padStart(8),
-        pct(c.llmCacheHitRate).padStart(5),
-        c.avgDurationMs.toFixed(1).padStart(5),
-      ].join("  ")
-    );
-  }
+  lines.push(...summaryTable(summary));
 
   const stageBreakdown = groupBy(
     results,
@@ -177,6 +162,11 @@ function renderConsole(
         ? goldEval.filter((r) => r.goldMatch).length / goldEval.length
         : null;
     lines.push(`  ${key.padEnd(48)} ${rows.length.toString().padStart(4)} cases   gold=${pct(acc)}`);
+  }
+
+  for (const section of detailSections(results)) {
+    lines.push("");
+    lines.push(...section);
   }
 
   const flipLines = renderFlips(summary, results, lookup);
@@ -218,6 +208,7 @@ function renderConsole(
 }
 
 function renderMarkdown(
+  corpus: Corpus,
   summary: RunSummary,
   results: RunResult[],
   lookup: PriorityLookup
@@ -225,18 +216,35 @@ function renderMarkdown(
   const lines: string[] = [];
   lines.push(`# Eval report — ${summary.corpus}`);
   lines.push("");
-  lines.push(`${summary.totalCases} cases evaluated.`);
+  lines.push(headerLine(corpus, summary));
+  for (const w of warningLines(corpus, results)) {
+    lines.push("");
+    lines.push(`**${w}**`);
+  }
   lines.push("");
   lines.push(
-    "| Classifier | Training set | Gold acc. | Expected acc. | Regressions | LLM calls / case | Cache hit rate | Avg ms |"
+    "| Classifier | Training set | Gold acc. [95% CI] | Expected acc. | Regressions | LLM calls / case | Cache hit rate | Avg ms |"
   );
   lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const c of summary.perClassifierTraining) {
     lines.push(
-      `| \`${c.classifier}\` | \`${c.trainingSet}\` | ${pct(c.goldAccuracy)} | ${pct(c.expectedAccuracy)} | ${c.regressions} | ${c.llmCallsPerCase.toFixed(2)} | ${pct(c.llmCacheHitRate)} | ${c.avgDurationMs.toFixed(1)} |`
+      `| \`${c.classifier}\` | \`${c.trainingSet}\` | ${goldCell(c)} | ${pct(c.expectedAccuracy)} | ${c.regressions} | ${c.llmCallsPerCase.toFixed(2)} | ${pct(c.llmCacheHitRate)} | ${c.avgDurationMs.toFixed(1)} |`
     );
   }
   lines.push("");
+
+  const sections = detailSections(results);
+  if (sections.length > 0) {
+    lines.push("## Details");
+    lines.push("");
+    lines.push("```");
+    sections.forEach((section, i) => {
+      if (i > 0) lines.push("");
+      lines.push(...section);
+    });
+    lines.push("```");
+    lines.push("");
+  }
 
   const failures = results.filter((r) => r.goldMatch === false);
   if (failures.length > 0) {
@@ -251,6 +259,300 @@ function renderMarkdown(
     }
   }
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Shared report sections (console + markdown)
+// ---------------------------------------------------------------------------
+
+/** `Corpus: <name> (<prod-extract|handcrafted>, N cases)`. */
+function headerLine(corpus: Corpus, summary: RunSummary): string {
+  return `Corpus: ${summary.corpus} (${corpus.world.source.kind}, ${summary.totalCases} cases)`;
+}
+
+/**
+ * Prominent warnings rendered right under the header: synthetic-corpus
+ * provenance (handcrafted results must never be pooled with prod-extract
+ * numbers) and LLM budget exhaustion (results were measured with a silently
+ * degraded cascade).
+ */
+function warningLines(corpus: Corpus, results: RunResult[]): string[] {
+  const lines: string[] = [];
+  if (corpus.world.source.kind === "handcrafted") {
+    lines.push(
+      "WARNING: synthetic corpus (handcrafted) — do not pool with real-data results."
+    );
+  }
+  const exhausted = results.filter((r) => r.budgetExhausted);
+  if (exhausted.length > 0) {
+    const perClassifier = [...groupBy(exhausted, (r) => r.classifier)]
+      .map(([classifier, rows]) => `${classifier}=${rows.length}`)
+      .join(", ");
+    lines.push(
+      `WARNING: LLM budget exhausted on ${exhausted.length} result(s) (${perClassifier}) — those cases fell back to deterministic stages.`
+    );
+  }
+  return lines;
+}
+
+/** Summary table with a Wilson 95% CI on every gold-accuracy figure. */
+function summaryTable(summary: RunSummary): string[] {
+  const headers = [
+    "Classifier",
+    "Training",
+    "Gold acc [95% CI]",
+    "Expected",
+    "Regress",
+    "LLM/case",
+    "Hit%",
+    "AvgMs",
+  ];
+  const cells = summary.perClassifierTraining.map((c) => [
+    c.classifier,
+    c.trainingSet,
+    goldCell(c),
+    pctCell(c.expectedAccuracy),
+    String(c.regressions),
+    c.llmCallsPerCase.toFixed(2),
+    pctCell(c.llmCacheHitRate),
+    c.avgDurationMs.toFixed(1),
+  ]);
+  const widths = headers.map((h, i) =>
+    Math.max(h.length, ...cells.map((row) => row[i]!.length))
+  );
+  const fmt = (row: string[]) =>
+    row
+      .map((c, i) => (i < 2 ? c.padEnd(widths[i]!) : c.padStart(widths[i]!)))
+      .join("  ")
+      .trimEnd();
+  return [
+    fmt(headers),
+    fmt(widths.map((w) => "-".repeat(w))),
+    ...cells.map(fmt),
+  ];
+}
+
+function goldCell(
+  c: RunSummary["perClassifierTraining"][number]
+): string {
+  if (c.goldAccuracy === null || c.goldEvaluated === 0) return "n/a";
+  const ci = wilsonInterval(c.goldCorrect, c.goldEvaluated);
+  return `${pctCell(c.goldAccuracy)} ${ciCell(ci)}`;
+}
+
+/**
+ * Optional detail sections, in render order. Each entry is a non-empty block
+ * of lines; the console renderer separates them with blank lines and the
+ * markdown renderer wraps them in a fenced block.
+ */
+function detailSections(results: RunResult[]): string[][] {
+  const sections = [
+    llmUsageSection(results),
+    rankOfGoldSection(results),
+    tagSection(results),
+    goldSourceSection(results),
+  ].filter((s) => s.length > 0);
+  if (new Set(results.map((r) => r.trainingSizeAtCase)).size > 1) {
+    sections.push(renderTrajectory(results).split("\n"));
+  }
+  return sections;
+}
+
+/**
+ * Per (classifier, trainingSet): live/replayed token totals, calls without
+ * usage data, and an estimated USD cost of the live calls. The model is
+ * resolved from the variant's registered HybridParams (`params.llm.model`);
+ * classifiers without registered params (e.g. sql:current) or with unpriced
+ * models render "(cost unknown)" rather than a misleading $0.
+ */
+function llmUsageSection(results: RunResult[]): string[] {
+  const lines: string[] = [];
+  for (const [key, rows] of groupBy(
+    results,
+    (r) => `${r.classifier} / ${r.trainingSet}`
+  )) {
+    const withUsage = rows.filter((r) => r.llmUsage);
+    if (withUsage.length === 0) continue;
+    const sum = (f: (u: NonNullable<RunResult["llmUsage"]>) => number) =>
+      withUsage.reduce((s, r) => s + f(r.llmUsage!), 0);
+    const liveIn = sum((u) => u.liveInputTokens);
+    const liveOut = sum((u) => u.liveOutputTokens);
+    const repIn = sum((u) => u.replayedInputTokens);
+    const repOut = sum((u) => u.replayedOutputTokens);
+    const unknown = sum((u) => u.unknownCalls);
+    const model = modelFor(rows[0]!.classifier);
+    const cost =
+      model === null
+        ? null
+        : estimateCostUsd(model, {
+            inputTokens: liveIn,
+            outputTokens: liveOut,
+          });
+    const costStr = cost === null ? "(cost unknown)" : `$${cost.toFixed(4)}`;
+    lines.push(
+      `  [${key}] live in/out=${liveIn}/${liveOut}  replayed in/out=${repIn}/${repOut}  unknown=${unknown}  est. live cost ${costStr}`
+    );
+  }
+  if (lines.length === 0) return [];
+  return ["LLM tokens & estimated cost:", ...lines];
+}
+
+/** LLM model for a classifier name, or null when not resolvable. */
+function modelFor(classifier: string): string | null {
+  try {
+    return getVariantParams(classifier).llm?.model ?? null;
+  } catch {
+    // Registered without HybridParams (sql:current, test stubs) or unknown.
+    return null;
+  }
+}
+
+/**
+ * Per (classifier, trainingSet) over gold-labeled cases: top-3 hit rate and
+ * MRR (mean of 1/rank). Both use cases WITH a ranking as the denominator —
+ * stages that carry no ranking (topic_shortcircuit, sql:current, …) are
+ * excluded and surfaced via the `unranked` count instead.
+ */
+function rankOfGoldSection(results: RunResult[]): string[] {
+  const lines: string[] = [];
+  for (const [key, rows] of groupBy(
+    results,
+    (r) => `${r.classifier} / ${r.trainingSet}`
+  )) {
+    const goldLabeled = rows.filter((r) => r.goldId !== null);
+    if (goldLabeled.length === 0) continue;
+    const ranked = goldLabeled.filter((r) => r.rankOfGold !== null);
+    const unranked = goldLabeled.length - ranked.length;
+    const top3 = ranked.filter((r) => r.rankOfGold! <= 3).length;
+    const top3Str =
+      ranked.length > 0
+        ? `${pctCell(top3 / ranked.length)} (${top3}/${ranked.length} ranked)`
+        : "n/a (0/0 ranked)";
+    const mrr =
+      ranked.length > 0
+        ? (
+            ranked.reduce((s, r) => s + 1 / r.rankOfGold!, 0) / ranked.length
+          ).toFixed(3)
+        : "n/a";
+    lines.push(`  [${key}] top-3 ${top3Str}  MRR ${mrr}  unranked=${unranked}`);
+  }
+  if (lines.length === 0) return [];
+  return [
+    "Rank of gold (gold-labeled cases; rates over ranked cases only):",
+    ...lines,
+  ];
+}
+
+/** Gold accuracy + CI + n per case tag, per combo. Empty when nothing is tagged. */
+function tagSection(results: RunResult[]): string[] {
+  if (!results.some((r) => r.tags.length > 0)) return [];
+  const lines: string[] = [];
+  for (const [key, rows] of groupBy(
+    results,
+    (r) => `${r.classifier} / ${r.trainingSet}`
+  )) {
+    const tagged = rows.filter(
+      (r) => r.goldMatch !== null && r.tags.length > 0
+    );
+    if (tagged.length === 0) continue;
+    const tags = [...new Set(tagged.flatMap((r) => r.tags))].sort();
+    const width = Math.max(...tags.map((t) => t.length));
+    lines.push(`  [${key}]`);
+    for (const tag of tags) {
+      const slice = tagged.filter((r) => r.tags.includes(tag));
+      lines.push(
+        `    ${tag.padEnd(width)}  ${accuracyWithCi(slice)}  n=${slice.length}`
+      );
+    }
+  }
+  if (lines.length === 0) return [];
+  return ["Gold accuracy by tag:", ...lines];
+}
+
+/**
+ * Gold accuracy split by gold-label provenance (human vs llm-proposed).
+ * Rendered only when both kinds exist — with a single kind the split is the
+ * overall accuracy and would just be noise.
+ */
+function goldSourceSection(results: RunResult[]): string[] {
+  const kinds = new Set(
+    results.map((r) => r.goldSource).filter((s) => s !== null)
+  );
+  if (kinds.size < 2) return [];
+  const lines: string[] = [];
+  for (const [key, rows] of groupBy(
+    results,
+    (r) => `${r.classifier} / ${r.trainingSet}`
+  )) {
+    const evaluated = rows.filter(
+      (r) => r.goldMatch !== null && r.goldSource !== null
+    );
+    if (evaluated.length === 0) continue;
+    lines.push(`  [${key}]`);
+    for (const source of ["human", "llm-proposed"] as const) {
+      const slice = evaluated.filter((r) => r.goldSource === source);
+      if (slice.length === 0) continue;
+      lines.push(
+        `    ${source.padEnd(12)}  ${accuracyWithCi(slice)}  n=${slice.length}`
+      );
+    }
+  }
+  if (lines.length === 0) return [];
+  return ["Gold accuracy by gold source (human vs llm-proposed):", ...lines];
+}
+
+/** `66.7% [49.0–80.9]` over rows that all have goldMatch !== null. */
+function accuracyWithCi(rows: RunResult[]): string {
+  const correct = rows.filter((r) => r.goldMatch).length;
+  return `${pctCell(correct / rows.length)} ${ciCell(wilsonInterval(correct, rows.length))}`;
+}
+
+function ciCell(ci: { lo: number; hi: number }): string {
+  return `[${(ci.lo * 100).toFixed(1)}–${(ci.hi * 100).toFixed(1)}]`;
+}
+
+const TRAJECTORY_BUCKETS: { label: string; lo: number; hi: number }[] = [
+  { label: "0", lo: 0, hi: 0 },
+  { label: "1–5", lo: 1, hi: 5 },
+  { label: "6–15", lo: 6, hi: 15 },
+  { label: "16–30", lo: 16, hi: 30 },
+  { label: "31+", lo: 31, hi: Infinity },
+];
+
+/**
+ * Backtest trajectory: gold accuracy bucketed by how many training threads
+ * were available when the case ran (trainingSizeAtCase), per classifier
+ * (training sets pool — a backtest replays one growing set). formatReport
+ * includes this section only when sizes actually vary; backtest runners
+ * (--mode backtest) can call it directly.
+ */
+export function renderTrajectory(results: RunResult[]): string {
+  const headers = ["Classifier", ...TRAJECTORY_BUCKETS.map((b) => b.label)];
+  const cells: string[][] = [];
+  for (const [classifier, rows] of groupBy(results, (r) => r.classifier)) {
+    const goldEval = rows.filter((r) => r.goldMatch !== null);
+    cells.push([
+      classifier,
+      ...TRAJECTORY_BUCKETS.map((b) => {
+        const slice = goldEval.filter(
+          (r) => r.trainingSizeAtCase >= b.lo && r.trainingSizeAtCase <= b.hi
+        );
+        if (slice.length === 0) return "-";
+        const correct = slice.filter((r) => r.goldMatch).length;
+        return `${pctCell(correct / slice.length)} (${slice.length})`;
+      }),
+    ]);
+  }
+  const widths = headers.map((h, i) =>
+    Math.max(h.length, ...cells.map((row) => row[i]!.length))
+  );
+  const fmt = (row: string[]) =>
+    "  " + row.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd();
+  return [
+    "Training-size trajectory (gold accuracy by training threads available at case time):",
+    fmt(headers),
+    ...cells.map(fmt),
+  ].join("\n");
 }
 
 function renderFlips(
@@ -456,6 +758,12 @@ function name(id: string | null, lookup: PriorityLookup): string {
 
 function pct(v: number | null): string {
   if (v === null) return "  n/a";
+  return `${(v * 100).toFixed(1)}%`;
+}
+
+/** Like pct() but without legacy left-padding (for dynamic-width tables). */
+function pctCell(v: number | null): string {
+  if (v === null) return "n/a";
   return `${(v * 100).toFixed(1)}%`;
 }
 

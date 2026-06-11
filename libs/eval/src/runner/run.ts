@@ -47,6 +47,10 @@ export type RunResult = {
   rankOfGold: number | null;
   /** topScore − goldScore (0 when rank 1); null when unranked. */
   goldMargin: number | null;
+  /** Case tags from the corpus, for per-tag report slices. */
+  tags: string[];
+  /** Gold-label provenance from the corpus; null when no gold label. */
+  goldSource: "human" | "llm-proposed" | null;
 };
 
 export type RunSummary = {
@@ -56,6 +60,10 @@ export type RunSummary = {
     classifier: string;
     trainingSet: string;
     goldAccuracy: number | null;
+    /** Gold-evaluated cases answered correctly (Wilson CI numerator). */
+    goldCorrect: number;
+    /** Cases with a gold label (Wilson CI denominator). */
+    goldEvaluated: number;
     expectedAccuracy: number | null;
     regressions: number;
     avgDurationMs: number;
@@ -243,6 +251,8 @@ async function runOneCase(
     llmUsage: result.llmUsage ?? null,
     rankOfGold: ranked?.rank ?? null,
     goldMargin: ranked?.margin ?? null,
+    tags: cs.tags,
+    goldSource: cs.labels.goldSource,
   };
 }
 
@@ -286,6 +296,7 @@ function summarize(
         (r) => r.classifier === c && r.trainingSet === ts.name
       );
       const goldEval = rows.filter((r) => r.goldMatch !== null);
+      const goldCorrect = goldEval.filter((r) => r.goldMatch).length;
       const expectedEval = rows.filter((r) => r.expectedMatch !== null);
       const totalLlm = rows.reduce((s, r) => s + r.llmCalls, 0);
       const totalHits = rows.reduce((s, r) => s + r.cacheHits, 0);
@@ -293,10 +304,9 @@ function summarize(
       perClassifierTraining.push({
         classifier: c,
         trainingSet: ts.name,
-        goldAccuracy:
-          goldEval.length > 0
-            ? goldEval.filter((r) => r.goldMatch).length / goldEval.length
-            : null,
+        goldAccuracy: goldEval.length > 0 ? goldCorrect / goldEval.length : null,
+        goldCorrect,
+        goldEvaluated: goldEval.length,
         expectedAccuracy:
           expectedEval.length > 0
             ? expectedEval.filter((r) => r.expectedMatch).length /
