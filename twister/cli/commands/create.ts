@@ -163,27 +163,22 @@ export default class MyConnector extends Connector<MyConnector> {
 }
 `;
 
-  const twistTemplate = `import {
-  type Activity,
-  Twist,
-  type Priority,
-  type ToolBuilder,
-} from "@plotday/twister";
-import { Plot } from "@plotday/twister/tools/plot";
+  const twistTemplate = `import { Twist, type ToolBuilder } from "@plotday/twister";
+import { Plot, ThreadAccess } from "@plotday/twister/tools/plot";
 
 export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      plot: build(Plot, {
+        thread: { access: ThreadAccess.Create },
+      }),
     };
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
-    // Called when twist is enabled for a priority
-  }
-
-  async activity(activity: Activity) {
-    // Called when an activity is routed to this twist
+  async activate() {
+    // Called when the twist is enabled for a focus.
+    // Auth and resource selection are handled in the twist edit modal;
+    // add custom initialization here if needed.
   }
 }
 `;

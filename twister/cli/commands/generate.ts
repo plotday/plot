@@ -264,10 +264,20 @@ export async function generateCommand(options: GenerateOptions) {
     // Load and write template files
     const templatesPath = path.join(__dirname, "..", "..", "bin", "templates");
 
-    // Write AGENTS.md (no template processing needed)
-    const twistsMdTemplate = fs.readFileSync(
+    // Detect package manager up front so template substitutions match the
+    // commands the user will actually run (npm needs "npm run", others don't).
+    const packageManager = detectPackageManager();
+    const packageManagerCommand =
+      packageManager === "npm" ? "npm run" : packageManager;
+
+    // Write AGENTS.md with template replacements
+    let twistsMdTemplate = fs.readFileSync(
       path.join(templatesPath, "AGENTS.template.md"),
       "utf-8"
+    );
+    twistsMdTemplate = twistsMdTemplate.replace(
+      /\{\{packageManager\}\}/g,
+      packageManagerCommand
     );
     writeFile(twistsMdPath, twistsMdTemplate);
 
@@ -288,7 +298,10 @@ export async function generateCommand(options: GenerateOptions) {
       /\{\{displayName\}\}/g,
       source.displayName
     );
-    readmeTemplate = readmeTemplate.replace(/\{\{packageManager\}\}/g, "pnpm");
+    readmeTemplate = readmeTemplate.replace(
+      /\{\{packageManager\}\}/g,
+      packageManagerCommand
+    );
     writeFile(readmePath, readmeTemplate);
 
     // Create src directory
@@ -303,9 +316,6 @@ export async function generateCommand(options: GenerateOptions) {
     }
 
     out.blank();
-
-    // Detect package manager and install dependencies
-    const packageManager = detectPackageManager();
 
     // Update @plotday/twister to latest and install packages
     try {
