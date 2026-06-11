@@ -3,7 +3,10 @@ import { createLogger } from "@plotday/worker-util";
 
 import { sql, withDb, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { enqueueJobs } from "../../state/classify-thread";
+import {
+  enqueueJobs,
+  logClassificationDecision,
+} from "../../state/classify-thread";
 import { notifyUserSyncByEnv } from "./notify";
 
 const priorityMoves = new Hono<{ Bindings: Bindings }>();
@@ -43,6 +46,18 @@ priorityMoves.post("/sync/priority-moves", async (c) => {
             updated_at = now()
       RETURNING thread_id
     `.execute(trx);
+
+    // Decision history: record the correction so an earlier auto-decision
+    // with a different priority becomes a labeled misclassification.
+    await logClassificationDecision(trx, c.env, {
+      threadId,
+      userId,
+      priorityId,
+      stage: "user_move",
+      scores: {},
+      classifier: "user",
+    });
+
     return { thread_id: updated.rows[0]?.thread_id ?? threadId };
   });
 

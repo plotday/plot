@@ -34,7 +34,55 @@ export type ClassifyResult = {
    * consumer Worker (or the hourly sweep) re-attempts later.
    */
   pending: boolean;
+  /**
+   * Present only for pre-insert callers (no threadId yet): the decision
+   * entry to log via logClassificationDecision once the thread row exists.
+   * Callers that passed a threadId never see this — the decision was
+   * already logged here.
+   */
+  pendingLog?: PendingDecision;
 };
+
+export type PendingDecision = {
+  userId: string;
+  priorityId: string | null;
+  stage: string;
+  scores: Record<string, unknown>;
+  classifier: string;
+  llmCalls?: number;
+  cacheHits?: number;
+  budgetExhausted?: boolean;
+  durationMs?: number | null;
+};
+
+export type ClassificationDecisionLog = PendingDecision & { threadId: string };
+
+/**
+ * Append a classification_decision row (spec B2). Best-effort: a logging
+ * failure must never fail or delay a filing — failures are captured to
+ * PostHog and swallowed.
+ */
+export async function logClassificationDecision(
+  db: Kysely<DB>,
+  env: Bindings,
+  entry: ClassificationDecisionLog
+): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO public.classification_decision
+        (thread_id, user_id, priority_id, stage, scores, classifier,
+         llm_calls, cache_hits, budget_exhausted, duration_ms)
+      VALUES
+        (${entry.threadId}::uuid, ${entry.userId}::uuid,
+         ${entry.priorityId}::uuid, ${entry.stage},
+         ${JSON.stringify(entry.scores)}::jsonb, ${entry.classifier},
+         ${entry.llmCalls ?? 0}, ${entry.cacheHits ?? 0},
+         ${entry.budgetExhausted ?? false}, ${entry.durationMs ?? null})
+    `.execute(db);
+  } catch (err) {
+    capture(env, err, entry.userId, entry.threadId);
+  }
+}
 
 export type ClassifyExplanation = {
   priorityId: string | null;
@@ -68,11 +116,29 @@ export async function classifyThreadForUser(
     const ctx = classifierContextFromDb(db, args.userId);
     const candidate = await buildCandidate(db, args);
     const result = await classifier.classify(ctx, candidate);
-    if (result.priorityId) {
-      return { priorityId: result.priorityId, pending: false };
+    // Log the decision verbatim — for stage 'none', priority_id stays NULL
+    // (the root filing below is a caller-side fallback, not the decision).
+    const entry: PendingDecision = {
+      userId: args.userId,
+      priorityId: result.priorityId,
+      stage: result.stage,
+      scores: result.scores ?? {},
+      classifier: classifier.name,
+      llmCalls: result.llmCalls,
+      cacheHits: result.cacheHits,
+      budgetExhausted: result.budgetExhausted,
+      durationMs: result.durationMs,
+    };
+    const priorityId =
+      result.priorityId ?? (await rootPriorityId(db, args.userId));
+    if (args.threadId) {
+      await logClassificationDecision(db, env, {
+        ...entry,
+        threadId: args.threadId,
+      });
+      return { priorityId, pending: false };
     }
-    // Normal "no match" — file at root, settled. No async retry needed.
-    return { priorityId: await rootPriorityId(db, args.userId), pending: false };
+    return { priorityId, pending: false, pendingLog: entry };
   } catch (err) {
     capture(env, err, args.userId, args.threadId);
     // Transient failure — file at root for instant author visibility,

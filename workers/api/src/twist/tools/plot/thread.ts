@@ -21,6 +21,7 @@ import { ContactAccess, ThreadAccess } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 import { sql } from "kysely";
 import { rpc, rpcUser } from "../../../rpc";
+import { logClassificationDecision } from "../../../state/classify-thread";
 import {
   cleanTitle,
   handleDbOperationError,
@@ -187,6 +188,15 @@ async function markThreadUnreadForUsers(
   }
 }
 
+/**
+ * upsert_thread can merge into an existing thread (source match); only a
+ * freshly-created row carries this call's pre-insert classification
+ * decision. created_at within 10s of now ⇒ created by this call.
+ */
+function isFreshlyCreated(createdAt: string | Date): boolean {
+  return Math.abs(Date.now() - new Date(createdAt).getTime()) < 10_000;
+}
+
 export async function createThread(
   plot: Plot,
   activity: NewThread | NewThreadWithNotes,
@@ -202,7 +212,7 @@ export async function createThread(
       // continue, and handleTwistOperation suppresses it from error reporting.
       throw new ThreadFilingSkippedError();
     }
-    const { priorityId, authorId, ...prep } = prepared;
+    const { priorityId, authorId, pendingDecision, ...prep } = prepared;
 
     // Set icon for twist-created threads if not already set by caller (e.g. createLink)
     // Skip auto-icon if the SDK 'type' field was set (mapped to icon by prepareThreadForDb)
@@ -266,6 +276,16 @@ export async function createThread(
         .values(prep.insert)
         .returningAll()
         .executeTakeFirstOrThrow();
+    }
+
+    // Log the pre-insert classification decision now that the thread row
+    // exists. Skip merged rows (upsert_thread source match) — only a
+    // freshly-created row carries this call's decision.
+    if (pendingDecision && isFreshlyCreated(dbResult.created_at)) {
+      await logClassificationDecision(plot.db, plot.env, {
+        ...pendingDecision,
+        threadId: dbResult.id,
+      });
     }
 
     // Process series-level tags if provided - convert NewActor[] to ActorId[] for each tag (batched)
@@ -1191,6 +1211,22 @@ export async function createThreads(
             p_defaults: { ...defaults, priority_id: prepared.priorityId } as Json,
           });
           dbActivities[index] = { ...dbResult, priority_id: prepared.priorityId } as DbActivity;
+        })
+      )
+    );
+
+    // Log pre-insert classification decisions now that thread ids exist.
+    // Skip merged rows (upsert_thread source match) via the freshness guard.
+    await Promise.all(
+      preparedActivities.map((prepared, index) =>
+        limit(async () => {
+          const row = dbActivities[index];
+          if (!prepared.pendingDecision || !row) return;
+          if (!isFreshlyCreated(row.created_at)) return;
+          await logClassificationDecision(plot.db, plot.env, {
+            ...prepared.pendingDecision,
+            threadId: row.id,
+          });
         })
       )
     );

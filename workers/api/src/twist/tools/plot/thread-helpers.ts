@@ -13,7 +13,10 @@ import type {
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { createLogger } from "@plotday/worker-util";
-import { classifyThreadForUser } from "../../../state/classify-thread";
+import {
+  classifyThreadForUser,
+  type PendingDecision,
+} from "../../../state/classify-thread";
 import { addContacts } from "./contacts";
 import type { Plot } from "./index";
 
@@ -1047,6 +1050,9 @@ export type PreparedThread = (
 
   /** The resolved author contact ID (or twistInstanceId if no author specified) */
   authorId: string;
+
+  /** Decision-log entry from the pre-insert classification, if one ran. */
+  pendingDecision?: PendingDecision;
 };
 
 /**
@@ -1210,6 +1216,9 @@ export async function prepareThreadForDb(
 
   // Determine target priority
   let targetPriorityId: string;
+  // Decision-log entry from the pre-insert classify, written by the caller
+  // (createThread/createThreads) once the thread row exists.
+  let pendingDecision: PendingDecision | undefined;
 
   // Generate embedding for all threads (used for future content-based rule matching).
   {
@@ -1259,6 +1268,11 @@ export async function prepareThreadForDb(
     const matched = await classifyThreadForUser(plot.db, plot.env, {
       userId: ownerUserId,
       embedding: embeddingJson ?? null,
+      facets:
+        ("facets" in activity
+          ? ((activity as any).facets as Record<string, string> | null)
+          : null) ?? null,
+      connectionId: plot.twistInstanceId,
     });
 
     // Focuses are team-agnostic: file wherever the classifier landed. Team
@@ -1267,6 +1281,7 @@ export async function prepareThreadForDb(
     // user.thread visibility firewall on thread.team_id — not by which
     // priority the thread is filed under.
     targetPriorityId = matched.priorityId;
+    pendingDecision = matched.pendingLog;
   }
 
   await plot.validatePriorityAccess(targetPriorityId);
@@ -1402,12 +1417,14 @@ export async function prepareThreadForDb(
       defaults,
       priorityId: targetPriorityId,
       authorId,
+      pendingDecision,
     };
   } else {
     return {
       insert: defaults,
       priorityId: targetPriorityId,
       authorId,
+      pendingDecision,
     };
   }
 }
