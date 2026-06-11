@@ -44,7 +44,7 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
           submodules: true

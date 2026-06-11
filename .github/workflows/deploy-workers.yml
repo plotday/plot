@@ -63,7 +63,7 @@ jobs:
       workers: ${{ steps.filter.outputs.workers }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: true
@@ -222,7 +222,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v4
         name: Install pnpm
@@ -252,7 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           # Full history incl. deploy/* tags — the contract drain uses the
           # previous deploy tag as its soak boundary.
@@ -312,7 +312,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: true
 
