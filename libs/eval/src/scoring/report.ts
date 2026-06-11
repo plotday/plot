@@ -718,7 +718,7 @@ export function buildLeaderboard(
         `Classifiers in results: ${[...byClassifier.keys()].join(", ")}`
     );
   }
-  const pairKey = (r: RunResult) => `${r.trainingSet} ${r.caseId}`;
+  const pairKey = (r: RunResult) => `${r.trainingSet}\u0000${r.caseId}`;
   const baseGold = new Map<string, boolean>();
   for (const r of baseRows) {
     if (r.goldMatch !== null) baseGold.set(pairKey(r), r.goldMatch);
