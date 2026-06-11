@@ -1,8 +1,10 @@
 {
   "name": "@plotday/connector-posthog",
   "private": true,
+  "plotTwistId": "fa89361d-0345-4088-a952-dcc22435ce67",
   "displayName": "PostHog",
   "description": "Turn PostHog events into person threads you can track and follow up on.",
+  "logoUrl": "https://api.iconify.design/simple-icons/posthog.svg?color=%23F54E00",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -25,7 +27,9 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"

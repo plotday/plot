@@ -1,6 +1,7 @@
 {
   "name": "@plotday/connector-todoist",
   "private": true,
+  "plotTwistId": "01224614-43a4-4aca-9085-088a1e9e24ac",
   "displayName": "Todoist",
   "description": "Bring your Todoist tasks into focus and check them off as you go.",
   "logoUrl": "https://api.iconify.design/logos/todoist-icon.svg",
@@ -26,7 +27,9 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"
