@@ -19,6 +19,8 @@ class GlobalShortcuts extends StatefulWidget {
 }
 
 class _GlobalShortcutsState extends State<GlobalShortcuts> {
+  bool _wasSignedIn = false;
+
   List<StaticCommandGroup> _getCommands({
     required bool signedIn,
     PrioritiesState? prioritiesState,
@@ -74,7 +76,10 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
         final signedIn = userState is UserReady;
 
         if (!signedIn) {
-          SubscriptionService.instance.reset();
+          if (_wasSignedIn) {
+            _wasSignedIn = false;
+            SubscriptionService.instance.reset();
+          }
           return CommandScope(
             commandsBuilder: () => _getCommands(signedIn: false),
             listenable: DeveloperMode.notifier,
@@ -83,7 +88,9 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
         }
 
         // Loads the initial snapshot and wires broadcast/reconnect/refocus
-        // refresh + the plan-up toast. Idempotent.
+        // refresh + the plan-up toast. Both are idempotent / cheap; start()
+        // self-guards so calling it each rebuild is fine.
+        _wasSignedIn = true;
         SubscriptionService.instance.start();
 
         return BlocBuilder<PrioritiesBloc, PrioritiesState>(

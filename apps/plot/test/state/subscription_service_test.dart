@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/state/subscription_service.dart';
@@ -146,6 +148,23 @@ void main() {
       await svc.refresh();
       await svc.handleAppResumed();
       expect(toasts, isEmpty);
+    });
+
+    test('a refresh in flight when reset() is called does not repopulate state',
+        () async {
+      final gate = Completer<SubscriptionInfo>();
+      final svc = SubscriptionService(
+        fetchSubscription: () => gate.future,
+        fetchUsage: () async => _usage(),
+        fetchTeams: () async => const [],
+        showToast: (_) {},
+      );
+      final pending = svc.refresh(); // starts, blocks on the completer
+      svc.reset(); // sign-out mid-flight
+      gate.complete(_sub('pro')); // the stale fetch now finishes
+      await pending;
+      // The stale result must be discarded — snapshot stays cleared.
+      expect(svc.notifier.value.subscription, isNull);
     });
   });
 }

@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/upgrade_api.dart';
+import 'package:plot/logging.dart';
 import 'package:plot/main.dart' show navigatorKey;
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/toast.dart';
@@ -65,6 +66,7 @@ class SubscriptionService with WidgetsBindingObserver {
       ValueNotifier<SubscriptionSnapshot>(const SubscriptionSnapshot());
 
   Future<void>? _inFlight;
+  int _generation = 0;
   bool _baselineInitialized = false;
   int _acknowledgedRank = 0;
   bool _started = false;
@@ -83,6 +85,9 @@ class SubscriptionService with WidgetsBindingObserver {
 
   /// Tear down on sign-out so a fresh sign-in re-baselines.
   void reset() {
+    // Invalidate any in-flight refresh so its result can't repopulate the
+    // snapshot/baseline for a now-signed-out (or about-to-change) user.
+    _generation++;
     if (_started) {
       WidgetsBinding.instance.removeObserver(this);
       Store.get.onSubscriptionChanged = null;
@@ -96,19 +101,32 @@ class SubscriptionService with WidgetsBindingObserver {
 
   /// Refetch subscription + usage + teams, coalescing concurrent callers.
   Future<void> refresh() {
-    return _inFlight ??= _doRefresh().whenComplete(() => _inFlight = null);
+    final existing = _inFlight;
+    if (existing != null) return existing;
+    final future = _doRefresh();
+    _inFlight = future;
+    // Only clear the slot if it still points at THIS future — a refresh that
+    // was superseded by reset()+a new refresh() must not clobber the new one.
+    future.whenComplete(() {
+      if (identical(_inFlight, future)) _inFlight = null;
+    });
+    return future;
   }
 
   /// Awaitable refresh used before gating decisions.
   Future<void> ensureFresh() => refresh();
 
   Future<void> _doRefresh() async {
+    final generation = _generation;
     try {
       final results = await Future.wait([
         _fetchSubscription(),
         _fetchUsage(),
         _fetchTeams(),
       ]);
+      // reset() (e.g. sign-out) ran while this was in flight — discard so we
+      // don't repopulate the snapshot/baseline for a stale user.
+      if (generation != _generation) return;
       final sub = results[0] as SubscriptionInfo;
       final usage = results[1] as UsageData;
       final orgs = results[2] as List<Map<String, dynamic>>;
@@ -122,9 +140,12 @@ class SubscriptionService with WidgetsBindingObserver {
         _acknowledgedRank = planRank(sub.effectivePlan);
         _baselineInitialized = true;
       }
-    } catch (_) {
-      // Non-critical — keep the last good snapshot. Consumers fall back to
-      // their own backstops (AddSourceDetail re-fetches usage on run).
+    } catch (e, st) {
+      // Best-effort: keep the last good snapshot. Consumers fall back to their
+      // own backstops (AddSourceDetail re-fetches usage on run). Logged (not
+      // PostHog-captured) since failures here are usually expected network /
+      // auth blips on app resume.
+      log.warning('Subscription refresh failed', e, st);
     }
   }
 
