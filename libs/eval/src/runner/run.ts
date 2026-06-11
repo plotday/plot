@@ -137,6 +137,12 @@ async function runOneCase(
       groups: cs.candidate.groups,
       embedding: emb?.vector ?? null,
       author: cs.candidate.author,
+      // Corpus schema v1 does not model facets, author contacts, or
+      // connections — both new signals are inert in eval until the corpus
+      // v2 workstream adds them.
+      facets: null,
+      authorContactId: null,
+      connectionId: null,
     });
   });
 

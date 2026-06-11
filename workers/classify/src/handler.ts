@@ -69,6 +69,9 @@ export async function handleClassifyJob(
     groups: [],
     embedding: null,
     author: null,
+    facets: null,
+    authorContactId: null,
+    connectionId: null,
   };
 
   // Hydrate candidate from the thread row so cascade stages have it
@@ -81,9 +84,12 @@ export async function handleClassifyJob(
     groups: string[] | null;
     embedding: string | null;
     created_by: string | null;
+    facets: Record<string, string> | null;
+    author_id: string | null;
+    twist_id: string | null;
   }>`SELECT t.title, t.topic, t.contacts, t.groups,
             CASE WHEN t.embedding IS NULL THEN NULL ELSE t.embedding::text END AS embedding,
-            t.created_by
+            t.created_by, t.facets, t.author_id, t.twist_id
        FROM public.thread t
       WHERE t.id = ${job.threadId}::uuid`.execute(db);
   const r = threadRow.rows[0];
@@ -94,6 +100,9 @@ export async function handleClassifyJob(
     candidate.groups = r.groups ?? [];
     candidate.embedding = parseEmbedding(r.embedding);
     candidate.author = r.created_by;
+    candidate.facets = r.facets ?? null;
+    candidate.authorContactId = r.author_id;
+    candidate.connectionId = r.twist_id != null ? r.created_by : null;
   }
 
   const classifier = getProductionClassifier(env);

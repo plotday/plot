@@ -19,6 +19,10 @@ export type ClassifyArgs = {
   topic?: string | null;
   contacts?: string[] | null;
   groups?: string[] | null;
+  /** Pre-insert callers: thread.facets when known. */
+  facets?: Record<string, string> | null;
+  /** Pre-insert callers: originating twist_instance id when known. */
+  connectionId?: string | null;
 };
 
 export type ClassifyResult = {
@@ -186,6 +190,9 @@ async function buildCandidate(
   let groups = args.groups ?? [];
   let embedding = parseEmbedding(args.embedding ?? null);
   let author: string | null = null;
+  let facets: Record<string, string> | null = args.facets ?? null;
+  let authorContactId: string | null = null;
+  let connectionId: string | null = args.connectionId ?? null;
 
   if (args.threadId) {
     const res = await sql<{
@@ -195,9 +202,12 @@ async function buildCandidate(
       groups: string[] | null;
       embedding: string | null;
       created_by: string | null;
+      facets: Record<string, string> | null;
+      author_id: string | null;
+      twist_id: string | null;
     }>`SELECT t.title, t.topic, t.contacts, t.groups,
               CASE WHEN t.embedding IS NULL THEN NULL ELSE t.embedding::text END AS embedding,
-              t.created_by
+              t.created_by, t.facets, t.author_id, t.twist_id
          FROM public.thread t
         WHERE t.id = ${args.threadId}::uuid`.execute(db);
     const r = res.rows[0];
@@ -208,6 +218,9 @@ async function buildCandidate(
       groups = (args.groups ?? r.groups ?? []) as string[];
       embedding = embedding ?? parseEmbedding(r.embedding);
       author = r.created_by;
+      facets = facets ?? r.facets ?? null;
+      authorContactId = r.author_id;
+      connectionId = connectionId ?? (r.twist_id != null ? r.created_by : null);
     }
   }
 
@@ -219,6 +232,9 @@ async function buildCandidate(
     groups,
     embedding,
     author,
+    facets,
+    authorContactId,
+    connectionId,
   };
 }
 

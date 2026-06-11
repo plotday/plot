@@ -29,6 +29,8 @@ export type AggregationMode =
   | { mode: "topk_mean"; k: number }
   | { mode: "softmax"; temperature: number };
 
+export type OriginBonus = { exact: number; org: number };
+
 export type LlmParams = {
   model:
     | "gemini-3-flash-preview"
@@ -105,6 +107,17 @@ export type HybridParams = {
    * mirror image of the user_moved positive training set. Set to 0 to disable.
    */
   negativePenaltyWeight: number;
+  /**
+   * Per-neighbor additive bonus when a user_moved example came from the
+   * SAME connection as the candidate (exact) or a connection sharing its
+   * org key (org) — mirrors the SQL scorer's 0.18/0.09 origin term. Added
+   * to the per-neighbor combined score BEFORE aggregation, outside the
+   * normalized SignalWeights. NOTE: topk_mean divides by k, so the
+   * post-aggregation effect is ~1/k of the SQL constants — these defaults
+   * are a starting point, tunable once the eval corpus models
+   * connections. Set both to 0 to disable.
+   */
+  originBonus: OriginBonus;
 
   highConfidenceFloor: number;
   marginFloor: number;
@@ -147,6 +160,7 @@ export const DEFAULTS: HybridParams = {
   // thread) subtracts ~0.24 — enough to demote a focus the user has rejected
   // for similar threads without overriding strong positive evidence.
   negativePenaltyWeight: 0.3,
+  originBonus: { exact: 0.18, org: 0.09 },
 
   // Calibrated for the post-/k aggregation: scoring scores cluster in
   // [0.10, 0.30] on noisy real corpora. The first-round (hcf=0.30,

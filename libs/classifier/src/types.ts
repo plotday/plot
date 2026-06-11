@@ -26,6 +26,20 @@ export interface Candidate {
   embedding: number[] | null;
   /** Resolved created_by for the candidate thread (UUID or null). */
   author: string | null;
+  /** thread.facets (format/automation/reach). Null ⇒ facet gate fails open. */
+  facets: Record<string, string> | null;
+  /**
+   * Author contact id (thread.author_id) — the contact-level identity the
+   * facet gate's trusted-sender exception checks against thread.contacts.
+   * Distinct from `author` (thread.created_by: a user or twist_instance id).
+   */
+  authorContactId: string | null;
+  /**
+   * Originating connection (twist_instance id): thread.created_by when
+   * thread.twist_id is set, else null. Drives the origin signal; null
+   * disables it for this candidate.
+   */
+  connectionId: string | null;
 }
 
 export interface ClassificationResult {
