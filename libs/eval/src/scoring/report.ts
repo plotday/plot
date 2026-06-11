@@ -1,8 +1,17 @@
 import type { Corpus } from "../corpus/schema";
+import type { BaselineComparison, BaselineFile } from "../runner/baseline";
 import type { RunResult, RunSummary } from "../runner/run";
 import { mcnemarExact, wilsonInterval } from "./stats";
 
 export type ReportFormat = "console" | "json" | "markdown";
+
+/** A loaded baseline plus its comparison against this run (CLI --baseline). */
+export type BaselineContext = {
+  file: BaselineFile;
+  /** Results filtered to the baseline's (classifier, trainingSet) combo. */
+  results: RunResult[];
+  comparison: BaselineComparison;
+};
 
 type PriorityLookup = Map<string, { slug: string; title: string }>;
 
@@ -16,18 +25,106 @@ export function formatReport(
   corpus: Corpus,
   summary: RunSummary,
   results: RunResult[],
-  format: ReportFormat
+  format: ReportFormat,
+  baseline?: BaselineContext | null
 ): string {
   const lookup = buildPriorityLookup(corpus);
   switch (format) {
     case "json":
-      return JSON.stringify({ summary, results }, null, 2);
+      return JSON.stringify(
+        {
+          summary,
+          results,
+          ...(baseline
+            ? {
+                baselineComparison: {
+                  meta: baseline.file.meta,
+                  ...baseline.comparison,
+                },
+              }
+            : {}),
+        },
+        null,
+        2
+      );
     case "markdown":
-      return renderMarkdown(summary, results, lookup);
+      return (
+        renderMarkdown(summary, results, lookup) +
+        (baseline
+          ? "\n\n" + renderBaselineComparison(baseline, corpus)
+          : "")
+      );
     case "console":
     default:
-      return renderConsole(summary, results, lookup);
+      return (
+        renderConsole(summary, results, lookup) +
+        (baseline
+          ? "\n\n" + renderBaselineComparison(baseline, corpus)
+          : "")
+      );
   }
+}
+
+/**
+ * Console section for a --baseline comparison: discordant counts, fixed/broke
+ * case lists with predicted-vs-gold priority names, and an exact McNemar p
+ * over the fixed/broke counts (~noise when p >= 0.05, matching the sweep
+ * leaderboard's annotation).
+ */
+export function renderBaselineComparison(
+  baseline: BaselineContext,
+  corpus: Corpus
+): string {
+  const lookup = buildPriorityLookup(corpus);
+  const { file, comparison } = baseline;
+  const byCase = new Map(baseline.results.map((r) => [r.caseId, r]));
+  const detail = (caseId: string): string => {
+    const was = file.results[caseId];
+    const now = byCase.get(caseId);
+    return (
+      `    ${caseId}: was=${name(was?.predicted ?? null, lookup)} ` +
+      `now=${name(now?.predicted ?? null, lookup)} ` +
+      `gold=${name(now?.goldId ?? null, lookup)}`
+    );
+  };
+
+  const lines: string[] = [];
+  lines.push(
+    `Baseline comparison (vs ${file.meta.classifier} / ${file.meta.trainingSet}, saved ${file.meta.createdAt}):`
+  );
+  lines.push(
+    `  fixed=${comparison.fixed.length}  broke=${comparison.broke.length}  ` +
+      `changed (no gold verdict)=${comparison.changedNeutral.length}  ` +
+      `same=${comparison.same}  new=${comparison.newCases.length}  ` +
+      `missing=${comparison.missingCases.length}`
+  );
+  if (comparison.fixed.length > 0) {
+    lines.push("  Fixed (was wrong, now matches gold):");
+    for (const id of comparison.fixed) lines.push(detail(id));
+  }
+  if (comparison.broke.length > 0) {
+    lines.push("  Broke (was gold, now wrong):");
+    for (const id of comparison.broke) lines.push(detail(id));
+  }
+  if (comparison.changedNeutral.length > 0) {
+    lines.push(
+      `  Changed without a gold verdict (${comparison.changedNeutral.length}): ` +
+        comparison.changedNeutral.join(", ")
+    );
+  }
+  if (comparison.newCases.length > 0) {
+    lines.push(`  New cases not in baseline: ${comparison.newCases.length}`);
+  }
+  if (comparison.missingCases.length > 0) {
+    lines.push(
+      `  Baseline cases absent from this run: ${comparison.missingCases.length}`
+    );
+  }
+  lines.push(
+    `  McNemar p = ${comparison.mcnemarP.toFixed(3)}` +
+      (comparison.mcnemarP >= 0.05 ? " ~noise" : "")
+  );
+  return lines.join("\n");
 }
 
 function renderConsole(

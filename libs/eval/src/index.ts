@@ -27,3 +27,9 @@ export {
 } from "@plotday/classifier";
 export type { RunResult, RunSummary } from "./runner/run";
 export { runEval } from "./runner/run";
+export type { BaselineComparison, BaselineFile } from "./runner/baseline";
+export {
+  buildBaseline,
+  compareToBaseline,
+  parseBaselineFile,
+} from "./runner/baseline";
