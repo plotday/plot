@@ -23,6 +23,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/router.dart';
@@ -843,6 +844,111 @@ Future<_MatchResult> _fetchMatches({
   }
 }
 
+/// Shared, mutable holder bridging the step-2 form builder and the in-modal
+/// progress widget. The progress widget writes [result] when the fetch lands,
+/// then triggers a form refresh so the builder rebuilds into the review UI.
+class _MatchLoadState {
+  _MatchLoadState(this.future);
+
+  final Future<_MatchResult> future;
+
+  /// Null while the fetch is in flight; set once it completes.
+  _MatchResult? result;
+}
+
+/// Friendly, no-jargon status messages cycled while matching runs. Timer-driven
+/// reassurance (not tied to real backend stages), looped if the fetch outlasts
+/// the list.
+const List<String> _matchingStatusMessages = [
+  'Looking through your threads…',
+  'Finding what fits…',
+  'Gathering the best matches…',
+  'Almost ready…',
+];
+
+/// Minimum time the progress UI stays up so a fast response doesn't flash.
+const Duration _matchingMinDisplay = Duration(milliseconds: 600);
+
+/// How long each status message shows before advancing.
+const Duration _matchingMessageInterval = Duration(milliseconds: 1800);
+
+/// In-modal progress shown while [load.future] is in flight. Cycles a spinner +
+/// friendly status line, and on completion writes [load.result] and refreshes
+/// the surrounding form into the review UI.
+class _MatchingProgress extends StatefulWidget {
+  const _MatchingProgress({required this.load});
+
+  final _MatchLoadState load;
+
+  @override
+  State<_MatchingProgress> createState() => _MatchingProgressState();
+}
+
+class _MatchingProgressState extends State<_MatchingProgress> {
+  int _messageIndex = 0;
+  Timer? _cycleTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _cycleTimer = Timer.periodic(_matchingMessageInterval, (_) {
+      if (!mounted) return;
+      setState(() {
+        _messageIndex = (_messageIndex + 1) % _matchingStatusMessages.length;
+      });
+    });
+    _awaitResult();
+  }
+
+  Future<void> _awaitResult() async {
+    final start = DateTime.now();
+    final result = await widget.load.future;
+    widget.load.result = result;
+
+    // Hold the progress UI for at least the minimum window.
+    final elapsed = DateTime.now().difference(start);
+    final remaining = _matchingMinDisplay - elapsed;
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
+    }
+
+    if (!mounted) return;
+    // Rebuild the surrounding form into the review UI.
+    await FormScope.of(context)?.refresh?.call();
+  }
+
+  @override
+  void dispose() {
+    _cycleTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.theme.spacing.xl,
+        vertical: context.theme.spacing.lg,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
+        children: [
+          const Spinner(),
+          Flexible(
+            child: Text(
+              _matchingStatusMessages[_messageIndex],
+              style: context.theme.typography.md.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Step-1 "Find matching threads" action: fetches the threads that match the
 /// description, then opens the review step ([_ShowFocusMatches]) as a nested
 /// modal. Running as a [FormButton] command, the form button shows its spinner
@@ -870,13 +976,17 @@ class _FindMatchingThreads extends Command {
     final description = (values['description'] as String? ?? '').trim();
     final title = (values['title'] as String? ?? '').trim();
 
-    final result = await _fetchMatches(description: description, title: title);
+    // Start the fetch but DON'T await it — navigate to the review modal right
+    // away so the user sees progress instead of a button spinner. The modal's
+    // progress widget observes this future and populates the form when it lands.
+    final load = _MatchLoadState(
+      _fetchMatches(description: description, title: title),
+    );
 
-    if (!context.mounted) return const CommandSkipped();
     return _ShowFocusMatches(
       values: values,
       root: root,
-      matches: result.matches,
+      load: load,
       suggestionKey: suggestionKey,
     ).run(context);
   }
@@ -913,11 +1023,13 @@ class _FocusMatch {
 /// Step 2 of [NewFocus]: review the threads that match the description. Pushed
 /// as a nested modal by [_FindMatchingThreads], so the form header shows a Back
 /// button and Esc returns to step 1 to edit the description and search again.
+/// Shown immediately in a loading state; [_MatchingProgress] refreshes it into
+/// the review UI once [load] completes.
 class _ShowFocusMatches extends ShowForm {
   _ShowFocusMatches({
     required Map<String, dynamic> values,
     required Priority root,
-    required List<_FocusMatch> matches,
+    required _MatchLoadState load,
     String? suggestionKey,
   }) : super(
          title: 'Add a focus',
@@ -926,7 +1038,7 @@ class _ShowFocusMatches extends ShowForm {
            ctx,
            values: values,
            root: root,
-           matches: matches,
+           load: load,
            suggestionKey: suggestionKey,
          ),
        );
@@ -936,15 +1048,40 @@ Future<FormData> _buildFocusMatchesForm(
   BuildContext context, {
   required Map<String, dynamic> values,
   required Priority root,
-  required List<_FocusMatch> matches,
+  required _MatchLoadState load,
   String? suggestionKey,
 }) async {
-  return FormData(
-    title: 'Add a focus',
-    groups: [
+  Future<List<StaticFormGroup>> buildGroups() async {
+    final result = load.result;
+
+    // Still loading: cycling progress, no Create button yet (Back/Esc returns
+    // to step 1).
+    if (result == null) {
+      return [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'matching_progress',
+              builder: (ctx) => _MatchingProgress(load: load),
+            ),
+          ],
+        ),
+      ];
+    }
+
+    // Loaded: review UI (failure / empty / matches) + Create button.
+    final matches = result.matches;
+    return [
       StaticFormGroup(
         items: [
-          if (matches.isEmpty)
+          if (result.failed)
+            FormInfo(
+              key: 'match_failed',
+              text:
+                  'We couldn’t check for matching threads just now. Create the '
+                  'focus and file threads into it as they come in.',
+            )
+          else if (matches.isEmpty)
             FormInfo(
               key: 'no_matches',
               text:
@@ -983,7 +1120,13 @@ Future<FormData> _buildFocusMatchesForm(
           ),
         ],
       ),
-    ],
+    ];
+  }
+
+  return FormData(
+    title: 'Add a focus',
+    groups: await buildGroups(),
+    onRefresh: buildGroups,
   );
 }
 
