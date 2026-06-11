@@ -18,6 +18,7 @@ export default [
     route("go/thanks", "routes/go.thanks.tsx"),
     route("terms", "routes/terms.tsx"),
     route("privacy", "routes/privacy.tsx"),
+    route("security", "routes/security.tsx"),
     route("help", "routes/help.tsx"),
     route("help/getting-started", "routes/help.getting-started.tsx"),
     route("help/faqs", "routes/help.faqs.tsx"),

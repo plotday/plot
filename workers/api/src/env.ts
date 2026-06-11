@@ -231,6 +231,12 @@ export type Bindings = {
   // 256-bit hex key for encrypting user-provided AI API keys at rest (AES-256-GCM)
   readonly AI_KEY_ENCRYPTION_KEY: string;
 
+  // 256-bit hex key for app-level encryption of stored connection auth tokens
+  // (AES-256-GCM). Optional: when unset, tokens are stored without the
+  // app-level layer (infrastructure encryption still applies) so a missing
+  // secret can't break auth.
+  readonly TOKEN_ENCRYPTION_KEY?: string;
+
   // Bearer token gating /admin/* endpoints (e.g. on-demand refreshAllChannels).
   readonly ADMIN_API_KEY?: string;
 

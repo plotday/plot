@@ -111,6 +111,9 @@ function AppFooter() {
           <Anchor component={Link} to="/privacy">
             Privacy Policy
           </Anchor>
+          <Anchor component={Link} to="/security">
+            Security
+          </Anchor>
         </Group>
       </Group>
     </Box>

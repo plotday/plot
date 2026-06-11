@@ -1404,6 +1404,7 @@ export interface User {
   avatar_url: string | null;
   clerk_id: string | null;
   created_at: Generated<Timestamp>;
+  deletion_requested_at: Timestamp | null;
   email: string;
   id: Generated<string>;
   name: string | null;

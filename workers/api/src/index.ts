@@ -58,6 +58,7 @@ import { recoverPendingConnections } from "./scheduled/recover-pending-connectio
 import { recoverStuckSyncs } from "./scheduled/recover-stuck-syncs";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
 import { reconcileMissingEmbeddings } from "./scheduled/reconcile-embeddings";
+import { purgeDeletedAccounts } from "./scheduled/purge-deleted-accounts";
 import { runSweep as runClassifySweep } from "./state/classify-thread";
 // Import webhook routes
 import webhook from "./webhook";
@@ -393,6 +394,17 @@ async function scheduled(
       });
     } catch (error) {
       logger.error("Error in classify sweep", error as Error);
+    }
+  }
+
+  // Daily (06:00-06:04 UTC): permanently purge accounts whose 14-day
+  // deletion window has elapsed — connections (stored tokens), twists,
+  // uploaded files, the Clerk user, then the DB row (cascades).
+  if (scheduledTime.getUTCHours() === 6 && scheduledMinutes < 5) {
+    try {
+      await purgeDeletedAccounts(env, _ctx);
+    } catch (error) {
+      logger.error("Error in account purge sweep", error as Error);
     }
   }
 

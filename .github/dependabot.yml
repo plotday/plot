@@ -1,0 +1,25 @@
+# Dependency vulnerability monitoring. Version-update PRs are grouped and
+# capped to stay low-noise; security update PRs are controlled by the repo's
+# Dependabot security settings (enable in GitHub repo settings).
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "pub"
+    directory: "/apps/plot"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3

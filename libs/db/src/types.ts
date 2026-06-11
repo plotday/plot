@@ -3262,6 +3262,7 @@ export type Database = {
           avatar_url: string | null
           clerk_id: string | null
           created_at: string
+          deletion_requested_at: string | null
           email: string
           id: string
           name: string | null
@@ -3271,6 +3272,7 @@ export type Database = {
           avatar_url?: string | null
           clerk_id?: string | null
           created_at?: string
+          deletion_requested_at?: string | null
           email: string
           id?: string
           name?: string | null
@@ -3280,6 +3282,7 @@ export type Database = {
           avatar_url?: string | null
           clerk_id?: string | null
           created_at?: string
+          deletion_requested_at?: string | null
           email?: string
           id?: string
           name?: string | null

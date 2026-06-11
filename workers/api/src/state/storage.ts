@@ -1,9 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
+import { PostHog } from "posthog-node";
 
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
+import {
+  isTokenKey,
+  openTokenValue,
+  sealTokenValue,
+} from "../utils/token-encryption";
 
-export class Storage extends DurableObject {
+export class Storage extends DurableObject<Bindings> {
   private sql: SqlStorage;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
@@ -36,7 +42,7 @@ export class Storage extends DurableObject {
     }
   }
 
-  get(key: string): string | null {
+  async get(key: string): Promise<string | null> {
     const logger = createLogger({
       durable_object: "Storage",
       operation: "get",
@@ -49,23 +55,47 @@ export class Storage extends DurableObject {
       if (result.done) {
         return null;
       }
-      return result.value.value as string;
+      const raw = result.value.value as string;
+      if (!isTokenKey(key)) {
+        return raw;
+      }
+      const opened = await openTokenValue(raw, this.env.TOKEN_ENCRYPTION_KEY);
+      if (opened === null) {
+        // Unrecoverable (missing/rotated key or corrupt envelope). Treat as
+        // absent so the caller prompts re-auth instead of parsing garbage.
+        const error = new Error("Token decryption failed");
+        logger.error("Failed to open encrypted token value", error, { key });
+        const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+          host: this.env.POSTHOG_HOST,
+          flushAt: 1,
+          flushInterval: 0,
+        });
+        postHog.captureException(error, undefined, {
+          durable_object: "Storage",
+          operation: "get",
+        });
+        this.ctx.waitUntil(postHog.shutdown());
+      }
+      return opened;
     } catch (error) {
       logger.error("Store get error", error as Error, { key });
       throw error;
     }
   }
 
-  set(key: string, value: string): void {
+  async set(key: string, value: string): Promise<void> {
+    const stored = isTokenKey(key)
+      ? await sealTokenValue(value, this.env.TOKEN_ENCRYPTION_KEY)
+      : value;
     this.sql.exec(
       `
-          INSERT INTO store (key, value) 
+          INSERT INTO store (key, value)
           VALUES (?, ?)
-          ON CONFLICT(key) DO UPDATE SET 
+          ON CONFLICT(key) DO UPDATE SET
             value = excluded.value
         `,
       key,
-      value
+      stored
     );
   }
 

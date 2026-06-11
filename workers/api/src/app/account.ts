@@ -930,6 +930,15 @@ account.delete("/account", async (c) => {
       // Continue with other deletion steps
     }
 
+    // Step 4: Record the deletion request. The daily purge cron permanently
+    // erases the account once this is 14+ days old
+    // (scheduled/purge-deleted-accounts.ts).
+    await c.var.db
+      .updateTable("user")
+      .set({ deletion_requested_at: new Date().toISOString() })
+      .where("id", "=", user.id)
+      .execute();
+
     // Step 5: Send notification email to team@plot.day
     const emailResult = await sendEmail(
       {
@@ -945,7 +954,7 @@ account.delete("/account", async (c) => {
             <li><strong>Deletion Requested:</strong> ${new Date().toISOString()}</li>
             <li><strong>Permanent Deletion Scheduled:</strong> ${bannedUntil.toISOString()}</li>
           </ul>
-          <p>The account has been deactivated. Please complete manual data deletion within 14 days.</p>
+          <p>The account has been deactivated and will be permanently deleted automatically on the scheduled date above. No manual action needed; to cancel (user changed their mind), unban the user in Clerk and clear user.deletion_requested_at.</p>
         `,
         text: `
 Account Deletion Request
@@ -956,7 +965,7 @@ A user has requested account deletion:
 - Deletion Requested: ${new Date().toISOString()}
 - Permanent Deletion Scheduled: ${bannedUntil.toISOString()}
 
-The account has been deactivated. Please complete manual data deletion within 14 days.
+The account has been deactivated and will be permanently deleted automatically on the scheduled date above. No manual action needed; to cancel (user changed their mind), unban the user in Clerk and clear user.deletion_requested_at.
         `,
       },
       c.env.RESEND_API_KEY
