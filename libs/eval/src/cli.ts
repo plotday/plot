@@ -259,7 +259,9 @@ async function main() {
 }
 
 function printHelp() {
-  console.log(`Usage: pnpm --filter @plotday/eval eval -- [options]
+  console.log(`Usage: cd libs/eval && pnpm exec tsx src/cli.ts [options]
+(do NOT use "pnpm --filter @plotday/eval eval -- ..." — pnpm forwards a
+literal "--" positional and parseArgs rejects it)
 
 Options:
   --corpus <name>           Corpus under libs/eval/corpora/<name>
