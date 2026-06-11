@@ -66,6 +66,8 @@ export type ScoringExplain = {
     origin: number;
     combined: number;
   }[];
+  /** Priority IDs dropped by the facet gate before threshold checks. */
+  facetGated?: string[];
 };
 
 export type ScoringOutcome =
@@ -139,7 +141,8 @@ export async function scoringStage(
   let candidateOrgKey: string | null = null;
   const originEnabled =
     (params.originBonus.exact > 0 || params.originBonus.org > 0) &&
-    candidate.connectionId !== null;
+    candidate.connectionId !== null &&
+    rows.length > 0;
   if (originEnabled) {
     const connIds = new Set<string>([candidate.connectionId!]);
     for (const n of rows) if (n.conn_id) connIds.add(n.conn_id);
@@ -289,7 +292,7 @@ export async function scoringStage(
     }
   }
 
-  const merged: {
+  let merged: {
     priorityId: string;
     score: number;
     neighborScore: number;
@@ -318,6 +321,39 @@ export async function scoringStage(
   }
   merged.sort((a, b) => b.score - a.score);
 
+  // Facet gate (mirrors classify_thread_for_user's scoring-stage gate):
+  // drop ranked priorities whose facet_filters this candidate violates,
+  // unless the author is trusted for that focus. Only the scoring stage is
+  // gated — structural stages and cold-start are not; the LLM tie-breaker
+  // inherits the gate because it draws candidates from this ranking.
+  // Always evaluated when a ranking exists: trustedSendersOnly gates
+  // regardless of candidate facets, and thread_facets_gated returns
+  // immediately for priorities with null facet_filters.
+  let facetGated: string[] = [];
+  if (merged.length > 0) {
+    const gateRes = await ctx.rawQuery(
+      `SELECT pid, public.thread_facets_gated($1::uuid, $2::jsonb, $3::uuid, pid) AS gated
+         FROM unnest($4::uuid[]) AS pid`,
+      [
+        ctx.userId,
+        candidate.facets === null ? null : JSON.stringify(candidate.facets),
+        candidate.authorContactId,
+        merged.map((m) => m.priorityId),
+      ]
+    );
+    const gatedSet = new Set(
+      (gateRes.rows as { pid: string; gated: boolean }[])
+        .filter((r) => r.gated)
+        .map((r) => r.pid)
+    );
+    if (gatedSet.size > 0) {
+      facetGated = merged
+        .filter((m) => gatedSet.has(m.priorityId))
+        .map((m) => m.priorityId);
+      merged = merged.filter((m) => !gatedSet.has(m.priorityId));
+    }
+  }
+
   const hierarchiesRecord: Record<
     string,
     { hierarchyId: string; hierarchyTitle: string }
@@ -343,6 +379,7 @@ export async function scoringStage(
     topNeighbors,
     hierarchies: hierarchiesRecord,
     candidateAccounts,
+    facetGated: facetGated.length > 0 ? facetGated : undefined,
   };
 
   if (merged.length === 0) {

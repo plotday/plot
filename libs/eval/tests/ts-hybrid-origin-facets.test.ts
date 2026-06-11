@@ -130,4 +130,77 @@ describe("scoringStage origin wiring", () => {
     expect(out.matched).toBe(false);
     expect(queries.some((q) => q.includes("connection_org_key"))).toBe(false);
   });
+
+  it("no neighbors ⇒ org-key query never issued", async () => {
+    const queries: string[] = [];
+    const ctx = fakeCtx(
+      [{ match: "user_moved = TRUE", rows: () => [] }],
+      queries
+    );
+    const out = await scoringStage(ctx, { ...CANDIDATE, connectionId: CONN_A }, PARAMS);
+    expect(out.matched).toBe(false);
+    expect(queries.some((q) => q.includes("connection_org_key"))).toBe(false);
+  });
+
+  it("origin is diluted by topk_mean aggregation (per-neighbor, not post-aggregation)", async () => {
+    const ctx = fakeCtx([
+      { match: "user_moved = TRUE", rows: () => [neighbor(P1, "t1", CONN_A)] },
+      orgKeys({}),
+      gate([]),
+    ]);
+    const out = await scoringStage(
+      ctx,
+      { ...CANDIDATE, connectionId: CONN_A },
+      { ...PARAMS, aggregation: { mode: "topk_mean", k: 3 } }
+    );
+    // One neighbor at combined=0.18, divided by k=3 ⇒ 0.06 < threshold 0.08.
+    expect(out.matched).toBe(false);
+    expect(out.top1).toBeCloseTo(0.06, 5);
+  });
+});
+
+describe("scoringStage facet gate wiring", () => {
+  const twoNeighbors: Route = {
+    match: "user_moved = TRUE",
+    rows: () => [neighbor(P1, "t1", CONN_A), neighbor(P2, "t2", CONN_B)],
+  };
+  const bothOrgs = orgKeys({
+    [CONN_A]: "domain:acme.com",
+    [CONN_B]: "domain:acme.com",
+  });
+
+  it("gated top priority falls through to the next candidate", async () => {
+    // P1 scores 0.18 (exact), P2 scores 0.09 (org). Gate drops P1 ⇒ P2 wins.
+    const ctx = fakeCtx([twoNeighbors, bothOrgs, gate([P1])]);
+    const out = await scoringStage(ctx, { ...CANDIDATE, connectionId: CONN_A }, PARAMS);
+    expect(out.matched).toBe(true);
+    if (out.matched) expect(out.priorityId).toBe(P2);
+    expect(out.explain.facetGated).toEqual([P1]);
+  });
+
+  it("fully gated ranking ⇒ no match", async () => {
+    const ctx = fakeCtx([twoNeighbors, bothOrgs, gate([P1, P2])]);
+    const out = await scoringStage(ctx, { ...CANDIDATE, connectionId: CONN_A }, PARAMS);
+    expect(out.matched).toBe(false);
+    expect(out.explain.facetGated).toEqual(expect.arrayContaining([P1, P2]));
+  });
+
+  it("gate query runs even with null candidate facets (trustedSendersOnly gates regardless)", async () => {
+    const queries: string[] = [];
+    const ctx = fakeCtx([twoNeighbors, bothOrgs, gate([])], queries);
+    const out = await scoringStage(ctx, { ...CANDIDATE, connectionId: CONN_A }, PARAMS);
+    expect(out.matched).toBe(true);
+    expect(queries.some((q) => q.includes("thread_facets_gated"))).toBe(true);
+  });
+
+  it("empty ranking skips the gate query", async () => {
+    const queries: string[] = [];
+    const ctx = fakeCtx(
+      [{ match: "user_moved = TRUE", rows: () => [] }],
+      queries
+    );
+    const out = await scoringStage(ctx, CANDIDATE, PARAMS);
+    expect(out.matched).toBe(false);
+    expect(queries.some((q) => q.includes("thread_facets_gated"))).toBe(false);
+  });
 });
