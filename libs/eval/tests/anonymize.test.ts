@@ -301,9 +301,14 @@ describe("leakCheck", () => {
     expect(scrubbed).toContain("Vendor");
     const docs = [{ path: "a.yaml", text: `group_name: ${scrubbed}\n` }];
     const report = leakCheck(docs, { emails: [], names: [contactName], orgDomains: [] });
-    expect(report.violations.some((v) => v.kind === "name" && v.value === "vendor")).toBe(
+    // Token-needle hits are WARNING-grade (audit list), not violations:
+    // service-named prod contacts ("Google", "Linear") make their tokens
+    // match benign structural YAML, and violation-grade tokens would block
+    // every extraction. Full-name matches stay violations.
+    expect(report.warnings.some((v) => v.kind === "name" && v.value === "vendor")).toBe(
       true
     );
+    expect(report.violations).toHaveLength(0);
   });
 
   it("flags org domains anywhere non-title as violations", () => {

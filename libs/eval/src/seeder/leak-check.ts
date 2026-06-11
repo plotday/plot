@@ -110,20 +110,29 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
   // boundaries so punctuated names ("Anna (Vendor)") still yield "vendor".
   // The same false-positive guards apply per token (length >= 4, common-word
   // skip), so short/generic tokens don't flood the report.
-  const nameNeedleSet = new Set<string>();
+  const fullNameNeedleSet = new Set<string>();
+  const tokenNeedleSet = new Set<string>();
   for (const rawName of pii.names) {
     const full = rawName.trim().toLowerCase();
     if (!full) continue;
     if (full.length >= MIN_NAME_LENGTH && !COMMON_WORD_NAMES.has(full)) {
-      nameNeedleSet.add(full);
+      fullNameNeedleSet.add(full);
     }
     for (const token of full.split(/[^\p{L}]+/u)) {
       if (token.length >= MIN_NAME_LENGTH && !COMMON_WORD_NAMES.has(token)) {
-        nameNeedleSet.add(token);
+        tokenNeedleSet.add(token);
       }
     }
   }
-  const nameNeedles = [...nameNeedleSet];
+  const fullNameNeedles = [...fullNameNeedleSet];
+  // Single tokens are warning-grade only: prod contacts include service
+  // senders ("Google", "Linear", "Cycling Weekly"), whose tokens match benign
+  // structural YAML (provider:, path:, slugs) — a violation storm with no
+  // leak. Full-name matches stay violation-grade; token hits land in the
+  // audit list for human review.
+  const tokenNeedles = [...tokenNeedleSet].filter(
+    (t) => !fullNameNeedleSet.has(t)
+  );
   const domainNeedles = [
     ...new Set(
       pii.orgDomains
@@ -141,7 +150,11 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
       const rawLine = lines[i]!;
       const lowerLine = rawLine.toLowerCase();
       const warnScope = WARN_SCOPE_RE.test(rawLine);
-      const scan = (kind: LeakFinding["kind"], needles: string[]) => {
+      const scan = (
+        kind: LeakFinding["kind"],
+        needles: string[],
+        forceWarn = false
+      ) => {
         for (const needle of needles) {
           if (!lowerLine.includes(needle)) continue;
           const dedupeKey = `${doc.path}\u0000${i + 1}\u0000${kind}\u0000${needle}`;
@@ -154,11 +167,14 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
             value: needle,
             context: truncate(rawLine.trim()),
           };
-          (warnScope ? report.warnings : report.violations).push(finding);
+          (warnScope || forceWarn ? report.warnings : report.violations).push(
+            finding
+          );
         }
       };
       scan("email", emailNeedles);
-      scan("name", nameNeedles);
+      scan("name", fullNameNeedles);
+      scan("name", tokenNeedles, true);
       scan("domain", domainNeedles);
     }
   }
