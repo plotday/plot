@@ -1,0 +1,330 @@
+{
+  "meta": {
+    "classifier": "ts:hybrid:default",
+    "corpus": "kris",
+    "trainingSet": "full",
+    "createdAt": "2026-06-11T11:28:40.906Z"
+  },
+  "results": {
+    "001-019e088a": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "channel_default"
+    },
+    "002-019df366": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "topic_shortcircuit"
+    },
+    "003-019dbffe": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "channel_default"
+    },
+    "004-019dbffe": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "channel_default"
+    },
+    "005-019dbff2": {
+      "predicted": "019c7285-073d-7937-8376-467a90ea24e9",
+      "stage": "priority_title_override"
+    },
+    "006-019dbfe6": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "channel_default"
+    },
+    "007-019e3842": {
+      "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+      "stage": "topic_shortcircuit"
+    },
+    "008-019e2d41": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "scoring"
+    },
+    "009-019e2d3c": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "010-019e2d3c": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "011-019e2d3c": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "013-019e3392": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "priority_title_override"
+    },
+    "014-019e2dd5": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "priority_title_override"
+    },
+    "016-019de191": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "scoring"
+    },
+    "019-019cb9a4": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "scoring"
+    },
+    "021-019cc015": {
+      "predicted": "019def07-5926-7267-bbb6-425ac07e1f17",
+      "stage": "scoring"
+    },
+    "024-019dff91": {
+      "predicted": "019def07-5926-7267-bbb6-425ac07e1f17",
+      "stage": "scoring"
+    },
+    "025-019dff8e": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "026-019cd511": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "028-019cb99c": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "scoring"
+    },
+    "029-019e3868": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "topic_shortcircuit"
+    },
+    "030-019e2c3d": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "031-019e0797": {
+      "predicted": "019e03e8-6de5-71ab-9d38-75b7dec26da7",
+      "stage": "topic_shortcircuit"
+    },
+    "032-019dac0c": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "topic_shortcircuit"
+    },
+    "033-019db0d8": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "034-019cba8e": {
+      "predicted": "019def07-5926-7267-bbb6-425ac07e1f17",
+      "stage": "scoring"
+    },
+    "035-019db0c5": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "scoring"
+    },
+    "036-019cb8fe": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "037-019d990a": {
+      "predicted": "019def07-5926-7267-bbb6-425ac07e1f17",
+      "stage": "scoring"
+    },
+    "038-019e2d3a": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "039-019e2c66": {
+      "predicted": "019e3c75-fac4-7b10-be1d-0b74467c7a9c",
+      "stage": "scoring"
+    },
+    "040-019d250d": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "scoring"
+    },
+    "041-019cb9a3": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "scoring"
+    },
+    "042-019c6eca": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "scoring"
+    },
+    "043-019cbb66": {
+      "predicted": "019c7b66-95da-75dc-8c86-fb65d3e8a19f",
+      "stage": "topic_shortcircuit"
+    },
+    "044-019cb9a3": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "scoring"
+    },
+    "045-019df0cc": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "topic_shortcircuit"
+    },
+    "046-019cbb5b": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "scoring"
+    },
+    "047-019dadaf": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "topic_shortcircuit"
+    },
+    "048-019ddacc": {
+      "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+      "stage": "topic_shortcircuit"
+    },
+    "049-019dac1c": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "topic_shortcircuit"
+    },
+    "050-019e3b55": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "051-019e35fd": {
+      "predicted": "019e3ccb-e6e6-76f1-a025-15cd7605c335",
+      "stage": "scoring"
+    },
+    "053-019e2c5d": {
+      "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+      "stage": "topic_shortcircuit"
+    },
+    "054-019e2c5c": {
+      "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+      "stage": "topic_shortcircuit"
+    },
+    "055-019e2c5c": {
+      "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+      "stage": "topic_shortcircuit"
+    },
+    "056-019e2c5c": {
+      "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+      "stage": "topic_shortcircuit"
+    },
+    "057-019e2d37": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "058-019e2d2c": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "059-019ddacd": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "topic_shortcircuit"
+    },
+    "060-019ddfb7": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "061-019db068": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "062-019dac10": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "topic_shortcircuit"
+    },
+    "063-019dab37": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "scoring"
+    },
+    "064-019da043": {
+      "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+      "stage": "priority_title_override"
+    },
+    "065-019d654e": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "scoring"
+    },
+    "066-019d46d5": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "topic_shortcircuit"
+    },
+    "067-019cd33e": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "scoring"
+    },
+    "068-019cc122": {
+      "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+      "stage": "scoring"
+    },
+    "069-019e0fa3": {
+      "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+      "stage": "topic_shortcircuit"
+    },
+    "070-019dd544": {
+      "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+      "stage": "scoring"
+    },
+    "071-019e2c95": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "072-019e2c59": {
+      "predicted": "019e3c75-fac4-7b10-be1d-0b74467c7a9c",
+      "stage": "topic_shortcircuit"
+    },
+    "073-019e2c5b": {
+      "predicted": "019e3c7c-0f48-7df4-9c46-2467abd834bc",
+      "stage": "priority_title_override"
+    },
+    "074-019e2cbf": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "075-019e2cd5": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "076-019e2c75": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "077-019e2c6b": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "078-019e2cc6": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "079-019e2c93": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "080-019e2c62": {
+      "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+      "stage": "topic_shortcircuit"
+    },
+    "081-019e2c60": {
+      "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+      "stage": "topic_shortcircuit"
+    },
+    "082-019e2c60": {
+      "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+      "stage": "topic_shortcircuit"
+    },
+    "083-019e2c83": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "084-019e2c62": {
+      "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+      "stage": "topic_shortcircuit"
+    },
+    "085-019e2c59": {
+      "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+      "stage": "topic_shortcircuit"
+    },
+    "086-019e2c5b": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "087-019e2c5a": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "088-019e2c5d": {
+      "predicted": "019e4216-e867-7b61-8733-4e55f753db60",
+      "stage": "topic_shortcircuit"
+    },
+    "089-019e2c5b": {
+      "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+      "stage": "topic_shortcircuit"
+    }
+  }
+}
