@@ -316,15 +316,12 @@ class FixedFocusTileState extends State<FixedFocusTile> {
       },
       leadingBuilder: (isHovered, hasFocus) {
         final iconSize = context.theme.iconSizes.base;
-        // Standard command-tile leading metrics: 20px from the panel edge,
-        // then a 12px gap to the title (mirrors PriorityWidget).
-        return Padding(
-          padding: const EdgeInsets.only(left: 20, right: 12),
-          child: SizedBox.square(
-            dimension: iconSize,
-            // Icon shares the title's colour so the two always match.
-            child: Icon(widget.icon, size: iconSize, color: labelColor),
-          ),
+        // Shared sidebar leading slot (md inset on either side of the icon —
+        // see sidebarLeading / PriorityWidget). Icon shares the title's colour
+        // so the two always match.
+        return sidebarLeading(
+          context,
+          Icon(widget.icon, size: iconSize, color: labelColor),
         );
       },
       // Title in the accent colour, with the unread dot trailing it (kept

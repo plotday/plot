@@ -17,11 +17,13 @@ import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/widget/list_tile.dart';
+import 'package:plot/widget/sidebar_leading.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/connection_status_tile.dart';
 import 'package:plot/widget/header.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 
 @RoutePage(name: 'PrioritiesRoute')
@@ -174,7 +176,6 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
       },
     );
   }
-
 }
 
 /// Flat focus-as-filter sidebar shown in place of [PrioritiesList] while a
@@ -345,7 +346,22 @@ class LeftPanelFooter extends StatelessWidget {
                   textStyle: context.theme.typography.sm.copyWith(
                     fontWeight: FontWeight.w500,
                   ),
-                  icon: PlotIcon.account,
+                  // Flush-left sidebar leading slot (muted → foreground on
+                  // hover, matching `muted: true`), so the account tile lines
+                  // up with the focus and connection tiles above it.
+                  leadingBuilder: (isHovered, hasFocus) {
+                    final highlighted = isHovered || hasFocus;
+                    return sidebarLeading(
+                      context,
+                      Icon(
+                        PlotIcon.account,
+                        size: context.theme.iconSizes.base,
+                        color: highlighted
+                            ? context.theme.colors.foreground
+                            : context.theme.plotColors.muted,
+                      ),
+                    );
+                  },
                   muted: true,
                   highlightColor: const Color(0x00000000),
                   command: CommandWrapper(ShowSettings(), icon: Value(null)),

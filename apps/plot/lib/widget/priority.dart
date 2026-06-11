@@ -236,19 +236,15 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       textStyle: effectiveTextStyle,
       leadingBuilder: (isHovered, hasFocus) {
         final iconSize = buildContext.theme.iconSizes.base;
-        // Leading focus icon, positioned with the standard command-tile
-        // metrics: 20px from the panel edge, then a 12px gap to the title
-        // (mirrors ListTile._buildContent's icon slot). The unread dot now
-        // trails the title — see _buildLabel.
-        return Padding(
-          padding: const EdgeInsets.only(left: 20, right: 12),
-          child: SizedBox.square(
-            dimension: iconSize,
-            child: Icon(
-              PlotIcon.focusIcon(priority.icon),
-              size: iconSize,
-              color: labelColor,
-            ),
+        // Leading focus icon in the shared sidebar leading slot (md inset on
+        // either side — see sidebarLeading). The unread dot now trails the
+        // title — see _buildLabel.
+        return sidebarLeading(
+          buildContext,
+          Icon(
+            PlotIcon.focusIcon(priority.icon),
+            size: iconSize,
+            color: labelColor,
           ),
         );
       },

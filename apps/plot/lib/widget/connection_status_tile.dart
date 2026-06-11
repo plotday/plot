@@ -9,6 +9,7 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
+import 'package:plot/widget/sidebar_leading.dart';
 import 'package:plot/widget/pulsing_icon.dart';
 
 /// Status tile shown above the account tile in the priorities panel.
@@ -145,9 +146,8 @@ class ConnectionStatusTile extends StatelessWidget {
     );
   }
 
-  /// Builds a leading-slot icon that matches the default ListTile spacing
-  /// (20px left inset, 12px gap to the label). The icon color flips
-  /// muted → foreground on hover, matching `muted: true`.
+  /// Builds an icon in the shared sidebar leading slot (see [sidebarLeading]).
+  /// The icon color flips muted → foreground on hover, matching `muted: true`.
   Widget? Function(bool, bool) _leadingIcon(
     BuildContext context,
     IconData icon,
@@ -185,15 +185,7 @@ class ConnectionStatusTile extends StatelessWidget {
     final shifted = isWidePlug
         ? Transform.translate(offset: Offset(-base * 0.125, 0), child: child)
         : child;
-    // Match the default ListTile leading: 20px left inset + 16px icon slot
-    // + 12px gap to the label.
-    return (isHovered, hasFocus) => Padding(
-      padding: const EdgeInsets.only(left: 20, right: 12),
-      child: SizedBox.square(
-        dimension: base,
-        child: Center(child: shifted),
-      ),
-    );
+    return (isHovered, hasFocus) => sidebarLeading(context, shifted);
   }
 
   /// Resolve display names for the twist instances referenced by the supplied

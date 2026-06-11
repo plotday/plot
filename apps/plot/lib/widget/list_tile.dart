@@ -379,6 +379,9 @@ class _ListTileState extends State<ListTile> {
               // so the entire highlighted row is clickable.
               // See test/widget/list_tile_hit_area_test.dart.
               final fillRowHeight = widget.trailingBuilder != null;
+              final spinnerSize = widget.style == ListTileStyle.header
+                  ? context.theme.iconSizes.sm
+                  : context.theme.iconSizes.base;
               Widget? fill(Widget? child) =>
                   fillRowHeight && child != null ? Center(child: child) : child;
               Widget intrinsic(Widget child) =>
@@ -449,10 +452,13 @@ class _ListTileState extends State<ListTile> {
                                 widget.onTap ??
                                 (widget.command != null ? () => run() : null),
                             // While a command is running, overlay a Spinner
-                            // centered on the leading widget. The original
-                            // widget is kept at 0 opacity so the slot width
-                            // (and therefore the title column position) is
-                            // preserved across the swap.
+                            // centred on the leading slot. The original widget
+                            // is kept at 0 opacity so the slot width (and the
+                            // title column position) is preserved across the
+                            // swap. Leading slots centre their icon in a
+                            // symmetric box (see sidebarLeading / the modal
+                            // unread dot), so centring the spinner over the slot
+                            // lands it on the icon.
                             child: fill(
                               _showSpinner
                                   ? Stack(
@@ -466,11 +472,7 @@ class _ListTileState extends State<ListTile> {
                                           ),
                                         ),
                                         Spinner(
-                                          size:
-                                              widget.style ==
-                                                  ListTileStyle.header
-                                              ? context.theme.iconSizes.sm
-                                              : context.theme.iconSizes.base,
+                                          size: spinnerSize,
                                           color: context.theme.plotColors.muted,
                                         ),
                                       ],
