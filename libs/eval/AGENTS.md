@@ -200,6 +200,7 @@ Registered (`src/classifiers/registry.ts`):
 | `ts:hybrid-llm:default` | Production LLM cascade, prod `DEFAULTS_LLM` (model `gemini-3-flash-preview`). **CLI default.** |
 | `ts:hybrid:default` | Deterministic cascade (no LLM stages), prod `DEFAULTS`. Cheap proxy for broad sweeps. |
 | `ts:hybrid-llm:tight-gates` | LLM cascade with `highConfidenceFloor: 0.55`, `marginFloor: 0.12`. |
+| `ts:hybrid-llm:tuned-2026-06` | First tuning pass: floors 0.75/0.3 + topic-ambiguity lists 6/5. Proposed WITH RESERVATIONS (pooled p=0.0625, holdout flat) — see `docs/superpowers/reports/2026-06-11-eval-framework-report.md`. |
 | `sql:current` | Legacy `public.classify_thread_for_user` (still on some DB trigger paths). |
 
 Every eval-registered LLM variant gets an **unlimited budget gate** — the
