@@ -1139,6 +1139,158 @@ describe("buildCorpusFiles", () => {
     expect(v.candidate.title).toBe("unresolvable thread");
   });
 
+  it("nulls stale gold/expected labels when referenced priority no longer exists in new world", async () => {
+    // Scenario: prod refresh. The old world had a "using-plot" priority (P3)
+    // that is now archived and absent from the new world.yaml. The preserved
+    // case has gold="using-plot" and expected="using-plot". After build:
+    // gold and expected must be null, notes must contain the stale-label
+    // messages, gold_source must be null, and the report must count them.
+    const P3_ARCHIVED = "f2000000-0000-4000-8000-000000000099";
+    const input = baseBuildInput();
+    // Provide an existingWorldYaml so the migration knows about the old slugs.
+    // P3 is in the old world but absent from input.world.priorities (new world).
+    input.existingWorldYaml = [
+      "name: fixture-corpus",
+      "schema_version: 2",
+      `user: { id: "${W_USER}", email: "c-old@example.test" }`,
+      "priorities:",
+      `  - { slug: inbox, id: "${P1}", path: evalroot, title: Inbox }`,
+      `  - { slug: engineering, id: "${P2}", path: evalroot.eng, title: Engineering }`,
+      `  - { slug: using-plot, id: "${P3_ARCHIVED}", path: evalroot.using-plot, title: Using Plot }`,
+      "",
+    ].join("\n");
+
+    // A preserved case with gold and expected pointing at the archived priority.
+    const refreshedThread = fixtureThread({
+      id: E_CASE,
+      title: "Stale gold case",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      filedToPriority: P2,
+    });
+    const resolution = new Map<string, CaseResolution>([
+      ["001-f2000000", { status: "hydrated", thread: refreshedThread }],
+    ]);
+    const merged = mergeExistingCases(
+      [
+        {
+          id: "001-f2000000",
+          description: "Archived priority test.",
+          tags: ["channel:N"],
+          candidate: { title: "old title", contacts: [] },
+          labels: {
+            gold: "using-plot",
+            gold_rationale: "Old judgment",
+            gold_source: "human",
+            expected: "using-plot",
+            expected_stage: null,
+            expected_recorded_at: "2026-05-01T00:00:00.000Z",
+          },
+          notes: "existing note",
+        },
+      ] as Record<string, unknown>[],
+      resolution
+    );
+    input.cases = merged.entries;
+
+    const { files, report } = buildCorpusFiles(input);
+    const casesDoc = parseYaml(files.find((f) => f.path === "cases.yaml")!.text) as {
+      cases: Record<string, any>[];
+    };
+    const c = casesDoc.cases.find((c) => c.id === "001-f2000000")!;
+
+    // gold and gold_source nulled; gold_rationale preserved; expected nulled.
+    expect(c.labels.gold).toBeNull();
+    expect(c.labels.gold_source).toBeNull();
+    expect(c.labels.gold_rationale).toBe("Old judgment");
+    expect(c.labels.expected).toBeNull();
+
+    // Notes: original note + stale-label messages appended.
+    expect(c.notes).toContain("existing note");
+    expect(c.notes).toContain(`stale gold label: was "using-plot"`);
+    expect(c.notes).toContain("priority no longer active in prod");
+    expect(c.notes).toContain(`stale expected: was "using-plot"`);
+
+    // Report must mention the counts.
+    expect(report.some((l) => /1 stale gold label/.test(l))).toBe(true);
+    expect(report.some((l) => /1 stale expected label/.test(l))).toBe(true);
+
+    // The emitted corpus must load without errors.
+    const dir = await writeBuiltCorpus(files);
+    const corpus = await loadCorpus(dir);
+    const loaded = corpus.cases.find((c) => c.id === "001-f2000000")!;
+    expect(loaded.labels.gold).toBeNull();
+    expect(loaded.labels.expected).toBeNull();
+  });
+
+  it("keeps gold/expected when the priority is present in the new world (possibly re-slugged)", async () => {
+    // Scenario: a priority was renamed (slug changed) between extractions.
+    // The old slug "inbox-zero" → P1 → new slug "inbox". The preserved case
+    // must keep the updated slug, not be nulled.
+    const input = baseBuildInput();
+    input.existingWorldYaml = [
+      "name: fixture-corpus",
+      "schema_version: 2",
+      `user: { id: "${W_USER}", email: "c-old@example.test" }`,
+      "priorities:",
+      `  - { slug: inbox-zero, id: "${P1}", path: evalroot, title: Old Inbox Title }`,
+      `  - { slug: engineering, id: "${P2}", path: evalroot.eng, title: Engineering }`,
+      "",
+    ].join("\n");
+
+    const refreshedThread = fixtureThread({
+      id: E_CASE,
+      title: "Renamed priority case",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      filedToPriority: P2,
+    });
+    const resolution = new Map<string, CaseResolution>([
+      ["001-f2000000", { status: "hydrated", thread: refreshedThread }],
+    ]);
+    const merged = mergeExistingCases(
+      [
+        {
+          id: "001-f2000000",
+          description: "Renamed priority test.",
+          tags: [],
+          candidate: { title: "old title", contacts: [] },
+          labels: {
+            gold: "inbox-zero",
+            gold_rationale: "Still valid",
+            gold_source: "human",
+            expected: "inbox-zero",
+            expected_stage: null,
+            expected_recorded_at: "2026-05-01T00:00:00.000Z",
+          },
+          notes: "",
+        },
+      ] as Record<string, unknown>[],
+      resolution
+    );
+    input.cases = merged.entries;
+
+    const { files, report } = buildCorpusFiles(input);
+    const casesDoc = parseYaml(files.find((f) => f.path === "cases.yaml")!.text) as {
+      cases: Record<string, any>[];
+    };
+    const c = casesDoc.cases.find((c) => c.id === "001-f2000000")!;
+
+    // Slug migrated to the new name; NOT nulled.
+    expect(c.labels.gold).toBe("inbox");
+    expect(c.labels.gold_source).toBe("human");
+    expect(c.labels.expected).toBe("inbox");
+
+    // No stale-label report lines.
+    expect(report.some((l) => /stale gold label/.test(l))).toBe(false);
+    expect(report.some((l) => /stale expected label/.test(l))).toBe(false);
+
+    // The corpus loads and resolves to P1.
+    const dir = await writeBuiltCorpus(files);
+    const corpus = await loadCorpus(dir);
+    const loaded = corpus.cases.find((c) => c.id === "001-f2000000")!;
+    expect(loaded.labels.gold).toBe(P1);
+    expect(loaded.labels.expected).toBe(P1);
+  });
+
   it("throws when a referenced contact is missing from the world (caller bug)", () => {
     const input = baseBuildInput();
     input.trainings[0]!.contacts = [

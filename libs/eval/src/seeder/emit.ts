@@ -617,6 +617,9 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
   const migrateSlug = (s: unknown): unknown =>
     typeof s === "string" && slugMigration.has(s) ? slugMigration.get(s)! : s;
 
+  // Valid priority slugs in the NEW world (for stale-label detection).
+  const validPrioritySlugs = new Set(prioritySlug.values());
+
   // ---- Ref resolution (throws on caller bugs: missing world entities) -------
   const contactRef = (id: string, ctx: string): string => {
     const s = contactSlug.get(id);
@@ -731,6 +734,8 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
   // ---- cases.yaml --------------------------------------------------------------
   const casesOut: Record<string, unknown>[] = [];
   const verbatimRefsNeeded: string[] = [];
+  let staleGoldCount = 0;
+  let staleExpectedCount = 0;
   for (const entry of input.cases) {
     if (entry.kind === "verbatim") {
       const c = structuredClone(entry.raw);
@@ -789,10 +794,41 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
       facets: fields.facets,
     };
     let labels: Record<string, unknown>;
+    let staleNotes: string[] = [];
     if (entry.labels.kind === "preserved") {
       labels = { ...entry.labels.raw };
       if ("gold" in labels) labels.gold = migrateSlug(labels.gold);
       if ("expected" in labels) labels.expected = migrateSlug(labels.expected);
+      // Stale-label detection: if a gold/expected ref no longer resolves to a
+      // priority in the NEW world, null it rather than emitting a dangling slug
+      // that will fail corpus load. gold_rationale is kept as a record of the
+      // old judgment; a note is appended to the case's top-level notes field
+      // explaining what happened.
+      if (
+        "gold" in labels &&
+        typeof labels.gold === "string" &&
+        labels.gold !== null &&
+        !validPrioritySlugs.has(labels.gold)
+      ) {
+        staleNotes.push(
+          `stale gold label: was "${labels.gold}" — priority no longer active in prod`
+        );
+        labels.gold = null;
+        if ("gold_source" in labels) labels.gold_source = null;
+        staleGoldCount++;
+      }
+      if (
+        "expected" in labels &&
+        typeof labels.expected === "string" &&
+        labels.expected !== null &&
+        !validPrioritySlugs.has(labels.expected)
+      ) {
+        staleNotes.push(
+          `stale expected: was "${labels.expected}" — priority no longer active in prod`
+        );
+        labels.expected = null;
+        staleExpectedCount++;
+      }
     } else {
       labels = {
         gold:
@@ -816,6 +852,7 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
         expected_recorded_at: entry.labels.expectedRecordedAt,
       };
     }
+    const caseNotes = [entry.notes, ...staleNotes].filter(Boolean).join("\n");
     casesOut.push({
       id: entry.id,
       source_thread_id: t.id,
@@ -824,8 +861,19 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
       description: entry.description,
       candidate,
       labels,
-      notes: entry.notes,
+      notes: caseNotes,
     });
+  }
+
+  if (staleGoldCount > 0) {
+    report.push(
+      `${staleGoldCount} stale gold label(s) nulled — priority no longer active in prod`
+    );
+  }
+  if (staleExpectedCount > 0) {
+    report.push(
+      `${staleExpectedCount} stale expected label(s) nulled — priority no longer active in prod`
+    );
   }
 
   // Verbatim-case embedding refs: carry old vectors forward so refs don't
