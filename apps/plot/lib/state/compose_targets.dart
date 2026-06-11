@@ -883,6 +883,16 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         }
         candidates.add((roster: e.roster, ms: e.ms));
       }
+      // Warm member contacts for every candidate group so the at-rest people
+      // list shows a correct member count (the synchronous _groupPeopleEntry
+      // below reads the Actor cache only — see _warmGroupMembers).
+      for (final c in candidates) {
+        for (final gid in c.roster.groups) {
+          final g = Group.fromCache(gid) ?? await Group.getOne(gid);
+          if (g != null) await _warmGroupMembers(g);
+        }
+      }
+
       // Resolve in MRU order, dropping unresolvable/collapsed rosters, capped.
       final seenRosters = <String>{};
       for (final roster in orderPeopleByRecency(candidates)) {
@@ -965,6 +975,23 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       inviteEmails: roster.inviteEmails,
       display: GroupPillData(g, members),
     );
+  }
+
+  /// Warm the in-memory [Actor] cache for [g]'s member contacts so a
+  /// subsequent (synchronous) [_groupPeopleEntry] resolves them. The cache is
+  /// lazily populated (startup loads only self + twists), and neither the
+  /// search nor the at-rest path otherwise loads a group's members — so the
+  /// member count renders 0 for any group whose members aren't already cached.
+  Future<void> _warmGroupMembers(GroupRow g) async {
+    for (final id in (g.memberContactIds ?? const <Uuid>[])) {
+      final aid = ActorId.fromUuid(id);
+      if (Actor.fromCache(aid) != null) continue;
+      try {
+        await Actor.getOne(aid);
+      } catch (_) {
+        // Contact not present locally (never synced) — dropped at resolve.
+      }
+    }
   }
 
   /// Resolve a deduped [RosterKey] into a presentable [ComposePeopleEntry], or
@@ -1132,6 +1159,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       // from the row so a just-created/un-cached group still resolves.
       final groupRows = await Group.getPostable(search: trimmed);
       for (final g in groupRows) {
+        await _warmGroupMembers(g);
         final entry = _groupPeopleEntry(g, (
           contacts: const [],
           groups: [g.id],

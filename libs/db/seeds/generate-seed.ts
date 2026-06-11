@@ -10,6 +10,7 @@ import pg from "pg";
 
 import { createClerkClient } from "@clerk/backend";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -1312,6 +1313,12 @@ function generateSQL(
   // Per-user thread_state from prior seed runs (drives feed sectioning).
   lines.push(`DELETE FROM thread_state WHERE user_id = ${sqlString(userId)};`);
   // Groups created by prior seed runs (cascades group_member/group_admin).
+  // Safe despite `group` being a synced table only because group ids are now
+  // deterministic (see stableUUID at the group call site): the INSERT below
+  // re-creates each current group under its original primary key in the same
+  // transaction, so clients merge it in place. This DELETE also clears any
+  // legacy random-id groups left server-side by pre-fix runs (those copies are
+  // already stranded on clients and are removed by the one-off local cleanup).
   lines.push(`DELETE FROM "group" WHERE created_by = ${sqlString(userId)};`);
   // Channels from prior seed runs (point at to-be-archived twist_instances).
   lines.push(
@@ -1398,7 +1405,14 @@ function generateSQL(
   // Runs after contacts/priorities so member refs resolve via contactIdMap.
   if (data.groups) {
     for (const group of data.groups) {
-      const groupId = generateUUID();
+      // Deterministic id (not random) so re-seeding reuses the same group row
+      // rather than stranding the prior run's copy on every synced client.
+      // `group` is a synced table; the bare DELETE above is invisible to the
+      // Flutter seq-cursor sync, so a fresh-UUID group on each run accumulated
+      // duplicates client-side (e.g. 11× "Coaching staff"). A stable id makes
+      // the same-transaction DELETE+INSERT an in-place primary-key update the
+      // client merges. `ref` is unique within a seed file's groups list.
+      const groupId = stableUUID(`group:${userId}:${group.ref}`);
       groups.push({
         id: groupId,
         name: group.name,
@@ -2585,6 +2599,25 @@ function generateUUID(): string {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+// Deterministic, RFC-4122 v5-style UUID derived from a stable seed string.
+// Re-running the seed yields the SAME id for the same input, so a
+// DELETE-then-INSERT inside the seed transaction re-creates a row under its
+// original primary key. The Flutter client merges synced rows by primary key,
+// so the re-inserted row is an in-place update — not a new duplicate that
+// strands the old copy. Use this for any synced entity the seed regenerates
+// on every run (see the group-id call site for the duplicate bug this fixes).
+function stableUUID(seed: string): string {
+  const h = createHash("sha1").update(seed).digest("hex");
+  return [
+    h.substring(0, 8),
+    h.substring(8, 12),
+    "5" + h.substring(13, 16),
+    ((parseInt(h.substring(16, 18), 16) & 0x3f) | 0x80).toString(16) +
+      h.substring(18, 20),
+    h.substring(20, 32),
+  ].join("-");
 }
 
 function generateRandomPath(length: number): string {
