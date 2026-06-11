@@ -41,7 +41,7 @@
     "@plotday/worker-util": "workspace:^",
     "ai": "^5.0.76",
     "defuddle": "0.6.6",
-    "hono": "^4.6.15",
+    "hono": "^4.12.21",
     "hono-rate-limiter": "^0.5.3",
     "kysely": "^0.28.11",
     "linkedom": "0.18.5",
