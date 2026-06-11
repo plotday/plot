@@ -21,6 +21,7 @@ const baseScoring = {
         author: 0,
         topic_fuzzy: 0,
         title: 0,
+        origin: 0,
         combined: 0.3,
       },
       {
@@ -32,6 +33,7 @@ const baseScoring = {
         author: 0,
         topic_fuzzy: 0,
         title: 0,
+        origin: 0,
         combined: 0.3,
       },
     ],
