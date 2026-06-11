@@ -829,6 +829,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
   Timer? _tick;
   BlockDragController? _dragController;
   bool _isHovered = false;
+  bool _editHovered = false;
 
   /// Live pending-duration snapshot for [PriorityBlock] headers.
   /// Subscribed in [initState]/[didUpdateWidget] so the gutter label and
@@ -1156,13 +1157,25 @@ class _BlockHeaderState extends State<_BlockHeader> {
                 opacity: _isHovered ? 1 : 0,
                 duration: const Duration(milliseconds: 120),
                 child: Center(
-                  child: GestureDetector(
-                    onTap: () => _openFocusBlockEditor(context),
-                    behavior: HitTestBehavior.opaque,
-                    child: Icon(
-                      PlotIcon.edit,
-                      size: secondarySize,
-                      color: context.theme.colors.mutedForeground,
+                  child: MouseRegion(
+                    onEnter: (_) {
+                      if (!_editHovered) setState(() => _editHovered = true);
+                    },
+                    onExit: (_) {
+                      if (_editHovered) setState(() => _editHovered = false);
+                    },
+                    child: GestureDetector(
+                      onTap: () => _openFocusBlockEditor(context),
+                      behavior: HitTestBehavior.opaque,
+                      child: Icon(
+                        PlotIcon.edit,
+                        size: secondarySize,
+                        // Mirror a ghost button: rest at the muted tone and
+                        // lift to foreground when the pointer is over the icon.
+                        color: _editHovered
+                            ? context.theme.colors.foreground
+                            : context.theme.colors.mutedForeground,
+                      ),
                     ),
                   ),
                 ),
