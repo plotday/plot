@@ -777,6 +777,72 @@ Future<FormData> _buildFocusDetailsForm(
   );
 }
 
+/// Outcome of the background match fetch, surfaced to the review step.
+class _MatchResult {
+  const _MatchResult({required this.matches, required this.failed});
+
+  /// The fetch (or local-store hydration) threw — distinct from "no matches".
+  const _MatchResult.failure() : matches = const [], failed = true;
+
+  final List<_FocusMatch> matches;
+  final bool failed;
+}
+
+/// Fetches the threads that match [description]/[title] and hydrates each from
+/// the local store. Never throws: failures are captured and returned as
+/// [_MatchResult.failure] so the review step can still offer "Create focus".
+Future<_MatchResult> _fetchMatches({
+  required String description,
+  required String title,
+}) async {
+  try {
+    final resp = await api.post<Map<String, dynamic>>(
+      '/sync/priorities/find-matching-threads',
+      body: {'description': description, 'title': title},
+    );
+    final raw = (resp['matches'] as List?) ?? const [];
+    final parsed = [
+      for (final m in raw)
+        if (m is Map && m['thread_id'] is String)
+          (
+            threadId: m['thread_id'] as String,
+            title: (m['title'] as String?)?.trim().isNotEmpty == true
+                ? m['title'] as String
+                : 'Untitled thread',
+            // Default to a strong score when absent so older responses keep
+            // their pre-checked behaviour.
+            score: (m['score'] as num?)?.toDouble() ?? 1.0,
+          ),
+    ];
+    // Hydrate each match from the local store so the review rows render the
+    // full thread (logo, header, title, preview). Best-effort: a thread that
+    // can't be loaded falls back to its title in the row.
+    final threads = await Future.wait([
+      for (final p in parsed)
+        Thread.getOne(Uuid.fromString(p.threadId)).then<Thread?>(
+          (t) => t,
+          onError: (_) => null,
+        ),
+    ]);
+    return _MatchResult(
+      matches: [
+        for (var i = 0; i < parsed.length; i++)
+          _FocusMatch(
+            threadId: parsed[i].threadId,
+            title: parsed[i].title,
+            score: parsed[i].score,
+            thread: threads[i],
+          ),
+      ],
+      failed: false,
+    );
+  } catch (e, stackTrace) {
+    Tracker.captureException(e, stackTrace);
+    // Fall through with no matches — the user can still create the focus.
+    return const _MatchResult.failure();
+  }
+}
+
 /// Step-1 "Find matching threads" action: fetches the threads that match the
 /// description, then opens the review step ([_ShowFocusMatches]) as a nested
 /// modal. Running as a [FormButton] command, the form button shows its spinner
@@ -804,55 +870,13 @@ class _FindMatchingThreads extends Command {
     final description = (values['description'] as String? ?? '').trim();
     final title = (values['title'] as String? ?? '').trim();
 
-    var matches = <_FocusMatch>[];
-    try {
-      final resp = await api.post<Map<String, dynamic>>(
-        '/sync/priorities/find-matching-threads',
-        body: {'description': description, 'title': title},
-      );
-      final raw = (resp['matches'] as List?) ?? const [];
-      final parsed = [
-        for (final m in raw)
-          if (m is Map && m['thread_id'] is String)
-            (
-              threadId: m['thread_id'] as String,
-              title: (m['title'] as String?)?.trim().isNotEmpty == true
-                  ? m['title'] as String
-                  : 'Untitled thread',
-              // Default to a strong score when absent so older responses keep
-              // their pre-checked behaviour.
-              score: (m['score'] as num?)?.toDouble() ?? 1.0,
-            ),
-      ];
-      // Hydrate each match from the local store so the review rows render the
-      // full thread (logo, header, title, preview). Best-effort: a thread that
-      // can't be loaded falls back to its title in the row.
-      final threads = await Future.wait([
-        for (final p in parsed)
-          Thread.getOne(Uuid.fromString(p.threadId)).then<Thread?>(
-            (t) => t,
-            onError: (_) => null,
-          ),
-      ]);
-      matches = [
-        for (var i = 0; i < parsed.length; i++)
-          _FocusMatch(
-            threadId: parsed[i].threadId,
-            title: parsed[i].title,
-            score: parsed[i].score,
-            thread: threads[i],
-          ),
-      ];
-    } catch (e, stackTrace) {
-      Tracker.captureException(e, stackTrace);
-      // Fall through with no matches — the user can still create the focus.
-    }
+    final result = await _fetchMatches(description: description, title: title);
 
     if (!context.mounted) return const CommandSkipped();
     return _ShowFocusMatches(
       values: values,
       root: root,
-      matches: matches,
+      matches: result.matches,
       suggestionKey: suggestionKey,
     ).run(context);
   }
