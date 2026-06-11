@@ -1,0 +1,625 @@
+name: prod-u2
+description: Snapshot of c-79e0a5ce2b9a@briargrove.com extracted 2026-06-11 by libs/eval seeder (schema v2). Emails, contact names, group-name contact tokens, team names, and topic emails are anonymized; priority/thread titles are preserved verbatim.
+schema_version: 2
+source:
+  kind: prod-extract
+  extracted_at: 2026-06-11T11:32:06.311Z
+  anonymized: true
+user:
+  id: ad0c725c-7e25-429d-8aaa-355ecade5116
+  email: c-79e0a5ce2b9a@briargrove.com
+  primary_contact_id: null
+  subscription:
+    plan: free
+    status: active
+teams:
+  - slug: team-2d48c7
+    id: 2456
+    name: Team 2d48c7
+connections:
+  - slug: linear-647da1
+    id: 019ddac3-c911-76af-8b3e-5c2d6b6cd658
+    provider: linear
+    account_contact: hamid-bergman
+    team: team-2d48c7
+  - slug: google-7b13ca
+    id: 019e26b7-3cb9-7adc-ab3a-be571aae75b1
+    provider: google
+    account_contact: leila-valdez
+    team: team-2d48c7
+  - slug: google-5854e6
+    id: 019e26ba-40ed-7e51-bde3-49fa6846a4f3
+    provider: google
+    account_contact: leila-valdez-2
+    team: team-2d48c7
+  - slug: google-e00bcc
+    id: 019ea85f-a654-79f9-ae8b-9078f2ac79ea
+    provider: google
+    account_contact: leila-valdez-2
+    team: team-2d48c7
+priorities:
+  - slug: everything
+    id: 019c3ac9-e09f-73f4-b39a-68cb2addd9a5
+    path: jQBCi0TS9xnJ
+    title: Everything
+    key: null
+    description: null
+    facet_filters: null
+  - slug: plot
+    id: 019d91c2-4d0d-798e-b920-4340faf6b2ff
+    path: jQBCi0TS9xnJ.Ws44
+    title: Plot
+    key: null
+    description: null
+    facet_filters: null
+  - slug: marketing
+    id: 019d91c2-72ff-70bc-bfa0-8bf478f5de77
+    path: jQBCi0TS9xnJ.Ws44.12an
+    title: Marketing
+    key: null
+    description: null
+    facet_filters: null
+  - slug: gtm
+    id: 019dd4a1-c2d8-7698-8afa-85e884743834
+    path: jQBCi0TS9xnJ.Ws44.12an.2tw5
+    title: GTM
+    key: null
+    description: null
+    facet_filters: null
+  - slug: june-30th-goals
+    id: 019dd49f-61e1-75c5-bd10-7581a76e26de
+    path: jQBCi0TS9xnJ.Ws44.12an.2tw5.3sKW
+    title: June 30th Goals
+    key: null
+    description: null
+    facet_filters: null
+  - slug: onboarding-white-glove-phase
+    id: 019dd531-c802-7627-a4f8-587fead74dc8
+    path: jQBCi0TS9xnJ.Ws44.12an.2tw5.3sKW.zD45
+    title: Onboarding - White-glove phase
+    key: null
+    description: null
+    facet_filters: null
+  - slug: scheduling
+    id: 019dd532-09d2-7a40-b650-befc1eb7ca68
+    path: jQBCi0TS9xnJ.Ws44.12an.2tw5.3sKW.zD45.5sYk
+    title: Scheduling
+    key: null
+    description: null
+    facet_filters: null
+  - slug: events
+    id: 019dd542-dc9c-7162-a36f-664458761b92
+    path: jQBCi0TS9xnJ.Ws44.12an.2tw5.3sKW.zD45.fkT0
+    title: Events
+    key: null
+    description: null
+    facet_filters: null
+  - slug: user-testing
+    id: 019dd4aa-6315-7a0f-a966-69cfefef89db
+    path: jQBCi0TS9xnJ.Ws44.12an.C1AR
+    title: User Testing
+    key: null
+    description: null
+    facet_filters: null
+  - slug: customer-discovery
+    id: 019dd4a9-a134-7269-af6f-8d92d46919d2
+    path: jQBCi0TS9xnJ.Ws44.12an.x2J1
+    title: Customer Discovery
+    key: null
+    description: null
+    facet_filters: null
+  - slug: legal
+    id: 019e19a8-0cce-7f16-b0aa-fa9cfe057523
+    path: jQBCi0TS9xnJ.Ws44.2HYt
+    title: Legal
+    key: null
+    description: null
+    facet_filters: null
+  - slug: product
+    id: 019dd4b2-8f96-7ff2-9879-750182f56441
+    path: jQBCi0TS9xnJ.Ws44.5wA0
+    title: Product
+    key: null
+    description: null
+    facet_filters: null
+  - slug: connections
+    id: 019dd522-9401-7efb-9093-1fdd49573c3f
+    path: jQBCi0TS9xnJ.Ws44.5wA0.mbvh
+    title: Connections
+    key: null
+    description: null
+    facet_filters: null
+  - slug: hr
+    id: 019dd4a0-3ab8-74d0-b0aa-9f60a0369b29
+    path: jQBCi0TS9xnJ.Ws44.Bfea
+    title: HR
+    key: null
+    description: null
+    facet_filters: null
+  - slug: funding-opportunities
+    id: 019dd6eb-b606-76ba-8dc7-924928c99e27
+    path: jQBCi0TS9xnJ.Ws44.Fujr
+    title: Funding Opportunities
+    key: null
+    description: null
+    facet_filters: null
+  - slug: nrc-irap
+    id: 019dd6ec-1ee3-7a2a-a2ff-d8d70bce386e
+    path: jQBCi0TS9xnJ.Ws44.Fujr.B21L
+    title: NRC IRAP
+    key: null
+    description: null
+    facet_filters: null
+  - slug: people
+    id: 019dd1eb-2e76-7f9c-a87f-188eb6a41939
+    path: jQBCi0TS9xnJ.Ws44.w2je
+    title: People
+    key: null
+    description: null
+    facet_filters: null
+  - slug: resources
+    id: 019de113-bfd7-7083-8fdd-0ee47d36e0d5
+    path: jQBCi0TS9xnJ.Ws44.WBw2
+    title: Resources
+    key: null
+    description: null
+    facet_filters: null
+  - slug: movement-building
+    id: f065a7b8-fe79-48e5-8d75-86e8589fb761
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9
+    title: Movement Building
+    key: null
+    description: null
+    facet_filters: null
+  - slug: earned-equity
+    id: 019dd4b6-cf68-7d06-ab78-2defebd36489
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9.8woL
+    title: Earned Equity
+    key: null
+    description: null
+    facet_filters: null
+  - slug: marketing-2
+    id: 2a5ce497-fb1b-42ab-9564-1fdf6c4e2663
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9.9eyg
+    title: Marketing
+    key: null
+    description: null
+    facet_filters: null
+  - slug: recruiting-teams
+    id: 2d53795c-2e0f-4c2e-9f16-aad90e34e834
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9.GyqO
+    title: Recruiting Teams
+    key: null
+    description: null
+    facet_filters: null
+  - slug: communitech-gtm
+    id: 98190172-ba66-4e50-aafb-92538ce681e8
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9.IVjR
+    title: Communitech GTM
+    key: null
+    description: null
+    facet_filters: null
+  - slug: community-building
+    id: 63c4b918-5cbf-468e-b008-dbe592fdd208
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9.J4Zv
+    title: Community Building
+    key: null
+    description: null
+    facet_filters: null
+  - slug: execution-focus-leader-discovery
+    id: 31432d6c-597d-4f2a-bf65-6dc78043190d
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9.nhCj
+    title: Execution-focus Leader Discovery
+    key: null
+    description: null
+    facet_filters: null
+  - slug: contacts
+    id: 019dd4b5-40d3-70c5-bbe2-1b63e810708b
+    path: jQBCi0TS9xnJ.Ws44.Xq7WSLKYLHV9.sqnn
+    title: Contacts
+    key: null
+    description: null
+    facet_filters: null
+  - slug: finance
+    id: 019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a
+    path: jQBCi0TS9xnJ.Ws44.Xwne
+    title: Finance
+    key: null
+    description: null
+    facet_filters: null
+  - slug: getting-started
+    id: 019c3aca-f775-71e4-8a8c-b84b4c392093
+    path: jQBCi0TS9xnJ.y9lK.5U18
+    title: Getting Started
+    key: null
+    description: null
+    facet_filters: null
+  - slug: whats-new
+    id: bff0c31a-6088-4d49-af29-fb7597c3c195
+    path: jQBCi0TS9xnJ.y9lK.eAdk
+    title: What's New
+    key: null
+    description: null
+    facet_filters: null
+  - slug: welcome-threads
+    id: 019dd1e3-ccaf-7499-8ef3-e325441e3e41
+    path: jQBCi0TS9xnJ.ZwRBeBywPoNx.29qd
+    title: Welcome Threads
+    key: null
+    description: null
+    facet_filters: null
+  - slug: updates
+    id: 019dd49d-1e42-7f24-9c60-a3e246f3a40d
+    path: jQBCi0TS9xnJ.ZwRBeBywPoNx.xibD
+    title: Updates
+    key: null
+    description: null
+    facet_filters: null
+  - slug: support-tickets
+    id: 019dd1e4-4005-7b64-b23d-d02893c0a76f
+    path: jQBCi0TS9xnJ.ZwRBeBywPoNx.xsBi
+    title: Support Tickets
+    key: null
+    description: null
+    facet_filters: null
+contacts:
+  - slug: leila-valdez
+    id: 019c3921-5f80-7540-a9a4-d61d5f13770e
+    email: leila.valdez@aol.com
+    name: Leila Valdez
+    linked_to_user: true
+  - slug: leila-valdez-2
+    id: 019cc122-2563-70fd-85f7-ced1107d89a7
+    email: leila.valdez@briargrove.com
+    name: Leila Valdez
+    linked_to_user: true
+  - slug: c-019e26bb
+    id: 019e26bb-7026-73c0-8a24-7fda78e637b2
+    email: null
+    name: null
+    linked_to_user: true
+  - slug: hamid-bergman
+    id: 019bd6c9-ebb9-78a4-8edf-4138d526550e
+    email: hamid.bergman@briargrove.com
+    name: Hamid Bergman
+    linked_to_user: false
+  - slug: hamid-bergman-2
+    id: 019bd6e2-e330-7418-9caf-afacd7cd5519
+    email: hamid.bergman@yahoo.com
+    name: Hamid Bergman
+    linked_to_user: false
+  - slug: sigrid-diallo
+    id: 019bd743-d903-7e7c-8596-5f7185a9f345
+    email: sigrid.diallo@duskgrove.com
+    name: Sigrid Diallo
+    linked_to_user: false
+  - slug: sana-kobayashi
+    id: 019bd744-22be-73a8-baa1-1b306b29ef92
+    email: sana.kobayashi@yahoo.com
+    name: Sana Kobayashi
+    linked_to_user: false
+  - slug: zofia-andersson
+    id: 019bd745-be81-7564-8006-1b5cf8f06bff
+    email: zofia.andersson@larkwharf.com
+    name: Zofia Andersson
+    linked_to_user: false
+  - slug: fiona-calloway
+    id: 019bd746-6438-7320-abba-6faa14b98658
+    email: fiona.calloway@yahoo.com
+    name: Fiona Calloway
+    linked_to_user: false
+  - slug: selma-ortega
+    id: 019bd746-a11e-7168-9775-b9eda43d4195
+    email: selma.ortega@yahoo.com
+    name: Selma Ortega
+    linked_to_user: false
+  - slug: anton-moreau
+    id: 019bd746-b07b-7d00-89a7-9c39c722f252
+    email: anton.moreau@yahoo.com
+    name: Anton Moreau
+    linked_to_user: false
+  - slug: lior-moretti
+    id: 019bd749-3763-7848-90dc-4445b00bb18c
+    email: lior.moretti@yahoo.com
+    name: Lior Moretti
+    linked_to_user: false
+  - slug: omar
+    id: 019bd749-701f-7b3c-b177-2a72f90820c2
+    email: omar@briargrove.com
+    name: Omar
+    linked_to_user: false
+  - slug: salim-jansen
+    id: 019be264-f9c3-7f4c-91a1-c3a8f16dd449
+    email: salim.jansen@briargrove.com
+    name: Salim Jansen
+    linked_to_user: false
+  - slug: lena-sandoval
+    id: 019c48dc-042a-7be4-850d-6f20cdc758b1
+    email: lena.sandoval@hazelworks.com
+    name: Lena Sandoval
+    linked_to_user: false
+  - slug: imani-ayala
+    id: 019cc122-2562-7c6a-89e8-03bbdca7d0f0
+    email: imani.ayala@amberward.com
+    name: Imani Ayala
+    linked_to_user: false
+  - slug: akira-sato
+    id: 019d47a8-d0fc-7245-bdcd-68f57432c7dc
+    email: akira.sato@yahoo.com
+    name: Akira Sato
+    linked_to_user: false
+  - slug: sasha-cormier
+    id: 019d4dea-f69e-7be9-bbe8-ae49b292a812
+    email: sasha.cormier@lichenshore.com
+    name: Sasha Cormier
+    linked_to_user: false
+  - slug: farah-suzuki
+    id: 019d4df1-3c8c-7532-85cd-b8578e311d99
+    email: farah.suzuki@yahoo.com
+    name: Farah Suzuki
+    linked_to_user: false
+  - slug: eitan-ogawa
+    id: 019d4dfa-366a-7ef4-ac75-a89fd2c085de
+    email: eitan.ogawa@yahoo.com
+    name: Eitan Ogawa
+    linked_to_user: false
+  - slug: felix
+    id: 019d98f0-df3d-7450-a644-1a76d91d0883
+    email: felix@glenbay.com
+    name: Felix
+    linked_to_user: false
+  - slug: tunde-pinto
+    id: 019d9b6d-2945-7119-b422-4355d62939dd
+    email: tunde.pinto@yahoo.com
+    name: Tunde Pinto
+    linked_to_user: false
+  - slug: fabian-horvat
+    id: 019d9c04-1caa-70df-9517-eb92e01793ab
+    email: fabian.horvat@hazelstone.com
+    name: Fabian Horvat
+    linked_to_user: false
+  - slug: c-789ebf1ea232
+    id: 019dab2d-965f-7f5e-b8b2-1463e94d4175
+    email: c-789ebf1ea232@briargrove.com
+    name: null
+    linked_to_user: false
+  - slug: ayodele
+    id: 019dab30-413c-7bbd-8f4b-e58f812c3a35
+    email: ayodele@sablereach.com
+    name: Ayodele
+    linked_to_user: false
+  - slug: ayodele-0be0
+    id: 019dab32-73b2-76d2-b0da-a53a5295ce43
+    email: ayodele+0be0@sablereach.com
+    name: Ayodele
+    linked_to_user: false
+  - slug: anders-yamamoto
+    id: 019dab35-a73c-7fb0-b790-196d8a7f31ec
+    email: anders.yamamoto@lichenshore.com
+    name: Anders Yamamoto
+    linked_to_user: false
+  - slug: varun-adler
+    id: 019dab35-acfd-7da6-a82b-e84c44bfbc12
+    email: varun.adler@onyxshore.com
+    name: Varun Adler
+    linked_to_user: false
+  - slug: eloise
+    id: 019dac0b-2a45-75f8-9768-db387f55dd54
+    email: eloise@onyxwharf.com
+    name: Eloise
+    linked_to_user: false
+  - slug: lior-gupta
+    id: 019dac4d-18be-7b5b-9e18-993f64cbf77a
+    email: lior.gupta@yahoo.com
+    name: Lior Gupta
+    linked_to_user: false
+  - slug: hugo-alvarez
+    id: 019db921-c6fb-7021-b3ad-b121fc33cee8
+    email: hugo.alvarez@yahoo.com
+    name: Hugo Alvarez
+    linked_to_user: false
+  - slug: noor-tanaka
+    id: 019dc627-2af2-7379-a12f-a6e64828b14a
+    email: noor.tanaka@yahoo.com
+    name: Noor Tanaka
+    linked_to_user: false
+  - slug: ayodele-chandra
+    id: 019dc83b-b1d2-7366-9567-79d56e932665
+    email: ayodele.chandra@yahoo.com
+    name: Ayodele Chandra
+    linked_to_user: false
+  - slug: imani-okonkwo
+    id: 019dd460-40e9-7591-8b5f-4f5fca1ddb15
+    email: imani.okonkwo@yahoo.com
+    name: Imani Okonkwo
+    linked_to_user: false
+  - slug: rosa-dubois
+    id: 019de601-9ecf-79e0-aa8c-77b59a73a9c2
+    email: rosa.dubois@yahoo.com
+    name: Rosa Dubois
+    linked_to_user: false
+  - slug: magnus-blanchet
+    id: 019df591-5650-725b-9c21-4cb284504c1f
+    email: magnus.blanchet@hazelworks.com
+    name: Magnus Blanchet
+    linked_to_user: false
+  - slug: sadie-pinto
+    id: 019df8f2-44bc-7838-9ac6-8a905212f90e
+    email: sadie.pinto@cedarward.com
+    name: Sadie Pinto
+    linked_to_user: false
+  - slug: luna-caetano
+    id: 019e0303-90cc-7fba-be07-d4ed6d4fb9e6
+    email: luna.caetano@yahoo.com
+    name: Luna Caetano
+    linked_to_user: false
+  - slug: dina-diallo
+    id: 019e26b9-eafe-789e-b5c3-5e5e9a68c4c4
+    email: dina.diallo@flintworks.com
+    name: Dina Diallo
+    linked_to_user: false
+  - slug: irena
+    id: 019e2c72-6b00-7f29-a343-f9b9b7054e1f
+    email: irena@hazelworks.com
+    name: Irena
+    linked_to_user: false
+  - slug: damian
+    id: 019e2d2c-27d7-7863-998c-472f5357ea0b
+    email: damian@aspenpoint.com
+    name: Damian
+    linked_to_user: false
+  - slug: idris-keller
+    id: 019e2f09-993a-70d6-9a88-2c82ed69fb92
+    email: idris.keller@yahoo.com
+    name: Idris Keller
+    linked_to_user: false
+  - slug: shreya-benali
+    id: 019e2f2f-6f2d-72e4-a4cf-b95542b5dd6a
+    email: shreya.benali@onyxsummit.com
+    name: Shreya Benali
+    linked_to_user: false
+  - slug: shreya-benali-5599
+    id: 019e3392-65e2-76e7-ae4a-3f2efc74a64b
+    email: shreya.benali+5599@onyxsummit.com
+    name: Shreya Benali
+    linked_to_user: false
+  - slug: c-30dc0896bfdd
+    id: 019e4055-e94e-71be-b2f6-752cb89c5ccc
+    email: c-30dc0896bfdd@driftbloom.com
+    name: null
+    linked_to_user: false
+  - slug: c-d3cf54b59f85
+    id: 019e472e-0648-7cad-ab92-c3d5862adaf5
+    email: c-d3cf54b59f85@briargrove.com
+    name: null
+    linked_to_user: false
+  - slug: c-d73e4bdca4b6
+    id: 019e4734-e47e-7fdc-9e41-12d1a46866fc
+    email: c-d73e4bdca4b6@briargrove.com
+    name: null
+    linked_to_user: false
+  - slug: salim-jansen-dbc9
+    id: 019e4743-7d01-75cb-946e-272fada5604a
+    email: salim.jansen+dbc9@briargrove.com
+    name: Salim Jansen
+    linked_to_user: false
+  - slug: salim-jansen-440f
+    id: 019e4b80-7fb4-7c0f-846a-a581cc173e2f
+    email: salim.jansen+440f@briargrove.com
+    name: Salim Jansen
+    linked_to_user: false
+  - slug: salim-jansen-27a4
+    id: 019e4c2e-26ae-7265-8125-5edec03b7ab5
+    email: salim.jansen+27a4@briargrove.com
+    name: Salim Jansen
+    linked_to_user: false
+  - slug: c-0f50bc58c329
+    id: 019e4cfe-8bb9-719d-96cb-906fa0ed2949
+    email: c-0f50bc58c329@driftbloom.com
+    name: null
+    linked_to_user: false
+  - slug: c-4c1897d02a5c
+    id: 019e5228-93d4-7d1d-aca6-d9570b86b674
+    email: c-4c1897d02a5c@driftbloom.com
+    name: null
+    linked_to_user: false
+  - slug: gunnar-blanchet
+    id: 019e61c7-b682-768a-9558-e17e855b71ff
+    email: gunnar.blanchet@hotmail.com
+    name: Gunnar Blanchet
+    linked_to_user: false
+  - slug: yasmin-fujita
+    id: 019e72ac-3c8c-7eb6-899f-474c0e2c0671
+    email: yasmin.fujita@duskreach.com
+    name: Yasmin Fujita
+    linked_to_user: false
+  - slug: sana-kobayashi-2
+    id: 019e896f-761e-7ded-88c3-1bb3de0066a9
+    email: sana.kobayashi@northspring.com
+    name: Sana Kobayashi
+    linked_to_user: false
+  - slug: rohan
+    id: 019e8dc7-a3a4-7501-b209-4901c7c01adc
+    email: rohan@cindermill.com
+    name: Rohan
+    linked_to_user: false
+  - slug: c-f7920e28d6e0
+    id: 019e9ffb-111c-7fff-8a01-e85e454a6452
+    email: c-f7920e28d6e0@hotmail.com
+    name: null
+    linked_to_user: false
+  - slug: edgar-cardoso
+    id: 019e9ffd-8a8a-78c7-a1ab-0c6126fe38c4
+    email: edgar.cardoso@yahoo.com
+    name: Edgar Cardoso
+    linked_to_user: false
+  - slug: amir
+    id: 019ea860-cd1a-7e9b-9a65-362616a227a1
+    email: amir@briargrove.com
+    name: Amir
+    linked_to_user: false
+  - slug: dario-ahmadi
+    id: 019ea861-9533-7088-ab0d-8229f00735e9
+    email: dario.ahmadi@harborridge.com
+    name: Dario Ahmadi
+    linked_to_user: false
+  - slug: c-ef00d49142d7
+    id: 019ea862-b498-768d-aca1-b48224681a7b
+    email: c-ef00d49142d7@cindercliff.com
+    name: null
+    linked_to_user: false
+  - slug: idris-iqbal
+    id: 019ea863-a9ac-71e9-b235-4496b25ba385
+    email: idris.iqbal@duskreach.com
+    name: Idris Iqbal
+    linked_to_user: false
+  - slug: kofi-rasmussen
+    id: 019ea8e7-3942-75a3-97d3-5cc3bee1000c
+    email: kofi.rasmussen@lichenspring.com
+    name: Kofi Rasmussen
+    linked_to_user: false
+  - slug: davi-carvalho
+    id: 019eb28d-7bf2-7c80-9612-76441e4acbea
+    email: davi.carvalho@lichenshore.com
+    name: Davi Carvalho
+    linked_to_user: false
+  - slug: katya-chandra
+    id: 019eb337-7104-70a9-9f8e-09e463177d8d
+    email: katya.chandra@lichenspring.com
+    name: Katya Chandra
+    linked_to_user: false
+groups:
+  - slug: felix-team
+    id: 019d8d3e-e009-7917-a0a0-a7690ae5409e
+    title: Felix Team
+channels:
+  - id: 2077
+    connection: linear-647da1
+    default_priority_id: null
+  - id: 9073
+    connection: google-7b13ca
+    default_priority_id: null
+  - id: 9080
+    connection: google-5854e6
+    default_priority_id: null
+  - id: 9081
+    connection: google-5854e6
+    default_priority_id: null
+  - id: 9085
+    connection: google-5854e6
+    default_priority_id: null
+  - id: 9093
+    connection: google-5854e6
+    default_priority_id: null
+  - id: 9095
+    connection: google-5854e6
+    default_priority_id: null
+  - id: 9096
+    connection: google-5854e6
+    default_priority_id: null
+  - id: 18891
+    connection: google-e00bcc
+    default_priority_id: null
+  - id: 18892
+    connection: google-e00bcc
+    default_priority_id: null

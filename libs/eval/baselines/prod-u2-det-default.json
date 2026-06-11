@@ -1,0 +1,198 @@
+{
+  "meta": {
+    "classifier": "ts:hybrid:default",
+    "corpus": "prod-u2",
+    "trainingSet": "full",
+    "createdAt": "2026-06-11T11:32:28.597Z"
+  },
+  "results": {
+    "001-019eb58c": {
+      "predicted": "019d91c2-72ff-70bc-bfa0-8bf478f5de77",
+      "stage": "scoring"
+    },
+    "002-019eb546": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "scoring"
+    },
+    "003-019eb460": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "004-019eb45c": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "005-019eb297": {
+      "predicted": "019dd4a9-a134-7269-af6f-8d92d46919d2",
+      "stage": "scoring"
+    },
+    "006-019eaf86": {
+      "predicted": "019d91c2-72ff-70bc-bfa0-8bf478f5de77",
+      "stage": "priority_title_override"
+    },
+    "007-019ea862": {
+      "predicted": "019dd4a1-c2d8-7698-8afa-85e884743834",
+      "stage": "scoring"
+    },
+    "008-019ea862": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "009-019ea862": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "010-019ea862": {
+      "predicted": "31432d6c-597d-4f2a-bf65-6dc78043190d",
+      "stage": "scoring"
+    },
+    "011-019ea862": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "012-019ea862": {
+      "predicted": "019dd4a1-c2d8-7698-8afa-85e884743834",
+      "stage": "scoring"
+    },
+    "013-019cd82d": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "014-019cd511": {
+      "predicted": "019d91c2-72ff-70bc-bfa0-8bf478f5de77",
+      "stage": "scoring"
+    },
+    "015-019cba8e": {
+      "predicted": "019dd4a9-a134-7269-af6f-8d92d46919d2",
+      "stage": "scoring"
+    },
+    "016-019d728c": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "scoring"
+    },
+    "017-019d4443": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "018-019d4004": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "019-019d3c3c": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "scoring"
+    },
+    "020-019d1bf2": {
+      "predicted": "019dd4a9-a134-7269-af6f-8d92d46919d2",
+      "stage": "scoring"
+    },
+    "021-019cd867": {
+      "predicted": "019d91c2-72ff-70bc-bfa0-8bf478f5de77",
+      "stage": "scoring"
+    },
+    "022-019cbb5b": {
+      "predicted": "019dd4a9-a134-7269-af6f-8d92d46919d2",
+      "stage": "scoring"
+    },
+    "023-019cb9a3": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "scoring"
+    },
+    "024-019c78b7": {
+      "predicted": "019dd4a9-a134-7269-af6f-8d92d46919d2",
+      "stage": "scoring"
+    },
+    "025-019eb3c1": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "scoring"
+    },
+    "026-019ea305": {
+      "predicted": "019dd1e4-4005-7b64-b23d-d02893c0a76f",
+      "stage": "scoring"
+    },
+    "027-019e9ffd": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "028-019e9ffb": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "029-019e936f": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "030-019e519d": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "scoring"
+    },
+    "031-019e4aed": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "032-019e4743": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "033-019e4734": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "034-019e472e": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "035-019e4055": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "036-019e3392": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "037-019e2f2f": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "038-019e2f09": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "039-019e2dd5": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "040-019e2c3d": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "041-019e22bc": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "042-019e0fa3": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "topic_shortcircuit"
+    },
+    "043-019e0797": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "044-019dfd74": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    },
+    "045-019df8bb": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "scoring"
+    },
+    "046-019df8f2": {
+      "predicted": "019d91c2-4d0d-798e-b920-4340faf6b2ff",
+      "stage": "priority_title_override"
+    },
+    "047-019ddfb7": {
+      "predicted": "019dc1ce-8ef6-709e-8bc3-661ce2ec6e1a",
+      "stage": "scoring"
+    }
+  }
+}

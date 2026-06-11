@@ -1,0 +1,1394 @@
+cases:
+  - id: 001-019eb58c
+    source_thread_id: 019eb58c-13d1-74d0-a53a-31e8a8567345
+    tags:
+      - channel:N
+    as_of: 2026-06-11T07:18:36.749Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: We've detected a spike in your exceptions
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - anders-yamamoto
+      groups: []
+      embedding_ref: emb-c20ad5781e
+      author: null
+      connection: google-e00bcc
+      facets:
+        reach: direct
+        format: notification
+        automation: human
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: updates
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 002-019eb546
+    source_thread_id: 019eb546-c1a8-78fa-85eb-fd969f1b720e
+    tags:
+      - channel:N
+    as_of: 2026-06-11T06:02:53.735Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Kris Braun, Plot, and more sent you messages
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - felix
+      groups: []
+      embedding_ref: emb-1b9fb194dd
+      author: null
+      connection: google-e00bcc
+      facets:
+        reach: direct
+        format: notification
+        automation: human
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 003-019eb460
+    source_thread_id: 019eb460-070b-7485-87f0-3104b259e0bb
+    tags:
+      - channel:N
+    as_of: 2026-06-11T01:50:52.681Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Your billing limits were updated
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - anders-yamamoto
+      groups: []
+      embedding_ref: emb-95ed5a3746
+      author: null
+      connection: google-e00bcc
+      facets:
+        reach: direct
+        format: notification
+        automation: human
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: finance
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 004-019eb45c
+    source_thread_id: 019eb45c-59ec-7ca3-99fc-056090c22206
+    tags:
+      - channel:N
+    as_of: 2026-06-11T01:46:51.754Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Your billing limits were updated
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - anders-yamamoto
+      groups: []
+      embedding_ref: emb-c8f65abc84
+      author: null
+      connection: google-e00bcc
+      facets:
+        reach: direct
+        format: notification
+        automation: human
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: finance
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 005-019eb297
+    source_thread_id: 019eb297-a59a-7cbc-a3fa-385c7a6fc30c
+    tags:
+      - channel:N
+    as_of: 2026-06-10T17:32:23.318Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "Updated invitation: Beth <> Kris Collab @ Weekly from 10am to 1pm on Wednesday from Wed May 27 to Tue Jun 16 (EDT) (Beth Round)"
+      topic: channel:18892
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-3c5c2b7692
+      author: null
+      connection: google-e00bcc
+      facets:
+        reach: direct
+        format: message
+        automation: human
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 006-019eaf86
+    source_thread_id: 019eaf86-9e5a-7af9-968f-d2dac2cf77a4
+    tags:
+      - channel:N
+    as_of: 2026-06-10T03:14:55.702Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Marketing 2.0
+      topic: channel:9080
+      contacts:
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-2c0d439383
+      author: leila-valdez-2
+      connection: google-5854e6
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing-2
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 007-019ea862
+    source_thread_id: 019ea862-fd11-7b80-aee4-4b63527f5a06
+    tags:
+      - channel:N
+    as_of: 2026-06-08T17:58:40.144Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: You're invited to join a development team.
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - fabian-horvat
+      groups: []
+      embedding_ref: emb-728d56b3ea
+      author: null
+      connection: google-e00bcc
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: gtm
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 008-019ea862
+    source_thread_id: 019ea862-cf76-7170-846b-743dd2e3a1ef
+    tags:
+      - channel:N
+    as_of: 2026-06-08T17:58:28.468Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: 📝 Notes for "ICP chat"
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - c-ef00d49142d7
+      groups: []
+      embedding_ref: emb-3a335b8ddb
+      author: null
+      connection: google-e00bcc
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: customer-discovery
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 009-019ea862
+    source_thread_id: 019ea862-a6da-7247-a081-616d5f4df581
+    tags:
+      - channel:N
+    as_of: 2026-06-08T17:58:18.070Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: What’s moving in Waterloo Region tech right now!
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - irena
+      groups: []
+      embedding_ref: emb-5285140a0b
+      author: null
+      connection: google-e00bcc
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 010-019ea862
+    source_thread_id: 019ea862-7ca8-7da3-b313-5a8eb55085cb
+    tags:
+      - channel:N
+    as_of: 2026-06-08T17:58:07.271Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: PostHog is going to train an AI model?!
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - sasha-cormier
+      groups: []
+      embedding_ref: emb-81397b188a
+      author: null
+      connection: google-e00bcc
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 011-019ea862
+    source_thread_id: 019ea862-5020-7bdb-932d-994c83e1761e
+    tags:
+      - channel:N
+    as_of: 2026-06-08T17:57:55.871Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "[GitHub] You've hit 75% of your budget for the plotday account"
+      topic: channel:18892
+      contacts:
+        - omar
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-e351a6e3cb
+      author: null
+      connection: google-e00bcc
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: finance
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 012-019ea862
+    source_thread_id: 019ea862-2634-76ed-ba95-0186fe7f5cd9
+    tags:
+      - channel:N
+    as_of: 2026-06-08T17:57:45.138Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Your extra 1% is live.
+      topic: channel:18892
+      contacts:
+        - leila-valdez-2
+        - varun-adler
+      groups: []
+      embedding_ref: emb-f1d0795510
+      author: null
+      connection: google-e00bcc
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: gtm
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 013-019cd82d
+    source_thread_id: 019cd82d-ca61-7b56-afed-0e39993bb543
+    tags:
+      - "null"
+    as_of: 2026-06-01T03:44:34.664Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Product Changes Live
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-bc1c375151
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: gtm
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 014-019cd511
+    source_thread_id: 019cd511-6dbe-706e-8865-803dd038d986
+    tags:
+      - "null"
+    as_of: 2026-05-06T16:25:24.127Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Update onboarding sign up
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-60b46cb909
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 015-019cba8e
+    source_thread_id: 019cba8e-34cc-7592-aa3d-bee2873d506b
+    tags:
+      - "null"
+    as_of: 2026-04-29T17:47:00.007Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Hey Beth — This looks like a good article on Superhuman's…
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-87b174755c
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: gtm
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 016-019d728c
+    source_thread_id: 019d728c-8cd5-757b-93fa-74087f09336b
+    tags:
+      - "null"
+    as_of: 2026-04-09T14:03:09.690Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Follow Plot Day LinkedIn Page
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-882ff6f48f
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 017-019d4443
+    source_thread_id: 019d4443-88c0-7185-a30b-5baba68a0659
+    tags:
+      - "null"
+    as_of: 2026-03-31T14:29:47.466Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Create Demo Video for Reddit Post
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-149ba48e19
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: gtm
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 018-019d4004
+    source_thread_id: 019d4004-43dd-7c9f-9684-d61675cfa6d7
+    tags:
+      - "null"
+    as_of: 2026-03-30T18:32:54.414Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: r/ProductivityApps
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-949e474b27
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: customer-discovery
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 019-019d3c3c
+    source_thread_id: 019d3c3c-3a3a-7aa6-8355-2d31ab19eb63
+    tags:
+      - "null"
+    as_of: 2026-03-30T00:57:55.026Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: "Book: Deep Work"
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-ac6fcca308
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 020-019d1bf2
+    source_thread_id: 019d1bf2-d5de-7919-9e09-e3644d6c12c6
+    tags:
+      - "null"
+    as_of: 2026-03-23T18:47:01.007Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Promo cards for events
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-a47cb5af53
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 021-019cd867
+    source_thread_id: 019cd867-2cbb-792e-a60e-8b716f1722c9
+    tags:
+      - "null"
+    as_of: 2026-03-11T16:10:57.727Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Marketing Site Image Generation
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-5ac093e16b
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 022-019cbb5b
+    source_thread_id: 019cbb5b-b067-784c-9e70-36d584f34519
+    tags:
+      - "null"
+    as_of: 2026-03-09T13:57:58.802Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: ICP and Messaging with Janet
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-1c5320ff29
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: customer-discovery
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 023-019cb9a3
+    source_thread_id: 019cb9a3-6525-7c82-8590-73fb893b1e28
+    tags:
+      - "null"
+    as_of: 2026-03-04T16:17:09.664Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: The Plot story for the website
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-1829a14a34
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 024-019c78b7
+    source_thread_id: 019c78b7-05c8-7004-a5c9-7a683f3f056a
+    tags:
+      - "null"
+    as_of: 2026-02-20T01:44:50.144Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: "Favourite Scheduling Tool: Cal.com"
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-253faf90e9
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: customer-discovery
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 025-019eb3c1
+    source_thread_id: 019eb3c1-5258-754d-a700-50ce9b198038
+    tags:
+      - other
+    as_of: 2026-06-11T00:07:12.926Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Features List Added to Plot Google Account
+      topic: 019e3c6b-4d8a-7017-84aa-f81de8837d11
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-fb19a1e762
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 026-019ea305
+    source_thread_id: 019ea305-1567-7cec-891b-a954ab3d4094
+    tags:
+      - other
+    as_of: 2026-06-09T20:29:28.759Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Make Time
+      topic: 019e03e8-6de5-71ab-9d38-75b7dec26da7
+      contacts:
+        - hamid-bergman
+      groups: []
+      embedding_ref: emb-a4f12278a5
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 027-019e9ffd
+    source_thread_id: 019e9ffd-8b0c-7335-90da-1aafb79e702b
+    tags:
+      - other
+    as_of: 2026-06-07T02:50:53.955Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - edgar-cardoso
+        - hamid-bergman
+      groups:
+        - felix-team
+      embedding_ref: emb-25549a173c
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 028-019e9ffb
+    source_thread_id: 019e9ffb-11a6-7a2b-8f53-4cfc84e3465a
+    tags:
+      - other
+    as_of: 2026-06-07T02:48:11.795Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - c-f7920e28d6e0
+        - hamid-bergman
+      groups:
+        - felix-team
+      embedding_ref: emb-663ef18170
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 029-019e936f
+    source_thread_id: 019e936f-36cf-78d3-8698-472a8840f241
+    tags:
+      - other
+    as_of: 2026-06-04T16:19:59.713Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - lior-moretti
+      groups:
+        - felix-team
+      embedding_ref: emb-917cb1b0a9
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 030-019e519d
+    source_thread_id: 019e519d-7e32-7b91-85d8-adeacc7cd437
+    tags:
+      - other
+    as_of: 2026-05-22T22:23:53.237Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Unified collaboration, organized and prioritized
+      topic: 019def07-5926-7267-bbb6-425ac07e1f17
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-1e44b988f3
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 031-019e4aed
+    source_thread_id: 019e4aed-9043-7665-a2bc-9ffe0a38e029
+    tags:
+      - other
+    as_of: 2026-05-21T14:31:16.422Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Investing time
+      topic: 019cb9a3-64cc-7806-b0ad-16b7f83d2f8f
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-3e3927a734
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 032-019e4743
+    source_thread_id: 019e4743-7d74-7dc9-aa13-4f634aab8c25
+    tags:
+      - other
+    as_of: 2026-05-20T21:21:05.782Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - salim-jansen-dbc9
+      groups:
+        - felix-team
+      embedding_ref: emb-de6d6308eb
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 033-019e4734
+    source_thread_id: 019e4734-e4e8-7abf-a650-42f41a924fe1
+    tags:
+      - other
+    as_of: 2026-05-20T21:05:09.237Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - c-d73e4bdca4b6
+      groups:
+        - felix-team
+      embedding_ref: emb-79929d7aec
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 034-019e472e
+    source_thread_id: 019e472e-06b8-7565-bd08-f167b03827f0
+    tags:
+      - other
+    as_of: 2026-05-20T20:57:39.133Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - c-d3cf54b59f85
+      groups:
+        - felix-team
+      embedding_ref: emb-6fac537a38
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 035-019e4055
+    source_thread_id: 019e4055-e9ce-732a-b002-964e5848f9c4
+    tags:
+      - other
+    as_of: 2026-05-19T13:03:52.642Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - c-30dc0896bfdd
+      groups:
+        - felix-team
+      embedding_ref: emb-734fa87cb8
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 036-019e3392
+    source_thread_id: 019e3392-6656-75e7-b271-c7d0b0dc443b
+    tags:
+      - other
+    as_of: 2026-05-17T01:34:52.887Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - shreya-benali-5599
+      groups:
+        - felix-team
+      embedding_ref: emb-da16fe42bd
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 037-019e2f2f
+    source_thread_id: 019e2f2f-6f9f-7186-8b63-af9cd4e92dd5
+    tags:
+      - other
+    as_of: 2026-05-16T05:08:18.339Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - shreya-benali
+      groups:
+        - felix-team
+      embedding_ref: emb-924a8c1534
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 038-019e2f09
+    source_thread_id: 019e2f09-99b3-7aa8-889b-98c57018db07
+    tags:
+      - other
+    as_of: 2026-05-16T04:26:58.735Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - idris-keller
+      groups:
+        - felix-team
+      embedding_ref: emb-941376e525
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 039-019e2dd5
+    source_thread_id: 019e2dd5-f0e9-7f16-8728-c00a8bb3d456
+    tags:
+      - other
+    as_of: 2026-05-15T22:50:55.968Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - farah-suzuki
+      groups:
+        - felix-team
+      embedding_ref: emb-ee81a48188
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 040-019e2c3d
+    source_thread_id: 019e2c3d-d2ec-7d5c-8a4b-90ed83d5f113
+    tags:
+      - other
+    as_of: 2026-05-15T15:39:53.806Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Exploring Coaching Opportunities with Phil Lee
+      topic: 019c1bf7-a779-7741-9e15-a53ecd488aee
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-0835b06d7d
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 041-019e22bc
+    source_thread_id: 019e22bc-7a20-7fbc-aba7-391ca119092c
+    tags:
+      - other
+    as_of: 2026-05-13T19:07:17.773Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - anton-moreau
+      groups:
+        - felix-team
+      embedding_ref: emb-a6baa4a095
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 042-019e0fa3
+    source_thread_id: 019e0fa3-7c9a-7188-a2f9-9af481a0a222
+    tags:
+      - other
+    as_of: 2026-05-10T02:13:43.840Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Core Workflow Breakthrough and Upcoming UI Changes
+      topic: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-3aa092edba
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: updates
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 043-019e0797
+    source_thread_id: 019e0797-5397-7135-831c-f3ca0087912b
+    tags:
+      - other
+    as_of: 2026-05-08T12:37:54.349Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Google Access Approval Pending
+      topic: 019e03e8-6de5-71ab-9d38-75b7dec26da7
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-afad51f90e
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 044-019dfd74
+    source_thread_id: 019dfd74-d9d0-7540-9822-71a509fbfb3b
+    tags:
+      - other
+    as_of: 2026-05-06T13:26:01.831Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Time Allocation Tracker
+      topic: 019d3100-e1a6-7627-8cf1-585420e4a676
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-e6219576db
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 045-019df8bb
+    source_thread_id: 019df8bb-5880-7e74-844e-081a2313c143
+    tags:
+      - other
+    as_of: 2026-05-05T16:44:33.253Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Core beliefs
+      topic: 019c1257-9025-79a9-83a1-e82ed4558b20
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-d7d07aad09
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 046-019df8f2
+    source_thread_id: 019df8f2-4533-7551-866d-31a5907cbfd2
+    tags:
+      - other
+    as_of: 2026-05-05T16:22:00.106Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Welcome to Plot!
+      topic: onboarding
+      contacts:
+        - sadie-pinto
+      groups:
+        - felix-team
+      embedding_ref: emb-a1b9c5c96f
+      author: null
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: welcome-threads
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 047-019ddfb7
+    source_thread_id: 019ddfb7-a0bb-70ac-8a9f-3e1c4fab7dbe
+    tags:
+      - other
+    as_of: 2026-05-04T15:21:48.252Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Upcoming Salesforce Event and Schedule Coordination
+      topic: 019dd4a9-a134-7269-af6f-8d92d46919d2
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-6317e93010
+      author: leila-valdez-2
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: customer-discovery
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 048-019cbb6b
+    source_thread_id: 019cbb6b-f02c-7ddf-b9eb-ddd20f4f3037
+    tags:
+      - holdout-move
+    as_of: 2026-05-28T02:29:17.329Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Concert Considerations
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-6b0a9891ea
+      author: leila-valdez-2
+      connection: null
+      facets: null
+    labels:
+      gold: plot
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: plot
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 049-019cc015
+    source_thread_id: 019cc015-8e92-7cec-88da-3f0192484c0f
+    tags:
+      - holdout-move
+    as_of: 2026-05-04T19:09:55.034Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: TalentLift Workflow Overview
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-fbd40fe43e
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: customer-discovery
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: customer-discovery
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 050-019df0cc
+    source_thread_id: 019df0cc-1606-7301-9fc1-4dcc118a8a2d
+    tags:
+      - holdout-move
+    as_of: 2026-05-04T15:21:14.720Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Booking Page Live and Invites Sent
+      topic: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-7b4cb9eadc
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: gtm
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: gtm
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 051-019df3c1
+    source_thread_id: 019df3c1-ce6a-7d1a-a552-0afb080e04fb
+    tags:
+      - holdout-move
+    as_of: 2026-05-04T16:12:39.705Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Upcoming Whats New Thread Feature
+      topic: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+      groups: []
+      embedding_ref: emb-dd168c4138
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: updates
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: updates
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 052-019cdd8d
+    source_thread_id: 019cdd8d-d9c0-76cb-a076-c171d2844a2a
+    tags:
+      - holdout-move
+    as_of: 2026-03-25T17:18:50.299Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Integrate Beth's Accounts
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-a4deebbaaa
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: support-tickets
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 053-019d2664
+    source_thread_id: 019d2664-4bfa-7ff8-88e5-8be65d43e0d1
+    tags:
+      - holdout-move
+    as_of: 2026-03-25T19:06:51.442Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Upgrade to Plot Team account
+      topic: origin:019bd757-1784-7b62-a1e3-9f67fa927545
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-0ffda40095
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: support-tickets
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 054-019cf2fa
+    source_thread_id: 019cf2fa-3b40-7cc9-a9c9-aa110ca5b033
+    tags:
+      - holdout-move
+    as_of: 2026-03-15T19:30:44.432Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Spinner Width Inconsistency
+      topic: origin:019c2469-a944-7804-b812-c9f5e02c1eaa
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-66b24d6fbf
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: support-tickets
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 055-019cf2f9
+    source_thread_id: 019cf2f9-c228-77d5-a782-4c57fdf9434b
+    tags:
+      - holdout-move
+    as_of: 2026-03-15T19:30:03.257Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Touch to toggle tag
+      topic: origin:019c2469-a944-7804-b812-c9f5e02c1eaa
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-f94ed001d5
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: support-tickets
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 056-019ce245
+    source_thread_id: 019ce245-c435-7eb1-879a-7e29fc8bc8fb
+    tags:
+      - holdout-move
+    as_of: 2026-03-15T18:43:22.632Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Detailed timestamp on notes on hover
+      topic: origin:019c2469-a944-7804-b812-c9f5e02c1eaa
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-8bba982494
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: support-tickets
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""
+  - id: 057-019cf2ce
+    source_thread_id: 019cf2ce-8dc6-78ce-9d6e-fd57163d40b2
+    tags:
+      - holdout-move
+    as_of: 2026-03-15T18:42:44.248Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Unread not showing
+      topic: origin:019c2469-a944-7804-b812-c9f5e02c1eaa
+      contacts:
+        - hamid-bergman
+        - leila-valdez
+      groups: []
+      embedding_ref: emb-ad86f276be
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: support-tickets
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: support-tickets
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:06.280Z
+    notes: ""

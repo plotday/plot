@@ -1,0 +1,230 @@
+{
+  "meta": {
+    "classifier": "ts:hybrid:default",
+    "corpus": "prod-u3",
+    "trainingSet": "full",
+    "createdAt": "2026-06-11T11:32:30.167Z"
+  },
+  "results": {
+    "001-019e2fcf": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "002-019e2e9d": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "priority_title_override"
+    },
+    "003-019e2bff": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "004-019e2887": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "005-019e22e0": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "006-019e21f3": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "007-019e0acd": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "008-019df51e": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "009-019df380": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "010-019df380": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "011-019df380": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "012-019df380": {
+      "predicted": "019d9751-8e66-76cf-b9d9-6a00b996f4f1",
+      "stage": "channel_default"
+    },
+    "013-019eb1ad": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "014-019ea761": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "015-019e8507": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "016-019e4ada": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "017-019e4a66": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "018-019e2965": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "019-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "020-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "021-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "022-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "023-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "024-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "025-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "026-019de3f1": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "027-019de3ef": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "028-019dbb11": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "029-019db608": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "030-019db326": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "031-019db1ce": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "032-019db1ae": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "033-019db183": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "034-019db100": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "035-019db06c": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "036-019dadb0": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "037-019dacb2": {
+      "predicted": "019d9c12-2cd1-736e-a79b-0ce4d7b0f74b",
+      "stage": "scoring"
+    },
+    "038-019da8a5": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "039-019da236": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "040-019d9ec2": {
+      "predicted": "019d4dea-9050-7e50-9416-2fd691931f13",
+      "stage": "priority_title_override"
+    },
+    "041-019d9c52": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "042-019dbfc5": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "043-019db749": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "044-019db06d": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "045-019daccb": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "046-019dadaf": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "047-019daccf": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "048-019dac58": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "049-019dab4c": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "050-019dab38": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "051-019dab2f": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "052-019da0d4": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "053-019da0d4": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "054-019da0c2": {
+      "predicted": "019d96b2-822a-78fe-af70-0cdac2ec36bb",
+      "stage": "scoring"
+    },
+    "055-019da0bd": {
+      "predicted": "019d9c12-2cd1-736e-a79b-0ce4d7b0f74b",
+      "stage": "scoring"
+    }
+  }
+}

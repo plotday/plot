@@ -1,0 +1,1420 @@
+cases:
+  - id: 001-019e2fcf
+    source_thread_id: 019e2fcf-fa9a-759a-b4c9-cacfbaf923ce
+    tags:
+      - channel:N
+    as_of: 2026-05-16T08:03:39.801Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Untitled
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-4465495f5c
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 002-019e2e9d
+    source_thread_id: 019e2e9d-a356-7852-9279-2ba62207beb9
+    tags:
+      - channel:N
+    as_of: 2026-05-16T02:29:03.443Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: faith.tools Work
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-545e9d037d
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 003-019e2bff
+    source_thread_id: 019e2bff-e129-76ba-8000-e2c5f04c10a0
+    tags:
+      - channel:N
+    as_of: 2026-05-15T14:17:30.151Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Untitled
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-74f673d8cf
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 004-019e2887
+    source_thread_id: 019e2887-80d1-7580-bdbd-bc36bf0584d5
+    tags:
+      - channel:N
+    as_of: 2026-05-14T22:07:09.517Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Untitled
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-2b55009137
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 005-019e22e0
+    source_thread_id: 019e22e0-5191-7de5-9e03-e8fb464b394b
+    tags:
+      - channel:N
+    as_of: 2026-05-13T19:46:26.832Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Virtual Meetup w/ Cam - Marcus Smith and Cam Pak
+      topic: channel:88
+      contacts:
+        - akira-sato
+        - fabian-santos
+      groups: []
+      embedding_ref: emb-6544761304
+      author: akira-sato
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 006-019e21f3
+    source_thread_id: 019e21f3-33cb-729a-a927-35d05dd50d43
+    tags:
+      - channel:N
+    as_of: 2026-05-13T15:27:27.177Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Untitled
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-a277f19c6f
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 007-019e0acd
+    source_thread_id: 019e0acd-4cd4-751b-a850-877ceeeb3e1e
+    tags:
+      - channel:N
+    as_of: 2026-05-09T03:34:47.251Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Untitled
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-3f3899d7a7
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 008-019df51e
+    source_thread_id: 019df51e-eea3-7b72-93dd-14910ba87dae
+    tags:
+      - channel:N
+    as_of: 2026-05-04T22:32:18.338Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Untitled
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-fcd90a9a05
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 009-019df380
+    source_thread_id: 019df380-f66a-74e8-9efd-1028e5743398
+    tags:
+      - channel:N
+    as_of: 2026-05-04T15:00:08.424Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Murdaugh hall council meeting
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-99e0aaad40
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 010-019df380
+    source_thread_id: 019df380-f324-7a11-bbd8-4ef2d43336ee
+    tags:
+      - channel:N
+    as_of: 2026-05-04T15:00:07.587Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "Digerati: Work Experience"
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-4155da1410
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 011-019df380
+    source_thread_id: 019df380-f23f-7f92-ad7c-b56f56f1740b
+    tags:
+      - channel:N
+    as_of: 2026-05-04T15:00:07.359Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "CS: Scrum Meeting"
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-d82666b838
+      author: akira-sato
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 012-019df380
+    source_thread_id: 019df380-b50a-74e8-98d9-a2eafcca595a
+    tags:
+      - channel:N
+    as_of: 2026-05-04T14:59:51.689Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Coffee w/ Caleb Bayles
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-2f13d61f1a
+      author: null
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 013-019eb1ad
+    source_thread_id: 019eb1ad-6fdc-7d18-9fb7-563e8d3f5cfd
+    tags:
+      - channel:N
+    as_of: 2026-06-10T13:16:34.112Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: 'feat(sponsor): live preview + "Supported by the best" showcase'
+      topic: channel:2790
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-604a811d45
+      author: null
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: faithtools
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 014-019ea761
+    source_thread_id: 019ea761-352f-7655-97b8-0bbd0b6234fe
+    tags:
+      - channel:N
+    as_of: 2026-06-08T13:17:06.218Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Added filtering
+      topic: channel:2790
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-c4ab846d45
+      author: cyrus
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: faithtools
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 015-019e8507
+    source_thread_id: 019e8507-e9e2-77be-9496-a1bf75209b5f
+    tags:
+      - channel:N
+    as_of: 2026-06-01T21:12:28.894Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "Close out Phase 1 v1: unblock CTA, cut unverified social proof, add 404"
+      topic: channel:2785
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-8c33a74cb5
+      author: lior
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: faithtools
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 016-019e4ada
+    source_thread_id: 019e4ada-8ae4-7e81-b471-6638d0e986fe
+    tags:
+      - channel:N
+    as_of: 2026-05-21T14:04:56.930Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Reduce Fly deployment cost
+      topic: channel:2816
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-5b2e9c0bf5
+      author: lior
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: faithtools
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 017-019e4a66
+    source_thread_id: 019e4a66-b611-7d80-bc62-2a4a94f64022
+    tags:
+      - channel:N
+    as_of: 2026-05-21T11:58:25.800Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "build: upgrade wasp to 0.23"
+      topic: channel:2816
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-2398566baa
+      author: lior
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: faithtools
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 018-019e2965
+    source_thread_id: 019e2965-077c-7bd5-bffc-a3332e233244
+    tags:
+      - channel:N
+    as_of: 2026-05-15T02:09:07.447Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Improve discernment skill guidance
+      topic: channel:2789
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-b3791d21a3
+      author: lior
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 019-019de3f1
+    source_thread_id: 019de3f1-e152-7deb-b187-8caa21a8e6f8
+    tags:
+      - channel:N
+    as_of: 2026-05-01T14:29:33.135Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: cam/update freedom stack
+      topic: channel:2814
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-a8734ae801
+      author: cyrus
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 020-019de3f1
+    source_thread_id: 019de3f1-c085-7813-be8e-e8bab88297cb
+    tags:
+      - channel:N
+    as_of: 2026-05-01T14:29:24.740Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "chore(deps): update Astro and related packages to latest versions"
+      topic: channel:2814
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-38bd8fd01a
+      author: cyrus
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 021-019de3f1
+    source_thread_id: 019de3f1-b45b-715c-a9bc-5275689f24f9
+    tags:
+      - channel:N
+    as_of: 2026-05-01T14:29:21.624Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "docs: update README and index.astro for Freedom Stack v2"
+      topic: channel:2814
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-4b0ef07def
+      author: isla
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 022-019de3f1
+    source_thread_id: 019de3f1-a174-7200-890e-0eb8803533e5
+    tags:
+      - channel:N
+    as_of: 2026-05-01T14:29:16.760Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: i want to put things away
+      topic: channel:2816
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-769ad326f3
+      author: cyrus
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 023-019de3f1
+    source_thread_id: 019de3f1-9c97-773c-abf8-79a8333e28be
+    tags:
+      - channel:N
+    as_of: 2026-05-01T14:29:15.542Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: cam/mobile
+      topic: channel:2819
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-f2c26be093
+      author: cyrus
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 024-019de3f1
+    source_thread_id: 019de3f1-8f4b-78d5-a0ed-df9d0b8963f3
+    tags:
+      - channel:N
+    as_of: 2026-05-01T14:29:12.133Z
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: upgrade bknd version to 0.16
+      topic: channel:2813
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-1eb41fd7b5
+      author: ayodele
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 025-019de3f1
+    source_thread_id: 019de3f1-e816-7e4d-8107-8f02a8953712
+    tags:
+      - "null"
+    as_of: 2026-05-01T14:29:34.867Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Merge suggestion
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-d855103c89
+      author: null
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 026-019de3f1
+    source_thread_id: 019de3f1-5dd2-7bd2-a903-02ac42474780
+    tags:
+      - "null"
+    as_of: 2026-05-01T14:28:59.472Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Add Biome versus prettier
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-c9518e4d16
+      author: null
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 027-019de3ef
+    source_thread_id: 019de3ef-e74e-7af4-aea0-0ea3cf7607f3
+    tags:
+      - "null"
+    as_of: 2026-05-01T14:27:23.595Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Consider https://ml.ink/
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-7599479ed5
+      author: null
+      connection: github-41552a
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 028-019dbb11
+    source_thread_id: 019dbb11-2907-752e-af7d-a0044856009d
+    tags:
+      - "null"
+    as_of: 2026-04-23T16:00:03.054Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Notification Overload
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-fd2b4e747d
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 029-019db608
+    source_thread_id: 019db608-74e1-7a4a-8701-7de3c2ab277f
+    tags:
+      - "null"
+    as_of: 2026-04-22T16:59:23.049Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Mobile Bridge Native Webviews Article
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-cc4c74caf0
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 030-019db326
+    source_thread_id: 019db326-0738-7be0-8520-fe4734a26e37
+    tags:
+      - "null"
+    as_of: 2026-04-22T08:26:52.571Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: tsrx.dev/…
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-e131fbd33e
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 031-019db1ce
+    source_thread_id: 019db1ce-3ab1-7a9e-b893-792550f0d513
+    tags:
+      - "null"
+    as_of: 2026-04-21T21:53:20.344Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Cancel ThyWord subscription
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-e0e5e2a460
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 032-019db1ae
+    source_thread_id: 019db1ae-eba1-7ca8-9bd7-462b3da708dc
+    tags:
+      - "null"
+    as_of: 2026-04-21T20:47:53.254Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Add Godly Ambition to Reading List
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-564619825e
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 033-019db183
+    source_thread_id: 019db183-bb6c-78b7-b8a2-ceb41981ebb6
+    tags:
+      - "null"
+    as_of: 2026-04-21T19:28:56.075Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Discuss Church Canvas API Integration with RR
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-37ad11798c
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 034-019db100
+    source_thread_id: 019db100-6a8b-77b5-b25b-fa18f786adb2
+    tags:
+      - "null"
+    as_of: 2026-04-21T17:05:12.749Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Declarative Audio Synthesis Library
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-eb7f0a501d
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 035-019db06c
+    source_thread_id: 019db06c-62f8-7e46-bfe3-dc9f63127a1d
+    tags:
+      - "null"
+    as_of: 2026-04-21T14:23:49.837Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Refactor Bible Directory API Review
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-4f7c416cf7
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: youversion-sdk
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 036-019dadb0
+    source_thread_id: 019dadb0-bc5d-75e2-a227-0f6c0f2e6919
+    tags:
+      - "null"
+    as_of: 2026-04-21T01:45:28.057Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Thank you for subscribing, Cam! You enthusiasm, usage, and…
+      topic: null
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+        - akira-sato
+      groups: []
+      embedding_ref: emb-27c575eff6
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bug-reports
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 037-019dacb2
+    source_thread_id: 019dacb2-9631-77f1-b16f-291d703da505
+    tags:
+      - "null"
+    as_of: 2026-04-20T21:14:59.837Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Ginger Ward Birthday Reminder
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-8593dc8b20
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 038-019da8a5
+    source_thread_id: 019da8a5-6b62-7d52-adda-5c8eb37d9f68
+    tags:
+      - "null"
+    as_of: 2026-04-20T13:58:25.958Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: See if I have any apps to review today!
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-54646420ce
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: faithtools-app-review-pipeline
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 039-019da236
+    source_thread_id: 019da236-10cd-72d9-8e54-572788cf58a9
+    tags:
+      - "null"
+    as_of: 2026-04-18T20:09:14.725Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Get deodorant
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-e1c793a4de
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 040-019d9ec2
+    source_thread_id: 019d9ec2-bf57-72c4-bc12-e7835ecdcfee
+    tags:
+      - "null"
+    as_of: 2026-04-18T04:04:52.283Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Got initial bible study coach iMessage agent working :)
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-98eb1a5c12
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 041-019d9c52
+    source_thread_id: 019d9c52-8fc9-7ecb-b7ac-b486f9ad498b
+    tags:
+      - "null"
+    as_of: 2026-04-17T16:50:03.240Z
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Issue with Adding Twists Resolved
+      topic: null
+      contacts:
+        - hamid-bergman
+        - akira-sato
+      groups: []
+      embedding_ref: emb-07aeb0f585
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bug-reports
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 042-019dbfc5
+    source_thread_id: 019dbfc5-e115-72c0-90bf-086ae7d3bc51
+    tags:
+      - other
+    as_of: 2026-04-26T02:41:59.226Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Hey Cam Pak — this week had a focus on connectors other…
+      topic: 019dbcc7-d4de-703f-8123-f1d5523da3ae
+      contacts:
+        - hamid-bergman
+        - leila-valdez-3
+        - akira-sato
+      groups: []
+      embedding_ref: emb-2f68a08723
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bug-reports
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 043-019db749
+    source_thread_id: 019db749-fc1e-77e5-a23e-2e33d7e808f5
+    tags:
+      - other
+    as_of: 2026-04-22T22:23:08.163Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Computer Access Using Desktop Application
+      topic: 019d4dea-7398-72f4-8eaf-d301b4d91b08
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-ae57582526
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 044-019db06d
+    source_thread_id: 019db06d-54a9-780e-b725-6f553df0c002
+    tags:
+      - other
+    as_of: 2026-04-21T15:08:33.055Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Review PR for Package Version Bump
+      topic: 019d9752-7ba3-7ce8-be8e-a8e7404921ed
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-c92e75ad00
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: youversion-sdk
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 045-019daccb
+    source_thread_id: 019daccb-bbf5-72b5-a706-6e1c0ec4052a
+    tags:
+      - other
+    as_of: 2026-04-21T13:46:01.208Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Review Figma Subscription
+      topic: 019d9c0f-d5fa-7425-83cf-a98ff6348c15
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-f2cd6f25a3
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 046-019dadaf
+    source_thread_id: 019dadaf-e88a-751b-98ed-9a1f8b37fd7c
+    tags:
+      - other
+    as_of: 2026-04-21T02:23:28.100Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Making shared state more obvious
+      topic: feedback
+      contacts:
+        - hamid-bergman
+        - leila-valdez-2
+        - akira-sato
+      groups: []
+      embedding_ref: emb-fe7a4d2d03
+      author: hamid-bergman
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bug-reports
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 047-019daccf
+    source_thread_id: 019daccf-cbe1-72cf-9e47-88b49892f8e3
+    tags:
+      - other
+    as_of: 2026-04-20T21:36:47.445Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Thanks to Joshua for Missional AI Access
+      topic: feedback
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-54ada0bc4b
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 048-019dac58
+    source_thread_id: 019dac58-7c2d-79dc-9fad-e1000698aed3
+    tags:
+      - other
+    as_of: 2026-04-20T19:23:42.963Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: So wildly enough, I helped solve two of the major pain…
+      topic: 019d9752-7ba3-7ce8-be8e-a8e7404921ed
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-c6d4aec1a7
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: youversion-sdk
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 049-019dab4c
+    source_thread_id: 019dab4c-69c9-7ed5-9ba8-6f664eb38f7b
+    tags:
+      - other
+    as_of: 2026-04-20T14:30:47.582Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: "L: Spend one hour working on reading, responding, and…"
+      topic: 019dab4c-68ac-7072-a9e4-3c9cc4808cf7
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-ec5ee5e2e4
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bknd-contributor
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 050-019dab38
+    source_thread_id: 019dab38-9d9f-723e-b525-43a1f18b1555
+    tags:
+      - other
+    as_of: 2026-04-20T14:13:36.532Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: The Monospace Web
+      topic: feedback
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-685d664199
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 3-resources
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 051-019dab2f
+    source_thread_id: 019dab2f-7062-7ee6-a596-03e85eadac9c
+    tags:
+      - other
+    as_of: 2026-04-20T14:01:35.172Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Try out Ilha
+      topic: 019d9755-1844-79c0-bd1f-ebadf934d5ed
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-adbab022b3
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: friends
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 052-019da0d4
+    source_thread_id: 019da0d4-e384-795f-9a22-574611932760
+    tags:
+      - other
+    as_of: 2026-04-18T13:44:10.494Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: I need to add error monitoring and tracking for this.…
+      topic: 019d4dea-9050-7e50-9416-2fd691931f13
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-6e1a405b7f
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 053-019da0d4
+    source_thread_id: 019da0d4-716b-747e-b086-6dca2da6a9cd
+    tags:
+      - other
+    as_of: 2026-04-18T13:43:19.437Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: I need the AI to respond promptly even if it has to do a…
+      topic: 019d4dea-9050-7e50-9416-2fd691931f13
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-e81747f831
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 054-019da0c2
+    source_thread_id: 019da0c2-80c9-7f0c-b6e6-11beb388878b
+    tags:
+      - other
+    as_of: 2026-04-18T13:25:12.768Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Abstract the codebase to make template for easy access…
+      topic: 019d4dea-9050-7e50-9416-2fd691931f13
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-90ebcfffe6
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 055-019da0bd
+    source_thread_id: 019da0bd-feb7-72ef-b0c9-93140d3a6b16
+    tags:
+      - other
+    as_of: 2026-04-18T13:19:39.058Z
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Yesterday spent a good emount of time coding and got it…
+      topic: 019d4dea-9050-7e50-9416-2fd691931f13
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-d1f76cd897
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: bible-study-coach
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 056-019d98b6
+    source_thread_id: 019d98b6-3889-7741-afe7-3be9bf89db3f
+    tags:
+      - holdout-move
+    as_of: 2026-04-16T23:52:52.104Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Hang with Cam
+      topic: channel:88
+      contacts:
+        - akira-sato
+        - santiago-fitzroy
+      groups: []
+      embedding_ref: emb-da6c4a6cc3
+      author: santiago-fitzroy
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: health-2
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: health-2
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 057-019d98b6
+    source_thread_id: 019d98b6-3d64-7326-8f2c-eb5c66fb4de6
+    tags:
+      - holdout-move
+    as_of: 2026-04-16T23:52:53.347Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Amber Pak's Baby Shower
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-ccdc8f5060
+      author: akira-sato
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: family
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 058-019d98ba
+    source_thread_id: 019d98ba-5831-727e-8b73-b8aeecba4545
+    tags:
+      - holdout-move
+    as_of: 2026-04-16T23:57:22.352Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Virtual Meetup w/ Cam - Kris Braun and Cam Pak
+      topic: channel:1531
+      contacts:
+        - hamid-bergman
+        - akira-sato
+      groups: []
+      embedding_ref: emb-4df77f2e21
+      author: akira-sato
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: everything
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: everything
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 059-019d98b6
+    source_thread_id: 019d98b6-4afb-7689-93e6-bf9756bbcb41
+    tags:
+      - holdout-move
+    as_of: 2026-04-16T23:52:56.826Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Nora's 1st Birthday Party
+      topic: channel:88
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-b8de6e3cd2
+      author: akira-sato
+      connection: google-calendar-d9c8e2
+      facets: null
+    labels:
+      gold: family
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: family
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 060-019db137
+    source_thread_id: 019db137-b8c3-7114-ae16-820bd42138ac
+    tags:
+      - holdout-move
+    as_of: 2026-04-21T18:05:31.944Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Dr. Chorelie
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-5c3a73152a
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: health
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: health
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
+  - id: 061-019dac41
+    source_thread_id: 019dac41-c7a6-700e-997b-fb42c48d0a6b
+    tags:
+      - holdout-move
+    as_of: 2026-04-20T19:17:18.584Z
+    description: "Holdout: recent user-moved thread; gold is the user's own filing."
+    candidate:
+      title: Route.Bible now has a skill to help agents implement it…
+      topic: null
+      contacts:
+        - akira-sato
+      groups: []
+      embedding_ref: emb-c99cad5f64
+      author: akira-sato
+      connection: null
+      facets: null
+    labels:
+      gold: faithtools
+      gold_rationale: User moved this thread here (holdout-move).
+      gold_source: human
+      expected: faithtools
+      expected_stage: null
+      expected_recorded_at: 2026-06-11T11:32:08.540Z
+    notes: ""
