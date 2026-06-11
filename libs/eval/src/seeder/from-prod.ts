@@ -1,602 +1,508 @@
 #!/usr/bin/env tsx
 /**
- * Extract a user's world + a sample of auto-filed threads from the prod DB
- * (via the Cloud SQL Proxy on port 5433) and emit an anonymized corpus.
+ * Extract a user's world + threads from the prod DB (via the Cloud SQL Proxy
+ * on port 5433) and emit an anonymized corpus (schema v2).
  *
  * Usage:
- *   pnpm tsx src/seeder/from-prod.ts \
- *       --user-email kris@plot.day \
- *       --out corpora/kris \
- *       --case-count 30
+ *   pnpm exec tsx src/seeder/from-prod.ts \
+ *       --user-email kris@plot.day --out kris \
+ *       --case-count 80 --holdout-recent-moves 10
  *
- * The script reads the prod DB via the readonly user, applies deterministic
- * anonymization (see anonymize.ts), and writes:
- *   - corpora/<out>/world.yaml
- *   - corpora/<out>/cases/NNN-<id>.yaml
- *   - corpora/<out>/README.md
+ *   pnpm exec tsx src/seeder/from-prod.ts --list-active-users
  *
- * No PII leaves the script's memory in unredacted form once writeYaml runs.
+ * Everything data-shaped goes through src/seeder/extract.ts (hydration) and
+ * src/seeder/emit.ts (buildCorpusFiles — anonymization + enforced leak
+ * check). main() is thin orchestration over those tested functions:
+ *
+ * - Training set: every user_moved=TRUE thread, MINUS the N most recent
+ *   moves when --holdout-recent-moves is given. Holdout threads become gold
+ *   cases tagged `holdout-move`.
+ * - Refresh-preserving-labels: when <out>/cases.yaml exists, each existing
+ *   case is re-hydrated by source_thread_id (falling back to the 8-hex
+ *   prefix in the case id); labels/tags/notes survive byte-exactly, the
+ *   candidate is upgraded to v2. Unresolvable cases are kept verbatim and
+ *   reported. New cases are sampled to top up to --case-count.
+ * - Slug migration: contact slugs derive from the anonymized emails, so a
+ *   refresh rewrites slugs in every emitted file AND in extra training files
+ *   (e.g. kris's first-day.yaml) that this seeder does not regenerate.
  */
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import pg from "pg";
-import { stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 
-import { anonymizeEmail, anonymizeName, hashShort } from "./anonymize";
-import { contactSlugFromEmail, uniqueSlugifier } from "./slugs";
+import {
+  hydrateThreadsByIds,
+  listActiveUsers,
+  loadConnections,
+  loadContactsByIds,
+  loadGroupsByIds,
+  loadNegatives,
+  loadTrainingThreads,
+  loadWorldEntities,
+  resolveThreadIdPrefix,
+  resolveUserIdByEmail,
+  sampleStratifiedCaseThreadIds,
+  sampleTimelineCaseThreadIds,
+  type ExtractedThread,
+  type ExtractedWorld,
+  type PgClient,
+} from "./extract";
+import {
+  applySlugMigrationToYamlText,
+  buildCorpusFiles,
+  holdoutCaseEntries,
+  mergeExistingCases,
+  sampledCaseEntries,
+  splitHoldout,
+  type CaseResolution,
+} from "./emit";
 
-const PROXY_URL =
+const DEFAULT_DB_URL =
   process.env.PROD_DB_URL ?? "postgres://readonly@127.0.0.1:5433/plot";
 
+/** note-content embeddings embed private message bodies; kris-only. */
+const NOTE_EMBEDDING_ALLOWED_EMAILS = new Set(["kris@plot.day"]);
+
 type CliOpts = {
-  userEmail: string;
-  out: string;
+  userEmail: string | null;
+  userId: string | null;
+  out: string | null;
   caseCount: number;
+  holdoutRecentMoves: number;
+  timelineCases: number | null;
+  dbUrl: string;
+  listActive: boolean;
 };
+
+function usage(): never {
+  console.error(
+    [
+      "Usage:",
+      "  from-prod --user-email <addr> --out <corpus-name> [options]",
+      "  from-prod --user-id <uuid> --out <corpus-name> [options]",
+      "  from-prod --list-active-users [--db-url <url>]",
+      "",
+      "Options:",
+      "  --case-count N            target number of non-holdout cases (default 80)",
+      "  --holdout-recent-moves N  drop the N most recent user-moved threads from the",
+      "                            training set and emit them as gold `holdout-move` cases",
+      "  --timeline-cases N        top up with N cases spread evenly over thread.created_at",
+      "                            instead of stratified topic-shape sampling",
+      "  --db-url <url>            Postgres URL (default: $PROD_DB_URL or the readonly proxy)",
+      "",
+      "Notes:",
+      "  - Refresh-preserving-labels: when <out>/cases.yaml exists, existing cases are",
+      "    re-hydrated by source_thread_id (or 8-hex case-id prefix); gold/expected labels,",
+      "    tags, and notes are preserved byte-for-byte.",
+      "  - note-content embedding vectors are included only for kris@plot.day (own data).",
+      "  - --list-active-users prints user ids and counts only — never emails.",
+    ].join("\n")
+  );
+  process.exit(2);
+}
 
 function parseOpts(): CliOpts {
   const { values } = parseArgs({
     options: {
       "user-email": { type: "string" },
+      "user-id": { type: "string" },
       out: { type: "string" },
       "case-count": { type: "string" },
+      "holdout-recent-moves": { type: "string" },
+      "timeline-cases": { type: "string" },
+      "db-url": { type: "string" },
+      "list-active-users": { type: "boolean" },
     },
   });
-  if (!values["user-email"] || !values.out) {
-    console.error(
-      "Usage: from-prod --user-email <addr> --out <corpus-name> [--case-count 30]"
-    );
-    process.exit(2);
-  }
-  return {
-    userEmail: values["user-email"],
-    out: values.out,
-    caseCount: Number(values["case-count"] ?? 30),
+  const opts: CliOpts = {
+    userEmail: values["user-email"] ?? null,
+    userId: values["user-id"] ?? null,
+    out: values.out ?? null,
+    caseCount: Number(values["case-count"] ?? 80),
+    holdoutRecentMoves: Number(values["holdout-recent-moves"] ?? 0),
+    timelineCases:
+      values["timeline-cases"] !== undefined
+        ? Number(values["timeline-cases"])
+        : null,
+    dbUrl: values["db-url"] ?? DEFAULT_DB_URL,
+    listActive: values["list-active-users"] ?? false,
   };
+  if (!opts.listActive && !((opts.userEmail || opts.userId) && opts.out)) {
+    usage();
+  }
+  return opts;
 }
 
-type PriorityRow = {
-  id: string;
-  path: string;
-  title: string;
-  key: string | null;
-};
-type ContactRow = {
-  id: string;
-  email: string | null;
-  name: string | null;
-  linked_to_user: boolean;
-};
-type ChannelRow = { id: number; default_priority_id: string | null };
-type ThreadRow = {
-  id: string;
-  title: string | null;
-  topic: string | null;
-  contacts: string[];
-  groups: string[];
-  embedding: number[] | null;
-  /** Author identity: first note's author_id, falling back to thread.created_by when no notes exist. */
-  author: string | null;
-  filed_to_priority: string;
-};
-type CaseRow = ThreadRow & {
-  filed_to_priority: string; // expected (the current filing)
-};
+async function readOptional(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
+}
+
+/**
+ * Resolves each existing case to a fresh prod hydration: by source_thread_id
+ * when present, else by the 8-hex thread-id prefix embedded in the case id.
+ * Ambiguous or unmatched cases resolve to verbatim preservation.
+ */
+async function resolveExistingCases(
+  client: PgClient,
+  userId: string,
+  existingCases: Record<string, unknown>[]
+): Promise<Map<string, CaseResolution>> {
+  const resolution = new Map<string, CaseResolution>();
+  const bySource: { caseId: string; threadId: string }[] = [];
+  const byPrefix: { caseId: string; prefix: string }[] = [];
+
+  for (const raw of existingCases) {
+    const caseId = String(raw.id ?? "");
+    const src =
+      typeof raw.source_thread_id === "string" ? raw.source_thread_id : null;
+    if (src) {
+      bySource.push({ caseId, threadId: src });
+      continue;
+    }
+    const m = /^\d+-([0-9a-f]{8})$/i.exec(caseId);
+    if (m) {
+      byPrefix.push({ caseId, prefix: m[1]!.toLowerCase() });
+    } else {
+      resolution.set(caseId, { status: "missing" });
+    }
+  }
+
+  const sourceThreads = await hydrateThreadsByIds(
+    client,
+    userId,
+    bySource.map((s) => s.threadId)
+  );
+  const threadById = new Map(sourceThreads.map((t) => [t.id, t]));
+  for (const { caseId, threadId } of bySource) {
+    const thread = threadById.get(threadId);
+    resolution.set(
+      caseId,
+      thread ? { status: "hydrated", thread } : { status: "missing" }
+    );
+  }
+
+  for (const { caseId, prefix } of byPrefix) {
+    const matches = await resolveThreadIdPrefix(client, userId, prefix);
+    if (matches.length === 0) {
+      resolution.set(caseId, { status: "missing" });
+    } else if (matches.length > 1) {
+      resolution.set(caseId, { status: "ambiguous", matches: matches.length });
+    } else {
+      const [thread] = await hydrateThreadsByIds(client, userId, matches);
+      resolution.set(
+        caseId,
+        thread ? { status: "hydrated", thread } : { status: "missing" }
+      );
+    }
+  }
+  return resolution;
+}
+
+/**
+ * Ensures every contact/group/connection referenced by the given threads is
+ * present in the world (hydrating from prod where possible) and strips refs
+ * that no longer resolve so buildCorpusFiles' strict checks cannot trip on
+ * deleted rows. Mutates `world` and the threads in place; returns log lines.
+ */
+async function ensureReferencedEntities(
+  client: PgClient,
+  world: ExtractedWorld,
+  threads: ExtractedThread[]
+): Promise<string[]> {
+  const log: string[] = [];
+
+  // Connections first (their actors feed the contact pass).
+  const knownConnections = new Set(world.connections.map((c) => c.id));
+  const neededConnections = [
+    ...new Set(
+      threads
+        .map((t) => t.connectionId)
+        .filter((id): id is string => id !== null && !knownConnections.has(id))
+    ),
+  ];
+  if (neededConnections.length > 0) {
+    const { connections, missing } = await loadConnections(
+      client,
+      neededConnections
+    );
+    world.connections.push(...connections);
+    if (connections.length > 0) {
+      log.push(`hydrated ${connections.length} thread-referenced connection(s)`);
+    }
+    if (missing.length > 0) {
+      log.push(
+        `${missing.length} connection(s) had no twist_instance_connection row — affected threads emit without a connection`
+      );
+    }
+  }
+
+  const knownContacts = new Set(world.contacts.map((c) => c.id));
+  const neededContacts = new Set<string>();
+  for (const t of threads) {
+    for (const id of t.contacts) if (!knownContacts.has(id)) neededContacts.add(id);
+    if (t.authorContactId && !knownContacts.has(t.authorContactId)) {
+      neededContacts.add(t.authorContactId);
+    }
+  }
+  for (const conn of world.connections) {
+    if (!knownContacts.has(conn.actorContactId)) {
+      neededContacts.add(conn.actorContactId);
+    }
+  }
+  if (neededContacts.size > 0) {
+    const fetched = await loadContactsByIds(client, world.userId, [
+      ...neededContacts,
+    ]);
+    world.contacts.push(...fetched);
+    for (const c of fetched) knownContacts.add(c.id);
+    log.push(`hydrated ${fetched.length} additional contact(s)`);
+    const unresolved = [...neededContacts].filter((id) => !knownContacts.has(id));
+    if (unresolved.length > 0) {
+      const gone = new Set(unresolved);
+      for (const t of threads) {
+        t.contacts = t.contacts.filter((id) => !gone.has(id));
+        if (t.authorContactId && gone.has(t.authorContactId)) {
+          t.authorContactId = null;
+        }
+      }
+      world.connections = world.connections.filter(
+        (c) => !gone.has(c.actorContactId)
+      );
+      log.push(
+        `${unresolved.length} contact id(s) no longer exist in prod — refs dropped`
+      );
+    }
+  }
+
+  const knownGroups = new Set(world.groups.map((g) => g.id));
+  const neededGroups = new Set<string>();
+  for (const t of threads) {
+    for (const id of t.groups) if (!knownGroups.has(id)) neededGroups.add(id);
+  }
+  if (neededGroups.size > 0) {
+    const fetched = await loadGroupsByIds(client, [...neededGroups]);
+    world.groups.push(...fetched);
+    for (const g of fetched) knownGroups.add(g.id);
+    log.push(`hydrated ${fetched.length} additional group(s)`);
+    const unresolved = [...neededGroups].filter((id) => !knownGroups.has(id));
+    if (unresolved.length > 0) {
+      const gone = new Set(unresolved);
+      for (const t of threads) {
+        t.groups = t.groups.filter((id) => !gone.has(id));
+      }
+      log.push(
+        `${unresolved.length} group id(s) no longer exist in prod — refs dropped`
+      );
+    }
+  }
+
+  return log;
+}
 
 async function main() {
   const opts = parseOpts();
-  const client = new pg.Client({ connectionString: PROXY_URL });
+  const client = new pg.Client({ connectionString: opts.dbUrl });
   await client.connect();
   try {
-    const { rows: userRows } = await client.query(
-      `SELECT id FROM public."user" WHERE email = $1`,
-      [opts.userEmail]
-    );
-    if (userRows.length === 0) throw new Error(`User ${opts.userEmail} not found`);
-    const userId: string = userRows[0].id;
-    console.log(`Found user ${opts.userEmail} → ${userId}`);
+    if (opts.listActive) {
+      const rows = await listActiveUsers(client);
+      console.log("user_id                               tp_rows  user_moved");
+      for (const r of rows) {
+        console.log(
+          `${r.userId}  ${String(r.threadPriorityCount).padStart(7)}  ${String(r.userMovedCount).padStart(10)}`
+        );
+      }
+      return;
+    }
 
-    const priorities = await loadPriorities(client, userId);
-    const activePriorityIds = new Set(priorities.map((p) => p.id));
-    const contacts = await loadContacts(client, userId);
-    const channels = await loadChannels(client, userId);
-    const allTrainingThreads = await loadTrainingThreads(client, userId);
-    const trainingThreads = allTrainingThreads.filter((t) =>
-      activePriorityIds.has(t.filed_to_priority)
+    const userId =
+      opts.userId ?? (await resolveUserIdByEmail(client, opts.userEmail!));
+    console.log(`Extracting user ${userId}`);
+
+    const world = await loadWorldEntities(client, userId);
+    const activePriorityIds = new Set(world.priorities.map((p) => p.id));
+
+    // Training set: all user_moved threads filed in active priorities.
+    const allTrainings = await loadTrainingThreads(client, userId);
+    const trainings = allTrainings.filter(
+      (t) => t.filedToPriority !== null && activePriorityIds.has(t.filedToPriority)
     );
-    const droppedTrainings = allTrainingThreads.length - trainingThreads.length;
-    if (droppedTrainings > 0) {
+    if (trainings.length < allTrainings.length) {
       console.log(
-        `  dropped ${droppedTrainings} training threads filed in archived priorities`
+        `  dropped ${allTrainings.length - trainings.length} training threads filed in archived priorities`
       );
     }
-    const cases = await loadSampledCases(
-      client,
-      userId,
-      opts.caseCount,
-      new Set(trainingThreads.map((t) => t.id)),
-      activePriorityIds
+    const { training, holdout } = splitHoldout(trainings, opts.holdoutRecentMoves);
+
+    // Negatives (real timestamps); threads not in the emitted training set —
+    // including holdout threads — are hydrated as negative_threads.
+    const allNegatives = await loadNegatives(client, userId);
+    const negatives = allNegatives.filter((n) =>
+      activePriorityIds.has(n.priorityId)
     );
-    const referencedGroups = new Set<string>();
-    for (const t of [...trainingThreads, ...cases]) {
-      for (const g of t.groups) referencedGroups.add(g);
+    if (negatives.length < allNegatives.length) {
+      console.log(
+        `  dropped ${allNegatives.length - negatives.length} negatives pointing at archived priorities`
+      );
     }
-    const groups = await loadGroups(client, referencedGroups);
+    const trainingIds = new Set(training.map((t) => t.id));
+    const negativeThreads = await hydrateThreadsByIds(client, userId, [
+      ...new Set(
+        negatives.map((n) => n.threadId).filter((id) => !trainingIds.has(id))
+      ),
+    ]);
 
-    console.log(
-      `Loaded: ${priorities.length} priorities, ${contacts.length} contacts, ` +
-        `${channels.length} channels, ${groups.length} groups, ` +
-        `${trainingThreads.length} training threads, ${cases.length} sampled cases`
+    // Refresh-preserving-labels over the existing cases.yaml.
+    const scriptDir = dirname(fileURLToPath(import.meta.url));
+    const corpusDir = resolve(scriptDir, "..", "..", "corpora", opts.out!);
+    const existingWorldYaml = await readOptional(join(corpusDir, "world.yaml"));
+    const existingEmbeddingsYaml = await readOptional(
+      join(corpusDir, "embeddings.yaml")
     );
+    const existingCasesText = await readOptional(join(corpusDir, "cases.yaml"));
+    const existingCases: Record<string, unknown>[] = existingCasesText
+      ? (((parseYaml(existingCasesText) as Record<string, unknown>)?.cases ??
+          []) as Record<string, unknown>[])
+      : [];
+    const resolution = await resolveExistingCases(client, userId, existingCases);
+    const merged = mergeExistingCases(existingCases, resolution);
+    for (const line of merged.report) console.log(`  ${line}`);
+    if (existingCases.length > 0) {
+      console.log(
+        `  refreshed ${existingCases.length} existing cases (${merged.resolvedThreadIds.size} re-hydrated, labels preserved)`
+      );
+    }
 
-    await writeCorpus(opts, userId, priorities, contacts, groups, channels, trainingThreads, cases);
-    console.log(`Wrote corpus to ${opts.out}`);
+    // Top up with fresh sampled cases.
+    const exclude = new Set<string>([
+      ...trainingIds,
+      ...holdout.map((t) => t.id),
+      ...merged.resolvedThreadIds,
+    ]);
+    const sampleCount =
+      opts.timelineCases !== null
+        ? opts.timelineCases
+        : Math.max(0, opts.caseCount - merged.entries.length);
+    const sampledIds =
+      opts.timelineCases !== null
+        ? await sampleTimelineCaseThreadIds(
+            client,
+            userId,
+            sampleCount,
+            exclude,
+            activePriorityIds
+          )
+        : await sampleStratifiedCaseThreadIds(
+            client,
+            userId,
+            sampleCount,
+            exclude,
+            activePriorityIds
+          );
+    const sampled = await hydrateThreadsByIds(client, userId, sampledIds);
+
+    const nowIso = new Date().toISOString();
+    let nextN = merged.maxCaseNumber + 1;
+    const sampledEntries = sampledCaseEntries(sampled, nextN, nowIso);
+    nextN += sampledEntries.length;
+    const holdoutEntries = holdoutCaseEntries(holdout, nextN, nowIso);
+    const caseEntries = [...merged.entries, ...sampledEntries, ...holdoutEntries];
+
+    // Make the world self-consistent for every thread we are about to emit.
+    const mergedThreads = merged.entries.flatMap((e) =>
+      e.kind === "thread" ? [e.thread] : []
+    );
+    const allThreads = [
+      ...training,
+      ...holdout,
+      ...negativeThreads,
+      ...mergedThreads,
+      ...sampled,
+    ];
+    const completenessLog = await ensureReferencedEntities(
+      client,
+      world,
+      allThreads
+    );
+    for (const line of completenessLog) console.log(`  ${line}`);
+
+    const regenerateCommand =
+      `pnpm exec tsx src/seeder/from-prod.ts --user-id ${userId} --out ${opts.out}` +
+      ` --case-count ${opts.caseCount}` +
+      (opts.holdoutRecentMoves > 0
+        ? ` --holdout-recent-moves ${opts.holdoutRecentMoves}`
+        : "") +
+      (opts.timelineCases !== null
+        ? ` --timeline-cases ${opts.timelineCases}`
+        : "");
+
+    const build = buildCorpusFiles({
+      corpusName: opts.out!,
+      world,
+      trainings: training,
+      negatives,
+      negativeThreads,
+      cases: caseEntries,
+      existingWorldYaml,
+      existingEmbeddingsYaml,
+      allowNoteContentEmbeddings: NOTE_EMBEDDING_ALLOWED_EMAILS.has(
+        world.userEmail
+      ),
+      regenerateCommand,
+    });
+
+    // Write the emitted files (replacing any pre-v2 per-case layout).
+    await rm(join(corpusDir, "cases"), { recursive: true, force: true });
+    await mkdir(join(corpusDir, "trainings"), { recursive: true });
+    for (const f of build.files) {
+      const path = join(corpusDir, f.path);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, f.text, "utf-8");
+    }
+
+    // Slug-migrate extra training files this seeder does not regenerate.
+    if (build.slugMigration.size > 0) {
+      const trainingFiles = (await readdir(join(corpusDir, "trainings"))).filter(
+        (f) => /\.ya?ml$/.test(f) && f !== "full.yaml"
+      );
+      for (const file of trainingFiles) {
+        const path = join(corpusDir, "trainings", file);
+        const text = await readFile(path, "utf-8");
+        const { text: rewritten, replacements } = applySlugMigrationToYamlText(
+          text,
+          build.slugMigration
+        );
+        if (replacements > 0) {
+          await writeFile(path, rewritten, "utf-8");
+          console.log(
+            `  rewrote ${replacements} slug reference(s) in trainings/${file}`
+          );
+        }
+      }
+    }
+
+    for (const line of build.report) console.log(`  ${line}`);
+    if (build.warnings.length > 0) {
+      console.log(
+        `  ${build.warnings.length} leak-check warning(s) for manual audit (titles are verbatim by policy):`
+      );
+      for (const w of build.warnings.slice(0, 50)) {
+        console.log(`    ${w.path}:${w.line} [${w.kind}] "${w.value}" — ${w.context}`);
+      }
+    }
+    console.log(`Wrote corpus to ${corpusDir}`);
   } finally {
     await client.end();
   }
-}
-
-async function loadPriorities(
-  client: pg.Client,
-  userId: string
-): Promise<PriorityRow[]> {
-  const { rows } = await client.query<PriorityRow>(
-    `SELECT id, path::text AS path, title, key
-       FROM public.priority
-      WHERE user_id = $1 AND archived_at IS NULL
-      ORDER BY path`,
-    [userId]
-  );
-  return rows;
-}
-
-async function loadContacts(
-  client: pg.Client,
-  userId: string
-): Promise<ContactRow[]> {
-  // Linked aliases (the user's own contacts) PLUS counterparty contacts that
-  // appear in any of the user's threads.
-  const { rows } = await client.query<ContactRow>(
-    `WITH linked AS (
-       SELECT c.id, c.email, c.name, TRUE AS linked_to_user
-         FROM public.contact c
-         JOIN public.user_contact uc
-           ON uc.contact_id = c.id AND uc.user_id = $1 AND uc.linked = TRUE
-        WHERE c.archived_at IS NULL
-     ),
-     counterparties AS (
-       SELECT DISTINCT c.id, c.email, c.name, FALSE AS linked_to_user
-         FROM public.contact c
-         JOIN public.thread t
-           ON c.id = ANY(t.contacts)
-         JOIN public.thread_priority tp ON tp.thread_id = t.id
-        WHERE tp.user_id = $1
-          AND t.archived_at IS NULL
-          AND c.archived_at IS NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM public.user_contact uc
-            WHERE uc.contact_id = c.id AND uc.user_id = $1 AND uc.linked = TRUE
-          )
-     )
-     SELECT * FROM linked
-     UNION ALL
-     SELECT * FROM counterparties`,
-    [userId]
-  );
-  return rows;
-}
-
-async function loadGroups(
-  client: pg.Client,
-  groupIds: Set<string>
-): Promise<{ id: string; title: string }[]> {
-  if (groupIds.size === 0) return [];
-  const { rows } = await client.query<{ id: string; title: string }>(
-    `SELECT id, name AS title FROM public."group" WHERE id = ANY($1::uuid[])`,
-    [[...groupIds]]
-  );
-  return rows;
-}
-
-async function loadChannels(
-  client: pg.Client,
-  userId: string
-): Promise<ChannelRow[]> {
-  const { rows } = await client.query<ChannelRow>(
-    `SELECT c.id::int AS id, c.default_priority_id
-       FROM public.channel c
-       LEFT JOIN public.priority p ON p.id = c.default_priority_id
-      WHERE c.id IN (
-        SELECT DISTINCT NULLIF(substring(t.topic FROM 9), '')::bigint
-          FROM public.thread t
-          JOIN public.thread_priority tp ON tp.thread_id = t.id
-         WHERE tp.user_id = $1
-           AND t.topic ~ '^channel:[0-9]+$'
-           AND t.archived_at IS NULL
-      )
-        AND (c.default_priority_id IS NULL OR p.user_id = $1)
-      ORDER BY c.id`,
-    [userId]
-  );
-  return rows;
-}
-
-async function loadTrainingThreads(
-  client: pg.Client,
-  userId: string
-): Promise<ThreadRow[]> {
-  // Pull each user_moved thread plus a fallback embedding from the earliest
-  // non-archived note (when t.embedding itself is NULL — common for threads
-  // created before auto-classify was rolled out). Author is the first note's
-  // author_id (the contact-level identity for matching), with thread.created_by
-  // as fallback for threads with no notes.
-  const { rows } = await client.query<{
-    id: string;
-    title: string | null;
-    topic: string | null;
-    contacts: string[];
-    groups: string[];
-    embedding_text: string | null;
-    note_embedding_text: string | null;
-    note_author_id: string | null;
-    created_by: string;
-    filed_to_priority: string;
-  }>(
-    `SELECT t.id,
-            t.title,
-            t.topic,
-            t.contacts,
-            t.groups,
-            t.embedding::text AS embedding_text,
-            (
-              SELECT n.embedding::text
-                FROM public.note n
-               WHERE n.thread_id = t.id
-                 AND n.archived_at IS NULL
-                 AND n.embedding IS NOT NULL
-               ORDER BY n.created_at ASC
-               LIMIT 1
-            ) AS note_embedding_text,
-            (
-              SELECT n.author_id
-                FROM public.note n
-               WHERE n.thread_id = t.id
-                 AND n.archived_at IS NULL
-               ORDER BY n.created_at ASC
-               LIMIT 1
-            ) AS note_author_id,
-            t.created_by,
-            tp.priority_id AS filed_to_priority
-       FROM public.thread_priority tp
-       JOIN public.thread t ON t.id = tp.thread_id
-      WHERE tp.user_id = $1
-        AND tp.user_moved = TRUE
-        AND t.archived_at IS NULL
-      ORDER BY tp.updated_at DESC`,
-    [userId]
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    topic: r.topic,
-    contacts: r.contacts,
-    groups: r.groups,
-    embedding:
-      parseHalfvec(r.embedding_text) ?? parseHalfvec(r.note_embedding_text),
-    author: r.note_author_id ?? r.created_by,
-    filed_to_priority: r.filed_to_priority,
-  }));
-}
-
-async function loadSampledCases(
-  client: pg.Client,
-  userId: string,
-  caseCount: number,
-  excludeIds: Set<string>,
-  activePriorityIds: Set<string>
-): Promise<CaseRow[]> {
-  // Stratified sample by topic shape. Use modular sampling to spread across
-  // the per-shape population deterministically (same seed → same sample).
-  const shapes: Array<{ shape: string; predicate: string }> = [
-    { shape: "channel-with-default", predicate: "t.topic ~ '^channel:[0-9]+$' AND ch.default_priority_id IS NOT NULL" },
-    { shape: "channel-no-default", predicate: "t.topic ~ '^channel:[0-9]+$' AND ch.default_priority_id IS NULL" },
-    { shape: "priority-key", predicate: "t.topic LIKE 'priority:%'" },
-    { shape: "null-topic", predicate: "t.topic IS NULL" },
-    { shape: "other-topic", predicate: "t.topic IS NOT NULL AND t.topic !~ '^channel:' AND t.topic NOT LIKE 'priority:%'" },
-  ];
-  // Roughly proportional but capped per-shape.
-  const targetPer = Math.ceil(caseCount / shapes.length);
-
-  const out: CaseRow[] = [];
-  for (const s of shapes) {
-    const { rows } = await client.query<{
-      id: string;
-      title: string | null;
-      topic: string | null;
-      contacts: string[];
-      groups: string[];
-      embedding_text: string | null;
-      note_embedding_text: string | null;
-      note_author_id: string | null;
-      created_by: string;
-      filed_to_priority: string;
-    }>(
-      `SELECT t.id,
-              t.title,
-              t.topic,
-              t.contacts,
-              t.groups,
-              t.embedding::text AS embedding_text,
-              (
-                SELECT n.embedding::text
-                  FROM public.note n
-                 WHERE n.thread_id = t.id
-                   AND n.archived_at IS NULL
-                   AND n.embedding IS NOT NULL
-                 ORDER BY n.created_at ASC
-                 LIMIT 1
-              ) AS note_embedding_text,
-              (
-                SELECT n.author_id
-                  FROM public.note n
-                 WHERE n.thread_id = t.id
-                   AND n.archived_at IS NULL
-                 ORDER BY n.created_at ASC
-                 LIMIT 1
-              ) AS note_author_id,
-              t.created_by,
-              tp.priority_id AS filed_to_priority
-         FROM public.thread_priority tp
-         JOIN public.thread t ON t.id = tp.thread_id
-         LEFT JOIN public.channel ch
-           ON t.topic ~ '^channel:[0-9]+$'
-          AND ch.id = NULLIF(substring(t.topic FROM 9), '')::bigint
-        WHERE tp.user_id = $1
-          AND tp.user_moved = FALSE
-          AND t.archived_at IS NULL
-          AND ${s.predicate}
-        ORDER BY t.created_at DESC NULLS LAST
-        LIMIT $2`,
-      [userId, targetPer * 3] // overfetch then stride-sample
-    );
-    const filtered = rows.filter(
-      (r) => !excludeIds.has(r.id) && activePriorityIds.has(r.filed_to_priority)
-    );
-    const droppedForArchive = rows.filter(
-      (r) => !excludeIds.has(r.id) && !activePriorityIds.has(r.filed_to_priority)
-    );
-    if (droppedForArchive.length > 0) {
-      console.log(
-        `  [${s.shape}] dropped ${droppedForArchive.length} cases whose filed_to_priority is archived`
-      );
-    }
-    const stride = Math.max(1, Math.floor(filtered.length / targetPer));
-    for (let i = 0; i < filtered.length && out.length < caseCount; i += stride) {
-      const r = filtered[i]!;
-      out.push({
-        id: r.id,
-        title: r.title,
-        topic: r.topic,
-        contacts: r.contacts,
-        groups: r.groups,
-        embedding:
-          parseHalfvec(r.embedding_text) ?? parseHalfvec(r.note_embedding_text),
-        author: r.note_author_id ?? r.created_by,
-        filed_to_priority: r.filed_to_priority,
-      });
-    }
-  }
-  return out.slice(0, caseCount);
-}
-
-function parseHalfvec(literal: string | null): number[] | null {
-  if (!literal) return null;
-  // halfvec text is "[0.1, -0.2, ...]"
-  const inner = literal.trim().replace(/^\[/, "").replace(/\]$/, "");
-  return inner.split(",").map((s) => Number(s.trim()));
-}
-
-async function writeCorpus(
-  opts: CliOpts,
-  userId: string,
-  priorities: PriorityRow[],
-  contacts: ContactRow[],
-  groups: { id: string; title: string }[],
-  channels: ChannelRow[],
-  trainingThreads: ThreadRow[],
-  cases: CaseRow[]
-): Promise<void> {
-  const scriptDir = dirname(fileURLToPath(import.meta.url));
-  const outDir = resolve(scriptDir, "..", "..", "corpora", opts.out);
-  // Remove any prior layout (per-case files, old training set blobs). World,
-  // cases.yaml, and trainings/full.yaml are overwritten outright.
-  await rm(join(outDir, "cases"), { recursive: true, force: true });
-  await rm(join(outDir, "cases.yaml"), { force: true });
-  await mkdir(join(outDir, "trainings"), { recursive: true });
-
-  // Only PII (emails, contact names) is anonymized. Priority titles, thread
-  // titles, topics, channel IDs, group names, and UUIDs are preserved
-  // verbatim so the corpus is human-readable for manual review and so any
-  // classifier that uses semantic signals (LLM-based, embedding-based) sees
-  // the same text the production classifier sees.
-
-  // Build embedding catalog: training + cases. Stable ref name per source thread.
-  const embeddings: { ref: string; vector: number[] }[] = [];
-  const embRefOf = new Map<string, string>();
-  for (const t of [...trainingThreads, ...cases]) {
-    if (t.embedding && t.embedding.length === 384) {
-      const ref = `emb-${hashShort(t.id, 10)}`;
-      if (!embRefOf.has(t.id)) {
-        embRefOf.set(t.id, ref);
-        embeddings.push({ ref, vector: t.embedding });
-      }
-    }
-  }
-
-  // Slug catalogs, keyed by UUID. Priorities get readable slugs derived from
-  // their title (dedup'd with the path's last segment if needed). Contacts and
-  // groups get short, generated slugs.
-  const prioritySlug = new Map<string, string>();
-  {
-    const slugify = uniqueSlugifier();
-    for (const p of priorities) {
-      const lastSegment = p.path.split(".").pop() ?? "";
-      prioritySlug.set(p.id, slugify(p.title, lastSegment));
-    }
-  }
-  const contactSlug = new Map<string, string>();
-  {
-    const slugify = uniqueSlugifier();
-    for (const c of contacts) {
-      const anonEmail = anonymizeEmail(c.email);
-      const base = contactSlugFromEmail(anonEmail, c.id);
-      contactSlug.set(c.id, slugify(base, `c-${c.id.replace(/-/g, "").slice(0, 8)}`));
-    }
-  }
-  const groupSlug = new Map<string, string>();
-  {
-    const slugify = uniqueSlugifier();
-    for (const g of groups) {
-      groupSlug.set(g.id, slugify(g.title, `g-${g.id.replace(/-/g, "").slice(0, 8)}`));
-    }
-  }
-
-  const world = {
-    name: opts.out,
-    description: `Snapshot of ${opts.userEmail} extracted ${new Date()
-      .toISOString()
-      .slice(0, 10)} by libs/eval seeder/from-prod. Emails and contact names anonymized; other text preserved verbatim.`,
-    schema_version: 1,
-    source: {
-      kind: "prod-extract",
-      extracted_at: new Date().toISOString(),
-      anonymized: true,
-    },
-    user: {
-      id: userId,
-      email: anonymizeEmail(opts.userEmail) ?? "eval-user@example.test",
-      primary_contact_id: null,
-    },
-    priorities: priorities.map((p) => ({
-      slug: prioritySlug.get(p.id),
-      id: p.id,
-      path: p.path,
-      title: p.title,
-      key: p.key,
-    })),
-    contacts: contacts.map((c) => ({
-      slug: contactSlug.get(c.id),
-      id: c.id,
-      email: anonymizeEmail(c.email),
-      name: anonymizeName(c.name),
-      linked_to_user: c.linked_to_user,
-    })),
-    groups: groups.map((g) => ({
-      slug: groupSlug.get(g.id),
-      id: g.id,
-      title: g.title,
-    })),
-    embeddings,
-    channels: channels.map((ch) => ({
-      id: ch.id,
-      default_priority_id: ch.default_priority_id,
-    })),
-  };
-
-  await writeFile(join(outDir, "world.yaml"), stringifyYaml(world), "utf-8");
-
-  // Write the full prod training set as trainings/full.yaml. Additional
-  // training-set variants live alongside as separate files and are not
-  // touched by this seeder — the user maintains them manually.
-  const fullTrainingSet = {
-    name: "full",
-    description:
-      `All ${trainingThreads.length} user_moved=TRUE threads for ${opts.userEmail} ` +
-      `as of ${new Date().toISOString().slice(0, 10)}. Re-generated by from-prod.`,
-    threads: trainingThreads.map((t) => ({
-      id: t.id,
-      title: t.title,
-      topic: t.topic,
-      contacts: t.contacts.map((id) => contactSlug.get(id) ?? id),
-      groups: t.groups.map((id) => groupSlug.get(id) ?? id),
-      embedding_ref: embRefOf.get(t.id) ?? null,
-      filed_to_priority: prioritySlug.get(t.filed_to_priority) ?? t.filed_to_priority,
-      author: t.author ? (contactSlug.get(t.author) ?? t.author) : null,
-    })),
-  };
-  await writeFile(
-    join(outDir, "trainings", "full.yaml"),
-    stringifyYaml(fullTrainingSet),
-    "utf-8"
-  );
-
-  // Write all cases into a single cases.yaml document.
-  const casesDoc = {
-    cases: cases.map((c, i) => ({
-      id: `${String(i + 1).padStart(3, "0")}-${c.id.slice(0, 8)}`,
-      description: `Sampled from prod (topic-shape: ${describeTopic(c.topic)}).`,
-      candidate: {
-        title: c.title,
-        topic: c.topic,
-        contacts: c.contacts.map((id) => contactSlug.get(id) ?? id),
-        groups: c.groups.map((id) => groupSlug.get(id) ?? id),
-        embedding_ref: embRefOf.get(c.id) ?? null,
-        author: c.author ? (contactSlug.get(c.author) ?? c.author) : null,
-      },
-      labels: {
-        gold: null,
-        gold_rationale: "",
-        expected: prioritySlug.get(c.filed_to_priority) ?? c.filed_to_priority,
-        expected_stage: null,
-        expected_recorded_at: new Date().toISOString(),
-      },
-      notes: "",
-    })),
-  };
-  await writeFile(join(outDir, "cases.yaml"), stringifyYaml(casesDoc), "utf-8");
-
-  await writeFile(
-    join(outDir, "README.md"),
-    [
-      `# Corpus: ${opts.out}`,
-      "",
-      `Anonymized snapshot of \`${opts.userEmail}\` extracted on ${new Date().toISOString().slice(0, 10)}.`,
-      "",
-      `World: ${priorities.length} priorities, ${contacts.length} contacts, ` +
-        `${channels.length} channels, ${embeddings.length} embeddings.`,
-      "",
-      `Training sets: trainings/full.yaml holds the ${trainingThreads.length} ` +
-        `user_moved=TRUE threads pulled from prod. Add more files under trainings/ ` +
-        "(e.g. minimal.yaml, plus-counterfactual.yaml) and the runner will matrix " +
-        "each one against every case.",
-      "",
-      `Cases: ${cases.length} sampled auto-filed threads in cases.yaml. Each case's ` +
-        "`expected` is the priority currently filed in prod. `gold` is unset — fill in " +
-        "by hand to capture cases where the current classifier disagrees with your " +
-        "judgment.",
-      "",
-      "## Re-generating",
-      "",
-      "```bash",
-      "pnpm prod-db-connect  # if proxy isn't running",
-      `pnpm tsx src/seeder/from-prod.ts --user-email ${opts.userEmail} --out ${opts.out}`,
-      "```",
-      "",
-      "Re-running overwrites world.yaml, trainings/full.yaml, and cases.yaml. Other " +
-        "training-set files under trainings/ are left untouched.",
-    ].join("\n"),
-    "utf-8"
-  );
-}
-
-function describeTopic(topic: string | null): string {
-  if (topic === null) return "null";
-  if (/^channel:\d+$/.test(topic)) return "channel:N";
-  if (topic.startsWith("priority:")) return "priority:KEY";
-  return "other";
 }
 
 main().catch((err) => {
