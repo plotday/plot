@@ -168,7 +168,7 @@ class OnboardingSteps {
           'Mark threads "To do" to keep them in Active until done.\n'
           "Prioritize threads by dragging them, or snooze them for another day.",
       target: PanelTarget.feed,
-      overlay: ThemeColor(2),
+      overlay: ThemeColor(3),
     ),
     const HighlightStep(
       title: 'Make something happen',
@@ -177,7 +177,7 @@ class OnboardingSteps {
           'Or create a post or app item using a channel.\n'
           'Plot threads also hold private notes and tasks alongside the rest of your work.',
       target: PanelTarget.newThread,
-      overlay: ThemeColor(3),
+      overlay: ThemeColor(2),
       // The cutout is the right panel (the new-thread compose page); pull the
       // text block toward it so the copy reads as belonging to it.
       multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
