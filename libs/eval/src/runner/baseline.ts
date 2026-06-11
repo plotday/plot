@@ -156,7 +156,8 @@ export function parseBaselineFile(text: string): BaselineFile {
     typeof meta.trainingSet !== "string" ||
     typeof meta.createdAt !== "string" ||
     obj.results === null ||
-    typeof obj.results !== "object"
+    typeof obj.results !== "object" ||
+    Array.isArray(obj.results)
   ) {
     throw new Error(
       "file does not look like a baseline snapshot (expected " +

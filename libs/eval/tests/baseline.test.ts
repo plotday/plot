@@ -234,5 +234,12 @@ describe("baseline file I/O", () => {
     expect(() =>
       parseBaselineFile('{"meta": {"classifier": "x"}, "results": {}}')
     ).toThrow(/baseline/i);
+    // typeof [] === "object": an array results would silently classify every
+    // case as new — must be rejected at parse time.
+    expect(() =>
+      parseBaselineFile(
+        '{"meta": {"classifier": "x", "corpus": "c", "trainingSet": "t", "createdAt": "now"}, "results": []}'
+      )
+    ).toThrow(/baseline/i);
   });
 });
