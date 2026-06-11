@@ -689,6 +689,88 @@ void main() {
       expect(pausedBlocks, isEmpty);
     });
 
+    test('suppresses the synthesized paused block when an in-progress '
+        'scheduled focus block for the same priority already covers now', () {
+      // Regression: a stale "paused-looking" session for a priority whose
+      // scheduled focus block is still live (covering now) must not render a
+      // second sliding block. A genuine pause archives the covering row (see
+      // NowBloc._archiveCoveringRow), so the two are mutually exclusive — the
+      // scheduled block wins.
+      final p = _testPriority();
+      final now = DateTime(2026, 5, 31, 10, 0);
+      // Scheduled focus block 09:30 → 10:45 — in progress at `now`.
+      final coveringRow = _focusRow(
+        p,
+        DateTime(2026, 5, 31, 9, 30),
+        const Duration(minutes: 75),
+      );
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 7,
+        now: now,
+        priorityById: {p.id: p},
+        priorityBlocksByPriority: {p.id: [coveringRow]},
+        pausedFocus: (
+          priority: p,
+          remaining: const Duration(minutes: 50),
+        ),
+      );
+
+      final today = Date(2026, 5, 31);
+      final section = model.sections.firstWhere(
+        (s) => s is ui.DateSection && s.date == today,
+      ) as ui.DateSection;
+
+      final pausedBlocks = section.blocks
+          .whereType<ui.PriorityBlock>()
+          .where((b) => b.id.startsWith('fp_'));
+      expect(pausedBlocks, isEmpty,
+          reason: 'synthesized paused block must not duplicate the live '
+              'scheduled focus block for the same priority');
+
+      // The real scheduled block is still present exactly once.
+      final scheduled = section.blocks
+          .whereType<ui.PriorityBlock>()
+          .where((b) => b.id.startsWith('fb_'));
+      expect(scheduled.length, 1);
+    });
+
+    test('still synthesizes the paused block when the covering scheduled '
+        'block is for a different priority', () {
+      final p = _testPriority(title: 'P1', path: 'p1', order: 0);
+      final other = _testPriority(title: 'P2', path: 'p2', order: 1);
+      final now = DateTime(2026, 5, 31, 10, 0);
+      // A live scheduled block on a DIFFERENT priority must not suppress the
+      // paused slide for `p`.
+      final otherRow = _focusRow(
+        other,
+        DateTime(2026, 5, 31, 9, 30),
+        const Duration(minutes: 75),
+      );
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 7,
+        now: now,
+        priorityById: {p.id: p, other.id: other},
+        priorityBlocksByPriority: {other.id: [otherRow]},
+        pausedFocus: (
+          priority: p,
+          remaining: const Duration(minutes: 50),
+        ),
+      );
+
+      final today = Date(2026, 5, 31);
+      final section = model.sections.firstWhere(
+        (s) => s is ui.DateSection && s.date == today,
+      ) as ui.DateSection;
+      final pausedBlocks = section.blocks
+          .whereType<ui.PriorityBlock>()
+          .where((b) => b.id.startsWith('fp_'));
+      expect(pausedBlocks.length, 1);
+    });
+
     test('does not emit an empty-day gap when paused focus fills today',
         () {
       final p = _testPriority();

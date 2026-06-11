@@ -324,7 +324,22 @@ class AgendaBuilder {
       // no anchored item follows, the cap is the next midnight. The
       // sliding block is inserted into [blocks] at the correct sorted
       // position by start time. Dropped when zero room remains.
-      if (isToday && pausedFocus != null) {
+      // Suppress the synthesized paused block when an in-progress scheduled
+      // focus block for the same priority already covers `now`. A genuine
+      // pause archives the covering row (NowBloc._archiveCoveringRow), so the
+      // sliding block and a live scheduled block are mutually exclusive. When
+      // a stale "paused-looking" session lingers without its row archived
+      // (e.g. an orphaned auto-started session), rendering both would show the
+      // same focus twice — the real scheduled block wins.
+      final pausedDuplicatesLiveBlock = pausedFocus != null &&
+          anchored.any((a) =>
+              a.block is PriorityBlock &&
+              (a.block as PriorityBlock).priority.id ==
+                  pausedFocus.priority.id &&
+              !a.start.isAfter(effectiveNow) &&
+              a.end.isAfter(effectiveNow));
+
+      if (isToday && pausedFocus != null && !pausedDuplicatesLiveBlock) {
         DateTime? nextAnchored;
         for (final a in anchored) {
           if (!a.start.isBefore(effectiveNow)) {

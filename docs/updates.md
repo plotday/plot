@@ -197,6 +197,7 @@
 
 ### Fixes
 
+- A focus you'd paused no longer shows up twice in the agenda. When a focus was scheduled for right now and also had a paused timer, the agenda could list the same block twice in a row; it now shows the live scheduled block just once.
 - Replies you write on an email thread now actually send. A recent change could leave a reply sitting in Plot without going out over email — the connector couldn't tell who the recipients were and quietly skipped the send. Your replies now reach everyone on the thread again.
 - The onboarding tour is easier to read in light mode. The tinted steps that show your app underneath were washing out against the light background, making the white text hard to read; they now carry enough contrast to read clearly.
 - Switching between a focus and an agenda event in another focus no longer flickers. The Event Agenda section used to flash in over the previous focus's threads (and on the way out, vanish a moment before the threads changed); now the event and the thread list always change together in a single step.
