@@ -14,7 +14,20 @@ describe("paramsHash", () => {
   });
 
   it("is key-order independent", () => {
-    const reordered = JSON.parse(JSON.stringify(DEFAULTS)) as typeof DEFAULTS;
+    // Rebuild with different insertion order at top level and nested level.
+    // Pre-spread duplicates force JS insertion-order semantics (first insertion wins);
+    // TS correctly warns that the later spread overwrites them — that's the point.
+    const reordered = {
+      // @ts-ignore TS2783 – intentional duplicate to force a different insertion order
+      scoreThreshold: DEFAULTS.scoreThreshold,
+      ...DEFAULTS,
+      weights: {
+        // @ts-ignore TS2783 – intentional duplicate to force a different insertion order
+        title: DEFAULTS.weights.title,
+        ...DEFAULTS.weights,
+      },
+    };
+    expect(Object.keys(reordered)[0]).not.toBe(Object.keys(DEFAULTS)[0]); // sanity: order really differs
     expect(paramsHash(reordered)).toBe(paramsHash(DEFAULTS));
   });
 });
