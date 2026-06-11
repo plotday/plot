@@ -55,3 +55,44 @@ self-heal catching anything push delivery misses).
 - Reply bodies are sent as plain text without the quoted-history block (Plot
   threads already carry the history as notes) — same behavior as the Gmail
   connector.
+
+## Manual E2E test plan
+
+Prerequisites: the Azure app registration (see `docs/outlook.md` in the core
+repo) must include the delegated scopes `Mail.ReadWrite`, `Mail.Send`,
+`People.Read`, `Contacts.Read`; `AUTH_MICROSOFT_ID`/`AUTH_MICROSOFT_SECRET`
+set in `workers/api/.dev.vars`; tunnel running (`pnpm tunnel:start`) so Graph
+can reach the webhook endpoint (subscriptions are skipped on localhost).
+
+Run the pass twice: once with a **personal** (outlook.com) account and once
+with a **work/school** (Microsoft 365) account.
+
+1. **Connect + channels** — add an Outlook Mail connection; verify the folder
+   list excludes Junk/Deleted/Drafts and defaults Inbox + Sent Items on.
+2. **Backfill** — enable Inbox; verify threads appear with correct titles,
+   per-message notes, participants, timestamps, and that the "Syncing…" badge
+   clears. No unread badges from backfilled mail.
+3. **Inbound incremental** — send mail to the account from outside; verify the
+   thread appears (or extends) within seconds via the subscription.
+4. **Unread round-trip** — read a thread in Plot → message marked read in
+   Outlook; mark a thread unread in Outlook → unread in Plot. Verify no
+   echo loop (state settles after one hop each way).
+5. **Flag ↔ To Do round-trip** — flag in Outlook → thread becomes a Plot
+   To Do; toggle To Do off in Plot → flag cleared in Outlook.
+6. **Reply from Plot** — reply on a synced thread; verify recipients (To/Cc),
+   threading in Outlook, and that the sent message does NOT duplicate as a
+   new note when it syncs back.
+7. **Reply with attachment** — attach a small (<3 MB) and a large (>3 MB)
+   file; verify both arrive in Outlook.
+8. **Compose from Plot** — new email thread to a typed address + a contact
+   with CC; verify delivery, BCC kept out of visible headers, and the
+   originating note binds to the sent message.
+9. **Attachment download** — open a synced message's attachment in Plot.
+10. **Contact names** — verify senders not in the address book still resolve
+    display names where People data exists (work tenant), and degrade to
+    email-only on personal accounts.
+11. **Self-heal** — stop the tunnel for >1 hour, send external mail, restart;
+    verify the hourly delta sweep ingests the missed mail and the
+    subscription is renewed (check `selfHealCheck` log lines).
+12. **Teardown** — disable all folders; verify the Graph subscription is
+    deleted (no further webhook traffic) and re-enabling rebuilds it.
