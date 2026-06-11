@@ -5,9 +5,11 @@ import postcssPresetMantine from "postcss-preset-mantine";
 import postcssSimpleVars from "postcss-simple-vars";
 import tailwindcss from "tailwindcss";
 import { defineConfig, type UserConfig } from "vite";
-import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig(() => ({
+  resolve: {
+    tsconfigPaths: true,
+  },
   css: {
     postcss: {
       plugins: [
@@ -59,6 +61,5 @@ export default defineConfig(() => ({
   plugins: [
     cloudflare({ viteEnvironment: { name: "ssr" } }),
     reactRouter(),
-    tsconfigPaths({ projects: ["tsconfig.json"] }),
   ],
 }) satisfies UserConfig);
