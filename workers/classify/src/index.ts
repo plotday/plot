@@ -37,7 +37,12 @@ export default {
         for (const message of batch.messages) {
           const job = message.body;
           try {
-            const outcome = await handleClassifyJob(job, env, db);
+            const outcome = await handleClassifyJob(job, env, db, (logErr) =>
+              posthog.captureException(logErr as Error, job.userId, {
+                threadId: job.threadId,
+                context: "classification_decision_log",
+              })
+            );
             posthog.capture({
               distinctId: job.userId,
               event: "classify.handled",

@@ -43,7 +43,8 @@ export type ClassifyOutcome = {
 export async function handleClassifyJob(
   job: ClassifyJob,
   env: ClassifyEnv,
-  db: ClassifyDb
+  db: ClassifyDb,
+  onError?: (err: unknown) => void
 ): Promise<ClassifyOutcome> {
   const row = await db
     .selectFrom("thread_priority")
@@ -118,6 +119,30 @@ export async function handleClassifyJob(
     budgetExhausted: result.budgetExhausted,
   };
 
+  // Append-only decision log (spec B2.2): record the applied result
+  // verbatim whenever this job's outcome is applied (settled/moved/same).
+  // result.priorityId may be null (stage 'none') even though the worker
+  // applies a snapshot/root fallback — never substitute it in. Runs on the
+  // pool handle after the settle transaction, so a failure can't poison
+  // anything; it must never fail the filing.
+  const logDecision = async () => {
+    try {
+      await sql`
+        INSERT INTO public.classification_decision
+          (thread_id, user_id, priority_id, stage, scores, classifier,
+           llm_calls, cache_hits, budget_exhausted, duration_ms)
+        VALUES
+          (${job.threadId}::uuid, ${job.userId}::uuid,
+           ${result.priorityId}::uuid, ${result.stage},
+           ${JSON.stringify(result.scores ?? {})}::jsonb, ${classifier.name},
+           ${result.llmCalls}, ${result.cacheHits},
+           ${result.budgetExhausted}, ${result.durationMs})
+      `.execute(db);
+    } catch (err) {
+      onError?.(err);
+    }
+  };
+
   // If the classifier returned null, case A falls back to root; B/D
   // stays at the snapshot so we never bounce settled rows through root.
   let target = result.priorityId;
@@ -150,10 +175,9 @@ export async function handleClassifyJob(
         .where("user_moved", "=", false)
         .executeTakeFirst()
     );
-    return {
-      status: updated.numUpdatedRows > 0n ? "settled" : "skipped",
-      ...telemetry,
-    };
+    const applied = updated.numUpdatedRows > 0n;
+    if (applied) await logDecision();
+    return { status: applied ? "settled" : "skipped", ...telemetry };
   } else if (target !== snapshot) {
     // Cases B-D with a different classifier result. Guard with the
     // snapshot so concurrent moves win.
@@ -167,10 +191,9 @@ export async function handleClassifyJob(
         .where("user_moved", "=", false)
         .executeTakeFirst()
     );
-    return {
-      status: updated.numUpdatedRows > 0n ? "moved" : "skipped",
-      ...telemetry,
-    };
+    const applied = updated.numUpdatedRows > 0n;
+    if (applied) await logDecision();
+    return { status: applied ? "moved" : "skipped", ...telemetry };
   } else {
     // Same result — only clear classify_at. Does NOT bump
     // thread.updated_at (the parent-seq trigger excludes this branch).
@@ -180,6 +203,7 @@ export async function handleClassifyJob(
       .where("user_id", "=", job.userId)
       .where("thread_id", "=", job.threadId)
       .execute();
+    await logDecision();
     return { status: "same", ...telemetry };
   }
 }

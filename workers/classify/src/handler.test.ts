@@ -13,9 +13,12 @@ import type { DB } from "./db";
 
 vi.mock("@plotday/classifier-runtime", () => ({
   getProductionClassifier: () => ({
+    name: "ts:hybrid-llm:production@deadbeef",
     classify: async () => ({
       priorityId: "target-priority",
       stage: "test",
+      scores: {},
+      durationMs: 1,
       llmCalls: 0,
       cacheHits: 0,
       budgetExhausted: false,
@@ -102,6 +105,9 @@ function defaultRespond(
     if (sql.startsWith('update "thread_priority"')) {
       return { rows: [], numAffectedRows: 1n };
     }
+    if (sql.includes("classification_decision")) {
+      return { rows: [] };
+    }
     throw new Error(`unexpected SQL in test: ${sql}`);
   };
 }
@@ -170,5 +176,53 @@ describe("handleClassifyJob lock ordering", () => {
       "duplicate key value"
     );
     expect(updateAttempts).toBe(1);
+  });
+});
+
+describe("decision logging", () => {
+  it("logs the applied decision after a settled update", async () => {
+    const events: string[] = [];
+    const db = testDb(events, defaultRespond());
+    const outcome = await handleClassifyJob(JOB, ENV, db);
+    expect(outcome.status).toBe("moved");
+    const update = events.findIndex((e) => e.startsWith('update "thread_priority"'));
+    const log = events.findIndex((e) => e.includes("classification_decision"));
+    expect(update).toBeGreaterThanOrEqual(0);
+    expect(log).toBeGreaterThan(update);
+  });
+
+  it("does not log when the job is skipped (user_moved)", async () => {
+    const events: string[] = [];
+    const db = testDb(
+      events,
+      defaultRespond((sql) => {
+        if (sql.includes('from "thread_priority"')) {
+          return Promise.resolve({
+            rows: [{ priority_id: "old-priority", user_moved: true, classify_at: new Date() }],
+          });
+        }
+        return null;
+      })
+    );
+    const outcome = await handleClassifyJob(JOB, ENV, db);
+    expect(outcome.status).toBe("skipped");
+    expect(events.some((e) => e.includes("classification_decision"))).toBe(false);
+  });
+
+  it("reports a failed log insert via onError and still settles", async () => {
+    const events: string[] = [];
+    const onError = vi.fn();
+    const db = testDb(
+      events,
+      defaultRespond((sql) => {
+        if (sql.includes("classification_decision")) {
+          return Promise.reject(new Error("log insert failed"));
+        }
+        return null;
+      })
+    );
+    const outcome = await handleClassifyJob(JOB, ENV, db, onError);
+    expect(outcome.status).toBe("moved");
+    expect(onError).toHaveBeenCalled();
   });
 });
