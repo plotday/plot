@@ -149,18 +149,9 @@ function renderConsole(
   lines.push("");
   lines.push(...summaryTable(summary));
 
-  const stageBreakdown = groupBy(
-    results,
-    (r) => `${r.classifier} / ${r.trainingSet} → ${r.stage}`
-  );
   lines.push("");
   lines.push("Stage breakdown:");
-  for (const [key, rows] of stageBreakdown) {
-    const goldEval = rows.filter((r) => r.goldMatch !== null);
-    const acc =
-      goldEval.length > 0
-        ? goldEval.filter((r) => r.goldMatch).length / goldEval.length
-        : null;
+  for (const [key, rows, acc] of stageBreakdownRows(results)) {
     lines.push(`  ${key.padEnd(48)} ${rows.length.toString().padStart(4)} cases   gold=${pct(acc)}`);
   }
 
@@ -232,6 +223,32 @@ function renderMarkdown(
     );
   }
   lines.push("");
+
+  // Stage breakdown table
+  lines.push("## Stage breakdown");
+  lines.push("");
+  lines.push("| Stage | Cases | Gold acc. |");
+  lines.push("| --- | --- | --- |");
+  for (const [key, rows, acc] of stageBreakdownRows(results)) {
+    lines.push(`| \`${key}\` | ${rows.length} | ${pct(acc).trim()} |`);
+  }
+  lines.push("");
+
+  // Flips table (only when multiple training sets produced differing predictions)
+  const trainingSets = [
+    ...new Set(summary.perClassifierTraining.map((r) => r.trainingSet)),
+  ];
+  if (trainingSets.length >= 2) {
+    const flipRows = renderFlipsMarkdown(summary, results, lookup);
+    if (flipRows.length > 0) {
+      lines.push("## Predictions that vary across training sets");
+      lines.push("");
+      lines.push(`| Classifier | Case | ${trainingSets.map((t) => `\`${t}\``).join(" | ")} |`);
+      lines.push(`| --- | --- | ${trainingSets.map(() => "---").join(" | ")} |`);
+      for (const row of flipRows) lines.push(row);
+      lines.push("");
+    }
+  }
 
   const sections = detailSections(results);
   if (sections.length > 0) {
@@ -501,8 +518,12 @@ function goldSourceSection(results: RunResult[]): string[] {
   return ["Gold accuracy by gold source (human vs llm-proposed):", ...lines];
 }
 
-/** `66.7% [49.0–80.9]` over rows that all have goldMatch !== null. */
+/**
+ * `66.7% [49.0–80.9]` over rows that all have goldMatch !== null.
+ * Returns "n/a" when the slice is empty (no pre-condition on caller).
+ */
 function accuracyWithCi(rows: RunResult[]): string {
+  if (rows.length === 0) return "n/a";
   const correct = rows.filter((r) => r.goldMatch).length;
   return `${pctCell(correct / rows.length)} ${ciCell(wilsonInterval(correct, rows.length))}`;
 }
@@ -555,6 +576,27 @@ export function renderTrajectory(results: RunResult[]): string {
   ].join("\n");
 }
 
+/**
+ * Shared stage-breakdown data: yields [key, rows, goldAccuracy|null] tuples
+ * in insertion order so both console and markdown renderers stay in sync.
+ */
+function stageBreakdownRows(
+  results: RunResult[]
+): [string, RunResult[], number | null][] {
+  const breakdown = groupBy(
+    results,
+    (r) => `${r.classifier} / ${r.trainingSet} → ${r.stage}`
+  );
+  return [...breakdown].map(([key, rows]) => {
+    const goldEval = rows.filter((r) => r.goldMatch !== null);
+    const acc =
+      goldEval.length > 0
+        ? goldEval.filter((r) => r.goldMatch).length / goldEval.length
+        : null;
+    return [key, rows, acc];
+  });
+}
+
 function renderFlips(
   summary: RunSummary,
   results: RunResult[],
@@ -594,6 +636,38 @@ function renderFlips(
     }
   }
   return lines;
+}
+
+/**
+ * Markdown table rows (no header) for the flips section. Returns one row per
+ * (classifier, case) pair where predictions differ across training sets. The
+ * caller is responsible for emitting the header row using the same `trainingSets`
+ * order from `summary.perClassifierTraining`.
+ */
+function renderFlipsMarkdown(
+  summary: RunSummary,
+  results: RunResult[],
+  lookup: PriorityLookup
+): string[] {
+  const trainingSets = [
+    ...new Set(summary.perClassifierTraining.map((r) => r.trainingSet)),
+  ];
+  if (trainingSets.length < 2) return [];
+
+  const rows: string[] = [];
+  for (const [classifier, cRows] of groupBy(results, (r) => r.classifier)) {
+    for (const [caseId, caseRows] of groupBy(cRows, (r) => r.caseId)) {
+      const cells = new Map<string, string | null>();
+      for (const r of caseRows) cells.set(r.trainingSet, r.predicted);
+      const distinct = new Set(cells.values());
+      if (distinct.size <= 1) continue;
+      const cols = trainingSets
+        .map((t) => name(cells.get(t) ?? null, lookup))
+        .join(" | ");
+      rows.push(`| \`${classifier}\` | \`${caseId}\` | ${cols} |`);
+    }
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
