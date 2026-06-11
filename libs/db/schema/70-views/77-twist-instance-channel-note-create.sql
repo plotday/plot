@@ -53,6 +53,10 @@ WHERE
     AND pt.archived_at IS NULL
     AND t.draft = FALSE
     AND n.draft = FALSE
+    -- Exclude archived notes: this view is seq-cursor driven on the mutable
+    -- n.seq, so archiving a note re-surfaces it as a "new note" and re-fires
+    -- the create dispatch. An archived note must not generate a create/send.
+    AND n.archived_at IS NULL
     AND n.created_by != ptc.twist_instance_id
     AND n.created_at > pt.created_at
 ORDER BY

@@ -1976,6 +1976,13 @@ export class Integrations extends Tool implements IAuth {
       // Skip notes created by this twist (prevent loops for new notes only)
       if (item.created_by === this.twistInstanceId) return [];
 
+      // Never (re)dispatch onNoteCreated for an archived note. Defense in depth:
+      // the twist_instance_note_create view already excludes archived notes, but
+      // the create dispatch is seq-cursor driven, so a note re-surfaces whenever
+      // its seq bumps (e.g. archival). Sending a note the user archived — and
+      // possibly never sent — is exactly the bug this guards against.
+      if (item.archived_at != null) return [];
+
       const isMentioned = (item.mentions ?? []).includes(this.twistInstanceId);
       if (!isMentioned) return [];
 
@@ -2008,6 +2015,10 @@ export class Integrations extends Tool implements IAuth {
 
       // Skip notes created by this twist (prevent loops)
       if (item.created_by === this.twistInstanceId) return [];
+
+      // Never (re)dispatch onNoteCreated for an archived note (see the matching
+      // guard on the "note" mention path above).
+      if (item.archived_at != null) return [];
 
       // Skip notes created by ANY twist/connector (prevent cross-connector loops).
       // Negative updated_by indicates twist-originated writes. Channel note dispatch

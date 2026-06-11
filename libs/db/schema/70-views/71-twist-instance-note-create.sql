@@ -42,6 +42,14 @@ FROM
     LEFT JOIN note_tags nt ON nt.note_id = n.id
 WHERE
     n.draft = FALSE
+    -- Exclude archived notes. This view is driven by a seq cursor on the
+    -- mutable n.seq, which bumps on EVERY note update — including archival.
+    -- Without this guard, archiving a note re-bumps its seq past the
+    -- create-cursor and re-surfaces it as a "new note", re-firing the
+    -- connector's onNoteCreated (and re-sending it to the external service
+    -- if the first dispatch left no idempotency guard). A note the user
+    -- archived must never generate a create/send dispatch.
+    AND n.archived_at IS NULL
     AND n.created_by != pt.id
     AND updated_by_uuid (pt.id) != n.updated_by
     AND pt.archived_at IS NULL
