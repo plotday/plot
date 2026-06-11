@@ -42,6 +42,28 @@ import {
 
 export type AppendMode = { kind: "cases" } | { kind: "trainings"; set: string };
 
+/**
+ * Per-thread case override (cases mode only): replaces the default
+ * tags/description/as_of/notes/labels for that thread's emitted case. Used by
+ * the decision-log miner, which knows the gold/expected labels up front.
+ * Label values are FINAL (priority slugs, not ids) — the caller resolves them.
+ */
+export type CaseOverride = {
+  tags: string[];
+  description: string;
+  /** Replaces the default as_of (thread.createdAt), ISO. */
+  asOf: string;
+  notes: string;
+  labels: {
+    gold: string | null;
+    gold_rationale: string;
+    gold_source: "human" | "llm-proposed" | null;
+    expected: string | null;
+    expected_stage: string | null;
+    expected_recorded_at: string;
+  };
+};
+
 export type AppendOptions = {
   corpus: string;
   threadIds: string[];
@@ -49,6 +71,8 @@ export type AppendOptions = {
   dbUrl: string;
   /** note-content vectors embed private message bodies; kris-only. */
   allowNoteContentEmbeddings: boolean;
+  /** Optional per-thread case overrides keyed by thread id (cases mode only). */
+  caseOverrides?: Map<string, CaseOverride>;
 };
 
 // Loosely-typed YAML documents: these scripts edit existing files in place
@@ -291,10 +315,14 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
         console.log(`  = ${t.id} already in training set; skipping`);
         continue;
       }
+      const override =
+        opts.mode.kind === "cases" ? opts.caseOverrides?.get(t.id) : undefined;
       const expectedSlug = t.filedToPriority
         ? prioritySlugById.get(t.filedToPriority)
         : undefined;
-      if (!expectedSlug) {
+      // An override carries its own labels, so the current prod filing does
+      // not need to resolve to a known priority slug.
+      if (!expectedSlug && !override) {
         console.warn(
           `  ! thread ${t.id} filed in archived/unknown priority ${t.filedToPriority}; skipping`
         );
@@ -340,9 +368,11 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
         (target.cases ??= []).push({
           id,
           source_thread_id: t.id,
-          tags: [describeTopic(t.topic)],
-          as_of: t.createdAt,
-          description: `Curated from prod (manual pick, ${describeTopic(t.topic)}).`,
+          tags: override?.tags ?? [describeTopic(t.topic)],
+          as_of: override?.asOf ?? t.createdAt,
+          description:
+            override?.description ??
+            `Curated from prod (manual pick, ${describeTopic(t.topic)}).`,
           candidate: {
             title: t.title ?? "",
             topic: anonymizeTopic(t.topic),
@@ -353,19 +383,21 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
             connection: connectionSlug,
             facets: t.facets,
           },
-          labels: {
-            gold: null,
-            gold_rationale: "",
-            expected: expectedSlug,
-            expected_stage: null,
-            expected_recorded_at: new Date().toISOString(),
-          },
-          notes: "",
+          labels: override
+            ? { ...override.labels }
+            : {
+                gold: null,
+                gold_rationale: "",
+                expected: expectedSlug,
+                expected_stage: null,
+                expected_recorded_at: new Date().toISOString(),
+              },
+          notes: override?.notes ?? "",
         });
       }
       added++;
       console.log(
-        `  + ${t.id} → ${expectedSlug}  ${t.title?.slice(0, 60) ?? "(no title)"}`
+        `  + ${t.id} → ${override?.labels.gold ?? expectedSlug}  ${t.title?.slice(0, 60) ?? "(no title)"}`
       );
     }
   } finally {
