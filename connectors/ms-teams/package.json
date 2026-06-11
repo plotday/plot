@@ -2,6 +2,7 @@
   "name": "@plotday/connector-ms-teams",
   "displayName": "Microsoft Teams",
   "description": "Keep up with Teams channels and chats, reply, and start new conversations.",
+  "category": "messaging",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",

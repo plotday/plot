@@ -87,6 +87,7 @@ interface PackageJson {
   license?: string;
   logoUrl?: string;
   logoUrlDark?: string;
+  category?: string;
   publisher?: string;
   publisherUrl?: string;
   plotTwistId?: string;
@@ -292,6 +293,7 @@ export async function deployCommand(options: DeployOptions) {
   const twistDescription = packageJson?.description;
   const twistLogoUrl = packageJson?.logoUrl;
   const twistLogoUrlDark = packageJson?.logoUrlDark;
+  const twistCategory = packageJson?.category;
   const twistPublisher = packageJson?.publisher;
   const twistPublisherUrl = packageJson?.publisherUrl;
 
@@ -628,6 +630,7 @@ export async function deployCommand(options: DeployOptions) {
     description?: string;
     logoUrl?: string;
     logoUrlDark?: string;
+    category?: string;
     environment: string;
     publisherId?: number;
     dryRun?: boolean;
@@ -667,6 +670,7 @@ export async function deployCommand(options: DeployOptions) {
       description: deploymentDescription,
       logoUrl: twistLogoUrl,
       logoUrlDark: twistLogoUrlDark,
+      category: twistCategory,
       environment: environment,
       publisherId,
       dryRun: options.dryRun,
