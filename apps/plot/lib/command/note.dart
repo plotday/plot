@@ -152,7 +152,7 @@ class ToggleSelfTask extends NoteCommand {
             ? PlotIcon.selfTaskTodo
             : PlotIcon.selfTask,
         hoverIcon: note.isAssignedTo(Base.actorId)
-            ? PlotIcon.selfTaskHover
+            ? PlotIcon.selfTaskCancel
             : null,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyT),
       );
@@ -302,8 +302,9 @@ class AddNoteReaction extends NoteCommand {
       // twist_instance, then read that instance's synced reaction
       // capabilities. Plot-native threads (no link) → open.
       final connectionId = Thread.primaryLink(links)?.createdBy;
-      final instance =
-          connectionId == null ? null : TwistInstance.fromCache(connectionId);
+      final instance = connectionId == null
+          ? null
+          : TwistInstance.fromCache(connectionId);
       final caps = reactionCapabilitiesFromJson(instance?.reactionCapabilities);
       final allowed = caps.allowed;
 
