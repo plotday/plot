@@ -201,17 +201,12 @@ class _PriorityWidgetState extends State<PriorityWidget> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Resting: weekly total chip → tap opens the time-tracking
-                // modal. Hover: swapped for icon controls; the Time log
-                // action lives inside the More modal.
-                if (!hovered)
-                  _PriorityWeeklyTotal(
-                    priority: priority,
-                    selected: widget.selected,
-                  )
-                else
-                  // Focuses are flat — no "pin to top" affordance.
-                  Button.icon(ShowPriorityCommands(priority)),
+                // The resting weekly-total chip is hidden for now — time
+                // totals live in the time log. (`_PriorityWeeklyTotal` is
+                // kept below so it's easy to re-add here later.) Hover still
+                // surfaces the menu; focuses are flat, so there's no
+                // "pin to top" affordance.
+                if (hovered) Button.icon(ShowPriorityCommands(priority)),
               ],
             ),
           ),
@@ -637,6 +632,10 @@ class _HoverColoredState extends State<_HoverColored> {
 ///
 /// Tapping opens [TimeTrackingModal] showing per-day totals with the
 /// ±15m manual-adjustment controls.
+///
+/// Currently unused: the resting chip is hidden from sidebar tiles (time
+/// totals live in the time log) but kept here so it can be re-added.
+// ignore: unused_element
 class _PriorityWeeklyTotal extends StatefulWidget {
   const _PriorityWeeklyTotal({required this.priority, this.selected = false});
 
