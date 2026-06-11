@@ -19,6 +19,7 @@ import { parse as parseYaml } from "yaml";
 import {
   anonymizePerson,
   anonymizeTopic,
+  hashShort,
   isFreemailDomain,
   scrubGroupName,
 } from "./anonymize";
@@ -145,6 +146,17 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
   const pii: RawPii = { emails: [], names: [], orgDomains: [] };
   const rawNamesThisRun: string[] = [];
 
+  // Track all anonymized emails already present in the world (lowercased) so
+  // newly appended contacts can detect collisions and apply plus-addressing.
+  // Existing world contacts win the unsuffixed slot; new contacts are always
+  // suffixed on collision (inherently arrival-ordered for appends, acceptable
+  // because the world snapshot is stable and new contacts are rare additions).
+  const usedAnonEmails = new Set<string>(
+    (world.contacts ?? [])
+      .map((c: YamlDoc) => (c.email as string | null)?.toLowerCase())
+      .filter((e: string | null | undefined): e is string => !!e)
+  );
+
   const client = new pg.Client({ connectionString: opts.dbUrl });
   await client.connect();
   let added = 0;
@@ -169,7 +181,33 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
         if (domain && !isFreemailDomain(domain)) pii.orgDomains.push(domain);
       }
       const anon = anonymizePerson({ name: contact.name, email: contact.email });
-      const email = emailShapedOrExampleTest(anon.email);
+      let email = emailShapedOrExampleTest(anon.email);
+      // Apply plus-addressing when the raw anonymized email collides with an
+      // existing world contact or another newly added contact in this run.
+      // Existing world emails always win the unsuffixed slot; new contacts are
+      // suffixed on collision. See dedupeContactEmails in emit.ts for the same
+      // logic applied order-independently at full-build time.
+      if (email !== null && usedAnonEmails.has(email.toLowerCase())) {
+        const atIdx = email.lastIndexOf("@");
+        const local = email.slice(0, atIdx);
+        const domain = email.slice(atIdx + 1);
+        let resolved = false;
+        for (const suffixLen of [4, 8]) {
+          const suffix = hashShort(contactId, suffixLen);
+          const candidate = `${local}+${suffix}@${domain}`;
+          if (!usedAnonEmails.has(candidate.toLowerCase())) {
+            email = candidate;
+            resolved = true;
+            break;
+          }
+        }
+        if (!resolved) {
+          // Astronomically unlikely — fall back to the full 16-char hash.
+          const suffix = hashShort(contactId, 16);
+          email = `${local}+${suffix}@${domain}`;
+        }
+      }
+      if (email !== null) usedAnonEmails.add(email.toLowerCase());
       const slug = contactSlugify(
         contactSlugFromEmail(email, contactId),
         `c-${contactId.replace(/-/g, "").slice(0, 8)}`

@@ -8,7 +8,7 @@ import { parse as parseYaml } from "yaml";
 import { deterministicUuid } from "../src/corpus/hash";
 import { loadCorpus } from "../src/corpus/load";
 import { loadWorld, openSandbox } from "../src/sandbox/pg-sandbox";
-import { anonymizePerson } from "../src/seeder/anonymize";
+import { anonymizeEmail, anonymizePerson } from "../src/seeder/anonymize";
 import {
   hydrateThreadsByIds,
   loadConnections,
@@ -25,6 +25,7 @@ import {
 import {
   applySlugMigrationToYamlText,
   buildCorpusFiles,
+  dedupeContactEmails,
   holdoutCaseEntries,
   mergeExistingCases,
   sampledCaseEntries,
@@ -1334,5 +1335,184 @@ describe("buildCorpusFiles", () => {
     expect(placeholder.linked_to_user).toBe(false);
     // The team referenced only by the placeholder-actor connection is emitted.
     expect(worldDoc.teams.some((t) => t.id === 77)).toBe(true);
+  });
+});
+
+// ===========================================================================
+// dedupeContactEmails — collision-prevention for contact_email_unique
+// ===========================================================================
+
+/**
+ * Build two contacts that deterministically collide when anonymized.
+ *
+ * Strategy: use the SAME contact name on both contacts — anonymizeName is
+ * deterministic on its input, so they get the same fake "First Last" local
+ * part — and the same freemail source domain — anonymizeDomain maps a given
+ * freemail domain to one fixed entry in FREEMAIL_POOL, so they get the same
+ * fake domain.  Result: identical anonymized emails from two distinct contacts.
+ */
+function collisionPair(): [
+  { id: string; email: string | null },
+  { id: string; email: string | null },
+] {
+  // Two ids chosen so that A < B lexicographically (A should win unsuffixed).
+  const idA = "a0000000-0000-4000-8000-000000000001";
+  const idB = "b0000000-0000-4000-8000-000000000002";
+  // Same name + same freemail source domain → identical anonymized email.
+  const sharedAnonEmail = anonymizeEmail("alice@gmail.com", "Alice Shared");
+  return [
+    { id: idA, email: sharedAnonEmail },
+    { id: idB, email: sharedAnonEmail },
+  ];
+}
+
+describe("dedupeContactEmails", () => {
+  it("passes through emails when there are no collisions", () => {
+    const contacts = [
+      { id: "aaa00001-0000-4000-8000-000000000001", email: "alice@example.com" },
+      { id: "bbb00002-0000-4000-8000-000000000002", email: "bob@example.com" },
+      { id: "ccc00003-0000-4000-8000-000000000003", email: null },
+    ];
+    const result = dedupeContactEmails(contacts);
+    expect(result.get(contacts[0]!.id)).toBe("alice@example.com");
+    expect(result.get(contacts[1]!.id)).toBe("bob@example.com");
+    expect(result.get(contacts[2]!.id)).toBeNull();
+  });
+
+  it("is order-independent: same output regardless of input iteration order", () => {
+    const [a, b] = collisionPair();
+    const ab = dedupeContactEmails([a, b]);
+    const ba = dedupeContactEmails([b, a]);
+    // Both orderings must agree on which id gets the unsuffixed slot.
+    expect(ab.get(a.id)).toBe(ba.get(a.id));
+    expect(ab.get(b.id)).toBe(ba.get(b.id));
+  });
+
+  it("exactly one of a collision pair is unsuffixed (the lex-smallest id)", () => {
+    const [a, b] = collisionPair();
+    // a.id < b.id lexicographically.
+    expect(a.id < b.id).toBe(true);
+    const result = dedupeContactEmails([a, b]);
+    const emailA = result.get(a.id)!;
+    const emailB = result.get(b.id)!;
+    // Winner keeps the original email unchanged.
+    expect(emailA).toBe(a.email);
+    // Non-winner is plus-addressed.
+    expect(emailB).not.toBe(b.email);
+    expect(emailB).toContain("+");
+    // Both emails are distinct.
+    expect(emailA.toLowerCase()).not.toBe(emailB.toLowerCase());
+  });
+
+  it("preserves the domain on plus-addressed suffixed email", () => {
+    const [a, b] = collisionPair();
+    const result = dedupeContactEmails([a, b]);
+    const emailB = result.get(b.id)!;
+    const domainA = a.email!.split("@")[1];
+    const domainB = emailB.split("@")[1];
+    expect(domainB).toBe(domainA);
+  });
+
+  it("is deterministic: same contacts in, same map out on repeated calls", () => {
+    const [a, b] = collisionPair();
+    const r1 = dedupeContactEmails([a, b]);
+    const r2 = dedupeContactEmails([a, b]);
+    expect(r1.get(a.id)).toBe(r2.get(a.id));
+    expect(r1.get(b.id)).toBe(r2.get(b.id));
+  });
+
+  it("handles three-way collisions: one unsuffixed, two distinct suffixes", () => {
+    const idA = "a0000000-0000-4000-8000-000000000001";
+    const idB = "b0000000-0000-4000-8000-000000000002";
+    const idC = "c0000000-0000-4000-8000-000000000003";
+    const sharedEmail = anonymizeEmail("triple@gmail.com", "Triple Collision");
+    const contacts = [
+      { id: idA, email: sharedEmail },
+      { id: idB, email: sharedEmail },
+      { id: idC, email: sharedEmail },
+    ];
+    const result = dedupeContactEmails(contacts);
+    const emails = [result.get(idA)!, result.get(idB)!, result.get(idC)!];
+    // All three must be distinct.
+    const unique = new Set(emails.map((e) => e.toLowerCase()));
+    expect(unique.size).toBe(3);
+    // The lex-smallest id (idA) wins the unsuffixed slot.
+    expect(result.get(idA)).toBe(sharedEmail);
+    // Domains are all preserved.
+    const expectedDomain = sharedEmail!.split("@")[1];
+    for (const e of emails) {
+      expect(e.split("@")[1]).toBe(expectedDomain);
+    }
+  });
+
+  it("null emails are never collided and pass through as null", () => {
+    const contacts = [
+      { id: "a0000000-0000-4000-8000-000000000001", email: null },
+      { id: "b0000000-0000-4000-8000-000000000002", email: null },
+    ];
+    const result = dedupeContactEmails(contacts);
+    expect(result.get(contacts[0]!.id)).toBeNull();
+    expect(result.get(contacts[1]!.id)).toBeNull();
+  });
+});
+
+describe("buildCorpusFiles (email collision)", () => {
+  it("resolves contact_email_unique collisions so the corpus loads without constraint errors", async () => {
+    // Two contacts with the same name AND the same freemail source domain
+    // produce the same anonymized email — exactly the birthday-paradox
+    // collision pattern seen in prod extracts (~1 000 contacts against a
+    // 40 000-entry name space and a 6-entry freemail pool).
+    const CLASH_A = "a0000000-0000-4000-8000-000000000010";
+    const CLASH_B = "b0000000-0000-4000-8000-000000000011";
+    const sharedName = "Alice Shared";
+    const sharedSourceEmail = "alice@gmail.com";
+    // Verify these genuinely collide before using them as a fixture.
+    const anonA = anonymizePerson({ name: sharedName, email: sharedSourceEmail });
+    const anonB = anonymizePerson({ name: sharedName, email: sharedSourceEmail });
+    expect(anonA.email).toBe(anonB.email);
+    expect(anonA.email).not.toBeNull();
+
+    const input = baseBuildInput();
+    // Replace the world contacts with our collision pair (plus the originals
+    // so thread refs remain valid — we just prepend the two clashing contacts).
+    input.world = {
+      ...input.world,
+      contacts: [
+        { id: CLASH_A, email: sharedSourceEmail, name: sharedName, linkedToUser: false },
+        { id: CLASH_B, email: sharedSourceEmail, name: sharedName, linkedToUser: false },
+        ...input.world.contacts,
+      ],
+    };
+
+    // Must not throw (previously threw contact_email_unique on sandbox load).
+    const { files } = buildCorpusFiles(input);
+
+    const worldDoc = parseYaml(files.find((f) => f.path === "world.yaml")!.text) as {
+      contacts: { id: string; email: string | null }[];
+    };
+    const clashA = worldDoc.contacts.find((c) => c.id === CLASH_A)!;
+    const clashB = worldDoc.contacts.find((c) => c.id === CLASH_B)!;
+    expect(clashA).toBeDefined();
+    expect(clashB).toBeDefined();
+
+    // All emitted emails must be distinct.
+    const allEmails = worldDoc.contacts
+      .map((c) => c.email)
+      .filter((e): e is string => e !== null)
+      .map((e) => e.toLowerCase());
+    expect(new Set(allEmails).size).toBe(allEmails.length);
+
+    // CLASH_A (lex-smaller id) keeps the unsuffixed email.
+    // CLASH_B is plus-addressed but retains the same domain.
+    expect(clashA.email).not.toContain("+");
+    expect(clashB.email).toContain("+");
+    expect(clashA.email!.split("@")[1]).toBe(clashB.email!.split("@")[1]);
+
+    // The corpus must load (schema validation passes).
+    const dir = await writeBuiltCorpus(files);
+    const corpus = await loadCorpus(dir);
+    const contactIds = corpus.world.contacts.map((c) => c.id);
+    expect(contactIds).toContain(CLASH_A);
+    expect(contactIds).toContain(CLASH_B);
   });
 });

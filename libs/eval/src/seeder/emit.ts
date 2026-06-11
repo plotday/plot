@@ -186,6 +186,110 @@ export function emailShapedOrExampleTest(anonEmail: string | null): string | nul
 }
 
 /**
+ * Deduplicates anonymized contact emails across a collection of contacts to
+ * prevent `contact_email_unique` constraint violations when the sandbox loads
+ * the corpus.
+ *
+ * WHY THIS IS NEEDED: The anonymizer maps contacts to a realistic fake name
+ * derived from a finite name pool (~200 first × 200 last names = 40 000
+ * combinations) and a small freemail domain pool (6 entries). With ~1 000
+ * contacts, birthday-paradox collisions are near-certain — two distinct prod
+ * contacts can anonymize to the same fake name AND the same freemail domain,
+ * producing an identical anonymized email.
+ *
+ * STRATEGY: group contacts by their (lowercased) anonymized email, then
+ * within each collision group sort by contact id lexicographically and leave
+ * the first member unsuffixed. Every other member gets a plus-address suffix
+ * derived from its contact UUID: `local+<hashShort(contactId, 4)>@domain`.
+ * That keeps the domain intact (org-key semantics are domain-based) and is a
+ * realistic, parseable email shape. An absurdly unlikely secondary collision
+ * (4-hex suffix still collides) is resolved by extending to 8 chars.
+ *
+ * ORDER-INDEPENDENCE: the unsuffixed slot is always the lexicographically-
+ * smallest contact id, not the first one encountered in iteration order, so
+ * the output is the same regardless of which order the caller iterates.
+ */
+export function dedupeContactEmails(
+  contacts: { id: string; email: string | null }[]
+): Map<string, string | null> {
+  // Group by lowercased email (null emails never collide — each is unique).
+  const groups = new Map<string, string[]>(); // lowercased email -> [contactId]
+  for (const c of contacts) {
+    if (c.email === null) continue;
+    const key = c.email.toLowerCase();
+    const group = groups.get(key);
+    if (group) {
+      group.push(c.id);
+    } else {
+      groups.set(key, [c.id]);
+    }
+  }
+
+  // Build the final email map: no-collision entries pass through; collision
+  // groups assign the unsuffixed email to the lex-smallest id, and plus-
+  // address suffixes to the rest.
+  const result = new Map<string, string | null>();
+  const usedEmails = new Set<string>();
+
+  // First, assign all non-colliding emails (and mark the unsuffixed winner
+  // in each collision group).
+  for (const c of contacts) {
+    if (c.email === null) {
+      result.set(c.id, null);
+      continue;
+    }
+    const key = c.email.toLowerCase();
+    const group = groups.get(key)!;
+    if (group.length === 1) {
+      // No collision — pass through.
+      result.set(c.id, c.email);
+      usedEmails.add(key);
+    } else {
+      // Collision group: assign unsuffixed slot to the lex-smallest id.
+      const winner = group.slice().sort()[0]!;
+      if (c.id === winner) {
+        result.set(c.id, c.email);
+        usedEmails.add(key);
+      }
+      // Non-winners are handled in the suffix pass below.
+    }
+  }
+
+  // Second pass: assign plus-address suffixes to the non-winners.
+  for (const c of contacts) {
+    if (result.has(c.id)) continue; // already assigned (winner or null)
+    // c is a non-winner in a collision group — it has a non-null email.
+    const baseEmail = c.email!;
+    const at = baseEmail.lastIndexOf("@");
+    const local = baseEmail.slice(0, at);
+    const domain = baseEmail.slice(at + 1);
+
+    // Try 4-char suffix first; extend to 8 on the (extremely unlikely) chance
+    // that suffix itself still collides with another contact's final email.
+    let suffixedEmail: string | undefined;
+    for (const suffixLen of [4, 8]) {
+      const suffix = hashShort(c.id, suffixLen);
+      const candidate = `${local}+${suffix}@${domain}`;
+      if (!usedEmails.has(candidate.toLowerCase())) {
+        suffixedEmail = candidate;
+        usedEmails.add(candidate.toLowerCase());
+        break;
+      }
+    }
+    // If both 4 and 8-char suffixes collide (astronomically unlikely), fall
+    // back to the full 16-char hash to guarantee uniqueness.
+    if (!suffixedEmail) {
+      const suffix = hashShort(c.id, 16);
+      suffixedEmail = `${local}+${suffix}@${domain}`;
+      usedEmails.add(suffixedEmail.toLowerCase());
+    }
+    result.set(c.id, suffixedEmail);
+  }
+
+  return result;
+}
+
+/**
  * Splits training threads into the emitted training set and the N most
  * recent user-moved threads (by movedAt desc) — the move holdout. Training
  * order is preserved; the holdout keeps most-recent-first order.
@@ -406,18 +510,39 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
   const contactAnon = new Map<string, { email: string | null; name: string | null }>();
   const contactSlug = new Map<string, string>();
   const contactSlugify = uniqueSlugifier();
-  for (const c of world.contacts) {
-    if (contactAnon.has(c.id)) continue;
-    const anon = anonymizePerson({ name: c.name, email: c.email });
-    const email = emailShapedOrExampleTest(anon.email);
-    contactAnon.set(c.id, { email, name: anon.name });
-    contactSlug.set(
-      c.id,
-      contactSlugify(
-        contactSlugFromEmail(email, c.id),
-        `c-${c.id.replace(/-/g, "").slice(0, 8)}`
-      )
+  {
+    // First, compute each contact's raw anonymized email (before dedup).
+    const rawAnonByContactId = new Map<string, { email: string | null; name: string | null }>();
+    for (const c of world.contacts) {
+      if (rawAnonByContactId.has(c.id)) continue;
+      const anon = anonymizePerson({ name: c.name, email: c.email });
+      rawAnonByContactId.set(c.id, {
+        email: emailShapedOrExampleTest(anon.email),
+        name: anon.name,
+      });
+    }
+    // Deduplicate anonymized emails across all contacts to prevent
+    // contact_email_unique constraint violations when the sandbox loads the
+    // corpus. Two distinct prod contacts can anonymize to the same fake name
+    // AND the same freemail domain (birthday-paradox collisions in a ~40 000-
+    // element name space are near-certain at ~1 000 contacts). See
+    // dedupeContactEmails for the full strategy.
+    const dedupedEmails = dedupeContactEmails(
+      [...rawAnonByContactId.entries()].map(([id, a]) => ({ id, email: a.email }))
     );
+    for (const c of world.contacts) {
+      if (contactAnon.has(c.id)) continue;
+      const raw = rawAnonByContactId.get(c.id)!;
+      const email = dedupedEmails.get(c.id) ?? raw.email;
+      contactAnon.set(c.id, { email, name: raw.name });
+      contactSlug.set(
+        c.id,
+        contactSlugify(
+          contactSlugFromEmail(email, c.id),
+          `c-${c.id.replace(/-/g, "").slice(0, 8)}`
+        )
+      );
+    }
   }
 
   // Tic-less connections (actorContactId null) get a synthesized placeholder
