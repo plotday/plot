@@ -75,7 +75,7 @@ export async function mineDecisionLog(
          SELECT DISTINCT ON (thread_id) *
            FROM public.classification_decision
           WHERE user_id = $1 AND stage = 'user_move'
-          ORDER BY thread_id, created_at DESC
+          ORDER BY thread_id, created_at DESC, id DESC
        )
        SELECT m.thread_id,
               a.priority_id AS auto_priority,
@@ -88,7 +88,7 @@ export async function mineDecisionLog(
            SELECT * FROM public.classification_decision a
             WHERE a.thread_id = m.thread_id AND a.user_id = m.user_id
               AND a.stage <> 'user_move' AND a.created_at < m.created_at
-            ORDER BY a.created_at DESC LIMIT 1
+            ORDER BY a.created_at DESC, a.id DESC LIMIT 1
          ) a ON TRUE
         WHERE m.priority_id IS DISTINCT FROM a.priority_id
         ORDER BY m.created_at ASC, m.thread_id`,
@@ -209,9 +209,15 @@ async function main() {
   } finally {
     await client.end();
   }
-  if (result.tableMissing || result.mined.length === 0) {
+  if (result.tableMissing) {
     console.log(
-      "classification_decision is empty/absent — prod hasn't deployed the decision log yet; nothing to mine"
+      "classification_decision is absent — prod hasn't deployed the decision log yet; nothing to mine"
+    );
+    return;
+  }
+  if (result.mined.length === 0) {
+    console.log(
+      "no user corrections disagree with logged auto decisions; nothing to mine"
     );
     return;
   }
