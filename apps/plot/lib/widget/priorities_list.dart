@@ -100,8 +100,7 @@ class PrioritiesList extends StatelessWidget {
                         key: ValueKey('focus-${priority.id}'),
                         priority: priority,
                         monochrome: monochrome,
-                        selected:
-                            !everything && selected?.id == priority.id,
+                        selected: !everything && selected?.id == priority.id,
                         selectedBorder: true,
                         borderRadius: itemBorderRadius,
                         textStyle: focusStyle(priority),
@@ -111,6 +110,14 @@ class PrioritiesList extends StatelessWidget {
                   onReorder: (oldIndex, newIndex) =>
                       _onReorderFocus(focuses, oldIndex, newIndex),
                 ),
+                if (focuses.isEmpty)
+                  Text(
+                    'Add a focus to gather work related to a role, project, or activity.',
+                    style: TextStyle(
+                      color: context.theme.plotColors.veryMuted,
+                      fontSize: context.theme.typography.sm.fontSize,
+                    ),
+                  ),
                 // "Add a focus" closes off the focus list — it scrolls with
                 // the focuses, not pinned with Inbox/Everything below.
                 ListTile(
@@ -127,21 +134,7 @@ class PrioritiesList extends StatelessWidget {
                   highlightColor: monochrome ? const Color(0x00000000) : null,
                   borderRadius: monochrome ? null : itemBorderRadius,
                 ),
-                if (focuses.isEmpty)
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: context.contentPaddingH,
-                      vertical: context.theme.spacing.xl,
-                    ),
-                    child: Text(
-                      'Focuses put your work in context. Add your roles, goals, and projects.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: context.theme.plotColors.veryMuted,
-                        fontSize: context.theme.typography.sm.fontSize,
-                      ),
-                    ),
-                  ),
+                SizedBox(height: context.theme.spacing.md),
               ],
             ),
           ),
@@ -172,8 +165,7 @@ class PrioritiesList extends StatelessWidget {
             FixedFocusTile(
               title: 'Inbox',
               icon: PlotIcon.inbox,
-              isSelected:
-                  !everything && selected?.id == root.id,
+              isSelected: !everything && selected?.id == root.id,
               command: ChangeCurrentPriority(root),
               menuCommand: ShowPriorityCommands(root),
               hasUnread: root.unread,
@@ -339,19 +331,14 @@ class FixedFocusTileState extends State<FixedFocusTile> {
               // A tight `height: 1` leaves the text top-aligned against it.
               style: widget.textStyle.copyWith(
                 color: labelColor,
-                fontWeight: widget.active
-                    ? FontWeight.w600
-                    : FontWeight.w400,
+                fontWeight: widget.active ? FontWeight.w600 : FontWeight.w400,
               ),
             ),
           ),
           if (widget.hasUnread)
             Padding(
               padding: EdgeInsets.only(left: context.theme.spacing.sm),
-              child: const PriorityNotification(
-                unread: true,
-                color: tileColor,
-              ),
+              child: const PriorityNotification(unread: true, color: tileColor),
             ),
         ],
       ),
