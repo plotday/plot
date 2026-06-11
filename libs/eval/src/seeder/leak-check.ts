@@ -97,8 +97,9 @@ function truncate(s: string, max = 160): string {
 }
 
 /**
- * Scans serialized YAML docs for raw PII values (case-insensitive substring
- * match). Hits on warn-scoped lines (see WARN_SCOPE_RE) become warnings;
+ * Scans serialized YAML docs for raw PII values (case-insensitive; emails
+ * use substring match, names use word boundaries, domains use a left
+ * boundary). Hits on warn-scoped lines (see WARN_SCOPE_RE) become warnings;
  * everything else becomes a violation. Freemail domains are never treated
  * as domain leaks (gmail.com is not PII), even if passed in `orgDomains`.
  */
@@ -118,7 +119,8 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
   //    (brands, services, words that legitimately appear in structural
   //    YAML) → warning-grade, surfaced for human audit.
   //  - Name needles match on WORD BOUNDARIES ("link" must not match
-  //    "linked_to_user"); emails/domains keep substring matching.
+  //    "linked_to_user"); emails keep substring matching. Domain needles use
+  //    a LEFT boundary only (see domainBoundaryRe below).
   const fullNameNeedleSet = new Set<string>();
   const tokenNeedleSet = new Set<string>();
   for (const rawName of pii.names) {
@@ -158,6 +160,19 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
     boundaryRe.set(n, new RegExp(`(?<!\\p{L})${escaped}(?!\\p{L})`, "u"));
   }
 
+  // Domain needles must not match when directly preceded by a letter/digit/
+  // hyphen: anonymized fake org domains are intentionally realistic and can
+  // coincidentally CONTAIN a real needle as a suffix substring (observed:
+  // fake "pebblebay.com"/"pinebay.com" flagged for real needle "ebay.com").
+  // Subdomain leaks still match ("mail.ebay.com" — preceded by "."), and
+  // there is deliberately NO trailing boundary: "ebay.com.au" containing
+  // "ebay.com" IS a leak-ish match.
+  const domainBoundaryRe = new Map<string, RegExp>();
+  for (const d of domainNeedles) {
+    const escaped = d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    domainBoundaryRe.set(d, new RegExp(`(?<![a-z0-9-])${escaped}`));
+  }
+
   const report: LeakReport = { violations: [], warnings: [] };
   const seen = new Set<string>();
 
@@ -173,7 +188,12 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
         forceWarn = false
       ) => {
         for (const needle of needles) {
-          const re = kind === "name" ? boundaryRe.get(needle) : null;
+          const re =
+            kind === "name"
+              ? boundaryRe.get(needle)
+              : kind === "domain"
+                ? domainBoundaryRe.get(needle)
+                : null;
           if (re ? !re.test(lowerLine) : !lowerLine.includes(needle)) continue;
           const dedupeKey = `${doc.path}\u0000${i + 1}\u0000${kind}\u0000${needle}`;
           if (seen.has(dedupeKey)) continue;

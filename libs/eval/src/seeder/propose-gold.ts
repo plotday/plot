@@ -28,7 +28,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 
 import { DEFAULTS_LLM } from "@plotday/classifier";
 
@@ -41,6 +41,7 @@ import type {
   CorpusTrainingSet,
   CorpusWorld,
 } from "../corpus/schema";
+import { stringifyCorpusYaml } from "./emit";
 
 // Loosely-typed YAML document: this script edits cases.yaml in place and
 // must not strip fields it doesn't know about (same pattern as append.ts /
@@ -310,7 +311,7 @@ async function main(): Promise<void> {
     corpus.world.priorities.map((p) => [p.id, p.slug])
   );
   const result = applyProposals(rawCasesDoc, proposals, slugByPriorityId);
-  await writeFile(casesPath, stringifyYaml(rawCasesDoc), "utf-8");
+  await writeFile(casesPath, stringifyCorpusYaml(rawCasesDoc), "utf-8");
 
   // Audit table: one row per consulted case, for Kris's review in the
   // final report.

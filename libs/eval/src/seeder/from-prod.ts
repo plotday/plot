@@ -19,7 +19,8 @@
  *   cases tagged `holdout-move`.
  * - Refresh-preserving-labels: when <out>/cases.yaml exists, each existing
  *   case is re-hydrated by source_thread_id (falling back to the 8-hex
- *   prefix in the case id); labels/tags/notes survive byte-exactly, the
+ *   prefix in the case id, with multi-match prefixes disambiguated by exact
+ *   candidate-title equality); labels/tags/notes survive byte-exactly, the
  *   candidate is upgraded to v2. Unresolvable cases are kept verbatim and
  *   reported. New cases are sampled to top up to --case-count.
  * - Slug migration: contact slugs derive from the anonymized emails, so a
@@ -28,7 +29,7 @@
  */
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import pg from "pg";
@@ -149,16 +150,23 @@ async function readOptional(path: string): Promise<string | undefined> {
 /**
  * Resolves each existing case to a fresh prod hydration: by source_thread_id
  * when present, else by the 8-hex thread-id prefix embedded in the case id.
- * Ambiguous or unmatched cases resolve to verbatim preservation.
+ * uuidv7 prefixes collide heavily (the 8 hex chars are mostly a timestamp:
+ * one observed kris prefix matched 42 threads), so a multi-match prefix is
+ * disambiguated by exact title equality with the existing case's candidate
+ * title — titles are preserved verbatim by policy, so equality is sound.
+ * Still-ambiguous or unmatched cases resolve to verbatim preservation.
+ *
+ * Exported for tests (tests/extract.test.ts).
  */
-async function resolveExistingCases(
+export async function resolveExistingCases(
   client: PgClient,
   userId: string,
   existingCases: Record<string, unknown>[]
 ): Promise<Map<string, CaseResolution>> {
   const resolution = new Map<string, CaseResolution>();
   const bySource: { caseId: string; threadId: string }[] = [];
-  const byPrefix: { caseId: string; prefix: string }[] = [];
+  const byPrefix: { caseId: string; prefix: string; title: string | null }[] =
+    [];
 
   for (const raw of existingCases) {
     const caseId = String(raw.id ?? "");
@@ -170,7 +178,14 @@ async function resolveExistingCases(
     }
     const m = /^\d+-([0-9a-f]{8})$/i.exec(caseId);
     if (m) {
-      byPrefix.push({ caseId, prefix: m[1]!.toLowerCase() });
+      // Candidate title, used only to disambiguate multi-match prefixes. An
+      // empty/missing title is no evidence, so it disables disambiguation.
+      const cand = raw.candidate as Record<string, unknown> | undefined;
+      const title =
+        typeof cand?.title === "string" && cand.title !== ""
+          ? cand.title
+          : null;
+      byPrefix.push({ caseId, prefix: m[1]!.toLowerCase(), title });
     } else {
       resolution.set(caseId, { status: "missing" });
     }
@@ -190,19 +205,34 @@ async function resolveExistingCases(
     );
   }
 
-  for (const { caseId, prefix } of byPrefix) {
+  for (const { caseId, prefix, title } of byPrefix) {
     const matches = await resolveThreadIdPrefix(client, userId, prefix);
     if (matches.length === 0) {
       resolution.set(caseId, { status: "missing" });
-    } else if (matches.length > 1) {
-      resolution.set(caseId, { status: "ambiguous", matches: matches.length });
-    } else {
+      continue;
+    }
+    if (matches.length === 1) {
       const [thread] = await hydrateThreadsByIds(client, userId, matches);
       resolution.set(
         caseId,
         thread ? { status: "hydrated", thread } : { status: "missing" }
       );
+      continue;
     }
+    // Multi-match prefix: exactly one thread whose verbatim title equals the
+    // case's candidate title wins; zero or several keep the case verbatim.
+    if (title !== null) {
+      const threads = await hydrateThreadsByIds(client, userId, matches);
+      const titleMatches = threads.filter((t) => t.title === title);
+      if (titleMatches.length === 1) {
+        resolution.set(caseId, {
+          status: "hydrated",
+          thread: titleMatches[0]!,
+        });
+        continue;
+      }
+    }
+    resolution.set(caseId, { status: "ambiguous", matches: matches.length });
   }
   return resolution;
 }
@@ -505,7 +535,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only run the CLI when executed directly (tests import resolveExistingCases).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

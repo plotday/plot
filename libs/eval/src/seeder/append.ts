@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import pg from "pg";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 
 import {
   anonymizePerson,
@@ -37,6 +37,7 @@ import {
   emailShapedOrExampleTest,
   embeddingRefForThread,
   makeCaseId,
+  stringifyCorpusYaml,
   synthTeam,
 } from "./emit";
 
@@ -415,16 +416,16 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
   const writeEmbeddings =
     embeddingsFileExisted || embeddingsDoc.embeddings.length > 0;
   const docs = [
-    { path: "world.yaml", text: stringifyYaml(world) },
+    { path: "world.yaml", text: stringifyCorpusYaml(world) },
     {
       path:
         opts.mode.kind === "cases"
           ? "cases.yaml"
           : `trainings/${opts.mode.set}.yaml`,
-      text: stringifyYaml(target),
+      text: stringifyCorpusYaml(target),
     },
     ...(writeEmbeddings
-      ? [{ path: "embeddings.yaml", text: stringifyYaml(embeddingsDoc) }]
+      ? [{ path: "embeddings.yaml", text: stringifyCorpusYaml(embeddingsDoc) }]
       : []),
   ];
   const leak = leakCheck(docs, pii);

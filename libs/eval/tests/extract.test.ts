@@ -30,6 +30,7 @@ import {
   type CaseResolution,
   type CorpusBuildInput,
 } from "../src/seeder/emit";
+import { resolveExistingCases } from "../src/seeder/from-prod";
 import { contactSlugFromEmail } from "../src/seeder/slugs";
 
 // ===========================================================================
@@ -371,6 +372,44 @@ describe.runIf(!!process.env.DATABASE_URL)("extract (db)", () => {
     expect(twins.sort()).toEqual([T2, T2B].sort());
     expect(await resolveThreadIdPrefix(client, W_USER, "deadbeef")).toEqual([]);
     expect(await resolveThreadIdPrefix(client, W_USER, "nothex!!")).toEqual([]);
+  });
+
+  it("resolveExistingCases: multi-match prefixes disambiguate by candidate title", async () => {
+    // uuidv7 prefixes collide heavily (one live kris prefix matched 42
+    // threads). A third thread sharing T2's prefix, with a title DUPLICATING
+    // T2's, exercises the matches-several branch.
+    const T2C = "aaaa0002-0000-4000-8000-000000000105";
+    await client.query(
+      `INSERT INTO public.thread (id, created_by, title, created_at)
+       VALUES ($1, $2, 'Fixture note-author thread', '2026-03-02T12:00:00Z')`,
+      [T2C, W_USER]
+    );
+    await client.query(
+      `INSERT INTO public.thread_priority
+         (thread_id, user_id, priority_id, user_moved, updated_at)
+       VALUES ($1, $2, $3, FALSE, '2026-03-04T11:00:00Z')`,
+      [T2C, W_USER, P2]
+    );
+
+    const prefix = T2.slice(0, 8);
+    const cases = [
+      // Title equals exactly ONE of the three prefix matches → hydrated.
+      { id: `010-${prefix}`, candidate: { title: "Fixture prefix twin" } },
+      // Title equals TWO threads (T2 and T2C) → still ambiguous.
+      { id: `011-${prefix}`, candidate: { title: "Fixture note-author thread" } },
+      // Title equals NO thread → ambiguous.
+      { id: `012-${prefix}`, candidate: { title: "No such title anywhere" } },
+      // No candidate title → no disambiguation evidence → ambiguous.
+      { id: `013-${prefix}`, candidate: {} },
+    ] as Record<string, unknown>[];
+
+    const res = await resolveExistingCases(client, W_USER, cases);
+    const hit = res.get(`010-${prefix}`)!;
+    expect(hit.status).toBe("hydrated");
+    if (hit.status === "hydrated") expect(hit.thread.id).toBe(T2B);
+    expect(res.get(`011-${prefix}`)).toEqual({ status: "ambiguous", matches: 3 });
+    expect(res.get(`012-${prefix}`)).toEqual({ status: "ambiguous", matches: 3 });
+    expect(res.get(`013-${prefix}`)).toEqual({ status: "ambiguous", matches: 3 });
   });
 });
 
@@ -932,6 +971,75 @@ describe("buildCorpusFiles", () => {
     expect(verbatim.candidate.title).toBe("unresolvable");
     expect(merged.report.some((l) => l.includes("002-deadbeef"))).toBe(true);
     expect(report).toBeDefined();
+  });
+
+  it("never wraps long title lines, so title PII stays warning-grade", () => {
+    const input = baseBuildInput();
+    // Pre-fix, yaml's default lineWidth (80) wrapped long quoted titles onto
+    // continuation lines that don't start with `title:`, so policy-exempt
+    // title content was counted as a hard violation (observed live:
+    // trainings/full.yaml title tails ending in "(kris@plot.day)").
+    const longTitle =
+      `${"Quarterly planning review with the vendor leadership team ".repeat(4)}(${RAW_USER_EMAIL})`;
+    expect(longTitle.length).toBeGreaterThan(200);
+    input.trainings[0]!.title = longTitle;
+
+    const { files, warnings } = buildCorpusFiles(input); // must NOT throw
+    expect(
+      warnings.some((w) => w.kind === "email" && w.value === RAW_USER_EMAIL)
+    ).toBe(true);
+
+    // Every line carrying the raw email is a single-line `title:` scalar.
+    for (const f of files) {
+      if (!/\.ya?ml$/.test(f.path)) continue;
+      const hitLines = f.text
+        .split("\n")
+        .filter((l) => l.includes(RAW_USER_EMAIL));
+      for (const l of hitLines) {
+        expect(l).toMatch(/^\s*(?:-\s*)?title:/);
+        expect(l).toContain(longTitle); // the whole title is on this line
+      }
+    }
+    const full = files.find((f) => f.path === "trainings/full.yaml")!;
+    expect(full.text).toContain(longTitle);
+  });
+
+  it("anonymizes verbatim-case topics while preserving labels byte-exactly", () => {
+    const input = baseBuildInput();
+    input.cases.push({
+      kind: "verbatim",
+      raw: {
+        id: "002-deadbeef",
+        description: "kept verbatim",
+        candidate: {
+          title: "unresolvable thread",
+          // A topic is candidate DATA, not a preserved label — pre-fix this
+          // raw email survived into cases.yaml as a hard violation
+          // (observed live: `topic: channel:kris@plot.day`).
+          topic: `channel:${RAW_USER_EMAIL}`,
+          contacts: [],
+          groups: [],
+        },
+        labels: {
+          gold: null,
+          gold_rationale: "byte-preserved rationale",
+          expected: null,
+        },
+        notes: "byte-preserved note",
+      },
+    });
+
+    const { files } = buildCorpusFiles(input); // must NOT throw
+    const casesDoc = parseYaml(files.find((f) => f.path === "cases.yaml")!.text) as {
+      cases: Record<string, any>[];
+    };
+    const v = casesDoc.cases.find((c) => c.id === "002-deadbeef")!;
+    expect(v.candidate.topic).toMatch(/^channel:.+@.+$/);
+    expect(v.candidate.topic).not.toContain(RAW_USER_EMAIL);
+    // Label fields remain byte-preserved.
+    expect(v.labels.gold_rationale).toBe("byte-preserved rationale");
+    expect(v.notes).toBe("byte-preserved note");
+    expect(v.candidate.title).toBe("unresolvable thread");
   });
 
   it("throws when a referenced contact is missing from the world (caller bug)", () => {

@@ -326,6 +326,46 @@ describe("leakCheck", () => {
     expect(report.warnings.filter((v) => v.kind === "domain")).toHaveLength(0);
   });
 
+  it("domain needles require a left boundary (fake domains containing the needle)", () => {
+    const ebayPii = { emails: [], names: [], orgDomains: ["ebay.com"] };
+    // Anonymized fake org domains can coincidentally CONTAIN a real needle
+    // as a suffix substring (observed live: pebblebay.com vs ebay.com).
+    const fake = leakCheck(
+      [{ path: "a.yaml", text: "email: anton.pacheco@pebblebay.com\n" }],
+      ebayPii
+    );
+    expect(fake.violations).toHaveLength(0);
+    expect(fake.warnings).toHaveLength(0);
+
+    // Subdomain leaks still match: preceded by ".", not a letter/digit/hyphen.
+    const sub = leakCheck(
+      [{ path: "a.yaml", text: "email: deals@mail.ebay.com\n" }],
+      ebayPii
+    );
+    expect(sub.violations.some((v) => v.kind === "domain" && v.value === "ebay.com")).toBe(
+      true
+    );
+
+    // Bare domain matches.
+    const bare = leakCheck(
+      [{ path: "a.yaml", text: "email: deals@ebay.com\n" }],
+      ebayPii
+    );
+    expect(bare.violations.some((v) => v.kind === "domain" && v.value === "ebay.com")).toBe(
+      true
+    );
+
+    // No trailing boundary on purpose: ebay.com.au containing ebay.com IS a
+    // leak-ish match.
+    const au = leakCheck(
+      [{ path: "a.yaml", text: "email: deals@ebay.com.au\n" }],
+      ebayPii
+    );
+    expect(au.violations.some((v) => v.kind === "domain" && v.value === "ebay.com")).toBe(
+      true
+    );
+  });
+
   it("matches names case-insensitively", () => {
     const docs = [{ path: "a.yaml", text: "group: ANNA VENDOR fan club\n" }];
     const report = leakCheck(docs, pii);

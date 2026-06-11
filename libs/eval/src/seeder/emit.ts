@@ -104,6 +104,17 @@ export type CorpusBuildOutput = {
 // Small shared helpers
 // ===========================================================================
 
+/**
+ * Corpus-YAML stringify — EVERY seeder write of corpus YAML must go through
+ * this. `lineWidth: 0` disables line wrapping so long quoted scalars (titles
+ * with raw PII, preserved verbatim by policy) never wrap onto continuation
+ * lines: the leak check's title warn-scope is per-LINE, and a wrapped title
+ * tail would be misclassified as a hard violation.
+ */
+export function stringifyCorpusYaml(doc: unknown): string {
+  return stringifyYaml(doc, { lineWidth: 0 });
+}
+
 /** Topic-shape label used for case tags/descriptions (v1-compatible). */
 export function describeTopic(topic: string | null): string {
   if (topic === null) return "null";
@@ -669,6 +680,13 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
       const c = structuredClone(entry.raw);
       const cand = c.candidate as Record<string, unknown> | undefined;
       if (cand) {
+        // A topic is CANDIDATE data, not a preserved label: even when the
+        // case is kept verbatim (un-rehydratable), email-bearing topics
+        // (e.g. Gmail's `channel:<address>`) must still be anonymized.
+        // Label fields (gold_rationale, notes) remain byte-preserved.
+        if (typeof cand.topic === "string") {
+          cand.topic = anonymizeTopic(cand.topic);
+        }
         if (Array.isArray(cand.contacts)) {
           cand.contacts = cand.contacts.map(migrateSlug);
         }
@@ -880,10 +898,10 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
 
   // ---- Serialize + leak check (the enforcement gate) --------------------------------
   const files = [
-    { path: "world.yaml", text: stringifyYaml(worldDoc) },
-    { path: "embeddings.yaml", text: stringifyYaml({ embeddings }) },
-    { path: "trainings/full.yaml", text: stringifyYaml(trainingsDoc) },
-    { path: "cases.yaml", text: stringifyYaml({ cases: casesOut }) },
+    { path: "world.yaml", text: stringifyCorpusYaml(worldDoc) },
+    { path: "embeddings.yaml", text: stringifyCorpusYaml({ embeddings }) },
+    { path: "trainings/full.yaml", text: stringifyCorpusYaml(trainingsDoc) },
+    { path: "cases.yaml", text: stringifyCorpusYaml({ cases: casesOut }) },
     { path: "README.md", text: readme },
   ];
 
