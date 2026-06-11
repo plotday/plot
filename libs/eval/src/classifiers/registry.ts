@@ -206,3 +206,22 @@ registerHybridVariant("ts:hybrid-llm:tight-gates", {
   highConfidenceFloor: 0.55,
   marginFloor: 0.12,
 });
+// First tuning pass (2026-06): widened topic-ambiguity candidate lists +
+// raised LLM gating floors. Tuning surface: kris +5 fixed/0 broke (53.75%
+// vs 47.5%), synthetic-groups +1/0; holdout flat (kris 3/12 both, prod-u2
+// 4/10 both, 2/2 discordant). Pooled real-data McNemar p=0.0625 — proposed
+// to production WITH RESERVATIONS, not applied. Evidence:
+// docs/superpowers/reports/2026-06-11-eval-framework-report.md
+registerHybridVariant("ts:hybrid-llm:tuned-2026-06", {
+  ...DEFAULTS_LLM,
+  highConfidenceFloor: 0.75,
+  marginFloor: 0.3,
+  llm: {
+    ...DEFAULTS_LLM.llm!,
+    topicAmbiguity: {
+      ...DEFAULTS_LLM.llm!.topicAmbiguity,
+      maxTopicCandidates: 6,
+      maxScoringCandidates: 5,
+    },
+  },
+});
