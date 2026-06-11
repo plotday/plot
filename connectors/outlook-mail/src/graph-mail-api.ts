@@ -602,12 +602,16 @@ export function transformOutlookConversation(opts: {
   accountEmail: string;
 }): NewLinkWithNotes {
   const sorted = sortConversation(opts.messages).filter((m) => !m.isDraft);
-  if (sorted.length === 0 || !sorted[0].conversationId) {
+  if (sorted.length === 0) {
     return { type: "email", title: "", notes: [] };
   }
 
   const parent = sorted[0];
-  const source = conversationSource(opts.accountEmail, parent.conversationId!);
+  const conversationId = parent.conversationId;
+  if (!conversationId) {
+    return { type: "email", title: "", notes: [] };
+  }
+  const source = conversationSource(opts.accountEmail, conversationId);
 
   // Collect all unique participants across messages for thread-level access.
   const participantsByEmail = new Map<string, NewContact>();
@@ -636,7 +640,7 @@ export function transformOutlookConversation(opts: {
     created: messageDate(parent),
     access: "private",
     accessContacts: [...participantsByEmail.values()],
-    meta: { conversationId: parent.conversationId },
+    meta: { conversationId },
     sourceUrl: sorted[sorted.length - 1].webLink ?? null,
     preview: parent.bodyPreview || null,
     notes: [],
@@ -683,7 +687,9 @@ export function transformOutlookConversation(opts: {
       ...(message.ccRecipients ?? []).map((r) => recipientToContact(r)),
     ].filter((c): c is NewContact => c !== null);
 
-    plotThread.notes!.push({
+    // Assigned to a const before push (same as gmail): note keys ride along
+    // structurally even though they're not part of the base NewNote type.
+    const note = {
       key: message.internetMessageId ?? message.id,
       author: senderActor,
       content,
@@ -692,7 +698,8 @@ export function transformOutlookConversation(opts: {
       accessContacts: messageContacts,
       created: messageDate(message),
       checkForTasks: true,
-    });
+    };
+    plotThread.notes!.push(note);
   }
 
   return plotThread;
