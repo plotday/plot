@@ -227,9 +227,11 @@ function renormalizedWeights(
         `(got "${String(value)}")`
     );
   }
-  if (value < 0 || value > 1) {
+  if (value < 0 || value >= 1) {
+    // value === 1 is legal arithmetic but silently zeroes every other signal
+    // (scale = 0) — a degenerate single-signal classifier nobody sweeps for.
     throw new Error(
-      `parseSweepSpec: weights dimension "${dim.raw}" value ${value} must be in [0, 1]`
+      `parseSweepSpec: weights dimension "${dim.raw}" value ${value} must be in [0, 1)`
     );
   }
   const base = baseParams.weights as unknown as Record<string, number>;
@@ -253,6 +255,14 @@ function parseValues(text: string, raw: string): unknown[] {
   }
   const colonParts = text.split(":");
   if (colonParts.length === 3) return expandRange(colonParts, raw);
+  if (colonParts.length === 2) {
+    // No HybridParams value legitimately contains a single colon; this is
+    // almost certainly a range with the step forgotten.
+    throw new Error(
+      `parseSweepSpec: dimension "${raw}" looks like an incomplete range — ` +
+        `numeric ranges require exactly three parts: start:end:step`
+    );
+  }
   return [parseScalar(text)];
 }
 

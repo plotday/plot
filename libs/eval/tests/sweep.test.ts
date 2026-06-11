@@ -142,6 +142,18 @@ describe("parseSweepSpec — weight renormalization", () => {
     ).toThrow(/weights/);
   });
 
+  it("rejects weight value 1 (would zero every other signal)", () => {
+    expect(() => parseSweepSpec("weights.sem=1", DEFAULTS_LLM)).toThrow(
+      /\[0, 1\)/
+    );
+  });
+
+  it("rejects a two-part colon value as an incomplete range", () => {
+    expect(() =>
+      parseSweepSpec("scoreThreshold=0.1:0.3", DEFAULTS_LLM)
+    ).toThrow(/incomplete range/);
+  });
+
   it("rejects renormalizing when the base weight is 1 (no remaining mass)", () => {
     const base: HybridParams = {
       ...DEFAULTS_LLM,
