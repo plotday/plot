@@ -110,26 +110,35 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
   // boundaries so punctuated names ("Anna (Vendor)") still yield "vendor".
   // The same false-positive guards apply per token (length >= 4, common-word
   // skip), so short/generic tokens don't flood the report.
+  // Name-needle policy (tuned on the real kris extraction, which has
+  // service-named contacts like "Plot", "Linear", "Link", "Google"):
+  //  - MULTI-token full names ("Anna Vendor") are unambiguous PII →
+  //    violation-grade.
+  //  - Single-token full names and individual name tokens are ambiguous
+  //    (brands, services, words that legitimately appear in structural
+  //    YAML) → warning-grade, surfaced for human audit.
+  //  - Name needles match on WORD BOUNDARIES ("link" must not match
+  //    "linked_to_user"); emails/domains keep substring matching.
   const fullNameNeedleSet = new Set<string>();
   const tokenNeedleSet = new Set<string>();
   for (const rawName of pii.names) {
     const full = rawName.trim().toLowerCase();
     if (!full) continue;
-    if (full.length >= MIN_NAME_LENGTH && !COMMON_WORD_NAMES.has(full)) {
+    const tokens = full.split(/[^\p{L}]+/u).filter(Boolean);
+    if (
+      tokens.length > 1 &&
+      full.length >= MIN_NAME_LENGTH &&
+      !COMMON_WORD_NAMES.has(full)
+    ) {
       fullNameNeedleSet.add(full);
     }
-    for (const token of full.split(/[^\p{L}]+/u)) {
+    for (const token of tokens) {
       if (token.length >= MIN_NAME_LENGTH && !COMMON_WORD_NAMES.has(token)) {
         tokenNeedleSet.add(token);
       }
     }
   }
   const fullNameNeedles = [...fullNameNeedleSet];
-  // Single tokens are warning-grade only: prod contacts include service
-  // senders ("Google", "Linear", "Cycling Weekly"), whose tokens match benign
-  // structural YAML (provider:, path:, slugs) — a violation storm with no
-  // leak. Full-name matches stay violation-grade; token hits land in the
-  // audit list for human review.
   const tokenNeedles = [...tokenNeedleSet].filter(
     (t) => !fullNameNeedleSet.has(t)
   );
@@ -140,6 +149,14 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
         .filter((d) => d.length > 0 && !isFreemailDomain(d))
     ),
   ];
+
+  // Word-boundary regexes for name needles, compiled once. Lines and needles
+  // are both lowercased before matching.
+  const boundaryRe = new Map<string, RegExp>();
+  for (const n of [...fullNameNeedles, ...tokenNeedles]) {
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    boundaryRe.set(n, new RegExp(`(?<!\\p{L})${escaped}(?!\\p{L})`, "u"));
+  }
 
   const report: LeakReport = { violations: [], warnings: [] };
   const seen = new Set<string>();
@@ -156,7 +173,8 @@ export function leakCheck(docs: { path: string; text: string }[], pii: RawPii): 
         forceWarn = false
       ) => {
         for (const needle of needles) {
-          if (!lowerLine.includes(needle)) continue;
+          const re = kind === "name" ? boundaryRe.get(needle) : null;
+          if (re ? !re.test(lowerLine) : !lowerLine.includes(needle)) continue;
           const dedupeKey = `${doc.path}\u0000${i + 1}\u0000${kind}\u0000${needle}`;
           if (seen.has(dedupeKey)) continue;
           seen.add(dedupeKey);
