@@ -144,7 +144,16 @@ class ToggleSelfTask extends NoteCommand {
         eventAction: note.isAssignedTo(Base.actorId)
             ? EventAction.untagged
             : EventAction.tagged,
-        icon: PlotIcon.selfTask,
+        // Match the thread row's leading toggle (see ThreadWidget): when the
+        // task is off, show `circlePlus`; when it's on, show a resting `circle`
+        // that becomes `circleCheck` on hover. Untoggling reverts to
+        // `circlePlus`.
+        icon: note.isAssignedTo(Base.actorId)
+            ? PlotIcon.selfTaskTodo
+            : PlotIcon.selfTask,
+        hoverIcon: note.isAssignedTo(Base.actorId)
+            ? PlotIcon.selfTaskHover
+            : null,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyT),
       );
 
