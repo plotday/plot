@@ -45,10 +45,16 @@ describe("corpus author resolution", () => {
     const corpus = await loadCorpus(dir);
     const threads = corpus.trainingSets[0]!.threads;
 
-    expect(threads[0]!.author).toBe("00000000-0000-4000-8000-000000000020");
-    expect(threads[1]!.author).toMatch(/^[0-9a-f]{8}-/);
-    expect(threads[1]!.author).not.toBe("00000000-0000-4000-8000-000000000020");
-    expect(corpus.cases[0]!.candidate.author).toBe(
+    // v1 `author` semantics: the resolved value lands in createdByOverride
+    // (v1 wrote it into thread.created_by, never thread.author_id).
+    expect(threads[0]!.createdByOverride).toBe(
+      "00000000-0000-4000-8000-000000000020"
+    );
+    expect(threads[1]!.createdByOverride).toMatch(/^[0-9a-f]{8}-/);
+    expect(threads[1]!.createdByOverride).not.toBe(
+      "00000000-0000-4000-8000-000000000020"
+    );
+    expect(corpus.cases[0]!.candidate.createdByOverride).toBe(
       "00000000-0000-4000-8000-000000000020"
     );
   });

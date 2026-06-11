@@ -118,7 +118,7 @@ async function runOneCase(
       contacts: cs.candidate.contacts,
       groups: cs.candidate.groups,
       embedding: emb?.vector ?? null,
-      author: cs.candidate.author,
+      author: cs.candidate.createdByOverride,
     });
 
     const ctx: ClassifierContext = {
@@ -136,10 +136,11 @@ async function runOneCase(
       contacts: cs.candidate.contacts,
       groups: cs.candidate.groups,
       embedding: emb?.vector ?? null,
-      author: cs.candidate.author,
-      // Corpus schema v1 does not model facets, author contacts, or
-      // connections — both new signals are inert in eval until the corpus
-      // v2 workstream adds them.
+      author: cs.candidate.createdByOverride,
+      // The corpus model now carries facets / authorContactId / connectionId
+      // (schema v2), but wiring them into classify() + stageCandidate is the
+      // A4 runner task — keep them inert here so v1-era behavior is
+      // byte-identical until that lands.
       facets: null,
       authorContactId: null,
       connectionId: null,
@@ -148,7 +149,7 @@ async function runOneCase(
 
   const goldId = cs.labels.gold;
   const expectedId = cs.labels.expected;
-  const expectedStage = cs.labels.expected_stage;
+  const expectedStage = cs.labels.expectedStage;
 
   return {
     corpus: corpus.name,

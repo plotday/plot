@@ -5,7 +5,7 @@ description: |
   Used by Vitest and as the CI smoke corpus. Channel_default and keyed_priority
   cross-user stages are not covered here — they require multi-user world state
   or twist_instance scaffolding and live in separate corpora.
-schema_version: 1
+schema_version: 2
 source:
   kind: handcrafted
 user:

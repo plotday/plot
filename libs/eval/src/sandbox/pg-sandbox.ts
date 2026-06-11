@@ -204,7 +204,7 @@ export async function loadTrainingSet(
        VALUES ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7::halfvec)`,
       [
         t.id,
-        t.author ?? world.user.id,
+        t.createdByOverride ?? world.user.id,
         t.title,
         t.topic,
         t.contacts,
@@ -219,7 +219,7 @@ export async function loadTrainingSet(
        ON CONFLICT (thread_id, user_id) DO UPDATE SET
          priority_id = EXCLUDED.priority_id,
          user_moved = TRUE`,
-      [t.id, world.user.id, t.filed_to_priority]
+      [t.id, world.user.id, t.filedToPriority]
     );
   }
 

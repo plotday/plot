@@ -30,7 +30,7 @@ describe("corpus loader (synthetic-tiny)", () => {
     for (const ts of corpus.trainingSets) {
       for (const t of ts.threads) {
         expect(
-          corpus.world.priorities.some((p) => p.id === t.filed_to_priority)
+          corpus.world.priorities.some((p) => p.id === t.filedToPriority)
         ).toBe(true);
       }
     }
