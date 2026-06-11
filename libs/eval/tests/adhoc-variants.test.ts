@@ -128,14 +128,25 @@ describe("deepMergeParams", () => {
     expect(DEFAULTS_LLM.llm!.tieBreaker.maxCandidates).toBe(5);
   });
 
-  it("replaces arrays and primitives instead of merging them", () => {
-    const base = { ...DEFAULTS, fake: [1, 2, 3] } as unknown as HybridParams;
-    const merged = deepMergeParams(base, {
-      fake: [9],
-      scoreThreshold: 0.5,
-    }) as unknown as { fake: number[]; scoreThreshold: number };
-    expect(merged.fake).toEqual([9]);
+  it("throws on an unknown top-level key (typo guard)", () => {
+    expect(() =>
+      deepMergeParams(DEFAULTS_LLM, { originBonsu: { exact: 0.5 } })
+    ).toThrow(/originBonsu/);
+  });
+
+  it("replaces primitives; merges nested plain objects; replaces with a non-object value", () => {
+    // Primitives replace directly.
+    const merged = deepMergeParams(DEFAULTS, { scoreThreshold: 0.5 });
     expect(merged.scoreThreshold).toBe(0.5);
+    // A plain-object field merged with another plain object merges (keeps siblings).
+    const merged2 = deepMergeParams(DEFAULTS, {
+      aggregation: { mode: "top1" },
+    });
+    // mergeObjects runs → both mode and k survive (mode overwritten, k kept from base).
+    expect(merged2.aggregation).toEqual({ mode: "top1", k: 3 });
+    // Assigning a string (non-object) where the field was a plain object replaces wholesale.
+    const merged3 = deepMergeParams(DEFAULTS, { nonlinearity: "sigmoid" });
+    expect(merged3.nonlinearity).toBe("sigmoid");
   });
 });
 

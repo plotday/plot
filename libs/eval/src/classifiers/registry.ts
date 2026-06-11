@@ -65,6 +65,23 @@ export function registerClassifier(c: Classifier): void {
   REGISTRY.set(c.name, c);
 }
 
+/**
+ * Register a classifier under `name` in REGISTRY only — it does NOT write to
+ * VARIANT_PARAMS. As a result, classifiers registered through this function
+ * cannot serve as the `--base` for ad-hoc variants built by
+ * `makeAdhocLlmVariant` / `makeAdhocVariantFromFile`, because those lookups
+ * resolve params from VARIANT_PARAMS.
+ *
+ * Intended for two narrow use cases:
+ *   1. **Test stubs** — fake classifiers that need a name but carry no
+ *      HybridParams (e.g. the SQL baseline stub).
+ *   2. **Non-HybridParams classifiers** — e.g. `sqlCurrentClassifier`, which
+ *      has its own internal configuration and is not parameterised via
+ *      HybridParams at all.
+ *
+ * For HybridParams-based variants that should be ad-hoc-derivable, use the
+ * private `registerHybridVariant` helper instead (which writes both maps).
+ */
 export function registerVariant(name: string, classifier: Classifier): void {
   if (classifier.name !== name) {
     throw new Error(
