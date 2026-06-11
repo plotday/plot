@@ -1,6 +1,9 @@
 .env
 /node_modules/
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # React Router
 /.react-router/
 /build/
