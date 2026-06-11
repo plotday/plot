@@ -293,6 +293,11 @@ export function applySlugMigrationToYamlText(
   migration: Map<string, string>
 ): { text: string; replacements: number } {
   let out = text;
+  // `replacements` is a logging-only count. It is accumulated against the
+  // progressively-transformed `out` string (i.e. after earlier slug
+  // replacements have already been applied), so the count is not guaranteed
+  // to equal the number of replacements in the original text. This is
+  // acceptable because the value is only used for human-readable reporting.
   let replacements = 0;
   const entries = [...migration.entries()].sort(
     (a, b) => b[0].length - a[0].length

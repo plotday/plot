@@ -124,6 +124,14 @@ type ThreadRow = {
  * The single source of truth for thread hydration. `$1` is the extraction
  * user (drives the thread_priority join); callers append their own WHERE /
  * ORDER BY tail.
+ *
+ * NOTE on the two note subqueries: `note_embedding_text` and `note_author_id`
+ * are deliberately INDEPENDENT subqueries with different WHERE predicates.
+ * `note_embedding_text` selects the earliest note that HAS an embedding
+ * (n.embedding IS NOT NULL); `note_author_id` selects the earliest note
+ * regardless of embedding. They may therefore come from different rows.
+ * This is intentional: the embedding fallback needs a usable vector, while
+ * the author fallback just needs the earliest known author.
  */
 const THREAD_SELECT = `
   SELECT t.id,

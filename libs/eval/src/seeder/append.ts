@@ -16,7 +16,12 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import { anonymizePerson, anonymizeTopic, scrubGroupName } from "./anonymize";
+import {
+  anonymizePerson,
+  anonymizeTopic,
+  isFreemailDomain,
+  scrubGroupName,
+} from "./anonymize";
 import { leakCheck, type RawPii } from "./leak-check";
 import { contactSlugFromEmail, uniqueSlugifier } from "./slugs";
 import {
@@ -133,7 +138,10 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
         rawNamesThisRun.push(contact.name);
       }
       const at = (contact.email ?? "").lastIndexOf("@");
-      if (at > 0) pii.orgDomains.push(contact.email!.slice(at + 1));
+      if (at > 0) {
+        const domain = contact.email!.slice(at + 1).toLowerCase();
+        if (domain && !isFreemailDomain(domain)) pii.orgDomains.push(domain);
+      }
       const anon = anonymizePerson({ name: contact.name, email: contact.email });
       const email = emailShapedOrExampleTest(anon.email);
       const slug = contactSlugify(
@@ -159,6 +167,15 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
         console.warn(`  ! group ${groupId} not found in prod; ref dropped`);
         return null;
       }
+      // LIMITATION: scrubGroupName only checks rawNamesThisRun — names of
+      // contacts already in world.yaml at append time are unavailable (they
+      // were anonymized during the original extraction and the mapping was
+      // never persisted). A new group whose title happens to match a
+      // pre-existing contact's real name therefore survives this scrub
+      // unscrubbed. We cannot recover the original names, so we always emit
+      // the audit warning below regardless of whether residueTokens is
+      // non-empty — the fail-safe is to flag every new group title for manual
+      // review.
       const { scrubbed, residueTokens } = scrubGroupName(
         group.title,
         rawNamesThisRun
@@ -168,6 +185,11 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
           `  ! group ${groupId} title has unscrubbed tokens — audit: "${scrubbed}"`
         );
       }
+      // Always warn: the scrub cannot check against pre-existing contacts whose
+      // real names are no longer recoverable. Audit every new group title.
+      console.warn(
+        `  append: group "${scrubbed}" added — title could not be checked against pre-existing contact names; audit manually`
+      );
       const slug = groupSlugify(
         scrubbed,
         `g-${groupId.replace(/-/g, "").slice(0, 8)}`
