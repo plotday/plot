@@ -16,10 +16,10 @@
     "@plotday/classifier": "workspace:^",
     "@plotday/db": "workspace:^",
     "ai": "^6.0.185",
-    "kysely": "^0.28.17",
+    "kysely": "^0.29.2",
     "pg": "^8.18.0",
-    "yaml": "^2.8.3",
-    "zod": "^4.1.8"
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",

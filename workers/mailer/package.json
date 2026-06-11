@@ -17,10 +17,10 @@
   "dependencies": {
     "@plotday/email": "workspace:^",
     "@plotday/worker-util": "workspace:^",
-    "posthog-node": "^5.18.1"
+    "posthog-node": "^5.36.15"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
+    "@cloudflare/workers-types": "^4.20260611.1",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "@types/node": "^20.14.2"

@@ -17,7 +17,7 @@
     "@plotday/worker-util": "workspace:^"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
+    "@cloudflare/workers-types": "^4.20260611.1",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "@types/node": "^20.14.2"

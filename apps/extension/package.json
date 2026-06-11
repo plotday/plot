@@ -20,7 +20,7 @@
     "lint": "wxt prepare && tsc --noEmit"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.279",
+    "@types/chrome": "^0.1.43",
     "typescript": "^5.7.2",
     "wxt": "^0.20.26"
   }

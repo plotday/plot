@@ -11,16 +11,16 @@
     "lint": "tsc && eslint ."
   },
   "dependencies": {
-    "@react-email/components": "^1.0.1",
-    "@react-email/render": "^2.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@react-email/components": "^1.0.12",
+    "@react-email/render": "^2.0.8",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
-    "@react-email/preview-server": "5.0.4",
-    "@types/react": "^19.0.1",
+    "@react-email/preview-server": "5.2.10",
+    "@types/react": "^19.2.17",
     "react-email": "^5.0.4"
   }
 }
