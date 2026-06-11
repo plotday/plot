@@ -3,7 +3,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { listClassifiers } from "./classifiers/registry";
+import {
+  listClassifiers,
+  makeAdhocVariantFromFile,
+} from "./classifiers/registry";
 import { runEval } from "./runner/run";
 import { formatReport, type ReportFormat } from "./scoring/report";
 
@@ -15,6 +18,8 @@ async function main() {
       corpus: { type: "string" },
       "corpus-dir": { type: "string" },
       classifiers: { type: "string" },
+      params: { type: "string" },
+      base: { type: "string" },
       "training-sets": { type: "string" },
       "exclude-tags": { type: "string" },
       "include-holdout": { type: "boolean" },
@@ -46,6 +51,15 @@ async function main() {
     resolve(SCRIPT_DIR, "..", "corpora", values.corpus!);
 
   const classifierNames = (values.classifiers ?? "ts:hybrid-llm:default").split(",");
+  if (values.params) {
+    // One-off variant: base params + JSON-file overrides, registered as
+    // <base>+params@<hash> and appended to this run's classifier list.
+    const adhoc = makeAdhocVariantFromFile(values.params, values.base);
+    classifierNames.push(adhoc.name);
+  } else if (values.base) {
+    console.error("Error: --base requires --params <file.json>.");
+    process.exit(2);
+  }
   const trainingSets = values["training-sets"]
     ? values["training-sets"].split(",")
     : undefined;
@@ -80,6 +94,11 @@ Options:
   --corpus <name>           Corpus under libs/eval/corpora/<name>
   --corpus-dir <path>       Absolute path to a corpus directory (overrides --corpus)
   --classifiers <list>      Comma-separated classifier names (default: ts:hybrid-llm:default)
+  --params <file.json>      JSON object of HybridParams overrides; registers an
+                            ad-hoc variant named <base>+params@<hash> and adds
+                            it to this run's classifier list
+  --base <variant>          Base variant for --params overrides
+                            (default: ts:hybrid-llm:default)
   --training-sets <list>    Comma-separated training-set names (default: all)
   --exclude-tags <csv>      Additional case tags to exclude (appended to the
                             default holdout-move exclusion)
