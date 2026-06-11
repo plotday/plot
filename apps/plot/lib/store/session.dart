@@ -391,6 +391,47 @@ class Session extends SessionRow {
     return session.at.isNow() ? session : null;
   }
 
+  /// Most-recent non-archived `source='active'` session for [priorityId]
+  /// whose **planned pomodoro window** still covers [now] — i.e.
+  /// `pomodoroAt <= now < pomodoroAt + pomodoro` — regardless of whether
+  /// its short `end` lookahead has lapsed.
+  ///
+  /// [activeFor] only matches a session whose `[start, end]` window
+  /// currently includes `now` (`at.isNow()`). That `end` is a 3-minute
+  /// lookahead the maintenance tick re-bumps every minute; after a time
+  /// jump (or any gap where the tick didn't run) it can fall behind `now`
+  /// even though the planned pomodoro is still live. Auto-start uses this
+  /// to *revive* such a session (bump its `end`) instead of spawning a
+  /// duplicate row — the source of focus-session spam when the lookahead
+  /// lapsed. Returns the most recent (by `start`) qualifying session.
+  static Future<Session?> revivableActiveFor(
+    PriorityId priorityId,
+    DateTime now,
+  ) async {
+    if (!Store.isAvailable) return null;
+    final rows = await (Store.get.select(table)
+          ..where(
+            (t) =>
+                t.priorityId.equals(priorityId.toBytes()) &
+                t.archivedAt.isNull() &
+                t.source.equals('active') &
+                t.pomodoroAt.isNotNull() &
+                t.pomodoro.isNotNull(),
+          )
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+          ]))
+        .get();
+    for (final row in rows) {
+      final session = Session.fromStore(row);
+      final windowEnd = session.pomodoroAt!.add(session.pomodoro!);
+      if (now.isBefore(session.pomodoroAt!)) continue;
+      if (!now.isBefore(windowEnd)) continue;
+      return session;
+    }
+    return null;
+  }
+
   /// Most recent paused explicit pomodoro session for [priorityId], or
   /// null if none qualifies. A session is "paused" when:
   ///   - `source` is `'active'` and the row is not archived,

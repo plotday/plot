@@ -888,7 +888,24 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
       if (d == null || d <= Duration.zero) continue;
       final end = r.effectiveAt.add(d);
       if (r.effectiveAt.isAfter(now) || !end.isAfter(now)) continue;
-      // Covering row found — start the session for the remaining window.
+      // Covering row found. Before spawning a session, revive any existing
+      // one for this priority whose planned pomodoro window still covers
+      // `now`. The in-memory guard above only catches a session that is
+      // `at.isNow()`; after a time jump (or a missed maintenance tick) that
+      // 3-minute `end` lookahead lapses while the pomodoro is still live, so
+      // without this every tick/navigation would create a fresh duplicate row
+      // (the focus-session spam). Bump the survivor's `end` so the pill and
+      // agenda keep treating it as running.
+      final existing = await Session.revivableActiveFor(ctx.id, now);
+      if (existing != null) {
+        if (existing.at.end.isBefore(now.add(const Duration(minutes: 1)))) {
+          await Session.fromStore(
+            existing.copyWith(end: now.add(const Duration(minutes: 3))),
+          ).save();
+        }
+        return;
+      }
+      // Otherwise start the session for the remaining window.
       final remaining = end.difference(now);
       await startSession(override: remaining);
       return;
