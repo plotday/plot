@@ -1960,9 +1960,11 @@ class NewThreadPageState extends State<NewThreadPage> {
       searchController: _pickerSearchController,
       searchFocusNode: _pickerSearchFocusNode,
       // Only multi-panel fades the panel, so only there does the "Start a
-      // thread" hint need the level-holding boost. Single-panel never dims, so
-      // pass null (no boost) — boosting an un-faded hint would over-darken it.
-      activeListenable: multiPanel ? _active : null,
+      // thread" hint need the level-holding boost. Single-panel and touch
+      // devices never dim, so pass null (no boost) — boosting an un-faded hint
+      // would over-darken it. Touch has no pointer to drive [_active], so the
+      // hover-based dimming would otherwise leave the panel stuck muted.
+      activeListenable: (multiPanel && !isTouchPlatform()) ? _active : null,
       onPickRecipient: (e) => unawaited(_pickRecipient(e)),
       onPickTarget: (t) => unawaited(_applyDirectTarget(t)),
       onCreateTopic: _createTopic,
@@ -2200,10 +2202,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                           // The connection and compose steps are always full
                           // strength — like [_singlePanel], the step is OR-ed
                           // in here at render time (never folded into [_active])
-                          // so a step change can't strand a stale value.
+                          // so a step change can't strand a stale value. Touch
+                          // devices never dim: the hover that drives [_active]
+                          // doesn't exist there, so dimming would leave the
+                          // panel permanently muted.
                           opacity:
                               (active ||
                                   _singlePanel ||
+                                  isTouchPlatform() ||
                                   _step != _ComposeStep.sections)
                               ? 1.0
                               : kNewThreadInactiveOpacity,
@@ -2249,11 +2255,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                               // viewInsets.bottom already pushes content past the
                               // bar (which the keyboard covers), so subtract it to
                               // avoid stacking a second gap on top of the keyboard.
-                              final keyboardInset =
-                                  MediaQuery.of(context).viewInsets.bottom;
+                              final keyboardInset = MediaQuery.of(
+                                context,
+                              ).viewInsets.bottom;
                               final barInset = BottomNavInset.of(context);
-                              final reserve = (barInset - keyboardInset)
-                                  .clamp(0.0, barInset);
+                              final reserve = (barInset - keyboardInset).clamp(
+                                0.0,
+                                barInset,
+                              );
                               // Compose fields + editor, bottom-aligned with
                               // the keyboard-inset reserve. The back affordance
                               // for this step lives in the header strip now
@@ -2287,17 +2296,23 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               bodyOnly: true,
                                               draft: state.draftNote,
                                               thread: state.draft,
-                                              onDraftChanged: _handleDraftChanged,
+                                              onDraftChanged:
+                                                  _handleDraftChanged,
                                               flushToBottom: true,
                                               showScheduleActions: false,
                                               hint: _computeEditorHint(state),
-                                              sendLabel: _computeSendLabel(state),
-                                              additionalMentions: _twistMentions,
+                                              sendLabel: _computeSendLabel(
+                                                state,
+                                              ),
+                                              additionalMentions:
+                                                  _twistMentions,
                                               onSubmitted: _onChatSubmitted,
-                                              submitValidator: _validateDmSubmit,
+                                              submitValidator:
+                                                  _validateDmSubmit,
                                               selectedTwist: _selectedTwist,
                                               onTwistSelected: _selectTwist,
-                                              onTwistMentioned: _onTwistMentioned,
+                                              onTwistMentioned:
+                                                  _onTwistMentioned,
                                             ),
                                           ),
                                         ),
