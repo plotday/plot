@@ -459,7 +459,7 @@ Threads are hydrated + anonymized via C1 against the same `--db-url`
   training threads (cases without `as_of` are skipped with a warning;
   count reported). One training set (default `full`) is used.
 - Cases sort by `as_of`; the runner inserts training threads with
-  `moved_at < as_of` progressively in the outer transaction (monotonic —
+  `moved_at <= as_of` progressively in the outer transaction (monotonic —
   no rollback between cases), then stages each case in its savepoint as
   today. Negatives follow the same clock via their own `created_at`
   (the real `thread_priority_negative.created_at`, extracted in C).
