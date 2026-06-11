@@ -199,6 +199,7 @@ class PlotIcon {
   static const selfTaskTodo = FontAwesomeIcons.circle;
   static const selfTaskDone = FontAwesomeIcons.check;
   static const selfTaskHover = FontAwesomeIcons.circleCheck;
+  static const selfTaskCancel = FontAwesomeIcons.circleX;
   static const selfTaskDoneHover = FontAwesomeIcons.circlePlus;
   static const othersTask = FontAwesomeIcons.circleUser;
   static const othersTaskDone = FontAwesomeIcons.circleUserCircleCheck;
