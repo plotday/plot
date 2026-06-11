@@ -195,6 +195,7 @@
 
 ### Fixes
 
+- The onboarding tour is easier to read in light mode. The tinted steps that show your app underneath were washing out against the light background, making the white text hard to read; they now carry enough contrast to read clearly.
 - Switching between a focus and an agenda event in another focus no longer flickers. The Event Agenda section used to flash in over the previous focus's threads (and on the way out, vanish a moment before the threads changed); now the event and the thread list always change together in a single step.
 - Read status now syncs reliably across your devices. Reading a thread on one device now clears the unread dot everywhere — previously some threads (often the welcome and Plot Team messages) could stay marked unread no matter how many times you opened them, and searching could even make a thread you'd read pop back to unread. Threads that were stuck this way are cleared automatically.
 - Fixed sync stalling for very large workspaces. Right after connecting tools with a big history (tens of thousands of threads), syncing could time out and stop bringing in updates entirely; thread sync is now fast no matter how much is coming in.

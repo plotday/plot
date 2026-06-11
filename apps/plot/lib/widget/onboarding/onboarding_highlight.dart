@@ -122,10 +122,14 @@ class _DesktopHighlight extends StatelessWidget {
             MainAxisAlignment.center,
         };
 
-        // See FullScreenStep backdrop: same mid-tone lightness keeps the
-        // highlight tint vibrant once it's blended over the blurred panel.
+        // See FullScreenStep backdrop: in dark mode this mid-tone lightness
+        // keeps the highlight tint vibrant once it's blended over the blurred
+        // panel. In light mode the same tint blends over a near-white feed and
+        // washes out, leaving the white overlay text low-contrast — so darken
+        // the tint and push its opacity up to keep the copy legible.
+        final isLight = context.colour.brightness == Brightness.light;
         final tint = context.colour.colours
-            .fromTheme(step.overlay, lightness: 0.55);
+            .fromTheme(step.overlay, lightness: isLight ? 0.48 : 0.55);
 
         return Stack(
           children: [
@@ -135,7 +139,7 @@ class _DesktopHighlight extends StatelessWidget {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                 child: Container(
-                  color: tint.withValues(alpha: 0.65),
+                  color: tint.withValues(alpha: isLight ? 0.85 : 0.65),
                 ),
               ),
             ),
@@ -331,8 +335,12 @@ class _MobileHighlight extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Light mode blends this tint over a near-white app background, washing it
+    // out and leaving the white overlay text low-contrast. Darken the tint and
+    // raise its opacity so the copy stays legible (matches _DesktopHighlight).
+    final isLight = context.colour.brightness == Brightness.light;
     final tint = context.colour.colours
-        .fromTheme(step.overlay, lightness: 0.55);
+        .fromTheme(step.overlay, lightness: isLight ? 0.48 : 0.55);
     return Column(
       children: [
         // Top half: transparent — shows highlighted app content beneath
@@ -343,7 +351,7 @@ class _MobileHighlight extends StatelessWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
               child: Container(
-                color: tint.withValues(alpha: 0.85),
+                color: tint.withValues(alpha: isLight ? 0.92 : 0.85),
                 child: SafeArea(
                   top: false,
                   child: Stack(
