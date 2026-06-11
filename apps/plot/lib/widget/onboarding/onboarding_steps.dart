@@ -212,7 +212,7 @@ Widget _buildClosingQuote(BuildContext context) => const Padding(
     mainAxisSize: MainAxisSize.min,
     children: [
       Text(
-        '“How we spend our days is, of course, how we spend our lives.”',
+        '“Alone we can do so little; together we can do so much.”',
         textAlign: TextAlign.center,
         style: TextStyle(
           color: Color(0xD9FFFFFF),
@@ -225,7 +225,7 @@ Widget _buildClosingQuote(BuildContext context) => const Padding(
       ),
       SizedBox(height: 8),
       Text(
-        '— Annie Dillard',
+        '— Helen Keller',
         textAlign: TextAlign.center,
         style: TextStyle(
           color: Color(0xB3FFFFFF),
