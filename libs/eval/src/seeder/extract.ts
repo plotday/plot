@@ -263,6 +263,7 @@ export async function loadTrainingThreads(
       WHERE tp.user_id IS NOT NULL
         AND tp.user_moved = TRUE
         AND t.archived_at IS NULL
+        AND t.draft = FALSE
       ORDER BY tp.updated_at DESC`,
     [userId]
   );
@@ -688,6 +689,7 @@ export async function sampleStratifiedCaseThreadIds(
           AND tp.user_moved = FALSE
           AND tp.priority_id IS NOT NULL
           AND t.archived_at IS NULL
+          AND t.draft = FALSE
           AND ${s.predicate}
         ORDER BY t.created_at DESC NULLS LAST
         LIMIT $2`,
@@ -731,6 +733,7 @@ export async function sampleTimelineCaseThreadIds(
         AND tp.user_moved = FALSE
         AND tp.priority_id IS NOT NULL
         AND t.archived_at IS NULL
+        AND t.draft = FALSE
       ORDER BY t.created_at ASC, t.id`,
     [userId]
   );
