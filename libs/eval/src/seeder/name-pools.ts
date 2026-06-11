@@ -9,6 +9,9 @@
  *   anonymizer joins one from A and one from B (e.g. "lumenforge.com").
  *   None of the halves are major brand names, and combos are chosen to be
  *   unlikely to collide with well-known companies.
+ * - Pool SIZE is part of the deterministic mapping (index = hash mod size),
+ *   so adding or removing entries remaps every input to a different fake.
+ *   Only resize before a corpus generation, never between increments of one.
  */
 
 export const FIRST_NAMES = [
@@ -25,6 +28,20 @@ export const FIRST_NAMES = [
   "Simone", "Sofia", "Soren", "Stefan", "Tariq", "Tessa", "Theo", "Tomas",
   "Uma", "Vera", "Viktor", "Wei", "Xenia", "Yara", "Yusuf", "Zara",
   "Zoe", "Idris", "Marisol", "Bjorn",
+  "Adriana", "Alma", "Amani", "Anouk", "Arjun", "Asger", "Aurelia", "Aziz",
+  "Bastian", "Benita", "Boris", "Caleb", "Catalina", "Cecilia", "Cyrus",
+  "Damian", "Daniela", "Deepa", "Dexter", "Diego", "Dina", "Edgar", "Eitan",
+  "Elias", "Eloise", "Enzo", "Esteban", "Ezra", "Fabian", "Fatima",
+  "Fernanda", "Finn", "Gita", "Gunnar", "Hamid", "Harriet", "Henrik",
+  "Hideo", "Imani", "Irena", "Isabel", "Jacinta", "Jasper", "Javier",
+  "Jelena", "Johan", "Kaito", "Kasia", "Katya", "Kofi", "Laila", "Lena",
+  "Liam", "Lior", "Lorenzo", "Lotte", "Magnus", "Mahmoud", "Maren",
+  "Mariko", "Marta", "Matteo", "Maxim", "Miriam", "Natalia", "Niamh",
+  "Oksana", "Olamide", "Oliver", "Otto", "Paloma", "Pedro", "Petra",
+  "Pilar", "Quentin", "Rasmus", "Rhea", "Ronan", "Ruth", "Sadie", "Salim",
+  "Samira", "Shreya", "Sigrid", "Silas", "Suresh", "Tabitha", "Takumi",
+  "Talia", "Tobias", "Tunde", "Ulrik", "Valentina", "Varun", "Xavier",
+  "Yael", "Yasmin", "Yuki", "Zainab", "Zofia",
 ];
 
 export const LAST_NAMES = [
@@ -43,6 +60,21 @@ export const LAST_NAMES = [
   "Soto", "Suzuki", "Takahashi", "Tanaka", "Thorne", "Ueda", "Valdez",
   "Varga", "Vasquez", "Vogel", "Walsh", "Weber", "Whitfield", "Yamamoto",
   "Yilmaz", "Zhang", "Zielinski", "Mehta", "Diallo", "Larsen",
+  "Abebe", "Acosta", "Adler", "Aguilar", "Ahmadi", "Albrecht", "Antonelli",
+  "Asante", "Ayala", "Bakker", "Baranov", "Barbosa", "Becker", "Bellamy",
+  "Benali", "Bhatt", "Blanchet", "Borges", "Brennan", "Caetano", "Caldwell",
+  "Camara", "Cardoso", "Carvalho", "Chandra", "Choi", "Conti", "Cormier",
+  "Cruz", "Dalton", "Davenport", "Dempsey", "Desai", "Dietrich", "Donovan",
+  "Duarte", "Dumont", "Eklund", "Ellison", "Engel", "Escobar", "Espinoza",
+  "Falk", "Faraji", "Fitzroy", "Flores", "Franco", "Gagnon", "Galindo",
+  "Gerber", "Greco", "Guerrero", "Gupta", "Halvorsen", "Hamdan", "Haugen",
+  "Herrera", "Hoffman", "Holm", "Horvat", "Huang", "Iglesias", "Ishida",
+  "Jafari", "Johansson", "Joshi", "Kaminski", "Khoury", "Kobayashi", "Kone",
+  "Kovacs", "Kuznetsov", "Lambert", "Leblanc", "Lindgren", "Lozano",
+  "Mancini", "Matsuda", "Medina", "Mensah", "Mirza", "Molina", "Morales",
+  "Mwangi", "Naidu", "Ogawa", "Oliveira", "Pacheco", "Pereira", "Pham",
+  "Pinto", "Popov", "Prasad", "Rahimi", "Rojas", "Ruiz", "Salonen",
+  "Sandoval", "Santos",
 ];
 
 export const ORG_WORDS_A = [

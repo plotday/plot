@@ -170,7 +170,9 @@ export function anonymizeEmail(email: string | null, name?: string | null): stri
   }
   const rawLocal = trimmed.slice(0, at);
   const rawDomain = trimmed.slice(at + 1);
-  const fakeName = name ? anonymizeName(name) : null;
+  // A blank/whitespace-only name is "no name": anonymizeName passes it
+  // through unchanged, which would otherwise collapse to a "." local part.
+  const fakeName = name?.trim() ? anonymizeName(name) : null;
   const local = fakeName
     ? fakeName.toLowerCase().split(/\s+/).join(".")
     : `c-${hashShort(rawLocal.toLowerCase(), 12)}`;
@@ -192,15 +194,38 @@ export function anonymizePerson(p: { name: string | null; email: string | null }
 export const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}/g;
 
 /**
+ * Catches @-address-shaped tokens that EMAIL_RE (intentionally ASCII-only)
+ * cannot match — e.g. internationalized addresses like `anna@münchen.de`.
+ * A "token" is a maximal run of plausible address characters (no whitespace,
+ * no `:`/`<`/`>`/`,`/`;`/parens/quotes, so `channel:`-style prefixes stay
+ * outside the match) containing an `@` with non-empty content on both sides.
+ */
+const LEFTOVER_AT_TOKEN_RE = /[^\s:<>,;()"'`]+@[^\s:<>,;()"'`]+/gu;
+
+/** EMAIL_RE anchored to the whole string (does this token LOOK like a fake?). */
+const ASCII_EMAIL_EXACT_RE = new RegExp(`^(?:${EMAIL_RE.source})$`);
+
+/**
  * Rewrites email-shaped substrings inside topic strings via anonymizeEmail;
  * everything else stays verbatim. Determinism preserves topic equality and
  * the `channel:` / `priority:` prefix structure (e.g. Gmail channels keyed
  * by address: `channel:kris@plot.day` -> `channel:<fake>@<fake-domain>`).
  * Note `priority:@plot.app` has no local part, so it is left unchanged.
+ *
+ * Second pass: EMAIL_RE is ASCII-only by design — there is no safe way to
+ * parse IDN / non-ASCII addresses with a regex, and a partial parse risks
+ * leaving raw PII fragments behind. So we fail closed instead: any remaining
+ * @-bearing token the first pass did not rewrite is replaced wholesale with
+ * an opaque deterministic token (`c-<hash>@redacted.example`). Losing the
+ * token's shape beats leaking it. First-pass outputs are themselves full
+ * ASCII email matches, so they are recognized and left alone.
  */
 export function anonymizeTopic(topic: string | null): string | null {
   if (!topic) return topic;
-  return topic.replace(EMAIL_RE, (match) => anonymizeEmail(match) ?? match);
+  const firstPass = topic.replace(EMAIL_RE, (match) => anonymizeEmail(match) ?? match);
+  return firstPass.replace(LEFTOVER_AT_TOKEN_RE, (token) =>
+    ASCII_EMAIL_EXACT_RE.test(token) ? token : `c-${hashShort(token, 12)}@redacted.example`
+  );
 }
 
 const GROUP_TOKEN_RE = /[A-Za-z][A-Za-z'-]*/g;

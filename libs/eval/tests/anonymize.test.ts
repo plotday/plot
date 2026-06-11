@@ -114,6 +114,14 @@ describe("anonymizeEmail", () => {
     expect(anonymizeEmail(null)).toBeNull();
     expect(anonymizeEmail(null, "Anna Vendor")).toBeNull();
   });
+
+  it("treats a whitespace-only name as absent (hash-derived local part)", () => {
+    // anonymizeName passes blank input through unchanged, which previously
+    // collapsed the local part to "." — blank means no name.
+    const fake = anonymizeEmail("anna@stripe.com", "   ")!;
+    expect(fake).toBe(anonymizeEmail("anna@stripe.com"));
+    expect(fake.split("@")[0]).toMatch(/^c-[0-9a-f]{12}$/);
+  });
 });
 
 describe("anonymizePerson", () => {
@@ -140,6 +148,24 @@ describe("anonymizeTopic", () => {
     expect(out.startsWith("channel:")).toBe(true);
     expect(out).toBe(`channel:${anonymizeEmail("kris@plot.day")}`);
     expect(out).not.toContain("kris@plot.day");
+  });
+
+  it("rewrites every email in a multi-email topic", () => {
+    const out = anonymizeTopic("dm:anna@stripe.com,bob@gmail.com")!;
+    expect(out).toBe(
+      `dm:${anonymizeEmail("anna@stripe.com")},${anonymizeEmail("bob@gmail.com")}`
+    );
+    expect(out).not.toContain("anna@stripe.com");
+    expect(out).not.toContain("bob@gmail.com");
+  });
+
+  it("replaces non-ASCII (IDN) emails with an opaque token instead of leaking", () => {
+    // EMAIL_RE is ASCII-only, so without the fail-closed second pass this
+    // address would survive verbatim.
+    const out = anonymizeTopic("channel:anna@münchen.de")!;
+    expect(out).toBe(`channel:c-${hashShort("anna@münchen.de", 12)}@redacted.example`);
+    expect(out).not.toContain("münchen");
+    expect(out).not.toContain("anna@");
   });
 
   it("leaves non-email topics unchanged", () => {
@@ -236,13 +262,48 @@ describe("leakCheck", () => {
     ];
     const report = leakCheck(docs, pii);
     expect(report.violations).toHaveLength(0);
-    expect(report.warnings.map((w) => w.kind).sort()).toEqual([
-      "domain",
-      "email",
-      "name",
-    ]);
+    // The rationale line hits the full-name needle AND the per-token needles
+    // ("anna", "vendor"), so name warnings appear more than once; assert on
+    // the distinct kinds.
+    expect(new Set(report.warnings.map((w) => w.kind))).toEqual(
+      new Set(["domain", "email", "name"])
+    );
     const titleHit = report.warnings.find((w) => w.kind === "email")!;
     expect(titleHit.line).toBe(2);
+  });
+
+  it("flags emails on folded-scalar continuation lines as violations (conservative)", () => {
+    // Warn-scope detection is per-LINE by documented policy: `title: >-`
+    // matches WARN_SCOPE_RE, but the folded scalar's continuation line does
+    // not, so a raw email there is a hard violation rather than a warning.
+    const docs = [
+      {
+        path: "a.yaml",
+        text: "cases:\n  - title: >-\n      Fwd from kris@plot.day yesterday\n",
+      },
+    ];
+    const report = leakCheck(docs, pii);
+    expect(report.warnings).toHaveLength(0);
+    expect(report.violations).toMatchObject([
+      { kind: "email", value: "kris@plot.day", line: 3 },
+    ]);
+  });
+
+  it("catches a lone leaked name token via per-token needles", () => {
+    // scrubGroupName maps contact-name tokens split on WHITESPACE, so a
+    // punctuated contact name like "Anna (Vendor)" keys "(vendor)" — the
+    // bare "Vendor" token in a group name matches nothing and survives as
+    // residue. The full-name needle "anna (vendor)" can't match that
+    // residue either; only the per-token needle does.
+    const contactName = "Anna (Vendor)";
+    const { scrubbed, residueTokens } = scrubGroupName("Anna Vendor sync", [contactName]);
+    expect(residueTokens).toContain("Vendor");
+    expect(scrubbed).toContain("Vendor");
+    const docs = [{ path: "a.yaml", text: `group_name: ${scrubbed}\n` }];
+    const report = leakCheck(docs, { emails: [], names: [contactName], orgDomains: [] });
+    expect(report.violations.some((v) => v.kind === "name" && v.value === "vendor")).toBe(
+      true
+    );
   });
 
   it("flags org domains anywhere non-title as violations", () => {
