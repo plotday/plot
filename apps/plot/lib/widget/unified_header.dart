@@ -799,6 +799,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
             return p?.id != n?.id || p?.displayTitle != n?.displayTitle;
           },
           builder: (context, nowState) {
+            // Sidebar visible: keep the tracking pill / search controls but
+            // drop the title itself (shown in the sidebar already). The
+            // current event name is treated exactly like the focus name —
+            // both are redundant with the sidebar, so this guard sits ahead
+            // of the event branch below.
+            if (!showPriority) {
+              return withTrackingPill(const SizedBox.shrink());
+            }
             final currentEvent = nowState is NowLoaded
                 ? nowState.currentEvent
                 : null;
@@ -820,11 +828,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
                   ),
                 ),
               );
-            }
-            // Sidebar visible: keep the tracking pill / search controls but
-            // drop the priority name itself (shown in the sidebar already).
-            if (!showPriority) {
-              return withTrackingPill(const SizedBox.shrink());
             }
             // Inbox (the root focus) and the synthetic Everything feed are
             // fixed semantic views. The sidebar draws both with the inbox /
