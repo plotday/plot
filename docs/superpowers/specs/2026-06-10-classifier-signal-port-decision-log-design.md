@@ -195,7 +195,7 @@ CREATE TABLE public.classification_decision (
     priority_id uuid,                          -- chosen filing; NULL only for stage='none'
     stage text NOT NULL,                       -- cascade stage | 'sql:<stage>' | 'user_move'
     scores jsonb NOT NULL DEFAULT '{}',        -- ClassificationResult.scores / SQL explain payload
-    classifier text NOT NULL,                  -- 'ts:hybrid-llm:default@<paramsHash>' | 'sql:classify_thread_for_user' | 'user'
+    classifier text NOT NULL,                  -- 'ts:hybrid-llm:production@<paramsHash>' | 'sql:classify_thread_for_user' | 'user'
     llm_calls int NOT NULL DEFAULT 0,
     cache_hits int NOT NULL DEFAULT 0,
     budget_exhausted boolean NOT NULL DEFAULT false,
@@ -268,7 +268,7 @@ Previews are never logged: `/sync/priority-match` and
 resolved `HybridParams` — including prompt template ids and model —
 computed once in the classifier-runtime factory
 (`libs/classifier-runtime/src/factory.ts`) and stamped into the
-`classifier` column (`ts:hybrid-llm:default@<hash>`). Weight, prompt, or
+`classifier` column (`ts:hybrid-llm:production@<hash>`). Weight, prompt, or
 model changes become visible in the log without schema changes.
 
 ### B4. Error handling
@@ -285,7 +285,11 @@ model changes become visible in the log without schema changes.
 Labeled misclassifications via self-join per (user_id, thread_id): an
 auto-decision row followed by a `user_move` row with a different
 priority_id, with the auto row's top-k scores snapshot from decision
-time. Live survival rate = fraction of auto decisions with no subsequent
+time. Mining caveat: low-confidence outcomes are asymmetric across
+writers — TS paths log stage `none` with NULL priority_id (root fallback
+not substituted), while the SQL trigger paths log `sql:applied` with the
+root fallback already resolved; treat both as the "no confident match"
+bucket. Live survival rate = fraction of auto decisions with no subsequent
 `user_move`, per stage/classifier version. Seeder integration is
 deferred.
 
