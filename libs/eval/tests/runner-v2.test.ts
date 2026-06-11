@@ -196,6 +196,9 @@ describe.runIf(!!process.env.DATABASE_URL)("runner v2", () => {
 
     // Control: WITHOUT the self-match the identical-embedding neighbor wins
     // at the scoring stage — proving the leak the guard must prevent.
+    // LOAD-BEARING: this fixture must keep scoring as the ONLY route to
+    // P_TARGET (no topic/key/channel shortcuts) or the control stops proving
+    // the leak vector is live and the guarded assertions below lose meaning.
     const control = byCase.get("502-eeeeeeee")!;
     expect(control.selfExcluded).toBe(false);
     expect(control.stage).toBe("scoring");
