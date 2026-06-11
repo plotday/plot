@@ -6,6 +6,10 @@ import type { HybridParams } from "./ts-hybrid.defaults";
  * classification_decision row attributes the decision to an exact
  * configuration. NOT cryptographic — FNV-1a over a key-sorted JSON
  * rendering; collisions are irrelevant for version discrimination.
+ *
+ * A key explicitly set to `undefined` hashes differently from an absent key
+ * (it serializes as a literal `undefined` token) — omit unwanted keys rather
+ * than setting them to `undefined`.
  */
 export function paramsHash(params: HybridParams): string {
   const s = stableStringify(params);
