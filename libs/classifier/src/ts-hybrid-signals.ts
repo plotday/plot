@@ -1,4 +1,4 @@
-import type { Nonlinearity, SignalWeights } from "./ts-hybrid.defaults";
+import type { Nonlinearity, OriginBonus, SignalWeights } from "./ts-hybrid.defaults";
 
 export type SignalValues = {
   sem: number;
@@ -186,4 +186,29 @@ export function combineSignals(
     total += weights[k] * applyNonlinearity(values[k], nl);
   }
   return total;
+}
+
+/**
+ * Connection-origin bonus for one neighbor (mirrors the SQL scorer's origin
+ * CASE in classify_thread_for_user): exact when the neighbor came from the
+ * SAME connection as the candidate, org when both connections share an org
+ * key (connection_org_key), else 0.
+ */
+export function originBonus(
+  neighborConnId: string | null,
+  neighborOrgKey: string | null,
+  candidateConnId: string | null,
+  candidateOrgKey: string | null,
+  bonus: OriginBonus
+): number {
+  if (candidateConnId === null) return 0;
+  if (neighborConnId !== null && neighborConnId === candidateConnId) return bonus.exact;
+  if (
+    candidateOrgKey !== null &&
+    neighborOrgKey !== null &&
+    neighborOrgKey === candidateOrgKey
+  ) {
+    return bonus.org;
+  }
+  return 0;
 }

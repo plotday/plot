@@ -12,6 +12,7 @@ export type {
   AggregationMode,
   LlmParams,
   BudgetLimits,
+  OriginBonus,
 } from "./ts-hybrid.defaults";
 export {
   DEFAULTS,
@@ -40,9 +41,11 @@ export {
   con,
   grp,
   jaccard,
+  originBonus,
   priorityTitleMatch,
   sem,
   titleTrigramJaccard,
   tokenize,
   topicFuzzy,
 } from "./ts-hybrid-signals";
+export { scoringStage } from "./ts-hybrid-scoring";

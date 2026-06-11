@@ -3,6 +3,7 @@ import {
   combineSignals,
   con,
   grp,
+  originBonus,
   sem,
   author as authorSignal,
   priorityTitleMatch,
@@ -30,6 +31,7 @@ type NeighborRow = {
   title: string | null;
   topic: string | null;
   created_by: string | null;
+  conn_id: string | null;
   contacts_expanded: string[];
   groups: string[];
   embedding: number[] | null;
@@ -61,6 +63,7 @@ export type ScoringExplain = {
     author: number;
     topic_fuzzy: number;
     title: number;
+    origin: number;
     combined: number;
   }[];
 };
@@ -91,6 +94,7 @@ export async function scoringStage(
             mt.title,
             mt.topic,
             mt.created_by,
+            CASE WHEN mt.twist_id IS NOT NULL THEN mt.created_by ELSE NULL END AS conn_id,
             public.expand_contacts(mt.contacts) AS contacts_expanded,
             mt.groups,
             CASE WHEN mt.embedding IS NULL THEN NULL ELSE mt.embedding::text END AS embedding
@@ -109,6 +113,7 @@ export async function scoringStage(
       title: string | null;
       topic: string | null;
       created_by: string | null;
+      conn_id: string | null;
       contacts_expanded: string[];
       groups: string[];
       embedding: string | null;
@@ -119,12 +124,35 @@ export async function scoringStage(
     title: r.title,
     topic: r.topic,
     created_by: r.created_by,
+    conn_id: r.conn_id,
     contacts_expanded: r.contacts_expanded ?? [],
     groups: r.groups ?? [],
     embedding: parseEmbedding(r.embedding),
   }));
 
   const expandedCandidateContacts = await expandContacts(ctx, candidate.contacts);
+
+  // Connection-origin: resolve org keys for the candidate's connection and
+  // every distinct neighbor connection in one round trip. Skipped when the
+  // candidate has no originating connection — origin is then 0 everywhere.
+  const orgKeyByConn = new Map<string, string | null>();
+  let candidateOrgKey: string | null = null;
+  const originEnabled =
+    (params.originBonus.exact > 0 || params.originBonus.org > 0) &&
+    candidate.connectionId !== null;
+  if (originEnabled) {
+    const connIds = new Set<string>([candidate.connectionId!]);
+    for (const n of rows) if (n.conn_id) connIds.add(n.conn_id);
+    const orgRes = await ctx.rawQuery(
+      `SELECT conn_id, public.connection_org_key(conn_id) AS org_key
+         FROM unnest($1::uuid[]) AS conn_id`,
+      [[...connIds]]
+    );
+    for (const r of orgRes.rows as { conn_id: string; org_key: string | null }[]) {
+      orgKeyByConn.set(r.conn_id, r.org_key);
+    }
+    candidateOrgKey = orgKeyByConn.get(candidate.connectionId!) ?? null;
+  }
 
   // Negative examples: for each priority, the max embedding similarity between
   // the candidate and threads the user moved out of / deselected for that
@@ -168,7 +196,17 @@ export async function scoringStage(
       ),
       title: titleTrigramJaccard(n.title ?? "", candidate.title),
     };
-    const combined = combineSignals(values, params.weights, params.nonlinearity);
+    const origin = originEnabled
+      ? originBonus(
+          n.conn_id,
+          n.conn_id ? (orgKeyByConn.get(n.conn_id) ?? null) : null,
+          candidate.connectionId,
+          candidateOrgKey,
+          params.originBonus
+        )
+      : 0;
+    const combined =
+      combineSignals(values, params.weights, params.nonlinearity) + origin;
     scored.push({
       priorityId: n.priority_id,
       threadId: n.thread_id,
@@ -183,6 +221,7 @@ export async function scoringStage(
       author: round(values.author),
       topic_fuzzy: round(values.topic_fuzzy),
       title: round(values.title),
+      origin: round(origin),
       combined: round(combined),
     });
   }

@@ -73,4 +73,24 @@ describe("canonicalInput", () => {
     expect(h1).toBe(h2);
     expect(h1).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it("differs when connectionId differs", () => {
+    expect(
+      canonicalInput("p1", ctx, { ...cand, connectionId: "conn-a" })
+    ).not.toBe(
+      canonicalInput("p1", ctx, { ...cand, connectionId: "conn-b" })
+    );
+  });
+
+  it("facets key order does not affect output", () => {
+    const a = canonicalInput("p1", ctx, {
+      ...cand,
+      facets: { a: "x", b: "y" },
+    });
+    const b = canonicalInput("p1", ctx, {
+      ...cand,
+      facets: { b: "y", a: "x" },
+    });
+    expect(a).toBe(b);
+  });
 });

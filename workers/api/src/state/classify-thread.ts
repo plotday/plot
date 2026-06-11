@@ -218,7 +218,7 @@ async function buildCandidate(
       groups = (args.groups ?? r.groups ?? []) as string[];
       embedding = embedding ?? parseEmbedding(r.embedding);
       author = r.created_by;
-      facets = facets ?? r.facets ?? null;
+      facets = facets ?? r.facets;
       authorContactId = r.author_id;
       connectionId = connectionId ?? (r.twist_id != null ? r.created_by : null);
     }

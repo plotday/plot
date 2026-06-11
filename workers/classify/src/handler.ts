@@ -100,7 +100,7 @@ export async function handleClassifyJob(
     candidate.groups = r.groups ?? [];
     candidate.embedding = parseEmbedding(r.embedding);
     candidate.author = r.created_by;
-    candidate.facets = r.facets ?? null;
+    candidate.facets = r.facets;
     candidate.authorContactId = r.author_id;
     candidate.connectionId = r.twist_id != null ? r.created_by : null;
   }

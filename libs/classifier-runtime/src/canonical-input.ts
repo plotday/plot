@@ -17,6 +17,9 @@ export type CanonicalContextSnapshot = {
  * - Embedding floats rounded to 4 decimal places.
  * - Priority snapshot ordered by id.
  * - Title/notes are NOT part of the input (the embedding fingerprints content).
+ * - facets serialized with sorted keys so insertion order doesn't matter.
+ * - authorContactId and connectionId included so candidates differing only in
+ *   those fields (which affect origin/gate scoring) never share a cache key.
  */
 export function canonicalInput(
   promptId: string,
@@ -33,6 +36,13 @@ export function canonicalInput(
       embedding: cand.embedding
         ? cand.embedding.map((x: number) => Number(x.toFixed(4)))
         : null,
+      facets: cand.facets
+        ? Object.fromEntries(
+            Object.entries(cand.facets).sort(([a], [b]) => a.localeCompare(b))
+          )
+        : null,
+      authorContactId: cand.authorContactId ?? null,
+      connectionId: cand.connectionId ?? null,
       priorities: [...ctx.priorities]
         .sort((a, b) => a.id.localeCompare(b.id))
         .map((p) => ({ id: p.id, key: p.key })),
