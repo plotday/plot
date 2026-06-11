@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/iap_api.dart';
 import 'package:plot/api/upgrade_api.dart';
+import 'package:plot/state/subscription_service.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/state/user.dart';
@@ -88,7 +89,13 @@ class BuyPlanCommand extends Command {
 
     switch (result.status) {
       case IapPurchaseStatus.purchased:
-        context.showToast(message: 'Subscription active.');
+        // Pull the new entitlement and mark it acknowledged so the refocus
+        // toast path does not double up on this inline confirmation.
+        await SubscriptionService.instance.refresh();
+        SubscriptionService.instance.acknowledgeBaseline();
+        if (context.mounted) {
+          context.showToast(message: 'Subscription active.');
+        }
         return const CommandDone();
       case IapPurchaseStatus.canceled:
         return const CommandSkipped();
