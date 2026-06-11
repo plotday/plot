@@ -637,6 +637,7 @@ class _HoverColoredState extends State<_HoverColored> {
 /// totals live in the time log) but kept here so it can be re-added.
 // ignore: unused_element
 class _PriorityWeeklyTotal extends StatefulWidget {
+  // ignore: unused_element_parameter
   const _PriorityWeeklyTotal({required this.priority, this.selected = false});
 
   final Priority priority;

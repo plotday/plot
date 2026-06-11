@@ -1841,6 +1841,38 @@ export class Integrations extends Tool implements IAuth {
    * Builds Note and Thread SDK objects from a raw note dispatch item,
    * looking up the connector's link metadata for thread context.
    */
+  /**
+   * Resolve a thread's contact roster to Contact objects (id + email + name).
+   *
+   * onNoteCreated/onNoteUpdated dispatch must populate `thread.accessContacts`
+   * so connectors can map a note's `accessContacts` (contact IDs) to outbound
+   * addresses. The message-mode invariant (app/sync/notes.ts
+   * `resolveAccessContactsForSend`) fills every email-thread note's
+   * `access_contacts` with the full thread roster, so a connector that
+   * constrains recipients by it (Gmail) needs the id→email map here. Without
+   * it the allow-set resolves empty and the connector drops the send with
+   * "no outbound recipients".
+   */
+  private async loadThreadAccessContacts(threadId: string): Promise<Contact[]> {
+    const threadRow = await this.db
+      .selectFrom("thread")
+      .select("contacts")
+      .where("id", "=", threadId)
+      .executeTakeFirst();
+    const contactIds = (threadRow?.contacts as string[] | undefined) ?? [];
+    if (contactIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("contact")
+      .select(["id", "email", "name"])
+      .where("id", "in", contactIds)
+      .execute();
+    return rows.map((r) => ({
+      id: r.id as ActorId,
+      email: (r.email as string | null) ?? null,
+      name: (r.name as string | null) ?? null,
+    }));
+  }
+
   private async buildNoteAndThread(item: any): Promise<{ note: Note; thread: Thread }> {
     const link = await this.db
       .selectFrom("link")
@@ -1899,6 +1931,7 @@ export class Integrations extends Tool implements IAuth {
       title: item.thread_title,
       focus: { id: item.priority_id },
       meta,
+      accessContacts: await this.loadThreadAccessContacts(item.thread_id!),
     } as Thread;
 
     return { note, thread };
@@ -2042,6 +2075,9 @@ export class Integrations extends Tool implements IAuth {
         title: item.thread_title,
         focus: { id: item.priority_id },
         meta,
+        accessContacts: await this.loadThreadAccessContacts(
+          item.thread_id as string
+        ),
       };
 
       return [{ sourceMethod: "onNoteCreated", args: [note, thread], deferredNoteKeyUpdate: { noteId: item.id as string } }];

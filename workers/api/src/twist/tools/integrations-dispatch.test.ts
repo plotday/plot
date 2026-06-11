@@ -28,6 +28,50 @@ function makeThis(linkRow: unknown) {
     // buildNoteAndThread is a prototype method; attach it so `this.x` resolves
     // when we invoke dispatch with a plain-object `this`.
     buildNoteAndThread: (Integrations.prototype as any).buildNoteAndThread,
+    loadThreadAccessContacts: (Integrations.prototype as any)
+      .loadThreadAccessContacts,
+  } as any;
+}
+
+/**
+ * Table-aware Kysely stub. `executeTakeFirst()` returns `link` for the link
+ * lookup and `thread` for the thread roster lookup; `execute()` returns the
+ * `contacts` rows for the contact lookup. Lets us exercise the
+ * thread.accessContacts resolution path inside buildNoteAndThread.
+ */
+function mockDbByTable(tables: {
+  link?: unknown;
+  thread?: unknown;
+  contact?: unknown[];
+  note?: unknown;
+}) {
+  function chain(table?: string): any {
+    return {
+      selectFrom: (t: string) => chain(t),
+      select: () => chain(table),
+      where: () => chain(table),
+      executeTakeFirst: async () =>
+        table === "link"
+          ? tables.link
+          : table === "thread"
+          ? tables.thread
+          : table === "note"
+          ? tables.note
+          : undefined,
+      execute: async () => (table === "contact" ? tables.contact ?? [] : []),
+    };
+  }
+  return chain();
+}
+
+function makeThisMulti(tables: Parameters<typeof mockDbByTable>[0]) {
+  return {
+    sourceProvider: { provider: "slack" },
+    twistInstanceId: CONNECTOR,
+    db: mockDbByTable(tables),
+    buildNoteAndThread: (Integrations.prototype as any).buildNoteAndThread,
+    loadThreadAccessContacts: (Integrations.prototype as any)
+      .loadThreadAccessContacts,
   } as any;
 }
 
@@ -124,6 +168,45 @@ describe("Integrations.dispatch — note reply routing", () => {
       },
     });
     expect(result).toEqual([]);
+  });
+
+  it("populates thread.accessContacts (id→email) so connectors can resolve a note's accessContacts to outbound addresses", async () => {
+    // Regression: the message-mode invariant fills an email reply's
+    // access_contacts with the full thread roster. The Gmail connector then
+    // resolves those IDs to emails via thread.accessContacts. When the
+    // dispatch left thread.accessContacts undefined, the allow-set was empty
+    // and every recipient was filtered out ("no outbound recipients").
+    const self = makeThisMulti({
+      link: { meta: {}, channel_id: "INBOX", source: "gmail:thread:1" },
+      thread: { contacts: ["c-self", "c-recipient"] },
+      contact: [
+        { id: "c-self", email: "me@plot.day", name: "Me" },
+        { id: "c-recipient", email: "them@gmail.com", name: "Them" },
+      ],
+    });
+
+    const result = await dispatch(self, {
+      itemType: "note",
+      isCreate: true,
+      item: {
+        id: "note-9",
+        thread_id: "thread-1",
+        thread_created_by: CONNECTOR,
+        created_by: USER,
+        author_id: USER,
+        mentions: [CONNECTOR],
+        access_contacts: ["c-self", "c-recipient"],
+        content: "reply to all",
+      },
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].sourceMethod).toBe("onNoteCreated");
+    const thread = result[0].args[1];
+    expect(thread.accessContacts).toEqual([
+      { id: "c-self", email: "me@plot.day", name: "Me" },
+      { id: "c-recipient", email: "them@gmail.com", name: "Them" },
+    ]);
   });
 
   it("channel_note path skips notes that mention the connector (handled by mention path; avoids double-post)", async () => {

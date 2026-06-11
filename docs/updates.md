@@ -196,6 +196,7 @@
 
 ### Fixes
 
+- Replies you write on an email thread now actually send. A recent change could leave a reply sitting in Plot without going out over email — the connector couldn't tell who the recipients were and quietly skipped the send. Your replies now reach everyone on the thread again.
 - The onboarding tour is easier to read in light mode. The tinted steps that show your app underneath were washing out against the light background, making the white text hard to read; they now carry enough contrast to read clearly.
 - Switching between a focus and an agenda event in another focus no longer flickers. The Event Agenda section used to flash in over the previous focus's threads (and on the way out, vanish a moment before the threads changed); now the event and the thread list always change together in a single step.
 - Read status now syncs reliably across your devices. Reading a thread on one device now clears the unread dot everywhere — previously some threads (often the welcome and Plot Team messages) could stay marked unread no matter how many times you opened them, and searching could even make a thread you'd read pop back to unread. Threads that were stuck this way are cleared automatically.
