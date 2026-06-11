@@ -1,8 +1,44 @@
 import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
 
-import type { Corpus, CorpusTrainingSet } from "../corpus/schema";
+import type {
+  Corpus,
+  CorpusThreadBase,
+  CorpusTrainingSet,
+  CorpusWorld,
+} from "../corpus/schema";
+import { deterministicUuid } from "../corpus/hash";
 import { resolveDatabaseUrl } from "./resolve-db-url";
+
+/**
+ * Corpus-declared numeric identity ids (teams, synthetic per-provider twists)
+ * are offset into a high range so they cannot collide with live dev rows.
+ * IMPORTANT: the OFFSET ids are what surfaces externally — e.g.
+ * `connection_org_key` returns `team:<offset id>` — so the same offset must be
+ * applied everywhere a team id is referenced (twist_instance.team_id, tests).
+ */
+const NUMERIC_ID_OFFSET = 1_000_000_000;
+
+/**
+ * Maps each distinct connection provider to a stable synthetic `twist` bigint
+ * id (sorted providers, id = NUMERIC_ID_OFFSET + index), and each connection
+ * to its provider's twist id. Shared by loadWorld (which inserts the twist
+ * rows), loadTrainingSet, and stageCandidate (which write thread.twist_id).
+ */
+function connectionTwists(world: CorpusWorld): {
+  providers: string[];
+  twistIdByProvider: Map<string, number>;
+  twistIdByConnection: Map<string, number>;
+} {
+  const providers = [...new Set(world.connections.map((c) => c.provider))].sort();
+  const twistIdByProvider = new Map(
+    providers.map((p, i) => [p, NUMERIC_ID_OFFSET + i])
+  );
+  const twistIdByConnection = new Map(
+    world.connections.map((c) => [c.id, twistIdByProvider.get(c.provider)!])
+  );
+  return { providers, twistIdByProvider, twistIdByConnection };
+}
 
 export type SandboxOptions = {
   /** Postgres connection string. Defaults to $DATABASE_URL. */
@@ -111,27 +147,115 @@ export async function loadWorld(
     world.user.email,
   ]);
 
+  // 1b. Subscription (when declared; absent/null = free, no row). Billing
+  //     cycle bounds are NOT NULL — fixed constants, never read by signals.
+  if (world.user.subscription !== null) {
+    await rawQuery(
+      `INSERT INTO public.user_subscription
+         (user_id, plan, status, billing_cycle_start, billing_cycle_end)
+       VALUES ($1, $2::subscription_plan, $3::subscription_status,
+               '2026-01-01', '2027-01-01')`,
+      [world.user.id, world.user.subscription.plan, world.user.subscription.status]
+    );
+  }
+
+  // 1c. Teams (org-key `team:` branch). Identity ids are offset; insert must
+  //     fail loudly on collision with live dev rows (no ON CONFLICT).
+  for (const team of world.teams) {
+    await rawQuery(
+      `INSERT INTO public.team (id, name)
+       OVERRIDING SYSTEM VALUE
+       VALUES ($1, $2)`,
+      [NUMERIC_ID_OFFSET + team.id, team.name]
+    );
+  }
+
+  // 1d. One synthetic twist per distinct provider. The synthesized NOT NULL
+  //     columns and the personal-environment owner shape satisfy
+  //     twist_owner_check (user_id set, publisher_id NULL).
+  const twists = connectionTwists(world);
+  for (const provider of twists.providers) {
+    await rawQuery(
+      `INSERT INTO public.twist
+         (id, twist_package_id, user_id, environment, name, handle, version)
+       OVERRIDING SYSTEM VALUE
+       VALUES ($1, $2, $3, 'personal', $4, $4, '0.0.0-eval')`,
+      [
+        twists.twistIdByProvider.get(provider),
+        deterministicUuid(provider),
+        world.user.id,
+        provider,
+      ]
+    );
+  }
+
+  // 1e. Connections: twist_instance (the connection itself; its uuid doubles
+  //     as an actor id) + twist_instance_connection (whose actor contact's
+  //     email domain drives connection_org_key).
+  for (const conn of world.connections) {
+    await rawQuery(
+      `INSERT INTO public.twist_instance (id, twist_id, owner_id, team_id, name)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        conn.id,
+        twists.twistIdByConnection.get(conn.id),
+        world.user.id,
+        conn.teamId === null ? null : NUMERIC_ID_OFFSET + conn.teamId,
+        `eval ${conn.provider} ${conn.slug}`,
+      ]
+    );
+    await rawQuery(
+      `INSERT INTO public.twist_instance_connection
+         (twist_instance_id, user_id, provider, actor_id)
+       VALUES ($1, $2, $3, $4)`,
+      [conn.id, world.user.id, conn.provider, conn.accountContactId]
+    );
+  }
+
   // 2. Priorities. Path ordering matters (parents before children).
+  //    description/facet_filters are v2 additions; v1 normalization yields
+  //    nulls, which is identical to omitting the columns (no defaults).
   const sortedPriorities = [...world.priorities].sort(
     (a, b) => a.path.split(".").length - b.path.split(".").length
   );
   for (const p of sortedPriorities) {
     await rawQuery(
-      `INSERT INTO public.priority (id, user_id, created_by, path, title, key)
-       VALUES ($1, $2, $2, $3::ltree, $4, $5)`,
-      [p.id, world.user.id, p.path, p.title, p.key]
+      `INSERT INTO public.priority
+         (id, user_id, created_by, path, title, key, description, facet_filters)
+       VALUES ($1, $2, $2, $3::ltree, $4, $5, $6, $7::jsonb)`,
+      [
+        p.id,
+        world.user.id,
+        p.path,
+        p.title,
+        p.key,
+        p.description,
+        p.facetFilters === null ? null : JSON.stringify(p.facetFilters),
+      ]
     );
   }
 
   // 3. Contacts. user_contact rows mark which contacts are "linked" to the
   //    user, which expand_contacts() uses for alias-aware Jaccard.
+  //    v2 worlds also insert contact.name; v1 worlds MUST NOT — the LLM
+  //    tiebreaker prompt renders COALESCE(name, email, id), so adding names
+  //    under v1 would change prompts and cache keys (byte-exact compat).
   for (const c of world.contacts) {
-    await rawQuery(
-      `INSERT INTO public.contact (id, email, user_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (id) DO NOTHING`,
-      [c.id, c.email, c.linked_to_user ? world.user.id : null]
-    );
+    if (world.schemaVersion >= 2) {
+      await rawQuery(
+        `INSERT INTO public.contact (id, email, name, user_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO NOTHING`,
+        [c.id, c.email, c.name, c.linked_to_user ? world.user.id : null]
+      );
+    } else {
+      await rawQuery(
+        `INSERT INTO public.contact (id, email, user_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO NOTHING`,
+        [c.id, c.email, c.linked_to_user ? world.user.id : null]
+      );
+    }
     if (c.linked_to_user) {
       await rawQuery(
         `INSERT INTO public.user_contact (user_id, contact_id, linked)
@@ -150,24 +274,40 @@ export async function loadWorld(
     );
   }
 
-  // 5. Channels (only those referenced by topic). Channels in production
-  //    require a backing twist_instance; the sandbox doesn't model that, so
-  //    callers who need channel_default coverage should supply a corpus that
-  //    also stages a synthetic twist_instance, or skip channel cases.
+  // 5. Channels. v2 channels reference their declared connection's
+  //    twist_instance and must fail loudly on an id collision with live dev
+  //    rows — a silent collision (e.g. an existing channel's real
+  //    default_priority_id) would corrupt results invisibly. v1 channels keep
+  //    the legacy placeholder parent + conflict-tolerant insert byte-exactly.
   for (const ch of world.channels) {
-    await rawQuery(
-      `INSERT INTO public.channel (id, twist_instance_id, channel_id, title, default_priority_id)
-       OVERRIDING SYSTEM VALUE
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (id) DO NOTHING`,
-      [
-        ch.id,
-        world.user.id, // placeholder; FK validation happens only on parent table
-        `synthetic-${ch.id}`,
-        `Synthetic channel ${ch.id}`,
-        ch.default_priority_id,
-      ]
-    );
+    if (ch.connectionId !== null) {
+      await rawQuery(
+        `INSERT INTO public.channel (id, twist_instance_id, channel_id, title, default_priority_id)
+         OVERRIDING SYSTEM VALUE
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          ch.id,
+          ch.connectionId,
+          `synthetic-${ch.id}`,
+          `Synthetic channel ${ch.id}`,
+          ch.default_priority_id,
+        ]
+      );
+    } else {
+      await rawQuery(
+        `INSERT INTO public.channel (id, twist_instance_id, channel_id, title, default_priority_id)
+         OVERRIDING SYSTEM VALUE
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          ch.id,
+          world.user.id, // placeholder; FK validation happens only on parent table
+          `synthetic-${ch.id}`,
+          `Synthetic channel ${ch.id}`,
+          ch.default_priority_id,
+        ]
+      );
+    }
   }
 
   // Re-enable triggers so subsequent training-set and candidate inserts go
@@ -192,26 +332,54 @@ export async function loadTrainingSet(
 ): Promise<void> {
   const { rawQuery } = sandbox;
   const { world } = corpus;
+  const twists = connectionTwists(world);
 
   await rawQuery(`SET LOCAL session_replication_role = replica`);
 
-  for (const t of trainingSet.threads) {
+  const insertThreadRow = async (t: CorpusThreadBase) => {
     const emb = t.embedding_ref ? corpus.embeddings.get(t.embedding_ref) : null;
     const embLiteral = emb ? toHalfvecLiteral(emb.vector) : null;
-    await rawQuery(
-      `INSERT INTO public.thread
-         (id, created_by, title, topic, contacts, groups, embedding)
-       VALUES ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7::halfvec)`,
-      [
-        t.id,
-        t.createdByOverride ?? world.user.id,
-        t.title,
-        t.topic,
-        t.contacts,
-        t.groups,
-        embLiteral,
-      ]
-    );
+    const values = [
+      t.id,
+      // created_by precedence: explicit override (carries v1 author
+      // semantics), else the connection (twist_instance) like production
+      // connector-created threads, else the world user.
+      t.createdByOverride ?? t.connectionId ?? world.user.id,
+      t.authorContactId,
+      t.connectionId === null
+        ? null
+        : (twists.twistIdByConnection.get(t.connectionId) ?? null),
+      t.title,
+      t.topic,
+      t.contacts,
+      t.groups,
+      embLiteral,
+      t.facets === null ? null : JSON.stringify(t.facets),
+    ];
+    if (t.createdAt !== null) {
+      // Triggers are disabled here, so the explicit value sticks.
+      await rawQuery(
+        `INSERT INTO public.thread
+           (id, created_by, author_id, twist_id, title, topic, contacts,
+            groups, embedding, facets, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::halfvec,
+                 $10::jsonb, $11)`,
+        [...values, t.createdAt]
+      );
+    } else {
+      await rawQuery(
+        `INSERT INTO public.thread
+           (id, created_by, author_id, twist_id, title, topic, contacts,
+            groups, embedding, facets)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::halfvec,
+                 $10::jsonb)`,
+        values
+      );
+    }
+  };
+
+  for (const t of trainingSet.threads) {
+    await insertThreadRow(t);
     await rawQuery(
       `INSERT INTO public.thread_priority
          (thread_id, user_id, priority_id, user_moved)
@@ -221,6 +389,30 @@ export async function loadTrainingSet(
          user_moved = TRUE`,
       [t.id, world.user.id, t.filedToPriority]
     );
+  }
+
+  // Negative-evidence threads exist only as thread rows (no thread_priority
+  // filing) so they can be referenced by thread_priority_negative.
+  for (const t of trainingSet.negativeThreads) {
+    await insertThreadRow(t);
+  }
+
+  for (const n of trainingSet.negatives) {
+    if (n.createdAt !== null) {
+      await rawQuery(
+        `INSERT INTO public.thread_priority_negative
+           (user_id, thread_id, priority_id, source, created_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [world.user.id, n.threadId, n.priorityId, n.source, n.createdAt]
+      );
+    } else {
+      await rawQuery(
+        `INSERT INTO public.thread_priority_negative
+           (user_id, thread_id, priority_id, source)
+         VALUES ($1, $2, $3, $4)`,
+        [world.user.id, n.threadId, n.priorityId, n.source]
+      );
+    }
   }
 
   await rawQuery(`SET LOCAL session_replication_role = origin`);
@@ -242,24 +434,40 @@ export async function stageCandidate(
     contacts: string[];
     groups: string[];
     embedding: number[] | null;
-    author: string | null;
+    authorContactId: string | null;
+    connectionId: string | null;
+    createdByOverride: string | null;
+    facets: Record<string, string> | null;
   }
 ): Promise<void> {
+  const { world } = corpus;
+  const twists = connectionTwists(world);
   const embLiteral = caseCandidate.embedding
     ? toHalfvecLiteral(caseCandidate.embedding)
     : null;
+  // Same created_by precedence as training threads. No explicit created_at:
+  // triggers run here (production path), so the value wouldn't stick anyway.
   await sandbox.rawQuery(
     `INSERT INTO public.thread
-       (id, created_by, title, topic, contacts, groups, embedding)
-     VALUES ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7::halfvec)`,
+       (id, created_by, author_id, twist_id, title, topic, contacts, groups,
+        embedding, facets)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::halfvec,
+             $10::jsonb)`,
     [
       caseCandidate.threadId,
-      caseCandidate.author ?? corpus.world.user.id,
+      caseCandidate.createdByOverride ??
+        caseCandidate.connectionId ??
+        world.user.id,
+      caseCandidate.authorContactId,
+      caseCandidate.connectionId === null
+        ? null
+        : (twists.twistIdByConnection.get(caseCandidate.connectionId) ?? null),
       caseCandidate.title,
       caseCandidate.topic,
       caseCandidate.contacts,
       caseCandidate.groups,
       embLiteral,
+      caseCandidate.facets === null ? null : JSON.stringify(caseCandidate.facets),
     ]
   );
 }

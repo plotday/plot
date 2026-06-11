@@ -119,7 +119,10 @@ async function runOneCase(
       contacts: cs.candidate.contacts,
       groups: cs.candidate.groups,
       embedding: emb?.vector ?? null,
-      author: cs.candidate.createdByOverride,
+      authorContactId: cs.candidate.authorContactId,
+      connectionId: cs.candidate.connectionId,
+      createdByOverride: cs.candidate.createdByOverride,
+      facets: cs.candidate.facets,
     });
 
     const ctx: ClassifierContext = {
