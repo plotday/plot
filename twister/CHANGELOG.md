@@ -1,5 +1,22 @@
 # @plotday/twister
 
+## 0.58.0
+
+### Added
+
+- `plot deploy` now reads the `category` field from a connector's package.json and sends it to the API, so connectors are grouped into Messaging/Calendars sections in onboarding. ([#190](https://github.com/plotday/plot/pull/190) [`6dc43ca`](https://github.com/plotday/plot/commit/6dc43caafbf7102353c3d2fe047c93a99d6da0f5))
+- `@plotday/twister/facets` exporting `Format`, `Automation`, `Reach`, and `ThreadFacets` for connector-emitted thread facets, and `NewLink.facets` to carry them. ([#185](https://github.com/plotday/plot/pull/185) [`012df5b`](https://github.com/plotday/plot/commit/012df5bd7784a20f7783f5c93cd1915752edfb0a))
+
+### Changed
+
+- `Connector.onContactsChanged` role fields are now nullable (`role`/`from`/`to` may be `null`) so the callback can carry thread-level sharing changes for connectors without roles (e.g. group DMs), where only email connectors set To/Cc/Bcc roles. JSDoc clarified that the callback fires for `sharingModel: "thread"`/`"message"` membership changes, not channel-level sharing. ([#192](https://github.com/plotday/plot/pull/192) [`4a2ae72`](https://github.com/plotday/plot/commit/4a2ae72c21f184d7c09de34db91cc963852f2eeb))
+- document the `public` value for the `-e/--environment` flag in `plot deploy` and `plot logs` help text. ([#188](https://github.com/plotday/plot/pull/188) [`1be4110`](https://github.com/plotday/plot/commit/1be4110a1ebe8655b851308ca73080aa112d9334))
+
+### Fixed
+
+- stale documentation throughout — docs/, READMEs, CLI templates, and source JSDoc updated to the current Thread/Focus/Link APIs (createThread, integrations.saveLink, method-reference callbacks), CLI_REFERENCE corrected to match the actual commands and flags, MULTI_USER_AUTH rewritten for the per-user write-back dispatch model, and SYNC_STRATEGIES/MULTI_USER_AUTH added to the published docs site ([#189](https://github.com/plotday/plot/pull/189) [`21cb19c`](https://github.com/plotday/plot/commit/21cb19c0be6511736e0cc9a67537d5fcb181ec2b))
+- `plot create` twist scaffold now emits the current Twist API (`activate()` plus `build(Plot, { thread: { access: ThreadAccess.Create } })`) instead of the removed `Activity`/`activity()` and the no-longer-exported `Priority` type, so a freshly scaffolded twist passes `plot lint`.
+
 ## 0.57.0
 
 ### Added
