@@ -949,12 +949,13 @@ class _MatchingProgressState extends State<_MatchingProgress> {
   }
 }
 
-/// Step-1 "Find matching threads" action: fetches the threads that match the
-/// description, then opens the review step ([_ShowFocusMatches]) as a nested
-/// modal. Running as a [FormButton] command, the form button shows its spinner
-/// while the fetch is in flight, then transitions to the review modal. Because
-/// the review step is nested, its Back button / Esc returns to this step-1 form
-/// with the description intact so the user can edit and try again.
+/// Step-1 "Find matching threads" action: starts the background fetch, then
+/// immediately opens the review step ([_ShowFocusMatches]) as a nested modal in
+/// a loading state. The modal's [_MatchingProgress] widget populates the review
+/// UI when the fetch lands, so the user sees progress rather than a button
+/// spinner. Because the review step is nested, its Back button / Esc returns to
+/// this step-1 form with the description intact so the user can edit and try
+/// again.
 class _FindMatchingThreads extends Command {
   _FindMatchingThreads({
     required this.values,
