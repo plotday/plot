@@ -16,6 +16,8 @@ async function main() {
       "corpus-dir": { type: "string" },
       classifiers: { type: "string" },
       "training-sets": { type: "string" },
+      "exclude-tags": { type: "string" },
+      "include-holdout": { type: "boolean" },
       format: { type: "string" },
       "list-classifiers": { type: "boolean" },
       help: { type: "boolean", short: "h" },
@@ -47,12 +49,22 @@ async function main() {
   const trainingSets = values["training-sets"]
     ? values["training-sets"].split(",")
     : undefined;
+  // holdout-move cases are excluded from every run unless --include-holdout;
+  // --exclude-tags appends more excluded tags.
+  const extraExcludes = (values["exclude-tags"] ?? "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  const excludeTags = values["include-holdout"]
+    ? extraExcludes
+    : ["holdout-move", ...extraExcludes];
   const format = ((values.format as ReportFormat) ?? "console") as ReportFormat;
 
   const { corpus, results, summary } = await runEval({
     corpusDir,
     classifiers: classifierNames,
     trainingSets,
+    excludeTags,
   });
 
   console.log(formatReport(corpus, summary, results, format));
@@ -69,6 +81,9 @@ Options:
   --corpus-dir <path>       Absolute path to a corpus directory (overrides --corpus)
   --classifiers <list>      Comma-separated classifier names (default: ts:hybrid-llm:default)
   --training-sets <list>    Comma-separated training-set names (default: all)
+  --exclude-tags <csv>      Additional case tags to exclude (appended to the
+                            default holdout-move exclusion)
+  --include-holdout         Include cases tagged holdout-move (excluded by default)
   --format <console|json|markdown>
                             Output format (default: console)
   --list-classifiers        Print registered classifier names and exit

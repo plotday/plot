@@ -36,6 +36,14 @@ function renderConsole(
 ): string {
   const lines: string[] = [];
   lines.push(`Corpus: ${summary.corpus} (${summary.totalCases} cases)`);
+  const selfExcluded = new Set(
+    results.filter((r) => r.selfExcluded).map((r) => r.caseId)
+  ).size;
+  if (selfExcluded > 0) {
+    lines.push(
+      `Self-exclusions: ${selfExcluded} case(s) had their source thread archived out of the training set (anti-leakage guard).`
+    );
+  }
   lines.push("");
   lines.push(
     "Classifier           Training         Gold     Expected  Regress  LLM/case  Hit%   AvgMs"

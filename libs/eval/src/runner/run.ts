@@ -1,8 +1,12 @@
 import { getClassifier } from "../classifiers/registry";
-import type { ClassifierContext } from "@plotday/classifier";
+import type {
+  ClassificationResult,
+  ClassifierContext,
+} from "@plotday/classifier";
 import type { Corpus, CorpusCase, CorpusTrainingSet } from "../corpus/schema";
 import { deterministicUuid } from "../corpus/hash";
 import { loadCorpus } from "../corpus/load";
+import { rankOfGold } from "../scoring/rank";
 import {
   loadTrainingSet,
   loadWorld,
@@ -28,6 +32,21 @@ export type RunResult = {
   expectedMatch: boolean | null;
   expectedStage: string | null;
   expectedStageMatch: boolean | null;
+  /**
+   * True when the case's source thread was found in the active training set
+   * and archived for this case (anti-leakage guard, spec A3a).
+   */
+  selfExcluded: boolean;
+  /** Active training thread count minus self-exclusions for this case. */
+  trainingSizeAtCase: number;
+  /** From ClassificationResult: an LLM stage was skipped for lack of budget. */
+  budgetExhausted: boolean;
+  /** Aggregate LLM token usage; null for classifiers without an LLM stage. */
+  llmUsage: ClassificationResult["llmUsage"] | null;
+  /** 1-based rank of the gold priority in the scoring ranking, when ranked. */
+  rankOfGold: number | null;
+  /** topScore − goldScore (0 when rank 1); null when unranked. */
+  goldMargin: number | null;
 };
 
 export type RunSummary = {
@@ -53,6 +72,13 @@ export type RunOptions = {
   caseFilter?: (caseId: string) => boolean;
   /** Optional filter: only run named training sets. Default = all. */
   trainingSets?: string[];
+  /**
+   * Cases carrying any of these tags are skipped. Defaults to
+   * ["holdout-move"] — holdout cases must never leak into routine runs.
+   * Pass [] to include everything (CLI: --include-holdout), or extend the
+   * list to exclude more slices (CLI: --exclude-tags).
+   */
+  excludeTags?: string[];
 };
 
 export async function runEval(opts: RunOptions): Promise<{
@@ -61,9 +87,22 @@ export async function runEval(opts: RunOptions): Promise<{
   summary: RunSummary;
 }> {
   const corpus = await loadCorpus(opts.corpusDir);
+  const excludeTags = new Set(opts.excludeTags ?? ["holdout-move"]);
+  const afterTagFilter = corpus.cases.filter(
+    (c) => !c.tags.some((t) => excludeTags.has(t))
+  );
+  const excludedByTag = corpus.cases.length - afterTagFilter.length;
+  if (excludedByTag > 0) {
+    // Visible in console output but off stdout, so --format json stays clean.
+    console.error(
+      `[eval] ${excludedByTag} case(s) excluded by tags (${[...excludeTags]
+        .sort()
+        .join(", ")}); pass --include-holdout (or excludeTags: []) to run them.`
+    );
+  }
   const cases = opts.caseFilter
-    ? corpus.cases.filter((c) => opts.caseFilter!(c.id))
-    : corpus.cases;
+    ? afterTagFilter.filter((c) => opts.caseFilter!(c.id))
+    : afterTagFilter;
   const selectedTrainingSets = opts.trainingSets
     ? corpus.trainingSets.filter((ts) => opts.trainingSets!.includes(ts.name))
     : corpus.trainingSets;
@@ -110,8 +149,35 @@ async function runOneCase(
     ? corpus.embeddings.get(cs.candidate.embedding_ref)
     : null;
   const threadId = caseIdToUuid(cs.id);
+  const selfExclusions = selfExclusionTargets(cs, trainingSet);
+
+  // Candidate `author` (thread.created_by as seen by the classifier):
+  //   v1: pass createdByOverride EXACTLY as recorded — null stays null. The
+  //       author signal historically saw null when a v1 case had no author,
+  //       even though the staged DB row defaulted created_by to user.id, and
+  //       the byte-exactness regression gates pin that behavior.
+  //   v2: mirror prod, where author is hydrated from the DB row and is never
+  //       null — connection (twist_instance) when present, else the user.
+  const author =
+    corpus.world.schemaVersion >= 2
+      ? (cs.candidate.createdByOverride ??
+        cs.candidate.connectionId ??
+        corpus.world.user.id)
+      : cs.candidate.createdByOverride;
 
   const result = await sandbox.withSavepoint(`case_${sanitize(cs.id)}`, async () => {
+    // Self-exclusion guard (spec A3a, always on): a case whose source thread
+    // is also a training thread would score sem≈1.0 against its own copy — a
+    // leaked answer. Archive the match inside the case savepoint (the
+    // neighbor query filters archived_at) so it is invisible for this case
+    // only and remains training signal for every other case.
+    for (const trainingThreadId of selfExclusions) {
+      await sandbox.rawQuery(
+        `UPDATE public.thread SET archived_at = now() WHERE id = $1`,
+        [trainingThreadId]
+      );
+    }
+
     await stageCandidate(sandbox, corpus, {
       threadId,
       title: cs.candidate.title,
@@ -140,20 +206,18 @@ async function runOneCase(
       contacts: cs.candidate.contacts,
       groups: cs.candidate.groups,
       embedding: emb?.vector ?? null,
-      author: cs.candidate.createdByOverride,
-      // The corpus model now carries facets / authorContactId / connectionId
-      // (schema v2), but wiring them into classify() + stageCandidate is the
-      // A4 runner task — keep them inert here so v1-era behavior is
-      // byte-identical until that lands.
-      facets: null,
-      authorContactId: null,
-      connectionId: null,
+      author,
+      // All null for v1 corpora by loader normalization (v1 unchanged).
+      facets: cs.candidate.facets,
+      authorContactId: cs.candidate.authorContactId,
+      connectionId: cs.candidate.connectionId,
     });
   });
 
   const goldId = cs.labels.gold;
   const expectedId = cs.labels.expected;
   const expectedStage = cs.labels.expectedStage;
+  const ranked = rankOfGold(result.scores ?? {}, goldId);
 
   return {
     corpus: corpus.name,
@@ -173,7 +237,39 @@ async function runOneCase(
     expectedStage,
     expectedStageMatch:
       expectedStage === null ? null : expectedStage === result.stage,
+    selfExcluded: selfExclusions.length > 0,
+    trainingSizeAtCase: trainingSet.threads.length - selfExclusions.length,
+    budgetExhausted: result.budgetExhausted,
+    llmUsage: result.llmUsage ?? null,
+    rankOfGold: ranked?.rank ?? null,
+    goldMargin: ranked?.margin ?? null,
   };
+}
+
+/** Case-id fallback for cases without source_thread_id: `NNN-<8 hex chars>`. */
+const CASE_ID_PREFIX_RE = /^\d+-([0-9a-f]{8})$/;
+
+/**
+ * Training thread ids to archive for this case (spec A3a). source_thread_id
+ * matches by full equality; pre-v2 cases fall back to the 8-hex prefix
+ * embedded in the case id, matched via startsWith. Two training threads
+ * sharing the same 8-hex prefix is theoretically possible — archive all
+ * matches (the case still counts as one self-exclusion).
+ */
+function selfExclusionTargets(
+  cs: CorpusCase,
+  trainingSet: CorpusTrainingSet
+): string[] {
+  if (cs.sourceThreadId !== null) {
+    const src = cs.sourceThreadId;
+    return trainingSet.threads.filter((t) => t.id === src).map((t) => t.id);
+  }
+  const m = CASE_ID_PREFIX_RE.exec(cs.id);
+  if (!m) return [];
+  const prefix = m[1]!;
+  return trainingSet.threads
+    .filter((t) => t.id.startsWith(prefix))
+    .map((t) => t.id);
 }
 
 function summarize(
