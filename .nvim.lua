@@ -12,6 +12,15 @@ require("flutter-tools").setup_project({
 		device = "iphone",
 	},
 	{
+		-- iPad Pro 13-inch (M4) — App Store screenshot size (2064x2752).
+		-- Boot it first with `pnpm sim:ipad` (apps/plot). Keyed by UDID
+		-- because two sims share the "iPad Pro 13-inch (M4)" name.
+		name = "iPad",
+		target = "lib/main.dart",
+		cwd = "apps/plot",
+		device = "9EC93BEB-903E-4B86-934C-2AFB4CFA4C26",
+	},
+	{
 		name = "Android",
 		target = "lib/main.dart",
 		cwd = "apps/plot",
