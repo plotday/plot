@@ -100,7 +100,12 @@ BEGIN
                      r.user_id, r.thread_id, r.new_priority_id
                  ) IS DISTINCT FROM tp.applied_default_channel_id
           )
-        RETURNING 1
+        RETURNING tp.thread_id, tp.user_id, tp.priority_id
+    ),
+    logged AS (
+        INSERT INTO public.classification_decision (thread_id, user_id, priority_id, stage, classifier)
+        SELECT u.thread_id, u.user_id, u.priority_id, 'sql:applied', 'sql:classify_thread_for_user'
+        FROM updated u
     )
     SELECT COUNT(*) INTO v_updated FROM updated;
 

@@ -16,14 +16,22 @@ BEGIN
         SELECT t.id AS thread_id, public.classify_thread_for_user(p_user_id, t.id) AS pid
         FROM public.thread t
         WHERE t.topic_id = p_topic_id AND t.archived_at IS NULL
+    ),
+    filed AS (
+        INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
+        SELECT c.thread_id, p_user_id, c.pid,
+               CASE WHEN c.pid IS NOT NULL THEN NULL ELSE now() END
+        FROM candidates c
+        ON CONFLICT ON CONSTRAINT thread_priority_pkey DO UPDATE
+        SET revoked_at = NULL
+        WHERE thread_priority.revoked_at IS NOT NULL
+        RETURNING thread_priority.thread_id, thread_priority.priority_id,
+                  (xmax = 0) AS inserted
     )
-    INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
-    SELECT c.thread_id, p_user_id, c.pid,
-           CASE WHEN c.pid IS NOT NULL THEN NULL ELSE now() END
-    FROM candidates c
-    ON CONFLICT ON CONSTRAINT thread_priority_pkey DO UPDATE
-    SET revoked_at = NULL
-    WHERE thread_priority.revoked_at IS NOT NULL;
+    INSERT INTO classification_decision (thread_id, user_id, priority_id, stage, classifier)
+    SELECT f.thread_id, p_user_id, f.priority_id, 'sql:applied', 'sql:classify_thread_for_user'
+    FROM filed f
+    WHERE f.inserted AND f.priority_id IS NOT NULL;
 
     INSERT INTO thread_state (user_id, thread_id)
     SELECT p_user_id, t.id

@@ -222,6 +222,51 @@ export type Database = {
           },
         ]
       }
+      classification_decision: {
+        Row: {
+          budget_exhausted: boolean
+          cache_hits: number
+          classifier: string
+          created_at: string
+          duration_ms: number | null
+          id: number
+          llm_calls: number
+          priority_id: string | null
+          scores: Json
+          stage: string
+          thread_id: string
+          user_id: string
+        }
+        Insert: {
+          budget_exhausted?: boolean
+          cache_hits?: number
+          classifier: string
+          created_at?: string
+          duration_ms?: number | null
+          id?: never
+          llm_calls?: number
+          priority_id?: string | null
+          scores?: Json
+          stage: string
+          thread_id: string
+          user_id: string
+        }
+        Update: {
+          budget_exhausted?: boolean
+          cache_hits?: number
+          classifier?: string
+          created_at?: string
+          duration_ms?: number | null
+          id?: never
+          llm_calls?: number
+          priority_id?: string | null
+          scores?: Json
+          stage?: string
+          thread_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       contact: {
         Row: {
           archived_at: string | null

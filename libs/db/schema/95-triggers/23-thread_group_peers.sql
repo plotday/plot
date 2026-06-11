@@ -109,19 +109,30 @@ BEGIN
         candidates AS (
             SELECT a.thread_id, public.classify_thread_for_user(v_peer_user_id, a.thread_id) AS pid
             FROM affected a
+        ),
+        filed AS (
+            INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
+            SELECT c.thread_id, v_peer_user_id, c.pid,
+                   CASE WHEN c.pid IS NOT NULL THEN NULL ELSE now() END
+            FROM candidates c
+            -- Re-join case: if a row already exists with revoked_at set
+            -- (the user previously lost access), un-revoke it. Prior priority
+            -- filing is preserved — we do not overwrite priority_id /
+            -- classify_at. Rows without revoked_at are left alone (the user
+            -- already had active access via another path).
+            ON CONFLICT ON CONSTRAINT thread_priority_pkey DO UPDATE
+            SET revoked_at = NULL
+            WHERE thread_priority.revoked_at IS NOT NULL
+            RETURNING thread_priority.thread_id, thread_priority.priority_id,
+                      (xmax = 0) AS inserted
         )
-        INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
-        SELECT c.thread_id, v_peer_user_id, c.pid,
-               CASE WHEN c.pid IS NOT NULL THEN NULL ELSE now() END
-        FROM candidates c
-        -- Re-join case: if a row already exists with revoked_at set
-        -- (the user previously lost access), un-revoke it. Prior priority
-        -- filing is preserved — we do not overwrite priority_id /
-        -- classify_at. Rows without revoked_at are left alone (the user
-        -- already had active access via another path).
-        ON CONFLICT ON CONSTRAINT thread_priority_pkey DO UPDATE
-        SET revoked_at = NULL
-        WHERE thread_priority.revoked_at IS NOT NULL;
+        -- Decision log: only freshly-inserted, resolved filings are applied
+        -- decisions. Un-revokes preserve the prior filing; pending rows
+        -- (pid NULL) are decided later by the classify worker, which logs.
+        INSERT INTO classification_decision (thread_id, user_id, priority_id, stage, classifier)
+        SELECT f.thread_id, v_peer_user_id, f.priority_id, 'sql:applied', 'sql:classify_thread_for_user'
+        FROM filed f
+        WHERE f.inserted AND f.priority_id IS NOT NULL;
 
         INSERT INTO thread_state (user_id, thread_id)
         SELECT v_peer_user_id, a.thread_id
