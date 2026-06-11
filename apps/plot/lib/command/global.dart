@@ -1,12 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
+import 'package:plot/state/subscription_service.dart';
 import 'package:plot/state/user.dart';
-import 'package:plot/store/store.dart';
 import 'package:plot/util/developer_mode.dart';
 import 'command.dart';
 
@@ -20,66 +19,14 @@ class GlobalShortcuts extends StatefulWidget {
 }
 
 class _GlobalShortcutsState extends State<GlobalShortcuts> {
-  SubscriptionInfo? _subscription;
-  List<Map<String, dynamic>> _adminOrgs = const [];
-  bool _hasTeams = false;
-  bool _fetchedSubscription = false;
-  bool _registeredSyncCallback = false;
-
-  void _fetchSubscription() async {
-    if (_fetchedSubscription) return;
-    _fetchedSubscription = true;
-    _registerSyncCallback();
-    try {
-      final results = await Future.wait([
-        UpgradeApi.getSubscription(),
-        api.get<List<dynamic>>('/team'),
-      ]);
-      if (mounted) {
-        setState(() {
-          _subscription = results[0] as SubscriptionInfo;
-          final orgs = (results[1] as List<dynamic>)
-              .cast<Map<String, dynamic>>();
-          _hasTeams = orgs.isNotEmpty;
-          _adminOrgs = orgs.where((o) => o['role'] == 'admin').toList();
-        });
-      }
-    } catch (_) {
-      // Non-critical — commands still work without subscription info
-    }
-  }
-
-  void _registerSyncCallback() {
-    if (_registeredSyncCallback) return;
-    _registeredSyncCallback = true;
-    Store.get.onSubscriptionChanged = _onSubscriptionChanged;
-  }
-
-  void _onSubscriptionChanged() async {
-    try {
-      final results = await Future.wait([
-        UpgradeApi.getSubscription(),
-        api.get<List<dynamic>>('/team'),
-      ]);
-      if (mounted) {
-        setState(() {
-          _subscription = results[0] as SubscriptionInfo;
-          final orgs = (results[1] as List<dynamic>)
-              .cast<Map<String, dynamic>>();
-          _hasTeams = orgs.isNotEmpty;
-          _adminOrgs = orgs.where((o) => o['role'] == 'admin').toList();
-        });
-      }
-    } catch (_) {
-      // Non-critical
-    }
-  }
-
   List<StaticCommandGroup> _getCommands({
     required bool signedIn,
     PrioritiesState? prioritiesState,
     bool showAllPriorities = false,
     String? email,
+    SubscriptionInfo? subscription,
+    List<Map<String, dynamic>> adminOrgs = const [],
+    bool hasTeams = false,
   }) {
     // When signed out, only show settings commands (and debug commands in debug mode)
     if (!signedIn) {
@@ -103,11 +50,11 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
       ),
       ...settingsCommandsFromState(
         prioritiesState,
-        hasTeams: _hasTeams,
+        hasTeams: hasTeams,
         showAllPriorities: showAllPriorities,
         email: email,
-        adminOrgs: _adminOrgs,
-        subscription: _subscription,
+        adminOrgs: adminOrgs,
+        subscription: subscription,
       ),
     ];
 
@@ -127,10 +74,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
         final signedIn = userState is UserReady;
 
         if (!signedIn) {
-          _fetchedSubscription = false;
-          _registeredSyncCallback = false;
-          _subscription = null;
-          _adminOrgs = const [];
+          SubscriptionService.instance.reset();
           return CommandScope(
             commandsBuilder: () => _getCommands(signedIn: false),
             listenable: DeveloperMode.notifier,
@@ -138,21 +82,31 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
           );
         }
 
-        _fetchSubscription();
+        // Loads the initial snapshot and wires broadcast/reconnect/refocus
+        // refresh + the plan-up toast. Idempotent.
+        SubscriptionService.instance.start();
 
         return BlocBuilder<PrioritiesBloc, PrioritiesState>(
           builder: (context, prioritiesState) {
             return BlocBuilder<LocalPreferencesBloc, LocalPreferencesState>(
               builder: (context, localPrefsState) {
-                return CommandScope(
-                  commandsBuilder: () => _getCommands(
-                    signedIn: true,
-                    prioritiesState: prioritiesState,
-                    showAllPriorities: localPrefsState.showAllPriorities,
-                    email: userState.user.primaryEmail,
-                  ),
-                  listenable: DeveloperMode.notifier,
-                  child: widget.child,
+                return ValueListenableBuilder<SubscriptionSnapshot>(
+                  valueListenable: SubscriptionService.instance.notifier,
+                  builder: (context, snapshot, _) {
+                    return CommandScope(
+                      commandsBuilder: () => _getCommands(
+                        signedIn: true,
+                        prioritiesState: prioritiesState,
+                        showAllPriorities: localPrefsState.showAllPriorities,
+                        email: userState.user.primaryEmail,
+                        subscription: snapshot.subscription,
+                        adminOrgs: snapshot.adminOrgs,
+                        hasTeams: snapshot.hasTeams,
+                      ),
+                      listenable: DeveloperMode.notifier,
+                      child: widget.child,
+                    );
+                  },
                 );
               },
             );
