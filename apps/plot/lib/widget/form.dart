@@ -827,6 +827,7 @@ class FormToggle extends FormItem {
     required super.key,
     super.label,
     this.details,
+    this.content,
     bool initialValue = true,
     this.onChanged,
   }) : _value = initialValue,
@@ -834,6 +835,10 @@ class FormToggle extends FormItem {
 
   /// Optional description text shown below the toggle.
   final String? details;
+
+  /// Optional rich widget shown in place of the [label] text (e.g. a thread
+  /// summary). When set, [label] is still used for the form field's semantics.
+  final Widget? content;
 
   /// Callback when value changes.
   final VoidCallback? onChanged;
@@ -891,6 +896,7 @@ class FormToggle extends FormItem {
     return _FormToggleWidget(
       label: label ?? key,
       details: details,
+      content: content,
       value: _value,
       highlighted: highlightedSubIndex >= 0,
       enabled: enabled,
@@ -904,6 +910,7 @@ class _FormToggleWidget extends StatefulWidget {
   const _FormToggleWidget({
     required this.label,
     this.details,
+    this.content,
     required this.value,
     required this.highlighted,
     required this.enabled,
@@ -913,6 +920,7 @@ class _FormToggleWidget extends StatefulWidget {
 
   final String label;
   final String? details;
+  final Widget? content;
   final bool value;
   final bool highlighted;
   final bool enabled;
@@ -981,15 +989,17 @@ class _FormToggleWidgetState extends State<_FormToggleWidget> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        widget.label,
-                        style: context.theme.typography.md.copyWith(
-                          color: widget.enabled
-                              ? context.theme.colors.foreground
-                              : context.theme.plotColors.muted,
-                        ),
-                      ),
+                      child: widget.content ??
+                          Text(
+                            widget.label,
+                            style: context.theme.typography.md.copyWith(
+                              color: widget.enabled
+                                  ? context.theme.colors.foreground
+                                  : context.theme.plotColors.muted,
+                            ),
+                          ),
                     ),
+                    SizedBox(width: context.theme.spacing.md),
                     SizedBox(
                       width: 32,
                       height: 20,

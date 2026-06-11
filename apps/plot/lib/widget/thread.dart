@@ -1400,6 +1400,181 @@ class _ThreadLogo extends StatelessWidget {
   }
 }
 
+/// Read-only rendering of a thread's header, source logo, title and inline
+/// preview — the same visual language as [ThreadWidget] minus the feed chrome
+/// (leading todo icon, swipe, hover commands, navigation). Used where a thread
+/// must be shown for recognition only, e.g. the focus-creation match picker.
+///
+/// Reuses [ThreadWidget]'s building blocks: the [_ThreadLogo] source icon,
+/// [Thread.displayTitle]/[Thread.displayPreview], the channel breadcrumb and
+/// the participant-name header (with the author promoted to the front).
+class ThreadSummary extends StatefulWidget {
+  const ThreadSummary({required this.thread, super.key});
+
+  final Thread thread;
+
+  @override
+  State<ThreadSummary> createState() => _ThreadSummaryState();
+}
+
+class _ThreadSummaryState extends State<ThreadSummary> {
+  StreamSubscription<List<Link>>? _linksSub;
+  List<Link> _links = const [];
+  Map<Uuid, Actor> _actors = const {};
+
+  Thread get thread => widget.thread;
+
+  @override
+  void initState() {
+    super.initState();
+    _links = Link.cachedForThread(thread.id) ?? const [];
+    _linksSub = Link.watchForThread(thread.id).listen((links) {
+      if (!mounted) return;
+      setState(() => _links = links);
+    });
+    _loadActors();
+  }
+
+  @override
+  void dispose() {
+    _linksSub?.cancel();
+    super.dispose();
+  }
+
+  void _loadActors() {
+    final ids = _otherContactIds();
+    () async {
+      final resolved = <Uuid, Actor>{};
+      for (final id in ids) {
+        try {
+          resolved[id] = await Actor.getOne(ActorId.fromUuid(id));
+        } catch (_) {
+          // Skip contacts whose actors can't be resolved.
+        }
+      }
+      if (!mounted) return;
+      setState(() => _actors = resolved);
+    }();
+  }
+
+  bool get _isChannelThread =>
+      Thread.resolveSharingModel(_links) == SharingModel.channel;
+
+  /// Channel breadcrumb (e.g. "Acme Co › #general"), or null when the primary
+  /// link isn't channel-sharing. Mirrors [ThreadWidget]'s `_channelLabel`.
+  String? _channelLabel() {
+    if (!_isChannelThread) return null;
+    final primary = Thread.primaryLink(_links);
+    final ptId = primary?.createdBy;
+    if (ptId == null) return null;
+    final instance = TwistInstance.fromCache(ptId);
+    final workspace = (instance?.accountLabel?.isNotEmpty ?? false)
+        ? instance!.accountLabel
+        : instance?.name;
+    final channelId = primary!.channelId;
+    final channel = channelId != null
+        ? Channel.findByChannel(ptId, channelId)?.title
+        : null;
+    return formatChannelBreadcrumb(workspace: workspace, channel: channel);
+  }
+
+  /// Other contacts in thread order (author promoted to front), excluding the
+  /// current user, dropped contacts, and connection-source twists. Mirrors
+  /// [ThreadWidget]'s `_otherContactIds`.
+  List<Uuid> _otherContactIds() {
+    final self = Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+    final dropped = thread.droppedContacts.toSet();
+    final out = <Uuid>[];
+    final seen = <Uuid>{};
+    for (final id in thread.contacts) {
+      if (self.contains(id)) continue;
+      if (dropped.contains(id)) continue;
+      if (TwistInstance.fromCache(id)?.isSource ?? false) continue;
+      if (seen.add(id)) out.add(id);
+    }
+    final authorId = thread.authorId?.toUuid();
+    if (authorId != null && !self.contains(authorId)) {
+      final index = out.indexOf(authorId);
+      if (index > 0) {
+        out.removeAt(index);
+        out.insert(0, authorId);
+      }
+    }
+    return out;
+  }
+
+  /// Comma-joined participant names (author first), or null. Mirrors
+  /// [ThreadWidget]'s `_contactsLabel`.
+  String? _contactsLabel() {
+    if (_isChannelThread) return null;
+    final names = <String>[];
+    for (final id in _otherContactIds()) {
+      final actor = _actors[id] ?? Actor.fromCache(ActorId.fromUuid(id));
+      if (actor != null) names.add(actor.nameOrEmail);
+    }
+    if (names.isEmpty) return null;
+    return names.join(', ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final header = _channelLabel() ?? _contactsLabel();
+    final preview = thread.displayPreview;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (header != null)
+          Padding(
+            padding: EdgeInsets.only(bottom: context.theme.spacing.xs),
+            child: Text(
+              header,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.xs.fontSize,
+                height: 1,
+              ),
+            ),
+          ),
+        Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: _ThreadLogo(activity: thread),
+            ),
+            SizedBox(width: context.theme.spacing.md),
+            Expanded(
+              child: Text.rich(
+                overflow: TextOverflow.ellipsis,
+                style: context.theme.typography.md.copyWith(
+                  color: context.colour.foreground,
+                ),
+                TextSpan(
+                  children: [
+                    TextSpan(text: thread.displayTitle),
+                    if (preview != null &&
+                        preview.isNotEmpty &&
+                        preview != thread.displayTitle)
+                      TextSpan(
+                        text: '  $preview',
+                        style: TextStyle(color: context.colour.muted),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _ThreadLeadingCommand extends CommandWrapper {
   final IconData outlineIcon;
   final bool showEmpty;

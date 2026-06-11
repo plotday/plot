@@ -811,15 +811,37 @@ class _FindMatchingThreads extends Command {
         body: {'description': description, 'title': title},
       );
       final raw = (resp['matches'] as List?) ?? const [];
-      matches = [
+      final parsed = [
         for (final m in raw)
           if (m is Map && m['thread_id'] is String)
-            _FocusMatch(
+            (
               threadId: m['thread_id'] as String,
               title: (m['title'] as String?)?.trim().isNotEmpty == true
                   ? m['title'] as String
                   : 'Untitled thread',
+              // Default to a strong score when absent so older responses keep
+              // their pre-checked behaviour.
+              score: (m['score'] as num?)?.toDouble() ?? 1.0,
             ),
+      ];
+      // Hydrate each match from the local store so the review rows render the
+      // full thread (logo, header, title, preview). Best-effort: a thread that
+      // can't be loaded falls back to its title in the row.
+      final threads = await Future.wait([
+        for (final p in parsed)
+          Thread.getOne(Uuid.fromString(p.threadId)).then<Thread?>(
+            (t) => t,
+            onError: (_) => null,
+          ),
+      ]);
+      matches = [
+        for (var i = 0; i < parsed.length; i++)
+          _FocusMatch(
+            threadId: parsed[i].threadId,
+            title: parsed[i].title,
+            score: parsed[i].score,
+            thread: threads[i],
+          ),
       ];
     } catch (e, stackTrace) {
       Tracker.captureException(e, stackTrace);
@@ -836,11 +858,32 @@ class _FindMatchingThreads extends Command {
   }
 }
 
+/// Matches at or above this confidence (the server's 0–1 relevance score) are
+/// pre-checked in the review step; weaker ones are left for the user to opt in.
+/// The server already drops anything below 0.5, so this splits the "almost
+/// certainly belongs" matches from the "might belong" ones.
+const double _strongMatchScore = 0.75;
+
 /// One matched thread surfaced in the focus-creation review step.
 class _FocusMatch {
-  const _FocusMatch({required this.threadId, required this.title});
+  const _FocusMatch({
+    required this.threadId,
+    required this.title,
+    required this.score,
+    this.thread,
+  });
   final String threadId;
   final String title;
+
+  /// Server relevance score (0–1). Drives whether the row is pre-checked.
+  final double score;
+
+  /// The hydrated thread from the local store, when it could be loaded. Drives
+  /// the rich [ThreadSummary] row; falls back to [title] when null.
+  final Thread? thread;
+
+  /// Whether this match is confident enough to be checked by default.
+  bool get isStrong => score >= _strongMatchScore;
 }
 
 /// Step 2 of [NewFocus]: review the threads that match the description. Pushed
@@ -887,15 +930,20 @@ Future<FormData> _buildFocusMatchesForm(
           else ...[
             FormInfo(
               key: 'matches_hint',
-              text:
-                  'These threads look like they belong in this focus. Uncheck '
-                  'any that don’t.',
+              text: matches.any((m) => m.isStrong)
+                  ? 'Plot checked the threads it’s confident belong here. Check '
+                        'any others that fit, and uncheck any that don’t.'
+                  : 'These threads might belong in this focus. Check the ones '
+                        'that fit.',
             ),
             for (final m in matches)
               FormToggle(
                 key: 'match_${m.threadId}',
                 label: m.title,
-                initialValue: true,
+                content: m.thread != null
+                    ? ThreadSummary(thread: m.thread!)
+                    : null,
+                initialValue: m.isStrong,
               ),
           ],
           FormButton(
@@ -946,11 +994,17 @@ class _CreateFocusWithThreads extends Command {
     }
 
     final selected = <String>[];
-    final deselected = <String>[];
+    // Only strong matches the user actively unchecked are a confident negative.
+    // Weak matches were unchecked by default (opt-in), so leaving them off
+    // carries no signal — recording them would teach the classifier to reject
+    // borderline-but-fine threads.
+    final rejected = <String>[];
     for (final m in matches) {
-      (selections['match_${m.threadId}'] == true ? selected : deselected).add(
-        m.threadId,
-      );
+      if (selections['match_${m.threadId}'] == true) {
+        selected.add(m.threadId);
+      } else if (m.isStrong) {
+        rejected.add(m.threadId);
+      }
     }
 
     // File the kept threads into the focus (mirrors a user move: a local
@@ -968,14 +1022,15 @@ class _CreateFocusWithThreads extends Command {
       }
     }
 
-    // Record the deselected matches as negative examples for future matching.
-    if (deselected.isNotEmpty) {
+    // Record the rejected strong matches as negative examples for future
+    // matching.
+    if (rejected.isNotEmpty) {
       try {
         await api.post<dynamic>(
           '/sync/priorities/negatives',
           body: {
             'negatives': [
-              for (final id in deselected)
+              for (final id in rejected)
                 {
                   'thread_id': id,
                   'priority_id': focus.id.toString(),
