@@ -23,6 +23,9 @@ const cand = {
   groups: ["g2-id", "g1-id"],
   embedding: [0.123456, 0.234567, 0.345678],
   author: null,
+  facets: null,
+  authorContactId: null,
+  connectionId: null,
 };
 
 describe("canonicalInput", () => {
