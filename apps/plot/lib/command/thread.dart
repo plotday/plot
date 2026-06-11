@@ -1251,12 +1251,12 @@ class ScheduleThread extends _UpdateThreadCommand {
     super.onUpdate,
     super.priorityBloc,
   }) : super(
-         title: 'Snooze',
+         title: 'Do later',
          eventObject: EventObject.activity,
          eventAction: thread.on != null
              ? EventAction.rescheduled
              : EventAction.scheduled,
-         icon: PlotIcon.snooze,
+         icon: PlotIcon.doLater,
        );
 
   final Date when;
@@ -1381,8 +1381,8 @@ class PickScheduleThread extends Command {
     // ignore: prefer_initializing_formals
     : _onUpdate = onUpdate,
       super(
-        title: 'Snooze',
-        icon: PlotIcon.snooze,
+        title: 'Do later',
+        icon: PlotIcon.doLater,
         eventObject: EventObject.modal,
         eventAction: EventAction.opened,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD, shift: true),
@@ -1406,11 +1406,21 @@ class PickScheduleThread extends Command {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 4),
               child: Text(
-                'Snooze',
+                'Do later',
                 style: context.theme.typography.xl2.copyWith(
                   fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Schedule the day you plan to act on this next.',
+                style: TextStyle(
+                  color: context.theme.plotColors.veryMuted,
+                  fontSize: context.theme.typography.sm.fontSize,
                 ),
               ),
             ),
@@ -1451,51 +1461,23 @@ class PickScheduleThread extends Command {
               },
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FButton(
-                    variant: FButtonVariant.secondary,
-                    onPress: () {
-                      unawaited(
-                        ScheduleThread(
-                          _thread,
-                          when: Thread.todoNowDate,
-                          onUpdate: _onUpdate,
-                          priorityBloc: bloc,
-                        ).run(context),
-                      );
-                      Modal.pop(
-                        context,
-                        Value<CommandReturn>(const CommandDone()),
-                      );
-                    },
-                    child: const Text('Today'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FButton(
-                    variant: FButtonVariant.secondary,
-                    onPress: () async {
-                      final actionReturn = await FinishThread(
-                        _thread,
-                        onUpdate: _onUpdate,
-                      ).run(context);
-                      if (!context.mounted) return;
-                      Modal.pop(context, Value(actionReturn));
-                    },
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      spacing: 6,
-                      children: [
-                        Icon(FontAwesomeIcons.circleCheck, size: 14),
-                        const Text('Done'),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+            FButton(
+              variant: FButtonVariant.secondary,
+              onPress: () {
+                unawaited(
+                  ScheduleThread(
+                    _thread,
+                    when: Thread.todoNowDate,
+                    onUpdate: _onUpdate,
+                    priorityBloc: bloc,
+                  ).run(context),
+                );
+                Modal.pop(
+                  context,
+                  Value<CommandReturn>(const CommandDone()),
+                );
+              },
+              child: const Text('Today'),
             ),
           ],
         ),
@@ -1511,8 +1493,8 @@ class PickScheduleThread extends Command {
 class RescheduleAllInBlock extends Command {
   RescheduleAllInBlock(this.threads, {required this.sectionLabel})
     : super(
-        title: 'Snooze all',
-        icon: PlotIcon.snooze,
+        title: 'Do all later',
+        icon: PlotIcon.doLater,
         eventObject: EventObject.modal,
         eventAction: EventAction.opened,
       );
@@ -1539,7 +1521,7 @@ class RescheduleAllInBlock extends Command {
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
-                'Snooze all',
+                'Do all later',
                 style: modalContext.theme.typography.xl2.copyWith(
                   fontWeight: FontWeight.w600,
                 ),

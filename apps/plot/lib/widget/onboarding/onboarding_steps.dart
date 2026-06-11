@@ -166,7 +166,7 @@ class OnboardingSteps {
       body:
           "Updates land at the top of Active. Read them and they'll move to Done.\n"
           'Mark threads "To do" to keep them in Active until done.\n'
-          "Prioritize threads by dragging them, or snooze them for another day.",
+          "Prioritize threads by dragging them, or schedule them to do later.",
       target: PanelTarget.feed,
       overlay: ThemeColor(3),
     ),

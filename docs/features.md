@@ -12,7 +12,7 @@ Plot is a unified workspace for human collaboration, focused on supporting you i
 - **Imply identity without naming it**: the reader is a high-agency collaborator whose important work lives outside their inbox.
 - **Supporting capabilities stay supporting**: the agenda, scheduling, and to-dos enable the story; they are not the headline.
 - **Avoid administrative words** like "filed", "triage", or "inbox zero" framing. Plot is about momentum, not paperwork.
-- **Use current product terminology** (below). Older terms — "priority", "activity", "Do Now / Do Later", "connector" (in user copy) — no longer appear in the product.
+- **Use current product terminology** (below). Older terms — "priority", "activity", "connector" (in user copy) — no longer appear in the product.
 
 ### Terminology
 
@@ -28,7 +28,7 @@ Plot is a unified workspace for human collaboration, focused on supporting you i
 | **Topic** | A Plot-only shared channel that owns a stream of threads (e.g. "#eng-standup"). |
 | **Group** | A reusable, named set of contacts. |
 | **Agenda** | The chronological day view: calendar events plus scheduled threads. |
-| **To do / Done / Snooze** | The thread actions: flag it as yours to do, finish it, or push it to a later day. |
+| **To do / Done / Do later** | The thread actions: flag it as yours to do, finish it, or push it to a later day. |
 | **Team** | A shared scope on an organization: threads can belong to a team or stay Personal. |
 
 ---
@@ -150,10 +150,10 @@ Plot bounds your inbox time to deliberate windows so you can respond, then carry
 - Turn on "Schedule time to respond" for a focus and Plot places short response blocks in your agenda — inside your chosen hours, around your existing events — sized to the threads waiting for a reply.
 - Notifications can wait for the block instead of interrupting you mid-flow.
 
-### Agenda and snooze
+### Agenda and do later
 
 - The Agenda shows your day chronologically: calendar events and scheduled threads together. (It stays hidden until you connect a calendar.)
-- Snooze any thread to a later day; schedule with a date or a specific time.
+- Do later: send any thread to a later day; schedule with a date or a specific time.
 - Recurring events just work — including editing a single occurrence without touching the series.
 
 ## 5. Built for working together

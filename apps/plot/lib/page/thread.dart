@@ -872,7 +872,7 @@ class _ThreadFilterBar extends StatelessWidget {
 /// buttons — they live here, fixed at the top of the squircle so the
 /// notes scroll list underneath can fade against its top edge cleanly.
 ///
-/// Start of the row: tag toggles, Todo/Finish, Snooze.
+/// Start of the row: tag toggles, Todo/Finish, Do later.
 /// End of the row: Edit, Share, "…" menu (thread-level commands only).
 class _ThreadActionsRow extends StatelessWidget {
   const _ThreadActionsRow({required this.thread});
@@ -915,8 +915,8 @@ class _ThreadActionsRow extends StatelessWidget {
     final scheduleButton = Button.icon(
       CommandWrapper(
         PickScheduleThread(thread),
-        icon: Value(PlotIcon.snooze),
-        title: 'Snooze',
+        icon: Value(PlotIcon.doLater),
+        title: 'Do later',
       ),
       selected: isScheduled,
       selectedColor: threadColor,

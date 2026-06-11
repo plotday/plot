@@ -1132,8 +1132,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     final calendarIcon = Button.icon(
       CommandWrapper(
         PickScheduleThread(thread),
-        icon: Value(PlotIcon.snooze),
-        title: 'Snooze',
+        icon: Value(PlotIcon.doLater),
+        title: 'Do later',
       ),
       selected: isScheduled,
       selectedColor: threadColor,

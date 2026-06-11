@@ -174,7 +174,7 @@ class PlotIcon {
   static const note = FontAwesomeIcons.note;
   static const notes = FontAwesomeIcons.notes;
   static const reschedule = FontAwesomeIcons.calendarPen;
-  static const snooze = FontAwesomeIcons.alarmSnooze;
+  static const doLater = FontAwesomeIcons.alarmClock;
   static const calendarPlus = FontAwesomeIcons.calendarPlus;
   static const calendarXmark = FontAwesomeIcons.calendarXmark;
   static const calendarCheck = FontAwesomeIcons.calendarCheck;
