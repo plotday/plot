@@ -11,6 +11,26 @@ body {
   }
 }
 
+/* Rendered markdown docs (internal Updates/Features pages). Tailwind's
+   Preflight resets ul/ol to `list-style: none; margin: 0; padding: 0`, which
+   strips bullet markers and spacing from the marked-rendered HTML. Restore
+   them here. */
+.internal-doc ul {
+  list-style: disc;
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.internal-doc ol {
+  list-style: decimal;
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.internal-doc li {
+  margin: 0.25rem 0;
+}
+
 /* Scroll reveal animations */
 .reveal {
   opacity: 0;

@@ -20,7 +20,7 @@ export default function InternalUpdates({ loaderData }: Route.ComponentProps) {
   return (
     <Container mt="lg" size="md">
       <TypographyStylesProvider>
-        <div dangerouslySetInnerHTML={{ __html: loaderData.html }} />
+        <div className="internal-doc" dangerouslySetInnerHTML={{ __html: loaderData.html }} />
       </TypographyStylesProvider>
     </Container>
   );
