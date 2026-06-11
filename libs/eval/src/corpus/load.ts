@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { deterministicUuid } from "./hash";
 import {
   CasesFileDocV1Schema,
   CasesFileDocV2Schema,
@@ -272,7 +273,7 @@ function resolveAuthor(
     // the candidate still work; the value will never match a real
     // twist_instance row, which is fine — the twist-author shortcut
     // gracefully no-ops when nothing matches.
-    return slugToUuid(author);
+    return deterministicUuid(author);
   }
   const contactId = lookups.contact.get(author);
   if (!contactId) {
@@ -281,26 +282,6 @@ function resolveAuthor(
     );
   }
   return contactId;
-}
-
-function slugToUuid(slug: string): string {
-  let h1 = 0x811c9dc5;
-  let h2 = 0xdeadbeef;
-  for (let i = 0; i < slug.length; i++) {
-    h1 = Math.imul(h1 ^ slug.charCodeAt(i), 16777619) >>> 0;
-    h2 = Math.imul(h2 ^ slug.charCodeAt(i), 2654435761) >>> 0;
-  }
-  const a = h1.toString(16).padStart(8, "0");
-  const b = (h2 >>> 16).toString(16).padStart(4, "0");
-  const c = ((h1 ^ h2) >>> 16).toString(16).padStart(4, "0");
-  const d = (h2 & 0xffff).toString(16).padStart(4, "0");
-  const e = (
-    (Math.imul(h1, h2) >>> 0).toString(16) +
-    (Math.imul(h1 ^ h2, 0x9e3779b1) >>> 0).toString(16)
-  )
-    .padStart(12, "0")
-    .slice(0, 12);
-  return `${a}-${b}-4${c.slice(1)}-8${d.slice(1)}-${e}`;
 }
 
 /** Normalizes a YAML timestamp (string or JS Date) into a Date. */
@@ -408,7 +389,9 @@ function normalizeWorldV2(doc: WorldDocV2, lookups: SlugLookups): CorpusWorld {
       ),
       default_priority_id: ch.default_priority_id,
     })),
-    embeddings: doc.embeddings,
+    // Copy: mergeSiblingEmbeddings pushes into this array, and it must not
+    // mutate the zod-parsed document.
+    embeddings: [...doc.embeddings],
   };
 }
 
@@ -692,20 +675,29 @@ function normalizeTrainingSetV2(
     ...threads.map((t) => t.id),
     ...negativeThreads.map((t) => t.id),
   ]);
+  const seenNegativePairs = new Set<string>();
   const negatives = doc.negatives.map((n, i) => {
     if (!knownThreadIds.has(n.thread)) {
       throw new Error(
         `${file}#negatives[${i}]: thread ${n.thread} is not a training thread or negative_thread in this file`
       );
     }
+    const priorityId = resolveRef(
+      n.priority,
+      "priority",
+      lookups,
+      `${file}#negatives[${i}].priority`
+    );
+    const pairKey = `${n.thread}:${priorityId}`;
+    if (seenNegativePairs.has(pairKey)) {
+      throw new Error(
+        `${file}#negatives[${i}]: duplicate negative pair (thread ${n.thread}, priority ${priorityId}) — duplicates would double-weight the penalty signal`
+      );
+    }
+    seenNegativePairs.add(pairKey);
     return {
       threadId: n.thread,
-      priorityId: resolveRef(
-        n.priority,
-        "priority",
-        lookups,
-        `${file}#negatives[${i}].priority`
-      ),
+      priorityId,
       source: n.source,
       createdAt: toDate(n.created_at, `${file}#negatives[${i}].created_at`),
     };

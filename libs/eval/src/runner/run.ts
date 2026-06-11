@@ -1,6 +1,7 @@
 import { getClassifier } from "../classifiers/registry";
 import type { ClassifierContext } from "@plotday/classifier";
 import type { Corpus, CorpusCase, CorpusTrainingSet } from "../corpus/schema";
+import { deterministicUuid } from "../corpus/hash";
 import { loadCorpus } from "../corpus/load";
 import {
   loadTrainingSet,
@@ -226,21 +227,5 @@ function sanitize(name: string): string {
  * we just need it stable across re-runs for debugging.
  */
 function caseIdToUuid(caseId: string): string {
-  let h1 = 0x811c9dc5;
-  let h2 = 0xdeadbeef;
-  for (let i = 0; i < caseId.length; i++) {
-    h1 = Math.imul(h1 ^ caseId.charCodeAt(i), 16777619) >>> 0;
-    h2 = Math.imul(h2 ^ caseId.charCodeAt(i), 2654435761) >>> 0;
-  }
-  const a = h1.toString(16).padStart(8, "0");
-  const b = (h2 >>> 16).toString(16).padStart(4, "0");
-  const c = ((h1 ^ h2) >>> 16).toString(16).padStart(4, "0");
-  const d = (h2 & 0xffff).toString(16).padStart(4, "0");
-  const e = (
-    (Math.imul(h1, h2) >>> 0).toString(16) +
-    (Math.imul(h1 ^ h2, 0x9e3779b1) >>> 0).toString(16)
-  )
-    .padStart(12, "0")
-    .slice(0, 12);
-  return `${a}-${b}-4${c.slice(1)}-8${d.slice(1)}-${e}`;
+  return deterministicUuid(caseId);
 }

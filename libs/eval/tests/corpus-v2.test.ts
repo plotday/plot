@@ -239,6 +239,27 @@ describe("corpus schema v2: trainings", () => {
     );
   });
 
+  it("throws when filed_to_priority is a well-formed but undeclared priority UUID", async () => {
+    const files = v2Files();
+    files["trainings/full.yaml"] = TRAININGS_V2.replace(
+      "filed_to_priority: root",
+      `filed_to_priority: "33333333-3333-4333-8333-333333333333"`
+    );
+    const dir = await writeCorpus(files);
+    await expect(loadCorpus(dir)).rejects.toThrow(/not declared in world\.yaml/);
+  });
+
+  it("throws on duplicate (thread, priority) negative pairs", async () => {
+    const files = v2Files();
+    files["trainings/full.yaml"] =
+      TRAININGS_V2 +
+      `  - { thread: "${NEG1}", priority: eng, source: deselected }\n`;
+    const dir = await writeCorpus(files);
+    await expect(loadCorpus(dir)).rejects.toThrow(
+      new RegExp(`duplicate negative pair.*${NEG1}.*${P_ENG}`, "s")
+    );
+  });
+
   it("throws on invalid timestamp strings with context", async () => {
     const files = v2Files();
     files["trainings/full.yaml"] = TRAININGS_V2.replace(
