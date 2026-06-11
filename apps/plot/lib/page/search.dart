@@ -16,6 +16,7 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/router.dart';
 import 'package:plot/widget/activity_feed_thread_row.dart';
+import 'package:plot/widget/priorities_shell.dart' show BottomNavInset;
 import 'package:plot/widget/search_footer.dart';
 
 /// Global Search tab (single-panel). Hosts its own [PriorityBloc] scoped to
@@ -164,15 +165,25 @@ class _SearchViewState extends State<_SearchView> {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _SearchField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-            ),
-            Expanded(child: _buildResults(context, state)),
-          ],
+        // Inset below the status bar (top) like every other single-panel tab
+        // (Focus/Agenda/More). The bottom nav is overlaid as a separate layer,
+        // so [bottom] is false here and the results list adds [BottomNavInset]
+        // padding itself so its last row clears the bar.
+        return SafeArea(
+          top: true,
+          bottom: false,
+          left: false,
+          right: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SearchField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+              ),
+              Expanded(child: _buildResults(context, state)),
+            ],
+          ),
         );
       },
     );
@@ -212,6 +223,7 @@ class _SearchViewState extends State<_SearchView> {
     }
 
     return ListView.builder(
+      padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
       itemCount: threads.length + (showFooter ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == threads.length) {
