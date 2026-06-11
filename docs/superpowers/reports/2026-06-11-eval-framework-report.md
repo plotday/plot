@@ -98,7 +98,7 @@ privacy policy, corpora inventory, troubleshooting); README fixed;
 
 | Corpus | Kind | Trainings | Cases | Gold | gold_source | Role |
 | --- | --- | --- | --- | --- | --- | --- |
-| kris | prod-extract | 199 (`full`) | 80 + 12 holdout | 92/92 | 54 human + 26 llm-proposed + 12 human (holdout) | primary tuning |
+| kris | prod-extract | 144 (`full`) | 80 + 12 holdout | 92/92 | 54 human + 26 llm-proposed + 12 human (holdout) | primary tuning |
 | prod-u2 | prod-extract | 103 | 47 + 10 holdout | 10 (holdout only) | human | **FINAL HOLDOUT — do not run** |
 | prod-u3 | prod-extract | 24 | 55 + 6 holdout | 6 (holdout only) | human | tuning |
 | synthetic-newsletter-flood | handcrafted | 20 | 15 | 15/15 | human (by construction) | facet-gate guardrail |
@@ -213,6 +213,9 @@ the exact procedure.** The variant is registered as
 - **Lowering LLM gating floors breaks badly** (0–9 fixed/broke, p = 0.004):
   the "send virtually every scoring case to the LLM" posture is right.
 - **Tiebreaker maxCandidates 5→7: inert.**
+- **`negativePenaltyWeight` is untestable on current real data** — kris has
+  zero `thread_priority_negative` rows in prod (the feature shipped recently);
+  the signal is exercised only by sandbox tests. Revisit once move-outs accrue.
 
 ### Exploration accounting
 
