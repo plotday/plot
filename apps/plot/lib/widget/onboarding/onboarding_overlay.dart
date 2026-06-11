@@ -120,7 +120,7 @@ class OnboardingOverlay extends StatelessWidget {
                       ctx.router.currentPath != expectedPath) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (ctx.mounted) {
-                        ctx.router.navigate(route);
+                        _navigateSinglePanel(ctx, target, route);
                       }
                     });
                   }
@@ -267,20 +267,92 @@ class OnboardingOverlay extends StatelessWidget {
         final pidStr = priority.id.toShortString();
         return (PriorityRoute(priorityIdString: pidStr), '/p/$pidStr');
       case PanelTarget.newThread:
-        // The new-thread compose page lives at /p/:priorityId/new. Open it
-        // under the user's current (or default) priority so the single-panel
-        // highlight reveals NewThreadPage rather than the previous screen.
+        // The new-thread compose page lives at /p/:priorityId/new. We return
+        // the *childless* PriorityRoute here only to mount the Activity tab
+        // for the right priority; the inner NewThreadRoute is pushed by
+        // [_navigateSinglePanel]. Returning `children: [NewThreadRoute()]`
+        // and calling `navigate` would silently DROP that child whenever
+        // PriorityRoute is already mounted (e.g. the user is viewing a
+        // thread), leaving the previous screen up — see `_openNewThread` in
+        // `priorities_shell.dart`.
         final nowState = context.read<NowBloc>().state;
         if (nowState is! NowLoaded) return (null, null);
         final priority = nowState.context ?? nowState.defaultPriority;
         final pidStr = priority.id.toShortString();
         return (
-          PriorityRoute(
-            priorityIdString: pidStr,
-            children: [NewThreadRoute()],
-          ),
+          PriorityRoute(priorityIdString: pidStr),
           '/p/$pidStr/new',
         );
+    }
+  }
+
+  /// Performs the single-panel navigation for a [PanelTarget] highlight step.
+  ///
+  /// Priorities and Agenda are distinct top-level tabs, so a plain
+  /// [StackRouter.navigate] lands cleanly. The feed and new-thread targets
+  /// both live on the Activity tab's PriorityRoute, whose inner stack
+  /// `navigate` will NOT reset once PriorityRoute is already mounted:
+  /// `navigate(PriorityRoute())` keeps whatever child is showing (e.g. a
+  /// thread the user opened before onboarding restarted) and
+  /// `navigate(PriorityRoute(children: [NewThreadRoute()]))` silently drops
+  /// the supplied child (see `_openNewThread` in `priorities_shell.dart`).
+  /// Either way the user would keep staring at the previous screen, so for
+  /// those targets we mount the Activity-tab PriorityRoute and then drive its
+  /// inner stack directly.
+  void _navigateSinglePanel(
+    BuildContext ctx,
+    PanelTarget target,
+    PageRouteInfo<dynamic> route,
+  ) {
+    switch (target) {
+      case PanelTarget.priorities:
+      case PanelTarget.agenda:
+        ctx.router.navigate(route);
+      case PanelTarget.feed:
+        ctx.router.navigate(route);
+        _resetActivityInnerStack(ctx, pushNewThread: false, attempt: 0);
+      case PanelTarget.newThread:
+        ctx.router.navigate(route);
+        _resetActivityInnerStack(ctx, pushNewThread: true, attempt: 0);
+    }
+  }
+
+  /// Drives the Activity-tab PriorityRoute's inner stack to the state a
+  /// single-panel highlight step needs: the bare PriorityOnlyRoute feed
+  /// (`pushNewThread: false`) or `[PriorityOnlyRoute, NewThreadRoute]`
+  /// (`pushNewThread: true`).
+  ///
+  /// PriorityWrapper builds its inner AutoRouter asynchronously (after a
+  /// priority-load DB read), so the inner router may not exist on the frame
+  /// after `navigate`. Poll across frames until it appears — mirrors
+  /// `_pushNewThreadWhenInnerReady` in `priorities_shell.dart`. The 120-frame
+  /// budget (~2s at 60Hz) bails out if the router never materializes.
+  void _resetActivityInnerStack(
+    BuildContext ctx, {
+    required bool pushNewThread,
+    required int attempt,
+  }) {
+    if (!ctx.mounted) return;
+    final innerRouter = _findPriorityInnerRouter(ctx.router.root);
+    if (innerRouter == null) {
+      if (attempt >= 120) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _resetActivityInnerStack(
+          ctx,
+          pushNewThread: pushNewThread,
+          attempt: attempt + 1,
+        );
+      });
+      return;
+    }
+    if (pushNewThread) {
+      // Already composing — leave the live page rather than remounting it.
+      if (innerRouter.current.name == NewThreadRoute.name) return;
+      if (innerRouter.canPop()) innerRouter.popUntilRoot();
+      innerRouter.push(NewThreadRoute());
+    } else {
+      // Feed: clear any thread/new-thread child so PriorityOnlyRoute shows.
+      if (innerRouter.canPop()) innerRouter.popUntilRoot();
     }
   }
 
