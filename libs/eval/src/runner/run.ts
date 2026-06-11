@@ -239,6 +239,10 @@ async function runBacktest(
   const movedAtByThreadId = new Map(
     trainingSet.threads.map((t) => [t.id, t.movedAt])
   );
+  // A negative whose explicit createdAt precedes its training thread's
+  // movedAt inserts before the thread row exists. FK triggers are off under
+  // replica role, so the row sits dangling — invisible to scoring (which
+  // joins public.thread) — until the thread arrives. Benign, by design.
   const negClock = (n: CorpusNegative): Date | null =>
     n.createdAt ?? movedAtByThreadId.get(n.threadId) ?? null;
   const alwaysNegatives = trainingSet.negatives.filter(

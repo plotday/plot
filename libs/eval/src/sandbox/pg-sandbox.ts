@@ -482,10 +482,10 @@ export async function insertNegatives(
 }
 
 /**
- * Inserts the case's candidate thread (plus a default thread_priority filing
- * pointing at the user's root) so the classifier can read the row via
- * `p_thread_id`. Returns the thread_id; caller is in a savepoint so the row
- * disappears after the case.
+ * Inserts the case's candidate thread so the classifier can read it by id.
+ * Runs with triggers ACTIVE (session_replication_role = origin) so the case
+ * path exercises the production trigger chain. The caller wraps the call in
+ * a savepoint, so the row disappears after the case.
  */
 export async function stageCandidate(
   sandbox: SandboxHandle,
