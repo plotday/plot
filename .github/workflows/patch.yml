@@ -175,7 +175,7 @@ jobs:
           cache: true
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Write app.env file
         env:
@@ -336,7 +336,7 @@ jobs:
           cache: true
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Write app.env file
         env:
@@ -505,7 +505,7 @@ jobs:
           cache: true
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Write app.env file
         env:
@@ -680,7 +680,7 @@ jobs:
           cache: true
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           package_json_file: package.json
 
