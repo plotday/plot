@@ -5,9 +5,10 @@ import {
   type LLMClient,
   type LLMInputs,
   type LLMOutput,
+  type LLMUsage,
 } from "@plotday/classifier";
 
-export type { LLMClient, LLMInputs, LLMOutput };
+export type { LLMClient, LLMInputs, LLMOutput, LLMUsage };
 
 export function makeGeminiClient(model: string): LLMClient {
   const apiKey =
@@ -37,15 +38,27 @@ export function makeGeminiClient(model: string): LLMClient {
           },
         },
       });
+      // ai v6 reports usage as `inputTokens`/`outputTokens`, each possibly
+      // undefined; only attach usage when both are known so consumers can
+      // count un-priced calls (missing usage) separately.
+      const usage =
+        typeof result.usage?.inputTokens === "number" &&
+        typeof result.usage?.outputTokens === "number"
+          ? {
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+            }
+          : undefined;
       const obj = result.object;
       const pid = obj.priority_id;
       if (pid !== null && !allowed.has(pid)) {
         return {
           priorityId: null,
           rationale: `out-of-set priorityId returned: ${pid}`,
+          usage,
         };
       }
-      return { priorityId: pid, rationale: obj.rationale };
+      return { priorityId: pid, rationale: obj.rationale, usage };
     },
   };
 }

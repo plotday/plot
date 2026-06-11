@@ -43,7 +43,9 @@ export function cachedLlmClient(opts: CacheOpts): CachedLlmClient {
         const text = await readFile(path, "utf-8");
         const parsed = JSON.parse(text) as { response: LLMOutput };
         stats.hits++;
-        return parsed.response;
+        // Replays carry the originally-recorded usage (if any) so callers
+        // can account replayed tokens separately from live ones.
+        return { ...parsed.response, fromCache: true };
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }

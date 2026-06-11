@@ -125,11 +125,28 @@ export function makeHybridLlmClassifier(
       const start = performance.now();
       let llmCalls = 0;
       let cacheHits = 0;
+      const llmUsage = {
+        liveInputTokens: 0,
+        liveOutputTokens: 0,
+        replayedInputTokens: 0,
+        replayedOutputTokens: 0,
+        unknownCalls: 0,
+      };
       const observe = (client: ReturnType<typeof wrapWithStats>) => {
         llmCalls += client.stats.misses;
         cacheHits += client.stats.hits;
         client.stats.hits = 0;
         client.stats.misses = 0;
+        llmUsage.liveInputTokens += client.usage.liveInputTokens;
+        llmUsage.liveOutputTokens += client.usage.liveOutputTokens;
+        llmUsage.replayedInputTokens += client.usage.replayedInputTokens;
+        llmUsage.replayedOutputTokens += client.usage.replayedOutputTokens;
+        llmUsage.unknownCalls += client.usage.unknownCalls;
+        client.usage.liveInputTokens = 0;
+        client.usage.liveOutputTokens = 0;
+        client.usage.replayedInputTokens = 0;
+        client.usage.replayedOutputTokens = 0;
+        client.usage.unknownCalls = 0;
       };
 
       // Per-user LLM budget, resolved lazily by subscription tier the first
@@ -357,6 +374,7 @@ export function makeHybridLlmClassifier(
           llmCalls,
           cacheHits,
           budgetExhausted,
+          llmUsage,
         };
       }
     },
@@ -365,22 +383,53 @@ export function makeHybridLlmClassifier(
 
 function wrapWithStats(client: LLMClient): LLMClient & {
   stats: { hits: number; misses: number };
+  usage: {
+    liveInputTokens: number;
+    liveOutputTokens: number;
+    replayedInputTokens: number;
+    replayedOutputTokens: number;
+    unknownCalls: number;
+  };
 } {
   const stats = { hits: 0, misses: 0 };
+  const usage = {
+    liveInputTokens: 0,
+    liveOutputTokens: 0,
+    replayedInputTokens: 0,
+    replayedOutputTokens: 0,
+    unknownCalls: 0,
+  };
   const inner = client as LLMClient & {
     stats?: { hits: number; misses: number };
   };
   return {
     id: client.id,
     stats,
+    usage,
     async classify(inputs) {
       const before = inner.stats ? { ...inner.stats } : null;
       const out = await client.classify(inputs);
       if (before && inner.stats) {
         stats.hits += inner.stats.hits - before.hits;
         stats.misses += inner.stats.misses - before.misses;
+      } else if (out.fromCache) {
+        stats.hits++;
       } else {
         stats.misses++;
+      }
+      // Token accounting: cache replays land in the replayed buckets, live
+      // provider calls in the live buckets; calls with no usage data are
+      // only counted (we can't price them).
+      if (out.usage) {
+        if (out.fromCache) {
+          usage.replayedInputTokens += out.usage.inputTokens;
+          usage.replayedOutputTokens += out.usage.outputTokens;
+        } else {
+          usage.liveInputTokens += out.usage.inputTokens;
+          usage.liveOutputTokens += out.usage.outputTokens;
+        }
+      } else {
+        usage.unknownCalls++;
       }
       return out;
     },

@@ -53,7 +53,8 @@ describe("cachedLlmClient", () => {
 
     const a = await wrapped.classify(baseInputs);
     const b = await wrapped.classify(baseInputs);
-    expect(a).toEqual(b);
+    // Replays are identical except for the fromCache marker.
+    expect(b).toEqual({ ...a, fromCache: true });
     expect(calls).toBe(1);
     expect(wrapped.stats.misses).toBe(1);
     expect(wrapped.stats.hits).toBe(1);

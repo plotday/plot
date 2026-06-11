@@ -26,7 +26,7 @@ export {
   type LlmClientFactory,
   type ConsumeBudgetFn,
 } from "./ts-hybrid-llm";
-export type { LLMClient, LLMInputs, LLMOutput } from "./llm-client";
+export type { LLMClient, LLMInputs, LLMOutput, LLMUsage } from "./llm-client";
 export { LLMResponseSchema } from "./llm-client";
 export { loadPrompt } from "./prompts/index";
 export { shouldRunTieBreaker } from "./ts-hybrid-tiebreaker";

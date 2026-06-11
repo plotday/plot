@@ -58,6 +58,20 @@ export interface ClassificationResult {
    * too low or a runaway re-classification loop. Default false.
    */
   budgetExhausted: boolean;
+  /**
+   * Aggregate LLM token usage for this classification. Always set by the
+   * LLM cascade (all zeros when no LLM call fired); classifiers without an
+   * LLM stage omit it. Live buckets count tokens from real provider calls;
+   * replayed buckets count tokens recorded with cached responses;
+   * unknownCalls counts LLM calls whose output carried no usage data.
+   */
+  llmUsage?: {
+    liveInputTokens: number;
+    liveOutputTokens: number;
+    replayedInputTokens: number;
+    replayedOutputTokens: number;
+    unknownCalls: number;
+  };
 }
 
 export interface Classifier {
