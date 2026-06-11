@@ -191,10 +191,15 @@ async function markThreadUnreadForUsers(
 /**
  * upsert_thread can merge into an existing thread (source match); only a
  * freshly-created row carries this call's pre-insert classification
- * decision. created_at within 10s of now ⇒ created by this call.
+ * decision. created_at within 60s of now ⇒ created by this call.
+ *
+ * The window's sole job is tolerating worker↔DB wall-clock skew
+ * (created_at is the DB's now()); request latency is negligible. A false
+ * negative just drops one mining row; a false positive requires a merge
+ * within the window, which still attributes this call's real decision.
  */
 function isFreshlyCreated(createdAt: string | Date): boolean {
-  return Math.abs(Date.now() - new Date(createdAt).getTime()) < 10_000;
+  return Math.abs(Date.now() - new Date(createdAt).getTime()) < 60_000;
 }
 
 export async function createThread(

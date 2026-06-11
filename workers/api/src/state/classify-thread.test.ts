@@ -4,6 +4,7 @@ import {
   PostgresAdapter,
   PostgresIntrospector,
   PostgresQueryCompiler,
+  sql as sql2,
   type CompiledQuery,
   type DatabaseConnection,
 } from "kysely";
@@ -198,5 +199,78 @@ describe("logClassificationDecision", () => {
     expect(executed[0]!.parameters).toEqual(
       expect.arrayContaining(["t-9", "u-9", "p-9", "user_move", "user", 0, false])
     );
+  });
+});
+
+describe("logClassificationDecision inside a transaction", () => {
+  it("guards the insert with a savepoint and survives failure without poisoning", async () => {
+    captureException.mockClear();
+    const executed: Executed[] = [];
+    const db = testDb(executed, async (sql) => {
+      if (sql.includes("INSERT INTO public.classification_decision")) {
+        throw new Error("insert failed");
+      }
+      return { rows: [] };
+    });
+    await db.transaction().execute(async (trx) => {
+      await logClassificationDecision(trx, ENV, {
+        threadId: "t-1",
+        userId: "u-1",
+        priorityId: "p-1",
+        stage: "scoring",
+        scores: {},
+        classifier: "c",
+      });
+      // The outer transaction must still be usable after the swallowed failure.
+      await sql2`SELECT 1`.execute(trx);
+    });
+    const stmts = executed.map((e) => e.sql);
+    expect(
+      stmts.some((s) => s.startsWith("SAVEPOINT classification_decision_log"))
+    ).toBe(true);
+    expect(
+      stmts.some((s) =>
+        s.startsWith("ROLLBACK TO SAVEPOINT classification_decision_log")
+      )
+    ).toBe(true);
+    expect(captureException).toHaveBeenCalled();
+  });
+
+  it("releases the savepoint on success", async () => {
+    const executed: Executed[] = [];
+    const db = testDb(executed, async () => ({ rows: [] }));
+    await db.transaction().execute(async (trx) => {
+      await logClassificationDecision(trx, ENV, {
+        threadId: "t-1",
+        userId: "u-1",
+        priorityId: "p-1",
+        stage: "scoring",
+        scores: {},
+        classifier: "c",
+      });
+    });
+    const stmts = executed.map((e) => e.sql);
+    expect(
+      stmts.some((s) => s.startsWith("SAVEPOINT classification_decision_log"))
+    ).toBe(true);
+    expect(
+      stmts.some((s) =>
+        s.startsWith("RELEASE SAVEPOINT classification_decision_log")
+      )
+    ).toBe(true);
+  });
+
+  it("uses no savepoint on a non-transaction handle", async () => {
+    const executed: Executed[] = [];
+    const db = testDb(executed, async () => ({ rows: [] }));
+    await logClassificationDecision(db, ENV, {
+      threadId: "t-1",
+      userId: "u-1",
+      priorityId: "p-1",
+      stage: "scoring",
+      scores: {},
+      classifier: "c",
+    });
+    expect(executed.some((e) => e.sql.includes("SAVEPOINT"))).toBe(false);
   });
 });

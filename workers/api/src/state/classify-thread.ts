@@ -67,7 +67,16 @@ export async function logClassificationDecision(
   env: Bindings,
   entry: ClassificationDecisionLog
 ): Promise<void> {
+  // On a shared transaction a failed INSERT would abort the whole txn
+  // (25P02) — the catch below can't clear that server-side state, and the
+  // caller's COMMIT would silently become ROLLBACK, discarding the filing
+  // this helper must never disturb. A savepoint scopes the failure to the
+  // log attempt alone. Pool handles autocommit per statement, so the plain
+  // path needs no savepoint.
+  const inTransaction = db.isTransaction;
   try {
+    if (inTransaction)
+      await sql`SAVEPOINT classification_decision_log`.execute(db);
     await sql`
       INSERT INTO public.classification_decision
         (thread_id, user_id, priority_id, stage, scores, classifier,
@@ -79,7 +88,17 @@ export async function logClassificationDecision(
          ${entry.llmCalls ?? 0}, ${entry.cacheHits ?? 0},
          ${entry.budgetExhausted ?? false}, ${entry.durationMs ?? null})
     `.execute(db);
+    if (inTransaction)
+      await sql`RELEASE SAVEPOINT classification_decision_log`.execute(db);
   } catch (err) {
+    if (inTransaction) {
+      try {
+        await sql`ROLLBACK TO SAVEPOINT classification_decision_log`.execute(db);
+      } catch {
+        // If even the rollback-to fails the outer txn is already doomed;
+        // nothing more we can do here.
+      }
+    }
     capture(env, err, entry.userId, entry.threadId);
   }
 }
