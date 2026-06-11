@@ -103,7 +103,7 @@ program
   .option("--dry-run", "Validate without deploying")
   .option(
     "-e, --environment <env>",
-    "Deployment environment (personal, private, review)",
+    "Deployment environment (personal, private, review, public)",
     "personal"
   )
   .action(function (this: Command) {
@@ -128,7 +128,7 @@ program
   .option("--id <twistId>", "Twist ID")
   .option(
     "-e, --environment <env>",
-    "Twist environment (personal, private, review)",
+    "Twist environment (personal, private, review, public)",
     "personal"
   )
   .option("--deploy-token <token>", "Authentication token")
