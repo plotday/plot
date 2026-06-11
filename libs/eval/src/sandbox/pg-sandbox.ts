@@ -3,8 +3,10 @@ import pg from "pg";
 
 import type {
   Corpus,
+  CorpusNegative,
   CorpusThreadBase,
   CorpusTrainingSet,
+  CorpusTrainingThread,
   CorpusWorld,
 } from "../corpus/schema";
 import { deterministicUuid } from "../corpus/hash";
@@ -341,56 +343,86 @@ export async function loadTrainingSet(
   corpus: Corpus,
   trainingSet: CorpusTrainingSet
 ): Promise<void> {
+  await insertTrainingThreads(sandbox, corpus, trainingSet.threads);
+  await insertNegatives(
+    sandbox,
+    corpus,
+    trainingSet.negativeThreads,
+    trainingSet.negatives
+  );
+}
+
+/** Shared thread-row INSERT for training and negative-evidence threads. */
+async function insertThreadRow(
+  sandbox: SandboxHandle,
+  corpus: Corpus,
+  twists: ReturnType<typeof connectionTwists>,
+  t: CorpusThreadBase
+): Promise<void> {
   const { rawQuery } = sandbox;
   const { world } = corpus;
-  const twists = connectionTwists(world);
+  const emb = t.embedding_ref ? corpus.embeddings.get(t.embedding_ref) : null;
+  const embLiteral = emb ? toHalfvecLiteral(emb.vector) : null;
+  const values = [
+    t.id,
+    // created_by precedence: explicit override (carries v1 author
+    // semantics), else the connection (twist_instance) like production
+    // connector-created threads, else the world user.
+    t.createdByOverride ?? t.connectionId ?? world.user.id,
+    t.authorContactId,
+    t.connectionId === null
+      ? null
+      : (twists.twistIdByConnection.get(t.connectionId) ?? null),
+    t.title,
+    t.topic,
+    t.contacts,
+    t.groups,
+    embLiteral,
+    t.facets === null ? null : JSON.stringify(t.facets),
+  ];
+  if (t.createdAt !== null) {
+    // Triggers are disabled here, so the explicit value sticks.
+    await rawQuery(
+      `INSERT INTO public.thread
+         (id, created_by, author_id, twist_id, title, topic, contacts,
+          groups, embedding, facets, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::halfvec,
+               $10::jsonb, $11)`,
+      [...values, t.createdAt]
+    );
+  } else {
+    await rawQuery(
+      `INSERT INTO public.thread
+         (id, created_by, author_id, twist_id, title, topic, contacts,
+          groups, embedding, facets)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::halfvec,
+               $10::jsonb)`,
+      values
+    );
+  }
+}
+
+/**
+ * Inserts training threads (thread row + user_moved thread_priority filing)
+ * into the open sandbox transaction. The helper sets and restores
+ * `session_replication_role` itself, so every call site — the full
+ * loadTrainingSet batch and each incremental backtest batch — gets trigger
+ * suppression without remembering to wrap. No statements run for an empty
+ * batch.
+ */
+export async function insertTrainingThreads(
+  sandbox: SandboxHandle,
+  corpus: Corpus,
+  threads: CorpusTrainingThread[]
+): Promise<void> {
+  if (threads.length === 0) return;
+  const { rawQuery } = sandbox;
+  const twists = connectionTwists(corpus.world);
 
   await rawQuery(`SET LOCAL session_replication_role = replica`);
 
-  const insertThreadRow = async (t: CorpusThreadBase) => {
-    const emb = t.embedding_ref ? corpus.embeddings.get(t.embedding_ref) : null;
-    const embLiteral = emb ? toHalfvecLiteral(emb.vector) : null;
-    const values = [
-      t.id,
-      // created_by precedence: explicit override (carries v1 author
-      // semantics), else the connection (twist_instance) like production
-      // connector-created threads, else the world user.
-      t.createdByOverride ?? t.connectionId ?? world.user.id,
-      t.authorContactId,
-      t.connectionId === null
-        ? null
-        : (twists.twistIdByConnection.get(t.connectionId) ?? null),
-      t.title,
-      t.topic,
-      t.contacts,
-      t.groups,
-      embLiteral,
-      t.facets === null ? null : JSON.stringify(t.facets),
-    ];
-    if (t.createdAt !== null) {
-      // Triggers are disabled here, so the explicit value sticks.
-      await rawQuery(
-        `INSERT INTO public.thread
-           (id, created_by, author_id, twist_id, title, topic, contacts,
-            groups, embedding, facets, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::halfvec,
-                 $10::jsonb, $11)`,
-        [...values, t.createdAt]
-      );
-    } else {
-      await rawQuery(
-        `INSERT INTO public.thread
-           (id, created_by, author_id, twist_id, title, topic, contacts,
-            groups, embedding, facets)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::halfvec,
-                 $10::jsonb)`,
-        values
-      );
-    }
-  };
-
-  for (const t of trainingSet.threads) {
-    await insertThreadRow(t);
+  for (const t of threads) {
+    await insertThreadRow(sandbox, corpus, twists, t);
     await rawQuery(
       `INSERT INTO public.thread_priority
          (thread_id, user_id, priority_id, user_moved)
@@ -398,30 +430,50 @@ export async function loadTrainingSet(
        ON CONFLICT (thread_id, user_id) DO UPDATE SET
          priority_id = EXCLUDED.priority_id,
          user_moved = TRUE`,
-      [t.id, world.user.id, t.filedToPriority]
+      [t.id, corpus.world.user.id, t.filedToPriority]
     );
   }
 
-  // Negative-evidence threads exist only as thread rows (no thread_priority
-  // filing) so they can be referenced by thread_priority_negative.
-  for (const t of trainingSet.negativeThreads) {
-    await insertThreadRow(t);
+  await rawQuery(`SET LOCAL session_replication_role = origin`);
+}
+
+/**
+ * Inserts negative-evidence rows: thread rows for `negativeThreads` (no
+ * thread_priority filing — they exist only to be referenced) followed by
+ * `negatives` (thread_priority_negative rows). Like insertTrainingThreads,
+ * the helper wraps itself in replica role; no statements run when both
+ * arrays are empty.
+ */
+export async function insertNegatives(
+  sandbox: SandboxHandle,
+  corpus: Corpus,
+  negativeThreads: CorpusThreadBase[],
+  negatives: CorpusNegative[]
+): Promise<void> {
+  if (negativeThreads.length === 0 && negatives.length === 0) return;
+  const { rawQuery } = sandbox;
+  const twists = connectionTwists(corpus.world);
+
+  await rawQuery(`SET LOCAL session_replication_role = replica`);
+
+  for (const t of negativeThreads) {
+    await insertThreadRow(sandbox, corpus, twists, t);
   }
 
-  for (const n of trainingSet.negatives) {
+  for (const n of negatives) {
     if (n.createdAt !== null) {
       await rawQuery(
         `INSERT INTO public.thread_priority_negative
            (user_id, thread_id, priority_id, source, created_at)
          VALUES ($1, $2, $3, $4, $5)`,
-        [world.user.id, n.threadId, n.priorityId, n.source, n.createdAt]
+        [corpus.world.user.id, n.threadId, n.priorityId, n.source, n.createdAt]
       );
     } else {
       await rawQuery(
         `INSERT INTO public.thread_priority_negative
            (user_id, thread_id, priority_id, source)
          VALUES ($1, $2, $3, $4)`,
-        [world.user.id, n.threadId, n.priorityId, n.source]
+        [corpus.world.user.id, n.threadId, n.priorityId, n.source]
       );
     }
   }

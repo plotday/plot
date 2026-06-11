@@ -41,6 +41,7 @@ async function main() {
       "training-sets": { type: "string" },
       baseline: { type: "string" },
       "save-baseline": { type: "string" },
+      backtest: { type: "boolean" },
       "exclude-tags": { type: "string" },
       "include-holdout": { type: "boolean" },
       format: { type: "string" },
@@ -114,6 +115,16 @@ async function main() {
     // A baseline snapshots exactly one (classifier, trainingSet) combo. Catch
     // what is knowable before the run; the default all-training-sets case is
     // only countable after loadCorpus, so buildBaseline re-validates below.
+    if (values.backtest) {
+      // Baselines snapshot the full-training-set condition; backtest results
+      // vary with each case's position on the timeline, so a comparison
+      // would be apples-to-oranges. (Sweeps stay allowed — trajectory sweeps
+      // are a legitimate use.)
+      console.error(
+        "Error: --save-baseline and --backtest are mutually exclusive."
+      );
+      process.exit(2);
+    }
     if (values.sweep) {
       console.error("Error: --save-baseline and --sweep are mutually exclusive.");
       process.exit(2);
@@ -145,6 +156,7 @@ async function main() {
   const { corpus, results, summary } = await runEval({
     corpusDir,
     classifiers: classifierNames,
+    mode: values.backtest ? "backtest" : "matrix",
     trainingSets,
     excludeTags,
   });
@@ -269,6 +281,14 @@ Options:
   --base <variant>          Base variant for --params/--sweep overrides
                             (default: ts:hybrid-llm:default)
   --training-sets <list>    Comma-separated training-set names (default: all)
+  --backtest                Time-replay mode: uses exactly ONE training set
+                            (--training-sets <name>, default: full), sorts
+                            cases by as_of, and inserts training threads and
+                            negatives progressively so each case sees only
+                            the history before its as_of (cold-start→warm
+                            trajectory). Cases without as_of are skipped with
+                            a counted warning. Mutually exclusive with
+                            --save-baseline
   --save-baseline <file>    After the run, write a per-case prediction snapshot
                             as pretty-printed JSON. Requires exactly one
                             classifier and one training set; mutually

@@ -3,11 +3,19 @@ import type {
   ClassificationResult,
   ClassifierContext,
 } from "@plotday/classifier";
-import type { Corpus, CorpusCase, CorpusTrainingSet } from "../corpus/schema";
+import type {
+  Corpus,
+  CorpusCase,
+  CorpusNegative,
+  CorpusTrainingSet,
+  CorpusTrainingThread,
+} from "../corpus/schema";
 import { deterministicUuid } from "../corpus/hash";
 import { loadCorpus } from "../corpus/load";
 import { rankOfGold } from "../scoring/rank";
 import {
+  insertNegatives,
+  insertTrainingThreads,
   loadTrainingSet,
   loadWorld,
   openSandbox,
@@ -76,6 +84,14 @@ export type RunOptions = {
   corpusDir: string;
   classifiers: string[];
   databaseUrl?: string;
+  /**
+   * "matrix" (default): every selected training set × every case, exactly as
+   * before. "backtest": time-replay (spec E) — exactly ONE training set
+   * (named via trainingSets, default "full"), cases sorted by as_of, training
+   * threads/negatives inserted progressively so each case sees only the
+   * history that existed at its as_of.
+   */
+  mode?: "matrix" | "backtest";
   /** Optional filter: only run cases whose id matches. */
   caseFilter?: (caseId: string) => boolean;
   /** Optional filter: only run named training sets. Default = all. */
@@ -111,6 +127,11 @@ export async function runEval(opts: RunOptions): Promise<{
   const cases = opts.caseFilter
     ? afterTagFilter.filter((c) => opts.caseFilter!(c.id))
     : afterTagFilter;
+
+  if ((opts.mode ?? "matrix") === "backtest") {
+    return runBacktest(opts, corpus, cases);
+  }
+
   const selectedTrainingSets = opts.trainingSets
     ? corpus.trainingSets.filter((ts) => opts.trainingSets!.includes(ts.name))
     : corpus.trainingSets;
@@ -129,7 +150,14 @@ export async function runEval(opts: RunOptions): Promise<{
         await loadTrainingSet(sandbox, corpus, ts);
         for (const cs of cases) {
           for (const classifierName of opts.classifiers) {
-            const result = await runOneCase(sandbox, corpus, ts, cs, classifierName);
+            const result = await runOneCase(
+              sandbox,
+              corpus,
+              ts,
+              ts.threads,
+              cs,
+              classifierName
+            );
             results.push(result);
           }
         }
@@ -145,10 +173,177 @@ export async function runEval(opts: RunOptions): Promise<{
   }
 }
 
+/**
+ * Time-replay backtest (spec E): replays ONE training set chronologically so
+ * the run traces the cold-start→warm accuracy trajectory. Cases sort by
+ * as_of; before each case, training threads with movedAt <= as_of and
+ * negatives with createdAt <= as_of that are not yet present are inserted in
+ * the OUTER transaction (monotonic — never rolled back between cases). Each
+ * case then runs inside its savepoint exactly as in matrix mode, including
+ * the self-exclusion guard (computed against the inserted-so-far threads).
+ *
+ * Null-clock choices (kept deliberately simple):
+ * - Cases without as_of cannot be placed on the timeline → SKIPPED, with a
+ *   counted stderr warning.
+ * - Training threads with movedAt null are ALWAYS PRESENT (inserted before
+ *   the first case): a thread without a move time cannot be ordered, and
+ *   dropping real training signal would understate warm accuracy. A stderr
+ *   note reports the count.
+ * - A negative's clock is its createdAt; when null it follows its thread:
+ *   negatives on training threads inherit the thread's movedAt clock, and
+ *   negatives on negativeThreads are always present (like null movedAt).
+ * - A negativeThread row has no clock of its own — it is inserted together
+ *   with the first negative that references it.
+ */
+async function runBacktest(
+  opts: RunOptions,
+  corpus: Corpus,
+  cases: CorpusCase[]
+): Promise<{ corpus: Corpus; results: RunResult[]; summary: RunSummary }> {
+  if (opts.trainingSets && opts.trainingSets.length > 1) {
+    throw new Error(
+      `Backtest uses exactly one training set; got ${opts.trainingSets.length} (${opts.trainingSets.join(", ")}).`
+    );
+  }
+  const setName = opts.trainingSets?.[0] ?? "full";
+  const trainingSet = corpus.trainingSets.find((t) => t.name === setName);
+  if (!trainingSet) {
+    throw new Error(
+      `Backtest training set "${setName}" not found. Available: ${corpus.trainingSets.map((t) => t.name).join(", ")}`
+    );
+  }
+
+  const dated = cases.filter((c) => c.asOf !== null);
+  const skipped = cases.length - dated.length;
+  if (skipped > 0) {
+    // stderr so --format json keeps a clean stdout.
+    console.error(`backtest: skipped ${skipped} case(s) without as_of`);
+  }
+  // Array.prototype.sort is stable: as_of ties keep corpus order.
+  const ordered = [...dated].sort(
+    (a, b) => a.asOf!.getTime() - b.asOf!.getTime()
+  );
+
+  const alwaysThreads = trainingSet.threads.filter((t) => t.movedAt === null);
+  if (alwaysThreads.length > 0) {
+    console.error(
+      `backtest: ${alwaysThreads.length} training thread(s) without moved_at treated as always present`
+    );
+  }
+  const timedThreads = trainingSet.threads
+    .filter((t) => t.movedAt !== null)
+    .sort((a, b) => a.movedAt!.getTime() - b.movedAt!.getTime());
+
+  // Effective clock for a negative: createdAt, else its training thread's
+  // movedAt, else null (= always present; covers negativeThread references).
+  const movedAtByThreadId = new Map(
+    trainingSet.threads.map((t) => [t.id, t.movedAt])
+  );
+  const negClock = (n: CorpusNegative): Date | null =>
+    n.createdAt ?? movedAtByThreadId.get(n.threadId) ?? null;
+  const alwaysNegatives = trainingSet.negatives.filter(
+    (n) => negClock(n) === null
+  );
+  const timedNegatives = trainingSet.negatives
+    .filter((n) => negClock(n) !== null)
+    .sort((a, b) => negClock(a)!.getTime() - negClock(b)!.getTime());
+
+  const negativeThreadsById = new Map(
+    trainingSet.negativeThreads.map((t) => [t.id, t])
+  );
+  const insertedNegThreadIds = new Set<string>();
+
+  const sandbox = await openSandbox({ databaseUrl: opts.databaseUrl });
+  try {
+    await loadWorld(sandbox, corpus);
+
+    // Inserts a negatives batch plus any referenced negativeThread rows that
+    // are not in the DB yet (training-thread references insert on their own
+    // movedAt clock and are intentionally not handled here).
+    const insertNegativeBatch = async (batch: CorpusNegative[]) => {
+      const threadRows = [];
+      for (const n of batch) {
+        const t = negativeThreadsById.get(n.threadId);
+        if (t && !insertedNegThreadIds.has(t.id)) {
+          insertedNegThreadIds.add(t.id);
+          threadRows.push(t);
+        }
+      }
+      await insertNegatives(sandbox, corpus, threadRows, batch);
+    };
+
+    // Unordered ("always present") rows go in before the first case.
+    const insertedThreads: CorpusTrainingThread[] = [];
+    await insertTrainingThreads(sandbox, corpus, alwaysThreads);
+    insertedThreads.push(...alwaysThreads);
+    await insertNegativeBatch(alwaysNegatives);
+
+    let threadIdx = 0;
+    let negativeIdx = 0;
+    const results: RunResult[] = [];
+    for (const cs of ordered) {
+      const asOf = cs.asOf!.getTime();
+      const threadBatch: CorpusTrainingThread[] = [];
+      while (
+        threadIdx < timedThreads.length &&
+        timedThreads[threadIdx]!.movedAt!.getTime() <= asOf
+      ) {
+        threadBatch.push(timedThreads[threadIdx]!);
+        threadIdx++;
+      }
+      await insertTrainingThreads(sandbox, corpus, threadBatch);
+      insertedThreads.push(...threadBatch);
+
+      const negativeBatch: CorpusNegative[] = [];
+      while (
+        negativeIdx < timedNegatives.length &&
+        negClock(timedNegatives[negativeIdx]!)!.getTime() <= asOf
+      ) {
+        negativeBatch.push(timedNegatives[negativeIdx]!);
+        negativeIdx++;
+      }
+      await insertNegativeBatch(negativeBatch);
+
+      for (const classifierName of opts.classifiers) {
+        results.push(
+          await runOneCase(
+            sandbox,
+            corpus,
+            trainingSet,
+            insertedThreads,
+            cs,
+            classifierName
+          )
+        );
+      }
+    }
+
+    return {
+      corpus,
+      results,
+      summary: summarize(
+        corpus,
+        opts.classifiers,
+        [trainingSet],
+        ordered.length,
+        results
+      ),
+    };
+  } finally {
+    await sandbox.close();
+  }
+}
+
 async function runOneCase(
   sandbox: SandboxHandle,
   corpus: Corpus,
   trainingSet: CorpusTrainingSet,
+  /**
+   * Training threads currently present in the DB: the full set in matrix
+   * mode, the inserted-so-far prefix in backtest mode. Drives both the
+   * self-exclusion guard and trainingSizeAtCase.
+   */
+  activeThreads: CorpusTrainingThread[],
   cs: CorpusCase,
   classifierName: string
 ): Promise<RunResult> {
@@ -157,7 +352,7 @@ async function runOneCase(
     ? corpus.embeddings.get(cs.candidate.embedding_ref)
     : null;
   const threadId = caseIdToUuid(cs.id);
-  const selfExclusions = selfExclusionTargets(cs, trainingSet);
+  const selfExclusions = selfExclusionTargets(cs, activeThreads);
 
   // Candidate `author` (thread.created_by as seen by the classifier):
   //   v1: pass createdByOverride EXACTLY as recorded — null stays null. The
@@ -246,7 +441,7 @@ async function runOneCase(
     expectedStageMatch:
       expectedStage === null ? null : expectedStage === result.stage,
     selfExcluded: selfExclusions.length > 0,
-    trainingSizeAtCase: trainingSet.threads.length - selfExclusions.length,
+    trainingSizeAtCase: activeThreads.length - selfExclusions.length,
     budgetExhausted: result.budgetExhausted,
     llmUsage: result.llmUsage ?? null,
     rankOfGold: ranked?.rank ?? null,
@@ -260,24 +455,25 @@ async function runOneCase(
 const CASE_ID_PREFIX_RE = /^\d+-([0-9a-f]{8})$/;
 
 /**
- * Training thread ids to archive for this case (spec A3a). source_thread_id
- * matches by full equality; pre-v2 cases fall back to the 8-hex prefix
- * embedded in the case id, matched via startsWith. Two training threads
- * sharing the same 8-hex prefix is theoretically possible — archive all
- * matches (the case still counts as one self-exclusion).
+ * Training thread ids to archive for this case (spec A3a), matched against
+ * the threads currently present in the DB. source_thread_id matches by full
+ * equality; pre-v2 cases fall back to the 8-hex prefix embedded in the case
+ * id, matched via startsWith. Two training threads sharing the same 8-hex
+ * prefix is theoretically possible — archive all matches (the case still
+ * counts as one self-exclusion).
  */
 function selfExclusionTargets(
   cs: CorpusCase,
-  trainingSet: CorpusTrainingSet
+  activeThreads: CorpusTrainingThread[]
 ): string[] {
   if (cs.sourceThreadId !== null) {
     const src = cs.sourceThreadId;
-    return trainingSet.threads.filter((t) => t.id === src).map((t) => t.id);
+    return activeThreads.filter((t) => t.id === src).map((t) => t.id);
   }
   const m = CASE_ID_PREFIX_RE.exec(cs.id);
   if (!m) return [];
   const prefix = m[1]!;
-  return trainingSet.threads
+  return activeThreads
     .filter((t) => t.id.startsWith(prefix))
     .map((t) => t.id);
 }
