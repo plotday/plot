@@ -547,17 +547,24 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   }
 
   /**
-   * Called when a user adds, removes, or changes the role of contacts on a
-   * thread owned by this connector. Override on connectors whose source
-   * supports mid-thread recipient changes (Gmail, IMAP, etc.). Connectors
-   * that can't change recipients per-message (Slack, Linear) leave this as
-   * the default no-op and should also declare
-   * `LinkTypeConfig.supportsContactChanges: false`.
+   * Called when a user changes the **thread-level sharing** of a thread owned
+   * by this connector — adding or removing a contact, or (for connectors with
+   * roles) changing a contact's role. Override on connectors whose external
+   * source can reflect that membership change, e.g. a group DM / multi-party
+   * chat (`LinkTypeConfig.sharingModel: "thread"`) or an email's To/Cc/Bcc
+   * recipients (`sharingModel: "message"`). Connectors backed by an immutable
+   * roster (most group DMs today) or by channel-level membership
+   * (`sharingModel: "channel"`) leave this as the default no-op.
    *
-   * The dispatch fires after Plot has persisted the change. Connectors are
-   * expected to reflect it on the next outbound note (e.g. building To/Cc/Bcc
-   * headers from the current `thread.contacts` × `thread.contactMeta`) — this
-   * callback is not the right place to send a standalone notification.
+   * `role`/`from`/`to` are **null** for connectors without roles (group DMs
+   * have no roles); they carry a `contactRoles` id only for connectors that
+   * declare roles (e.g. email `to`/`cc`/`bcc`).
+   *
+   * The dispatch fires after Plot has persisted the change. A connector may
+   * reflect it actively (e.g. add/remove a participant on the external chat)
+   * or passively on the next outbound note (e.g. building To/Cc/Bcc headers
+   * from the current `thread.contacts` × `thread.contactMeta`) — this callback
+   * is not the right place to send a standalone notification.
    *
    * @param thread - The thread whose contacts changed
    * @param changes - The added/removed contacts and any role transitions on existing contacts
@@ -566,9 +573,9 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   onContactsChanged(
     thread: Thread,
     changes: {
-      added: Array<{ contact: Contact; role: string }>;
-      removed: Array<{ contact: Contact; role: string }>;
-      changed: Array<{ contact: Contact; from: string; to: string }>;
+      added: Array<{ contact: Contact; role: string | null }>;
+      removed: Array<{ contact: Contact; role: string | null }>;
+      changed: Array<{ contact: Contact; from: string | null; to: string | null }>;
     },
   ): Promise<void> {
     return Promise.resolve();
