@@ -60,8 +60,17 @@ export type ExtractedConnection = {
   /** twist_instance id. */
   id: string;
   provider: string;
-  /** twist_instance_connection.actor_id (a contact — third-party PII). */
-  actorContactId: string;
+  /**
+   * twist_instance_connection.actor_id (a contact — third-party PII), or
+   * null when the instance has NO twist_instance_connection row at all.
+   * Tic-less instances are real prod connections (verified live: many of
+   * kris's twist_instances have zero tic rows): connection_org_key's actor
+   * lateral finds no row for them, so acct.domain is NULL and the key falls
+   * through to `team:<id>` (or NULL when personal). Emission synthesizes a
+   * placeholder actor contact with NULL email/name so the sandbox reproduces
+   * the identical org-key outcome — see placeholderActorContact in emit.ts.
+   */
+  actorContactId: string | null;
   teamId: number | null;
 };
 
@@ -446,8 +455,17 @@ export async function loadWorldEntities(
  * the REAL owner's connection row (`tic.user_id = ti.owner_id`), but the
  * emitted corpus connection is always owned by the world user — the sandbox
  * inserts owner = world user regardless. When the owner row is missing, any
- * other user's row for the instance is used as a fallback; instances with no
- * connection row at all land in `missing`.
+ * other user's row for the instance is used as a fallback.
+ *
+ * Instances with NO twist_instance_connection row at all are still real prod
+ * connections and are KEPT, with `actorContactId: null` and a provider hint
+ * taken from the parent twist's handle (`twist_instance.twist_id -> twist`,
+ * 'unknown' when unresolvable) — there is no tic row to read a provider
+ * from. Dropping them would also drop every channel they parent (channel
+ * topics drive the channel_default/topic classifier stages) and null the
+ * threads' connection refs (killing the origin exact-match signal). Only ids
+ * with no twist_instance row at all (genuinely nonexistent) land in
+ * `missing`.
  */
 export async function loadConnections(
   client: PgClient,
@@ -459,15 +477,19 @@ export async function loadConnections(
     team_id: number | null;
     provider: string | null;
     actor_id: string | null;
+    twist_handle: string | null;
   }>(
     `SELECT DISTINCT ON (ti.id)
             ti.id,
             ti.team_id::int AS team_id,
             tic.provider,
-            tic.actor_id
+            tic.actor_id,
+            tw.handle AS twist_handle
        FROM public.twist_instance ti
        LEFT JOIN public.twist_instance_connection tic
          ON tic.twist_instance_id = ti.id
+       LEFT JOIN public.twist tw
+         ON tw.id = ti.twist_id
       WHERE ti.id = ANY($1::uuid[])
       ORDER BY ti.id, (tic.user_id = ti.owner_id) DESC NULLS LAST, tic.provider`,
     [twistInstanceIds]
@@ -477,7 +499,9 @@ export async function loadConnections(
   const missing: string[] = [];
   for (const id of new Set(twistInstanceIds)) {
     const row = found.get(id);
-    if (row && row.provider !== null && row.actor_id !== null) {
+    if (!row) {
+      missing.push(id);
+    } else if (row.provider !== null && row.actor_id !== null) {
       connections.push({
         id: row.id,
         provider: row.provider,
@@ -485,7 +509,14 @@ export async function loadConnections(
         teamId: row.team_id,
       });
     } else {
-      missing.push(id);
+      // Tic-less instance: keep the connection; emit synthesizes the
+      // placeholder actor (see ExtractedConnection.actorContactId).
+      connections.push({
+        id: row.id,
+        provider: row.twist_handle?.toLowerCase() || "unknown",
+        actorContactId: null,
+        teamId: row.team_id,
+      });
     }
   }
   return { connections, missing };

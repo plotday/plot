@@ -5,7 +5,9 @@ import { dirname, join } from "node:path";
 import pg from "pg";
 import { parse as parseYaml } from "yaml";
 
+import { deterministicUuid } from "../src/corpus/hash";
 import { loadCorpus } from "../src/corpus/load";
+import { loadWorld, openSandbox } from "../src/sandbox/pg-sandbox";
 import { anonymizePerson } from "../src/seeder/anonymize";
 import {
   hydrateThreadsByIds,
@@ -46,6 +48,8 @@ const C_BOB = "f1000000-0000-4000-8000-000000000021"; // counterparty
 const C_CARL = "f1000000-0000-4000-8000-000000000022"; // foreign connection actor
 const TI1 = "f1000000-0000-4000-8000-000000000030"; // owned by W
 const TI2 = "f1000000-0000-4000-8000-000000000031"; // owned by F (owner remap)
+const TI3 = "f1000000-0000-4000-8000-000000000032"; // team-owned, NO tic row
+const TI4 = "f1000000-0000-4000-8000-000000000033"; // personal, NO tic row
 const T1 = "aaaa0001-0000-4000-8000-000000000100"; // connector-created
 const T2 = "aaaa0002-0000-4000-8000-000000000101"; // note-author fallback
 const T2B = "aaaa0002-0000-4000-8000-000000000102"; // shares T2's 8-hex prefix
@@ -333,6 +337,99 @@ describe.runIf(!!process.env.DATABASE_URL)("extract (db)", () => {
         { id: TI2, provider: "slack", actorContactId: C_CARL, teamId: TEAM_ID },
       ])
     );
+  });
+
+  /**
+   * Prod reality (verified live on kris's data): many twist_instances have
+   * ZERO twist_instance_connection rows. They must extract as REAL
+   * connections (placeholder actor synthesized at emit), not as "missing".
+   * TI3 reuses TWIST2 (handle "slack") + the team; TI4 reuses TWIST1
+   * (handle "google") with no team.
+   */
+  async function insertTicLessInstances(): Promise<void> {
+    await client.query(
+      `INSERT INTO public.twist_instance (id, twist_id, owner_id, team_id, name) VALUES
+         ($1, $3, $5, $6, 'fixture tic-less team instance'),
+         ($2, $4, $5, NULL, 'fixture tic-less personal instance')`,
+      [TI3, TI4, TWIST2, TWIST1, W_USER, TEAM_ID]
+    );
+  }
+
+  it("loadConnections: tic-less instances extract with null actor + twist-handle provider", async () => {
+    await insertTicLessInstances();
+    const { connections, missing } = await loadConnections(client, [TI3, TI4]);
+    expect(missing).toEqual([]);
+    expect(connections).toEqual(
+      expect.arrayContaining([
+        { id: TI3, provider: "slack", actorContactId: null, teamId: TEAM_ID },
+        { id: TI4, provider: "google", actorContactId: null, teamId: null },
+      ])
+    );
+  });
+
+  it("tic-less connections: placeholder actors round-trip and reproduce prod org keys", async () => {
+    await insertTicLessInstances();
+    const { connections, missing } = await loadConnections(client, [TI3, TI4]);
+    expect(missing).toEqual([]);
+
+    // Release the fixture transaction before opening the sandbox: it uses a
+    // SEPARATE connection and would block forever on our uncommitted
+    // twist_instance/user rows when loadWorld re-inserts the same ids. The
+    // immediate BEGIN keeps afterEach's ROLLBACK balanced.
+    await client.query("ROLLBACK");
+    await client.query("BEGIN");
+
+    const input = baseBuildInput();
+    input.world.connections.push(...connections);
+    const { files, report } = buildCorpusFiles(input);
+    expect(report.some((l) => l.includes("dropped connection"))).toBe(false);
+
+    const dir = await writeBuiltCorpus(files);
+    const corpus = await loadCorpus(dir);
+
+    const teamConn = corpus.world.connections.find((c) => c.id === TI3)!;
+    const personalConn = corpus.world.connections.find((c) => c.id === TI4)!;
+    expect(teamConn.teamId).toBe(TEAM_ID);
+    expect(personalConn.teamId).toBeNull();
+    // The team entry is emitted even though only a placeholder-actor
+    // connection references it.
+    expect(corpus.world.teams.some((t) => t.id === TEAM_ID)).toBe(true);
+    for (const [conn, connectionId] of [
+      [teamConn, TI3],
+      [personalConn, TI4],
+    ] as const) {
+      const placeholder = corpus.world.contacts.find(
+        (ct) => ct.id === conn.accountContactId
+      )!;
+      expect(placeholder).toBeDefined();
+      expect(placeholder.id).toBe(deterministicUuid(`conn-actor:${connectionId}`));
+      expect(placeholder.email).toBeNull();
+      expect(placeholder.name).toBeNull();
+      expect(placeholder.linked_to_user).toBe(false);
+      expect(placeholder.slug ?? "").toMatch(/^conn-actor-[0-9a-f]{6}$/);
+    }
+
+    // Sandbox: the placeholder actor's NULL email makes connection_org_key's
+    // actor lateral skip the row, falling through to team:<offset id> / NULL
+    // exactly like the tic-less prod instance.
+    const sandbox = await openSandbox({ databaseUrl: process.env.DATABASE_URL });
+    try {
+      await loadWorld(sandbox, corpus);
+      const team = await sandbox.rawQuery(
+        `SELECT public.connection_org_key($1) AS key`,
+        [TI3]
+      );
+      expect((team.rows[0] as { key: string | null }).key).toBe(
+        `team:${1_000_000_000 + TEAM_ID}`
+      );
+      const personal = await sandbox.rawQuery(
+        `SELECT public.connection_org_key($1) AS key`,
+        [TI4]
+      );
+      expect((personal.rows[0] as { key: string | null }).key).toBeNull();
+    } finally {
+      await sandbox.close();
+    }
   });
 
   it("loadContactsByIds / loadGroupsByIds hydrate referenced entities", async () => {
@@ -1049,5 +1146,41 @@ describe("buildCorpusFiles", () => {
       "f2000000-0000-4000-8000-00000000beef",
     ];
     expect(() => buildCorpusFiles(input)).toThrow(/loadContactsByIds/);
+  });
+
+  it("synthesizes a placeholder actor contact for tic-less connections", () => {
+    const TIC_LESS = "f2000000-0000-4000-8000-000000000031";
+    const input = baseBuildInput();
+    input.world.connections.push({
+      id: TIC_LESS,
+      provider: "unknown",
+      actorContactId: null,
+      teamId: 77,
+    });
+
+    const { files, report } = buildCorpusFiles(input);
+    expect(report.some((l) => l.includes("dropped connection"))).toBe(false);
+
+    const worldDoc = parseYaml(
+      files.find((f) => f.path === "world.yaml")!.text
+    ) as {
+      connections: Record<string, unknown>[];
+      contacts: Record<string, unknown>[];
+      teams: { id: number }[];
+    };
+    const conn = worldDoc.connections.find((c) => c.id === TIC_LESS)!;
+    expect(conn).toBeDefined();
+    expect(conn.account_contact).toMatch(/^conn-actor-[0-9a-f]{6}$/);
+    const placeholder = worldDoc.contacts.find(
+      (c) => c.slug === conn.account_contact
+    )!;
+    // The placeholder is deterministic (stable across re-extractions) with
+    // NULL email/name so connection_org_key's actor lateral skips it.
+    expect(placeholder.id).toBe(deterministicUuid(`conn-actor:${TIC_LESS}`));
+    expect(placeholder.email).toBeNull();
+    expect(placeholder.name).toBeNull();
+    expect(placeholder.linked_to_user).toBe(false);
+    // The team referenced only by the placeholder-actor connection is emitted.
+    expect(worldDoc.teams.some((t) => t.id === 77)).toBe(true);
   });
 });

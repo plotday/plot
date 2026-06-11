@@ -18,9 +18,12 @@ import {
   isFreemailDomain,
   scrubGroupName,
 } from "./anonymize";
+import { deterministicUuid } from "../corpus/hash";
 import { leakCheck, type LeakFinding, type RawPii } from "./leak-check";
 import { contactSlugFromEmail, uniqueSlugifier } from "./slugs";
 import type {
+  ExtractedConnection,
+  ExtractedContact,
   ExtractedNegative,
   ExtractedThread,
   ExtractedWorld,
@@ -141,6 +144,34 @@ export function synthTeam(teamId: number): {
 /** Deterministic base slug for a connection (provider + id hash). */
 export function connectionSlugBase(provider: string, connectionId: string): string {
   return `${provider}-${hashShort(connectionId, 6)}`;
+}
+
+/**
+ * Placeholder actor contact for a tic-less connection — a prod
+ * twist_instance with ZERO twist_instance_connection rows (verified live:
+ * many of kris's instances, e.g. team-owned ones, have no tic row).
+ *
+ * WHY a placeholder instead of dropping the connection: in prod,
+ * connection_org_key's actor lateral finds no tic row for these instances,
+ * so acct.domain is NULL and the key falls through to `team:<id>` (or NULL
+ * when personal). The sandbox, however, ALWAYS inserts a
+ * twist_instance_connection row with actor_id = account_contact, so the
+ * faithful corpus representation is a synthesized contact whose email AND
+ * name are both NULL: the lateral then matches the row, but its
+ * `c.email IS NOT NULL` predicate excludes it — yielding the exact same
+ * org-key outcome (team branch or NULL) as prod. Keeping the connection also
+ * keeps every channel it parents (channel topics drive the
+ * channel_default/topic stages) and the threads' `connection` refs (the
+ * origin exact-match signal).
+ */
+export function placeholderActorContact(connectionId: string): {
+  id: string;
+  slugBase: string;
+} {
+  return {
+    id: deterministicUuid(`conn-actor:${connectionId}`),
+    slugBase: `conn-actor-${hashShort(connectionId, 6)}`,
+  };
 }
 
 /**
@@ -374,22 +405,42 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
 
   const contactAnon = new Map<string, { email: string | null; name: string | null }>();
   const contactSlug = new Map<string, string>();
-  {
-    const slugify = uniqueSlugifier();
-    for (const c of world.contacts) {
-      if (contactAnon.has(c.id)) continue;
-      const anon = anonymizePerson({ name: c.name, email: c.email });
-      const email = emailShapedOrExampleTest(anon.email);
-      contactAnon.set(c.id, { email, name: anon.name });
-      contactSlug.set(
-        c.id,
-        slugify(
-          contactSlugFromEmail(email, c.id),
-          `c-${c.id.replace(/-/g, "").slice(0, 8)}`
-        )
-      );
-    }
+  const contactSlugify = uniqueSlugifier();
+  for (const c of world.contacts) {
+    if (contactAnon.has(c.id)) continue;
+    const anon = anonymizePerson({ name: c.name, email: c.email });
+    const email = emailShapedOrExampleTest(anon.email);
+    contactAnon.set(c.id, { email, name: anon.name });
+    contactSlug.set(
+      c.id,
+      contactSlugify(
+        contactSlugFromEmail(email, c.id),
+        `c-${c.id.replace(/-/g, "").slice(0, 8)}`
+      )
+    );
   }
+
+  // Tic-less connections (actorContactId null) get a synthesized placeholder
+  // actor with NULL email/name so the sandbox's twist_instance_connection
+  // insert reproduces prod's connection_org_key fall-through (team:<id> or
+  // NULL) — see placeholderActorContact for the full rationale. The
+  // placeholder shares the contact slug namespace so refs stay unambiguous.
+  const placeholderActorIdByConnection = new Map<string, string>();
+  const placeholderContacts: ExtractedContact[] = [];
+  for (const conn of world.connections) {
+    if (conn.actorContactId !== null) continue;
+    if (placeholderActorIdByConnection.has(conn.id)) continue;
+    const { id, slugBase } = placeholderActorContact(conn.id);
+    placeholderActorIdByConnection.set(conn.id, id);
+    if (contactAnon.has(id)) continue;
+    contactAnon.set(id, { email: null, name: null });
+    contactSlug.set(
+      id,
+      contactSlugify(slugBase, `c-${id.replace(/-/g, "").slice(0, 8)}`)
+    );
+    placeholderContacts.push({ id, email: null, name: null, linkedToUser: false });
+  }
+  const emittedContacts = [...world.contacts, ...placeholderContacts];
 
   const rawContactNames = world.contacts
     .map((c) => c.name)
@@ -433,18 +484,23 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
   const teamSlugById = new Map(teams.map((t) => [t.id, t.slug]));
 
   // Connections: dedupe by id; drop (with report) when the actor contact is
-  // not part of the world — the caller should have hydrated it.
+  // not part of the world — the caller should have hydrated it. Tic-less
+  // connections resolve their actor to the synthesized placeholder above.
   const connSlug = new Map<string, string>();
-  const emittedConnections: ExtractedWorld["connections"] = [];
+  const emittedConnections: Array<
+    Omit<ExtractedConnection, "actorContactId"> & { actorContactId: string }
+  > = [];
   {
     const slugify = uniqueSlugifier();
     const seen = new Set<string>();
     for (const conn of world.connections) {
       if (seen.has(conn.id)) continue;
       seen.add(conn.id);
-      if (!contactSlug.has(conn.actorContactId)) {
+      const actorContactId =
+        conn.actorContactId ?? placeholderActorIdByConnection.get(conn.id)!;
+      if (!contactSlug.has(actorContactId)) {
         report.push(
-          `dropped connection ${conn.id} (${conn.provider}): actor contact ${conn.actorContactId} not in world.contacts`
+          `dropped connection ${conn.id} (${conn.provider}): actor contact ${actorContactId} not in world.contacts`
         );
         continue;
       }
@@ -455,7 +511,7 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
           `conn-${conn.id.replace(/-/g, "").slice(0, 8)}`
         )
       );
-      emittedConnections.push(conn);
+      emittedConnections.push({ ...conn, actorContactId });
     }
   }
 
@@ -839,7 +895,7 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
       description: p.description,
       facet_filters: p.facetFilters,
     })),
-    contacts: world.contacts.map((c) => ({
+    contacts: emittedContacts.map((c) => ({
       slug: contactSlug.get(c.id)!,
       id: c.id,
       email: contactAnon.get(c.id)!.email,
@@ -863,7 +919,7 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
     "",
     `Anonymized snapshot of \`${anonUserEmail}\` extracted on ${today} (corpus schema v2).`,
     "",
-    `World: ${world.priorities.length} priorities, ${world.contacts.length} contacts, ` +
+    `World: ${world.priorities.length} priorities, ${emittedContacts.length} contacts, ` +
       `${world.groups.length} groups, ${emittedConnections.length} connections, ` +
       `${emittedChannels.length} channels, ${teams.length} teams, ${embeddings.length} embeddings ` +
       `(in embeddings.yaml).`,
@@ -920,7 +976,7 @@ export function buildCorpusFiles(input: CorpusBuildInput): CorpusBuildOutput {
   warnings.push(...leak.warnings);
 
   report.push(
-    `emitted: ${world.priorities.length} priorities, ${world.contacts.length} contacts, ` +
+    `emitted: ${world.priorities.length} priorities, ${emittedContacts.length} contacts, ` +
       `${world.groups.length} groups, ${emittedConnections.length} connections, ` +
       `${emittedChannels.length} channels, ${teams.length} teams, ` +
       `${input.trainings.length} training threads, ${input.negativeThreads.length} negative threads, ` +

@@ -37,6 +37,7 @@ import {
   emailShapedOrExampleTest,
   embeddingRefForThread,
   makeCaseId,
+  placeholderActorContact,
   stringifyCorpusYaml,
   synthTeam,
 } from "./emit";
@@ -224,6 +225,28 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
       return slug;
     };
 
+    // Tic-less connections get a synthesized placeholder actor (NULL email +
+    // name) so the connection — and its channels / org-key fall-through —
+    // survives in the corpus. See placeholderActorContact in emit.ts.
+    const ensurePlaceholderActor = (connectionId: string): string => {
+      const { id, slugBase } = placeholderActorContact(connectionId);
+      const known = contactSlugById.get(id);
+      if (known) return known;
+      const slug = contactSlugify(
+        slugBase,
+        `c-${id.replace(/-/g, "").slice(0, 8)}`
+      );
+      (world.contacts ??= []).push({
+        slug,
+        id,
+        email: null,
+        name: null,
+        linked_to_user: false,
+      });
+      contactSlugById.set(id, slug);
+      return slug;
+    };
+
     const ensureConnection = async (
       connectionId: string | null
     ): Promise<string | null> => {
@@ -234,11 +257,14 @@ export async function appendProdThreads(opts: AppendOptions): Promise<void> {
       const conn = connections[0];
       if (!conn) {
         console.warn(
-          `  ! connection ${connectionId} has no twist_instance_connection row; thread emitted without one`
+          `  ! connection ${connectionId} no longer exists in prod (no twist_instance row); thread emitted without one`
         );
         return null;
       }
-      const actorSlug = await ensureContact(conn.actorContactId);
+      const actorSlug =
+        conn.actorContactId !== null
+          ? await ensureContact(conn.actorContactId)
+          : ensurePlaceholderActor(conn.id);
       if (!actorSlug) return null;
       let teamSlug: string | null = null;
       if (conn.teamId !== null) {

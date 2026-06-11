@@ -270,7 +270,7 @@ async function ensureReferencedEntities(
     }
     if (missing.length > 0) {
       log.push(
-        `${missing.length} connection(s) had no twist_instance_connection row — affected threads emit without a connection`
+        `${missing.length} connection id(s) no longer exist in prod (no twist_instance row) — affected threads emit without a connection`
       );
     }
   }
@@ -284,7 +284,9 @@ async function ensureReferencedEntities(
     }
   }
   for (const conn of world.connections) {
-    if (!knownContacts.has(conn.actorContactId)) {
+    // Tic-less connections (actorContactId null) have no real actor to
+    // hydrate — emit synthesizes their placeholder contact.
+    if (conn.actorContactId !== null && !knownContacts.has(conn.actorContactId)) {
       neededContacts.add(conn.actorContactId);
     }
   }
@@ -305,7 +307,7 @@ async function ensureReferencedEntities(
         }
       }
       world.connections = world.connections.filter(
-        (c) => !gone.has(c.actorContactId)
+        (c) => c.actorContactId === null || !gone.has(c.actorContactId)
       );
       log.push(
         `${unresolved.length} contact id(s) no longer exist in prod — refs dropped`
