@@ -66,6 +66,28 @@ double agendaLeadingWidth(BuildContext context) {
 /// block types.
 double agendaGutterGap(BuildContext context) => context.theme.spacing.md;
 
+/// Color for the agenda's secondary content text (event summary lines,
+/// durations, the date-header month).
+///
+/// In multi-panel layouts the agenda is secondary sidebar content, so it
+/// keeps the quiet `veryMuted` tone. In single-panel layouts (phones) the
+/// agenda is primary content, so the tier is promoted one step up the
+/// prominence ladder (veryMuted → muted → foreground) to a phone-appropriate
+/// contrast level — fixing the washed-out look, especially in light mode.
+Color agendaSecondaryColor(BuildContext context) {
+  final pc = context.theme.plotColors;
+  return context.isMultiPanel ? pc.veryMuted : pc.muted;
+}
+
+/// Color for the agenda's emphasised text (the date-header day number).
+/// One tier stronger than [agendaSecondaryColor]: `muted` when multi-panel,
+/// the full `foreground` when single-panel.
+Color agendaEmphasisColor(BuildContext context) {
+  return context.isMultiPanel
+      ? context.theme.plotColors.muted
+      : context.theme.colors.foreground;
+}
+
 /// Line-height multiplier for the block header's fixed-height text rows.
 ///
 /// Figtree's glyphs span ~1.2em (0.95 ascent + 0.25 descent). A line box
@@ -275,12 +297,12 @@ class AgendaTile extends StatelessWidget {
       // content titles beside it.
       final spacing = context.theme.spacing;
       final labelStyle = TextStyle(
-        color: context.theme.plotColors.veryMuted,
+        color: agendaSecondaryColor(context),
         fontSize: smSize,
         fontWeight: FontWeight.w500,
       );
       final dayStyle = labelStyle.copyWith(
-        color: context.theme.plotColors.muted,
+        color: agendaEmphasisColor(context),
         fontWeight: FontWeight.w700,
       );
 
@@ -989,7 +1011,13 @@ class _BlockHeaderState extends State<_BlockHeader> {
       priority.displayColor,
       muted: true,
     );
-    final fg = widget.selected
+    // The title/focus colour. In multi-panel layouts the agenda is secondary
+    // content, so only the selected row shows its full focus colour and the
+    // rest sit in the desaturated `muted` variant. In single-panel (phone)
+    // the agenda is the primary, full-screen view with no persistent row
+    // selection, so every title renders in its full focus colour rather than
+    // the washed-out muted variant.
+    final fg = widget.selected || !context.isMultiPanel
         ? context.colour.colours.fromTheme(priority.displayColor)
         : mutedFg;
     final bg = widget.selected
@@ -1036,7 +1064,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // thread's links. For non-event blocks, row 1 keeps the priority
     // breadcrumb (a [FocusLabel], which carries its own leading focus
     // icon) and row 2 keeps the joined thread summary.
-    final mutedColor = context.theme.plotColors.veryMuted;
+    final mutedColor = agendaSecondaryColor(context);
     final TextSpan summarySpan = TextSpan(
       text: summary,
       style: TextStyle(color: mutedColor),

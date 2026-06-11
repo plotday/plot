@@ -197,6 +197,7 @@
 
 ### Fixes
 
+- On a phone, the agenda no longer looks washed out. Event titles now show in their focus's full color, and the day and summary text read at a normal contrast level, so the agenda is easy to scan at a glance. On wider windows, where the agenda sits beside your threads as secondary content, it stays softly muted as before.
 - New replies on a thread you'd already opened now show up as unread again, and notify you. A reply could land silently — no unread mark, no push or email — on any thread you'd previously read; new messages now resurface the thread and reach you as expected.
 - A focus you'd paused no longer shows up twice in the agenda. When a focus was scheduled for right now and also had a paused timer, the agenda could list the same block twice in a row; it now shows the live scheduled block just once.
 - Replies you write on an email thread now actually send. A recent change could leave a reply sitting in Plot without going out over email — the connector couldn't tell who the recipients were and quietly skipped the send. Your replies now reach everyone on the thread again.
