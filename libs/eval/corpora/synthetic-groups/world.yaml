@@ -1,0 +1,151 @@
+name: synthetic-groups
+description: |
+  Handcrafted group-heavy ambiguity corpus. Persona: Tomás Rivera, lead
+  organizer of the Riverton Neighbors association. Most threads arrive via
+  one Slack connection, the same handful of people show up everywhere, and
+  topics (planning, signups, schedules, workshops) repeat across focuses —
+  group membership (thread.groups) is frequently the only clean signal.
+
+  Signals exercised (all fictional people/orgs; labels true by construction):
+  - group-overlap vs topic noise: near-identical wording filed in different
+    focuses where the Jaccard over thread.groups discriminates.
+  - tie-breaker pressure: cases where two focuses both hold close neighbors
+    (same groups, shared contacts, similar wording) so margins are small and
+    rank-of-gold reporting matters.
+  - topic short-circuit: channel:301/304 are filed consistently → the
+    deterministic topic stage fires; channel:302 is split across Community
+    Events (2) and Volunteer Crew (1) → the mode wins deterministically and
+    one case is deliberately labeled against the mode (topic-ambiguity
+    material for the LLM override stage).
+schema_version: 2
+source:
+  kind: handcrafted
+  anonymized: false
+user:
+  id: aaaaaaa3-0000-4000-a000-000000000001
+  email: tomas@rivertonneighbors.org
+  primary_contact_id: null
+  subscription: null
+
+teams: []
+
+connections:
+  # Single Slack workspace; account domain rivertonneighbors.org is not
+  # freemail so the org key resolves — origin is uniform across trainings.
+  - slug: slack-riverton
+    id: f3000000-0000-4000-a000-000000000001
+    provider: slack
+    account_contact: tomas
+    team: null
+
+priorities:
+  - slug: everything
+    id: b3000000-0000-4000-a000-000000000001
+    path: gr
+    title: Everything
+    key: null
+    description: null
+    facet_filters: null
+  - slug: governance
+    id: b3000000-0000-4000-a000-000000000002
+    path: gr.gov
+    title: Board & Governance
+    key: null
+    description: null
+    facet_filters: null
+  - slug: fundraising
+    id: b3000000-0000-4000-a000-000000000003
+    path: gr.fund
+    title: Fundraising
+    key: null
+    description: null
+    facet_filters: null
+  - slug: events
+    id: b3000000-0000-4000-a000-000000000004
+    path: gr.ev
+    title: Community Events
+    key: null
+    description: null
+    facet_filters: null
+  - slug: volunteers-p
+    id: b3000000-0000-4000-a000-000000000005
+    path: gr.vc
+    title: Volunteer Crew
+    key: null
+    description: null
+    facet_filters: null
+  - slug: youth
+    id: b3000000-0000-4000-a000-000000000006
+    path: gr.yp
+    title: Youth Program
+    key: null
+    description: null
+    facet_filters: null
+  - slug: garden
+    id: b3000000-0000-4000-a000-000000000007
+    path: gr.gd
+    title: Community Garden
+    key: null
+    description: null
+    facet_filters: null
+  - slug: personal
+    id: b3000000-0000-4000-a000-000000000008
+    path: gr.ps
+    title: Personal
+    key: null
+    description: null
+    facet_filters: null
+
+contacts:
+  - slug: tomas
+    id: c3000000-0000-4000-a000-000000000001
+    email: tomas@rivertonneighbors.org
+    name: Tomás Rivera
+    linked_to_user: true
+  - slug: nadia-osei
+    id: c3000000-0000-4000-a000-000000000002
+    email: nadia@rivertonneighbors.org
+    name: Nadia Osei
+    linked_to_user: false
+  - slug: victor-lam
+    id: c3000000-0000-4000-a000-000000000003
+    email: victor@rivertonneighbors.org
+    name: Victor Lam
+    linked_to_user: false
+  - slug: priti-shah
+    id: c3000000-0000-4000-a000-000000000004
+    email: priti@rivertonneighbors.org
+    name: Priti Shah
+    linked_to_user: false
+  - slug: omar-haddad
+    id: c3000000-0000-4000-a000-000000000005
+    email: omar@rivertonneighbors.org
+    name: Omar Haddad
+    linked_to_user: false
+  - slug: june-park
+    id: c3000000-0000-4000-a000-000000000006
+    email: june@rivertonneighbors.org
+    name: June Park
+    linked_to_user: false
+  - slug: rosa-delgado
+    id: c3000000-0000-4000-a000-000000000007
+    email: rosa@rivertonneighbors.org
+    name: Rosa Delgado
+    linked_to_user: false
+
+groups:
+  - slug: board
+    id: e3000000-0000-4000-a000-000000000001
+    title: Board
+  - slug: volunteers
+    id: e3000000-0000-4000-a000-000000000002
+    title: Volunteers
+  - slug: youth-crew
+    id: e3000000-0000-4000-a000-000000000003
+    title: Youth Crew
+  - slug: garden-club
+    id: e3000000-0000-4000-a000-000000000004
+    title: Garden Club
+
+channels: []
+embeddings: []

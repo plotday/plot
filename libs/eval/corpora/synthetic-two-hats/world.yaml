@@ -1,0 +1,168 @@
+name: synthetic-two-hats
+description: |
+  Handcrafted multi-account routing corpus. Persona: Ana Vidal, a staff
+  engineer at Brightforge (ana@brightforge.io) who also runs her household
+  from a personal gmail (ana.vidal.dev@gmail.com). Work and personal
+  hierarchies contain deliberately similar-sounding threads (budget reviews,
+  renewals, lunches) so plain text similarity cannot separate them.
+
+  Signals exercised (all fictional people/orgs; labels true by construction):
+  - origin-exact: ambiguous-title cases whose only reliable discriminator is
+    the originating connection (work-gmail vs personal-gmail) — neighbors
+    from the same connection get the exact origin bonus + author match.
+  - origin-org: cases arriving via work-calendar, a SECOND work connection
+    sharing the brightforge.io org domain. No trainings exist on
+    work-calendar, so matching work neighbors can only earn the org-key
+    branch of the origin bonus (connection_org_key → domain:brightforge.io).
+  - org-key NULL: personal-gmail resolves to no org key (gmail.com is
+    freemail, no team), so personal trainings never org-match work cases.
+  - account-hierarchy affinity: ana-work / ana-personal are linked contacts;
+    their raw presence in thread.contacts ties cases to the work or
+    personal hierarchy distributions.
+  - no-connection controls: connection=null candidates get zero origin
+    everywhere and must route on contacts/sem alone.
+schema_version: 2
+source:
+  kind: handcrafted
+  anonymized: false
+user:
+  id: aaaaaaa2-0000-4000-a000-000000000001
+  email: ana@brightforge.io
+  primary_contact_id: null
+  subscription:
+    plan: pro
+    status: active
+
+teams:
+  - slug: brightforge
+    id: 21
+    name: Brightforge
+
+connections:
+  # Org connection #1: gmail on the work account. connection_org_key →
+  # domain:brightforge.io (non-freemail account email).
+  - slug: work-gmail
+    id: f2000000-0000-4000-a000-000000000001
+    provider: gmail
+    account_contact: ana-work
+    team: brightforge
+  # Org connection #2: calendar on the SAME work account/domain. Shares the
+  # org key with work-gmail but is a different connection id — candidates
+  # arriving here can only org-match work-gmail neighbors (never exact).
+  - slug: work-calendar
+    id: f2000000-0000-4000-a000-000000000002
+    provider: google calendar
+    account_contact: ana-work
+    team: brightforge
+  # Personal connection: freemail account, no team → org key NULL.
+  - slug: personal-gmail
+    id: f2000000-0000-4000-a000-000000000003
+    provider: gmail
+    account_contact: ana-personal
+    team: null
+
+priorities:
+  - slug: everything
+    id: b2000000-0000-4000-a000-000000000001
+    path: th
+    title: Everything
+    key: null
+    description: null
+    facet_filters: null
+  - slug: work
+    id: b2000000-0000-4000-a000-000000000002
+    path: th.wk
+    title: Brightforge
+    key: null
+    description: Work hierarchy bucket.
+    facet_filters: null
+  - slug: work-platform
+    id: b2000000-0000-4000-a000-000000000003
+    path: th.wk.pl
+    title: Platform Team
+    key: null
+    description: null
+    facet_filters: null
+  - slug: work-hiring
+    id: b2000000-0000-4000-a000-000000000004
+    path: th.wk.hr
+    title: Hiring
+    key: null
+    description: null
+    facet_filters: null
+  - slug: work-planning
+    id: b2000000-0000-4000-a000-000000000005
+    path: th.wk.bp
+    title: Quarterly Planning
+    key: null
+    description: null
+    facet_filters: null
+  - slug: personal
+    id: b2000000-0000-4000-a000-000000000006
+    path: th.ps
+    title: Personal
+    key: null
+    description: Personal hierarchy bucket.
+    facet_filters: null
+  - slug: personal-finance
+    id: b2000000-0000-4000-a000-000000000007
+    path: th.ps.fin
+    title: Home Finances
+    key: null
+    description: null
+    facet_filters: null
+  - slug: personal-travel
+    id: b2000000-0000-4000-a000-000000000008
+    path: th.ps.tr
+    title: Trips
+    key: null
+    description: null
+    facet_filters: null
+  - slug: personal-family
+    id: b2000000-0000-4000-a000-000000000009
+    path: th.ps.fam
+    title: Family
+    key: null
+    description: null
+    facet_filters: null
+
+contacts:
+  - slug: ana-work
+    id: c2000000-0000-4000-a000-000000000001
+    email: ana@brightforge.io
+    name: Ana Vidal
+    linked_to_user: true
+  - slug: ana-personal
+    id: c2000000-0000-4000-a000-000000000002
+    email: ana.vidal.dev@gmail.com
+    name: Ana Vidal (personal)
+    linked_to_user: true
+  - slug: raj-iyer
+    id: c2000000-0000-4000-a000-000000000003
+    email: raj@brightforge.io
+    name: Raj Iyer
+    linked_to_user: false
+  - slug: mei-tan
+    id: c2000000-0000-4000-a000-000000000004
+    email: mei@brightforge.io
+    name: Mei Tan
+    linked_to_user: false
+  - slug: sofia-ruiz
+    id: c2000000-0000-4000-a000-000000000005
+    email: sofia@brightforge.io
+    name: Sofia Ruiz
+    linked_to_user: false
+  - slug: diego-vidal
+    id: c2000000-0000-4000-a000-000000000006
+    email: diego.vidal@gmail.com
+    name: Diego Vidal
+    linked_to_user: false
+  - slug: carla-mendes
+    id: c2000000-0000-4000-a000-000000000007
+    email: carla.mendes@gmail.com
+    name: Carla Mendes
+    linked_to_user: false
+
+groups: []
+channels: []
+embeddings: []

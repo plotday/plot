@@ -1,0 +1,320 @@
+name: full
+description: |
+  22 user_moved trainings. Work threads arrive via work-gmail (org key
+  domain:brightforge.io) with colleague contacts; personal threads arrive
+  via personal-gmail (freemail, org key NULL) with family/friend contacts.
+  Deliberate wording twins exist on both sides (budget review, renewal
+  reminder, lunch) so the connection is the discriminating signal for the
+  ambiguous cases. NO trainings exist on work-calendar — candidates arriving
+  there can only earn the org branch of the origin bonus.
+threads:
+  - id: d2000000-0000-4000-a000-000000000001
+    title: Deploy pipeline incident review
+    topic: null
+    contacts:
+      - ana-work
+      - raj-iyer
+    groups: []
+    embedding_ref: embl-2fa6904f39
+    author: raj-iyer
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-05T15:00:00.000Z
+    filed_to_priority: work-platform
+    moved_at: 2026-01-06T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000002
+    title: Datadog contract renewal for the platform stack
+    topic: null
+    contacts:
+      - ana-work
+      - raj-iyer
+    groups: []
+    embedding_ref: embl-109f126bbb
+    author: raj-iyer
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-12T11:30:00.000Z
+    filed_to_priority: work-platform
+    moved_at: 2026-01-13T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000003
+    title: Postgres upgrade rollout plan
+    topic: null
+    contacts:
+      - ana-work
+      - raj-iyer
+    groups: []
+    embedding_ref: embl-61d48fa287
+    author: raj-iyer
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-19T14:00:00.000Z
+    filed_to_priority: work-platform
+    moved_at: 2026-01-20T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000004
+    title: On-call rotation handoff notes
+    topic: null
+    contacts:
+      - ana-work
+      - raj-iyer
+    groups: []
+    embedding_ref: embl-259ef0d37d
+    author: raj-iyer
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-26T16:00:00.000Z
+    filed_to_priority: work-platform
+    moved_at: 2026-01-27T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000005
+    title: "Lunch and learn: incident response retro"
+    topic: null
+    contacts:
+      - ana-work
+      - raj-iyer
+    groups: []
+    embedding_ref: embl-e0f2b3eb20
+    author: raj-iyer
+    connection: work-gmail
+    facets: null
+    created_at: 2026-02-02T12:00:00.000Z
+    filed_to_priority: work-platform
+    moved_at: 2026-02-03T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000006
+    title: "Interview: senior SRE candidate panel"
+    topic: null
+    contacts:
+      - ana-work
+      - sofia-ruiz
+    groups: []
+    embedding_ref: embl-279a03239b
+    author: sofia-ruiz
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-08T10:00:00.000Z
+    filed_to_priority: work-hiring
+    moved_at: 2026-01-09T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000007
+    title: Hiring sync with recruiting
+    topic: null
+    contacts:
+      - ana-work
+      - sofia-ruiz
+    groups: []
+    embedding_ref: embl-e9e9781f0b
+    author: sofia-ruiz
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-15T10:00:00.000Z
+    filed_to_priority: work-hiring
+    moved_at: 2026-01-16T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000008
+    title: "Debrief: staff engineer onsite loop"
+    topic: null
+    contacts:
+      - ana-work
+      - sofia-ruiz
+    groups: []
+    embedding_ref: embl-5b1b4eadcc
+    author: sofia-ruiz
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-22T10:00:00.000Z
+    filed_to_priority: work-hiring
+    moved_at: 2026-01-23T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000009
+    title: Q3 infrastructure budget review
+    topic: null
+    contacts:
+      - ana-work
+      - mei-tan
+    groups: []
+    embedding_ref: embl-fb36f0453d
+    author: mei-tan
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-07T13:00:00.000Z
+    filed_to_priority: work-planning
+    moved_at: 2026-01-08T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-00000000000a
+    title: Cloud spend forecast draft
+    topic: null
+    contacts:
+      - ana-work
+      - mei-tan
+    groups: []
+    embedding_ref: embl-62409fb3b7
+    author: mei-tan
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-14T13:00:00.000Z
+    filed_to_priority: work-planning
+    moved_at: 2026-01-15T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-00000000000b
+    title: Headcount planning for the platform org
+    topic: null
+    contacts:
+      - ana-work
+      - mei-tan
+    groups: []
+    embedding_ref: embl-6fab323d06
+    author: mei-tan
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-21T13:00:00.000Z
+    filed_to_priority: work-planning
+    moved_at: 2026-01-22T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-00000000000c
+    title: Annual planning budget kickoff
+    topic: null
+    contacts:
+      - ana-work
+      - mei-tan
+    groups: []
+    embedding_ref: embl-997cc6dffb
+    author: mei-tan
+    connection: work-gmail
+    facets: null
+    created_at: 2026-01-28T13:00:00.000Z
+    filed_to_priority: work-planning
+    moved_at: 2026-01-29T09:00:00.000Z
+  - id: d2000000-0000-4000-a000-00000000000d
+    title: Monthly household budget review
+    topic: null
+    contacts:
+      - ana-personal
+      - diego-vidal
+    groups: []
+    embedding_ref: embl-f4bafcd02a
+    author: diego-vidal
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-06T19:00:00.000Z
+    filed_to_priority: personal-finance
+    moved_at: 2026-01-07T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-00000000000e
+    title: Mortgage renewal options from the bank
+    topic: null
+    contacts:
+      - ana-personal
+      - diego-vidal
+    groups: []
+    embedding_ref: embl-34e6f37495
+    author: diego-vidal
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-13T19:00:00.000Z
+    filed_to_priority: personal-finance
+    moved_at: 2026-01-14T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-00000000000f
+    title: Car insurance renewal reminder
+    topic: null
+    contacts:
+      - ana-personal
+      - diego-vidal
+    groups: []
+    embedding_ref: embl-37d10aee65
+    author: diego-vidal
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-20T19:00:00.000Z
+    filed_to_priority: personal-finance
+    moved_at: 2026-01-21T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000010
+    title: Savings plan for the kitchen reno
+    topic: null
+    contacts:
+      - ana-personal
+      - diego-vidal
+    groups: []
+    embedding_ref: embl-f6db3ec910
+    author: diego-vidal
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-27T19:00:00.000Z
+    filed_to_priority: personal-finance
+    moved_at: 2026-01-28T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000011
+    title: Lisbon trip flight options
+    topic: null
+    contacts:
+      - ana-personal
+      - carla-mendes
+    groups: []
+    embedding_ref: embl-884f222fbc
+    author: carla-mendes
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-09T20:00:00.000Z
+    filed_to_priority: personal-travel
+    moved_at: 2026-01-10T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000012
+    title: Itinerary draft for the Lisbon long weekend
+    topic: null
+    contacts:
+      - ana-personal
+      - carla-mendes
+    groups: []
+    embedding_ref: embl-a820f980f2
+    author: carla-mendes
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-16T20:00:00.000Z
+    filed_to_priority: personal-travel
+    moved_at: 2026-01-17T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000016
+    title: Hotel booking confirmation for the Lisbon stay
+    topic: null
+    contacts:
+      - ana-personal
+    groups: []
+    embedding_ref: embl-7cd291c997
+    author: null
+    connection: personal-gmail
+    facets:
+      format: notification
+      automation: automated
+      reach: direct
+    created_at: 2026-01-23T20:00:00.000Z
+    filed_to_priority: personal-travel
+    moved_at: 2026-01-24T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000013
+    title: Lunch with Mom on Saturday
+    topic: null
+    contacts:
+      - ana-personal
+      - diego-vidal
+    groups: []
+    embedding_ref: embl-e146b1da39
+    author: diego-vidal
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-11T18:00:00.000Z
+    filed_to_priority: personal-family
+    moved_at: 2026-01-12T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000014
+    title: Lucia school recital plans
+    topic: null
+    contacts:
+      - ana-personal
+      - diego-vidal
+    groups: []
+    embedding_ref: embl-a04fb17864
+    author: diego-vidal
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-18T18:00:00.000Z
+    filed_to_priority: personal-family
+    moved_at: 2026-01-19T08:00:00.000Z
+  - id: d2000000-0000-4000-a000-000000000015
+    title: Dinner with the Vidals next Friday
+    topic: null
+    contacts:
+      - ana-personal
+      - diego-vidal
+    groups: []
+    embedding_ref: embl-39d98ac22d
+    author: diego-vidal
+    connection: personal-gmail
+    facets: null
+    created_at: 2026-01-25T18:00:00.000Z
+    filed_to_priority: personal-family
+    moved_at: 2026-01-26T08:00:00.000Z

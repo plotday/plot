@@ -1,0 +1,302 @@
+name: full
+description: |
+  19 user_moved trainings. Group membership discriminates the filings:
+  Board → governance/fundraising, Volunteers → events/volunteer crew,
+  Youth Crew → youth, Garden Club → garden. Topics: channel:301 is filed
+  consistently to governance (3×) and channel:304 to garden (2×);
+  channel:302 is split events (2×) / volunteer crew (1×) to create
+  topic ambiguity. Wording deliberately repeats across focuses (planning,
+  signups, schedules, workshops, Saturday).
+threads:
+  - id: d3000000-0000-4000-a000-000000000001
+    title: Board meeting agenda for March
+    topic: channel:301
+    contacts:
+      - tomas
+      - nadia-osei
+      - victor-lam
+    groups:
+      - board
+    embedding_ref: embl-a06c59df54
+    author: nadia-osei
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-05T18:00:00.000Z
+    filed_to_priority: governance
+    moved_at: 2026-01-06T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000002
+    title: Bylaw amendment first reading
+    topic: channel:301
+    contacts:
+      - tomas
+      - nadia-osei
+      - victor-lam
+    groups:
+      - board
+    embedding_ref: embl-6e108f5ff7
+    author: nadia-osei
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-12T18:00:00.000Z
+    filed_to_priority: governance
+    moved_at: 2026-01-13T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000003
+    title: "Vote results: budget approval"
+    topic: channel:301
+    contacts:
+      - tomas
+      - nadia-osei
+      - victor-lam
+    groups:
+      - board
+    embedding_ref: embl-144d5f395b
+    author: nadia-osei
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-19T18:00:00.000Z
+    filed_to_priority: governance
+    moved_at: 2026-01-20T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000004
+    title: Spring gala sponsorship outreach
+    topic: channel:305
+    contacts:
+      - tomas
+      - victor-lam
+      - nadia-osei
+    groups:
+      - board
+    embedding_ref: embl-8ad8fb0d55
+    author: victor-lam
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-07T17:00:00.000Z
+    filed_to_priority: fundraising
+    moved_at: 2026-01-08T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000005
+    title: Donor thank-you letter drive
+    topic: null
+    contacts:
+      - tomas
+      - victor-lam
+      - priti-shah
+    groups:
+      - board
+      - volunteers
+    embedding_ref: embl-4e8da28f08
+    author: victor-lam
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-14T17:00:00.000Z
+    filed_to_priority: fundraising
+    moved_at: 2026-01-15T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000006
+    title: Community fund grant application draft
+    topic: channel:305
+    contacts:
+      - tomas
+      - victor-lam
+    groups:
+      - board
+    embedding_ref: embl-9be951d17f
+    author: victor-lam
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-21T17:00:00.000Z
+    filed_to_priority: fundraising
+    moved_at: 2026-01-22T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000007
+    title: Summer block party planning kickoff
+    topic: channel:302
+    contacts:
+      - tomas
+      - priti-shah
+      - omar-haddad
+    groups:
+      - volunteers
+    embedding_ref: embl-78e1b09382
+    author: priti-shah
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-08T16:00:00.000Z
+    filed_to_priority: events
+    moved_at: 2026-01-09T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000008
+    title: Movie night logistics and signups
+    topic: channel:302
+    contacts:
+      - tomas
+      - priti-shah
+      - june-park
+    groups:
+      - volunteers
+      - youth-crew
+    embedding_ref: embl-ce412fed8c
+    author: priti-shah
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-15T16:00:00.000Z
+    filed_to_priority: events
+    moved_at: 2026-01-16T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000009
+    title: Fall festival vendor list
+    topic: null
+    contacts:
+      - tomas
+      - omar-haddad
+    groups:
+      - volunteers
+    embedding_ref: embl-c2f436bed0
+    author: omar-haddad
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-22T16:00:00.000Z
+    filed_to_priority: events
+    moved_at: 2026-01-23T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-00000000000a
+    title: New volunteer onboarding checklist
+    topic: channel:302
+    contacts:
+      - tomas
+      - priti-shah
+    groups:
+      - volunteers
+    embedding_ref: embl-ae8869031a
+    author: priti-shah
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-10T15:00:00.000Z
+    filed_to_priority: volunteers-p
+    moved_at: 2026-01-11T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-00000000000b
+    title: April shift schedule for the crew
+    topic: null
+    contacts:
+      - tomas
+      - omar-haddad
+    groups:
+      - volunteers
+    embedding_ref: embl-66afeab9f8
+    author: priti-shah
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-17T15:00:00.000Z
+    filed_to_priority: volunteers-p
+    moved_at: 2026-01-18T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-00000000000c
+    title: Background check forms for new helpers
+    topic: null
+    contacts:
+      - tomas
+      - priti-shah
+    groups:
+      - volunteers
+    embedding_ref: embl-8580a32d4f
+    author: priti-shah
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-24T15:00:00.000Z
+    filed_to_priority: volunteers-p
+    moved_at: 2026-01-25T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-00000000000d
+    title: Youth soccer signup forms
+    topic: channel:303
+    contacts:
+      - tomas
+      - june-park
+    groups:
+      - youth-crew
+    embedding_ref: embl-7cb0f328b7
+    author: june-park
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-09T14:00:00.000Z
+    filed_to_priority: youth
+    moved_at: 2026-01-10T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-00000000000e
+    title: Saturday tutoring workshop schedule
+    topic: null
+    contacts:
+      - tomas
+      - june-park
+    groups:
+      - youth-crew
+    embedding_ref: embl-5921aabc92
+    author: june-park
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-16T14:00:00.000Z
+    filed_to_priority: youth
+    moved_at: 2026-01-17T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-00000000000f
+    title: Field trip permission slips
+    topic: channel:303
+    contacts:
+      - tomas
+      - june-park
+    groups:
+      - youth-crew
+    embedding_ref: embl-93a44e2345
+    author: june-park
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-23T14:00:00.000Z
+    filed_to_priority: youth
+    moved_at: 2026-01-24T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000010
+    title: Compost workshop this Saturday
+    topic: null
+    contacts:
+      - tomas
+      - rosa-delgado
+    groups:
+      - garden-club
+    embedding_ref: embl-afd47ff8d8
+    author: rosa-delgado
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-11T13:00:00.000Z
+    filed_to_priority: garden
+    moved_at: 2026-01-12T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000011
+    title: Plot assignments for the spring beds
+    topic: channel:304
+    contacts:
+      - tomas
+      - rosa-delgado
+    groups:
+      - garden-club
+    embedding_ref: embl-bfdcb51327
+    author: rosa-delgado
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-18T13:00:00.000Z
+    filed_to_priority: garden
+    moved_at: 2026-01-19T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000012
+    title: Seed swap table signup
+    topic: channel:304
+    contacts:
+      - tomas
+      - rosa-delgado
+    groups:
+      - garden-club
+    embedding_ref: embl-d4d57e676d
+    author: rosa-delgado
+    connection: slack-riverton
+    facets: null
+    created_at: 2026-01-25T13:00:00.000Z
+    filed_to_priority: garden
+    moved_at: 2026-01-26T09:00:00.000Z
+  - id: d3000000-0000-4000-a000-000000000013
+    title: Pick up the bike from the repair shop
+    topic: null
+    contacts:
+      - tomas
+    groups: []
+    embedding_ref: embl-9e3140bdc3
+    author: tomas
+    connection: null
+    facets: null
+    created_at: 2026-01-13T19:00:00.000Z
+    filed_to_priority: personal
+    moved_at: 2026-01-14T08:00:00.000Z

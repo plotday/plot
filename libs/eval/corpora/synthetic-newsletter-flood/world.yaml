@@ -1,0 +1,171 @@
+name: synthetic-newsletter-flood
+description: |
+  Handcrafted facet-gate stress corpus. Persona: Priya Raghavan, a freelance
+  product designer running a one-person studio (meridianloft.com) whose gmail
+  inbox is flooded with newsletters, receipts, and promos alongside real
+  client work.
+
+  Signals exercised (all fictional people/orgs; labels true by construction):
+  - intrinsic facet gate: "Client Work" excludes automation=automated, so
+    automated digests that semantically score into it must be dropped to the
+    correct fallback focus (gate-drop cases).
+  - trusted-sender bypass: Lena Okafor participates in user_moved threads
+    filed in Client Work, so her automated digest bypasses the exclude.
+  - trustedSendersOnly: "Finances" admits only trusted-for-focus authors
+    (Marcus Finch, via user_moved filings) or org-domain authors
+    (avery@meridianloft.com matches Priya's linked identity domain); bank
+    and newsletter senders are rejected even with null facets.
+  - format include filter: "Design Reading" includes only format=reading,
+    gating a human chat message that semantically belongs there.
+  - fail-open: candidates with facets=null never violate intrinsic filters.
+schema_version: 2
+source:
+  kind: handcrafted
+  anonymized: false
+user:
+  id: aaaaaaa1-0000-4000-a000-000000000001
+  email: priya@meridianloft.com
+  primary_contact_id: null
+  subscription: null
+
+teams: []
+
+connections:
+  # Gmail org connection: account email domain meridianloft.com is not
+  # freemail, so connection_org_key resolves to domain:meridianloft.com.
+  - slug: gmail-priya
+    id: f1000000-0000-4000-a000-000000000001
+    provider: gmail
+    account_contact: priya
+    team: null
+
+priorities:
+  - slug: everything
+    id: b1000000-0000-4000-a000-000000000001
+    path: nf
+    title: Everything
+    key: null
+    description: null
+    facet_filters: null
+  - slug: client-work
+    id: b1000000-0000-4000-a000-000000000002
+    path: nf.cw
+    title: Client Work
+    key: null
+    description: Active client projects (Okafor Brand rebrand).
+    facet_filters:
+      automation:
+        exclude:
+          - automated
+  - slug: finances
+    id: b1000000-0000-4000-a000-000000000003
+    path: nf.fin
+    title: Finances
+    key: null
+    description: Taxes, bookkeeping, and invoices with the accountant.
+    facet_filters:
+      trustedSendersOnly: true
+  - slug: reading
+    id: b1000000-0000-4000-a000-000000000004
+    path: nf.rd
+    title: Design Reading
+    key: null
+    description: Curated long-form design newsletters worth reading.
+    facet_filters:
+      format:
+        include:
+          - reading
+  - slug: subscriptions
+    id: b1000000-0000-4000-a000-000000000005
+    path: nf.nl
+    title: Subscriptions
+    key: null
+    description: The newsletter/promo pile.
+    facet_filters: null
+  - slug: receipts
+    id: b1000000-0000-4000-a000-000000000006
+    path: nf.rc
+    title: Orders & Receipts
+    key: null
+    description: null
+    facet_filters: null
+  - slug: personal
+    id: b1000000-0000-4000-a000-000000000007
+    path: nf.ps
+    title: Personal
+    key: null
+    description: null
+    facet_filters: null
+  - slug: studio-ops
+    id: b1000000-0000-4000-a000-000000000008
+    path: nf.so
+    title: Studio Operations
+    key: null
+    description: null
+    facet_filters: null
+
+contacts:
+  - slug: priya
+    id: c1000000-0000-4000-a000-000000000001
+    email: priya@meridianloft.com
+    name: Priya Raghavan
+    linked_to_user: true
+  - slug: lena-okafor
+    id: c1000000-0000-4000-a000-000000000002
+    email: lena@okaforbrand.co
+    name: Lena Okafor
+    linked_to_user: false
+  - slug: marcus-finch
+    id: c1000000-0000-4000-a000-000000000003
+    email: marcus@finchaccounting.com
+    name: Marcus Finch
+    linked_to_user: false
+  - slug: avery-meridian
+    id: c1000000-0000-4000-a000-000000000004
+    email: avery@meridianloft.com
+    name: Avery Soto
+    linked_to_user: false
+  - slug: jonas-keller
+    id: c1000000-0000-4000-a000-000000000005
+    email: jonas@kellerstudio.de
+    name: Jonas Keller
+    linked_to_user: false
+  - slug: pixel-weekly
+    id: c1000000-0000-4000-a000-000000000006
+    email: digest@pixelweekly.email
+    name: Pixel Weekly
+    linked_to_user: false
+  - slug: okafor-news
+    id: c1000000-0000-4000-a000-000000000007
+    email: news@okaforbrand.co
+    name: Okafor Brand News
+    linked_to_user: false
+  - slug: firstledger
+    id: c1000000-0000-4000-a000-000000000008
+    email: alerts@firstledgerbank.com
+    name: FirstLedger Bank
+    linked_to_user: false
+  - slug: financeflow
+    id: c1000000-0000-4000-a000-000000000009
+    email: tips@financeflow.app
+    name: FinanceFlow
+    linked_to_user: false
+  - slug: cloudcanvas
+    id: c1000000-0000-4000-a000-00000000000a
+    email: billing@cloudcanvas.app
+    name: CloudCanvas Billing
+    linked_to_user: false
+  - slug: brightcart
+    id: c1000000-0000-4000-a000-00000000000b
+    email: orders@brightcart.shop
+    name: BrightCart Orders
+    linked_to_user: false
+  - slug: typeletter
+    id: c1000000-0000-4000-a000-00000000000c
+    email: hello@typeletter.studio
+    name: TypeLetter
+    linked_to_user: false
+
+groups: []
+channels: []
+embeddings: []

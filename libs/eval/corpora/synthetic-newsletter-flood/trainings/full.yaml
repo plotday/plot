@@ -1,0 +1,346 @@
+name: full
+description: |
+  20 user_moved trainings. Client Work threads carry Lena Okafor in contacts
+  (making her trusted-for-focus there); Finances threads carry Marcus Finch
+  (trusted there); Subscriptions/Receipts anchor the untrusted automated
+  senders so gate-drop cases have a well-supported fallback focus. All inbox
+  threads come via the gmail-priya connection so origin is uniform.
+threads:
+  - id: d1000000-0000-4000-a000-000000000001
+    title: Okafor brand refresh kickoff notes
+    topic: null
+    contacts:
+      - priya
+      - lena-okafor
+    groups: []
+    embedding_ref: embl-d3b8f73e07
+    author: lena-okafor
+    connection: gmail-priya
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-01-06T14:10:00.000Z
+    filed_to_priority: client-work
+    moved_at: 2026-01-07T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000002
+    title: Logo concepts for Okafor launch review
+    topic: null
+    contacts:
+      - priya
+      - lena-okafor
+    groups: []
+    embedding_ref: embl-e4e1d40965
+    author: lena-okafor
+    connection: gmail-priya
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-01-13T16:30:00.000Z
+    filed_to_priority: client-work
+    moved_at: 2026-01-14T08:45:00.000Z
+  - id: d1000000-0000-4000-a000-000000000003
+    title: Okafor packaging mockups feedback round
+    topic: null
+    contacts:
+      - priya
+      - lena-okafor
+    groups: []
+    embedding_ref: embl-d522e01051
+    author: lena-okafor
+    connection: gmail-priya
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-01-20T11:00:00.000Z
+    filed_to_priority: client-work
+    moved_at: 2026-01-21T10:15:00.000Z
+  - id: d1000000-0000-4000-a000-000000000004
+    title: Wordmark font pairing exploration for Okafor
+    topic: null
+    contacts:
+      - priya
+      - lena-okafor
+    groups: []
+    embedding_ref: embl-0db7a7c837
+    author: lena-okafor
+    connection: gmail-priya
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-01-27T15:20:00.000Z
+    filed_to_priority: client-work
+    moved_at: 2026-01-28T09:30:00.000Z
+  - id: d1000000-0000-4000-a000-000000000005
+    title: Quarterly tax estimate review
+    topic: null
+    contacts:
+      - priya
+      - marcus-finch
+    groups: []
+    embedding_ref: embl-b1fd027c65
+    author: marcus-finch
+    connection: gmail-priya
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-01-08T13:00:00.000Z
+    filed_to_priority: finances
+    moved_at: 2026-01-09T08:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000006
+    title: Studio bookkeeping February close
+    topic: null
+    contacts:
+      - priya
+      - marcus-finch
+    groups: []
+    embedding_ref: embl-067c92e6ba
+    author: marcus-finch
+    connection: gmail-priya
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-02-02T10:30:00.000Z
+    filed_to_priority: finances
+    moved_at: 2026-02-03T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000007
+    title: Invoice reconciliation for Q1 retainers
+    topic: null
+    contacts:
+      - priya
+      - marcus-finch
+    groups: []
+    embedding_ref: embl-5c01882438
+    author: marcus-finch
+    connection: gmail-priya
+    facets:
+      format: invoice
+      automation: human
+      reach: direct
+    created_at: 2026-02-09T15:45:00.000Z
+    filed_to_priority: finances
+    moved_at: 2026-02-10T08:30:00.000Z
+  - id: d1000000-0000-4000-a000-000000000008
+    title: "Typography Tuesday: variable fonts deep dive"
+    topic: null
+    contacts:
+      - priya
+      - typeletter
+    groups: []
+    embedding_ref: embl-df1521d0c9
+    author: typeletter
+    connection: gmail-priya
+    facets:
+      format: reading
+      automation: automated
+      reach: list
+    created_at: 2026-01-14T12:00:00.000Z
+    filed_to_priority: reading
+    moved_at: 2026-01-15T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000009
+    title: "TypeLetter essay: the revival of grotesks"
+    topic: null
+    contacts:
+      - priya
+      - typeletter
+    groups: []
+    embedding_ref: embl-a383204320
+    author: typeletter
+    connection: gmail-priya
+    facets:
+      format: reading
+      automation: automated
+      reach: list
+    created_at: 2026-01-28T12:00:00.000Z
+    filed_to_priority: reading
+    moved_at: 2026-01-29T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000013
+    title: "TypeLetter guide: pairing grotesks with variable fonts"
+    topic: null
+    contacts:
+      - priya
+      - typeletter
+    groups: []
+    embedding_ref: embl-1756d16936
+    author: typeletter
+    connection: gmail-priya
+    facets:
+      format: reading
+      automation: automated
+      reach: list
+    created_at: 2026-02-04T12:00:00.000Z
+    filed_to_priority: reading
+    moved_at: 2026-02-05T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-00000000000a
+    title: "Pixel Weekly Digest #214: tools roundup"
+    topic: null
+    contacts:
+      - priya
+      - pixel-weekly
+    groups: []
+    embedding_ref: embl-132f45edb2
+    author: pixel-weekly
+    connection: gmail-priya
+    facets:
+      format: reading
+      automation: automated
+      reach: list
+    created_at: 2026-01-09T08:00:00.000Z
+    filed_to_priority: subscriptions
+    moved_at: 2026-01-10T09:30:00.000Z
+  - id: d1000000-0000-4000-a000-00000000000b
+    title: "Pixel Weekly Digest #215: portfolio inspiration"
+    topic: null
+    contacts:
+      - priya
+      - pixel-weekly
+    groups: []
+    embedding_ref: embl-b4ba297d73
+    author: pixel-weekly
+    connection: gmail-priya
+    facets:
+      format: reading
+      automation: automated
+      reach: list
+    created_at: 2026-01-16T08:00:00.000Z
+    filed_to_priority: subscriptions
+    moved_at: 2026-01-17T09:30:00.000Z
+  - id: d1000000-0000-4000-a000-00000000000c
+    title: "FinanceFlow weekly: budgeting templates roundup"
+    topic: null
+    contacts:
+      - priya
+      - financeflow
+    groups: []
+    embedding_ref: embl-99b6083f84
+    author: financeflow
+    connection: gmail-priya
+    facets:
+      format: reading
+      automation: automated
+      reach: list
+    created_at: 2026-01-23T08:00:00.000Z
+    filed_to_priority: subscriptions
+    moved_at: 2026-01-24T09:30:00.000Z
+  - id: d1000000-0000-4000-a000-00000000000d
+    title: "BrightCart weekend promo: studio supplies sale"
+    topic: null
+    contacts:
+      - priya
+      - brightcart
+    groups: []
+    embedding_ref: embl-80c8fd307f
+    author: brightcart
+    connection: gmail-priya
+    facets:
+      format: promotion
+      automation: automated
+      reach: list
+    created_at: 2026-01-30T08:00:00.000Z
+    filed_to_priority: subscriptions
+    moved_at: 2026-01-31T09:30:00.000Z
+  - id: d1000000-0000-4000-a000-00000000000e
+    title: Receipt for your CloudCanvas subscription renewal
+    topic: null
+    contacts:
+      - priya
+      - cloudcanvas
+    groups: []
+    embedding_ref: embl-c701ab796d
+    author: cloudcanvas
+    connection: gmail-priya
+    facets:
+      format: receipt
+      automation: automated
+      reach: direct
+    created_at: 2026-01-11T07:00:00.000Z
+    filed_to_priority: receipts
+    moved_at: 2026-01-12T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-00000000000f
+    title: "BrightCart order #4821 shipping confirmation"
+    topic: null
+    contacts:
+      - priya
+      - brightcart
+    groups: []
+    embedding_ref: embl-73c550307d
+    author: brightcart
+    connection: gmail-priya
+    facets:
+      format: notification
+      automation: automated
+      reach: direct
+    created_at: 2026-01-18T07:00:00.000Z
+    filed_to_priority: receipts
+    moved_at: 2026-01-19T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000010
+    title: "FirstLedger payment confirmation #88231"
+    topic: null
+    contacts:
+      - priya
+      - firstledger
+    groups: []
+    embedding_ref: embl-be84a0827d
+    author: firstledger
+    connection: gmail-priya
+    facets:
+      format: receipt
+      automation: automated
+      reach: direct
+    created_at: 2026-01-25T07:00:00.000Z
+    filed_to_priority: receipts
+    moved_at: 2026-01-26T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000014
+    title: FirstLedger monthly e-statement notification
+    topic: null
+    contacts:
+      - priya
+      - firstledger
+    groups: []
+    embedding_ref: embl-bbfc2a7f0b
+    author: firstledger
+    connection: gmail-priya
+    facets:
+      format: notification
+      automation: automated
+      reach: direct
+    created_at: 2026-02-01T07:00:00.000Z
+    filed_to_priority: receipts
+    moved_at: 2026-02-02T09:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000011
+    title: Weekend hike plan with the cousins
+    topic: null
+    contacts:
+      - priya
+    groups: []
+    embedding_ref: embl-a050fe8421
+    author: priya
+    connection: null
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-01-17T20:00:00.000Z
+    filed_to_priority: personal
+    moved_at: 2026-01-18T08:00:00.000Z
+  - id: d1000000-0000-4000-a000-000000000012
+    title: Studio lease renewal paperwork
+    topic: null
+    contacts:
+      - priya
+    groups: []
+    embedding_ref: embl-cb87a18fb5
+    author: priya
+    connection: gmail-priya
+    facets:
+      format: message
+      automation: human
+      reach: direct
+    created_at: 2026-01-21T17:00:00.000Z
+    filed_to_priority: studio-ops
+    moved_at: 2026-01-22T08:30:00.000Z

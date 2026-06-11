@@ -1,0 +1,458 @@
+cases:
+  - id: 301-topic-board-agenda
+    source_thread_id: null
+    tags:
+      - topic-consistent
+    as_of: 2026-03-02T18:00:00.000Z
+    description: |
+      channel:301 is filed to Board & Governance 3/3 times — the topic
+      short-circuit should fire deterministically.
+    candidate:
+      title: Agenda items for the April session
+      topic: channel:301
+      contacts:
+        - tomas
+        - nadia-osei
+      groups:
+        - board
+      embedding_ref: embl-a9144300b0
+      author: nadia-osei
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: governance
+      gold_rationale: Constructed consistent-topic — channel:301 always filed to governance.
+      gold_source: human
+      expected: null
+      expected_stage: topic_shortcircuit
+      expected_recorded_at: null
+    notes: ""
+  - id: 302-topic-board-minutes
+    source_thread_id: null
+    tags:
+      - topic-consistent
+    as_of: 2026-03-09T18:00:00.000Z
+    description: |
+      Second consistent-topic probe on channel:301 with off-topic wording —
+      the topic stage must still win.
+    candidate:
+      title: Minutes from last night and follow-ups
+      topic: channel:301
+      contacts:
+        - tomas
+        - victor-lam
+      groups:
+        - board
+      embedding_ref: embl-ea125bc9a4
+      author: victor-lam
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: governance
+      gold_rationale: Constructed consistent-topic — channel:301 always filed to governance.
+      gold_source: human
+      expected: null
+      expected_stage: topic_shortcircuit
+      expected_recorded_at: null
+    notes: ""
+  - id: 303-topic-garden-rota
+    source_thread_id: null
+    tags:
+      - topic-consistent
+    as_of: 2026-03-16T13:00:00.000Z
+    description: |
+      channel:304 is filed to Community Garden 2/2 times — short-circuit.
+    candidate:
+      title: Watering rota for the new beds
+      topic: channel:304
+      contacts:
+        - tomas
+        - rosa-delgado
+      groups:
+        - garden-club
+      embedding_ref: embl-c4d8d37259
+      author: rosa-delgado
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: garden
+      gold_rationale: Constructed consistent-topic — channel:304 always filed to garden.
+      gold_source: human
+      expected: null
+      expected_stage: topic_shortcircuit
+      expected_recorded_at: null
+    notes: ""
+  - id: 304-topic-ambiguous-events-side
+    source_thread_id: null
+    tags:
+      - topic-ambiguity
+    as_of: 2026-03-23T16:00:00.000Z
+    description: |
+      channel:302 is split (events 2×, volunteer crew 1×). This case really
+      is event content, so the deterministic mode pick (events) is also the
+      gold — the easy side of the ambiguity.
+    candidate:
+      title: Block party stage schedule draft
+      topic: channel:302
+      contacts:
+        - tomas
+        - priti-shah
+      groups:
+        - volunteers
+      embedding_ref: embl-14a5e4829a
+      author: priti-shah
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: events
+      gold_rationale: Constructed split-topic, majority side — mode (events) matches the content.
+      gold_source: human
+      expected: null
+      expected_stage: topic_shortcircuit
+      expected_recorded_at: null
+    notes: ""
+  - id: 305-topic-ambiguous-crew-side
+    source_thread_id: null
+    tags:
+      - topic-ambiguity
+      - deliberately-hard
+    as_of: 2026-03-25T16:00:00.000Z
+    description: |
+      Same split topic (channel:302) but the content is volunteer-crew
+      onboarding. The deterministic mode pick (events) is WRONG by
+      construction — this is the material the LLM topic-ambiguity override
+      stage exists for. Deterministic classifiers are expected to miss it.
+    candidate:
+      title: Onboarding buddy pairings for the new crew
+      topic: channel:302
+      contacts:
+        - tomas
+        - priti-shah
+      groups:
+        - volunteers
+      embedding_ref: embl-b757ce0827
+      author: priti-shah
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: volunteers-p
+      gold_rationale: Constructed split-topic, minority side — content belongs to Volunteer Crew though the topic mode says events.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: Deliberately adversarial to the deterministic topic stage.
+  - id: 306-topic-ambiguous-movie-night
+    source_thread_id: null
+    tags:
+      - topic-ambiguity
+    as_of: 2026-04-01T16:00:00.000Z
+    description: |
+      Split topic again, but the content (movie night totals) belongs with
+      the events mode — the deterministic pick should be right.
+    candidate:
+      title: Volunteer signup totals for movie night
+      topic: channel:302
+      contacts:
+        - tomas
+        - priti-shah
+        - june-park
+      groups:
+        - volunteers
+        - youth-crew
+      embedding_ref: embl-a42feb423d
+      author: priti-shah
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: events
+      gold_rationale: Constructed split-topic, majority side — movie-night content matches the events filings.
+      gold_source: human
+      expected: null
+      expected_stage: topic_shortcircuit
+      expected_recorded_at: null
+    notes: ""
+  - id: 307-workshop-garden
+    source_thread_id: null
+    tags:
+      - groups
+    as_of: 2026-04-06T13:00:00.000Z
+    description: |
+      "Workshop ... Saturday" wording exists in BOTH youth (Saturday
+      tutoring workshop schedule) and garden (compost workshop this
+      Saturday). The garden-club group on the candidate must discriminate.
+    candidate:
+      title: Workshop signup sheet for the Saturday session
+      topic: null
+      contacts:
+        - tomas
+        - rosa-delgado
+      groups:
+        - garden-club
+      embedding_ref: embl-7237a8d918
+      author: rosa-delgado
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: garden
+      gold_rationale: Constructed group-overlap discriminator — wording ties youth/garden, groups=[garden-club] decides.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""
+  - id: 308-workshop-youth
+    source_thread_id: null
+    tags:
+      - groups
+    as_of: 2026-04-08T13:00:00.000Z
+    description: |
+      Mirror of 307: same workshop-signup wording but groups=[youth-crew]
+      and June in contacts — must land in Youth Program.
+    candidate:
+      title: Tutoring workshop signups for Saturday
+      topic: null
+      contacts:
+        - tomas
+        - june-park
+      groups:
+        - youth-crew
+      embedding_ref: embl-95628161b8
+      author: june-park
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: youth
+      gold_rationale: Constructed group-overlap mirror of 307 — groups=[youth-crew] decides.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""
+  - id: 309-movie-night-garden-families
+    source_thread_id: null
+    tags:
+      - groups
+    as_of: 2026-04-13T13:00:00.000Z
+    description: |
+      Title sem pulls hard toward the events movie-night training, but the
+      garden-club group and Rosa's contact overlap must keep it in the
+      garden focus (group signal beats topic noise).
+    candidate:
+      title: Movie night for the garden families
+      topic: null
+      contacts:
+        - tomas
+        - rosa-delgado
+      groups:
+        - garden-club
+      embedding_ref: embl-2ad4a90bb3
+      author: rosa-delgado
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: garden
+      gold_rationale: Constructed sem-vs-group conflict — movie-night wording pulls events, garden-club group + Rosa decide.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""
+  - id: 310-sponsorship-invoice
+    source_thread_id: null
+    tags:
+      - groups
+    as_of: 2026-04-20T17:00:00.000Z
+    description: |
+      Sponsorship/invoice wording with the board group and Victor —
+      fundraising's gala-sponsorship anchor should win over governance
+      (same group, same people, different wording).
+    candidate:
+      title: Sponsorship invoice from the print shop
+      topic: null
+      contacts:
+        - tomas
+        - victor-lam
+      groups:
+        - board
+      embedding_ref: embl-a30e981fb1
+      author: victor-lam
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: fundraising
+      gold_rationale: Constructed — board group is shared with governance; sponsorship sem anchors fundraising.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""
+  - id: 311-planning-meeting-tiebreak
+    source_thread_id: null
+    tags:
+      - tiebreaker
+      - groups
+    as_of: 2026-04-27T17:00:00.000Z
+    description: |
+      groups=[board, volunteers] exactly matches the donor-drive training in
+      fundraising; events holds volunteers-group planning threads with
+      similar wording and shared contacts. Both focuses rank with close
+      margins — exact group-set Jaccard must tip fundraising.
+    candidate:
+      title: Planning meeting notes for the spring push
+      topic: null
+      contacts:
+        - tomas
+        - priti-shah
+        - victor-lam
+      groups:
+        - board
+        - volunteers
+      embedding_ref: embl-ed09cad5e6
+      author: victor-lam
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: fundraising
+      gold_rationale: Constructed tie-breaker — exact groups match (board+volunteers) on the fundraising donor drive.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""
+  - id: 312-kickoff-signup-tiebreak
+    source_thread_id: null
+    tags:
+      - tiebreaker
+    as_of: 2026-05-04T16:00:00.000Z
+    description: |
+      "Signup sheet ... kickoff" sits between events (block party planning
+      kickoff, Priti) and volunteer crew (onboarding checklist, Priti) with
+      identical groups — a deliberate near-tie that sem must settle toward
+      the kickoff training.
+    candidate:
+      title: Signup sheet draft for the block party kickoff
+      topic: null
+      contacts:
+        - tomas
+        - priti-shah
+        - omar-haddad
+      groups:
+        - volunteers
+      embedding_ref: embl-d9c084effe
+      author: priti-shah
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: events
+      gold_rationale: Constructed near-tie — same group and contact on both sides, kickoff wording anchors events.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""
+  - id: 313-schedule-helpers-tiebreak
+    source_thread_id: null
+    tags:
+      - tiebreaker
+    as_of: 2026-05-06T15:00:00.000Z
+    description: |
+      "Schedule updates for Saturday helpers" sits between volunteer crew
+      (April shift schedule, Omar) and events (fall festival, Omar) — the
+      shift-schedule wording must tip Volunteer Crew by a small margin.
+    candidate:
+      title: Shift schedule updates for the Saturday helpers
+      topic: null
+      contacts:
+        - tomas
+        - omar-haddad
+      groups:
+        - volunteers
+      embedding_ref: embl-b78c0c2fa2
+      author: omar-haddad
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: volunteers-p
+      gold_rationale: Constructed near-tie — Omar and the volunteers group appear on both sides, schedule wording anchors the crew focus.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""
+  - id: 314-grant-report-tiebreak
+    source_thread_id: null
+    tags:
+      - tiebreaker
+      - groups
+      - deliberately-hard
+    as_of: 2026-05-11T17:00:00.000Z
+    description: |
+      Grant-report wording with the full board roster — governance trainings
+      share the exact contact set and group, so deterministic scoring ranks
+      governance first; the human-correct filing follows the
+      grant-application anchor in fundraising, which sits at rank 2 with a
+      small margin. Deliberately left on the wrong side of the deterministic
+      tie so the LLM tie-breaker has genuine rank-2 pressure to resolve.
+    candidate:
+      title: Grant report draft for the community fund
+      topic: null
+      contacts:
+        - tomas
+        - victor-lam
+        - nadia-osei
+      groups:
+        - board
+      embedding_ref: embl-60ad8f4806
+      author: victor-lam
+      connection: slack-riverton
+      created_by_override: null
+      facets: null
+    labels:
+      gold: fundraising
+      gold_rationale: Constructed tie-breaker — governance matches contacts/group exactly, but the grant anchor lives in fundraising.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: Deliberately adversarial to deterministic scoring (gold at rank 2).
+  - id: 315-control-personal
+    source_thread_id: null
+    tags:
+      - control
+    as_of: 2026-05-18T19:00:00.000Z
+    description: |
+      Composed personal errand — no groups, no connection; routes to
+      Personal on contact shape + author match.
+    candidate:
+      title: Dentist appointment reminder for Thursday
+      topic: null
+      contacts:
+        - tomas
+      groups: []
+      embedding_ref: embl-27d371b802
+      author: tomas
+      connection: null
+      created_by_override: null
+      facets: null
+    labels:
+      gold: personal
+      gold_rationale: Constructed control — composed no-group thread matches the Personal training shape.
+      gold_source: human
+      expected: null
+      expected_stage: scoring
+      expected_recorded_at: null
+    notes: ""

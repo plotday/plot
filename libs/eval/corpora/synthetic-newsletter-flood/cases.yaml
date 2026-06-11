@@ -1,0 +1,489 @@
+cases:
+  - id: 101-gate-drop-okafor-digest
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - gate-drop
+    as_of: 2026-03-04T09:15:00.000Z
+    description: |
+      Automated brand digest whose embedding scores into Client Work
+      ("Okafor brand" titles) but automation=automated violates the
+      exclude filter and the author (mailing list) is untrusted, so the
+      gate must drop Client Work; Subscriptions is the supported fallback.
+    candidate:
+      title: "Okafor Brand digest: spring identity trends and studio news"
+      topic: null
+      contacts:
+        - priya
+        - okafor-news
+      groups: []
+      embedding_ref: embl-45b3dbc999
+      author: okafor-news
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: reading
+        automation: automated
+        reach: list
+    labels:
+      gold: subscriptions
+      gold_rationale: Constructed gate-drop — Client Work gated (automated, untrusted author), newsletter pile is the fallback.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 102-trusted-bypass-lena-digest
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - trusted-bypass
+    as_of: 2026-03-06T10:00:00.000Z
+    description: |
+      Same automated facets as 101, but authored by Lena Okafor, who is in
+      thread.contacts of user_moved Client Work trainings — trusted for that
+      focus, so the intrinsic gate is bypassed and Client Work keeps the win.
+    candidate:
+      title: "Okafor Studio digest: rebrand progress recap"
+      topic: null
+      contacts:
+        - priya
+        - lena-okafor
+      groups: []
+      embedding_ref: embl-df4661ecda
+      author: lena-okafor
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: reading
+        automation: automated
+        reach: list
+    labels:
+      gold: client-work
+      gold_rationale: Constructed trusted-sender bypass — Lena is trusted for Client Work, automated facets must not gate her.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 103-gate-drop-okafor-promo
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - gate-drop
+    as_of: 2026-03-12T08:30:00.000Z
+    description: |
+      Promotional blast from the Okafor mailing list. Embedding pulls toward
+      Client Work ("Okafor") but the gate drops it (automated, untrusted);
+      Subscriptions holds the promo anchor (BrightCart weekend promo).
+    candidate:
+      title: "Okafor Brand holiday sale: prints and merch promo"
+      topic: null
+      contacts:
+        - priya
+        - okafor-news
+      groups: []
+      embedding_ref: embl-df5b8b8bb3
+      author: okafor-news
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: promotion
+        automation: automated
+        reach: list
+    labels:
+      gold: subscriptions
+      gold_rationale: Constructed gate-drop — Client Work gated, promo anchor sits in Subscriptions.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 104-trusted-only-reject-bank
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - trusted-only-reject
+    as_of: 2026-03-18T07:45:00.000Z
+    description: |
+      Bank statement notification. Finances ranks first pre-gate via sem
+      (quarterly/tax wording) but trustedSendersOnly rejects the untrusted
+      bank sender; Orders & Receipts holds the same-sender anchor (payment
+      confirmation) as the fallback.
+    candidate:
+      title: Your quarterly tax statement and estimate summary is ready
+      topic: null
+      contacts:
+        - priya
+      groups: []
+      embedding_ref: embl-e4584bccc2
+      author: firstledger
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: notification
+        automation: automated
+        reach: direct
+    labels:
+      gold: receipts
+      gold_rationale: Constructed trust-filter reject — Finances gated for untrusted bank sender, same-sender anchor lives in Receipts.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 105-trusted-only-admit-marcus
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - trusted-only-admit
+    as_of: 2026-03-20T09:00:00.000Z
+    description: |
+      Tax checklist from the accountant. Marcus participates in user_moved
+      Finances filings, so trustedSendersOnly admits him.
+    candidate:
+      title: Tax planning checklist for the spring filing
+      topic: null
+      contacts:
+        - priya
+        - marcus-finch
+      groups: []
+      embedding_ref: embl-7b9eb1ac3c
+      author: marcus-finch
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: message
+        automation: human
+        reach: direct
+    labels:
+      gold: finances
+      gold_rationale: Constructed trust-filter admit — Marcus is trusted-for-focus via Finances trainings.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 106-trusted-only-admit-org-domain
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - trusted-only-admit
+      - org-domain
+    as_of: 2026-03-24T11:30:00.000Z
+    description: |
+      Expense summary from Avery (avery@meridianloft.com). Avery has no
+      user_moved history anywhere, but the author email domain matches
+      Priya's linked identity domain (non-freemail), so the trust filter
+      admits via the org-domain branch.
+    candidate:
+      title: Expense reconciliation and reimbursement summary for April
+      topic: null
+      contacts:
+        - priya
+        - avery-meridian
+      groups: []
+      embedding_ref: embl-4995b68c78
+      author: avery-meridian
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: message
+        automation: human
+        reach: direct
+    labels:
+      gold: finances
+      gold_rationale: Constructed org-domain admit — author domain equals user's linked meridianloft.com identity.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 107-trusted-only-reject-null-facets
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - trusted-only-reject
+      - no-facets
+    as_of: 2026-04-02T08:00:00.000Z
+    description: |
+      Finance newsletter with facets=null. trustedSendersOnly gates on the
+      author regardless of facets, so Finances is still dropped; the
+      same-sender anchor (FinanceFlow weekly) sits in Subscriptions.
+    candidate:
+      title: "FinanceFlow tips: five budgeting templates for freelancers"
+      topic: null
+      contacts:
+        - priya
+        - financeflow
+      groups: []
+      embedding_ref: embl-fae14d2b79
+      author: financeflow
+      connection: gmail-priya
+      created_by_override: null
+      facets: null
+    labels:
+      gold: subscriptions
+      gold_rationale: Constructed trust-filter reject with null facets — the trust gate fires independently of facet values.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 108-gate-drop-format-include
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - format-include
+      - gate-drop
+    as_of: 2026-04-08T14:00:00.000Z
+    description: |
+      Human chat about variable fonts/grotesks. Embedding pulls toward Design
+      Reading (Typography Tuesday / grotesks essays) but format=message is
+      not in the include list, so Reading is gated; the wordmark font-pairing
+      training keeps Client Work as the supported fallback (automation=human
+      passes its exclude filter).
+    candidate:
+      title: Variable fonts and grotesks for the wordmark draft
+      topic: null
+      contacts:
+        - priya
+        - jonas-keller
+      groups: []
+      embedding_ref: embl-68aa4020c8
+      author: jonas-keller
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: message
+        automation: human
+        reach: direct
+    labels:
+      gold: client-work
+      gold_rationale: Constructed format-include gate-drop — Reading gated for format=message, font-pairing anchor is in Client Work.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 109-format-include-admit
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - format-include
+      - admit
+    as_of: 2026-04-10T12:00:00.000Z
+    description: |
+      Typography newsletter issue with format=reading — passes the include
+      filter, lands in Design Reading on sem + contact overlap.
+    candidate:
+      title: "Typography Tuesday #88: the grotesk revival issue"
+      topic: null
+      contacts:
+        - priya
+        - typeletter
+      groups: []
+      embedding_ref: embl-c6fb0ad121
+      author: typeletter
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: reading
+        automation: automated
+        reach: list
+    labels:
+      gold: reading
+      gold_rationale: Constructed include-pass — format=reading satisfies the include filter; sender anchored in Reading.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 110-fail-open-control
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - fail-open
+      - control
+    as_of: 2026-04-15T10:30:00.000Z
+    description: |
+      Human feedback note on the Okafor refresh with facets=null from an
+      untrusted new contact. Null facet values never violate the automation
+      exclude (fail-open), so Client Work must keep the win.
+    candidate:
+      title: Okafor homepage hero feedback for the refresh
+      topic: null
+      contacts:
+        - priya
+        - jonas-keller
+      groups: []
+      embedding_ref: embl-c37c2ed7db
+      author: jonas-keller
+      connection: gmail-priya
+      created_by_override: null
+      facets: null
+    labels:
+      gold: client-work
+      gold_rationale: Constructed fail-open control — facets=null must not trigger the automation exclude.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 111-trusted-bypass-marcus-automated
+    source_thread_id: null
+    tags:
+      - facet-gate
+      - trusted-only-admit
+      - trusted-bypass
+    as_of: 2026-04-21T09:45:00.000Z
+    description: |
+      Automated invoice reminder sent from the accountant's billing system.
+      Finances has only the trust filter (no automation exclude) and Marcus
+      is trusted, so the automated facets do not matter.
+    candidate:
+      title: "Automated invoice reminder: retainer 2204 due Friday"
+      topic: null
+      contacts:
+        - priya
+        - marcus-finch
+      groups: []
+      embedding_ref: embl-ad67f77067
+      author: marcus-finch
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: invoice
+        automation: automated
+        reach: direct
+    labels:
+      gold: finances
+      gold_rationale: Constructed trusted admit with automated facets — trust filter admits Marcus regardless of automation.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 112-control-promo
+    source_thread_id: null
+    tags:
+      - control
+      - promo
+    as_of: 2026-04-28T08:15:00.000Z
+    description: |
+      Store promo from BrightCart. Sender is anchored in both Subscriptions
+      (weekend promo) and Receipts (shipping confirmation); sem ties it to
+      the promo training.
+    candidate:
+      title: "BrightCart flash sale: 30 percent off studio supplies this weekend"
+      topic: null
+      contacts:
+        - priya
+        - brightcart
+      groups: []
+      embedding_ref: embl-8ae94dedb7
+      author: brightcart
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: promotion
+        automation: automated
+        reach: list
+    labels:
+      gold: subscriptions
+      gold_rationale: Constructed control — promo wording matches the Subscriptions promo anchor.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 113-control-receipt
+    source_thread_id: null
+    tags:
+      - control
+    as_of: 2026-05-02T07:30:00.000Z
+    description: |
+      SaaS invoice notification — same sender and wording family as the
+      CloudCanvas receipt training.
+    candidate:
+      title: Your CloudCanvas invoice for May is available
+      topic: null
+      contacts:
+        - priya
+        - cloudcanvas
+      groups: []
+      embedding_ref: embl-bbd8cc3360
+      author: cloudcanvas
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: invoice
+        automation: automated
+        reach: direct
+    labels:
+      gold: receipts
+      gold_rationale: Constructed control — same-sender receipt anchor.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 114-control-personal-note
+    source_thread_id: null
+    tags:
+      - control
+    as_of: 2026-05-08T21:00:00.000Z
+    description: |
+      Self-composed note (no connection, facets null). Contact set {priya}
+      and author=user line up with the composed Personal training.
+    candidate:
+      title: "Loose thought: mood board for the autumn palette"
+      topic: null
+      contacts:
+        - priya
+      groups: []
+      embedding_ref: embl-247a1b3a98
+      author: priya
+      connection: null
+      created_by_override: null
+      facets: null
+    labels:
+      gold: personal
+      gold_rationale: Constructed control — composed-note shape matches the Personal training.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 115-control-newsletter
+    source_thread_id: null
+    tags:
+      - control
+    as_of: 2026-05-12T08:00:00.000Z
+    description: |
+      Ordinary newsletter issue from the Pixel Weekly sender — lands in
+      Subscriptions on contacts + sem. Reading also passes the format filter
+      but has no sender anchor for this contact.
+    candidate:
+      title: "Pixel Weekly Digest #218: spring tooling special"
+      topic: null
+      contacts:
+        - priya
+        - pixel-weekly
+      groups: []
+      embedding_ref: embl-2e260d8e17
+      author: pixel-weekly
+      connection: gmail-priya
+      created_by_override: null
+      facets:
+        format: reading
+        automation: automated
+        reach: list
+    labels:
+      gold: subscriptions
+      gold_rationale: Constructed control — same-sender newsletter anchor in Subscriptions.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""

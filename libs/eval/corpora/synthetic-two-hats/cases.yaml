@@ -1,0 +1,427 @@
+cases:
+  - id: 201-budget-review-work
+    source_thread_id: null
+    tags:
+      - origin-exact
+      - account-routing
+    as_of: 2026-03-03T10:00:00.000Z
+    description: |
+      Ambiguous "budget review" with no contacts. Work and personal both
+      have budget-review trainings; the work-gmail connection (exact origin
+      bonus + author match on work neighbors) must route it to Quarterly
+      Planning.
+    candidate:
+      title: Budget review notes ahead of the sync
+      topic: null
+      contacts: []
+      groups: []
+      embedding_ref: embl-9812cd1470
+      author: null
+      connection: work-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-planning
+      gold_rationale: Constructed origin pair — same wording as 202, work connection is the discriminator.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 202-budget-review-personal
+    source_thread_id: null
+    tags:
+      - origin-exact
+      - account-routing
+    as_of: 2026-03-03T19:00:00.000Z
+    description: |
+      Mirror of 201: same ambiguous "budget review" wording but arriving on
+      personal-gmail — must land in Home Finances.
+    candidate:
+      title: Budget review notes for this month
+      topic: null
+      contacts: []
+      groups: []
+      embedding_ref: embl-4a7fb5f657
+      author: null
+      connection: personal-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: personal-finance
+      gold_rationale: Constructed origin pair — same wording as 201, personal connection is the discriminator.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 203-renewal-work
+    source_thread_id: null
+    tags:
+      - origin-exact
+      - account-routing
+    as_of: 2026-03-10T09:30:00.000Z
+    description: |
+      Ambiguous renewal reminder. Work side has the Datadog contract renewal,
+      personal side has mortgage/insurance renewals; work-gmail origin must
+      pull it to Platform Team.
+    candidate:
+      title: "Renewal reminder: contract expires at the end of the month"
+      topic: null
+      contacts: []
+      groups: []
+      embedding_ref: embl-1a3009df45
+      author: null
+      connection: work-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-platform
+      gold_rationale: Constructed origin pair — renewal wording exists on both sides, work connection discriminates.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 204-renewal-personal
+    source_thread_id: null
+    tags:
+      - origin-exact
+      - account-routing
+    as_of: 2026-03-10T19:30:00.000Z
+    description: |
+      Mirror of 203 on personal-gmail — must land in Home Finances
+      (mortgage/insurance renewal anchors).
+    candidate:
+      title: "Renewal reminder: policy expires at the end of the month"
+      topic: null
+      contacts: []
+      groups: []
+      embedding_ref: embl-a9f6743e3c
+      author: null
+      connection: personal-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: personal-finance
+      gold_rationale: Constructed origin pair — renewal wording exists on both sides, personal connection discriminates.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 205-lunch-work
+    source_thread_id: null
+    tags:
+      - origin-exact
+      - account-routing
+    as_of: 2026-03-17T11:00:00.000Z
+    description: |
+      "Lunch on Thursday?" from Raj — lunch trainings exist at work (lunch &
+      learn) and home (lunch with Mom). Work-gmail origin separates the
+      hierarchies; Raj's contact overlap settles the within-work pick.
+    candidate:
+      title: Lunch on Thursday?
+      topic: null
+      contacts:
+        - raj-iyer
+      groups: []
+      embedding_ref: embl-d1bcddf8b3
+      author: raj-iyer
+      connection: work-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-platform
+      gold_rationale: Constructed origin pair — lunch wording on both sides, work connection discriminates.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 206-lunch-personal
+    source_thread_id: null
+    tags:
+      - origin-exact
+      - account-routing
+    as_of: 2026-03-17T19:00:00.000Z
+    description: |
+      Mirror of 205 on personal-gmail — must land in Family.
+    candidate:
+      title: Lunch on Saturday?
+      topic: null
+      contacts: []
+      groups: []
+      embedding_ref: embl-c60ba32325
+      author: null
+      connection: personal-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: personal-family
+      gold_rationale: Constructed origin pair — lunch wording on both sides, personal connection discriminates.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 207-org-budget-session
+    source_thread_id: null
+    tags:
+      - origin-org
+      - account-routing
+    as_of: 2026-03-24T09:00:00.000Z
+    description: |
+      Calendar invite via work-calendar. No trainings exist on that
+      connection, so the work-planning neighbors (work-gmail) can only earn
+      the ORG branch of the origin bonus — both connections resolve to
+      domain:brightforge.io.
+    candidate:
+      title: Budget session for the fall cycle
+      topic: null
+      contacts:
+        - ana-work
+        - mei-tan
+      groups: []
+      embedding_ref: embl-dce9eac819
+      author: null
+      connection: work-calendar
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-planning
+      gold_rationale: Constructed org-key match — work-calendar shares brightforge.io with work-gmail neighbors (org bonus, not exact).
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 208-org-sprint-retro
+    source_thread_id: null
+    tags:
+      - origin-org
+    as_of: 2026-03-26T14:00:00.000Z
+    description: |
+      Sprint/deploy review meeting via work-calendar. Org-key origin plus
+      Raj's contact overlap route it to Platform Team.
+    candidate:
+      title: Sprint retro and deploy checklist walkthrough
+      topic: null
+      contacts:
+        - ana-work
+        - raj-iyer
+      groups: []
+      embedding_ref: embl-e9b34fbb86
+      author: null
+      connection: work-calendar
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-platform
+      gold_rationale: Constructed org-key match — calendar event org-matches work-gmail platform neighbors.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 209-org-panel-interview
+    source_thread_id: null
+    tags:
+      - origin-org
+    as_of: 2026-04-02T10:30:00.000Z
+    description: |
+      Interview panel hold via work-calendar. Org-key origin plus Sofia's
+      contact overlap route it to Hiring.
+    candidate:
+      title: Panel hold for Thursday onsite
+      topic: null
+      contacts:
+        - ana-work
+        - sofia-ruiz
+      groups: []
+      embedding_ref: embl-5c0f566026
+      author: null
+      connection: work-calendar
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-hiring
+      gold_rationale: Constructed org-key match — calendar hold org-matches work-gmail hiring neighbors.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 210-control-mortgage
+    source_thread_id: null
+    tags:
+      - no-connection-control
+    as_of: 2026-04-08T09:00:00.000Z
+    description: |
+      Composed thread with no connection — origin is disabled; Diego's
+      contact overlap and mortgage wording route it to Home Finances.
+    candidate:
+      title: Mortgage paperwork to sign before the rate hold lapses
+      topic: null
+      contacts:
+        - ana-personal
+        - diego-vidal
+      groups: []
+      embedding_ref: embl-d0e8d5843d
+      author: diego-vidal
+      connection: null
+      created_by_override: null
+      facets: null
+    labels:
+      gold: personal-finance
+      gold_rationale: Constructed no-connection control — contacts/sem route without origin.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 211-control-postgres
+    source_thread_id: null
+    tags:
+      - no-connection-control
+    as_of: 2026-04-08T15:00:00.000Z
+    description: |
+      Composed thread with no connection — Raj's contact overlap and
+      Postgres wording route it to Platform Team without origin.
+    candidate:
+      title: Postgres maintenance window question
+      topic: null
+      contacts:
+        - ana-work
+        - raj-iyer
+      groups: []
+      embedding_ref: embl-a83cefb491
+      author: raj-iyer
+      connection: null
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-platform
+      gold_rationale: Constructed no-connection control — contacts/sem route without origin.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 212-flight-confirmation
+    source_thread_id: null
+    tags:
+      - origin-exact
+      - account-routing
+    as_of: 2026-04-15T07:00:00.000Z
+    description: |
+      Automated flight confirmation on personal-gmail. Origin + Lisbon trip
+      sem route to Trips.
+    candidate:
+      title: "Flight booking confirmation: YYZ to Lisbon"
+      topic: null
+      contacts:
+        - ana-personal
+      groups: []
+      embedding_ref: embl-093dbc9747
+      author: null
+      connection: personal-gmail
+      created_by_override: null
+      facets:
+        format: notification
+        automation: automated
+        reach: direct
+    labels:
+      gold: personal-travel
+      gold_rationale: Constructed — personal origin + Lisbon sem anchor in Trips.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 213-headcount-ask
+    source_thread_id: null
+    tags:
+      - origin-exact
+    as_of: 2026-04-22T13:00:00.000Z
+    description: |
+      Headcount ask via work-gmail with Mei in contacts. Planning (headcount
+      planning training + Mei) must beat Hiring's interview-flavored sem.
+    candidate:
+      title: Headcount ask before the next cycle
+      topic: null
+      contacts:
+        - ana-work
+        - mei-tan
+      groups: []
+      embedding_ref: embl-3d6582e7ea
+      author: mei-tan
+      connection: work-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-planning
+      gold_rationale: Constructed — Mei contact + headcount training anchor Planning over Hiring.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 214-anniversary-dinner
+    source_thread_id: null
+    tags:
+      - account-routing
+    as_of: 2026-05-05T18:00:00.000Z
+    description: |
+      Dinner reservation on personal-gmail with Diego — Diego appears in
+      both Home Finances and Family trainings, so sem (dinner wording vs the
+      Vidals dinner training) must pick Family within the hierarchy.
+    candidate:
+      title: Dinner reservation for our anniversary on Friday
+      topic: null
+      contacts:
+        - ana-personal
+        - diego-vidal
+      groups: []
+      embedding_ref: embl-96e3c962e9
+      author: diego-vidal
+      connection: personal-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: personal-family
+      gold_rationale: Constructed — dinner sem anchor in Family disambiguates Diego's dual presence.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
+  - id: 215-offsite-logistics
+    source_thread_id: null
+    tags:
+      - origin-exact
+    as_of: 2026-05-12T10:00:00.000Z
+    description: |
+      Team offsite logistics via work-gmail with Raj — travel-ish wording
+      that must NOT leak into the personal Trips focus; work origin + Raj
+      keep it in Platform Team.
+    candidate:
+      title: Offsite logistics for the team week
+      topic: null
+      contacts:
+        - ana-work
+        - raj-iyer
+      groups: []
+      embedding_ref: embl-b2d240530c
+      author: raj-iyer
+      connection: work-gmail
+      created_by_override: null
+      facets: null
+    labels:
+      gold: work-platform
+      gold_rationale: Constructed — travel-flavored work thread; origin + Raj prevent leakage into Trips.
+      gold_source: human
+      expected: null
+      expected_stage: null
+      expected_recorded_at: null
+    notes: ""
