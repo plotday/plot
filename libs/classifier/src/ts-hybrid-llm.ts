@@ -206,15 +206,19 @@ export function makeHybridLlmClassifier(
           let llmRationale: unknown = null;
           if (ambiguous && llm.topicAmbiguity.enabled && (await tryConsumeBudget())) {
             const client = getTopicLlmClient();
-            const r = await runTopicLlm({
-              ctx,
-              candidate,
-              summary,
-              scoring: scoreResult.explain,
-              params: opts.params,
-              llmClient: client,
-            });
-            observe(client);
+            let r: Awaited<ReturnType<typeof runTopicLlm>>;
+            try {
+              r = await runTopicLlm({
+                ctx,
+                candidate,
+                summary,
+                scoring: scoreResult.explain,
+                params: opts.params,
+                llmClient: client,
+              });
+            } finally {
+              observe(client);
+            }
             if (r.fired && r.output.priorityId !== null) {
               llmPriorityId = r.output.priorityId;
               llmRationale = r.output.rationale;
@@ -269,15 +273,19 @@ export function makeHybridLlmClassifier(
             anyContactOverlap: false,
           };
           const client = getTopicLlmClient();
-          const r = await runTopicLlm({
-            ctx,
-            candidate,
-            summary: fakeSummary,
-            scoring: cdScore.explain,
-            params: opts.params,
-            llmClient: client,
-          });
-          observe(client);
+          let r: Awaited<ReturnType<typeof runTopicLlm>>;
+          try {
+            r = await runTopicLlm({
+              ctx,
+              candidate,
+              summary: fakeSummary,
+              scoring: cdScore.explain,
+              params: opts.params,
+              llmClient: client,
+            });
+          } finally {
+            observe(client);
+          }
           if (r.fired && r.output.priorityId !== null) {
             return finish({
               priorityId: r.output.priorityId,
@@ -298,14 +306,18 @@ export function makeHybridLlmClassifier(
       if (score.matched) {
         if (llm.tieBreaker.enabled && (await tryConsumeBudget())) {
           const client = getTieBreakerClient();
-          const tb = await runTieBreaker({
-            ctx,
-            candidate,
-            scoring: score,
-            params: opts.params,
-            llmClient: client,
-          });
-          observe(client);
+          let tb: Awaited<ReturnType<typeof runTieBreaker>>;
+          try {
+            tb = await runTieBreaker({
+              ctx,
+              candidate,
+              scoring: score,
+              params: opts.params,
+              llmClient: client,
+            });
+          } finally {
+            observe(client);
+          }
           if (tb.fired && tb.output.priorityId !== null) {
             return finish({
               priorityId: tb.output.priorityId,
@@ -333,13 +345,17 @@ export function makeHybridLlmClassifier(
 
       if (llm.coldStart.enabled && (await tryConsumeBudget())) {
         const client = getColdStartClient();
-        const cs = await runColdStart({
-          ctx,
-          candidate,
-          params: opts.params,
-          llmClient: client,
-        });
-        observe(client);
+        let cs: Awaited<ReturnType<typeof runColdStart>>;
+        try {
+          cs = await runColdStart({
+            ctx,
+            candidate,
+            params: opts.params,
+            llmClient: client,
+          });
+        } finally {
+          observe(client);
+        }
         if (cs.fired && cs.output.priorityId !== null) {
           return finish({
             priorityId: cs.output.priorityId,
