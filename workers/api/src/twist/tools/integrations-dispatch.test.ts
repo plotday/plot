@@ -152,6 +152,28 @@ describe("Integrations.dispatch — note reply routing", () => {
     expect(result).toEqual([]);
   });
 
+  it("does not dispatch onNoteCreated for an archived note (archiving must not re-send)", async () => {
+    // Regression: the create view is seq-cursor driven, so archiving a note
+    // re-surfaces it as a "new note". Without this guard, archiving a note —
+    // possibly one that never sent — re-fires onNoteCreated and sends it.
+    const self = makeThis({ meta: {}, channel_id: "C1", source: "s" });
+    const result = await dispatch(self, {
+      itemType: "note",
+      isCreate: true,
+      item: {
+        id: "note-2",
+        thread_id: "thread-1",
+        thread_created_by: CONNECTOR,
+        created_by: USER,
+        author_id: USER,
+        mentions: [CONNECTOR],
+        archived_at: "2026-06-11T19:51:11Z",
+        content: "Good idea. I've added a couple of those",
+      },
+    });
+    expect(result).toEqual([]);
+  });
+
   it("does not dispatch when the note does not mention the connector", async () => {
     const self = makeThis({ meta: {}, channel_id: "C1", source: "s" });
     const result = await dispatch(self, {
