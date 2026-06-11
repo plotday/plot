@@ -1,5 +1,6 @@
 import type { Corpus } from "../corpus/schema";
 import type { RunResult, RunSummary } from "../runner/run";
+import { mcnemarExact, wilsonInterval } from "./stats";
 
 export type ReportFormat = "console" | "json" | "markdown";
 
@@ -194,6 +195,159 @@ function renderFlips(
     }
   }
   return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Sweep leaderboard (--sweep)
+// ---------------------------------------------------------------------------
+
+export type LeaderboardRow = {
+  classifier: string;
+  /** Sweep point label (e.g. "scoreThreshold=0.05") or "base". */
+  label: string;
+  goldAccuracy: number | null;
+  ciLo: number | null;
+  ciHi: number | null;
+  /** Gold-labeled cases the base got wrong and this variant got right. */
+  fixed: number;
+  /** Gold-labeled cases the base got right and this variant got wrong. */
+  broke: number;
+  /** Exact McNemar p over the discordant pairs; null for the base row. */
+  mcnemarP: number | null;
+  /** True when mcnemarP >= 0.05 — the difference from base is plausibly noise. */
+  withinNoise: boolean;
+  liveInputTokens: number;
+  liveOutputTokens: number;
+};
+
+/**
+ * Builds the sweep leaderboard: per classifier, gold accuracy with a Wilson
+ * 95% CI plus a paired comparison against `baseClassifier` (fixed/broke
+ * discordant counts and an exact McNemar p) over gold-labeled cases.
+ *
+ * Pairing is keyed on (trainingSet, caseId), so a sweep run over multiple
+ * training sets stays a valid matched-pairs design: accuracies pool across
+ * sets while each (case, set) outcome is compared against the base's outcome
+ * for the same (case, set). Live token sums cover ALL cases, not just
+ * gold-labeled ones. Rows sort by gold accuracy descending; the base row is
+ * always present (marked with `*` by renderLeaderboard).
+ */
+export function buildLeaderboard(
+  results: RunResult[],
+  baseClassifier: string,
+  labels: Map<string, string>
+): LeaderboardRow[] {
+  const byClassifier = groupBy(results, (r) => r.classifier);
+  const baseRows = byClassifier.get(baseClassifier);
+  if (!baseRows) {
+    throw new Error(
+      `buildLeaderboard: base classifier "${baseClassifier}" has no results. ` +
+        `Classifiers in results: ${[...byClassifier.keys()].join(", ")}`
+    );
+  }
+  const pairKey = (r: RunResult) => `${r.trainingSet} ${r.caseId}`;
+  const baseGold = new Map<string, boolean>();
+  for (const r of baseRows) {
+    if (r.goldMatch !== null) baseGold.set(pairKey(r), r.goldMatch);
+  }
+
+  const rows: LeaderboardRow[] = [];
+  for (const [classifier, cRows] of byClassifier) {
+    const goldEval = cRows.filter((r) => r.goldMatch !== null);
+    const correct = goldEval.filter((r) => r.goldMatch).length;
+    const ci = goldEval.length > 0 ? wilsonInterval(correct, goldEval.length) : null;
+    let fixed = 0;
+    let broke = 0;
+    if (classifier !== baseClassifier) {
+      for (const r of goldEval) {
+        const baseMatch = baseGold.get(pairKey(r));
+        if (baseMatch === undefined) continue; // unpaired: base lacks this case
+        if (!baseMatch && r.goldMatch) fixed++;
+        if (baseMatch && !r.goldMatch) broke++;
+      }
+    }
+    const mcnemarP =
+      classifier === baseClassifier ? null : mcnemarExact(fixed, broke);
+    rows.push({
+      classifier,
+      label:
+        classifier === baseClassifier
+          ? "base"
+          : (labels.get(classifier) ?? classifier),
+      goldAccuracy: goldEval.length > 0 ? correct / goldEval.length : null,
+      ciLo: ci?.lo ?? null,
+      ciHi: ci?.hi ?? null,
+      fixed,
+      broke,
+      mcnemarP,
+      withinNoise: mcnemarP !== null && mcnemarP >= 0.05,
+      liveInputTokens: cRows.reduce(
+        (s, r) => s + (r.llmUsage?.liveInputTokens ?? 0),
+        0
+      ),
+      liveOutputTokens: cRows.reduce(
+        (s, r) => s + (r.llmUsage?.liveOutputTokens ?? 0),
+        0
+      ),
+    });
+  }
+
+  rows.sort((a, b) => {
+    const accA = a.goldAccuracy ?? -1;
+    const accB = b.goldAccuracy ?? -1;
+    if (accB !== accA) return accB - accA;
+    // Ties: base first, then label for a deterministic order.
+    if (a.classifier === baseClassifier) return -1;
+    if (b.classifier === baseClassifier) return 1;
+    return a.label.localeCompare(b.label);
+  });
+  return rows;
+}
+
+/** Aligned console table for the sweep leaderboard. */
+export function renderLeaderboard(rows: LeaderboardRow[]): string {
+  const headers = [
+    "Variant",
+    "Gold acc [95% CI]",
+    "Fixed",
+    "Broke",
+    "McNemar p",
+    "Live tokens in/out",
+  ];
+  const cells = rows.map((r) => [
+    `${r.mcnemarP === null ? "* " : "  "}${r.label}`,
+    accCell(r),
+    r.mcnemarP === null ? "-" : String(r.fixed),
+    r.mcnemarP === null ? "-" : String(r.broke),
+    pCell(r),
+    `${r.liveInputTokens}/${r.liveOutputTokens}`,
+  ]);
+  const widths = headers.map((h, i) =>
+    Math.max(h.length, ...cells.map((row) => row[i]!.length))
+  );
+  const fmt = (row: string[]) =>
+    row
+      .map((c, i) => (i === 0 ? c.padEnd(widths[i]!) : c.padStart(widths[i]!)))
+      .join("  ")
+      .trimEnd();
+  return [
+    "Sweep leaderboard (gold accuracy; fixed/broke and McNemar p are paired vs * base):",
+    fmt(headers),
+    fmt(widths.map((w) => "-".repeat(w))),
+    ...cells.map(fmt),
+    "",
+    "~noise: the difference from base is not statistically significant (p >= 0.05).",
+  ].join("\n");
+}
+
+function accCell(r: LeaderboardRow): string {
+  if (r.goldAccuracy === null) return "n/a";
+  return `${pct(r.goldAccuracy)} [${(r.ciLo! * 100).toFixed(1)}–${(r.ciHi! * 100).toFixed(1)}]`;
+}
+
+function pCell(r: LeaderboardRow): string {
+  if (r.mcnemarP === null) return "-";
+  return `${r.mcnemarP.toFixed(3)}${r.withinNoise ? " ~noise" : ""}`;
 }
 
 function name(id: string | null, lookup: PriorityLookup): string {

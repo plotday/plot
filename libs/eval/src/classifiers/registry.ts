@@ -91,6 +91,22 @@ export function registerVariant(name: string, classifier: Classifier): void {
   REGISTRY.set(name, classifier);
 }
 
+/**
+ * Resolved HybridParams for a registry-constructed variant — the base a
+ * sweep's renormalization and overrides are computed against. Throws for
+ * names registered without params (e.g. sql:current) or never registered.
+ */
+export function getVariantParams(name: string): HybridParams {
+  const params = VARIANT_PARAMS.get(name);
+  if (!params) {
+    throw new Error(
+      `Unknown variant "${name}" (no HybridParams registered). ` +
+        `Known: ${[...VARIANT_PARAMS.keys()].join(", ")}`
+    );
+  }
+  return params;
+}
+
 export function getClassifier(name: string): Classifier {
   const c = REGISTRY.get(name);
   if (!c) {
