@@ -13,6 +13,9 @@ export type BaselineFile = {
     trainingSet: string;
     createdAt: string;
   };
+  // Gold labels are NOT stored: comparisons read gold from the CURRENT run's
+  // corpus, so re-labeled cases are judged against the new gold, not the one
+  // in effect when the snapshot was saved (check meta.createdAt for staleness).
   results: Record<string, { predicted: string | null; stage: string }>;
 };
 
