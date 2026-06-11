@@ -240,14 +240,23 @@ export async function loadWorld(
   //    v2 worlds also insert contact.name; v1 worlds MUST NOT — the LLM
   //    tiebreaker prompt renders COALESCE(name, email, id), so adding names
   //    under v1 would change prompts and cache keys (byte-exact compat).
+  //    v2 inserts are plain (no ON CONFLICT) so an id collision with live dev
+  //    rows throws instead of silently mixing dev data into eval signals;
+  //    v1 keeps the legacy conflict-tolerant inserts byte-exactly.
   for (const c of world.contacts) {
     if (world.schemaVersion >= 2) {
       await rawQuery(
         `INSERT INTO public.contact (id, email, name, user_id)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (id) DO NOTHING`,
+         VALUES ($1, $2, $3, $4)`,
         [c.id, c.email, c.name, c.linked_to_user ? world.user.id : null]
       );
+      if (c.linked_to_user) {
+        await rawQuery(
+          `INSERT INTO public.user_contact (user_id, contact_id, linked)
+           VALUES ($1, $2, TRUE)`,
+          [world.user.id, c.id]
+        );
+      }
     } else {
       await rawQuery(
         `INSERT INTO public.contact (id, email, user_id)
@@ -255,18 +264,20 @@ export async function loadWorld(
          ON CONFLICT (id) DO NOTHING`,
         [c.id, c.email, c.linked_to_user ? world.user.id : null]
       );
-    }
-    if (c.linked_to_user) {
-      await rawQuery(
-        `INSERT INTO public.user_contact (user_id, contact_id, linked)
-         VALUES ($1, $2, TRUE)
-         ON CONFLICT (user_id, contact_id) DO NOTHING`,
-        [world.user.id, c.id]
-      );
+      if (c.linked_to_user) {
+        await rawQuery(
+          `INSERT INTO public.user_contact (user_id, contact_id, linked)
+           VALUES ($1, $2, TRUE)
+           ON CONFLICT (user_id, contact_id) DO NOTHING`,
+          [world.user.id, c.id]
+        );
+      }
     }
   }
 
   // 4. Groups. Plot's group table is reserved-keyword-named ("group").
+  //    Fails loudly on id collision in both v1 and v2 (long-standing plain
+  //    INSERT behavior).
   for (const g of world.groups) {
     await rawQuery(
       `INSERT INTO public."group" (id, name, created_by) VALUES ($1, $2, $3)`,

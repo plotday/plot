@@ -8,6 +8,7 @@ import {
   loadTrainingSet,
   loadWorld,
   openSandbox,
+  stageCandidate,
   type SandboxHandle,
 } from "../src/sandbox/pg-sandbox";
 
@@ -267,6 +268,50 @@ describe.runIf(!!process.env.DATABASE_URL)("sandbox v2", () => {
     expect(new Date(tpn.rows[0]!.created_at).toISOString()).toBe(
       "2026-04-05T08:00:00.000Z"
     );
+  });
+
+  it("stages a v2 candidate: connection created_by, author, twist_id, facets", async () => {
+    const dir = await writeCorpus(v2Files());
+    const corpus = await loadCorpus(dir);
+    sandbox = await openSandbox();
+    await loadWorld(sandbox, corpus);
+
+    const CAND = "e0000000-0000-4000-8000-000000000300";
+    await stageCandidate(sandbox, corpus, {
+      threadId: CAND,
+      title: "Quarterly invoice arrived",
+      topic: null,
+      contacts: [ANNA],
+      groups: [],
+      embedding: null,
+      authorContactId: ANNA,
+      connectionId: CONN_ORG,
+      createdByOverride: null,
+      facets: { format: "message", automation: "automated" },
+    });
+
+    // stageCandidate runs with triggers ON (production path), so only assert
+    // columns the trigger chain doesn't clobber: author_id, created_by,
+    // twist_id, and facets are all safe.
+    const res = (await sandbox.rawQuery(
+      `SELECT created_by, author_id, twist_id, facets
+       FROM public.thread WHERE id = $1`,
+      [CAND]
+    )) as {
+      rows: {
+        created_by: string;
+        author_id: string | null;
+        twist_id: string | null;
+        facets: unknown;
+      }[];
+    };
+    expect(res.rows).toHaveLength(1);
+    const cand = res.rows[0]!;
+    expect(cand.author_id).toBe(ANNA);
+    expect(cand.created_by).toBe(CONN_ORG);
+    expect(cand.twist_id).not.toBeNull();
+    expect(Number(cand.twist_id)).toBeGreaterThanOrEqual(1_000_000_000);
+    expect(cand.facets).toEqual({ format: "message", automation: "automated" });
   });
 
   it("fails loudly when a v2 channel id collides with an existing row", async () => {
