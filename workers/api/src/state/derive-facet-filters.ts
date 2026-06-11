@@ -1,9 +1,9 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 
 import { createLogger } from "@plotday/worker-util";
 
 import type { Bindings } from "../env";
+import { createSystemModel, SYSTEM_PROVIDER_OPTIONS } from "../utils/system-model";
 import { FacetFiltersSchema, registryPromptBlock, type FacetFilters } from "./facet-registry";
 
 const SYSTEM_PROMPT = `You configure classification filters for a "focus" — a project or area-of-life a user gathers related items under.
@@ -32,17 +32,10 @@ export async function deriveFacetFilters(
   description: string | null
 ): Promise<FacetFilters | null> {
   const logger = createLogger({ component: "derive-facet-filters" });
-  if (!env.AI_GATEWAY_ACCOUNT_ID || !env.AI_GATEWAY_ID || !env.AI_GATEWAY_TOKEN) {
+  const model = createSystemModel(env);
+  if (!model) {
     return null;
   }
-
-  const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}`;
-  const anthropic = createAnthropic({
-    baseURL: `${gatewayBaseUrl}/anthropic`,
-    apiKey: env.ANTHROPIC_API_KEY,
-    headers: { "cf-aig-authorization": `Bearer ${env.AI_GATEWAY_TOKEN}` },
-  });
-  const model: any = anthropic("claude-sonnet-4-6");
 
   const userPrompt = `Focus title: ${JSON.stringify(title || "(untitled)")}
 Focus description: ${JSON.stringify(description ?? "")}
@@ -57,12 +50,9 @@ Return the facet filters for this focus.`;
       schemaDescription:
         "Per-dimension include/exclude sets (format/automation/reach) plus an optional trustedSendersOnly boolean.",
       maxOutputTokens: 1_000,
+      providerOptions: SYSTEM_PROVIDER_OPTIONS,
       messages: [
-        {
-          role: "system",
-          content: SYSTEM_PROMPT,
-          providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
-        },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
     });

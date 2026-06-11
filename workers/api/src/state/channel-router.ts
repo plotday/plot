@@ -1,5 +1,4 @@
 import { DurableObject } from "cloudflare:workers";
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 import { sql, type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
@@ -12,6 +11,7 @@ import { withDb, withUserDb } from "../db";
 import type { Bindings } from "../env";
 import { enqueueJobs, type ClassifyJob } from "./classify-thread";
 import { notifyUserSyncByEnv } from "../app/sync/notify";
+import { createSystemModel, SYSTEM_PROVIDER_OPTIONS } from "../utils/system-model";
 
 // Debounce window. Priority edits and channel enables arrive in clusters
 // (a user creating several priorities in a row, a connector enabling its
@@ -349,22 +349,12 @@ async function callLlm(
   samplesByChannel: Map<number, string[]>,
   logger: ReturnType<typeof createLogger>
 ): Promise<LlmResult[] | null> {
-  if (
-    !env.AI_GATEWAY_ACCOUNT_ID ||
-    !env.AI_GATEWAY_ID ||
-    !env.AI_GATEWAY_TOKEN
-  ) {
-    // Without gateway config (e.g. some test envs), skip the router rather
-    // than fail loudly — the classifier still works via scoring + root.
+  // Without gateway config (e.g. some test envs), skip the router rather
+  // than fail loudly — the classifier still works via scoring + root.
+  const model = createSystemModel(env);
+  if (!model) {
     return null;
   }
-
-  const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}`;
-  const anthropic = createAnthropic({
-    baseURL: `${gatewayBaseUrl}/anthropic`,
-    apiKey: env.ANTHROPIC_API_KEY,
-    headers: { "cf-aig-authorization": `Bearer ${env.AI_GATEWAY_TOKEN}` },
-  });
 
   const systemPrompt = `You assign a default Plot priority to each of a user's connector channels so new threads route to the right home automatically.
 
@@ -383,7 +373,6 @@ Priority hierarchy uses ltree paths (dot-separated labels from root to leaf). Pa
 
   const userPrompt = renderUserPrompt(priorities, channels, samplesByChannel);
 
-  const model: any = anthropic("claude-sonnet-4-6");
   try {
     const result = await generateObject({
       model,
@@ -392,14 +381,9 @@ Priority hierarchy uses ltree paths (dot-separated labels from root to leaf). Pa
       schemaDescription:
         "An object with a `results` array, one entry per input channel, each carrying channelPk (number), priorityId (uuid string or null), and reason (short string).",
       maxOutputTokens: 8_000,
+      providerOptions: SYSTEM_PROVIDER_OPTIONS,
       messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-          providerOptions: {
-            anthropic: { cacheControl: { type: "ephemeral" } },
-          },
-        },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     });

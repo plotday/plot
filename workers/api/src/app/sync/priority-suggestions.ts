@@ -1,4 +1,3 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 import { Hono } from "hono";
 import { type Kysely, sql } from "kysely";
@@ -9,6 +8,7 @@ import { createLogger } from "@plotday/worker-util";
 import type { DB } from "../../db-types";
 import { withUserDb } from "../../db";
 import type { Bindings } from "../../env";
+import { createSystemModel, SYSTEM_PROVIDER_OPTIONS } from "../../utils/system-model";
 
 const suggestions = new Hono<{ Bindings: Bindings }>();
 
@@ -467,20 +467,10 @@ async function callLlm(
   maxSuggestions: number,
   logger: ReturnType<typeof createLogger>
 ): Promise<LlmCallResult> {
-  if (
-    !env.AI_GATEWAY_ACCOUNT_ID ||
-    !env.AI_GATEWAY_ID ||
-    !env.AI_GATEWAY_TOKEN
-  ) {
+  const model = createSystemModel(env);
+  if (!model) {
     return { ok: false, error: "llm_unavailable" };
   }
-
-  const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}`;
-  const anthropic = createAnthropic({
-    baseURL: `${gatewayBaseUrl}/anthropic`,
-    apiKey: env.ANTHROPIC_API_KEY,
-    headers: { "cf-aig-authorization": `Bearer ${env.AI_GATEWAY_TOKEN}` },
-  });
 
   const systemPrompt = `You suggest a starter set of Plot priorities for a user based on the content flowing in from their connected accounts.
 
@@ -514,8 +504,6 @@ Each suggestion's rationale must cite the concrete signal used (a connection nam
     totalCandidates
   );
 
-  const model: any = anthropic("claude-sonnet-4-6");
-
   // Single retry on schema-mismatch failures. AI_NoObjectGeneratedError is
   // typically transient: the model returned text or a slightly malformed
   // object, and a second attempt usually succeeds. Other errors (network,
@@ -531,14 +519,9 @@ Each suggestion's rationale must cite the concrete signal used (a connection nam
         schemaDescription:
           'An object with a `suggestions` array. Each suggestion has `path` (an array of 1 to 3 strings going from root to leaf) and a `rationale` string. Example: { "suggestions": [{ "path": ["Acme Corp", "Engineering"], "rationale": "Linear workspace + #eng-onboarding Slack channel" }, { "path": ["Personal", "Family"], "rationale": "Family Calendar channel + family-related thread titles" }] }',
         maxOutputTokens: 4_000,
+        providerOptions: SYSTEM_PROVIDER_OPTIONS,
         messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-            providerOptions: {
-              anthropic: { cacheControl: { type: "ephemeral" } },
-            },
-          },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
       });
