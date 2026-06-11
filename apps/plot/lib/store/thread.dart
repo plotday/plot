@@ -3387,12 +3387,19 @@ SELECT
     final sqlBuf = StringBuffer();
     final now = Time.now();
 
+    // The flat "Everything" / search / filter feed sorts by real content
+    // recency only — note / link source times and a past event's end. It
+    // deliberately EXCLUDES `bumped_at`: unlike a focus's Done section (which
+    // excludes unread), this feed shows unread threads inline, so a bump would
+    // yank an already-visible row to the top when it is read or completed.
+    // (The sectioned Done feed keeps `bumped_at` — see [_watchDoneIds].) The
+    // in-memory mirror is [PriorityBloc._flatFeedCompare] via
+    // [Thread.contentActivityAt].
     sqlBuf.writeln('''
 SELECT
   a.id AS id,
   MAX(MAX(
     COALESCE(a.last_note_source_created_at, l.source_created_at, a.created_at),
-    COALESCE(a.bumped_at, '0000'),
     CASE WHEN sched.end_at IS NOT NULL
           AND sched.occurrence IS NULL
           AND sched.end_at <= ?
@@ -4534,6 +4541,7 @@ SELECT
     /// directly on `threads`); exposed here so tests can construct a
     /// [Thread] in a specific state without going through [copyWith].
     bool active = false,
+    bool unread = false,
     bool? urgent,
     Order? stateOrder,
     Date? stateOn,
@@ -4554,7 +4562,7 @@ SELECT
       draft: draft,
       title: title,
       preview: preview,
-      unread: false,
+      unread: unread,
       importance: 0,
       active: active,
       urgent: urgent,
@@ -5309,6 +5317,25 @@ SELECT
       best = bumpedAt;
     }
     // Include past event end time
+    final schedEnd = _lastPastOccurrenceEnd;
+    if (schedEnd != null && (best == null || schedEnd.isAfter(best))) {
+      best = schedEnd;
+    }
+    return best ?? createdAt;
+  }
+
+  /// Like [activityAt] but EXCLUDING the manual `bumpedAt` reposition —
+  /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, pastScheduleEnd),
+  /// falling back to createdAt. The flat "Everything" / search feed sorts by
+  /// this so a read or completion never lifts an already-visible row to the
+  /// top; it mirrors the bump-free SQL in [Thread._watchAllTabIds]. The
+  /// sectioned Done feed uses [activityAt] (bump included).
+  DateTime get contentActivityAt {
+    DateTime? best = _thread.lastNoteSourceCreatedAt;
+    if (_linkSourceCreatedAt != null &&
+        (best == null || _linkSourceCreatedAt.isAfter(best))) {
+      best = _linkSourceCreatedAt;
+    }
     final schedEnd = _lastPastOccurrenceEnd;
     if (schedEnd != null && (best == null || schedEnd.isAfter(best))) {
       best = schedEnd;
@@ -6226,20 +6253,26 @@ SELECT
       stateDirty = true;
     }
 
-    // Bump rules — both place the thread at the top of Activity as it
-    // transitions in, then it drifts down naturally as newer activity
-    // lands above it:
-    //   1. Read transition (unread → read) while the thread will not be
-    //      active. Fires for every read path because the unread-clear is
-    //      what defines the transition, not the call site.
-    //   2. Done transition (active → inactive via `bump: true,
-    //      todo: false`).
-    // Synced via /sync/thread-read (read-state fields), so this path
-    // does not need activityRemoteDirty.
-    final willBeActive = todo == false ? false : _thread.active;
-    final isReadTransition = unread == false && _thread.unread && !willBeActive;
-    final isDoneTransition = bump && todo == false;
-    if (isReadTransition || isDoneTransition) {
+    // Bump rule — surface a thread at the top of the Done (Activity) section
+    // ONLY when it is completed (`bump: true, todo: false`) from OUTSIDE Done,
+    // i.e. it just left Active / Scheduled. It then drifts down naturally as
+    // newer activity lands above it.
+    //
+    // Reading does NOT bump. In a focus the Done section excludes unread
+    // threads (they sit in the unread cluster), so a just-read thread settles
+    // into Done by recency on its own. But the flat "Everything" feed sorts by
+    // the same recency key WITH unread threads inline, so a read-bump there
+    // would yank an already-visible row to the top. Because `bumpedAt` is a
+    // single persisted key feeding both feeds, the safe rule is to never bump
+    // on a passive read — only explicit user actions reposition a thread.
+    // (Clearing unread / stamping readAt still happens, via the param-applied
+    // activity copyWith above.)
+    //
+    // A thread already in Done (inactive) is not re-bumped on completion.
+    // Synced via /sync/thread-read (read-state fields), so this path does not
+    // need activityRemoteDirty.
+    final entersDone = bump && todo == false && _thread.active;
+    if (entersDone) {
       activityDirty = true;
       activity = activity.copyWith(
         bumpedAt: Value(DateTime.now()),

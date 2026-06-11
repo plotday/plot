@@ -1429,9 +1429,12 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// ([Thread.watchAllTabHead]). Used to re-place overlay substitutions and
   /// injections in the Everything / search / filter / icon feed so an
   /// optimistic mutation keeps the pure-recency order the SQL produced —
-  /// importance and read state never reorder this feed.
+  /// importance and read state never reorder this feed. Sorts by
+  /// [Thread.contentActivityAt] (NOT [Thread.activityAt]) so `bumped_at`
+  /// never lifts a row here, matching the bump-free SQL in
+  /// [Thread._watchAllTabIds].
   int _flatFeedCompare(Thread a, Thread b) {
-    final atCmp = b.activityAt.compareTo(a.activityAt);
+    final atCmp = b.contentActivityAt.compareTo(a.contentActivityAt);
     if (atCmp != 0) return atCmp;
     return b.id.toString().compareTo(a.id.toString());
   }
