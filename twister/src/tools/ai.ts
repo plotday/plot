@@ -21,12 +21,11 @@ import { ITool } from "..";
  * ```typescript
  * import { Type } from "typebox";
  *
- * class SmartEmailTool extends Tool {
- *   private ai: AI;
- *
- *   constructor(id: string, tools: ToolBuilder) {
- *     super();
- *     this.ai = tools.get(AI);
+ * class SmartEmailTool extends Tool<SmartEmailTool> {
+ *   build(build: ToolBuilder) {
+ *     return {
+ *       ai: build(AI),
+ *     };
  *   }
  *
  *   async categorizeEmail(emailContent: string) {
@@ -42,7 +41,7 @@ import { ITool } from "..";
  *       reasoning: Type.Optional(Type.String())
  *     });
  *
- *     const response = await this.ai.prompt({
+ *     const response = await this.tools.ai.prompt({
  *       model: { speed: "fast", cost: "medium" },
  *       system: "Classify emails into categories: work, personal, spam, or promotional.",
  *       prompt: `Categorize this email: ${emailContent}`,
@@ -53,7 +52,7 @@ import { ITool } from "..";
  *   }
  *
  *   async generateResponse(emailContent: string) {
- *     const response = await this.ai.prompt({
+ *     const response = await this.tools.ai.prompt({
  *       model: { speed: "fast", cost: "medium" },
  *       system: "Generate professional email responses that are helpful and concise.",
  *       prompt: `Write a response to: ${emailContent}`
@@ -67,7 +66,7 @@ import { ITool } from "..";
 export abstract class AI extends ITool {
   /**
    * Returns which AI capabilities are currently available.
-   * Check this before calling prompt() or embed() to gracefully
+   * Check this before calling prompt() to gracefully
    * handle cases where AI is disabled by the user.
    *
    * Built-in tools are accessed as RPC stubs, so from a twist this call
@@ -195,7 +194,7 @@ export type AICapabilities = {
  *   prompt: "Analyze this data..."
  * });
  *
- * // Most capable - uses Claude Sonnet 4.5 or Opus 4.1
+ * // Most capable - uses models like GPT-5, Claude Sonnet 4.6, or Gemini 2.5 Pro
  * const response = await ai.prompt({
  *   model: { speed: "capable", cost: "high" },
  *   prompt: "Solve this complex reasoning problem..."
@@ -203,7 +202,7 @@ export type AICapabilities = {
  *
  * // Request a specific model with a hint
  * const response = await ai.prompt({
- *   model: { speed: "balanced", cost: "medium", hint: AIModel.CLAUDE_SONNET_45 },
+ *   model: { speed: "balanced", cost: "medium", hint: AIModel.CLAUDE_SONNET_46 },
  *   prompt: "..."
  * });
  * ```
@@ -238,7 +237,7 @@ export type ModelPreferences = {
  * Models are organized by provider:
  * - **OpenAI**: Latest GPT models via AI Gateway
  * - **Anthropic**: Claude models via AI Gateway (prefix with "anthropic/")
- * - **Google**: Gemini models via AI Gateway (prefix with "google-ai-studio/")
+ * - **Google**: Gemini models via AI Gateway (prefix with "google/")
  * - **Workers AI**: Models running on Cloudflare's network (free/low cost)
  */
 export enum AIModel {
@@ -513,7 +512,7 @@ export type AIUsage = {
    */
   outputTokens?: number;
   /**
-   * The total number of tokens used (promptTokens + completionTokens).
+   * The total number of tokens used (inputTokens + outputTokens).
    */
   totalTokens?: number;
   /**

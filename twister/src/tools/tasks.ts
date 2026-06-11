@@ -30,18 +30,18 @@ import type { Callback } from "./callbacks";
  *
  * @example
  * ```typescript
- * class SyncTool extends Tool {
+ * class SyncTool extends Tool<SyncTool> {
  *   async startBatchSync(totalItems: number) {
  *     // Store initial state using built-in set method
  *     await this.set("sync_progress", { processed: 0, total: totalItems });
  *
  *     // Create callback and queue first batch
- *     const callback = await this.callback("processBatch", { batchNumber: 1 });
+ *     const callback = await this.callback(this.processBatch, 1);
  *     // runTask creates NEW execution with fresh ~1000 request limit
  *     await this.runTask(callback);
  *   }
  *
- *   async processBatch(args: any, context: { batchNumber: number }) {
+ *   async processBatch(batchNumber: number) {
  *     // Process one batch of items (sized to stay under request limit)
  *     const progress = await this.get("sync_progress");
  *
@@ -61,9 +61,7 @@ import type { Callback } from "./callbacks";
  *
  *     if (progress.processed < progress.total) {
  *       // Queue next batch - creates NEW execution with fresh request limit
- *       const callback = await this.callback("processBatch", {
- *         batchNumber: context.batchNumber + 1
- *       });
+ *       const callback = await this.callback(this.processBatch, batchNumber + 1);
  *       await this.runTask(callback);
  *     }
  *   }
@@ -72,7 +70,7 @@ import type { Callback } from "./callbacks";
  *     const tomorrow = new Date();
  *     tomorrow.setDate(tomorrow.getDate() + 1);
  *
- *     const callback = await this.callback("cleanupOldData");
+ *     const callback = await this.callback(this.cleanupOldData);
  *     // Schedule for future execution
  *     return await this.runTask(callback, { runAt: tomorrow });
  *   }
@@ -103,7 +101,7 @@ export abstract class Tasks extends ITool {
    * @example
    * ```typescript
    * // Break large loop into batches to stay under request limit
-   * const callback = await this.callback("syncBatch", { page: 1 });
+   * const callback = await this.callback(this.syncBatch, 1);
    * await this.runTask(callback); // Fresh execution with ~1000 requests
    * ```
    */

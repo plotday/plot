@@ -15,7 +15,7 @@
 
 - **[@plotday/twister](./twister)** - Core twist creator package with the `plot` command, and library for building twists and tools
 - **[connectors/](./connectors)** - Connector integrations that sync data from external services (Linear, Slack, Google Calendar, etc.)
-- **[twists/](./twists)** - Full source code for several twists
+- **[libs/](./libs)** - Shared libraries used by connectors
 
 ## Quick Start
 

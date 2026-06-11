@@ -1,79 +1,20 @@
-# Google Calendar Tool
+# Google Calendar Connector for Plot
 
-A Plot tool for syncing with Google Calendar.
+Sync Google Calendar events into Plot.
 
-## Installation
+## What it does
 
-```bash
-npm install @plotday/tool-google-calendar @plotday/twister
-```
+- Lists your calendars as channels (calendars you own are enabled by default)
+- Syncs events — including recurring events and exceptions — onto your Plot agenda
+- Syncs attendees with their RSVP status, and event descriptions as notes
+- RSVPing in Plot writes your response back to Google Calendar
+- Real-time updates via Google Calendar push notifications (watch channels), renewed automatically
 
-## Usage
+## OAuth scopes
 
-```typescript
-import { Twist, Tools } from "@plotday/twister";
-import { GoogleCalendar } from "@plotday/tool-google-calendar";
-import { Integrations, AuthProvider } from "@plotday/twister/tools/integrations";
-
-export default class extends Twist {
-  private googleCalendar: GoogleCalendar;
-  private auth: Integrations;
-
-  constructor(id: string, tools: Tools) {
-    super();
-    this.googleCalendar = tools.get(GoogleCalendar);
-    this.integrations = tools.get(Integrations);
-  }
-
-  async activate() {
-    // Request Google Calendar access
-    const authLink = await this.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
-      },
-      {
-        functionName: "onAuthComplete",
-      }
-    );
-
-    // User will authenticate via authLink
-  }
-
-  async onAuthComplete(authorization: any, context: any) {
-    const authToken = await this.integrations.get(authorization);
-
-    // Get available calendars
-    const calendars = await this.googleCalendar.getCalendars(authToken);
-
-    // Start syncing a calendar
-    await this.googleCalendar.startSync(
-      authToken,
-      calendars[0].id,
-      "onCalendarEvent"
-    );
-  }
-
-  async onCalendarEvent(event: any) {
-    // Handle calendar events
-    console.log("New calendar event:", event.summary);
-  }
-}
-```
-
-## API
-
-### `getCalendars(authToken: string)`
-
-Retrieves the list of calendars available to the authenticated user.
-
-### `startSync(authToken: string, calendarId: string, callbackName: string, options?: object)`
-
-Starts syncing events from a Google Calendar.
-
-### `stopSync(authToken: string, calendarId: string)`
-
-Stops syncing events from a Google Calendar.
+- `calendar.events` (required) — read events and write your RSVPs
+- `calendar.calendarlist.readonly` (optional) — list all calendars so you can choose which to sync; without it, only your primary calendar is synced
+- Google Contacts scopes (optional) — add names to events using your contacts
 
 ## License
 

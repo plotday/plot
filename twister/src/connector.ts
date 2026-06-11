@@ -216,8 +216,8 @@ export type ScopeConfig = {
  *     type: "issue",
  *     label: "Issue",
  *     statuses: [
- *       { status: "open", label: "Open" },
- *       { status: "done", label: "Done" },
+ *       { status: "open", label: "Open", icon: "todo" },
+ *       { status: "done", label: "Done", icon: "done", done: true },
  *     ],
  *   }];
  *

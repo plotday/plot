@@ -60,24 +60,20 @@ npx @plotday/twister create
 **2. Implement your twist:**
 
 ```typescript
-import {
-  ActivityType,
-  type Priority,
-  type ToolBuilder,
-  Twist,
-} from "@plotday/twister";
-import { Plot } from "@plotday/twister/tools/plot";
+import { type ToolBuilder, Twist } from "@plotday/twister";
+import { Plot, ThreadAccess } from "@plotday/twister/tools/plot";
 
 export default class MyTwist extends Twist<MyTwist> {
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      plot: build(Plot, {
+        thread: { access: ThreadAccess.Create },
+      }),
     };
   }
 
-  async activate(priority: Pick<Priority, "id">) {
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
+  async activate() {
+    await this.tools.plot.createThread({
       title: "Welcome! Your twist is now active.",
       notes: [
         {
@@ -92,7 +88,7 @@ export default class MyTwist extends Twist<MyTwist> {
 **3. Deploy:**
 
 ```bash
-npm run plot login
+npx plot login
 npm run deploy
 ```
 
@@ -104,13 +100,13 @@ npm run deploy
 
 ### Twists
 
-Twists are smart automations that connect, organize, and prioritize your work. They implement opinionated workflows and respond to lifecycle events.
+Twists are smart automations that connect, organize, and prioritize your work. They implement opinionated workflows and respond to lifecycle events. A twist is installed at the workspace level and owned by a single user.
 
 ```typescript
 // Lifecycle methods
-async activate(priority)   // When twist is added to a priority
-async deactivate()         // When twist is removed
-async upgrade()            // When new version is deployed
+async activate(context?)   // When the twist is installed
+async deactivate()         // When the twist is uninstalled
+async upgrade()            // When a new version is deployed
 ```
 
 ### Twist Tools
@@ -119,7 +115,7 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 
 **Built-in Tools:**
 
-- **Plot** - Manage activities and priorities
+- **Plot** - Manage threads, notes, and focuses
 - **Store** - Persistent key-value storage
 - **AI** - Language models with structured output
 - **Integrations** - OAuth authentication and channel lifecycle
@@ -131,32 +127,28 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 
 External service integrations (Google Calendar, Slack, Linear, etc.) are built as **Connectors** — see [Building Connectors](https://twist.plot.day/documents/Building_Connectors.html).
 
-### Activities and Notes
+### Threads and Notes
 
-**Activity** represents something done or to be done (a task, event, or conversation).
-**Notes** represent updates and details on that activity.
+A **Thread** represents something done or to be done (a task, event, or conversation).
+**Notes** represent updates and details on that thread.
 
-Think of an **Activity as a thread** and **Notes as messages in that thread**. Always create activities with an initial note, and add notes for updates rather than creating new activities.
+Think of a **Thread like a messaging thread** and **Notes as messages in that thread**. Always create threads with an initial note, and add notes for updates rather than creating new threads.
 
-**Data sync:** When syncing from external systems, use `Activity.source` (canonical URL) and `Note.key` for automatic upserts without manual ID tracking. See the [Sync Strategies guide](https://twist.plot.day/documents/Sync_Strategies.html) for detailed patterns.
-
-**Action scheduling:** When creating Actions (tasks), omitting the `start` field defaults to "Do Now" (current time). For most integrations, explicitly set `start: null` to create backlog items ("Do Someday"), only using "Do Now" for urgent or in-progress tasks.
+**Data sync:** When syncing from external systems, connectors save **Links** (external items attached to threads) via `integrations.saveLink()`, using `Link.sources` for deduplication and `Note.key` for upsertable notes — no manual ID tracking needed. See the [Sync Strategies guide](https://github.com/plotday/plot/blob/main/twister/docs/SYNC_STRATEGIES.md) for detailed patterns.
 
 ```typescript
-// Create an activity with source for automatic deduplication
-await this.tools.plot.createActivity({
-  source: "https://github.com/org/repo/pull/123", // Enables automatic upserts
-  type: ActivityType.Action,
+import { ActionType } from "@plotday/twister";
+
+// Create a thread with an initial note
+const threadId = await this.tools.plot.createThread({
   title: "Review pull request",
-  start: null, // "Do Someday" - backlog item (recommended default)
   notes: [
     {
-      activity: { source: "https://github.com/org/repo/pull/123" },
       key: "description", // Use key for upsertable notes
       content: "New PR ready for review",
-      links: [
+      actions: [
         {
-          type: ActivityLinkType.external,
+          type: ActionType.external,
           title: "View PR",
           url: "https://github.com/org/repo/pull/123",
         },
@@ -167,7 +159,7 @@ await this.tools.plot.createActivity({
 
 // Add or update a note using key (upserts if key exists)
 await this.tools.plot.createNote({
-  activity: { source: "https://github.com/org/repo/pull/123" },
+  thread: { id: threadId },
   key: "approval", // Using key enables upserts
   content: "LGTM! Approved ✅",
 });
@@ -186,6 +178,8 @@ plot login
 # Twist management
 plot create                    # Create new twist project
 plot generate                  # Generate code from plot-twist.md
+plot lint                      # Check for build or lint errors
+plot build                     # Bundle without deploying
 plot deploy                    # Deploy to Plot
 plot logs                      # Stream real-time twist logs
 
@@ -206,11 +200,10 @@ plot priority create           # Create new priority
 
 - [Getting Started](https://twist.plot.day/documents/Getting_Started.html) - Complete walkthrough
 - [Core Concepts](https://twist.plot.day/documents/Core_Concepts.html) - Twists, tools, and architecture
-- [Sync Strategies](https://twist.plot.day/documents/Sync_Strategies.html) - Data synchronization patterns (upserts, deduplication, ID management)
+- [Sync Strategies](https://github.com/plotday/plot/blob/main/twister/docs/SYNC_STRATEGIES.md) - Data synchronization patterns (upserts, deduplication, ID management)
 - [Built-in Tools](https://twist.plot.day/documents/Built-in_Tools.html) - Plot, Store, AI, and more
 - [Building Connectors](https://twist.plot.day/documents/Building_Connectors.html) - Build external service integrations
 - [Runtime Environment](https://twist.plot.day/documents/Runtime_Environment.html) - Execution constraints and optimization
-- [Advanced Topics](https://twist.plot.day/documents/Advanced.html) - Complex patterns and techniques
 
 ### Reference
 
@@ -226,12 +219,15 @@ plot priority create           # Create new priority
 ```typescript
 export default class WelcomeTwist extends Twist<WelcomeTwist> {
   build(build: ToolBuilder) {
-    return { plot: build(Plot) };
+    return {
+      plot: build(Plot, {
+        thread: { access: ThreadAccess.Create },
+      }),
+    };
   }
 
-  async activate(priority: Pick<Priority, "id">) {
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
+  async activate() {
+    await this.tools.plot.createThread({
       title: "Welcome to Plot! 👋",
       notes: [
         {
@@ -246,21 +242,34 @@ export default class WelcomeTwist extends Twist<WelcomeTwist> {
 ### GitHub Connector
 
 ```typescript
-import { Connector, type ConnectorBuilder, type Channel } from "@plotday/twister";
-import { Integrations } from "@plotday/twister/tools/integrations";
+import { Connector, type ToolBuilder } from "@plotday/twister";
+import {
+  AuthProvider,
+  type AuthToken,
+  type Authorization,
+  type Channel,
+  Integrations,
+} from "@plotday/twister/tools/integrations";
 
 export default class GitHubConnector extends Connector<GitHubConnector> {
-  build(build: ConnectorBuilder) {
+  readonly provider = AuthProvider.GitHub;
+  readonly scopes = ["repo"];
+
+  build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
     };
   }
 
-  async getChannels(): Promise<Channel[]> {
+  async getChannels(
+    auth: Authorization | null,
+    token: AuthToken | null
+  ): Promise<Channel[]> {
     // Return repositories the user can sync
+    const repos = await this.listRepos(token);
     return repos.map((repo) => ({
       id: repo.id,
-      name: repo.full_name,
+      title: repo.full_name,
     }));
   }
 

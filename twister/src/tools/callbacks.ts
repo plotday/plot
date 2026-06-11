@@ -7,7 +7,7 @@ import { Serializable } from "../utils/types";
  * Callbacks enable tools and twists to create persistent references to functions
  * that can survive worker restarts and be invoked across different execution contexts.
  *
- * This is a branded strin
+ * This is a branded string
  * type to prevent mixing callback tokens with regular strings.
  *
  * @example

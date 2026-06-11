@@ -4,15 +4,14 @@ This repository uses [Changesets](https://github.com/changesets/changesets) to m
 
 ## Package Versioning Strategy
 
-Only `@plotday/twister` is published to npm via changesets. Everything else (`@plotday/connector-*`, `@plotday/twist-*`) is listed under `ignore` in `.changeset/config.json`:
+Only `@plotday/twister` is published to npm via changesets. Everything else (the `@plotday/connector-*` packages) is listed under `ignore` in `.changeset/config.json`:
 
 - **Twist Creator** (`@plotday/twister`): Published to npm; versioned via changesets
 - **Connectors** (`@plotday/connector-*`): Ignored by changesets — deployed via `plot deploy`, not npm
-- **Twists** (`@plotday/twist-*`): Ignored by changesets — deployed via `plot deploy`, not npm
 
 **Only create changesets for changes to `twister/`.** A changeset that targets only ignored packages will never resolve: `changeset version` leaves the file in place, so every subsequent run of the release workflow treats it as a pending release, produces an empty diff, and fails to open a release PR (`No commits between main and changeset-release/main`). The `pnpm validate-changesets` CI check rejects these up front.
 
-Changes to connectors or twists do **not** need a changeset — the PR-level changeset check (`changeset-check.yml`) only requires one when files under `twister/` are modified.
+Changes to connectors do **not** need a changeset — the PR-level changeset check (`changeset-check.yml`) only requires one when files under `twister/` are modified.
 
 ## How to Add a Changeset
 
@@ -29,7 +28,7 @@ This will prompt you with:
 1. **Which packages would you like to include?**
 
    - Select `@plotday/twister` (use space to select, enter to confirm)
-   - Do **not** select any `@plotday/connector-*` or `@plotday/twist-*` package — they are ignored and will block the release workflow
+   - Do **not** select any `@plotday/connector-*` package — they are ignored and will block the release workflow
 
 2. **What kind of change is this?**
 
@@ -57,14 +56,14 @@ The changeset file will be created in `.changeset/` with a random name like `.ch
 
 1. **Developer makes changes**
 
-   - Make your changes to builder or tools packages
+   - Make your changes under `twister/`
    - Run `pnpm changeset` to add a changeset
    - Commit the changeset file along with your changes
    - Open a PR to `main`
 
 2. **PR validation**
 
-   - GitHub Actions will check if builder/tools were modified
+   - GitHub Actions will check if files under `twister/` were modified
    - If modified, it ensures a changeset file exists
    - PR cannot be merged without a changeset (or admin override)
 
@@ -81,9 +80,9 @@ The changeset file will be created in `.changeset/` with a random name like `.ch
    - When the "Version Packages" PR is merged
    - GitHub Actions automatically:
      - Builds all packages
-     - Publishes changed packages to npm
-     - Creates GitHub releases with changelogs
-     - Tags each release (e.g., `twister@0.9.1`, `tool-google-calendar@0.1.0`)
+     - Publishes `@plotday/twister` to npm
+     - Creates a GitHub release with the changelog
+     - Tags the release (e.g., `twister@0.9.1`)
 
 ## GitHub Releases
 
@@ -202,8 +201,8 @@ gh release create twister@0.9.1 --title "@plotday/twister@0.9.1" --notes "Releas
 
 ### Changeset not detecting my package
 
-**Problem:** You modified a connector or twist package.
-**Solution:** Connectors (`@plotday/connector-*`) and twists (`@plotday/twist-*`) are ignored by changesets — only `@plotday/twister` is published to npm. No changeset is needed for connector/twist-only changes.
+**Problem:** You modified a connector package.
+**Solution:** Connectors (`@plotday/connector-*`) are ignored by changesets — only `@plotday/twister` is published to npm. No changeset is needed for connector-only changes.
 
 ### Release workflow fails with "No commits between main and changeset-release/main"
 

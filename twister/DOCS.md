@@ -6,7 +6,7 @@ This directory contains the TypeDoc-generated API documentation for the Plot Twi
 
 The Twist Creator documentation is automatically published to GitHub Pages whenever changes are pushed to the main branch:
 
-**Live Documentation**: [https://plotday.github.io/plot/](https://plotday.github.io/plot/)
+**Live Documentation**: [https://twist.plot.day](https://twist.plot.day)
 
 The documentation is automatically updated whenever changes to the Twist Creator are merged into the main branch, ensuring developers always have access to the latest API reference.
 
@@ -62,11 +62,10 @@ start dist/docs/index.html
 
 The generated documentation includes:
 
-- **Classes** - Twist, Tool, and built-in tool classes
-- **Interfaces** - Activity, Priority, Contact, and other data types
-- **Enums** - ActivityType, ActorType, ActivityLinkType, etc.
-- **Type Aliases** - NewActivity, NewPriority, and utility types
-- **Modules** - Organized by functionality (tools, common, utils)
+- **Classes** - Twist, Connector, Tool, and built-in tool classes
+- **Type Aliases** - Thread, Note, Focus, Contact, NewThread, NewFocus, and other data types
+- **Enums** - ActorType, ActionType, Tag, etc.
+- **Modules** - Organized by functionality (tools, utils)
 
 ## Publishing Documentation
 
@@ -77,11 +76,11 @@ The documentation is automatically published in two ways:
 When changes to the Twist Creator are pushed to the main branch, a GitHub Action automatically:
 
 - Builds the Twist Creator and generates the documentation
-- Deploys it to GitHub Pages at [https://plotday.github.io/plot/](https://plotday.github.io/plot/)
+- Deploys it to GitHub Pages at [https://twist.plot.day](https://twist.plot.day)
 
 **Workflow Location**: `.github/workflows/deploy-docs.yml`
 
-**Trigger**: Automatic on push to `main` when files in `public/twist/**` change
+**Trigger**: Automatic on push to `main` when files in `twister/**` change
 
 ### 2. npm Package (Manual)
 
@@ -136,31 +135,33 @@ When adding new public APIs:
 
 ````typescript
 /**
- * Creates a new activity in the current priority.
+ * Creates a new thread in the Plot system.
  *
- * Activities are the core data type in Plot, representing tasks, events, and notes.
- * This method creates a new activity with the specified properties.
+ * Threads are the core data type in Plot, representing tasks, events, and conversations.
+ * This method creates a new thread with the specified properties.
  *
- * @param activity - The activity data to create
- * @returns Promise resolving to the created activity with its generated ID
+ * @param thread - The thread data to create
+ * @returns Promise resolving to the created thread's ID
  *
  * @example
  * ```typescript
- * const activity = await this.tools.plot.createActivity({
- *   type: ActivityType.Action,
+ * const threadId = await this.tools.plot.createThread({
  *   title: "Review pull request",
- *   links: [{
- *     type: ActivityLinkType.external,
- *     title: "View PR",
- *     url: "https://github.com/org/repo/pull/123"
+ *   notes: [{
+ *     content: "New PR ready for review",
+ *     actions: [{
+ *       type: ActionType.external,
+ *       title: "View PR",
+ *       url: "https://github.com/org/repo/pull/123"
+ *     }]
  *   }]
  * });
  * ```
  *
- * @see {@link Activity} for the full activity type definition
- * @see {@link ActivityType} for available activity types
+ * @see {@link Thread} for the full thread type definition
+ * @see {@link NewThread} for the creation type
  */
-abstract createActivity(activity: NewActivity): Promise<Activity>;
+abstract createThread(thread: NewThread | NewThreadWithNotes): Promise<Uuid>;
 ````
 
 ## Support

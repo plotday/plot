@@ -225,8 +225,8 @@ export abstract class Twist<TSelf> {
    * await this.set("handler_token", token);
    *
    * // Later, execute the callback
-   * const token = await this.get<string>("handler_token");
-   * await this.run(token, args);
+   * const token = await this.get<Callback>("handler_token");
+   * await this.run(token);
    * ```
    *
    * @template T - The type of value being stored (must be Serializable)

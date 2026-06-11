@@ -14,8 +14,8 @@ import { ITool } from "..";
  */
 export abstract class Files extends ITool {
   /**
-   * Read a file uploaded by a client and attached to a note in a focus
-   * where this twist is installed.
+   * Read a file uploaded by a client and attached to a note on a thread
+   * in one of the twist owner's focuses.
    *
    * @param fileId The id from an ActionType.file action.
    * @returns Bytes plus original metadata.

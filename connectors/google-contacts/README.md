@@ -1,72 +1,17 @@
-# Google Contacts Tool
+# Google Contacts Connector for Plot
 
-A Plot tool for syncing with Google Contacts.
+Syncs your Google contacts into Plot so people show up with names and avatars.
 
-## Installation
+## What it does
 
-```bash
-npm install @plotday/tool-google-contacts @plotday/twister
-```
+- Syncs your saved contacts and "other contacts" (people you've corresponded with) — name, email, and avatar
+- Contact records only: no threads or notes are created
+- Other Google connectors (e.g. Calendar, Drive) share its OAuth scopes to add names to the people they sync
 
-## Usage
+## OAuth scopes
 
-```typescript
-import { Twist, Tools } from "@plotday/twister";
-import { GoogleContacts } from "@plotday/tool-google-contacts";
-import { Integrations, AuthProvider } from "@plotday/twister/tools/integrations";
-
-export default class extends Twist {
-  private googleContacts: GoogleContacts;
-  private auth: Integrations;
-
-  constructor(id: string, tools: Tools) {
-    super();
-    this.googleContacts = tools.get(GoogleContacts);
-    this.integrations = tools.get(Integrations);
-  }
-
-  async activate() {
-    // Request Google Contacts access
-    const authLink = await this.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: ["https://www.googleapis.com/auth/contacts.readonly"],
-      },
-      {
-        functionName: "onAuthComplete",
-      }
-    );
-
-    // User will authenticate via authLink
-  }
-
-  async onAuthComplete(authorization: any, context: any) {
-    const authToken = await this.integrations.get(authorization);
-
-    // Start syncing contacts
-    await this.googleContacts.startSync(authToken, "onContact");
-  }
-
-  async onContact(contact: any) {
-    // Handle contact updates
-    console.log("Contact:", contact.names?.[0]?.displayName);
-  }
-}
-```
-
-## API
-
-### `getContacts(authToken: string, options?: object)`
-
-Retrieves contacts from Google Contacts.
-
-### `startSync(authToken: string, callbackName: string)`
-
-Starts syncing contacts from Google Contacts.
-
-### `stopSync(authToken: string)`
-
-Stops syncing contacts from Google Contacts.
+- `contacts.readonly`
+- `contacts.other.readonly`
 
 ## License
 

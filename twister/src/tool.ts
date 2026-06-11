@@ -13,7 +13,7 @@ import type {
 export type { ToolBuilder };
 
 /**
- * Abstrtact parent for both built-in tools and regular Tools.
+ * Abstract parent for both built-in tools and regular Tools.
  * Regular tools extend Tool.
  */
 export abstract class ITool {}
@@ -194,8 +194,8 @@ export abstract class Tool<TSelf> implements ITool {
    * await this.set("handler_token", token);
    *
    * // Later, execute the callback
-   * const token = await this.get<string>("handler_token");
-   * await this.run(token, args);
+   * const token = await this.get<Callback>("handler_token");
+   * await this.run(token);
    * ```
    *
    * @template T - The type of value being stored (must be Serializable)
@@ -257,7 +257,7 @@ export abstract class Tool<TSelf> implements ITool {
    * @example
    * ```typescript
    * // Break large loop into batches
-   * const callback = await this.callback("processBatch", { page: 1 });
+   * const callback = await this.callback(this.processBatch, 1);
    * await this.runTask(callback); // New execution with fresh request limit
    * ```
    */

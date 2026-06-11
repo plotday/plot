@@ -685,8 +685,9 @@ export type AuthToken = {
    *
    * For Slack (AuthProvider.Slack):
    * - authed_user_id: The authenticated user's Slack ID
-   * - bot_user_id: The bot user's Slack ID
+   * - team_id: The Slack workspace/team ID
    * - team_name: The Slack workspace/team name
+   * - enterprise_id: The Enterprise Grid org ID (when applicable)
    */
   provider?: Record<string, string>;
 };
