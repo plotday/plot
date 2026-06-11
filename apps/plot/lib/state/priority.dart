@@ -315,6 +315,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (initialNow is NowLoaded) {
       _pausedFocus = initialNow.pausedFocus;
       _lastNowForPaused = initialNow.now;
+      // Seed the Event Agenda event too: PriorityPage only mirrors
+      // currentEvent CHANGES, so a bloc freshly mounted for the event's
+      // own focus would otherwise never learn about an already-selected
+      // event. Ownership-gated — a foreign event stays out of this feed.
+      _currentEventForFeed = eventAgendaEventFor(
+        initialNow.currentEvent,
+        priority.id,
+      );
     }
 
     // Subscribe to NowBloc so the agenda re-builds when the paused-focus
@@ -995,8 +1003,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (p.root) {
       return (priorityId: p.id, priorityPath: null);
     }
-    final scopeByPath =
-        state.showSubPriorities || _currentEventForFeed != null;
+    final scopeByPath = state.showSubPriorities ||
+        eventAgendaEventFor(_currentEventForFeed, p.id) != null;
     return (
       priorityId: scopeByPath ? null : p.id,
       priorityPath: scopeByPath ? p.path : null,
@@ -1655,7 +1663,21 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// feed. Set via [setCurrentEventForFeed]; null when no event is
   /// selected. Drives the "Event Agenda" section in
   /// [_rebuildActivityFeedSections].
+  ///
+  /// Invariant: this always holds what the RENDERED feed should show for
+  /// its current context. During a cross-focus transition the latest
+  /// mirror is withheld in [_pendingEventForFeed] instead, so incidental
+  /// rebuilds (associations stream, agenda updates) can't flip the
+  /// Event Agenda prefix ahead of the thread rows.
   Thread? _currentEventForFeed;
+
+  /// Latest mirrored event withheld while a cross-focus transition is in
+  /// flight (see [setCurrentEventForFeed]). Applied by [setPriority] so
+  /// the prefix and the new focus's rows flip in the same emission.
+  /// [_hasPendingEventForFeed] distinguishes "pending null" (clear the
+  /// prefix at the swap) from "nothing pending".
+  Thread? _pendingEventForFeed;
+  bool _hasPendingEventForFeed = false;
 
   /// Replace the event that drives the "Event Agenda" section and
   /// rebuild the activity feed. Called by PriorityPage when the
@@ -1665,11 +1687,32 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// both resolve to the same priority, so this only re-runs the
   /// subscriptions when the event-selected transition flips the prefix.
   void setCurrentEventForFeed(Thread? event) {
-    final prev = _currentEventForFeed;
-    if (prev?.id == event?.id && prev?.occurrence == event?.occurrence) {
+    final latest = _hasPendingEventForFeed
+        ? _pendingEventForFeed
+        : _currentEventForFeed;
+    if (latest?.id == event?.id && latest?.occurrence == event?.occurrence) {
       return;
     }
-    final scopeChanged = (prev == null) != (event == null);
+    // During a cross-focus switch the event mirror arrives before the
+    // setPriority that swaps the rows: ChangeCurrentPriority and
+    // NowBloc.setCurrentEvent update NowBloc's context synchronously at
+    // tap time, while this feed swaps atomically on the restarted
+    // subscription's first emission. Applying the mirror now would render
+    // the new event over the previous focus's rows — or drop the old
+    // event a frame before the rows swap. Stash it; [setPriority] applies
+    // it so the Event Agenda prefix and the rows flip in the same frame.
+    final nowState = _nowBloc.state;
+    if (shouldDeferEventMirror(
+      nowContextId: nowState is NowLoaded ? nowState.context?.id : null,
+      feedContextId: state.context.id,
+    )) {
+      _pendingEventForFeed = event;
+      _hasPendingEventForFeed = true;
+      return;
+    }
+    _pendingEventForFeed = null;
+    _hasPendingEventForFeed = false;
+    final scopeChanged = (_currentEventForFeed == null) != (event == null);
     _currentEventForFeed = event;
     if (scopeChanged && !state.showSubPriorities && state.search.isEmpty) {
       // Only reload when the effective scope actually flips. When the
@@ -2138,7 +2181,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // without changing the thread's own section membership — the user
     // wants the thread to appear in both places (duplicate).
     if (targetSection == ActivitySection.eventAgenda) {
-      final parent = _currentEventForFeed;
+      // Same ownership gate as _buildEventAgendaItems — the section is only
+      // rendered (and so only a drop target) for an event this context owns.
+      final parent = eventAgendaEventFor(_currentEventForFeed, state.context.id);
       if (parent == null) return;
       // Resolve neighbouring association orders (if any) to compute a
       // fractional order between them.
@@ -2708,6 +2753,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     // finalization from a previous setPriority is fenced off — they check
     // this counter before emitting and bail if a newer switch is underway.
     final myGen = ++_priorityLoadGeneration;
+
+    // Apply any event mirror withheld during the transition (see
+    // [setCurrentEventForFeed]) so the restarted subscription's first
+    // emission renders the Event Agenda prefix together with the new
+    // focus's rows — never one ahead of the other.
+    if (_hasPendingEventForFeed) {
+      _currentEventForFeed = _pendingEventForFeed;
+      _pendingEventForFeed = null;
+      _hasPendingEventForFeed = false;
+    }
 
     // Profile the priority switch end-to-end. The same stopwatch is passed
     // into _loadPriority/_loadAgenda so timestamps share an origin and the
@@ -4184,9 +4239,15 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   /// Build the Event Agenda prefix items — pinned event thread plus its
-  /// associated threads. Returns an empty list when no event is selected.
+  /// associated threads. Returns an empty list when no event is selected
+  /// or when the selected event belongs to another focus — the prefix
+  /// must never render over rows from a context that doesn't own it
+  /// (defense in depth behind [setCurrentEventForFeed]'s deferral).
   List<AgendaItem> _buildEventAgendaItems() {
-    final currentEvent = _currentEventForFeed;
+    final currentEvent = eventAgendaEventFor(
+      _currentEventForFeed,
+      state.context.id,
+    );
     if (currentEvent == null) return const <AgendaItem>[];
     final items = <AgendaItem>[
       AgendaHeaderItem(
@@ -4701,4 +4762,31 @@ class _ErrorPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// True when a [NowBloc.currentEvent] mirror must NOT be applied to the
+/// feed yet because a cross-focus transition is in flight.
+///
+/// [ChangeCurrentPriority] and [NowBloc.setCurrentEvent] move NowBloc's
+/// context synchronously at tap time, while the activity feed swaps
+/// atomically on the first emission after [PriorityBloc.setPriority] —
+/// so whenever the two contexts disagree, the mirror is ahead of the
+/// rendered rows and applying it would flip the Event Agenda prefix one
+/// frame early (new event over the old focus's threads on the way in;
+/// prefix vanishing before the rows on the way out). A null
+/// [nowContextId] (NowBloc not loaded) applies immediately.
+bool shouldDeferEventMirror({
+  required PriorityId? nowContextId,
+  required PriorityId feedContextId,
+}) {
+  return nowContextId != null && nowContextId != feedContextId;
+}
+
+/// The event allowed to drive the "Event Agenda" prefix for a feed whose
+/// context is [feedContextId]: [event] when that context owns it, null
+/// otherwise. Keeps an event filed in another focus from ever rendering
+/// over rows it doesn't belong with.
+Thread? eventAgendaEventFor(Thread? event, PriorityId feedContextId) {
+  if (event == null) return null;
+  return event.priority.id == feedContextId ? event : null;
 }

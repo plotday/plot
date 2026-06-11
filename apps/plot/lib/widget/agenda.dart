@@ -1009,7 +1009,8 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // rows — user-scheduled focus blocks and timed events — instead of
     // omitting it. All-day events keep no time label: their start is
     // midnight only because they carry a date (`on`), not a time-of-day.
-    final showMidnightStart = block is PriorityBlock ||
+    final showMidnightStart =
+        block is PriorityBlock ||
         (block is EventBlock && block.event.on == null);
     // An event/block/gap in progress shows "Now" in the gutter instead of
     // its start time.
@@ -1517,9 +1518,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // ACTIVITY-scoped stack router to the target priority (NOT root — that
     // would re-introduce the Search-subtree ambiguity), then drive the
     // inner ThreadRoute once the inner router becomes available.
-    final activityRouter = tabsRouter.stackRouterOfIndex(
-      PriorityTabs.activity,
-    );
+    final activityRouter = tabsRouter.stackRouterOfIndex(PriorityTabs.activity);
     if (activityRouter == null) {
       // Shouldn't happen once the Activity tab exists; fall back to root.
       context.router.root.navigate(
@@ -1966,7 +1965,12 @@ class _ConferencingInlineState extends State<_ConferencingInline> {
 /// render as plain text. The heuristic is intentionally conservative —
 /// a missed address is a minor inconvenience, a wrongly-clickable
 /// meeting room would mislead.
-class _LocationInline extends StatelessWidget {
+///
+/// When the location is clickable, it mirrors [_ConferencingInline]'s hover
+/// affordance: the text strengthens from the resting muted tone to
+/// [PlotColors.muted], signalling that the row is a true (external) link the
+/// user can click to open Maps.
+class _LocationInline extends StatefulWidget {
   const _LocationInline({
     required this.location,
     required this.color,
@@ -1977,10 +1981,17 @@ class _LocationInline extends StatelessWidget {
   final Color color;
   final double fontSize;
 
-  bool get _looksLikeAddress => location.contains(',');
+  @override
+  State<_LocationInline> createState() => _LocationInlineState();
+}
+
+class _LocationInlineState extends State<_LocationInline> {
+  bool _hovered = false;
+
+  bool get _looksLikeAddress => widget.location.contains(',');
 
   void _open() {
-    final q = Uri.encodeQueryComponent(location);
+    final q = Uri.encodeQueryComponent(widget.location);
     try {
       launchUrl(
         Uri.parse('https://www.google.com/maps/search/?api=1&query=$q'),
@@ -1991,12 +2002,17 @@ class _LocationInline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Strengthen from the resting muted tone on hover so the link reads as
+    // interactive, matching the videoconferencing affordance.
+    final color = _looksLikeAddress && _hovered
+        ? context.theme.plotColors.muted
+        : widget.color;
     final textWidget = Text(
-      location,
+      widget.location,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        fontSize: fontSize,
+        fontSize: widget.fontSize,
         color: color,
         height: _agendaRowLineHeight,
       ),
@@ -2004,6 +2020,8 @@ class _LocationInline extends StatelessWidget {
     if (!_looksLikeAddress) return textWidget;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(onTap: _open, child: textWidget),
     );
   }
