@@ -4,8 +4,8 @@ import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/state/subscription_service.dart';
 import 'package:plot/command/twist.dart';
 import 'package:plot/command/upgrade.dart' show ShowUpgradeOptions;
 import 'package:plot/widget/logo_image.dart';
@@ -41,7 +41,6 @@ class _OnboardingToolsState extends State<OnboardingTools> {
   List<Twist>? _twists;
   List<SourceSummary> _connected = const [];
   bool _loading = true;
-  UsageData? _usage;
 
   @override
   void initState() {
@@ -54,13 +53,11 @@ class _OnboardingToolsState extends State<OnboardingTools> {
       final results = await Future.wait([
         TwistApi.getAllTwists(),
         TwistApi.getSourcesSummary(),
-        UpgradeApi.getUsage(),
       ]);
       if (!mounted) return;
       setState(() {
         _twists = results[0] as List<Twist>;
         _connected = results[1] as List<SourceSummary>;
-        _usage = results[2] as UsageData;
         _loading = false;
       });
     } catch (e, t) {
@@ -70,18 +67,24 @@ class _OnboardingToolsState extends State<OnboardingTools> {
   }
 
   Future<void> _openSetup(Twist twist) async {
-    // Pro connectors: gate before opening setup. If the user can't add another
-    // Pro connection (Free/Core, or a Pro user who used their included one),
-    // show the upgrade picker instead. Usage may be null if it failed to load —
-    // fall through to AddSourceDetail, whose own gate is the backstop.
-    final usage = _usage;
-    if (usage != null) {
-      final gate = premiumOnboardingGate(usage: usage, isPremium: twist.premium);
-      if (gate != null) {
-        if (!mounted) return;
-        await gate.run(context);
-        if (mounted) await _load(); // refresh so an upgraded user can proceed
-        return;
+    // Pull a fresh subscription/usage snapshot before gating. After a browser
+    // (Stripe) upgrade, the cached value could otherwise still read "blocked"
+    // and re-show the subscribe modal. The service coalesces this with any
+    // refresh already kicked off by app refocus.
+    if (twist.premium) {
+      await SubscriptionService.instance.ensureFresh();
+      if (!mounted) return;
+      final usage = SubscriptionService.instance.usage;
+      if (usage != null) {
+        final gate =
+            premiumOnboardingGate(usage: usage, isPremium: twist.premium);
+        if (gate != null) {
+          await gate.run(context);
+          // The upgrade may complete out-of-band (browser). The service's
+          // refocus/broadcast refresh updates usage; the user taps again to
+          // proceed. No stale re-cache here.
+          return;
+        }
       }
     }
     await AddSourceDetail(twist, dismissable: true).run(context);
