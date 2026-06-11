@@ -367,7 +367,12 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
     skip: false,
   };
 
-  const raw = response.response;
+  const raw =
+    typeof response === "string"
+      ? response
+      : "response" in response
+        ? response.response
+        : undefined;
   const text = (typeof raw === "string" ? raw : JSON.stringify(raw))?.trim();
   if (!text) {
     return { state: { default: defaultClassification, overrides: {} } };

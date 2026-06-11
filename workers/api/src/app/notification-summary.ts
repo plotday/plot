@@ -172,7 +172,12 @@ export async function generateSummary(
       throw new Error("Response is a stream");
     }
 
-    const text = typeof response === "string" ? response : response.response;
+    const text =
+      typeof response === "string"
+        ? response
+        : "response" in response
+          ? response.response
+          : undefined;
     return text?.replace(/^"(.*)"$/, "$1")?.trim() || fallbackSummary(threads);
   } catch (e) {
     const logger = createLogger();

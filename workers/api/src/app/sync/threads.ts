@@ -26,6 +26,11 @@ import { sendInvitation } from "../invitation";
 import { parseInviteAddress } from "./invite-address";
 import { notifySync, notifyUserSyncByEnv } from "./notify";
 import {
+  dispatchContactsChangedIfNeeded,
+  snapshotThreadContacts,
+  type ThreadContactsSnapshot,
+} from "./contacts-changed-dispatch";
+import {
   stripAnnounceContactsFromThreads,
   stripHiddenRoleContactsFromThreads,
 } from "./viewer";
@@ -669,6 +674,19 @@ threads.post("/sync/threads", async (c) => {
   let muteAffected = 0;
   let muteMode: "apply" | "clear" | null = null;
 
+  // Snapshot contacts before the upsert so we can dispatch onContactsChanged to
+  // the owning connector if this save changes the thread's membership or a
+  // contact's role. Only relevant for an existing thread whose payload touches
+  // contacts/contact_meta — a brand new thread's roster is conveyed via
+  // onLinkCreated instead.
+  const contactsMayChange =
+    !!threadData.id &&
+    (threadData.contacts !== undefined || threadData.contact_meta !== undefined);
+  let prevContacts: ThreadContactsSnapshot | null = null;
+  if (contactsMayChange) {
+    prevContacts = await snapshotThreadContacts(c.var.db, threadData.id as string);
+  }
+
   const result = await withUserDb(c.var.db, userId, async (trx) => {
     const upsertResult = await rpcUser(trx, "upsert_thread", {
       user_id: userId,
@@ -805,6 +823,12 @@ threads.post("/sync/threads", async (c) => {
 
     return upsertResult;
   });
+
+  // If this save changed the thread's contact membership or a contact's role,
+  // notify the connector that owns the thread (best-effort, connector-only).
+  if (prevContacts && result?.id) {
+    await dispatchContactsChangedIfNeeded(c, result.id as string, prevContacts);
+  }
 
   // Dispatch classify jobs for peer thread_priority rows the upsert
   // triggers wrote as pending (and the author's row if foreground

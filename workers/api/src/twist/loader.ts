@@ -141,6 +141,19 @@ export async function getTwist({
       }
       module = moduleFromR2;
     }
+    // `ctx.exports` is typed as `Cloudflare.Exports` — a mapped type over the
+    // worker's own module exports (`typeof import("./index")`). Resolving it
+    // here is circular (index.ts re-exports this loader, which references
+    // ctx.exports), so it collapses to `{}` and the exported entrypoints aren't
+    // visible. Cast to the loopback-binding factories we actually call; each
+    // returns a Fetcher, which is what globalOutbound/tails expect.
+    const workerExports = ctx.exports as unknown as {
+      HttpProxy: (config: { props: { allowedPatterns: string[] } }) => Fetcher;
+      TwistTail: (config: {
+        env: { TWIST_LOGS_QUEUE: typeof env.TWIST_LOGS_QUEUE; USAGE: typeof env.USAGE };
+        props: { twistRootId: string; environment: TwistEnvironment };
+      }) => Fetcher;
+    };
     return {
       compatibilityDate: "2025-10-01",
       compatibilityFlags: ["nodejs_compat"],
@@ -149,11 +162,11 @@ export async function getTwist({
         "index.js": TwistEntrypoint.Module,
         "twist.js": module,
       },
-      globalOutbound: ctx.exports.HttpProxy({
+      globalOutbound: workerExports.HttpProxy({
         props: { allowedPatterns: httpPermissions },
       }),
       tails: [
-        ctx.exports.TwistTail({
+        workerExports.TwistTail({
           env: {
             TWIST_LOGS_QUEUE: env.TWIST_LOGS_QUEUE,
             USAGE: env.USAGE,

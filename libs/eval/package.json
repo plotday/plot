@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.75",
+    "@huggingface/transformers": "^3.8.1",
     "@plotday/classifier": "workspace:^",
     "@plotday/db": "workspace:^",
     "ai": "^6.0.185",

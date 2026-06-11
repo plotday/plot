@@ -8,6 +8,11 @@ import { rpc } from "../rpc";
 import { captureServerError } from "../utils/error-capture";
 import { handleValidationError } from "../utils/validation";
 import { sendInvitation } from "./invitation";
+import {
+  dispatchContactsChangedIfNeeded,
+  snapshotThreadContacts,
+  type ThreadContactsSnapshot,
+} from "./sync/contacts-changed-dispatch";
 import { updateThreadDroppedContacts } from "../twist/sharing";
 
 const threadShare = new Hono<{ Bindings: Bindings }>();
@@ -91,6 +96,20 @@ threadShare.post("/thread/:id/share", async (c) => {
     undrop.length === 0
   ) {
     return c.json({ message: "No changes to make" }, 400);
+  }
+
+  // Snapshot contacts before any mutation so we can dispatch onContactsChanged
+  // to the owning connector after. Group-only changes don't affect the contact
+  // membership, so we only snapshot when a contact/role/drop op is present.
+  const contactsMayChange =
+    add.length > 0 ||
+    remove.length > 0 ||
+    roleChanges.length > 0 ||
+    drop.length > 0 ||
+    undrop.length > 0;
+  let prevContacts: ThreadContactsSnapshot | null = null;
+  if (contactsMayChange) {
+    prevContacts = await snapshotThreadContacts(c.var.db, threadId);
   }
 
   if (add.length > 0 || remove.length > 0 || roleChanges.length > 0) {
@@ -287,6 +306,11 @@ threadShare.post("/thread/:id/share", async (c) => {
       );
     }
   }
+
+  // If the membership/roles actually changed, notify the connector that owns
+  // the thread (best-effort, connector-only). Covers message-mode drop/undrop,
+  // the only path that removes a member from a group-DM thread.
+  await dispatchContactsChangedIfNeeded(c, threadId, prevContacts);
 
   return c.json({ success: true });
 });

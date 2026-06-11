@@ -6,6 +6,7 @@ import {
   type Actor,
   type ActorId,
   ActorType,
+  type Contact,
   type Link,
   type NewContact,
   type NewLinkWithNotes,
@@ -2207,6 +2208,98 @@ export class Integrations extends Tool implements IAuth {
       return [{
         sourceMethod: "onScheduleContactUpdated",
         args: [thread, item.schedule_id, item.contact_id, item.status ?? null, actor],
+      }];
+    }
+
+    // Handle thread_contacts dispatch — route to connector's onContactsChanged.
+    // Fired when a user changes thread-level sharing (adds/removes a contact or
+    // changes a role) on a thread this connector owns. The caller
+    // (`dispatchThreadContactsChanged`) has already computed the membership/role
+    // diff from before/after snapshots; here we resolve the contact ids to SDK
+    // Contact objects and hand the change to the connector. Like the sibling
+    // handlers, the Plot-tool dispatch path needs `plotOptions.thread.access`
+    // (which connectors don't declare), so we dispatch from here.
+    if (dispatchItem?.itemType === "thread_contacts" && this.sourceProvider) {
+      const { item } = dispatchItem as {
+        item?: {
+          thread_id?: string;
+          added?: Array<{ contactId: string; role: string | null }>;
+          removed?: Array<{ contactId: string; role: string | null }>;
+          changed?: Array<{ contactId: string; from: string | null; to: string | null }>;
+        };
+      };
+      if (!item?.thread_id) return [];
+
+      const added = item.added ?? [];
+      const removed = item.removed ?? [];
+      const changed = item.changed ?? [];
+      if (added.length === 0 && removed.length === 0 && changed.length === 0) {
+        return [];
+      }
+
+      // Only dispatch for threads this connector created.
+      const link = await this.db
+        .selectFrom("link")
+        .select(["meta", "channel_id", "source"])
+        .where("thread_id", "=", item.thread_id)
+        .where("created_by", "=", this.twistInstanceId)
+        .executeTakeFirst();
+      if (!link) return [];
+
+      const threadRow = await this.db
+        .selectFrom("thread")
+        .select(["id", "title", "archived_at"])
+        .where("id", "=", item.thread_id)
+        .executeTakeFirst();
+      if (!threadRow) return [];
+
+      // Resolve every referenced contact id to an SDK Contact in one query.
+      const ids = [
+        ...added.map((c) => c.contactId),
+        ...removed.map((c) => c.contactId),
+        ...changed.map((c) => c.contactId),
+      ];
+      const uniqueIds = Array.from(new Set(ids));
+      const contactRows = uniqueIds.length
+        ? await this.db
+            .selectFrom("contact")
+            .select(["id", "name", "email"])
+            .where("id", "in", uniqueIds)
+            .execute()
+        : [];
+      const contactById = new Map<string, Contact>();
+      for (const row of contactRows) {
+        contactById.set(row.id as string, {
+          id: row.id as ActorId,
+          name: row.name ?? null,
+          email: row.email ?? null,
+        });
+      }
+      const resolve = (id: string): Contact =>
+        contactById.get(id) ?? { id: id as ActorId, name: null, email: null };
+
+      const meta: ThreadMeta = {
+        ...((link.meta as Record<string, unknown>) ?? {}),
+        channelId: link.channel_id ?? null,
+        linkSource: link.source ?? null,
+      } as ThreadMeta;
+
+      const thread: Partial<Thread> = {
+        id: threadRow.id as Uuid,
+        title: threadRow.title ?? "",
+        archived: threadRow.archived_at !== null,
+        meta,
+      };
+
+      const changes = {
+        added: added.map((c) => ({ contact: resolve(c.contactId), role: c.role })),
+        removed: removed.map((c) => ({ contact: resolve(c.contactId), role: c.role })),
+        changed: changed.map((c) => ({ contact: resolve(c.contactId), from: c.from, to: c.to })),
+      };
+
+      return [{
+        sourceMethod: "onContactsChanged",
+        args: [thread, changes],
       }];
     }
 

@@ -85,8 +85,14 @@ export async function summarize(ai: Ai, body: string) {
     if (response instanceof ReadableStream) {
       throw new Error("Response is a stream");
     }
+    const responseText =
+      typeof response === "string"
+        ? response
+        : "response" in response
+          ? response.response
+          : undefined;
     const json = {
-      title: response.response?.replace(/^"(.*)"$/, "$1")?.trim() || (titleFromContent(body) ?? cleanTitle(body).slice(0, 60)),
+      title: responseText?.replace(/^"(.*)"$/, "$1")?.trim() || (titleFromContent(body) ?? cleanTitle(body).slice(0, 60)),
     };
     return json;
   } catch (e) {
