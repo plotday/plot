@@ -1,58 +1,21 @@
-# Google Drive Tool
+# Google Drive Connector for Plot
 
-A Plot tool for syncing documents comments from Google Drive.
+Sync Google Drive document comments into Plot.
 
-## Installation
+## What it does
 
-```bash
-npm install @plotday/tool-google-drive @plotday/twister
-```
+- Lists your Drive folders (My Drive, shared drives, and "Shared with me") as channels
+- Syncs files in enabled folders (Docs, Sheets, Slides, Forms, and other documents) as Plot threads
+- Syncs comments and replies as notes; comments with assignees are tagged as to-dos
+- Replying in Plot posts the comment or reply back to Drive, and edits sync both ways
+- Real-time updates via Drive change notifications, renewed automatically
 
-## Usage
+File content is not synced — only file metadata, comments, and replies.
 
-```typescript
-import { GoogleDrive } from "@plotday/tool-google-drive";
-import { Tools, Twist } from "@plotday/twister";
-import {
-  AuthProvider,
-  Integrations,
-} from "@plotday/twister/tools/integrations";
+## OAuth scopes
 
-export default class extends Twist {
-  private googleDrive: GoogleDrive;
-  private integrations: Integrations;
-
-  constructor(id: string, tools: Tools) {
-    super();
-    this.googleDrive = tools.get(GoogleDrive);
-    this.integrations = tools.get(Integrations);
-  }
-
-  async activate() {
-    // Request Google Drive access
-    const authLink = await this.integrations.request(
-      {
-        provider: AuthProvider.Google,
-        scopes: GoogleDrive.SCOPES,
-      },
-      {
-        functionName: "onAuthComplete",
-      }
-    );
-
-    // User will authenticate via authLink
-  }
-}
-```
-
-## Features
-
-- OAuth 2.0 authentication with Google
-- Folder-based document synchronization
-- Comment and reply syncing
-- Webhook-based change notifications
-- Batch processing for large folders
-- Bidirectional comment sync
+- `drive` — read files and comments, write comments
+- Google Contacts scopes — add names to the people on comments
 
 ## License
 

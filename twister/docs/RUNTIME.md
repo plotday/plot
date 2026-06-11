@@ -15,7 +15,7 @@ Understanding the Plot runtime environment will help you build efficient, reliab
 - [Batching Long Operations](#batching-long-operations)
 - [Memory Considerations](#memory-considerations)
 - [Performance Optimization](#performance-optimization)
-- [Timeout Handling](#timeout-handling)
+- [Request Limits and Timeouts](#request-limits-and-timeouts)
 
 ---
 
@@ -35,7 +35,7 @@ Plot twists run in a **sandboxed, serverless environment** with the following ch
 Twists respond to events:
 
 - **Lifecycle events** - activate, upgrade, deactivate
-- **Activity events** - New or updated activities
+- **Thread events** - New or updated threads, notes, and links
 - **Webhook events** - External service notifications
 - **Scheduled events** - Tasks queued with runTask()
 
@@ -60,7 +60,7 @@ In addition to per-execution limits, the platform enforces per-twist-instance ra
 When any of these limits is exceeded, the twist is **auto-suspended**:
 
 - All callbacks (webhooks, runTask handlers, scheduled tasks) immediately stop executing.
-- A suspension log is written to the twist log stream (visible in the connector logs UI) and a note is posted to the workspace owner's Help & Feedback thread.
+- A suspension log is written to the twist log stream (visible in the connector logs UI) and a note is posted to the twist owner's Help & Feedback thread.
 - **Suspension is lifted automatically on the next deploy of the twist.** Each new version starts with a clean rate-limit budget. If the same pattern repeats, the twist will be re-suspended within minutes — fix the root cause before redeploying.
 
 Manual/operator suspensions (set directly in the database without a recorded version) are durable across deploys.
@@ -75,7 +75,7 @@ The most common cause of auto-suspension is a callback that re-queues itself wit
 //   limit (200 / 5 min) in under a minute.
 async reconcileComments() {
   await this.processOne();
-  const callback = await this.callback("reconcileComments");
+  const callback = await this.callback(this.reconcileComments);
   await this.runTask(callback);  // recurses forever
 }
 
@@ -85,7 +85,7 @@ async reconcileComments() {
   const result = await this.processOne(state?.cursor);
   if (result.hasMore) {
     await this.set("reconcile_state", { cursor: result.nextCursor });
-    const callback = await this.callback("reconcileComments");
+    const callback = await this.callback(this.reconcileComments);
     await this.runTask(callback);
   } else {
     await this.set("reconcile_state", { cursor: null });
@@ -95,7 +95,7 @@ async reconcileComments() {
 // ✅ CORRECT — periodic background work uses runAt, not a self-chain
 async pollForChanges() {
   await this.processBatch();
-  const callback = await this.callback("pollForChanges");
+  const callback = await this.callback(this.pollForChanges);
   // Schedule the next run 5 minutes from now. Cloudflare's queue stays
   // out of the loop entirely between runs.
   await this.runTask(callback, {
@@ -159,7 +159,7 @@ class MyTwist extends Twist<MyTwist> {
 async syncAllEvents() {
   const events = await fetchAllEvents();  // Could be thousands
   for (const event of events) {
-    // Each iteration makes multiple requests (fetch event details, create activity, etc.)
+    // Each iteration makes multiple requests (fetch event details, save link, etc.)
     // With 500 events × 3 requests each = 1500 requests total - exceeds limit!
     await this.processEvent(event);
   }
@@ -168,7 +168,7 @@ async syncAllEvents() {
 // ✅ CORRECT - Batch processing with fresh request limits
 async startSync() {
   await this.set("sync_state", { page: 1, total: 0 });
-  const callback = await this.callback("syncBatch");
+  const callback = await this.callback(this.syncBatch);
   // runTask creates a NEW execution with fresh request limit
   await this.runTask(callback);
 }
@@ -189,7 +189,7 @@ async syncBatch() {
       total: state.total + events.length
     });
 
-    const callback = await this.callback("syncBatch");
+    const callback = await this.callback(this.syncBatch);
     // Each runTask creates a NEW execution with fresh request limit
     await this.runTask(callback);
   }
@@ -274,9 +274,11 @@ async deactivate() {
   await this.clear("sync:page_token");
   await this.clear("cache:user:123");
 
-  // Option 3: Clear by prefix (manually)
-  // Store doesn't have native prefix clearing,
-  // so track keys if needed
+  // Option 3: Clear by prefix — list matching keys, then clear each
+  const keys = await this.tools.store.list("cache:");
+  for (const key of keys) {
+    await this.clear(key);
+  }
 }
 ```
 
@@ -298,7 +300,7 @@ async startSync() {
     startTime: new Date().toISOString()
   });
 
-  const callback = await this.callback("syncPage");
+  const callback = await this.callback(this.syncPage);
   // Creates new execution with fresh ~1000 request limit
   await this.runTask(callback);
 }
@@ -330,7 +332,7 @@ async syncPage() {
     // Queue next page if more exist
     if (data.hasMore) {
       await this.set("sync_state", newState);
-      const callback = await this.callback("syncPage");
+      const callback = await this.callback(this.syncPage);
       // Each runTask creates NEW execution with fresh request limit
       await this.runTask(callback);
     } else {
@@ -361,7 +363,7 @@ async startSync() {
     totalProcessed: 0
   });
 
-  const callback = await this.callback("syncBatch");
+  const callback = await this.callback(this.syncBatch);
   // Creates new execution with fresh request limit
   await this.runTask(callback);
 }
@@ -389,7 +391,7 @@ async syncBatch() {
       totalProcessed: state.totalProcessed + data.items.length
     });
 
-    const callback = await this.callback("syncBatch");
+    const callback = await this.callback(this.syncBatch);
     // New execution = fresh request limit for next batch
     await this.runTask(callback);
   } else {
@@ -409,7 +411,7 @@ async processLargeArray(items: Item[]) {
   await this.set("items_to_process", items);
   await this.set("process_index", 0);
 
-  const callback = await this.callback("processBatch");
+  const callback = await this.callback(this.processBatch);
   // Creates new execution with fresh request limit
   await this.runTask(callback);
 }
@@ -438,7 +440,7 @@ async processBatch() {
   const newIndex = index + batchSize;
   if (newIndex < items.length) {
     await this.set("process_index", newIndex);
-    const callback = await this.callback("processBatch");
+    const callback = await this.callback(this.processBatch);
     // Each runTask gets fresh request limit
     await this.runTask(callback);
   } else {
@@ -507,8 +509,8 @@ Batch operations where possible:
 ```typescript
 // ❌ SLOW - Multiple round trips
 for (const item of items) {
-  await this.tools.plot.createActivity({
-    type: ActivityType.Action,
+  await this.tools.plot.createThread({
+    type: "action",
     title: item.title,
     notes: [{ content: item.description }],
   });
@@ -516,15 +518,17 @@ for (const item of items) {
 
 // ✅ FAST - Batch create (always include initial notes)
 // Note: Store UUID mappings separately for tracking
-await this.tools.plot.createActivities(
+await this.tools.plot.createThreads(
   items.map((item) => ({
     id: Uuid.Generate(),
-    type: ActivityType.Action,
+    type: "action",
     title: item.title,
     notes: [{ id: Uuid.Generate(), content: item.description }],
   }))
 );
 ```
+
+Connectors batch the same way with `integrations.saveLinks()` — each `saveLink` call counts against the per-execution request budget, so collapsing a page of items into one `saveLinks` call matters.
 
 ### 2. Parallel Operations
 
@@ -571,7 +575,7 @@ Avoid processing duplicate events:
 
 ```typescript
 async onWebhook(request: WebhookRequest) {
-  const eventId = request.body.id;
+  const eventId = (request.body as { id: string }).id;
 
   // Check if already processed
   const processed = await this.get<boolean>(`processed:${eventId}`);
@@ -614,29 +618,31 @@ async longOperation() {
   const requestsPerItem = 10;
   const safeItemsPerBatch = Math.floor(1000 / requestsPerItem);
 
-  // Process in batches to stay under request limit
-  for (let i = 0; i < items.length; i += safeItemsPerBatch) {
-    const batch = items.slice(i, i + safeItemsPerBatch);
+  await this.set("remaining_items", items);
+  await this.set("batch_size", safeItemsPerBatch);
 
-    await this.set("remaining_items", items.slice(i + safeItemsPerBatch));
-    await this.set("processed_count", i);
-
-    const callback = await this.callback("processBatch", batch);
-    // New execution = fresh request limit
-    await this.runTask(callback);
-  }
+  const callback = await this.callback(this.processBatch);
+  // New execution = fresh request limit
+  await this.runTask(callback);
 }
 
-async processBatch(args: any, batch: Item[]) {
+async processBatch() {
+  const items = (await this.get<Item[]>("remaining_items")) ?? [];
+  const batchSize = (await this.get<number>("batch_size")) ?? 50;
+  const batch = items.slice(0, batchSize);
+
   // Process items within this execution's request limit
   for (const item of batch) {
     await this.processItem(item);
   }
 
-  const remaining = await this.get<Item[]>("remaining_items");
-  if (remaining && remaining.length > 0) {
-    // Continue with next batch in new execution
-    await this.longOperation();
+  const remaining = items.slice(batchSize);
+  await this.set("remaining_items", remaining);
+
+  if (remaining.length > 0) {
+    // Continue with next batch in a new execution
+    const callback = await this.callback(this.processBatch);
+    await this.runTask(callback);
   }
 }
 ```

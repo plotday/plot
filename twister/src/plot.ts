@@ -22,7 +22,7 @@ export { type AuthProvider } from "./tools/integrations";
  * - **Required fields**: No `?`, cannot be `undefined`
  *   - Example: `id: Uuid`, `title: string`
  * - **Nullable fields**: Use `| null` to allow explicit clearing
- *   - Example: `assignee: ActorId | null`, `done: Date | null`
+ *   - Example: `key: string | null`, `status: string | null`
  *   - `null` = field is explicitly unset/cleared
  *   - Non-null value = field has a value
  * - **Optional nullable fields**: Use `?` with `| null` for permission-based access
@@ -69,9 +69,9 @@ export { type AuthProvider } from "./tools/integrations";
  * Represents a unique user, contact, or twist in Plot.
  *
  * ActorIds are used throughout Plot for:
- * - Activity authors and assignees
- * - Tag creators (actor_id in activity_tag/note_tag)
- * - Mentions in activities and notes
+ * - Thread and note authors, link assignees
+ * - Tag creators (actor_id in thread_tag/note_tag)
+ * - Mentions in notes
  * - Any entity that can perform actions in Plot
  */
 export type ActorId = string & { readonly __brand: "ActorId" };
@@ -101,7 +101,7 @@ export enum ThemeColor {
 /**
  * Represents a focus within Plot.
  *
- * A focus is similar to a project or area-of-life. All Activity is in a Focus.
+ * A focus is similar to a project or area-of-life. Every thread is in a focus.
  * Focuses are flat — they have no parent and no children. Threads not matched
  * to any focus live in the Inbox.
  */
@@ -403,8 +403,8 @@ export type NewTags = { [K in Tag]?: NewActor[] };
  * Anything matching a known provider prefix is treated as a custom-emoji
  * reference; everything else is rendered as the Unicode it contains.
  *
- * Reactions are the open-set counterpart to {@link Tag}'s count range
- * (`1000+`). Use reactions for emoji that round-trip with chat platforms;
+ * Reactions are the open-set replacement for {@link Tag}'s retired count
+ * range (`1000+`). Use reactions for emoji that round-trip with chat platforms;
  * use tags for Plot-managed compute/toggle state (todo, pinned, urgent,
  * ...).
  */
@@ -922,7 +922,7 @@ export enum ActorType {
  * Represents contact information for creating a new contact.
  *
  * Contacts are used throughout Plot for representing people associated
- * with activities, such as event attendees or task assignees.
+ * with threads, such as event attendees or task assignees.
  *
  * @example
  * ```typescript

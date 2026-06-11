@@ -11,8 +11,8 @@ Understanding these core concepts will help you build effective Plot Twists.
 
 - [Twists](#twists)
 - [Twist Tools](#twist-tools)
-- [Priorities](#priorities)
-- [Activities](#activities)
+- [Focuses](#focuses)
+- [Threads](#threads)
 - [Lifecycle Methods](#lifecycle-methods)
 - [Best Practices](#best-practices)
 
@@ -29,25 +29,29 @@ A twist is a class that:
 - Extends the `Twist<T>` base class
 - Declares tool dependencies in the `build()` method
 - Responds to lifecycle events (`activate`, `deactivate`, `upgrade`)
-- Can process activities and create new ones
+- Can create threads and respond to new notes, links, and thread changes
+
+A twist is installed at the workspace level and owned by a single user. Threads it creates are filed against the owner's focuses, with automatic focus matching when no explicit focus is provided.
 
 ### Twist Anatomy
 
 ```typescript
-import { type Priority, type ToolBuilder, Twist } from "@plotday/twister";
-import { Plot } from "@plotday/twister/tools/plot";
+import { type ToolBuilder, Twist } from "@plotday/twister";
+import { Plot, ThreadAccess } from "@plotday/twister/tools/plot";
 
 export default class MyTwist extends Twist<MyTwist> {
   // 1. Declare dependencies
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      plot: build(Plot, {
+        thread: { access: ThreadAccess.Create },
+      }),
     };
   }
 
   // 2. Initialize on activation
-  async activate(priority: Pick<Priority, "id">) {
-    // Setup code - runs once when twist is added to a priority
+  async activate() {
+    // Setup code - runs once when the twist is installed
   }
 
   // 3. Handle lifecycle events
@@ -56,7 +60,7 @@ export default class MyTwist extends Twist<MyTwist> {
   }
 
   async deactivate() {
-    // Cleanup - runs when twist is removed
+    // Cleanup - runs when the twist is uninstalled
   }
 }
 ```
@@ -66,7 +70,7 @@ export default class MyTwist extends Twist<MyTwist> {
 Use twists for:
 
 - **Automations** - Automatic task creation, reminders, status updates
-- **Data Processing** - Analyzing and organizing activities
+- **Data Processing** - Analyzing and organizing threads
 - **Notifications** - Sending alerts based on conditions
 
 For external service integrations (Google Calendar, GitHub, Slack, etc.), build a **Connector** instead. Connectors extend `Connector<T>` (which itself extends `Twist<T>`) and provide the OAuth and channel lifecycle needed for syncing external data. See [Building Connectors](BUILDING_CONNECTORS.md).
@@ -83,7 +87,7 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 
 Core Plot functionality provided by the Twist Creator:
 
-- **Plot** - Create and manage activities and priorities
+- **Plot** - Create and manage threads, notes, and focuses
 - **Store** - Persistent key-value storage
 - **Integrations** - OAuth authentication
 - **Tasks** - Background task execution
@@ -106,11 +110,12 @@ Use the `build()` method to declare which tools your twist needs:
 ```typescript
 build(build: ToolBuilder) {
   return {
-    plot: build(Plot),
-    store: build(Store),
-    calendar: build(GoogleCalendar, {
+    plot: build(Plot, {
+      thread: { access: ThreadAccess.Create },
+    }),
+    network: build(Network, {
       // Tool-specific options
-      defaultCalendar: "primary"
+      urls: ["https://api.service.com/*"],
     }),
   };
 }
@@ -121,11 +126,11 @@ build(build: ToolBuilder) {
 Access your tools via `this.tools`:
 
 ```typescript
-async activate(priority: Pick<Priority, "id">) {
+async activate() {
   // Tools are fully typed
-  await this.tools.plot.createActivity({
-    type: ActivityType.Note,
-    title: "Hello from my twist"
+  await this.tools.plot.createThread({
+    title: "Hello from my twist",
+    notes: [{ content: "The twist is now set up." }],
   });
 }
 ```
@@ -144,75 +149,70 @@ await this.clear("key");
 await this.runTask(callback);
 await this.cancelTask(token);
 
-// Callbacks
-await this.callback("methodName", ...args);
+// Callbacks (pass a method reference, not a string)
+await this.callback(this.methodName, ...args);
 await this.run(callbackToken);
 ```
 
 ---
 
-## Priorities
+## Focuses
 
-Priorities are contexts that organize activities. Think of them like projects or focus areas.
+Focuses are contexts that organize threads. Think of them like projects or areas of life. Focuses are flat — they have no parent and no children. Threads not matched to any focus live in the Inbox.
 
-### Priority Hierarchy
+### Creating Focuses
 
-Priorities can be nested to create hierarchies:
-
-```
-Work
-├── Project A
-│   ├── Backend
-│   └── Frontend
-└── Project B
-```
-
-### Creating Priorities
+Creating focuses requires `FocusAccess` in the Plot tool options. A focus can carry a `key` (unique per user) so it can be upserted without tracking its UUID:
 
 ```typescript
-// Top-level priority
-const work = await this.tools.plot.createPriority({
-  title: "Work",
-});
+import { FocusAccess, Plot } from "@plotday/twister/tools/plot";
 
-// Nested priority
-const projectA = await this.tools.plot.createPriority({
-  title: "Project A",
-  parentId: work.id,
-});
-```
-
-### Twist Activation
-
-Twists are activated within a specific priority. When activated, the twist has access to that priority and all its children.
-
-```typescript
-async activate(priority: Pick<Priority, "id">) {
-  // This twist is now active for this priority
-  // It can create activities, set up webhooks, etc.
+build(build: ToolBuilder) {
+  return {
+    plot: build(Plot, {
+      thread: { access: ThreadAccess.Create },
+      focus: { access: FocusAccess.Create },
+    }),
+  };
 }
+
+// Create (or upsert by key) a focus
+const work = await this.tools.plot.createFocus({
+  title: "Work",
+  key: "work",
+});
+```
+
+### Automatic Focus Matching
+
+When a twist creates a thread without specifying a `focus`, the server classifies the thread into one of the owner's focuses automatically. Provide an explicit `focus: { id }` only when you want to override that routing:
+
+```typescript
+await this.tools.plot.createThread({
+  title: "Quarterly planning",
+  focus: { id: work.id }, // Optional - omit to let Plot classify it
+  notes: [{ content: "Kick off Q3 planning." }],
+});
 ```
 
 ---
 
-## Activities
+## Threads
 
-Activities are the core data type in Plot, representing tasks, events, and notes.
+Threads are the core data type in Plot, representing tasks, events, and conversations.
 
-**Think of an Activity as a thread** on a messaging platform, and **Notes as the messages in that thread**. An Activity represents something done or to be done, while Notes represent the updates and details on that activity. Always create activities with an initial note, and add notes for updates rather than creating new activities.
+**Think of a Thread as a thread** on a messaging platform, and **Notes as the messages in that thread**. A Thread represents something done or to be done, while Notes represent the updates and details on that thread. Always create threads with an initial note, and add notes for updates rather than creating new threads.
 
-### Activity Types
+### Thread Types
 
-- **Note** - Information without actionable requirements
-- **Task** - Actionable items that can be completed
-- **Event** - Scheduled occurrences with start/end times
+A thread's `type` is a sub-type/category that determines its icon. Available types depend on whether the focus is shared:
+
+- **Private focuses**: `"action"` (tasks), `"notes"` (default), `"idea"`, `"goal"`, `"decision"`
+- **Shared focuses**: all of the above plus `"discussion"` (default), `"announcement"`, `"ask"`
 
 ```typescript
-import { ActivityType } from "@plotday/twister";
-
-// Note - Information without actionable requirements
-await this.tools.plot.createActivity({
-  type: ActivityType.Note,
+// Notes - Information without actionable requirements (default)
+await this.tools.plot.createThread({
   title: "Meeting notes from sync",
   notes: [
     {
@@ -221,11 +221,10 @@ await this.tools.plot.createActivity({
   ],
 });
 
-// Task - Actionable item
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+// Action - Actionable item
+await this.tools.plot.createThread({
+  type: "action",
   title: "Review pull request",
-  done: null, // null = not done
   notes: [
     {
       content: "PR adds new authentication flow. Please review for security concerns.",
@@ -233,128 +232,73 @@ await this.tools.plot.createActivity({
   ],
 });
 
-// Event - Scheduled occurrence
-await this.tools.plot.createActivity({
-  type: ActivityType.Event,
+// Scheduled event - a thread with a schedule
+await this.tools.plot.createThread({
   title: "Team standup",
-  start: new Date("2025-02-01T10:00:00Z"),
-  end: new Date("2025-02-01T10:30:00Z"),
   notes: [
     {
       content: "Daily sync meeting",
     },
   ],
+  schedules: [
+    {
+      start: new Date("2025-02-01T10:00:00Z"),
+      end: new Date("2025-02-01T10:30:00Z"),
+    },
+  ],
 });
 ```
 
-### Activity Scheduling States
-
-When creating Activities of type `Action` (tasks), the `start` field determines how they appear in Plot:
-
-- **"Do Now"** (Current/Actionable) - Tasks that should be done today
-- **"Do Later"** (Future Scheduled) - Tasks scheduled for a specific future date
-- **"Do Someday"** (Unscheduled Backlog) - Tasks without a specific timeline
-
-#### Default Behavior
-
-**Important:** When creating an Action, omitting the `start` field defaults to the current time, making it a "Do Now" task.
-
-For most integrations (project management tools, issue trackers), you should explicitly set `start: null` to create backlog items, only using "Do Now" for tasks that are actively in progress or urgent.
+### Thread Properties
 
 ```typescript
-// "Do Now" - Appears in today's actionable list
-// WARNING: This is the default when start is omitted!
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
-  title: "Urgent: Review security PR",
-  // Omitting start defaults to new Date()
-});
-
-// "Do Someday" - Backlog item (RECOMMENDED for most synced tasks)
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
-  title: "Refactor authentication service",
-  start: null, // Explicitly set to null for backlog
-});
-
-// "Do Later" - Scheduled for specific date
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
-  title: "Prepare Q1 review",
-  start: new Date("2025-03-15"), // Scheduled for future date
-});
-```
-
-#### When to Use Each State
-
-**Use "Do Now" (omit `start`)** when:
-
-- Task is actively being worked on
-- Task has a due date of today
-- Task is marked as "In Progress" in source system
-- Task is high priority AND explicitly assigned as current work
-
-**Use "Do Someday" (`start: null`)** when:
-
-- Syncing backlog items from project management tools
-- Task is in "To Do" or "Backlog" status
-- Task doesn't have a specific due date
-- This should be the **default for most integrations**
-
-**Use "Do Later" (future `start`)** when:
-
-- Task has a specific due date in the future
-- Task is scheduled for a particular day
-
-### Activity Properties
-
-```typescript
-type Activity = {
-  id: string; // Unique identifier
-  type: ActivityType; // Note, Action, or Event
-  title: string | null; // Display title
-  preview: string | null; // Brief preview text
-  source: string | null; // Canonical URL for external item (enables automatic upserts)
-  start: Date | null; // Event start time
-  end: Date | null; // Event end time
-  done: Date | null; // Action completion time
-  tags: Record<Tag, ActorId[]>; // Tag assignments
+type Thread = {
+  id: Uuid; // Unique identifier
+  created: Date; // When the thread was created
+  title: string; // Display title
+  focus: Focus; // The focus this thread belongs to
+  type: ThreadType | null; // Sub-type/category, determines the icon
+  archived: boolean; // Whether the thread has been archived
+  access: ThreadAccessLevel; // "public", "members", or "private"
+  tags: Tags; // Tag assignments (tag -> actors who added it)
+  reactions: Reactions; // Emoji reactions (emoji -> actors who reacted)
+  schedule?: Schedule; // The schedule associated with this thread, if any
   // ... and more
 };
 ```
 
 **Key Properties:**
 
-- **`source`**: Canonical URL or stable identifier for items from external systems. When set, it uniquely identifies the activity within a priority tree and enables automatic deduplication. See [Sync Strategies](SYNC_STRATEGIES.md).
-- **`type`**: Determines how the activity is displayed and interacted with (Note, Action with `done`, Event with `start`/`end`)
 - **`title`**: Short summary that may be truncated in the UI - detailed content should go in Notes
+- **`type`**: Determines how the thread is displayed (icon and category)
+- **`focus`**: The focus the thread is filed in - assigned automatically unless you provide one
 
-### Activity Notes
+### Thread Notes
 
-Activities can have multiple Notes attached to them, like messages in a thread. Notes contain detailed content and links.
+Threads can have multiple Notes attached to them, like messages in a thread. Notes contain detailed content and interactive actions.
 
-**Data Sync:** When syncing from external systems, use `Activity.source` and `Note.key` for automatic upserts. See [Sync Strategies](SYNC_STRATEGIES.md).
+**Data Sync:** When syncing from external systems, connectors use `Link.sources` and `Note.key` for automatic upserts. See [Sync Strategies](SYNC_STRATEGIES.md).
 
 ```typescript
-await this.tools.plot.createActivity({
-  source: "https://github.com/org/repo/issues/123", // Enables automatic deduplication
-  type: ActivityType.Action,
+import { ActionType } from "@plotday/twister";
+
+await this.tools.plot.createThread({
+  type: "action",
   title: "Fix bug #123",
   notes: [
     {
-      activity: { source: "https://github.com/org/repo/issues/123" },
       key: "description", // Using key enables upserts
       content: "Users are unable to log in with SSO. Error occurs in auth middleware.",
-      links: [
+      actions: [
         {
-          type: ActivityLinkType.external,
+          type: ActionType.external,
           title: "View Issue",
           url: "https://github.com/org/repo/issues/123",
         },
         {
-          type: ActivityLinkType.callback,
+          type: ActionType.callback,
           title: "Mark as Fixed",
-          callback: await this.callback("markAsFixed", "123"),
+          callback: await this.actionCallback(this.markAsFixed, "123"),
         },
       ],
     },
@@ -362,35 +306,36 @@ await this.tools.plot.createActivity({
 });
 ```
 
-**Link Types:**
+**Action Types:**
 
 - **external** - Opens URL in browser
 - **auth** - Initiates OAuth flow
 - **callback** - Triggers twist method when clicked
 - **conferencing** - Video conferencing links (Zoom, Meet, Teams, etc.)
+- **file** / **fileRef** - File attachments (stored in Plot or referenced from a connector's source system)
+- **thread** - Navigates to a related thread
+- **plan** - Structured plan of operations for user approval
 
-### Best Practices for Activities and Notes
+### Best Practices for Threads and Notes
 
-#### Always Create Activities with an Initial Note
+#### Always Create Threads with an Initial Note
 
-**In most cases, an Activity should be created with at least one initial Note.** The Activity's `title` is just a short summary that may be truncated in the UI. Detailed information, context, and links should always go in Notes.
+**In most cases, a Thread should be created with at least one initial Note.** The Thread's `title` is just a short summary that may be truncated in the UI. Detailed information, context, and actions should always go in Notes.
 
 Think of it like starting a new thread with a first message - the thread title gives context, but the real content is in the messages.
 
 ```typescript
-// ✅ GOOD - Activity with detailed Note (thread with first message)
-await this.tools.plot.createActivity({
-  source: "https://github.com/org/repo/pull/456", // Enables automatic deduplication
-  type: ActivityType.Action,
+// ✅ GOOD - Thread with detailed Note (thread with first message)
+await this.tools.plot.createThread({
+  type: "action",
   title: "Review PR #456",
   notes: [
     {
-      activity: { source: "https://github.com/org/repo/pull/456" },
       key: "description", // Using key enables upserts
       content: "Please review the OAuth 2.0 implementation. Key changes include:\n- Token refresh logic\n- Session management\n- Error handling for expired tokens",
-      links: [
+      actions: [
         {
-          type: ActivityLinkType.external,
+          type: ActionType.external,
           title: "View PR",
           url: "https://github.com/org/repo/pull/456",
         },
@@ -400,87 +345,72 @@ await this.tools.plot.createActivity({
 });
 
 // ❌ BAD - Relying only on title
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+await this.tools.plot.createThread({
+  type: "action",
   title: "Review PR #456 - OAuth implementation with token refresh and session management",
-  // Missing Notes with full context and links
+  // Missing Notes with full context and actions
 });
 ```
 
-**Why?** Just as you wouldn't create a messaging thread without a first message, Activities need Notes to provide meaningful context and detail.
+**Why?** Just as you wouldn't create a messaging thread without a first message, Threads need Notes to provide meaningful context and detail.
 
-#### Add Notes to Existing Activities for Related Content
+#### Add Notes to Existing Threads for Related Content
 
-**Wherever possible, related messages should be added to an existing Activity rather than creating a new Activity.** This keeps conversations, workflows, and related information together.
+**Wherever possible, related messages should be added to an existing Thread rather than creating a new Thread.** This keeps conversations, workflows, and related information together.
 
 Think of it like replying to a message thread instead of starting a new thread for every reply.
 
 **Use this pattern for:**
 
-- **Email threads** - All messages in a thread as Notes on one Activity
+- **Email threads** - All messages in a thread as Notes on one Thread
 - **Chat conversations** - All messages in a channel or thread as Notes
 - **Workflows** - All steps in an end-to-end process as Notes
 - **Document collaboration** - All comments and updates as Notes
 - **Issue tracking** - All comments and status updates as Notes
 
 ```typescript
-// ✅ GOOD - Add reply using source/key pattern (no lookup needed)
-async onNewMessage(message: Message, threadId: string) {
-  // Simply create - Plot handles deduplication automatically
-  const threadSource = `chat:thread:${threadId}`;
+// ✅ GOOD - Track the thread ID and add replies as Notes
+async onNewMessage(message: Message, conversationId: string) {
+  let threadId = await this.get<Uuid>(`thread_${conversationId}`);
 
+  if (!threadId) {
+    // First message - create the thread with the message as its initial note
+    threadId = await this.tools.plot.createThread({
+      title: message.subject || "New conversation",
+      notes: [
+        {
+          key: `message-${message.id}`, // Unique key per message for upserts
+          content: message.text,
+        },
+      ],
+    });
+    await this.set(`thread_${conversationId}`, threadId);
+    return;
+  }
+
+  // Follow-up message - add a note to the existing thread
   await this.tools.plot.createNote({
-    activity: { source: threadSource }, // References activity by source
-    key: `message-${message.id}`, // Unique key per message for upserts
+    thread: { id: threadId },
+    key: `message-${message.id}`,
     content: message.text,
   });
-
-  // If thread doesn't exist yet, create it first
-  await this.tools.plot.createActivity({
-    source: threadSource, // Same source for deduplication
-    type: ActivityType.Note,
-    title: message.subject || "New conversation",
-    notes: [{
-      activity: { source: threadSource },
-      key: `message-${message.id}`,
-      content: message.text,
-    }],
-  });
 }
 
-// Alternative: Check existence first (for advanced cases)
-async onNewMessageAdvanced(message: Message, threadId: string) {
-  const activity = await this.tools.plot.getActivityBySource({ threadId });
-
-  if (activity) {
-    await this.tools.plot.createNote({
-      activity: { id: activity.id },
-      content: message.text,
-    });
-  } else {
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
-      title: message.subject || "New conversation",
-      meta: { threadId },
-      notes: [{ content: message.text }],
-    });
-  }
-}
-
-// ❌ BAD - Creating separate Activity for each message (new thread for every reply!)
-async onNewMessage(message: Message, threadId: string) {
-  // This creates clutter - each message becomes its own Activity
-  await this.tools.plot.createActivity({
-    type: ActivityType.Note,
+// ❌ BAD - Creating separate Thread for each message (new thread for every reply!)
+async onNewMessage(message: Message, conversationId: string) {
+  // This creates clutter - each message becomes its own Thread
+  await this.tools.plot.createThread({
     title: `Message from ${message.author}`,
     notes: [{ content: message.text }],
   });
 }
 ```
 
+**For connectors:** When syncing from an external service, there's no need to store thread IDs — save links with `integrations.saveLink()` using `Link.sources` for deduplication, and reference the thread by source (`thread: { source: ... }`) when creating notes.
+
 See [Sync Strategies](SYNC_STRATEGIES.md) for more details on choosing the right pattern.
 
-**Why?** Grouping related content keeps the user's workspace organized and provides better context. A chat conversation with 20 messages should be one Activity with 20 Notes, not 20 separate Activities.
+**Why?** Grouping related content keeps the user's workspace organized and provides better context. A chat conversation with 20 messages should be one Thread with 20 Notes, not 20 separate Threads.
 
 ---
 
@@ -488,34 +418,33 @@ See [Sync Strategies](SYNC_STRATEGIES.md) for more details on choosing the right
 
 Twists have several lifecycle methods that are called at specific times.
 
-### activate(priority)
+### activate()
 
-Called when the twist is first activated for a priority.
+Called when the twist is installed by a user. When it runs, `this.userId` is already populated with the installing user's ID.
 
 **Use for:**
 
-- Creating initial activities
+- Creating initial threads
 - Setting up webhooks
 - Initializing state
-- Requesting authentication
 
 ```typescript
-async activate(priority: Pick<Priority, "id">) {
+async activate() {
   // Create welcome message
-  await this.tools.plot.createActivity({
-    type: ActivityType.Note,
-    title: "Calendar sync is now active"
+  await this.tools.plot.createThread({
+    title: "Calendar sync is now active",
+    notes: [{ content: "Events will appear as they sync." }],
   });
 
   // Set up webhook
-  const webhookUrl = await this.tools.network.createWebhook("onUpdate");
+  const webhookUrl = await this.tools.network.createWebhook({}, this.onUpdate);
   await this.set("webhook_url", webhookUrl);
 }
 ```
 
 ### upgrade()
 
-Called when a new version of your twist is deployed to an existing priority.
+Called when a new version of your twist is deployed to existing installations.
 
 **Use for:**
 
@@ -577,11 +506,11 @@ async upgrade() {
     const syncs = await this.get<SyncState[]>("active_syncs");
     for (const sync of syncs) {
       // Delete old callback
-      const oldCallback = await this.get<string>(`sync_${sync.id}`);
+      const oldCallback = await this.get<Callback>(`sync_${sync.id}`);
       if (oldCallback) await this.deleteCallback(oldCallback);
 
       // Create new callback with updated signature
-      const newCallback = await this.callback("syncBatchV2", sync.id);
+      const newCallback = await this.callback(this.syncBatchV2, sync.id);
       await this.set(`sync_${sync.id}`, newCallback);
     }
   }
@@ -607,7 +536,7 @@ async syncBatchV2(options: SyncOptions) {
 
 ### deactivate()
 
-Called when the twist is removed from a priority.
+Called when the twist is uninstalled.
 
 **Use for:**
 
@@ -659,14 +588,14 @@ class MyTwist extends Twist<MyTwist> {
 Always handle errors gracefully:
 
 ```typescript
-async activate(priority: Pick<Priority, "id">) {
+async activate() {
   try {
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
-      title: "Twist activated"
+    await this.tools.plot.createThread({
+      title: "Twist activated",
+      notes: [{ content: "Setup is complete." }],
     });
   } catch (error) {
-    console.error("Failed to create activity:", error);
+    console.error("Failed to create thread:", error);
     // Twist activation continues even if this fails
   }
 }
@@ -678,19 +607,17 @@ Break long-running operations into batches:
 
 ```typescript
 async startSync() {
-  const callback = await this.callback("syncBatch", { page: 1 });
+  const callback = await this.callback(this.syncBatch, 1);
   await this.runTask(callback);
 }
 
-async syncBatch(args: any, context: { page: number }) {
+async syncBatch(page: number) {
   // Process one page
-  const hasMore = await processPage(context.page);
+  const hasMore = await this.processPage(page);
 
   if (hasMore) {
     // Queue next batch
-    const callback = await this.callback("syncBatch", {
-      page: context.page + 1
-    });
+    const callback = await this.callback(this.syncBatch, page + 1);
     await this.runTask(callback);
   }
 }
@@ -722,30 +649,32 @@ Build complex functionality by composing tools:
 ```typescript
 build(build: ToolBuilder) {
   return {
-    plot: build(Plot),
+    plot: build(Plot, {
+      thread: { access: ThreadAccess.Create },
+    }),
     network: build(Network, {
       urls: ["https://api.service.com/*"]
     }),
-    auth: build(Integrations),
+    integrations: build(Integrations),
     ai: build(AI)
   };
 }
 ```
 
-### 6. Clear Activity Titles
+### 6. Clear Thread Titles
 
-Make activity titles clear and actionable:
+Make thread titles clear and actionable:
 
 ```typescript
 // ❌ Vague
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+await this.tools.plot.createThread({
+  type: "action",
   title: "Thing",
 });
 
 // ✅ Clear
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+await this.tools.plot.createThread({
+  type: "action",
   title: "Review pull request #123 for authentication fix",
 });
 ```

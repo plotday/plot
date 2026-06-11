@@ -39,14 +39,10 @@ Connectors connect Plot to external services like Google Calendar, Slack, Linear
 
 ## Connector Structure
 
-Connectors extend the `Connector<T>` base class and declare dependencies using `ConnectorBuilder`:
+Connectors extend the `Connector<T>` base class. They declare their OAuth provider and scopes as class properties, declare tool dependencies in `build()`, and implement the channel lifecycle methods — the Integrations tool reads all of these automatically:
 
 ```typescript
-import {
-  ActivityType,
-  Connector,
-  type ConnectorBuilder,
-} from "@plotday/twister";
+import { Connector, type ToolBuilder } from "@plotday/twister";
 import {
   AuthProvider,
   type AuthToken,
@@ -55,35 +51,23 @@ import {
   Integrations,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
-import { Plot } from "@plotday/twister/tools/plot";
-import { Tasks } from "@plotday/twister/tools/tasks";
-import { Callbacks } from "@plotday/twister/tools/callbacks";
 
 export default class MyConnector extends Connector<MyConnector> {
-  static readonly PROVIDER = AuthProvider.Linear;
-  static readonly SCOPES = ["read", "write"];
+  readonly provider = AuthProvider.Linear;
+  readonly scopes = ["read", "write"];
 
-  build(build: ConnectorBuilder) {
+  build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [{
-          provider: MyConnector.PROVIDER,
-          scopes: MyConnector.SCOPES,
-          getChannels: this.getChannels,
-          onChannelEnabled: this.onChannelEnabled,
-          onChannelDisabled: this.onChannelDisabled,
-        }],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.example.com/*"] }),
-      plot: build(Plot),
-      tasks: build(Tasks),
-      callbacks: build(Callbacks),
     };
   }
 
-  // ... lifecycle methods below
+  // ... lifecycle methods below (getChannels, onChannelEnabled, onChannelDisabled)
 }
 ```
+
+`scopes` can be a flat array (all required) or a `ScopeConfig` declaring `required` plus `optional` scope groups the user can toggle at connect time. The built-in `callbacks`, `store`, and `tasks` tools are always available (via `this.callback()`, `this.set()`/`this.get()`/`this.clear()`, and `this.runTask()`) — they don't need a `build()` entry.
 
 ### Package Structure
 
@@ -104,8 +88,8 @@ Connectors use the Integrations tool for OAuth. Auth is handled automatically in
 
 ### How It Works
 
-1. Connector declares providers in `build()` with `getChannels`, `onChannelEnabled`, `onChannelDisabled` callbacks
-2. User clicks "Connect" in the twist edit modal -> OAuth flow happens automatically
+1. Connector declares `provider` and `scopes` as class properties and implements `getChannels`, `onChannelEnabled`, `onChannelDisabled`
+2. User clicks "Connect" in the connection edit modal -> OAuth flow happens automatically
 3. After auth, the runtime calls `getChannels()` to list available resources
 4. User enables/disables resources in the modal
 
@@ -114,7 +98,8 @@ Connectors use the Integrations tool for OAuth. Auth is handled automatically in
 Return available resources after authentication:
 
 ```typescript
-async getChannels(_auth: Authorization, token: AuthToken): Promise<Channel[]> {
+async getChannels(_auth: Authorization | null, token: AuthToken | null): Promise<Channel[]> {
+  if (!token) return [];
   const client = new ApiClient({ accessToken: token.token });
   const resources = await client.listResources();
   return resources.map(r => ({ id: r.id, title: r.name }));
@@ -123,14 +108,23 @@ async getChannels(_auth: Authorization, token: AuthToken): Promise<Channel[]> {
 
 ### onChannelEnabled
 
-Called when the user enables a resource. Set up syncing:
+Called when a resource is enabled. **This method runs inline in the HTTP request handler** — any real work (webhook registration, API calls, the initial sync) must be queued as separate tasks via `this.runTask()`, never executed inline:
 
 ```typescript
-async onChannelEnabled(channel: Channel): Promise<void> {
-  await this.setupWebhook(channel.id);
-  await this.startBatchSync(channel.id);
+async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+  await this.set(`sync_state_${channel.id}`, { cursor: null, initialSync: true });
+
+  const webhook = await this.callback(this.setupWebhook, channel.id);
+  await this.runTask(webhook);
+
+  const batch = await this.callback(this.syncBatch, channel.id);
+  await this.runTask(batch);
 }
 ```
+
+The same channel can receive multiple `onChannelEnabled` calls over its lifetime — initial enable, auto-enable of newly discovered channels, and recovery after re-auth (`context?.recovering === true`). Make the implementation idempotent: overwrite stored state unconditionally rather than skipping when it already exists.
+
+The framework marks the connection as "syncing" when it dispatches this method. Call `this.tools.integrations.channelSyncCompleted(channel.id)` exactly once when the initial backfill finishes so the UI clears the indicator (it's cleared automatically if `onChannelEnabled` throws).
 
 ### onChannelDisabled
 
@@ -157,7 +151,7 @@ Retrieve tokens for API calls using the channel ID:
 
 ```typescript
 private async getClient(channelId: string): Promise<ApiClient> {
-  const token = await this.tools.integrations.get(MyConnector.PROVIDER, channelId);
+  const token = await this.tools.integrations.get(channelId);
   if (!token) throw new Error("No authentication token available");
   return new ApiClient({ accessToken: token.token });
 }
@@ -167,20 +161,22 @@ private async getClient(channelId: string): Promise<ApiClient> {
 
 ## Data Sync
 
-Connectors sync data using `Activity.source` and `Note.key` for automatic upserts (no manual ID tracking needed).
+Connectors save data with `integrations.saveLink()` (or the batch `saveLinks()`), passing a `NewLinkWithNotes`. `link.source` and `note.key` drive automatic upserts (no manual ID tracking needed).
 
 ### Transforming External Items
 
 ```typescript
-private transformItem(item: any, channelId: string, initialSync: boolean) {
+private transformItem(item: any, channelId: string, initialSync: boolean): NewLinkWithNotes {
   return {
-    source: `myprovider:item:${item.id}`, // Canonical source for deduplication
-    type: ActivityType.Action,
+    source: `myprovider:item:${item.id}`, // Canonical source for dedup/upsert
+    type: "issue",                        // Matches a LinkTypeConfig.type
     title: item.title,
+    status: item.state,                   // Matches a statuses[].status
+    created: new Date(item.createdAt),    // External timestamp, not sync time
+    channelId,                            // Required for bulk operations
     meta: {
       externalId: item.id,
-      syncProvider: "myprovider",  // Required for bulk operations
-      channelId,                   // Required for bulk operations
+      syncProvider: "myprovider",         // Required for bulk operations
     },
     notes: [{
       key: "description",  // Enables note-level upserts
@@ -208,7 +204,7 @@ See [Sync Strategies](SYNC_STRATEGIES.md) for detailed patterns on deduplication
 
 ## Batch Processing
 
-Connectors run in an ephemeral environment with ~1000 requests per execution. Break long operations into batches using `runTask()`, which creates a new execution with fresh request limits.
+Connectors run in an ephemeral environment with ~1000 requests per execution. Break long operations into batches using `this.runTask()`, which creates a new execution with fresh request limits. Prefer the batch `saveLinks()` over looping `saveLink()` — each `saveLink` call counts against the request budget, while `saveLinks` collapses a whole page into one crossing.
 
 ```typescript
 private async startBatchSync(channelId: string): Promise<void> {
@@ -219,7 +215,7 @@ private async startBatchSync(channelId: string): Promise<void> {
   });
 
   const batchCallback = await this.callback(this.syncBatch, channelId);
-  await this.tools.tasks.runTask(batchCallback);
+  await this.runTask(batchCallback);
 }
 
 private async syncBatch(channelId: string): Promise<void> {
@@ -229,10 +225,11 @@ private async syncBatch(channelId: string): Promise<void> {
   const client = await this.getClient(channelId);
   const result = await client.listItems({ cursor: state.cursor, limit: 50 });
 
-  for (const item of result.items) {
-    const activity = this.transformItem(item, channelId, state.initialSync);
-    await this.tools.plot.createActivity(activity);
-  }
+  await this.tools.integrations.saveLinks(
+    result.items.map((item) =>
+      this.transformItem(item, channelId, state.initialSync)
+    )
+  );
 
   if (result.nextCursor) {
     await this.set(`sync_state_${channelId}`, {
@@ -241,9 +238,10 @@ private async syncBatch(channelId: string): Promise<void> {
       initialSync: state.initialSync,
     });
     const nextBatch = await this.callback(this.syncBatch, channelId);
-    await this.tools.tasks.runTask(nextBatch);
+    await this.runTask(nextBatch);
   } else {
     await this.clear(`sync_state_${channelId}`);
+    await this.tools.integrations.channelSyncCompleted(channelId);
   }
 }
 ```
@@ -256,11 +254,9 @@ A minimal connector that syncs issues from an external service:
 
 ```typescript
 import {
-  ActivityType,
-  LinkType,
   Connector,
-  type ConnectorBuilder,
-  type SyncToolOptions,
+  type NewLinkWithNotes,
+  type ToolBuilder,
 } from "@plotday/twister";
 import {
   AuthProvider,
@@ -268,60 +264,53 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type StatusIcon,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { Plot } from "@plotday/twister/tools/plot";
-import { Tasks } from "@plotday/twister/tools/tasks";
-import { Callbacks } from "@plotday/twister/tools/callbacks";
 
 export default class IssueConnector extends Connector<IssueConnector> {
-  static readonly PROVIDER = AuthProvider.Linear;
-  static readonly SCOPES = ["read"];
-  static readonly Options: SyncToolOptions;
-  declare readonly Options: SyncToolOptions;
+  readonly provider = AuthProvider.Linear;
+  readonly scopes = ["read"];
+  readonly linkTypes = [{
+    type: "issue",
+    label: "Issue",
+    statuses: [
+      { status: "unstarted", label: "To Do", icon: "todo" as StatusIcon },
+      { status: "completed", label: "Done", done: true, icon: "done" as StatusIcon },
+    ],
+  }];
 
-  build(build: ConnectorBuilder) {
+  build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [{
-          provider: IssueConnector.PROVIDER,
-          scopes: IssueConnector.SCOPES,
-          getChannels: this.getChannels,
-          onChannelEnabled: this.onChannelEnabled,
-          onChannelDisabled: this.onChannelDisabled,
-        }],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.linear.app/*"] }),
-      plot: build(Plot),
-      tasks: build(Tasks),
-      callbacks: build(Callbacks),
     };
   }
 
-  async getChannels(_auth: Authorization, token: AuthToken): Promise<Channel[]> {
+  async getChannels(_auth: Authorization | null, token: AuthToken | null): Promise<Channel[]> {
     // Return available projects/teams for the user to select
+    if (!token) return [];
     const client = new LinearClient({ accessToken: token.token });
     const teams = await client.teams();
     return teams.nodes.map(t => ({ id: t.id, title: t.name }));
   }
 
-  async onChannelEnabled(channel: Channel): Promise<void> {
-    // Set up webhook
-    const webhookUrl = await this.tools.network.createWebhook(
-      {}, this.onWebhook, channel.id
-    );
-    if (!webhookUrl.includes("localhost")) {
-      const client = await this.getClient(channel.id);
-      const webhook = await client.createWebhook({ url: webhookUrl });
-      if (webhook?.id) await this.set(`webhook_id_${channel.id}`, webhook.id);
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Recovery re-dispatch after re-auth: drop stale cursors.
+    if (context?.recovering) {
+      await this.clear(`sync_state_${channel.id}`);
     }
 
-    // Start initial sync
+    // Queue webhook setup and initial sync as tasks — never run them inline.
+    const webhook = await this.callback(this.setupWebhook, channel.id);
+    await this.runTask(webhook);
+
     await this.set(`sync_state_${channel.id}`, {
       cursor: null, batchNumber: 1, initialSync: true,
     });
     const batch = await this.callback(this.syncBatch, channel.id);
-    await this.tools.tasks.runTask(batch);
+    await this.runTask(batch);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -337,9 +326,37 @@ export default class IssueConnector extends Connector<IssueConnector> {
   }
 
   private async getClient(channelId: string) {
-    const token = await this.tools.integrations.get(IssueConnector.PROVIDER, channelId);
+    const token = await this.tools.integrations.get(channelId);
     if (!token) throw new Error("No auth token");
     return new LinearClient({ accessToken: token.token });
+  }
+
+  private async setupWebhook(channelId: string): Promise<void> {
+    const webhookUrl = await this.tools.network.createWebhook(
+      {}, this.onWebhook, channelId
+    );
+    if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) return;
+    const client = await this.getClient(channelId);
+    const webhook = await client.createWebhook({ url: webhookUrl });
+    if (webhook?.id) await this.set(`webhook_id_${channelId}`, webhook.id);
+  }
+
+  private transformIssue(issue: any, channelId: string, initialSync: boolean): NewLinkWithNotes {
+    return {
+      source: `linear:issue:${issue.id}`,
+      type: "issue",
+      title: `${issue.identifier}: ${issue.title}`,
+      status: issue.completedAt ? "completed" : "unstarted",
+      created: new Date(issue.createdAt),
+      sourceUrl: issue.url ?? null,
+      channelId,
+      meta: { syncProvider: "linear", externalId: issue.id },
+      notes: [{
+        key: "description",
+        content: issue.description || null,
+      }],
+      ...(initialSync ? { unread: false, archived: false } : {}),
+    };
   }
 
   private async syncBatch(channelId: string): Promise<void> {
@@ -349,26 +366,11 @@ export default class IssueConnector extends Connector<IssueConnector> {
     const client = await this.getClient(channelId);
     const result = await client.issues({ teamId: channelId, after: state.cursor });
 
-    for (const issue of result.nodes) {
-      await this.tools.plot.createActivity({
-        source: `linear:issue:${issue.id}`,
-        type: ActivityType.Action,
-        title: `${issue.identifier}: ${issue.title}`,
-        done: issue.completedAt ? new Date(issue.completedAt) : null,
-        meta: { syncProvider: "linear", channelId },
-        notes: [{
-          key: "description",
-          content: issue.description || null,
-          links: issue.url ? [{
-            type: LinkType.external,
-            title: "Open in Linear",
-            url: issue.url,
-          }] : null,
-        }],
-        ...(state.initialSync ? { unread: false } : {}),
-        ...(state.initialSync ? { archived: false } : {}),
-      });
-    }
+    await this.tools.integrations.saveLinks(
+      result.nodes.map((issue: any) =>
+        this.transformIssue(issue, channelId, state.initialSync)
+      )
+    );
 
     if (result.pageInfo.hasNextPage) {
       await this.set(`sync_state_${channelId}`, {
@@ -377,9 +379,11 @@ export default class IssueConnector extends Connector<IssueConnector> {
         initialSync: state.initialSync,
       });
       const next = await this.callback(this.syncBatch, channelId);
-      await this.tools.tasks.runTask(next);
+      await this.runTask(next);
     } else {
       await this.clear(`sync_state_${channelId}`);
+      // Clear the "syncing…" indicator now that the backfill is done.
+      await this.tools.integrations.channelSyncCompleted(channelId);
     }
   }
 
@@ -387,19 +391,10 @@ export default class IssueConnector extends Connector<IssueConnector> {
     const payload = JSON.parse(request.rawBody || "{}");
     if (payload.type !== "Issue") return;
 
-    const issue = payload.data;
-    await this.tools.plot.createActivity({
-      source: `linear:issue:${issue.id}`,
-      type: ActivityType.Action,
-      title: `${issue.identifier}: ${issue.title}`,
-      done: issue.completedAt ? new Date(issue.completedAt) : null,
-      meta: { syncProvider: "linear", channelId },
-      notes: [{
-        key: "description",
-        content: issue.description || null,
-      }],
-      // Incremental sync: omit unread and archived
-    });
+    // Incremental sync: initialSync=false omits unread and archived
+    await this.tools.integrations.saveLink(
+      this.transformIssue(payload.data, channelId, false)
+    );
   }
 }
 ```
@@ -412,28 +407,32 @@ Some connectors let users start a new thread that creates a brand-new
 external item — a Linear issue, a Google Calendar event, a Slack DM. Opt
 in per link type:
 
-### 1. Mark the creation default
+### 1. Declare a `compose` block
 
-Declare one `statuses[]` entry with `createDefault: true` on the
-`LinkTypeConfig` for that type. Either on the static `readonly linkTypes`
-on the class or on the dynamic per-channel linkTypes returned by
-`getChannels`:
+Add a `compose` block to the `LinkTypeConfig` for that type. Either on the
+class-level `readonly linkTypes` or on the dynamic per-channel linkTypes
+returned by `getChannels`:
 
 ```typescript
 readonly linkTypes = [{
   type: "issue",
   label: "Issue",
   statuses: [
-    { status: "backlog", label: "Backlog" },
-    { status: "unstarted", label: "To Do", todo: true, createDefault: true },
-    { status: "completed", label: "Done", done: true },
+    { status: "backlog", label: "Backlog", icon: "backlog" as StatusIcon },
+    { status: "unstarted", label: "To Do", icon: "todo" as StatusIcon },
+    { status: "completed", label: "Done", done: true, icon: "done" as StatusIcon },
   ],
+  compose: { status: "unstarted" },   // targets defaults to "channels"
 }];
 ```
 
-A link type opts in to Plot-initiated creation by having at least one
-status with `createDefault: true`. The marker also tells the UI which
-status to pre-select in the picker.
+A link type opts in to Plot-initiated creation by declaring `compose` —
+without it, the "Create new …" picker entry never appears. `compose.status`
+is the status assigned to newly-created links: a literal `statuses[]` entry,
+or a symbolic id your `onCreateLink` resolves itself; omit it for status-less
+link types. For closed-roster DM-style compose set
+`compose.targets: "contacts"`; for open address spaces (email) use
+`"addresses"`. See `ComposeConfig` in `twister/src/tools/integrations.ts`.
 
 ### 2. Implement `onCreateLink(draft)`
 
@@ -466,10 +465,12 @@ async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
 |-------|---------|
 | `channelId` | Target channel (Linear team, Google calendar, Slack workspace). |
 | `type` | Link type id matching a `LinkTypeConfig.type`. |
-| `status` | Status the user selected; matches `statuses[].status`. |
+| `status` | Status the user selected; matches `statuses[].status`. `null` for status-less link types. |
 | `title` | Thread title (post AI title generation). |
 | `noteContent` | Markdown of the thread's first note, or `null`. |
 | `contacts` | Thread's contacts, minus the creating user — use for email recipients, DM members, invitees. |
+| `recipients` | For `compose.targets: "contacts"` / `"addresses"` only: contacts pre-resolved to platform account IDs (`externalAccountId`) with their thread `role` (e.g. to/cc/bcc) — use these instead of re-resolving `contacts`. |
+| `inviteEmails` | For `compose.targets: "addresses"` only: free-form addresses the user typed with no Plot contact row. |
 
 ### Platform guarantees
 
@@ -524,11 +525,11 @@ The `externalContent` field establishes a sync baseline: the runtime hashes it a
 
 ### 1. Always Inject Sync Metadata
 
-Every synced activity must include `syncProvider` and `channelId` in `meta` for bulk operations (e.g., archiving all activities when a channel is disabled).
+Every synced link must set the first-class `channelId` field and include `syncProvider` in `meta` for bulk operations (e.g., `integrations.archiveLinks({ channelId })` when a channel is disabled).
 
-### 2. Use Canonical Source URLs
+### 2. Use Canonical Source IDs
 
-Use immutable IDs in `Activity.source` for deduplication. For services with mutable identifiers (like Jira issue keys), use the immutable ID in `source` and store the mutable key in `meta`.
+Use immutable IDs in `link.source` for deduplication. For services with mutable identifiers (like Jira issue keys), use the immutable ID in `source` and store the mutable key in `meta`.
 
 ### 3. Handle HTML Content Correctly
 

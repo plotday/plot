@@ -22,8 +22,12 @@ connectors/<name>/
 {
   "name": "@plotday/connector-<name>",
   "private": true,
+  "plotTwistId": "<uuid>",
   "displayName": "Human Name",
   "description": "One-line purpose statement",
+  "logoUrl": "https://api.iconify.design/logos/<name>-icon.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.0",
@@ -37,8 +41,7 @@ connectors/<name>/
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
-  "scripts": { "build": "tsc", "clean": "rm -rf dist" },
+  "scripts": { "build": "tsc", "clean": "rm -rf dist", "lint": "plot lint", "deploy": "plot deploy" },
   "dependencies": { "@plotday/twister": "workspace:^" },
   "devDependencies": { "typescript": "^5.9.3" },
   "repository": { "type": "git", "url": "https://github.com/plotday/plot.git", "directory": "connectors/<name>" },
@@ -48,6 +51,7 @@ connectors/<name>/
 ```
 
 - `"@plotday/connector"` export condition resolves to TS source during workspace dev.
+- `plotTwistId` is the connector's stable twist UUID — `plot create --connector` generates one; `plot deploy` reads it along with `displayName`, `description`, `logoUrl`/`logoUrlDark`, and `publisher`.
 - Add third-party SDKs to `dependencies` (e.g. `"@linear/sdk": "^72.0.0"`).
 - Add `@plotday/connector-google-contacts` as `"workspace:^"` if you sync contacts (Google connectors only).
 
@@ -68,47 +72,47 @@ Use `connectors/linear/` as the canonical reference. Minimum shape:
 
 ```typescript
 import {
-  ActivityType, LinkType, Connector,
-  type NewActivityWithNotes, type SyncToolOptions, type ConnectorBuilder,
+  Connector,
+  type NewLinkWithNotes, type ToolBuilder,
 } from "@plotday/twister";
-import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider, Integrations,
   type AuthToken, type Authorization, type Channel,
+  type StatusIcon, type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { Tasks } from "@plotday/twister/tools/tasks";
 
 export class MyConnector extends Connector<MyConnector> {
-  static readonly PROVIDER = AuthProvider.Linear;
-  static readonly SCOPES = ["read", "write"];
-  static readonly Options: SyncToolOptions;
   static readonly handleReplies = true; // only for bidirectional connectors
-  declare readonly Options: SyncToolOptions;
 
-  build(build: ConnectorBuilder) {
+  readonly provider = AuthProvider.Linear;
+  readonly scopes = ["read", "write"]; // or a ScopeConfig: { required, optional }
+  readonly linkTypes = [{
+    type: "issue",
+    label: "Issue",
+    statuses: [
+      { status: "unstarted", label: "To Do", icon: "todo" as StatusIcon },
+      { status: "completed", label: "Done", done: true, icon: "done" as StatusIcon },
+    ],
+  }];
+
+  build(build: ToolBuilder) {
     return {
-      integrations: build(Integrations, {
-        providers: [{
-          provider: MyConnector.PROVIDER,
-          scopes: MyConnector.SCOPES,
-          getChannels: this.getChannels,
-          onChannelEnabled: this.onChannelEnabled,
-          onChannelDisabled: this.onChannelDisabled,
-        }],
-      }),
+      integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.example.com/*"] }),
-      callbacks: build(Callbacks),
-      tasks: build(Tasks),
     };
   }
 
-  async getChannels(_auth: Authorization, token: AuthToken): Promise<Channel[]> { /* list resources */ }
+  async getChannels(_auth: Authorization | null, token: AuthToken | null): Promise<Channel[]> { /* list resources */ }
 
-  async onChannelEnabled(channel: Channel): Promise<void> {
-    // 1. Store parent callback tokens via tools.callbacks.createFromParent(this.options.onItem)
-    // 2. Queue webhook + initial sync as SEPARATE tasks via runTask() — never inline;
-    //    onChannelEnabled blocks the HTTP response until it returns.
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Runs inline in the HTTP request handler — only this.set()/this.get()/
+    // this.callback()/this.runTask() belong here. Queue webhook setup +
+    // initial sync as SEPARATE tasks via this.runTask(), never inline.
+    // Can be re-dispatched (auto-enable, recovery: context.recovering) —
+    // overwrite stored state unconditionally, don't skip-if-present.
+    // Call integrations.channelSyncCompleted(channel.id) once the initial
+    // backfill finishes (from the last syncBatch, not from here).
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -119,18 +123,22 @@ export class MyConnector extends Connector<MyConnector> {
 export default MyConnector;
 ```
 
+The runtime reads `provider`, `scopes`, and `linkTypes` from the class and drives OAuth and channel management automatically. The built-in `callbacks`, `store`, and `tasks` tools are always available (`this.callback()`, `this.set()`/`this.get()`/`this.clear()`, `this.runTask()`) and need no `build()` entry.
+
 Required private helpers: `getClient(channelId)`, `setupWebhook(id)`, `startBatchSync(id)`, `syncBatch(id)`, `transformItem(item, id, initialSync)`, `onWebhook(req, id)`. See `linear/` for the full pattern.
 
 ## Integrations (auth + channels)
 
-Auth is handled in the Flutter edit modal — you declare providers in `build()`, the runtime drives OAuth.
+Auth is handled in the Flutter edit modal — you declare `provider` and `scopes` as class properties, the runtime drives OAuth.
 
 1. User clicks "Connect" → OAuth runs automatically.
 2. Runtime calls your `getChannels()` to list resources.
 3. User enables → `onChannelEnabled()`. User disables → `onChannelDisabled()`.
-4. Read tokens via `this.tools.integrations.get(PROVIDER, channelId)`.
+4. Read tokens via `this.tools.integrations.get(channelId)`.
 
-`AuthProvider` values: `Google`, `Microsoft`, `Notion`, `Slack`, `Atlassian`, `Linear`, `Monday`, `GitHub`, `Asana`, `HubSpot`.
+`AuthProvider` values: `Google`, `Microsoft`, `Notion`, `Slack`, `Atlassian`, `Linear`, `Monday`, `GitHub`, `Asana`, `HubSpot`, `Todoist`, `Airtable`.
+
+`scopes` may be a flat array (all required) or a `ScopeConfig` (`{ required, optional }`) whose optional scope groups render as connect-time toggles; detect declined groups via the granted `token.scopes` and degrade gracefully (see `slack/` and `google-calendar/`). Connectors without OAuth (API keys, CalDAV credentials) omit `provider` and collect credentials via the `Options` tool with `secure: true` fields (see `attio/`, `fellow/`, `apple-calendar/`).
 
 ### Per-user auth for write-backs
 
@@ -145,7 +153,7 @@ Plot but is not dispatched — there is no instance to deliver to.
 
 ### Cross-connector auth sharing (Google)
 
-Merge scopes with `Integrations.MergeScopes(MyGoogleConnector.SCOPES, GoogleContacts.SCOPES)` and add `googleContacts: build(GoogleContacts)` to your `build()` return.
+Set `readonly scopes = Integrations.MergeScopes(MyGoogleConnector.SCOPES, GoogleContacts.SCOPES)` and add `googleContacts: build(GoogleContacts)` to your `build()` return (see `gmail/`, `google-drive/`). Alternatively declare the contacts scopes as an optional `ScopeConfig` group so the user can decline them (see `google-calendar/`).
 
 ## Architecture
 
@@ -156,24 +164,31 @@ Connectors persist data directly via `integrations.saveLink()` (building `NewLin
 Functions are not serializable across worker boundaries. Convert to tokens, store primitives.
 
 ```typescript
+import { type Callback } from "@plotday/twister/tools/callbacks";
+
 // ❌ WRONG — passing a function as a callback arg
-await this.callback(this.syncBatch, callback, ...extraArgs);
-// Error: Cannot create callback args: Found function at path "value[0]"
+await this.callback(this.syncBatch, this.onItem);
+// Error: Found function at path "value[0]"
 
-// ✅ CORRECT
-const token = await this.tools.callbacks.createFromParent(callback, ...extraArgs);
-await this.set(`callback_${resourceId}`, token);
-const batch = await this.callback(this.syncBatch, resourceId); // primitives only
-await this.tools.tasks.runTask(batch);
+// ✅ CORRECT — callback args are serializable primitives only
+const batch = await this.callback(this.syncBatch, resourceId);
+await this.runTask(batch);
 
-// In syncBatch:
-const token = await this.get<Callback>(`callback_${resourceId}`);
-if (!token) throw new Error(`Callback not found for ${resourceId}`);
-await this.tools.callbacks.run(token, item);
+// To invoke something later (scheduled renewals, stored continuations),
+// persist the token, not the function:
+const token = await this.callback(this.renewWatch, resourceId);
+await this.set(`renewal_${resourceId}`, token);
+
+// Later:
+const stored = await this.get<Callback>(`renewal_${resourceId}`);
+if (!stored) throw new Error(`Callback not found for ${resourceId}`);
+await this.run(stored);
 ```
 
 Serializable: strings, numbers, booleans, `null`, plain objects, arrays, Dates (SuperJSON), callback tokens.  
 Not serializable: functions, `undefined` (use `null`), symbols, RPC stubs, circular refs.
+
+(`tools.callbacks.createFromParent()` exists for tokenizing a function handed in from a parent twist/tool — regular connectors don't need it.)
 
 ## Callback backward compatibility
 
@@ -191,14 +206,12 @@ async syncBatch(batchNumber: number, resourceId: string, initialSync?: boolean) 
 }
 ```
 
-For breaking changes, do migration in `preUpgrade()` (e.g. clear stale locks).
+For breaking changes, do migration in `upgrade()` (called once per active instance when a new version deploys — e.g. clear stale locks, see `gmail/`, `google-calendar/`).
 
 ## Storage key conventions
 
 | Key | Purpose |
 |---|---|
-| `item_callback_<id>` | Token for parent's `onItem` |
-| `disable_callback_<id>` | Token for parent's `onChannelDisabled` |
 | `sync_state_<id>` | Current batch pagination state |
 | `sync_enabled_<id>` | Boolean tracking enabled state |
 | `webhook_id_<id>` | External webhook registration id |
@@ -207,7 +220,7 @@ For breaking changes, do migration in `preUpgrade()` (e.g. clear stale locks).
 
 ## `source` — idempotency + cross-user dedup (CRITICAL)
 
-`activity.source` / `link.source` is the upsert key AND the cross-user dedup key: two instances emitting the same `source` converge on a single shared thread across users (that's how two users on the same Gmail message share one thread).
+`link.source` is the upsert key AND the cross-user dedup key: two instances emitting the same `source` converge on a single shared thread across users (that's how two users on the same Gmail message share one thread).
 
 **Your `source` must be globally unique for the external item, not merely unique within a user's account.** If two different users' connectors could emit the same string for different items, include a qualifier (workspace, tenant, mailbox, project).
 
@@ -232,6 +245,8 @@ fellow:<tenantId>:note:<id>
 Pick the format up front — retrofits require a backfill migration.
 
 **Mutable ids:** use the immutable id in `source`, store the mutable key in `meta` only (e.g. Jira issue id in `source`, issue key in `meta`).
+
+**Cross-connector bundling:** `link.sources` (plural) carries additional canonical aliases — any element shared with another link's `sources` bundles the two onto one thread. E.g. calendar connectors emit an `icaluid:<iCalUID>` alias so meeting-notes connectors (Fellow, Granola) can attach to the event's thread.
 
 ### Attestation-based visibility
 
@@ -266,11 +281,16 @@ Previews (`preview` fields) always use plain text — `snippet` or truncated tit
 
 ## Sync metadata injection
 
-Every synced activity must include provider and channel metadata — the twist's bulk operations (e.g. archiving on disable) rely on it:
+Every synced link must carry provider and channel metadata — bulk operations (e.g. `integrations.archiveLinks({ channelId })` on disable) rely on it:
 
 ```typescript
-activity.meta = { ...activity.meta, syncProvider: "myprovider", channelId: resourceId };
+link.channelId = resourceId; // first-class field on NewLink
+link.meta = { ...link.meta, syncProvider: "myprovider" };
 ```
+
+## Classifier facets (optional)
+
+Messaging-style connectors may set `link.facets` (`format` / `automation` / `reach` from `@plotday/twister/facets`) as internal classifier signal. Set a dimension only when a heuristic is confident; leave it `null`/omitted otherwise. See `gmail/src/gmail-facets.ts` and `slack/src/slack-facets.ts`.
 
 ## Initial vs incremental sync (REQUIRED)
 
@@ -282,12 +302,12 @@ Missing this causes notification spam from bulk historical imports.
 | `archived` | `false` | *omit* |
 
 ```typescript
-const activity = {
+const link = {
   ...(initialSync ? { unread: false, archived: false } : {}),
 };
 ```
 
-The flag must flow from entry point through every batch to the activity-creation site.
+The flag must flow from entry point through every batch to the link-creation site.
 
 - **Pattern A — store in SyncState**: include `initialSync: boolean` in your state type; set `true` in `startBatchSync`, preserve across batches, webhooks pass `false`.
 - **Pattern B — pass as callback arg**: make it the last, optional param (for backward compat) and propagate: `async syncBatch(batch: number, mode: "full"|"incremental", channelId: string, initialSync?: boolean)`. Used by connectors like Gmail.
@@ -325,11 +345,12 @@ if (taskToken) await this.set(`watch_renewal_task_${resourceId}`, taskToken);
 ## Bidirectional sync
 
 ```typescript
-// Update issue/task from Plot
-async updateIssue(activity: Activity): Promise<void> {
-  const externalId = activity.meta?.externalId as string;
-  const client = await this.getClient(activity.meta?.resourceId as string);
-  await client.updateItem(externalId, { title: activity.title, done: /* ... */ });
+// Write back status/assignee changes the user makes in Plot on links this
+// connector created (dispatched by the runtime)
+async onLinkUpdated(link: Link): Promise<void> {
+  const externalId = link.meta?.externalId as string;
+  const client = await this.getClient(link.channelId ?? (link.meta?.resourceId as string));
+  await client.updateItem(externalId, { title: link.title, status: /* map link.status */ });
 }
 
 // Post a comment. Return a NoteWriteBackResult with externalContent so the
@@ -395,9 +416,9 @@ Opt a link type in by adding a `compose` block to its `LinkTypeConfig`:
   type: "issue",
   label: "Issue",
   statuses: [
-    { status: "backlog", label: "Backlog" },
-    { status: "unstarted", label: "To Do" },
-    { status: "completed", label: "Done", done: true },
+    { status: "backlog", label: "Backlog", icon: "backlog" as StatusIcon },
+    { status: "unstarted", label: "To Do", icon: "todo" as StatusIcon },
+    { status: "completed", label: "Done", done: true, icon: "done" as StatusIcon },
   ],
   compose: { status: "unstarted" },        // targets defaults to "channels"
 }
@@ -432,7 +453,7 @@ async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
 }
 ```
 
-`CreateLinkDraft`: `channelId`, `type`, `status`, `title`, `noteContent`, `contacts: Actor[]`. See `twister/src/connector.ts`.
+`CreateLinkDraft`: `channelId`, `type`, `status` (`null` for status-less link types), `title`, `noteContent`, `contacts: Actor[]`, plus — for `compose.targets: "contacts"`/`"addresses"` — `recipients?: ResolvedRecipient[]` (contacts pre-resolved to platform account IDs with their thread `role`) and `inviteEmails?: string[]` (free-form typed addresses). See `twister/src/connector.ts`.
 
 Resolve category statuses (`"unstarted"`, etc.) to the provider's state id yourself — the draft's status is whatever the picker showed.
 
@@ -443,11 +464,16 @@ The returned link is written with `updated_by` set to the twist, so subsequent s
 Contacts are created implicitly when you save threads/links — no `addContacts()` call, no `ContactAccess.Write`.
 
 ```typescript
-const author: NewContact | undefined = creator?.email
-  ? { email: creator.email, name: creator.name, avatar: creator.avatarUrl ?? undefined }
+const author: NewContact | undefined = creator
+  ? {
+      ...(creator.email ? { email: creator.email } : {}),
+      name: creator.name ?? "",
+      avatar: creator.avatarUrl ?? undefined,
+      source: { accountId: creator.id }, // platform identity, resolves without email
+    }
   : undefined;
 
-const activity: NewActivityWithNotes = {
+const link: NewLinkWithNotes = {
   author,
   assignee: assigneeContact ?? null,
   notes: [{ author /* note-level author too */ }],
@@ -468,8 +494,8 @@ declare const Buffer: {
 ## Build & test
 
 ```bash
-cd public/connectors/<name> && pnpm build
-cd public/connectors/<name> && pnpm exec tsc --noEmit
+cd connectors/<name> && pnpm build
+cd connectors/<name> && pnpm exec tsc --noEmit
 pnpm install  # from repo root
 ```
 
@@ -477,19 +503,20 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 
 ## Checklist
 
-- [ ] Extend `Connector<YourConnector>`; declare `PROVIDER`, `SCOPES`, `Options` (static + `declare readonly`)
-- [ ] `build()` declares Integrations, Network, Callbacks, Tasks (plus GoogleContacts if applicable)
+- [ ] Extend `Connector<YourConnector>`; declare `readonly provider`, `readonly scopes`, `readonly linkTypes`
+- [ ] `build()` declares Integrations and Network (plus GoogleContacts/Files if applicable) — `callbacks`/`store`/`tasks` are built-in
 - [ ] Set `handleReplies = true` only if bidirectional
 - [ ] For bidirectional note sync: `onNoteCreated` / `onNoteUpdated` return `NoteWriteBackResult` with `externalContent` matching what sync-in will emit for this note — no `Promise<string | void>` in new connectors
 - [ ] For bidirectional note sync: implement `onNoteUpdated` if the external supports editing (document the gap if it doesn't)
 - [ ] `onChannelEnabled` uses `runTask()` (NOT `run()`) for webhook setup and initial sync — blocks HTTP response otherwise
-- [ ] Convert parent callbacks to tokens with `createFromParent()`; store via `this.set()`; retrieve with `this.get<Callback>()`
+- [ ] `onChannelEnabled` is idempotent (overwrites state) — it re-fires on auto-enable and recovery (`context.recovering`)
+- [ ] Call `integrations.channelSyncCompleted(channelId)` exactly once when the initial backfill finishes
 - [ ] Never pass functions, RPC stubs, or `undefined` to `this.callback()` — use `null`
-- [ ] Validate token exists before `callbacks.run()`
+- [ ] Validate stored callback tokens exist before `this.run()`
 - [ ] Localhost guard in webhook setup; verify webhook signatures
 - [ ] Canonical, globally-unique `source` using immutable ids; mutable keys in `meta` only
 - [ ] `note.key` for note-level upserts
-- [ ] Inject `syncProvider` + `channelId` into `activity.meta`
+- [ ] Set `link.channelId` and inject `syncProvider` into `link.meta`
 - [ ] `contentType: "html"` for HTML — never strip tags locally
 - [ ] `created` on notes = external timestamp, not sync time
 - [ ] `initialSync` propagated through every entry point and batch; set `unread: false, archived: false` on initial, omit on incremental
@@ -501,14 +528,14 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 ## Common pitfalls
 
 1. Passing functions/`undefined`/RPC stubs to `this.callback()` → use tokens + `null`.
-2. Forgetting sync metadata (`syncProvider`, `channelId`) → breaks bulk archive on disable.
+2. Forgetting sync metadata (`link.channelId`, `meta.syncProvider`) → breaks bulk archive on disable.
 3. Not propagating `initialSync` through the whole pipeline → notification spam.
 4. Mutable ids in `source` (e.g. Jira issue key) → use immutable id, store key in `meta`.
 5. `source` that's only unique within one user's account → breaks cross-user dedup; add workspace/tenant/mailbox qualifier.
 6. Not breaking long loops into batches → each execution has ~1000 request limit.
 7. Missing localhost guard → webhook registration fails silently.
 8. Calling `plot.createThread()` from a connector → use `integrations.saveLink()`.
-9. Breaking callback signatures → add optional params at end only; use `preUpgrade()` for breaking migrations.
+9. Breaking callback signatures → add optional params at end only; use `upgrade()` for breaking migrations.
 10. Not cleaning up on disable → orphan callbacks, webhooks, state.
 11. Two-way sync without metadata correlation → embed Plot id in external metadata to prevent race-condition duplicates (see SYNC_STRATEGIES.md §6).
 12. Stripping HTML locally → breaks encoding + loses links; use `contentType: "html"`.
@@ -533,4 +560,4 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 | `jira/` | ProjectConnector | Immutable vs mutable ids; comment metadata dedup |
 | `asana/` | ProjectConnector | HMAC webhook verification; section-based projects |
 | `outlook-calendar/` | CalendarConnector | Microsoft Graph; subscription management |
-| `google-contacts/` | Supporting | Contact sync; cross-connector `syncWithAuth()` |
+| `google-contacts/` | Supporting | Contact sync; shared Google auth consumed by other connectors via `MergeScopes` |

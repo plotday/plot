@@ -27,17 +27,17 @@ Create a file named `plot-twist.md` in your project directory and describe what 
 
 I want a twist that:
 
-- Syncs my Google Calendar events into Plot as activities
+- Syncs my Google Calendar events into Plot as threads
 - Creates tasks for upcoming meetings
 - Sends me a reminder 10 minutes before each meeting
-- Updates activity status when meetings are completed
+- Updates thread status when meetings are completed
 ```
 
 **Be specific about:**
 
 - **Data sources** - Which services to connect (Google Calendar, GitHub, Slack, etc.)
 - **Actions** - What the twist should do (create tasks, send notifications, update status)
-- **Triggers** - When actions should happen (on new events, on schedule, when activities change)
+- **Triggers** - When actions should happen (on new events, on schedule, when threads change)
 
 ### Step 2: Deploy Your Twist
 
@@ -97,9 +97,11 @@ This creates a new directory with:
 my-calendar-twist/
 ├── src/
 │   └── index.ts        # Your twist code
-├── package.json
+├── package.json        # Twist metadata and dependencies
 ├── tsconfig.json
-└── plot-twist.json     # Twist configuration
+├── README.md
+├── AGENTS.md           # Guide for AI coding assistants
+└── CLAUDE.md
 ```
 
 ### Step 2: Implement Your Twist
@@ -107,51 +109,46 @@ my-calendar-twist/
 Edit `src/index.ts` to add your twist logic:
 
 ```typescript
-import {
-  type Activity,
-  ActivityType,
-  type Priority,
-  type ToolBuilder,
-  Twist,
-} from "@plotday/twister";
-import { Plot } from "@plotday/twister/tools/plot";
+import { type Note, type ToolBuilder, Twist } from "@plotday/twister";
+import { Plot, ThreadAccess } from "@plotday/twister/tools/plot";
 
 export default class MyTwist extends Twist<MyTwist> {
   // Declare tool dependencies
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      plot: build(Plot, {
+        thread: { access: ThreadAccess.Create },
+      }),
     };
   }
 
-  // Called when the twist is activated for a priority
-  async activate(priority: Pick<Priority, "id">) {
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
+  // Called when the twist is installed
+  async activate() {
+    await this.tools.plot.createThread({
       title: "Welcome! Your twist is now active.",
       notes: [
         {
-          content: "Your twist is ready to use. You can now start creating activities and automating your workflow.",
+          content: "Your twist is ready to use. You can now start creating threads and automating your workflow.",
         },
       ],
     });
   }
 
-  // Called when an activity is routed to this twist
-  async activity(activity: Activity) {
-    console.log("Processing activity:", activity.title);
+  // Called when a note is created on a thread this twist created
+  async onNoteCreated(note: Note) {
+    console.log("Processing note:", note.content);
   }
 }
 ```
 
 ### Step 3: Test Locally
 
-Build and check for errors:
+Check for build and lint errors:
 
 ```bash
-npm run build
+npm run lint
 # or
-pnpm build
+pnpm lint
 ```
 
 ### Step 4: Deploy
@@ -160,7 +157,7 @@ You'll need a [Plot account](https://plot.day) to deploy twists.
 
 ```bash
 # Login to Plot
-npm run plot login
+npx plot login
 
 # Deploy your twist
 npm run deploy
@@ -177,20 +174,20 @@ Your twist is now deployed and ready to activate in Plot!
 Your twist extends the `Twist` class and implements:
 
 - **`build()`** - Declares tool dependencies
-- **`activate()`** - Initialization when added to a priority
-- **`deactivate()`** - Cleanup when removed from a priority
+- **`activate()`** - Initialization when the twist is installed
+- **`deactivate()`** - Cleanup when the twist is uninstalled
 - **`upgrade()`** - Migration when deploying a new version
 
-### Configuration (plot-twist.json)
+### Configuration (package.json)
 
-Contains twist metadata:
+Twist metadata lives in `package.json`, including a generated `plotTwistId` that identifies your twist for deployment:
 
 ```json
 {
   "name": "my-calendar-twist",
   "displayName": "My Calendar Twist",
-  "version": "1.0.0",
-  "description": "Syncs calendar events to Plot"
+  "description": "Syncs calendar events to Plot",
+  "plotTwistId": "generated-uuid"
 }
 ```
 
@@ -218,31 +215,30 @@ Now that you have a basic twist running, explore:
 
 ## Common First Tasks
 
-### Understanding Activities and Notes
+### Understanding Threads and Notes
 
-**Activity** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that activity.
+A **Thread** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that thread.
 
-Think of an **Activity as a thread** on a messaging platform, and **Notes as the messages in that thread**. Always create activities with an initial note, and add notes for updates rather than creating new activities.
+Think of a **Thread as a thread** on a messaging platform, and **Notes as the messages in that thread**. Always create threads with an initial note, and add notes for updates rather than creating new threads.
 
-### Creating Activities
+### Creating Threads
 
-Always create activities with an initial note. The `notes` array can contain multiple notes (messages in the thread).
+Always create threads with an initial note. The `notes` array can contain multiple notes (messages in the thread).
 
-**Data Sync Tip:** When syncing from external systems, use `Activity.source` for automatic deduplication and `Note.key` for upsertable notes. See the [Sync Strategies](SYNC_STRATEGIES.md) guide for detailed patterns.
+**Data Sync Tip:** When syncing from external systems, build a connector and use `Link.sources` for automatic deduplication and `Note.key` for upsertable notes. See the [Sync Strategies](SYNC_STRATEGIES.md) guide for detailed patterns.
 
 ```typescript
-await this.tools.plot.createActivity({
-  source: "https://github.com/org/repo/pull/123", // Enables automatic upserts
-  type: ActivityType.Action,
+import { ActionType } from "@plotday/twister";
+
+await this.tools.plot.createThread({
   title: "Review pull request",
   notes: [
     {
-      activity: { source: "https://github.com/org/repo/pull/123" },
       key: "description", // Using key enables upserts
       content: "Please review the authentication changes and ensure they follow security best practices.",
-      links: [
+      actions: [
         {
-          type: ActivityLinkType.external,
+          type: ActionType.external,
           title: "View PR",
           url: "https://github.com/org/repo/pull/123",
         },
@@ -252,36 +248,22 @@ await this.tools.plot.createActivity({
 });
 ```
 
-#### Scheduling States for Actions
+#### Scheduling Threads
 
-**Important:** When creating Actions (tasks), the `start` field determines how they appear in Plot. By default, omitting `start` creates a "Do Now" task. For most integrations, you should explicitly set `start: null` to create backlog items.
+Threads appear on the user's agenda when they have a schedule. Pass `schedules` when creating the thread, or call `createSchedule()` later:
 
 ```typescript
-// "Do Now" - Actionable today (DEFAULT when start is omitted)
-// Use for urgent tasks or items actively in progress
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
-  title: "Fix critical bug in production",
-  notes: [{ content: "Users reporting login failures" }],
-  // Omitting start defaults to current time
-});
-
-// "Do Someday" - Backlog item (RECOMMENDED for most synced tasks)
-// Use for task backlog, future ideas, non-urgent items
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
-  title: "Refactor authentication module",
-  start: null, // Explicitly set to null for backlog
-  notes: [{ content: "Technical debt item to address later" }],
-});
-
-// "Do Later" - Scheduled for specific date
-// Use when task has a specific due date
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
-  title: "Submit expense report",
-  start: new Date("2025-01-31"), // Due date
-  notes: [{ content: "December expenses need to be submitted by end of month" }],
+// Scheduled (recurring) event
+await this.tools.plot.createThread({
+  title: "Team standup",
+  notes: [{ content: "Daily sync meeting" }],
+  schedules: [
+    {
+      start: new Date("2025-02-01T10:00:00Z"),
+      end: new Date("2025-02-01T10:30:00Z"),
+      recurrenceRule: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR",
+    },
+  ],
 });
 ```
 
@@ -298,8 +280,8 @@ const lastSync = await this.get<string>("last_sync");
 ### Scheduling Tasks
 
 ```typescript
-// Run immediately
-const callback = await this.callback("processData");
+// Run immediately (in a new execution with a fresh request limit)
+const callback = await this.callback(this.processData);
 await this.runTask(callback);
 
 // Schedule for later
@@ -310,21 +292,20 @@ await this.runTask(callback, {
 
 ### Best Practices
 
-#### Always Include Notes with Activities
+#### Always Include Notes with Threads
 
-**Important:** Always create Activities with at least one initial Note. The `title` and `preview` are brief summaries that may be truncated in the UI. Detailed information should go in Notes.
+**Important:** Always create Threads with at least one initial Note. The `title` and `preview` are brief summaries that may be truncated in the UI. Detailed information should go in Notes.
 
 ```typescript
-// ✅ Good - Activity with detailed Note
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+// ✅ Good - Thread with detailed Note
+await this.tools.plot.createThread({
   title: "Deploy v2.0",
   notes: [
     {
-      note: "Deployment checklist:\n- Run database migrations\n- Update environment variables\n- Deploy backend services\n- Deploy frontend\n- Run smoke tests",
-      links: [
+      content: "Deployment checklist:\n- Run database migrations\n- Update environment variables\n- Deploy backend services\n- Deploy frontend\n- Run smoke tests",
+      actions: [
         {
-          type: ActivityLinkType.external,
+          type: ActionType.external,
           title: "Deployment Guide",
           url: "https://docs.example.com/deploy",
         },
@@ -334,67 +315,52 @@ await this.tools.plot.createActivity({
 });
 
 // ❌ Bad - No detailed information
-await this.tools.plot.createActivity({
-  type: ActivityType.Action,
+await this.tools.plot.createThread({
   title: "Deploy v2.0",
   // Missing Notes with context and steps
 });
 ```
 
-#### Add Notes to Existing Activities for Related Content
+#### Add Notes to Existing Threads for Related Content
 
-For conversations, email threads, or workflows, add Notes to the existing Activity instead of creating new Activities.
+For conversations, email threads, or workflows, add Notes to the existing Thread instead of creating new Threads.
 
-**Recommended Pattern:** Use `Activity.source` and `Note.key` for automatic upserts - no need to check if the activity exists first:
-
-```typescript
-// Simply create - Plot handles deduplication automatically via source
-const conversationUrl = `https://app.example.com/conversations/${conversationId}`;
-
-await this.tools.plot.createNote({
-  activity: { source: conversationUrl }, // References activity by source
-  key: `message-${messageId}`, // Use unique key per message for upserts
-  content: newMessage.text,
-});
-
-// If the activity doesn't exist yet, create it with source
-await this.tools.plot.createActivity({
-  source: conversationUrl, // Same source for deduplication
-  type: ActivityType.Note,
-  title: "New conversation",
-  notes: [{
-    activity: { source: conversationUrl },
-    key: `message-${messageId}`,
-    content: newMessage.text,
-  }],
-});
-```
-
-**Alternative Pattern** (for advanced cases): Use `getActivityBySource` to check existence:
+**Recommended Pattern:** Store the thread ID when you create the thread, then add notes by ID. A unique `Note.key` per message makes note writes upserts, so re-processing the same message never creates duplicates:
 
 ```typescript
-const existing = await this.tools.plot.getActivityBySource({
-  conversation_id: conversationId,
-});
+async onNewMessage(message: Message, conversationId: string) {
+  // Look up the thread for this conversation (created earlier)
+  let threadId = await this.get<Uuid>(`thread_${conversationId}`);
 
-if (existing) {
+  if (!threadId) {
+    // First message - create the thread with the message as its initial note
+    threadId = await this.tools.plot.createThread({
+      title: message.subject || "New conversation",
+      notes: [
+        {
+          key: `message-${message.id}`, // Unique key per message enables upserts
+          content: message.text,
+        },
+      ],
+    });
+    await this.set(`thread_${conversationId}`, threadId);
+    return;
+  }
+
+  // Follow-up message - add a note to the existing thread
   await this.tools.plot.createNote({
-    activity: { id: existing.id },
-    content: newMessage.text,
-  });
-} else {
-  await this.tools.plot.createActivity({
-    type: ActivityType.Note,
-    title: "New conversation",
-    meta: { conversation_id: conversationId },
-    notes: [{ content: newMessage.text }],
+    thread: { id: threadId },
+    key: `message-${message.id}`,
+    content: message.text,
   });
 }
 ```
 
+**For connectors:** When syncing from an external service, you don't need to store thread IDs at all — save links with `integrations.saveLink()` using `Link.sources` for deduplication, and reference threads by source (`thread: { source: ... }`) when creating notes.
+
 See [Sync Strategies](SYNC_STRATEGIES.md) for more patterns and guidance on choosing the right approach.
 
-See [Core Concepts - Best Practices](CORE_CONCEPTS.md#best-practices-for-activities-and-notes) for more details.
+See [Core Concepts - Best Practices](CORE_CONCEPTS.md#best-practices-for-threads-and-notes) for more details.
 
 ## Need Help?
 

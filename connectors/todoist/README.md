@@ -10,7 +10,6 @@ Sync your Todoist projects and tasks with Plot.
 - Comments synced as notes
 - Subtasks synced as notes with todo tags
 - Two-way completion status and comment sync
-- Priority mapping (p1/urgent → Urgent tag)
 
 ## License
 

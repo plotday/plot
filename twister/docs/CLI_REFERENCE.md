@@ -19,7 +19,7 @@ Complete reference for the Plot CLI (`plot` command).
 
 ## Installation
 
-The Plot CLI is included with the Builder:
+The Plot CLI is included with the Twist Creator package:
 
 ```bash
 # Run directly with npx
@@ -48,7 +48,7 @@ This will:
 2. After authentication, save your API token locally
 3. Enable deploying and managing twists
 
-**Token Storage**: The token is stored in `~/.plot/config.json`
+**Token Storage**: The token is saved per API host at `~/.config/plot/credentials/<api-host>/token` (e.g. `~/.config/plot/credentials/api.plot.day/token`). On Windows it is stored under `%APPDATA%\plot\credentials\`.
 
 ---
 
@@ -64,9 +64,12 @@ plot create [options]
 
 **Options:**
 
-- `--name <name>` - Package name (kebab-case)
+- `-n, --name <name>` - Package name (kebab-case)
 - `--display-name <name>` - Human-readable display name
-- `--dir <directory>` - Output directory (default: current directory)
+- `-d, --dir <directory>` - Output directory (default: a new directory named after the package)
+- `--connector` - Create a connector instead of a twist
+
+If `--name` and `--display-name` are not both provided, the command prompts for them interactively.
 
 **Example:**
 
@@ -82,8 +85,13 @@ my-calendar-twist/
 │   └── index.ts
 ├── package.json
 ├── tsconfig.json
-└── plot-twist.json
+├── README.md
+├── AGENTS.md
+├── CLAUDE.md
+└── .gitignore
 ```
+
+It also initializes a git repository and installs dependencies with the detected package manager.
 
 ---
 
@@ -100,7 +108,7 @@ plot generate [options]
 - `-d, --dir <directory>` - Twist directory to generate in (default: current directory)
 - `--spec <file>` - Spec file to generate from (default: `plot-twist.md` inside the twist directory)
 - `--id <twistId>` - Twist ID (reads `plotTwistId` from `package.json` if present, otherwise generates a new UUID)
-- `--deploy-token <token>` - Authentication token (falls back to `PLOT_DEPLOY_TOKEN` env var or `DEPLOY_TOKEN` in `.env`)
+- `--deploy-token <token>` - Authentication token (falls back to the `PLOT_DEPLOY_TOKEN` env var, `DEPLOY_TOKEN` in `.env`, or the token saved by `plot login`)
 
 If existing files would be overwritten, the command prompts before proceeding. On success it writes `package.json`, `tsconfig.json`, `README.md`, `AGENTS.md`, `CLAUDE.md`, and the generated source files into `src/`, then runs `pnpm install` (or the detected package manager).
 
@@ -126,7 +134,7 @@ plot lint [options]
 
 **Options:**
 
-- `--dir <directory>` - twist directory (default: current directory)
+- `-d, --dir <directory>` - twist directory (default: current directory)
 
 **Example:**
 
@@ -136,9 +144,31 @@ plot lint --dir ./my-twist
 
 ---
 
+### plot build
+
+Bundle the twist without deploying.
+
+```bash
+plot build [options]
+```
+
+**Options:**
+
+- `-d, --dir <directory>` - twist directory (default: current directory)
+
+Writes the bundle to `build/index.js` and prints its size. Useful for verifying the build locally or in CI pipelines that separate build and deploy steps.
+
+**Example:**
+
+```bash
+plot build --dir ./my-twist
+```
+
+---
+
 ### plot deploy
 
-Deploy an twist to Plot.
+Deploy a twist to Plot.
 
 ```bash
 plot deploy [options]
@@ -146,26 +176,28 @@ plot deploy [options]
 
 **Options:**
 
-- `--twist-id <id>` - Update existing twist (creates new if not specified)
-- `--name <name>` - twist name
-- `--description <description>` - twist description
-- `--source <path>` - Source directory (default: `./src`)
-- `--env <environment>` - Environment (default: `production`)
+- `-d, --dir <directory>` - twist directory (default: current directory)
+- `--id <twistId>` - Twist ID (default: `plotTwistId` from `package.json`)
+- `--name <name>` - twist name (default: `displayName` from `package.json`)
+- `--description <description>` - twist description (default: `description` from `package.json`; required for non-personal environments)
+- `--deploy-token <token>` - Authentication token (falls back to the `PLOT_DEPLOY_TOKEN` env var, `DEPLOY_TOKEN` in `.env`, or the token saved by `plot login`)
+- `-e, --environment <env>` - Deployment environment: `personal`, `private`, `review`, or `public` (default: `personal`)
 - `--dry-run` - Validate without deploying
 
 **Behavior:**
 
-- If `plot-twist.md` exists: Generates code and deploys in one step
-- Otherwise: Deploys compiled TypeScript from `src/`
+- Type-checks the code (`tsc --noEmit`), bundles it, and uploads it to Plot
+- If there is no `package.json` but a `plot-twist.md` spec exists: generates the twist from the spec first, then deploys
+- Non-personal environments require a description and a publisher (resolved from `publisher` in `package.json`, or selected/created interactively)
 
 **Example:**
 
 ```bash
-# Deploy new twist
+# Deploy (twist ID is read from package.json)
 plot deploy
 
-# Update existing twist
-plot deploy --twist-id ag_1234567890
+# Deploy to a shared environment
+plot deploy --environment private
 
 # Dry run
 plot deploy --dry-run
@@ -175,7 +207,7 @@ plot deploy --dry-run
 
 ### plot logs
 
-Stream real-time logs from an twist.
+Stream real-time logs from a twist.
 
 ```bash
 plot logs [twist-id] [options]
@@ -183,16 +215,16 @@ plot logs [twist-id] [options]
 
 **Options:**
 
-- `--id <twistId>` - twist ID
-- `--dir <directory>` - twist directory (default: current directory)
-- `--environment <env>` - twist environment (personal, private, review) (default: personal)
+- `--id <twistId>` - twist ID (when omitted, read from `plotTwistId` in `package.json`)
+- `-d, --dir <directory>` - twist directory (default: current directory)
+- `-e, --environment <env>` - twist environment: `personal`, `private`, `review`, or `public` (default: `personal`)
 - `--deploy-token <token>` - Authentication token
 
 **Example:**
 
 ```bash
-# Stream logs for an twist
-plot logs ag_1234567890
+# Stream logs for a twist by ID
+plot logs 123e4567-e89b-42d3-a456-426614174000
 
 # Stream logs using twist in current directory
 plot logs --dir ./my-twist
@@ -213,10 +245,13 @@ plot priority list
 **Output:**
 
 ```
-pr_0987654321  Work
-  pr_1111111111  Project A
-  pr_2222222222  Project B
-pr_3333333333  Personal
+ID                                     Parent ID                              Title
+------------------------------------------------------------------------------------
+6e1f0336-...                           (root)                                 Work
+9b2c4a18-...                           6e1f0336-...                           Project A
+0a7d92e4-...                           (root)                                 Personal
+
+Total: 3 priorities
 ```
 
 ---
@@ -231,8 +266,8 @@ plot priority create [options]
 
 **Options:**
 
-- `--name <name>` - Priority name (required)
-- `--parent-id <id>` - Parent priority ID (optional)
+- `--name <name>` - Priority name (prompted for if omitted)
+- `--parent-id <id>` - Parent priority ID, a UUID (prompted for if omitted; leave empty for a root priority)
 
 **Example:**
 
@@ -241,7 +276,7 @@ plot priority create [options]
 plot priority create --name "Work"
 
 # Create nested priority
-plot priority create --name "Project A" --parent-id pr_0987654321
+plot priority create --name "Project A" --parent-id 6e1f0336-58d4-4f5a-9c2b-7a1d3e8f0b42
 ```
 
 ---
@@ -250,48 +285,31 @@ plot priority create --name "Project A" --parent-id pr_0987654321
 
 These options are available for all commands:
 
-- `--help`, `-h` - Show help for command
-- `--version`, `-v` - Show CLI version
-- `--verbose` - Enable verbose logging
-- `--config <path>` - Use custom config file (default: `~/.plot/config.json`)
+- `-h, --help` - Show help for command
+- `-V, --version` - Show CLI version
 
 **Example:**
 
 ```bash
-plot deploy --verbose
 plot --version
+plot deploy --help
 ```
 
 ---
 
-## Configuration File
+## Stored Credentials
 
-The CLI stores configuration in `~/.plot/config.json`:
+The CLI does not use a configuration file. Credentials are stored in two places:
 
-```json
-{
-  "auth": {
-    "token": "your-api-token",
-    "userId": "user_1234567890"
-  },
-  "defaults": {
-    "environment": "production"
-  }
-}
-```
+- **Login token**: `plot login` saves your token per API host at `~/.config/plot/credentials/<api-host>/token` (Windows: `%APPDATA%\plot\credentials\<api-host>\token`)
+- **Deploy token**: a `DEPLOY_TOKEN` entry in the twist directory's `.env` file (written automatically if you enter a token when prompted)
 
-### Customizing Defaults
+When a command needs a token, it resolves one in this order:
 
-Edit the config file to set default options:
-
-```json
-{
-  "defaults": {
-    "environment": "staging",
-    "twistSourceDir": "./dist"
-  }
-}
-```
+1. `--deploy-token` flag
+2. `PLOT_DEPLOY_TOKEN` environment variable
+3. `DEPLOY_TOKEN` in the twist directory's `.env` file
+4. The saved login token for the current API host
 
 ---
 
@@ -299,14 +317,14 @@ Edit the config file to set default options:
 
 Configure the CLI using environment variables:
 
-- `PLOT_API_TOKEN` - API authentication token
+- `PLOT_DEPLOY_TOKEN` - API authentication token
 - `PLOT_API_URL` - API endpoint (default: `https://api.plot.day`)
-- `PLOT_CONFIG_PATH` - Custom config file path
+- `PLOT_SITE_URL` - Site endpoint used by `plot login` (default: `https://plot.day`)
 
 **Example:**
 
 ```bash
-export PLOT_API_TOKEN=your-token
+export PLOT_DEPLOY_TOKEN=your-token
 plot deploy
 ```
 
@@ -318,7 +336,7 @@ plot deploy
 
 ```bash
 # 1. Create project
-plot create --name my-twist
+plot create --name my-twist --display-name "My twist"
 
 # 2. Navigate to directory
 cd my-twist
@@ -338,11 +356,11 @@ npm run deploy
 ```bash
 # 1. Make changes to src/index.ts
 
-# 2. Build
-npm run build
+# 2. Check for errors
+npm run lint
 
-# 3. Deploy update
-plot deploy --twist-id ag_1234567890
+# 3. Deploy update (twist ID is read from plotTwistId in package.json)
+plot deploy
 ```
 
 ### No-Code twist Deployment
@@ -366,7 +384,7 @@ plot deploy
 
 ```bash
 # Clear saved token
-rm ~/.plot/config.json
+rm ~/.config/plot/credentials/api.plot.day/token
 
 # Login again
 plot login
@@ -376,10 +394,10 @@ plot login
 
 ```bash
 # Check for TypeScript errors
-npm run build
-
-# Or use lint command
 plot lint
+
+# Or check that the bundle builds
+plot build
 ```
 
 ### Deployment Failures
@@ -388,8 +406,8 @@ plot lint
 # Try dry run first
 plot deploy --dry-run
 
-# Enable verbose logging
-plot deploy --verbose
+# After deploying, stream logs to debug runtime issues
+plot logs
 ```
 
 ---

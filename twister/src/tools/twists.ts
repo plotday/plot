@@ -61,10 +61,10 @@ export type TwistPermissions = Record<string, Record<string, string[]>>;
  *
  * @example
  * ```typescript
- * class TwistBuilderTwist extends Twist {
+ * class TwistBuilderTwist extends Twist<TwistBuilderTwist> {
  *   build(build: ToolBuilder) {
  *    return {
- *      twists: build.get(Twists)
+ *      twists: build(Twists)
  *    }
  *   }
  *
@@ -77,14 +77,15 @@ export type TwistPermissions = Record<string, Record<string, string[]>>;
  */
 export abstract class Twists extends ITool {
   /**
-   * Creates a new twist ID and grants access to people in the current focus.
+   * Creates a new twist package ID. Ownership of the ID is claimed lazily
+   * on first deploy — no upfront registration happens beyond generating it.
    *
    * @returns Promise resolving to the generated twist ID
    * @throws When twist creation fails
    *
    * @example
    * ```typescript
-   * const twistId = await twist.create();
+   * const twistId = await this.tools.twists.create();
    * console.log(`Your twist ID: ${twistId}`);
    * ```
    */
@@ -103,15 +104,15 @@ export abstract class Twists extends ITool {
    *
    * @example
    * ```typescript
-   * const source = await twist.generate(`
+   * const source = await this.tools.twists.generate(`
    * # Calendar Sync Twist
    *
-   * This twist syncs Google Calendar events to Plot activities.
+   * This twist syncs Google Calendar events to Plot threads.
    *
    * ## Features
    * - Authenticate with Google
    * - Sync calendar events
-   * - Create activities from events
+   * - Create threads from events
    * `);
    *
    * // source.dependencies: { "@plotday/twister": "workspace:^", ... }
@@ -143,7 +144,7 @@ export abstract class Twists extends ITool {
    * @example
    * ```typescript
    * // Deploy with a module
-   * const result = await twist.deploy({
+   * const result = await this.tools.twists.deploy({
    *   twistId: 'abc-123-...',
    *   module: 'export default class MyTwist extends Twist {...}',
    *   environment: 'personal',
@@ -153,8 +154,8 @@ export abstract class Twists extends ITool {
    * console.log(`Deployed version ${result.version}`);
    *
    * // Deploy with source
-   * const source = await twist.generate(spec);
-   * const result = await twist.deploy({
+   * const source = await this.tools.twists.generate(spec);
+   * const result = await this.tools.twists.deploy({
    *   twistId: 'abc-123-...',
    *   source,
    *   environment: 'personal',
@@ -162,7 +163,7 @@ export abstract class Twists extends ITool {
    * });
    *
    * // Validate with dryRun
-   * const result = await twist.deploy({
+   * const result = await this.tools.twists.deploy({
    *   twistId: 'abc-123-...',
    *   source,
    *   dryRun: true,
@@ -209,11 +210,11 @@ export abstract class Twists extends ITool {
    * @example
    * ```typescript
    * // Create twist and callback
-   * const twistId = await this.twist.create();
-   * const callback = await this.callback.create("onLogs");
+   * const twistId = await this.tools.twists.create();
+   * const callback = await this.callback(this.onLogs);
    *
    * // Subscribe to logs
-   * await this.twist.watchLogs(twistId, callback);
+   * await this.tools.twists.watchLogs(twistId, callback);
    *
    * // Implement handler
    * async onLogs(logs: Log[]) {

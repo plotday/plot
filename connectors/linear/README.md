@@ -1,52 +1,20 @@
-# Linear Tool for Plot
+# Linear Connector for Plot
 
 Sync your Linear teams and issues with Plot.
 
-## Features
+## What it does
 
-- OAuth authentication with Linear
-- Sync issues from Linear teams to Plot activities
-- Real-time updates via webhooks
-- Issue comments synced as activity notes
-- Automatic issue state mapping
+- Lists your Linear teams as channels
+- Syncs each team's issues as Plot threads, with descriptions and comments as notes
+- Maps each team's workflow states to Plot statuses
+- Two-way sync: status, title, and assignee changes in Plot update the Linear issue
+- Commenting in Plot posts back to Linear (including file attachments), and edits sync both ways
+- Create new Linear issues directly from Plot
+- Real-time updates via Linear webhooks
 
-## Usage
+## OAuth scopes
 
-```typescript
-import { Linear } from "@plotday/tool-linear";
-import { Twist, type ToolBuilder } from "@plotday/twister";
-
-export default class MyTwist extends Twist<MyTwist> {
-  build(build: ToolBuilder) {
-    return {
-      linear: build(Linear),
-    };
-  }
-
-  async activate() {
-    // Request Linear authorization
-    const authLink = await this.tools.linear.requestAuth(this.onAuthComplete);
-    // ... show authLink to user
-  }
-
-  async onAuthComplete(auth: { authToken: string }) {
-    // Get available teams
-    const projects = await this.tools.linear.getProjects(auth.authToken);
-
-    // Start syncing a team
-    await this.tools.linear.startSync(
-      auth.authToken,
-      projects[0].id,
-      this.onIssue
-    );
-  }
-
-  async onIssue(issue: NewActivityWithNotes) {
-    // Handle synced issue
-    await this.tools.plot.createActivity(issue);
-  }
-}
-```
+`read`, `write`, `admin`
 
 ## License
 

@@ -146,22 +146,26 @@ export type SearchOptions = {
  *
  * @example
  * ```typescript
- * class MyTwist extends Twist {
- *   private plot: Plot;
- *
- *   constructor(id: string, tools: ToolBuilder) {
- *     super();
- *     this.plot = tools.get(Plot);
+ * class MyTwist extends Twist<MyTwist> {
+ *   build(build: ToolBuilder) {
+ *     return {
+ *       plot: build(Plot, {
+ *         thread: { access: ThreadAccess.Create },
+ *       }),
+ *     };
  *   }
  *
  *   async activate() {
- *     // Create a welcome thread
- *     await this.plot.createThread({
+ *     // Create a welcome thread with an opening note
+ *     await this.tools.plot.createThread({
  *       title: "Welcome to Plot!",
- *       actions: [{
- *         title: "Get Started",
- *         type: ActionType.external,
- *         url: "https://plot.day/docs"
+ *       notes: [{
+ *         content: "Get started with Plot:",
+ *         actions: [{
+ *           type: ActionType.external,
+ *           title: "Get Started",
+ *           url: "https://plot.day/docs"
+ *         }]
  *       }]
  *     });
  *   }
@@ -330,8 +334,9 @@ export abstract class Plot extends ITool {
    * remain unchanged. This enables partial updates without needing to fetch and resend
    * the entire thread object.
    *
-   * For tags, provide a Record<number, boolean> where true adds a tag and false removes it.
-   * Tags not included in the update remain unchanged.
+   * For the twist's own tags, use `twistTags`: a record mapping tag ID to a
+   * boolean, where true adds the tag and false removes it. Tags not included
+   * in the update remain unchanged.
    *
    * Set `focus` to move the thread to a different focus.
    *
@@ -343,18 +348,18 @@ export abstract class Plot extends ITool {
    *
    * @example
    * ```typescript
-   * // Mark a task as complete
-   * await this.plot.updateThread({
-   *   id: "task-123",
-   *   done: new Date()
+   * // Archive a thread
+   * await this.tools.plot.updateThread({
+   *   id: threadId,
+   *   archived: true
    * });
    *
-   * // Add and remove tags
-   * await this.plot.updateThread({
-   *   id: "thread-789",
-   *   tags: {
-   *     1: true,  // Add tag with ID 1
-   *     2: false  // Remove tag with ID 2
+   * // Add and remove the twist's tags
+   * await this.tools.plot.updateThread({
+   *   id: threadId,
+   *   twistTags: {
+   *     [Tag.Todo]: true,  // Add the to-do tag
+   *     [Tag.Done]: false  // Remove the done tag
    *   }
    * });
    * ```
@@ -388,16 +393,16 @@ export abstract class Plot extends ITool {
    * @example
    * ```typescript
    * // Create a note with content
-   * await this.plot.createNote({
+   * await this.tools.plot.createNote({
    *   thread: { id: "thread-123" },
-   *   note: "Discussion notes from the meeting...",
+   *   content: "Discussion notes from the meeting...",
    *   contentType: "markdown"
    * });
    *
    * // Create a note with actions
-   * await this.plot.createNote({
+   * await this.tools.plot.createNote({
    *   thread: { id: "thread-456" },
-   *   note: "Meeting recording available",
+   *   content: "Meeting recording available",
    *   actions: [{
    *     type: ActionType.external,
    *     title: "View Recording",
@@ -422,14 +427,14 @@ export abstract class Plot extends ITool {
    * @example
    * ```typescript
    * // Create multiple notes in one batch
-   * await this.plot.createNotes([
+   * await this.tools.plot.createNotes([
    *   {
    *     thread: { id: "thread-123" },
-   *     note: "First message in thread"
+   *     content: "First message in thread"
    *   },
    *   {
    *     thread: { id: "thread-123" },
-   *     note: "Second message in thread"
+   *     content: "Second message in thread"
    *   }
    * ]);
    * ```
@@ -454,16 +459,16 @@ export abstract class Plot extends ITool {
    * @example
    * ```typescript
    * // Update note content
-   * await this.plot.updateNote({
+   * await this.tools.plot.updateNote({
    *   id: "note-123",
-   *   note: "Updated content with more details"
+   *   content: "Updated content with more details"
    * });
    *
    * // Add tags to a note
-   * await this.plot.updateNote({
+   * await this.tools.plot.updateNote({
    *   id: "note-456",
    *   twistTags: {
-   *     [Tag.Important]: true
+   *     [Tag.Todo]: true
    *   }
    * });
    * ```
@@ -573,10 +578,10 @@ export abstract class Plot extends ITool {
    * @example
    * ```typescript
    * // Schedule a timed event
-   * const threadId = await this.plot.createThread({
+   * const threadId = await this.tools.plot.createThread({
    *   title: "Team standup"
    * });
-   * await this.plot.createSchedule({
+   * await this.tools.plot.createSchedule({
    *   threadId,
    *   start: new Date("2025-01-15T10:00:00Z"),
    *   end: new Date("2025-01-15T10:30:00Z"),

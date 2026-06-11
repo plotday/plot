@@ -19,7 +19,7 @@ Plot Twists are smart automations that connect, organize, and prioritize your wo
 
   - Twists and their lifecycle
   - Twist tools and dependencies
-  - Priorities and Activities
+  - Focuses, threads, and notes
   - Best practices and patterns
 
 - **[Sync Strategies](SYNC_STRATEGIES.md)** - Data synchronization patterns
@@ -27,7 +27,7 @@ Plot Twists are smart automations that connect, organize, and prioritize your wo
   - Upsert via Source and Key (recommended)
   - Create once (fire and forget)
   - Generate and store IDs (advanced)
-  - Tag management
+  - Tags and reactions
   - Choosing the right strategy
 
 - **[Built-in Tools Guide](TOOLS_GUIDE.md)** - Complete reference for all built-in twist tools
@@ -67,9 +67,8 @@ Plot Twists are smart automations that connect, organize, and prioritize your wo
 Explore the complete API documentation using the navigation on the left:
 
 - **Classes** - Twist, Connector, Tool, and all built-in tool classes
-- **Interfaces** - Activity, Priority, Contact, and data structures
-- **Enums** - ActivityType, ActorType, and other enumerations
-- **Type Aliases** - Helper types and utilities
+- **Type Aliases** - Thread, Note, Focus, Contact, and other data structures
+- **Enums** - ActorType, ActionType, and other enumerations
 
 ## Quick Links
 
@@ -85,25 +84,26 @@ Check out these examples to get started:
 ### Simple Note Twist
 
 ```typescript
-import {
-  ActivityType,
-  type Priority,
-  type ToolBuilder,
-  Twist,
-} from "@plotday/twister";
-import { Plot } from "@plotday/twister/tools/plot";
+import { type ToolBuilder, Twist } from "@plotday/twister";
+import { Plot, ThreadAccess } from "@plotday/twister/tools/plot";
 
 export default class WelcomeTwist extends Twist<WelcomeTwist> {
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      plot: build(Plot, {
+        thread: { access: ThreadAccess.Create },
+      }),
     };
   }
 
-  async activate(priority: Pick<Priority, "id">) {
-    await this.tools.plot.createActivity({
-      type: ActivityType.Note,
+  async activate() {
+    await this.tools.plot.createThread({
       title: "Welcome to Plot! 👋",
+      notes: [
+        {
+          content: "This twist will help you get started with Plot.",
+        },
+      ],
     });
   }
 }
@@ -112,28 +112,34 @@ export default class WelcomeTwist extends Twist<WelcomeTwist> {
 ### Calendar Sync Twist
 
 ```typescript
-import { type Activity, type ToolBuilder, Twist } from "@plotday/twister";
-import { Network } from "@plotday/twister/tools/network";
-import { Plot } from "@plotday/twister/tools/plot";
+import { type ToolBuilder, Twist } from "@plotday/twister";
+import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { Plot, ThreadAccess } from "@plotday/twister/tools/plot";
 
 export default class CalendarTwist extends Twist<CalendarTwist> {
   build(build: ToolBuilder) {
     return {
-      plot: build(Plot),
+      plot: build(Plot, {
+        thread: { access: ThreadAccess.Create },
+      }),
       network: build(Network, {
         urls: ["https://www.googleapis.com/calendar/*"],
       }),
     };
   }
 
-  async activate(priority: Pick<Priority, "id">) {
-    // Set up webhook for calendar updates
+  async activate() {
+    // Set up a webhook for calendar updates
     const webhookUrl = await this.tools.network.createWebhook(
-      "onCalendarUpdate",
-      { priorityId: priority.id }
+      {},
+      this.onCalendarUpdate
     );
 
     await this.set("webhook_url", webhookUrl);
+  }
+
+  async onCalendarUpdate(request: WebhookRequest) {
+    // Process the calendar change notification
   }
 }
 ```

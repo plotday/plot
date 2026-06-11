@@ -76,7 +76,7 @@ export type SmtpSendResult = {
  * @example
  * ```typescript
  * class AppleMailConnector extends Connector<AppleMailConnector> {
- *   build(build: ConnectorBuilder) {
+ *   build(build: ToolBuilder) {
  *     return {
  *       options: build(Options, {
  *         email: { type: "text", label: "Apple ID Email", default: "" },

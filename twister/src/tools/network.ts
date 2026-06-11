@@ -233,9 +233,9 @@ export abstract class Network extends ITool {
    * Deletes an existing webhook endpoint.
    *
    * Removes the webhook endpoint and stops processing requests.
-   * Works with all webhook types (standard, Slack, and Gmail).
+   * Works with all webhook types (standard, Slack, and Pub/Sub).
    *
-   * **For Gmail webhooks:** Also deletes the associated Google Pub/Sub topic and subscription.
+   * **For Pub/Sub webhooks (Gmail and Workspace Events):** Also deletes the associated Google Pub/Sub topic and subscription.
    *
    * **For Slack webhooks:** Removes the callback registration for the specific team.
    *
@@ -243,9 +243,9 @@ export abstract class Network extends ITool {
    * to the deleted webhook will return 404.
    *
    * @param url - The webhook identifier returned from `createWebhook()`.
-   *              This can be a URL (standard webhooks), a Pub/Sub topic name (Gmail),
-   *              or an opaque identifier (Slack). Always pass the exact value returned
-   *              from `createWebhook()`.
+   *              This can be a URL (standard webhooks), a Pub/Sub topic name
+   *              (Gmail/Workspace Events), or an opaque identifier (Slack).
+   *              Always pass the exact value returned from `createWebhook()`.
    * @returns Promise that resolves when the webhook is deleted
    */
   abstract deleteWebhook(url: string): Promise<void>;

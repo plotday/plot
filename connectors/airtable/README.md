@@ -4,8 +4,8 @@ Sync Airtable task lists into Plot.
 
 ## What it does
 
-- Auto-detects task-like tables across your enabled bases (collaborator + due-date + status fields)
-- Syncs records assigned to you as Plot threads with status and due date
+- Auto-detects task-like tables across your enabled bases (tables with a collaborator assignee field or a done-style status field, plus optional due-date and notes fields)
+- Syncs records from those tables as Plot threads with assignee, status, and due date
 - Marking a task done in Plot flips the status field / checkbox in Airtable
 
 Comments are not synced. Airtable's standard webhooks don't notify on comment changes (that's an Enterprise-only Change Events feature), so a reliable two-way comment flow isn't possible on standard plans.
