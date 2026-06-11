@@ -16,7 +16,7 @@
     "@plotday/classifier": "workspace:^",
     "@plotday/db": "workspace:^",
     "ai": "^6.0.185",
-    "kysely": "^0.28.0",
+    "kysely": "^0.28.17",
     "pg": "^8.18.0",
     "yaml": "^2.6.1",
     "zod": "^4.1.8"

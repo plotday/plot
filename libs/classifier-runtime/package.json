@@ -14,7 +14,7 @@
     "@ai-sdk/google": "^3.0.75",
     "@plotday/classifier": "workspace:^",
     "ai": "^6.0.185",
-    "kysely": "^0.28.0"
+    "kysely": "^0.28.17"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

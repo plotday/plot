@@ -43,7 +43,7 @@
     "defuddle": "0.9.0",
     "hono": "^4.12.21",
     "hono-rate-limiter": "^0.5.3",
-    "kysely": "^0.28.11",
+    "kysely": "^0.28.17",
     "linkedom": "0.18.5",
     "linkify-it": "^5.0.0",
     "p-limit": "^7.2.0",

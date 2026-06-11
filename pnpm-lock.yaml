@@ -206,8 +206,8 @@ importers:
   libs/classifier:
     dependencies:
       kysely:
-        specifier: ^0.28.0
-        version: 0.28.11
+        specifier: ^0.28.17
+        version: 0.28.17
       zod:
         specifier: ^4.1.8
         version: 4.3.6
@@ -234,8 +234,8 @@ importers:
         specifier: ^6.0.185
         version: 6.0.185(zod@4.3.6)
       kysely:
-        specifier: ^0.28.0
-        version: 0.28.11
+        specifier: ^0.28.17
+        version: 0.28.17
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.0.0
@@ -355,8 +355,8 @@ importers:
         specifier: ^6.0.185
         version: 6.0.185(zod@4.3.6)
       kysely:
-        specifier: ^0.28.0
-        version: 0.28.11
+        specifier: ^0.28.17
+        version: 0.28.17
       pg:
         specifier: ^8.18.0
         version: 8.18.0
@@ -824,8 +824,8 @@ importers:
         specifier: ^0.5.3
         version: 0.5.3(hono@4.12.21)
       kysely:
-        specifier: ^0.28.11
-        version: 0.28.11
+        specifier: ^0.28.17
+        version: 0.28.17
       linkedom:
         specifier: 0.18.5
         version: 0.18.5
@@ -883,7 +883,7 @@ importers:
         version: 8.16.0
       kysely-codegen:
         specifier: ^0.19.0
-        version: 0.19.0(kysely@0.28.11)(pg@8.18.0)(typescript@5.9.3)
+        version: 0.19.0(kysely@0.28.17)(pg@8.18.0)(typescript@5.9.3)
       postgres-interval:
         specifier: ^4.0.2
         version: 4.0.2
@@ -922,8 +922,8 @@ importers:
         specifier: workspace:^
         version: link:../../libs/worker-util
       kysely:
-        specifier: ^0.28.0
-        version: 0.28.11
+        specifier: ^0.28.17
+        version: 0.28.17
       pg:
         specifier: ^8.18.0
         version: 8.18.0
@@ -7371,8 +7371,8 @@ packages:
       tedious:
         optional: true
 
-  kysely@0.28.11:
-    resolution: {integrity: sha512-zpGIFg0HuoC893rIjYX1BETkVWdDnzTzF5e0kWXJFg5lE0k1/LfNWBejrcnOFu8Q2Rfq/hTDTU7XLUM8QOrpzg==}
+  kysely@0.28.17:
+    resolution: {integrity: sha512-nbD8lB9EB3wNdMhOCdx5Li8DxnLbvKByylRLcJ1h+4SkrowVeECAyZlyiKMThF7xFdRz0jSQ2MoJr+wXux2y0Q==}
     engines: {node: '>=20.0.0'}
 
   language-subtag-registry@0.3.22:
@@ -17228,14 +17228,14 @@ snapshots:
 
   ky@1.14.3: {}
 
-  kysely-codegen@0.19.0(kysely@0.28.11)(pg@8.18.0)(typescript@5.9.3):
+  kysely-codegen@0.19.0(kysely@0.28.17)(pg@8.18.0)(typescript@5.9.3):
     dependencies:
       chalk: 4.1.2
       cosmiconfig: 9.0.0(typescript@5.9.3)
       dotenv: 17.3.1
       dotenv-expand: 12.0.3
       git-diff: 2.0.6
-      kysely: 0.28.11
+      kysely: 0.28.17
       micromatch: 4.0.8
       minimist: 1.2.8
       pluralize: 8.0.0
@@ -17245,7 +17245,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  kysely@0.28.11: {}
+  kysely@0.28.17: {}
 
   language-subtag-registry@0.3.22: {}
 
