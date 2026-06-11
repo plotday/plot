@@ -229,7 +229,16 @@ Previews are never logged: `/sync/priority-match` and
    auto_file, and twist thread-helpers. This is where stage/scores are
    currently discarded. The catch path (transient failure → root +
    pending) is **not** logged — no decision was made; the queue retry
-   logs when it settles. The "no match" path IS logged exactly as the
+   logs when it settles.
+   **Pre-insert callers** (twist `prepareThreadForDb`, which classifies
+   before the thread row exists) cannot be logged at the choke point —
+   there is no thread_id yet. For those, `ClassifyResult` carries the
+   decision entry back as `pendingLog`, threaded through
+   `PreparedThread.pendingDecision`, and `createThread`/`createThreads`
+   write it once the row exists. Because `upsert_thread` can merge into
+   an existing thread (source match), the write is guarded by a
+   created-at freshness check so merged threads don't get a spurious
+   decision row. The "no match" path IS logged exactly as the
    classifier returned it: stage `none`, `priority_id` NULL. (The root
    filing the caller then applies is a fallback, recoverable from the
    stage — do not substitute it into the logged row.)
