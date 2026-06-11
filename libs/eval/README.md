@@ -7,10 +7,11 @@ variants, TS-side scorers, LLM-based) against a YAML corpus of labeled cases
 and reports accuracy against hand-labeled gold targets plus regression diffs
 against a baseline.
 
-The classifier under test is the PostgreSQL function
-`public.classify_thread_for_user_explain` defined in
-`libs/db/schema/60-functions/classify_thread_for_user.sql`. The companion
-wrapper `classify_thread_for_user` is what all production call sites use.
+The default classifier under test is `ts:hybrid-llm:default` — the same
+TS hybrid-LLM cascade production runs (`libs/classifier`, dispatched via
+`workers/api` and `workers/classify`). The historical SQL classifier
+`public.classify_thread_for_user` (still used inline by a few DB trigger
+paths) remains available as the `sql:current` variant for comparison.
 
 ## Quick start
 
