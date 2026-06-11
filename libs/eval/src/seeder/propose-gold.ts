@@ -124,7 +124,9 @@ export function buildProposePrompt(
   );
   for (const t of exemplars) {
     lines.push(
-      `- "${t.title}" → ${titleById.get(t.filedToPriority) ?? t.filedToPriority}`
+      // Include the id so the model can answer without cross-referencing the
+      // tree listing (the response must be a priority id, not a title).
+      `- "${t.title}" → ${titleById.get(t.filedToPriority) ?? t.filedToPriority} (id: ${t.filedToPriority})`
     );
   }
   lines.push("");
@@ -153,10 +155,13 @@ export function buildProposePrompt(
 
 /** Exemplars come from the `full` training set, falling back to the first. */
 export function pickTrainingSet(corpus: Corpus): CorpusTrainingSet {
-  return (
-    corpus.trainingSets.find((ts) => ts.name === "full") ??
-    corpus.trainingSets[0]!
-  );
+  const ts =
+    corpus.trainingSets.find((s) => s.name === "full") ??
+    corpus.trainingSets[0];
+  if (!ts) {
+    throw new Error(`corpus "${corpus.name}" has no training sets`);
+  }
+  return ts;
 }
 
 /**
