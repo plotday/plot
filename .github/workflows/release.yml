@@ -89,23 +89,27 @@ jobs:
 
       - name: Stamp changelog and bump main to next build number
         run: |
-          git checkout main
-
           RELEASE_VERSION="${{ steps.version.outputs.release_version }}"
           STAMP_DATE="$(date -u +%Y-%m-%d)"
-          node scripts/stamp-updates.mjs "$RELEASE_VERSION" "$STAMP_DATE"
-
-          cd apps/plot
           NEXT_BUILD_NUMBER=$((${{ steps.version.outputs.build_number }} + 1))
           NEXT_VERSION="${{ steps.version.outputs.version_name }}+${NEXT_BUILD_NUMBER}"
-          sed -i "s/version: .*/version: ${NEXT_VERSION}/" pubspec.yaml
-          cd ..
+
+          # We're still on the freshly-created release branch, which sits at the
+          # release commit (== main's tip). Make the stamp + bump commit here and
+          # fast-forward it onto main with `git push origin HEAD:main`, instead of
+          # `git checkout main`. The branch switch mutated the worktree and could
+          # leave apps/plot/pubspec.yaml unstaged ("pathspec did not match") by
+          # the time `git add` ran; pushing HEAD lands the identical commit on
+          # main (parent = release commit) without touching the worktree.
+          node scripts/stamp-updates.mjs "$RELEASE_VERSION" "$STAMP_DATE"
+          # Anchor on ^version: so we don't also rewrite the msix_version: line.
+          sed -i "s/^version: .*/version: ${NEXT_VERSION}/" apps/plot/pubspec.yaml
 
           git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
           git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
           git add apps/plot/pubspec.yaml docs/updates.md
           git commit -m "Release ${RELEASE_VERSION}: stamp changelog + bump to ${NEXT_VERSION} [skip ci]"
-          git push
+          git push origin HEAD:main
 
           echo "Stamped changelog for $RELEASE_VERSION; bumped main to: $NEXT_VERSION"
 
