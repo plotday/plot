@@ -34,14 +34,25 @@ export function uniqueSlugifier(
 }
 
 /**
- * For contacts whose email matches the anonymized pattern
- * `c-XXXXXXXX@example.test`, return the local-part as the slug. Falls back
- * to a generic short-hash slug derived from the id.
+ * Derives a contact slug from an ANONYMIZED email's local part. Works for
+ * both the v2 anonymizer's realistic shapes (`jordan.mercer@lumenforge.com`
+ * -> `jordan-mercer`, `c-1a2b3c4d5e6f@gmail.com` -> `c-1a2b3c4d5e6f`) and the
+ * legacy v1 shape (`c-XXXX@example.test`). Falls back to a generic
+ * short-hash slug derived from the id when the email is missing or yields
+ * nothing slug-shaped.
+ *
+ * Only ever call this with an anonymized email — a raw email's local part
+ * would leak straight into the slug.
  */
 export function contactSlugFromEmail(email: string | null, id: string): string {
   if (email) {
-    const m = email.match(/^([a-z0-9-]+)@example\.test$/);
-    if (m) return m[1]!;
+    const at = email.lastIndexOf("@");
+    const local = at > 0 ? email.slice(0, at) : email;
+    const slug = local
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (slug) return slug;
   }
   // Last resort: derive from id.
   return `c-${id.replace(/-/g, "").slice(0, 8)}`;
