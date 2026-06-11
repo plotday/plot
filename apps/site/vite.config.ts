@@ -4,7 +4,7 @@ import autoprefixer from "autoprefixer";
 import postcssPresetMantine from "postcss-preset-mantine";
 import postcssSimpleVars from "postcss-simple-vars";
 import tailwindcss from "tailwindcss";
-import { defineConfig } from "vite";
+import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig(() => ({
@@ -39,6 +39,18 @@ export default defineConfig(() => ({
   ssr: {
     target: "webworker",
     noExternal: true,
+    optimizeDeps: {
+      // Pre-bundle the server-only Clerk subpaths at startup. Without this,
+      // `@clerk/react-router/api.server` (imported only from
+      // internal-auth.server.ts, reachable only via /internal) is discovered
+      // lazily on the first /internal request, triggering a mid-request SSR
+      // re-optimization and the "new version of the pre-bundle" error.
+      include: [
+        "@clerk/react-router",
+        "@clerk/react-router/api.server",
+        "@clerk/react-router/ssr.server",
+      ],
+    },
     resolve: {
       conditions: ["workerd", "worker", "browser"],
       externalConditions: ["workerd", "worker"],
@@ -49,4 +61,4 @@ export default defineConfig(() => ({
     reactRouter(),
     tsconfigPaths({ projects: ["tsconfig.json"] }),
   ],
-}));
+}) satisfies UserConfig);
