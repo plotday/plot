@@ -3,6 +3,7 @@
   "plotTwistId": "174bbfb4-97f5-49a7-abde-cb237675dd51",
   "displayName": "Apple Calendar",
   "description": "See your iCloud schedule, respond to invites, and add notes and to-dos to events.",
+  "category": "calendar",
   "logoUrl": "https://plot.day/assets/logo-apple-calendar.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

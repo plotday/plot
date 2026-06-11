@@ -3,6 +3,7 @@
   "plotTwistId": "d8cbc41f-71f5-4cb6-a0bb-3ade462c4084",
   "displayName": "Slack",
   "description": "Follow Slack channels and DMs, reply in threads, and start new conversations.",
+  "category": "messaging",
   "logoUrl": "https://api.iconify.design/logos/slack-icon.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

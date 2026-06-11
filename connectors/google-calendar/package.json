@@ -3,6 +3,7 @@
   "plotTwistId": "2ed4fcf8-6524-410f-b318-f9316e71c8b0",
   "displayName": "Google Calendar",
   "description": "See your schedule, respond to invites, and add notes and to-dos to events.",
+  "category": "calendar",
   "logoUrl": "https://api.iconify.design/logos/google-calendar.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

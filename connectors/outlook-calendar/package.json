@@ -3,6 +3,7 @@
   "plotTwistId": "cf518010-30c1-4594-b3df-295a19d65459",
   "displayName": "Outlook Calendar",
   "description": "See your Outlook schedule, respond to invites, and add notes and to-dos to events.",
+  "category": "calendar",
   "logoUrl": "https://api.iconify.design/simple-icons/microsoftoutlook.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
