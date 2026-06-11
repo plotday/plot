@@ -438,7 +438,7 @@ function parseClassificationOverride(
   return Object.keys(result).length > 0 ? result : null;
 }
 
-async function applyThreadState(
+export async function applyThreadState(
   env: Bindings,
   db: Kysely<DB>,
   threadId: string,
@@ -469,6 +469,15 @@ async function applyThreadState(
         p_set_active: true,
         p_set_urgent: true,
         p_set_importance: true,
+        // Mark the recipient unread. notes.ts treats analyzeNote()'s success
+        // as "unread handled" and skips the fallback markThreadUnreadForOthers,
+        // so the AI path MUST write the unread signal itself. p_read_at is left
+        // unset (→ NULL = unread); p_note_created_at above makes the DB-side
+        // race guard preserve read_at for a recipient who already read past
+        // this note. Without this, a reply on a previously-read thread never
+        // re-surfaces in Updates and never pushes (read_at stays non-NULL on
+        // the existing thread_state row).
+        p_set_read_at: true,
       });
     } catch (error) {
       console.error(
