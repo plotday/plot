@@ -329,6 +329,9 @@ export async function scoringStage(
   // Always evaluated when a ranking exists: trustedSendersOnly gates
   // regardless of candidate facets, and thread_facets_gated returns
   // immediately for priorities with null facet_filters.
+  // Intentional divergence from SQL: the SQL scorer gates only its top-3
+  // scored rows (falling through when all are gated); we gate the whole
+  // ranking so a valid lower-ranked priority can still win.
   let facetGated: string[] = [];
   if (merged.length > 0) {
     const gateRes = await ctx.rawQuery(

@@ -203,4 +203,28 @@ describe("scoringStage facet gate wiring", () => {
     expect(out.matched).toBe(false);
     expect(queries.some((q) => q.includes("thread_facets_gated"))).toBe(false);
   });
+
+  it("passes candidate facets and authorContactId to the gate query", async () => {
+    let gateValues: unknown[] = [];
+    const ctx = fakeCtx([
+      twoNeighbors,
+      bothOrgs,
+      {
+        match: "thread_facets_gated",
+        rows: (v) => {
+          gateValues = v;
+          return (v[3] as string[]).map((pid) => ({ pid, gated: false }));
+        },
+      },
+    ]);
+    const facets = { format: "promotion", automation: "automated" };
+    await scoringStage(
+      ctx,
+      { ...CANDIDATE, connectionId: CONN_A, facets, authorContactId: "contact-7" },
+      PARAMS
+    );
+    expect(gateValues[0]).toBe(USER);
+    expect(gateValues[1]).toBe(JSON.stringify(facets));
+    expect(gateValues[2]).toBe("contact-7");
+  });
 });
