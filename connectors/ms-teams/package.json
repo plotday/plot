@@ -1,8 +1,10 @@
 {
   "name": "@plotday/connector-ms-teams",
+  "plotTwistId": "7f17dd78-6ab0-446a-8934-12ca3f2ab5eb",
   "displayName": "Microsoft Teams",
   "description": "Keep up with Teams channels and chats, reply, and start new conversations.",
   "category": "messaging",
+  "logoUrl": "https://api.iconify.design/logos/microsoft-teams.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
