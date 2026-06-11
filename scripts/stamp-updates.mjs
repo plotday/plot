@@ -2,15 +2,46 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 /**
- * Insert a `## <version> — <date>` heading above the unreleased bullets at the
- * top of an updates.md changelog. The unreleased block is everything above the
- * first `## ` version heading, or (if none) above the first `---` separator, or
- * (if neither) the whole file. Returns `{ stamped, content }`; `stamped` is
- * false (and content unchanged) when the unreleased block has no `- ` bullet.
+ * Stamp an updates.md changelog for a release.
+ *
+ * Current convention: the in-progress changelog lives under a `## Next release`
+ * heading, with its bullets grouped into `### <feature>` sections (and a final
+ * `### Fixes`). Stamping renames that heading in place to `## <version> —
+ * <date>`, preserving every grouped section beneath it. The next changelog
+ * entry recreates a fresh `## Next release` section at the top (see AGENTS.md),
+ * so we don't pre-insert an empty one here.
+ *
+ * Legacy fallback (no `## Next release` heading): insert a `## <version> —
+ * <date>` heading above the unreleased bullets — everything above the first
+ * `## ` version heading, or (if none) the first `---` separator, or the whole
+ * file. Retained so older changelog shapes still stamp correctly.
+ *
+ * Returns `{ stamped, content }`; `stamped` is false (and content unchanged)
+ * when the current-release block has no `- ` bullet to ship.
  */
 export function stampUpdates(content, version, date) {
   const lines = content.split("\n");
+  const heading = `## ${version} — ${date}`;
 
+  // Preferred path: a literal `## Next release` heading marks the cycle.
+  const nextIdx = lines.findIndex((l) => l.trim() === "## Next release");
+  if (nextIdx !== -1) {
+    let end = lines.length;
+    for (let i = nextIdx + 1; i < lines.length; i++) {
+      if (lines[i].startsWith("## ")) {
+        end = i;
+        break;
+      }
+    }
+    const section = lines.slice(nextIdx + 1, end).join("\n");
+    if (!/^- /m.test(section)) {
+      return { stamped: false, content };
+    }
+    lines[nextIdx] = heading;
+    return { stamped: true, content: lines.join("\n") };
+  }
+
+  // Legacy fallback.
   let boundary = lines.length;
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].startsWith("## ")) {
@@ -29,7 +60,6 @@ export function stampUpdates(content, version, date) {
     return { stamped: false, content };
   }
 
-  const heading = `## ${version} — ${date}`;
   let out = `${heading}\n\n${unreleased}`;
   if (rest.trim().length > 0) {
     out += `\n\n${rest}`;
