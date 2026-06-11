@@ -1,0 +1,82 @@
+{
+  "001-019e088a": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "channel_default"
+  },
+  "002-019df366": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "topic_shortcircuit"
+  },
+  "003-019dbffe": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "channel_default"
+  },
+  "004-019dbffe": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "channel_default"
+  },
+  "005-019dbff2": {
+    "predicted": "019c7285-073d-7937-8376-467a90ea24e9",
+    "stage": "priority_title_override"
+  },
+  "006-019dbfe6": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "channel_default"
+  },
+  "007-019e3842": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "topic_shortcircuit"
+  },
+  "008-019e2d41": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "scoring"
+  },
+  "009-019e2d3c": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "topic_shortcircuit"
+  },
+  "010-019e2d3c": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "topic_shortcircuit"
+  },
+  "011-019e2d3c": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "topic_shortcircuit"
+  },
+  "013-019e3392": {
+    "predicted": "019d8cc7-caac-70ca-9d07-d8119383a0cb",
+    "stage": "priority_prefix"
+  },
+  "014-019e2dd5": {
+    "predicted": "019d8cc7-caac-70ca-9d07-d8119383a0cb",
+    "stage": "priority_prefix"
+  },
+  "016-019de191": {
+    "predicted": "019bd6cd-a592-7428-99fd-10501ea6b4dc",
+    "stage": "priority_prefix"
+  },
+  "019-019cb9a4": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "scoring"
+  },
+  "021-019cc015": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "scoring"
+  },
+  "024-019dff91": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "scoring"
+  },
+  "025-019dff8e": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "scoring"
+  },
+  "026-019cd511": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "scoring"
+  },
+  "028-019cb99c": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "scoring"
+  }
+}

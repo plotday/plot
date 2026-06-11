@@ -1,0 +1,322 @@
+{
+  "001-019e088a": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "llm_channel_default"
+  },
+  "002-019df366": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "llm_topic_ambiguity"
+  },
+  "003-019dbffe": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "llm_channel_default"
+  },
+  "004-019dbffe": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "llm_channel_default"
+  },
+  "005-019dbff2": {
+    "predicted": "019c7285-073d-7937-8376-467a90ea24e9",
+    "stage": "priority_title_override"
+  },
+  "006-019dbfe6": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_channel_default"
+  },
+  "007-019e3842": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "008-019e2d41": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "llm_tiebreaker"
+  },
+  "009-019e2d3c": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "010-019e2d3c": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "011-019e2d3c": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "013-019e3392": {
+    "predicted": "019d8cc7-caac-70ca-9d07-d8119383a0cb",
+    "stage": "priority_prefix"
+  },
+  "014-019e2dd5": {
+    "predicted": "019d8cc7-caac-70ca-9d07-d8119383a0cb",
+    "stage": "priority_prefix"
+  },
+  "016-019de191": {
+    "predicted": "019bd6cd-a592-7428-99fd-10501ea6b4dc",
+    "stage": "priority_prefix"
+  },
+  "019-019cb9a4": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_tiebreaker"
+  },
+  "021-019cc015": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "024-019dff91": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "025-019dff8e": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "026-019cd511": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "scoring"
+  },
+  "028-019cb99c": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_tiebreaker"
+  },
+  "029-019e3868": {
+    "predicted": "019d8cc7-caac-70ca-9d07-d8119383a0cb",
+    "stage": "llm_topic_ambiguity"
+  },
+  "030-019e2c3d": {
+    "predicted": "019c1bf7-a779-7741-9e15-a53ecd488aee",
+    "stage": "llm_tiebreaker"
+  },
+  "031-019e0797": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_tiebreaker"
+  },
+  "032-019dac0c": {
+    "predicted": "019cc015-8e4e-7076-8b35-257e775a7eac",
+    "stage": "llm_topic_ambiguity"
+  },
+  "033-019db0d8": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_tiebreaker"
+  },
+  "034-019cba8e": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_tiebreaker"
+  },
+  "035-019db0c5": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "036-019cb8fe": {
+    "predicted": "019e3c88-63ad-73f8-b400-6d21fb449a3f",
+    "stage": "llm_tiebreaker"
+  },
+  "037-019d990a": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "038-019e2d3a": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "039-019e2c66": {
+    "predicted": "019e3c7c-0f48-7df4-9c46-2467abd834bc",
+    "stage": "llm_tiebreaker"
+  },
+  "040-019d250d": {
+    "predicted": "019e03e8-6de5-71ab-9d38-75b7dec26da7",
+    "stage": "llm_tiebreaker"
+  },
+  "041-019cb9a3": {
+    "predicted": "019c1bf7-a779-7741-9e15-a53ecd488aee",
+    "stage": "llm_tiebreaker"
+  },
+  "042-019c6eca": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "043-019cbb66": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_topic_ambiguity"
+  },
+  "044-019cb9a3": {
+    "predicted": "019c1bf7-a779-7741-9e15-a53ecd488aee",
+    "stage": "llm_tiebreaker"
+  },
+  "045-019df0cc": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "llm_topic_ambiguity"
+  },
+  "046-019cbb5b": {
+    "predicted": "019c1bf7-a779-7741-9e15-a53ecd488aee",
+    "stage": "llm_tiebreaker"
+  },
+  "047-019dadaf": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_topic_ambiguity"
+  },
+  "048-019ddacc": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "049-019dac1c": {
+    "predicted": "019cc015-8e4e-7076-8b35-257e775a7eac",
+    "stage": "llm_topic_ambiguity"
+  },
+  "050-019e3b55": {
+    "predicted": "019dbcc7-d4de-703f-8123-f1d5523da3ae",
+    "stage": "llm_tiebreaker"
+  },
+  "051-019e35fd": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_tiebreaker"
+  },
+  "053-019e2c5d": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "054-019e2c5c": {
+    "predicted": "019e3c75-3048-7b6c-96af-2379aa26d8eb",
+    "stage": "llm_topic_ambiguity"
+  },
+  "055-019e2c5c": {
+    "predicted": "019e3c6b-4d8a-7017-84aa-f81de8837d11",
+    "stage": "llm_topic_ambiguity"
+  },
+  "056-019e2c5c": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "057-019e2d37": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "llm_topic_ambiguity"
+  },
+  "058-019e2d2c": {
+    "predicted": "019e3c75-7dda-7ee2-855e-91006407f9d4",
+    "stage": "llm_topic_ambiguity"
+  },
+  "059-019ddacd": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_topic_ambiguity"
+  },
+  "060-019ddfb7": {
+    "predicted": "019c1bf7-a779-7741-9e15-a53ecd488aee",
+    "stage": "llm_tiebreaker"
+  },
+  "061-019db068": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "062-019dac10": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "llm_topic_ambiguity"
+  },
+  "063-019dab37": {
+    "predicted": "019d8cc7-caac-70ca-9d07-d8119383a0cb",
+    "stage": "llm_tiebreaker"
+  },
+  "064-019da043": {
+    "predicted": "019bd757-1784-7b62-a1e3-9f67fa927545",
+    "stage": "priority_title_override"
+  },
+  "065-019d654e": {
+    "predicted": "019c1bf7-a779-7741-9e15-a53ecd488aee",
+    "stage": "llm_tiebreaker"
+  },
+  "066-019d46d5": {
+    "predicted": "019cb9b4-6cfe-7efd-ba4a-c7d274087747",
+    "stage": "llm_topic_ambiguity"
+  },
+  "067-019cd33e": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "068-019cc122": {
+    "predicted": "019c1bf7-a779-7741-9e15-a53ecd488aee",
+    "stage": "llm_tiebreaker"
+  },
+  "069-019e0fa3": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_topic_ambiguity"
+  },
+  "070-019dd544": {
+    "predicted": "019c2469-a944-7804-b812-c9f5e02c1eaa",
+    "stage": "llm_tiebreaker"
+  },
+  "071-019e2c95": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "llm_topic_ambiguity"
+  },
+  "072-019e2c59": {
+    "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+    "stage": "llm_tiebreaker"
+  },
+  "073-019e2c5b": {
+    "predicted": "019e3c7c-0f48-7df4-9c46-2467abd834bc",
+    "stage": "priority_title_override"
+  },
+  "074-019e2cbf": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "075-019e2cd5": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "076-019e2c75": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "llm_topic_ambiguity"
+  },
+  "077-019e2c6b": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "llm_topic_ambiguity"
+  },
+  "078-019e2cc6": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "079-019e2c93": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "llm_topic_ambiguity"
+  },
+  "080-019e2c62": {
+    "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+    "stage": "llm_topic_ambiguity"
+  },
+  "081-019e2c60": {
+    "predicted": "019e3c76-23b0-7b7b-940e-9046ccf4ad21",
+    "stage": "llm_topic_ambiguity"
+  },
+  "082-019e2c60": {
+    "predicted": "019e3c76-23b0-7b7b-940e-9046ccf4ad21",
+    "stage": "llm_topic_ambiguity"
+  },
+  "083-019e2c83": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "084-019e2c62": {
+    "predicted": "019c48d7-9c7c-75d0-bf74-2064a09e2116",
+    "stage": "llm_topic_ambiguity"
+  },
+  "085-019e2c59": {
+    "predicted": "019e3c75-cac6-7552-8496-490e42dc0482",
+    "stage": "llm_topic_ambiguity"
+  },
+  "086-019e2c5b": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  },
+  "087-019e2c5a": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "llm_topic_ambiguity"
+  },
+  "088-019e2c5d": {
+    "predicted": "019e3c6b-0b92-732e-b0a1-f160eeeec6f3",
+    "stage": "llm_topic_ambiguity"
+  },
+  "089-019e2c5b": {
+    "predicted": "019bd6d7-eb04-7203-921a-951df0d27964",
+    "stage": "llm_topic_ambiguity"
+  }
+}
