@@ -209,6 +209,24 @@ describe("decision logging", () => {
     expect(events.some((e) => e.includes("classification_decision"))).toBe(false);
   });
 
+  it("logs on the same-result branch (classify_at cleared, no move)", async () => {
+    const events: string[] = [];
+    const db = testDb(
+      events,
+      defaultRespond((sql) => {
+        if (sql.includes('from "thread_priority"')) {
+          return Promise.resolve({
+            rows: [{ priority_id: "target-priority", user_moved: false, classify_at: new Date() }],
+          });
+        }
+        return null;
+      })
+    );
+    const outcome = await handleClassifyJob(JOB, ENV, db);
+    expect(outcome.status).toBe("same");
+    expect(events.some((e) => e.includes("classification_decision"))).toBe(true);
+  });
+
   it("reports a failed log insert via onError and still settles", async () => {
     const events: string[] = [];
     const onError = vi.fn();

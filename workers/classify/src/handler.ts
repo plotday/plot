@@ -125,6 +125,9 @@ export async function handleClassifyJob(
   // applies a snapshot/root fallback — never substitute it in. Runs on the
   // pool handle after the settle transaction, so a failure can't poison
   // anything; it must never fail the filing.
+  //
+  // Column list must stay in sync with logClassificationDecision in
+  // workers/api/src/state/classify-thread.ts (the workers share no code).
   const logDecision = async () => {
     try {
       await sql`
@@ -135,8 +138,8 @@ export async function handleClassifyJob(
           (${job.threadId}::uuid, ${job.userId}::uuid,
            ${result.priorityId}::uuid, ${result.stage},
            ${JSON.stringify(result.scores ?? {})}::jsonb, ${classifier.name},
-           ${result.llmCalls}, ${result.cacheHits},
-           ${result.budgetExhausted}, ${result.durationMs})
+           ${result.llmCalls ?? 0}, ${result.cacheHits ?? 0},
+           ${result.budgetExhausted ?? false}, ${result.durationMs ?? null})
       `.execute(db);
     } catch (err) {
       onError?.(err);
