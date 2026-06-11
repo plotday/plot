@@ -49,3 +49,4 @@ export {
   topicFuzzy,
 } from "./ts-hybrid-signals";
 export { scoringStage } from "./ts-hybrid-scoring";
+export { paramsHash } from "./params-hash";

@@ -1,6 +1,7 @@
 import {
   DEFAULTS_LLM,
   makeHybridLlmClassifier,
+  paramsHash,
   type Classifier,
   type LLMClient,
 } from "@plotday/classifier";
@@ -39,11 +40,14 @@ export function getProductionClassifier(env: ClassifierEnv): Classifier {
     return kvLlmCache({ client, kv: env.LLM_CACHE, promptId });
   };
 
-  const classifier = makeHybridLlmClassifier("ts:hybrid-llm:production", {
-    params: DEFAULTS_LLM,
-    llmClientFor,
-    consumeBudget: kvBudget(env.LLM_CACHE),
-  });
+  const classifier = makeHybridLlmClassifier(
+    `ts:hybrid-llm:production@${paramsHash(DEFAULTS_LLM)}`,
+    {
+      params: DEFAULTS_LLM,
+      llmClientFor,
+      consumeBudget: kvBudget(env.LLM_CACHE),
+    }
+  );
   global[SINGLETON_KEY] = { classifier, kv: env.LLM_CACHE };
   return classifier;
 }
