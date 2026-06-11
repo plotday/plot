@@ -10,6 +10,7 @@
   },
   "scripts": {
     "sim:ios": "xcrun simctl boot 05E59DE7-DEEA-437B-955A-DECB91443E4A 2>/dev/null; open -a Simulator",
+    "sim:ipad": "xcrun simctl boot 9EC93BEB-903E-4B86-934C-2AFB4CFA4C26 2>/dev/null; open -a Simulator",
     "sim:android": "flutter emulators -d android_medium 2>/dev/null | grep android_medium || flutter emulators --launch Medium_Phone_API_34 --name android_medium; flutter emulators --launch android_medium",
     "run-mac": "flutter run -d macos",
     "run-mac2": "flutter run -d macos --dart-entrypoint-args='--profile=dev2'",
