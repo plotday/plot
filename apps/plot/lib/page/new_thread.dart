@@ -2469,7 +2469,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       platformSingleActivator(LogicalKeyboardKey.keyS, shift: true): () {
         _openSharedPicker(context);
       },
-      // ⌘⇧P (⌘⌥⇧P on web) — change priority
+      // ⌘⇧P (⌘⌃⇧P on web) — change priority
       platformSingleActivator(
         LogicalKeyboardKey.keyP,
         shift: true,

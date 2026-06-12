@@ -62,18 +62,31 @@ String _metaSymbol() {
 }
 
 /// Creates a SingleActivator that uses Meta (Cmd) on macOS and Control on other platforms.
+///
+/// Callers pass `alt: kIsWeb` to add a secondary modifier on web so the
+/// shortcut doesn't collide with browser/OS chrome (e.g. ⌘N opens a new
+/// browser window, which the page can't override). On macOS, however,
+/// Option (Alt) is the dead-key composition modifier — pressing ⌥N produces
+/// "~", so the browser reports a composed logical key (`~`) and a letter
+/// shortcut bound to `keyN` never matches (and the composed character is
+/// keyboard-layout dependent). On macOS we therefore use Control as the
+/// secondary modifier (⌘⌃N) instead of Option; on Windows/Linux web, Alt is
+/// safe and is kept (Ctrl+Alt+N).
 SingleActivator platformSingleActivator(
   LogicalKeyboardKey key, {
   bool shift = false,
   bool alt = false,
 }) {
   final useMeta = _isMacOS();
+  // macOS can't use Option as the secondary modifier (dead-key composition),
+  // so route the requested Alt to Control there instead.
+  final controlAsSecondary = alt && useMeta;
   return SingleActivator(
     key,
     meta: useMeta,
-    control: !useMeta,
+    control: !useMeta || controlAsSecondary,
     shift: shift,
-    alt: alt,
+    alt: alt && !controlAsSecondary,
   );
 }
 
