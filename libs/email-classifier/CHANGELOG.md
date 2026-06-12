@@ -1,5 +1,12 @@
 # @plotday/email-classifier
 
+## 0.1.2
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.59.0
+
 ## 0.1.1
 
 ### Changed

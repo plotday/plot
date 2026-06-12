@@ -43,6 +43,15 @@
     "directory": "connectors/outlook-mail"
   },
   "homepage": "https://plot.day",
-  "bugs": { "url": "https://github.com/plotday/plot/issues" },
-  "keywords": ["plot", "connector", "outlook", "microsoft", "email", "messaging"]
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "connector",
+    "outlook",
+    "microsoft",
+    "email",
+    "messaging"
+  ]
 }
