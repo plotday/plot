@@ -451,6 +451,19 @@ class ColourSchemeData extends Equatable {
   Color get veryMuted => _colours.veryMuted.toColor();
   Color get border => _colours.border.toColor();
 
+  /// Text colour for inline links rendered under this scheme. Links follow the
+  /// scheme's own [accent], except theme 7 (gray) whose near-zero-chroma accent
+  /// is invisible against body text — it falls back to theme 0 (brand teal).
+  ///
+  /// Always derived from this scheme (i.e. `context.colour`, the thread's own
+  /// priority colour), never from `context.theme`. In the Everything feed the
+  /// surrounding focus theme is gray (7) while the opened thread keeps its own
+  /// priority colour; reading the fallback off the focus primary rendered a
+  /// teal-priority thread's links as the invisible gray theme-7 accent.
+  Color get linkColor => themeColor.index == 7
+      ? colours.fromTheme(const ThemeColor(0))
+      : accent;
+
   FColors toFColorScheme() {
     return FColors(
       brightness: brightness,

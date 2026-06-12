@@ -25,7 +25,6 @@ import 'package:plot/state/settings.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
-import 'package:plot/util/theme_color.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/command/page_link.dart';
 import 'package:plot/util/platform.dart';
@@ -2677,15 +2676,13 @@ TextStyle _inlineTextStyler(
   }
 
   if (attributions.whereType<LinkAttribution>().isNotEmpty) {
-    // Theme 7 (gray) has near-zero chroma, so its accent renders as a muted
-    // gray that disappears against body text — notably in the "Using Plot"
-    // priority. Fall back to theme 0 (brand teal) so links stay visible.
-    final scheme = context.colour;
-    final linkColor = scheme.themeColor.index == 7
-        ? scheme.colours.fromTheme(const ThemeColor(0))
-        : context.theme.colors.primary;
+    // Links follow the thread's own priority accent (context.colour), with a
+    // teal fallback for the near-invisible gray theme 7 — see
+    // ColourSchemeData.linkColor. Deriving from context.colour (not
+    // context.theme.colors.primary) keeps links visible in the Everything feed,
+    // where the focus theme is gray while a thread keeps its own colour.
     style = style.copyWith(
-      color: linkColor,
+      color: context.colour.linkColor,
       fontWeight: FontWeight.w600,
       decoration: TextDecoration.none,
     );
