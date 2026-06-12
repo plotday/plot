@@ -132,18 +132,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _panelController = ActivityPanelControllerProvider.maybeOf(context);
-    // The inline header search field only exists in multi-panel mode — on
-    // desktop it's the only way to search (there's no bottom-nav). In
-    // single-panel mode search is a dedicated bottom-nav tab, so the `single`
-    // header variant must NOT register a toggle handler: that keeps
-    // [LayoutBloc.hasSearchToggle] false and
-    // [PriorityShortcutsProviderState._searchToggleCallback] null, so the `/`
-    // shortcut and any bottom-nav requestSearchToggle/Close cleanly no-op.
-    // The `single` variant is only ever rendered in single-panel mode (see
-    // priority.dart), so gating on the variant is equivalent to gating on
-    // multiPanel here but stable across resize (didChangeDependencies doesn't
-    // re-run on width changes).
-    if (widget.variant != HeaderVariant.single) {
+    // Only the `main` variant owns the inline search field, so it is the only
+    // variant that may register the search toggle/close handlers. There is a
+    // SINGLE [PriorityShortcutsProviderState._searchToggleCallback] slot shared
+    // across the whole priority subtree (both the docked `sidebar` column and
+    // the `main` column resolve the same [ActivityPanelControllerProvider]).
+    // If a field-less variant also registered, it would clobber that slot with
+    // a `_toggleSearch` that flips `_searchExpanded` on a header that renders no
+    // field — so the `/` (Cmd+/) shortcut would silently no-op. Gate strictly
+    // to `main`:
+    //   - `single` (single-panel mode): search is a dedicated bottom-nav tab,
+    //     not the header — must not register (keeps [LayoutBloc.hasSearchToggle]
+    //     false so bottom-nav requestSearchToggle/Close cleanly no-op here).
+    //   - `sidebar` (multi-panel left column): has no search field; registering
+    //     it would steal the slot from `main` and break Cmd+/.
+    if (widget.variant == HeaderVariant.main) {
       _panelController?.registerSearchToggle(_toggleSearch);
       LayoutBloc.instance?.registerSearchToggle(_toggleSearch);
       LayoutBloc.instance?.registerSearchClose(_closeSearchIfOpen);
@@ -334,9 +337,16 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
 
   @override
   void dispose() {
-    _panelController?.unregisterSearchToggle();
-    LayoutBloc.instance?.unregisterSearchToggle(_toggleSearch);
-    LayoutBloc.instance?.unregisterSearchClose(_closeSearchIfOpen);
+    // Mirror the registration gate above: only the `main` variant ever
+    // registered, so only it may unregister. [unregisterSearchToggle] nulls the
+    // shared slot unconditionally, so letting a `sidebar`/`single` header run it
+    // on dispose (e.g. the docked sidebar being torn down on a 3-panel→2-panel
+    // resize) would wipe out `main`'s live registration and break Cmd+/.
+    if (widget.variant == HeaderVariant.main) {
+      _panelController?.unregisterSearchToggle();
+      LayoutBloc.instance?.unregisterSearchToggle(_toggleSearch);
+      LayoutBloc.instance?.unregisterSearchClose(_closeSearchIfOpen);
+    }
     _navHistory?.removeListener(_onRouteChanged);
     ThreadHeaderNotifier.pendingNewThreadIntent.removeListener(
       _onPendingNewThreadChanged,
