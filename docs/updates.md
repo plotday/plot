@@ -197,6 +197,7 @@
 
 ### Fixes
 
+- The two side-by-side panel headers now line up exactly. On iPad and on the web, the bar above an open thread could sit a touch taller than the list header beside it, leaving a small step where the panels meet; both now share the same height on every platform. On iPad, the rounded corners on the thread panel's right side also showed a dark sliver — they render clean now.
 - Opening a thread no longer moves it. Just reading a completed thread used to bump it to the top of Done, and in Everything (and search) — where read and unread threads sit together — both reading and completing a thread could yank it to the top. Now opening a thread leaves it in place, and the Everything and search lists stay in a steady, recency-based order.
 - On a phone, the agenda no longer looks washed out. Event titles now show in their focus's full color, and the day and summary text read at a normal contrast level, so the agenda is easy to scan at a glance. On wider windows, where the agenda sits beside your threads as secondary content, it stays softly muted as before.
 - New replies on a thread you'd already opened now show up as unread again, and notify you. A reply could land silently — no unread mark, no push or email — on any thread you'd previously read; new messages now resurface the thread and reach you as expected.

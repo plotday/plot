@@ -373,22 +373,36 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   /// clip those tooltips at the panel edge — most visibly across the shared
   /// seam with the middle panel.
   ///
-  /// Instead we paint the rounded background and let the page content clip
-  /// itself to the same corners *inside* [Scaffold] — below the Navigator —
-  /// via [PanelContentClip]. The background (and the opaque thread header that
-  /// fills the top corners) stay rounded; the tooltips, raised into a sibling
-  /// overlay entry above that clip, escape.
+  /// Instead we paint the rounded background *behind* the child and let the
+  /// page content clip itself to the same corners *inside* [Scaffold] —
+  /// below the Navigator — via [PanelContentClip]. The background (and the
+  /// opaque thread header that fills the top corners) stay rounded; the
+  /// tooltips, raised into a sibling overlay entry above that clip, escape.
+  ///
+  /// The background is rounded with [ClipRSuperellipse] + [ColoredBox] —
+  /// the same primitive the middle panel uses (proven clean on iPad) —
+  /// rather than painting a `ShapeDecoration(RoundedSuperellipseBorder)`
+  /// fill, so both panels round their corners through one primitive. Note
+  /// the page content's own corner clip (see [Scaffold]) must be ClipRRect:
+  /// a ClipRSuperellipse there leaves a dark fringe hugging the panel's
+  /// outer corner curves on iPad.
   Widget _rightPanelCard(
     BuildContext context,
     Widget child,
     BorderRadius borderRadius,
   ) {
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
-        color: context.colour.background,
-      ),
-      child: PanelContentClip(borderRadius: borderRadius, child: child),
+    return Stack(
+      // Expand so the router child keeps the tight panel-filling constraints
+      // it had when this was a plain DecoratedBox wrapper.
+      fit: StackFit.expand,
+      children: [
+        ClipRSuperellipse(
+          borderRadius: borderRadius,
+          clipBehavior: Clip.antiAlias,
+          child: ColoredBox(color: context.colour.background),
+        ),
+        PanelContentClip(borderRadius: borderRadius, child: child),
+      ],
     );
   }
 
@@ -593,9 +607,8 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                           _SidebarDrawerOverlay(
                             open: layoutState.drawerOpen,
                             width: drawerWidth,
-                            onDismiss: () => context
-                                .read<LayoutBloc>()
-                                .setDrawerOpen(false),
+                            onDismiss: () =>
+                                context.read<LayoutBloc>().setDrawerOpen(false),
                             sidebar: _buildDrawerContent(context),
                           ),
                         ],
@@ -1294,9 +1307,9 @@ class _SidebarDrawerOverlayState extends State<_SidebarDrawerOverlay>
                           color: context.colour.background,
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF000000).withValues(
-                                alpha: 0.28,
-                              ),
+                              color: const Color(
+                                0xFF000000,
+                              ).withValues(alpha: 0.28),
                               blurRadius: 24,
                               offset: const Offset(4, 0),
                               spreadRadius: -4,

@@ -1077,6 +1077,16 @@ class _PriorityPageState extends State<PriorityPage>
         ? listItems[index - 1]
         : null;
     final rawNext = index < listItems.length ? listItems[index] : null;
+    // The leading separator (above the first item) renders as an invisible
+    // background-coloured 1px strip (see BlockListSeparator's `prev == null`
+    // branch). In multi-panel mode that strip sits above the feed's leading
+    // section header, pushing it 1px lower than the thread panel's actions
+    // row across the shared squircle top — the bands' [panelHeaderHeight]s
+    // match but the list offset broke the alignment. Drop it so the header
+    // sits flush against the panel top like the thread panel's band does.
+    if (rawPrev == null && context.isMultiPanel) {
+      return const SizedBox.shrink();
+    }
     return BlockListSeparator(
       prev: rawPrev,
       next: rawNext,

@@ -10,11 +10,34 @@ import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/style/theme.dart';
 import 'button.dart';
 import 'window.dart';
 
 enum HeaderPosition { left, middle, right }
+
+/// Height of the band pinned to the top of a multi-panel content panel: the
+/// feed's leading section header ("Active", "Everything", …) and the thread
+/// panel's actions row.
+///
+/// Both bands sit at the top of the shared main squircle, so any height
+/// difference shows as a misaligned seam between the panels. Their natural
+/// heights come from unrelated sources — the section header from its label's
+/// line height plus `sm` padding, the actions row from a ghost icon [Button]
+/// (whose vertical padding is larger on touch platforms) plus `xs` padding —
+/// and only coincidentally matched on macOS; on iPad and web they drifted
+/// apart. Pinning both to this shared, theme-derived height keeps them
+/// aligned by construction: the tallest occupant is a ghost icon button
+/// (icon size + the ghost style's vertical icon padding), plus `xs`
+/// breathing room above and below.
+double panelHeaderHeight(BuildContext context) {
+  final theme = context.theme;
+  final iconPadV = theme.buttonStyles.ghost.md.iconContentStyle.padding
+      .resolve(TextDirection.ltr)
+      .top;
+  return theme.iconSizes.base + iconPadV * 2 + theme.spacing.xs * 2;
+}
 
 class PanelPositionProvider extends InheritedWidget {
   const PanelPositionProvider({

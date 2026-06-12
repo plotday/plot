@@ -499,14 +499,30 @@ class AgendaTile extends StatelessWidget {
       final isTextOnlyHeading = dateTimeRange == null;
       Widget result;
       if (isTextOnlyHeading) {
+        // In multi-panel mode the heading band is pinned to the shared
+        // [panelHeaderHeight] so the feed's leading section header lines up
+        // with the thread panel's actions row across the squircle seam —
+        // deriving each band's height independently (text line height here,
+        // icon-button height there) left them misaligned by a few pixels on
+        // iPad and web. The centered label sits inside the fixed band.
+        // Single-panel keeps the intrinsic text-plus-padding height.
         result = DecoratedBox(
           decoration: BoxDecoration(
             color: context.colour.sectionHeaderBackground,
           ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
-            child: child,
-          ),
+          child: context.isMultiPanel
+              // The 1px divider below the heading is drawn by the list (the
+              // row separator above the next item), so the band itself takes
+              // panelHeaderHeight - 1: band + separator = panelHeaderHeight,
+              // exactly mirroring the thread panel's actions row, which
+              // paints its 1px bottom border *inside* its band.
+              ? SizedBox(height: panelHeaderHeight(context) - 1, child: child)
+              : Padding(
+                  padding: EdgeInsets.symmetric(
+                    vertical: context.theme.spacing.sm,
+                  ),
+                  child: child,
+                ),
         );
       } else {
         result = Padding(

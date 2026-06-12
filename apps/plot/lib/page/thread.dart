@@ -947,12 +947,19 @@ class _ThreadActionsRow extends StatelessWidget {
           bottom: BorderSide(color: context.theme.colors.border, width: 1),
         ),
       ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: context.theme.spacing.lg,
-          vertical: context.theme.spacing.xs,
+      // Pinned to the shared [panelHeaderHeight] (rather than padding the
+      // buttons' intrinsic height with `xs`) so this band stays exactly as
+      // tall as the feed's leading section header in the middle panel —
+      // independently derived heights drifted ~1px+ apart on iPad and web.
+      // The Row centers its buttons inside the band, which reproduces the
+      // old `xs` vertical padding when the tallest child is a ghost icon
+      // button.
+      child: SizedBox(
+        height: panelHeaderHeight(context),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.lg),
+          child: Row(children: [...startGroup, const Spacer(), ...endGroup]),
         ),
-        child: Row(children: [...startGroup, const Spacer(), ...endGroup]),
       ),
     );
   }

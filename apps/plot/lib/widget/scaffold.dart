@@ -114,9 +114,15 @@ class Scaffold extends StatelessWidget {
     // edges; clipping the page content here keeps the header/background rounded
     // into the corners without trapping those overlays. Null (single-panel and
     // every other layout) leaves the content unclipped.
+    //
+    // ClipRRect, not ClipRSuperellipse: on iPad the superellipse clip leaves
+    // a dark fringe hugging the panel's outer corner curves (verified by
+    // toggling just this clip). The circular arc sits a hair inside the
+    // panel's superellipse background, so the difference hides as a sub-pixel
+    // background-coloured sliver at the corners.
     final clipRadius = PanelContentClip.maybeOf(context);
     if (clipRadius == null) return result;
-    return ClipRSuperellipse(
+    return ClipRRect(
       borderRadius: clipRadius,
       clipBehavior: Clip.antiAlias,
       child: result,
