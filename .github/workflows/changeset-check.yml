@@ -9,6 +9,10 @@ jobs:
   check:
     name: Check for changeset
     runs-on: ubuntu-latest
+    # The automated Changesets release PR (branch changeset-release/main) consumes
+    # and deletes changesets while bumping versions, so it legitimately has Twister
+    # changes with no remaining changeset. Skip the check on that bot branch.
+    if: github.head_ref != 'changeset-release/main'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
