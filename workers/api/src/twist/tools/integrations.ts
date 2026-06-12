@@ -261,7 +261,7 @@ export class Integrations extends Tool implements IAuth {
   private path: string[];
   private providerConfigs: IntegrationProviderConfig[];
   /** Source metadata passed from factory when the twist is a Source. */
-  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean } | null = null;
+  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean; autoEnableNewChannelsByDefault?: boolean } | null = null;
   /** Cached sync history min date (undefined = not computed yet, null = no limit). */
   private _syncHistoryMin: Date | null | undefined = undefined;
   /**
@@ -306,7 +306,7 @@ export class Integrations extends Tool implements IAuth {
     path: string[];
     integrationOptions?: IntegrationOptions;
     /** Source metadata (provider, scopes, linkTypes, auth model) from the Source class. Set by factory for sources. */
-    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean } | null;
+    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean; autoEnableNewChannelsByDefault?: boolean } | null;
   }) {
     super();
     this.store = options.store;
@@ -686,6 +686,32 @@ export class Integrations extends Tool implements IAuth {
     await this.store.set(
       `auto_enable_new_channels:${provider}:${actorId}`,
       enabled
+    );
+  }
+
+  /**
+   * Seed the per-connection "sync new channels" preference from the connector's
+   * declared default ({@link Connector.autoEnableNewChannelsByDefault}) when no
+   * explicit value has been stored yet. Called once when a connection is
+   * finalized (draft activation), AFTER the user's initial channel selection
+   * has been applied — so the initial selection governs which channels start
+   * enabled, and only channels discovered *later* are auto-enabled.
+   *
+   * No-op when a value is already stored (the user's choice, or a prior seed)
+   * or when the connector's default is not `true`.
+   */
+  async initAutoEnableDefault(
+    provider: AuthProvider,
+    actorId: ActorId
+  ): Promise<void> {
+    if (this.sourceProvider?.autoEnableNewChannelsByDefault !== true) return;
+    const existing = await this.store.get<boolean>(
+      `auto_enable_new_channels:${provider}:${actorId}`
+    );
+    if (existing !== undefined && existing !== null) return;
+    await this.store.set(
+      `auto_enable_new_channels:${provider}:${actorId}`,
+      true
     );
   }
 
@@ -3899,7 +3925,15 @@ export class Integrations extends Tool implements IAuth {
             ) ?? null)
           : null;
 
-        const autoEnableNewChannels = autoEnableSetting ?? false;
+        // Fall back to the connector's declared default when the user has
+        // never set an explicit preference (null). This is display-only — the
+        // enforcement path in setChannels reads the raw stored value, and the
+        // default is persisted for enforcement at connection activation (see
+        // initAutoEnableDefault). The user's explicit toggle always wins.
+        const autoEnableNewChannels =
+          autoEnableSetting ??
+          this.sourceProvider?.autoEnableNewChannelsByDefault ??
+          false;
 
         accounts.push({
           provider,

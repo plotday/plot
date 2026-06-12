@@ -712,6 +712,30 @@ class TwistConnectResult {
   bool get isError => error != null;
 }
 
+/// The user-facing noun a connector uses for its channels (e.g. "folder" /
+/// "folders", "project" / "projects"). Falls back to "channel" / "channels"
+/// when the connector declares none.
+class ChannelNoun extends Equatable {
+  final String singular;
+  final String plural;
+
+  const ChannelNoun({required this.singular, required this.plural});
+
+  static const ChannelNoun fallback =
+      ChannelNoun(singular: 'channel', plural: 'channels');
+
+  static ChannelNoun fromJson(Map<String, dynamic>? json) {
+    if (json == null) return fallback;
+    final singular = json['singular'] as String?;
+    final plural = json['plural'] as String?;
+    if (singular == null || plural == null) return fallback;
+    return ChannelNoun(singular: singular, plural: plural);
+  }
+
+  @override
+  List<Object?> get props => [singular, plural];
+}
+
 /// Integration data for a twist
 class TwistIntegrations {
   final List<TwistProvider> providers;
@@ -727,6 +751,11 @@ class TwistIntegrations {
   /// When true, this connector has a single implicit channel.
   /// The UI shows channel config inline instead of a channel list.
   final bool singleChannel;
+
+  /// The connector's user-facing noun for its channels (folders, projects,
+  /// calendars, …). Drives the "Sync new {plural}" copy. Defaults to
+  /// "channel" / "channels".
+  final ChannelNoun channelNoun;
 
   /// When true, this connector uses a shared credential for all users.
   final bool shared;
@@ -757,6 +786,7 @@ class TwistIntegrations {
     this.optionsSchema,
     this.optionsConfig,
     this.singleChannel = false,
+    this.channelNoun = ChannelNoun.fallback,
     this.shared = false,
     this.keyOption,
     this.teamDomains,
@@ -779,6 +809,9 @@ class TwistIntegrations {
       optionsSchema: json['optionsSchema'] as Map<String, dynamic>?,
       optionsConfig: json['optionsConfig'] as Map<String, dynamic>?,
       singleChannel: json['singleChannel'] as bool? ?? false,
+      channelNoun: ChannelNoun.fromJson(
+        json['channelNoun'] as Map<String, dynamic>?,
+      ),
       shared: json['shared'] as bool? ?? false,
       keyOption: json['keyOption'] as String?,
       teamDomains: _parseTeamDomains(

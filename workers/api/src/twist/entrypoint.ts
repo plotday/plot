@@ -471,6 +471,8 @@ export default class extends WorkerEntrypoint {
         linkTypes: twist.linkTypes || [],
         ...(TwistConstructor.handleReplies ? { handleReplies: true } : {}),
         ...(twist.singleChannel ? { singleChannel: true } : {}),
+        ...(twist.channelNoun ? { channelNoun: twist.channelNoun } : {}),
+        ...(twist.autoEnableNewChannelsByDefault ? { autoEnableNewChannelsByDefault: true } : {}),
         ...(twist.shared ? { shared: true } : {}),
         ...(twist.keyOption ? { keyOption: twist.keyOption } : {}),
       };

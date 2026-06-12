@@ -123,6 +123,7 @@ async function loadTwistConfig(
   toolPermissions: Record<string, any>;
   optionsSchema: OptionsSchema | null;
   singleChannel: boolean;
+  channelNoun: { singular: string; plural: string } | null;
   connectorLinkTypes?: any[];
 } | null> {
   const config = await env.TWIST_CONFIG.get(`${twistPackageId}:${version}`);
@@ -135,6 +136,7 @@ async function loadTwistConfig(
     toolPermissions: parsed.toolPermissions ?? {},
     optionsSchema: parsed.optionsSchema ?? null,
     singleChannel: parsed.sourceProvider?.singleChannel === true,
+    channelNoun: parsed.sourceProvider?.channelNoun ?? null,
     connectorLinkTypes: parsed.sourceProvider?.linkTypes ?? undefined,
   };
 }
@@ -367,6 +369,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     return c.json({
       providers: [], accounts, syncables, optionsSchema, optionsConfig,
       singleChannel: config.singleChannel,
+      channelNoun: config.channelNoun,
       shared: twistInfo.shared,
       keyOption: twistInfo.keyOption,
       premium: twistInfo.premium,
@@ -511,6 +514,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     accounts: allAccounts,
     syncables: allChannels,
     singleChannel: config.singleChannel,
+    channelNoun: config.channelNoun,
     optionsSchema,
     optionsConfig,
     shared: twistInfo.shared,

@@ -598,6 +598,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       if (_removedAccounts.contains(accountKey)) continue;
       autoEnableRows.add(
         _AutoEnableNewChannelsRow(
+          noun: data.channelNoun,
           showAccountLabel: data.accounts.length > 1,
           accountLabel: account.displayName,
           isOn: _autoEnableLocalState[accountKey] ?? false,
@@ -1014,12 +1015,16 @@ class ProviderIcon extends StatelessWidget {
 
 class _AutoEnableNewChannelsRow extends StatefulWidget {
   const _AutoEnableNewChannelsRow({
+    required this.noun,
     required this.isOn,
     required this.onToggle,
     required this.showAccountLabel,
     required this.accountLabel,
   });
 
+  /// The connector's word for its channels (folders, projects, …). Drives the
+  /// row's title and description copy.
+  final ChannelNoun noun;
   final bool isOn;
   final VoidCallback onToggle;
 
@@ -1040,8 +1045,8 @@ class _AutoEnableNewChannelsRowState extends State<_AutoEnableNewChannelsRow> {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final title = widget.showAccountLabel
-        ? 'Sync new channels · ${widget.accountLabel}'
-        : 'Sync new channels';
+        ? 'Sync new ${widget.noun.plural} · ${widget.accountLabel}'
+        : 'Sync new ${widget.noun.plural}';
 
     return MouseRegion(
       cursor: SystemMouseCursors.basic,
@@ -1100,7 +1105,8 @@ class _AutoEnableNewChannelsRowState extends State<_AutoEnableNewChannelsRow> {
                       ),
                       SizedBox(height: theme.spacing.xs),
                       Text(
-                        'When a new channel is added, enable it automatically.',
+                        'When a new ${widget.noun.singular} is added, '
+                        'enable it automatically.',
                         style: TextStyle(
                           fontSize: theme.typography.xs.fontSize,
                           color: theme.colors.mutedForeground,

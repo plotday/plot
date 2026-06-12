@@ -1157,6 +1157,34 @@ export async function activateDraft(
           });
         }
       }
+
+      // Seed the per-connection "sync new channels" default from the
+      // connector's declaration, now that the user's initial channel
+      // selection has been applied. Done once per provider; the tool no-ops
+      // when a value is already stored or the connector default isn't `true`.
+      const seededProviders = new Set<string>();
+      for (const { provider } of syncables) {
+        if (seededProviders.has(provider)) continue;
+        seededProviders.add(provider);
+        const integrationsPath = integrationsMap[provider];
+        if (!integrationsPath) continue;
+        try {
+          const result = await twistWrapper.callCallback(
+            integrationsPath.split(":"),
+            "initAutoEnableDefault",
+            provider,
+            contact.id
+          );
+          if (result && typeof result === "object" && Symbol.dispose in result) {
+            (result as any)[Symbol.dispose]();
+          }
+        } catch (error) {
+          logger.warn("Failed to seed auto-enable default during activation", {
+            provider,
+            error_message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
   } else {
     logger.info("activateDraft: no channels to enable", {
