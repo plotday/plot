@@ -1184,38 +1184,54 @@ class ThreadCommands extends HookWidget {
         ? RsvpChip(activity: activity)
         : null;
 
-    final List<Widget> allButtons;
-    if (showCommands) {
-      allButtons = [
+    // Always-on (persistent) trailing icons — anchored at the right edge in a
+    // stable position whether or not the row is hovered. Hover-only commands
+    // slide in to their LEFT (see [hoverOnly]) instead of reflowing this
+    // cluster. Order, left→right: mute (when muted) · conferencing · status ·
+    // RSVP · assignee. Mute, when set, lives here (not in the hover set) so it
+    // doesn't jump position on hover; it still toggles to unmute on tap.
+    final persistent = <Widget>[
+      if (activity.muteByThreadId != null)
+        buildCommandButton(MuteSimilarThreads(activity)),
+      for (final action in conferencingActions)
+        _ConferencingIconButton(action: action),
+      // Match the always-on icon buttons (size, footprint, hover background).
+      if (primaryLink != null)
+        StatusIconButton(link: primaryLink, buttonStyle: true),
+      ?rsvpChip,
+      // Persistent thread-level assignee avatar (any assigned thread).
+      if (activity.assigneeId != null) ThreadAssignee(thread: activity),
+    ];
+
+    // Hover-only commands — surfaced only while the row is hovered, appearing
+    // to the LEFT of the persistent cluster above.
+    final hoverOnly = <Widget>[
+      if (showCommands) ...[
         ...threadCommandButtons.take(5),
-        // "Skip active for threads like this" sits immediately before the
-        // overflow menu so it's always reachable on hover. Title and event
-        // semantics flip based on whether the thread already carries the
-        // mute flag.
-        Button.icon(MuteSimilarThreads(activity)),
+        // Offer "Mute" only when the thread isn't already muted — a muted
+        // thread carries the persistent mute icon in the cluster above (which
+        // toggles to unmute), so adding it here too would duplicate it.
+        if (activity.muteByThreadId == null)
+          buildCommandButton(MuteSimilarThreads(activity)),
         // Surface "Assign" on hover for unassigned, writable threads. Assigned
         // threads get the persistent trailing [ThreadAssignee] avatar instead.
         if (activity.assigneeId == null && !activity.isReadOnly)
           Button.icon(AssignThread(activity)),
+        // "Remove from event" X-icon for associated threads — a hover-only
+        // action, so it sits with the other hover commands to the left of the
+        // persistent cluster.
+        if (isAssociated) Button.icon(DisassociateThread(activity)),
         // Rename is intentionally NOT surfaced on hover — it lives only in the
         // more-commands menu, and only for Plot threads (see threadCommands).
-        // Always add ShowThreadCommands as the 6th button
+        // Always end with the more-commands overflow menu.
         Button.icon(
           CommandWrapper(
             ShowThreadCommands(activity),
             icon: Value(PlotIcon.more),
           ),
         ),
-      ];
-    } else {
-      // Mute toggle is treated like an enabled tag: when the flag is set the
-      // icon stays visible even when the row isn't hovered (hover surfaces
-      // the full command set, including it — so no duplication).
-      allButtons = [
-        if (activity.muteByThreadId != null)
-          buildCommandButton(MuteSimilarThreads(activity)),
-      ];
-    }
+      ],
+    ];
 
     // The trailing row is overlaid via a [Positioned] (see _buildListTile)
     // whose negative right offset is tuned for ghost icon buttons: it pushes
@@ -1223,12 +1239,12 @@ class ThreadCommands extends HookWidget {
     // lands at the content's right edge. Non-button trailing items (the RSVP
     // chip, the assignee avatar) carry no such internal inset, so when one of
     // them is the trailing-most child it overshoots and sits flush against the
-    // panel edge. When resting (no hover commands, which always end in a
-    // button), add a right inset equal to that button icon padding so the
-    // chip/avatar lands at the same x a button glyph would — matching the
-    // agenda's RSVP padding.
+    // panel edge. The persistent cluster's rightmost item is the RSVP chip or
+    // assignee avatar whenever either is present, so apply the inset based on
+    // that — independent of hover — so the chip/avatar holds its position
+    // instead of shifting right when hover commands appear.
     final trailingIsNonButton =
-        !showCommands && (rsvpChip != null || activity.assigneeId != null);
+        rsvpChip != null || activity.assigneeId != null;
     final trailingInset = trailingIsNonButton
         ? context.theme.buttonStyles.ghost.md.iconContentStyle.padding
               .resolve(TextDirection.ltr)
@@ -1238,20 +1254,8 @@ class ThreadCommands extends HookWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ...allButtons,
-        for (final action in conferencingActions)
-          _ConferencingIconButton(action: action),
-        if (primaryLink != null) StatusIconButton(link: primaryLink),
-        ?rsvpChip,
-        // Persistent thread-level assignee avatar (any assigned thread).
-        if (activity.assigneeId != null) ThreadAssignee(thread: activity),
-        // Trailing-most "Remove from event" X-icon for associated
-        // threads, surfaced only on hover. The row is positioned at
-        // the right edge with mainAxisSize.min, so adding this as
-        // the last child pushes existing trailing items (tags,
-        // avatars) to the left.
-        if (isAssociated && showCommands)
-          Button.icon(DisassociateThread(activity)),
+        ...hoverOnly,
+        ...persistent,
         if (trailingInset > 0) SizedBox(width: trailingInset),
       ],
     );

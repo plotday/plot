@@ -1,7 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/analytics/conventions.dart';
+import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/button.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/select_modal.dart';
@@ -23,15 +27,23 @@ StatusIcon? statusIconFor(LinkTypeConfig? cfg, String? status) {
 /// [showWhenHiddenDefault] controls whether a status flagged `hiddenDefault`
 /// renders: true in the page header (always show), false on the feed row
 /// (suppress resting defaults like calendar "Confirmed").
+///
+/// [buttonStyle] makes the icon render with the same footprint, size,
+/// muted/hover colours and circular hover background as the other trailing
+/// icon buttons (e.g. Mute) — used in the thread-feed row so the status icon
+/// sits flush in the always-on trailing cluster. The default (false) keeps the
+/// compact 14px glyph used in the thread page header.
 class StatusIconButton extends StatelessWidget {
   const StatusIconButton({
     required this.link,
     this.showWhenHiddenDefault = false,
+    this.buttonStyle = false,
     super.key,
   });
 
   final Link link;
   final bool showWhenHiddenDefault;
+  final bool buttonStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +58,41 @@ class StatusIconButton extends StatelessWidget {
     }
 
     final canChange = statuses != null && statuses.length > 1;
+
+    if (buttonStyle) {
+      // Feed row: match the other always-on trailing icon buttons exactly.
+      if (canChange) {
+        // Routed through [Button.icon] for a pixel-identical match with Mute.
+        return Button.icon(_ChangeLinkStatus(link, statuses, current));
+      }
+      // Single, non-interactive status: same footprint (so it aligns in the
+      // row) but no tap target or hover background.
+      final iconSize = context.theme.iconSizes.base;
+      final pad = context
+          .theme
+          .buttonStyles
+          .ghost
+          .md
+          .iconContentStyle
+          .padding
+          .resolve(TextDirection.ltr);
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: pad.top),
+        child: SizedBox(
+          width: iconSize + pad.horizontal,
+          height: iconSize,
+          child: Center(
+            child: Icon(
+              icon.glyph,
+              size: iconSize,
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Header / compact rendering: small 14px glyph.
     final glyph = Icon(
       icon.glyph,
       size: 14,
@@ -114,5 +161,27 @@ class StatusIconButton extends StatelessWidget {
     if (selected != link.status) {
       await Link.updateStatus(link, selected);
     }
+  }
+}
+
+/// Opens the status picker for [_link]. Carries the current status' glyph and
+/// label as its icon/title so [Button.icon] renders it identically to the
+/// other trailing icon commands (e.g. Mute) on the feed row.
+class _ChangeLinkStatus extends Command {
+  _ChangeLinkStatus(this._link, this._statuses, LinkStatus current)
+    : super(
+        title: current.label,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: current.icon!.glyph,
+      );
+
+  final Link _link;
+  final List<LinkStatus> _statuses;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await StatusIconButton._showStatusPicker(context, _link, _statuses);
+    return const CommandDone();
   }
 }

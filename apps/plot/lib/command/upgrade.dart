@@ -120,16 +120,26 @@ class BuyPlanCommand extends Command {
   }
 
   Future<CommandReturn> _runWeb(BuildContext context) async {
-    final userState = context.read<UserBloc>().state;
-    final email = userState is UserReady ? userState.user.primaryEmail : null;
-    final params = <String, String>{'plan': plan};
-    if (email != null) params['email'] = email;
-    final uri = Uri.parse(
-      '${Env.siteRoot}/upgrade',
-    ).replace(queryParameters: params);
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    await openWebUpgrade(context, plan: plan);
     return const CommandSkipped();
   }
+}
+
+/// Opens the web upgrade flow (`${Env.siteRoot}/upgrade`) in an external
+/// browser, optionally preselecting a [plan]. Used on every non-App-Store
+/// distribution channel, where the web page presents full plan details and
+/// its own picker — so there's no need to make the user pick a plan in-app
+/// first.
+Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
+  final userState = context.read<UserBloc>().state;
+  final email = userState is UserReady ? userState.user.primaryEmail : null;
+  final params = <String, String>{};
+  if (plan != null) params['plan'] = plan;
+  if (email != null) params['email'] = email;
+  final uri = Uri.parse(
+    '${Env.siteRoot}/upgrade',
+  ).replace(queryParameters: params.isEmpty ? null : params);
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 /// Subscription disclosure text shown in the upgrade picker. Apple's
@@ -174,6 +184,15 @@ class ShowUpgradeOptions extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Off the App Store, the upgrade flow lives on the web, which presents
+    // full plan details and its own picker. Skip the in-app plan modal —
+    // it only exists to choose a StoreKit product — and open the page
+    // directly. The modal's title/subtitle are App-Store-only from here.
+    if (!UpgradeUi.isAppStoreBuild) {
+      await openWebUpgrade(context);
+      return const CommandSkipped();
+    }
+
     final result = await SelectModal.open<String>(
       context,
       showFilter: false,
