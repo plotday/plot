@@ -420,10 +420,29 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   /// doesn't duplicate the main column's title/search registration or
   /// tracking pill. The collapse button routes through
   /// [LayoutBloc.toggleSidebar], which closes the drawer in this band.
+  /// Wrap [child] in a top-only SafeArea so its header clears the OS status
+  /// bar / home indicator on iPad. Desktop top inset is 0, so it's a no-op
+  /// there. Applied per branch (not as one shared wrapper) so the overlay
+  /// drawer can opt out and paint its surface up behind the status bar.
+  Widget _withTopInset(Widget child) {
+    return SafeArea(
+      top: true,
+      bottom: false,
+      left: false,
+      right: false,
+      child: child,
+    );
+  }
+
   Widget _buildDrawerContent(BuildContext context) {
     final resolvedToolbarPadding = Window.toolbarPadding.resolve(
       TextDirection.ltr,
     );
+    // The drawer is intentionally outside the per-column top SafeArea so its
+    // opaque surface (painted in [_SidebarDrawerOverlay]) extends up behind
+    // the OS status bar. Pad the content down by the status-bar inset so the
+    // collapse button and focus list still clear it. Desktop inset is 0.
+    final topInset = MediaQuery.paddingOf(context).top;
     // The priorities list styles itself for the left sidebar (compact `sm`
     // font, rounded monochrome selection) only when it finds a
     // [PanelPositionProvider] of [HeaderPosition.left] above it — the docked
@@ -432,27 +451,30 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     // render with the larger middle/right-panel styling.
     return PanelPositionProvider(
       position: HeaderPosition.left,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: _drawerHeaderHeight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  // Reserve the macOS traffic-light gutter — the drawer slides
-                  // over the window's top-left corner where they sit.
-                  if (resolvedToolbarPadding.left != 0)
-                    SizedBox(width: resolvedToolbarPadding.left),
-                  const Spacer(),
-                  Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
-                ],
+      child: Padding(
+        padding: EdgeInsets.only(top: topInset),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: _drawerHeaderHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    // Reserve the macOS traffic-light gutter — the drawer
+                    // slides over the window's top-left corner where they sit.
+                    if (resolvedToolbarPadding.left != 0)
+                      SizedBox(width: resolvedToolbarPadding.left),
+                    const Spacer(),
+                    Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
+                  ],
+                ),
               ),
             ),
-          ),
-          Expanded(child: _buildSidebarBody(context)),
-        ],
+            Expanded(child: _buildSidebarBody(context)),
+          ],
+        ),
       ),
     );
   }
@@ -538,10 +560,16 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                     // NewThreadRoute, wiping the open thread. Keeping the
                     // tree shape stable preserves the thread panel's state.
                     if (!leftVisible) {
-                      final mainColumn = _buildMainColumn(
-                        context,
-                        hasLeftSidebar: false,
-                        viewedNote: viewedNote,
+                      // Inset the main column below the OS status bar. The
+                      // drawer (below) is deliberately left outside this inset
+                      // so its opaque surface can paint up behind the status
+                      // bar; it pads its own content clear of it instead.
+                      final mainColumn = _withTopInset(
+                        _buildMainColumn(
+                          context,
+                          hasLeftSidebar: false,
+                          viewedNote: viewedNote,
+                        ),
                       );
                       // Two-panel band: the sidebar is too wide to dock as a
                       // third column, so it's reachable as an overlay drawer
@@ -573,16 +601,20 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                         ],
                       );
                     }
-                    return _OuterHoverableResizable(
-                      leftWidth: leftWidth,
-                      totalWidth: totalWidth,
-                      layoutState: layoutState,
-                      onLeftWidthChanged: (width) => _leftPanelWidth = width,
-                      left: _buildSidebarColumn(context),
-                      right: _buildMainColumn(
-                        context,
-                        hasLeftSidebar: true,
-                        viewedNote: viewedNote,
+                    // Docked three-panel layout: inset the whole resizable as a
+                    // unit (matches the old shared top SafeArea exactly).
+                    return _withTopInset(
+                      _OuterHoverableResizable(
+                        leftWidth: leftWidth,
+                        totalWidth: totalWidth,
+                        layoutState: layoutState,
+                        onLeftWidthChanged: (width) => _leftPanelWidth = width,
+                        left: _buildSidebarColumn(context),
+                        right: _buildMainColumn(
+                          context,
+                          hasLeftSidebar: true,
+                          viewedNote: viewedNote,
+                        ),
                       ),
                     );
                   },

@@ -251,20 +251,16 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
                         decoration: BoxDecoration(
                           gradient: context.colour.frameBackgroundGradient,
                         ),
-                        // The multi-panel layout places a header (sidebar +
-                        // main variants) at the very top of each column. On
-                        // iPad those headers would sit under the OS status
-                        // bar / home indicator without this inset — the
-                        // SafeArea pushes the columns below the status bar
-                        // while the gradient above paints through behind it.
-                        // Desktop top inset is 0, so this is a no-op there.
-                        child: SafeArea(
-                          top: true,
-                          bottom: false,
-                          left: false,
-                          right: false,
-                          child: body,
-                        ),
+                        // The top status-bar inset is applied *per branch*
+                        // inside ResizablePanelLayout, not here. The docked
+                        // and main-column-only branches wrap their whole
+                        // output in a top SafeArea (matching the old shared
+                        // wrapper exactly). The two-panel band insets only its
+                        // main column, leaving the overlay drawer free to
+                        // paint its opaque surface up behind the status bar
+                        // while padding its own content clear of it. Desktop
+                        // top inset is 0, so all of this is a no-op there.
+                        child: body,
                       );
                     }
                     // PriorityPage doesn't use the Plot Scaffold (it owns its
