@@ -104,6 +104,8 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       logoMono: "https://api.iconify.design/simple-icons/apple.svg",
     },
   ];
+  readonly channelNoun = { singular: "calendar", plural: "calendars" };
+  readonly autoEnableNewChannelsByDefault = true;
 
   // Lock TTL covering the worst-case full backfill. The framework releases
   // the lock automatically after this window even if a worker crashes, so

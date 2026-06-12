@@ -60,6 +60,8 @@ export class GoogleTasks extends Connector<GoogleTasks> {
   static readonly SCOPES = ["https://www.googleapis.com/auth/tasks"];
 
   readonly provider = AuthProvider.Google;
+  readonly channelNoun = { singular: "list", plural: "lists" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = GoogleTasks.SCOPES;
   readonly linkTypes = [
     {

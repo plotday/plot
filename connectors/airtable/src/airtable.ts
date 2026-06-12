@@ -99,6 +99,8 @@ export class Airtable extends Connector<Airtable> {
   ];
 
   readonly provider = AuthProvider.Airtable;
+  readonly channelNoun = { singular: "base", plural: "bases" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Airtable.SCOPES;
   readonly linkTypes = [
     {

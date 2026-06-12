@@ -111,6 +111,7 @@ export class Slack extends Connector<Slack> {
   };
 
   readonly provider = AuthProvider.Slack;
+  readonly autoEnableNewChannelsByDefault = true;
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
     // Workspace custom emoji sync both ways: inbound reactions become

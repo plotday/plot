@@ -50,6 +50,8 @@ export class Asana extends Connector<Asana> {
   static readonly SCOPES = ["default"];
 
   readonly provider = AuthProvider.Asana;
+  readonly channelNoun = { singular: "project", plural: "projects" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Asana.SCOPES;
   readonly linkTypes = [
     {

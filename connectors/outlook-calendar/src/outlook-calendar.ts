@@ -154,6 +154,8 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   static readonly SCOPES = ["https://graph.microsoft.com/calendars.readwrite"];
 
   readonly provider = AuthProvider.Microsoft;
+  readonly channelNoun = { singular: "calendar", plural: "calendars" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = OutlookCalendar.SCOPES;
   readonly linkTypes = [{ type: "event", label: "Event", sharingModel: "thread" as const, includesSchedules: true, logo: "https://api.iconify.design/logos/microsoft-icon.svg", logoDark: "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4", logoMono: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
 

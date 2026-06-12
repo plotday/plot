@@ -88,6 +88,7 @@ export class GoogleChat extends Connector<GoogleChat> {
   ];
 
   readonly provider = AuthProvider.Google;
+  readonly channelNoun = { singular: "space", plural: "spaces" };
   readonly scopes = Integrations.MergeScopes(
     GoogleChat.SCOPES,
     GoogleContacts.SCOPES

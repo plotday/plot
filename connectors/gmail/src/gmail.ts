@@ -190,6 +190,7 @@ export class Gmail extends Connector<Gmail> {
   static readonly SCOPES = ["https://www.googleapis.com/auth/gmail.modify"];
 
   readonly provider = AuthProvider.Google;
+  readonly channelNoun = { singular: "label", plural: "labels" };
   // Merge in People API scopes so we can enrich email-only contacts (Gmail
   // headers carry name + address but no avatar) with photos from the user's
   // Google Contacts and "other contacts" — without requiring the separate

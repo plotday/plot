@@ -58,6 +58,8 @@ export class Todoist extends Connector<Todoist> {
   static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Todoist;
+  readonly channelNoun = { singular: "project", plural: "projects" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Todoist.SCOPES;
   readonly linkTypes = [
     {
