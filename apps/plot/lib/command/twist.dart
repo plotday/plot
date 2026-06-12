@@ -13,6 +13,7 @@ import 'package:plot/api/network_exception.dart';
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart' show PermissionFlag;
+import 'package:plot/state/subscription_service.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
@@ -868,6 +869,26 @@ class _SourceLogo extends StatelessWidget {
 
 enum _ResourceType { connections, twists }
 
+/// The freshest usage the app knows about: the [SubscriptionService] snapshot
+/// (kept current via websocket broadcast and app refocus) when available,
+/// otherwise the [fallback] captured when the form first opened. Setup-modal
+/// gates read through this so they re-evaluate against a just-completed
+/// upgrade — including one done out-of-band in a browser — instead of the
+/// stale snapshot they were built from.
+UsageData _liveUsage(UsageData fallback) =>
+    SubscriptionService.instance.usage ?? fallback;
+
+/// Refresh the [SubscriptionService] and return its usage, falling back to the
+/// [ManageConnections] cache or a direct fetch if the service couldn't load.
+/// Setup forms seed their initial usage from this so the value they render and
+/// the notifier they bind to via `refreshOn` share one source of truth.
+Future<UsageData> _freshUsage() async {
+  await SubscriptionService.instance.ensureFresh();
+  return SubscriptionService.instance.usage ??
+      ManageConnections._dataCache?.usage ??
+      await UpgradeApi.getUsage();
+}
+
 /// Returns the at-limit command for a connection-limit case. Opens the
 /// upgrade picker on every distribution channel — on App Store builds
 /// that picker triggers StoreKit IAP; on web/DMG it routes to
@@ -1218,15 +1239,15 @@ class EditSource extends ShowForm {
     }
     final results = await Future.wait([
       integrationsF,
-      ManageConnections._dataCache?.usage != null
-          ? Future.value(ManageConnections._dataCache!.usage!)
-          : UpgradeApi.getUsage(),
+      _freshUsage(),
       TwistConnection.getForInstance(twistInstanceUuid),
     ]);
     var integrations = results[0] as TwistIntegrations;
-    final usage = results[1] as UsageData;
+    // Mutable so the onRefresh closure can re-read the live plan; sourced from
+    // the SubscriptionService so the at-limit gate reacts to upgrades.
+    var usage = results[1] as UsageData;
     var connections = results[2] as List<TwistConnectionRow>;
-    final teams = usage.teams;
+    var teams = usage.teams;
 
     final refreshNotifier = ValueNotifier<int>(0);
     final channelListController = FormChannelListController();
@@ -1370,16 +1391,17 @@ class EditSource extends ShowForm {
                 // Existing connections saving in place are exempt — they
                 // already count toward their current scope.
                 if (isNewlyActivated || owner != initialTeamId) {
+                  final live = _liveUsage(usage);
                   final premiumGate = _premiumGateCommand(
-                    usage: usage,
+                    usage: live,
                     owner: owner,
                     isPremium: integrations.premium,
                   );
                   if (premiumGate != null) return premiumGate;
-                  final team = teams.firstWhereOrNull((t) => t.id == owner);
+                  final team = live.teams.firstWhereOrNull((t) => t.id == owner);
                   final atLimit = team != null
                       ? team.connections.isAtLimit
-                      : usage.personal.connections.isAtLimit;
+                      : live.personal.connections.isAtLimit;
                   if (atLimit) {
                     return _connectionAtLimitCommand();
                   }
@@ -1497,6 +1519,10 @@ class EditSource extends ShowForm {
     }
 
     Future<List<StaticFormGroup>> refresh() async {
+      // Re-read the live plan so a just-completed upgrade clears the at-limit
+      // gate on the save button when rebuilding.
+      usage = _liveUsage(usage);
+      teams = usage.teams;
       final refreshed = await Future.wait([
         TwistApi.getIntegrations(twistInstanceId),
         TwistConnection.getForInstance(twistInstanceUuid),
@@ -1509,6 +1535,7 @@ class EditSource extends ShowForm {
     return FormData(
       title: isNewlyActivated ? 'Set up $name' : name,
       onRefresh: refresh,
+      refreshOn: SubscriptionService.instance.notifier,
       groups: buildAllGroups(),
       dismissable: dismissable,
     );
@@ -1766,16 +1793,19 @@ class AddSourceDetail extends ShowForm {
       );
     }
 
-    // Pre-fetch integrations and usage
+    // Pre-fetch integrations and the freshest usage. Usage comes from the
+    // SubscriptionService (the app-wide source of truth, kept current on
+    // websocket broadcast and app refocus) so the upgrade/at-limit gates below
+    // rebuild reactively when the plan changes — see the `refreshOn` wiring on
+    // the returned FormData. `usage`/`teams` are mutable so the onRefresh
+    // closure can re-read the live snapshot.
     final results = await Future.wait([
       TwistApi.getIntegrations(draftId),
-      ManageConnections._dataCache?.usage != null
-          ? Future.value(ManageConnections._dataCache!.usage!)
-          : UpgradeApi.getUsage(),
+      _freshUsage(),
     ]);
     var integrations = results[0] as TwistIntegrations;
-    final usage = results[1] as UsageData;
-    final teams = usage.teams;
+    var usage = results[1] as UsageData;
+    var teams = usage.teams;
 
     // If we have a cached connect result with an account name but the API
     // didn't return accounts (getAccountName may have failed), inject it.
@@ -1863,6 +1893,10 @@ class AddSourceDetail extends ShowForm {
     }
 
     Future<List<StaticFormGroup>> buildGroups() async {
+      // Re-read the live plan so a just-completed upgrade swaps the upgrade
+      // button for the auth/connect button on rebuild.
+      usage = _liveUsage(usage);
+      teams = usage.teams;
       // Re-fetch integrations on refresh
       var refreshed = await TwistApi.getIntegrations(draftId);
       final cached = _lastConnectResult;
@@ -2019,16 +2053,19 @@ class AddSourceDetail extends ShowForm {
                   isPrimary: true,
                   buildCommand: (values) {
                     final owner = values['team_id'] as String? ?? 'personal';
+                    final live = _liveUsage(usage);
                     final premiumGate = _premiumGateCommand(
-                      usage: usage,
+                      usage: live,
                       owner: owner,
                       isPremium: twist.premium,
                     );
                     if (premiumGate != null) return premiumGate;
-                    final team = teams.firstWhereOrNull((t) => t.id == owner);
+                    final team = live.teams.firstWhereOrNull(
+                      (t) => t.id == owner,
+                    );
                     final atLimit = team != null
                         ? team.connections.isAtLimit
-                        : usage.personal.connections.isAtLimit;
+                        : live.personal.connections.isAtLimit;
 
                     if (atLimit) {
                       return _connectionAtLimitCommand();
@@ -2093,6 +2130,9 @@ class AddSourceDetail extends ShowForm {
     return FormData(
       title: 'Set up ${twist.name}',
       onRefresh: buildGroups,
+      // Rebuild the moment the plan changes (e.g. after a browser upgrade with
+      // no child modal to pop) so the upgrade button becomes the auth button.
+      refreshOn: SubscriptionService.instance.notifier,
       dismissable: dismissable,
       groups: [
         StaticFormGroup(
@@ -2217,16 +2257,19 @@ class AddSourceDetail extends ShowForm {
                   isPrimary: true,
                   buildCommand: (values) {
                     final owner = values['team_id'] as String? ?? 'personal';
+                    final live = _liveUsage(usage);
                     final premiumGate = _premiumGateCommand(
-                      usage: usage,
+                      usage: live,
                       owner: owner,
                       isPremium: twist.premium,
                     );
                     if (premiumGate != null) return premiumGate;
-                    final team = teams.firstWhereOrNull((t) => t.id == owner);
+                    final team = live.teams.firstWhereOrNull(
+                      (t) => t.id == owner,
+                    );
                     final atLimit = team != null
                         ? team.connections.isAtLimit
-                        : usage.personal.connections.isAtLimit;
+                        : live.personal.connections.isAtLimit;
 
                     if (atLimit) {
                       return _connectionAtLimitCommand();
@@ -2697,9 +2740,10 @@ class EditTwist extends ShowForm {
 
                   // Check twist limit if owner changes (for non-sources)
                   if (owner != initialTeamId && !matchingTwist.isSource) {
-                    // Check personal limits
+                    // Check personal limits against the live plan so a
+                    // just-completed upgrade isn't blocked by a stale snapshot.
                     if (owner == 'personal' &&
-                        usage.personal.twists.isAtLimit) {
+                        _liveUsage(usage).personal.twists.isAtLimit) {
                       return _twistAtLimitCommand();
                     }
                     // Note: team twist limits are not yet tracked in UsageData (UI side),
@@ -2870,24 +2914,25 @@ class ShowTwistInfo extends ShowForm {
     // returning in a future Premium AI add-on.
     final results = await Future.wait([
       UpgradeApi.getAiKeys(),
-      UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
+      _freshUsage().then<UsageData?>((r) => r).catchError((_) => null),
     ]);
     final aiKeys = results[0] as List<String>;
-    final usage = results[1] as UsageData?;
     final hasAiKeys = aiKeys.isNotEmpty;
 
     // Block AI-required twists when the user has no API keys.
     final blocked = twist.aiRequired && !hasAiKeys;
 
-    // Only gate entry when the user has no team to fall back to. If they
-    // have teams, let them reach the setup form and pick a scope — the
-    // save-time check in SetupTwist will gate against the chosen owner.
-    final atTwistLimit =
-        usage != null && usage.teams.isEmpty && usage.personal.twists.isAtLimit;
-
-    return FormData(
-      title: twist.name,
-      groups: [
+    List<StaticFormGroup> buildGroups() {
+      // Prefer the live plan so the "Upgrade to add more twists" button flips
+      // back to the normal add button the moment the user upgrades.
+      final usage = SubscriptionService.instance.usage ?? results[1] as UsageData?;
+      // Only gate entry when the user has no team to fall back to. If they
+      // have teams, let them reach the setup form and pick a scope — the
+      // save-time check in SetupTwist will gate against the chosen owner.
+      final atTwistLimit = usage != null &&
+          usage.teams.isEmpty &&
+          usage.personal.twists.isAtLimit;
+      return [
         StaticFormGroup(
           items: [
             FormInfo(
@@ -2905,7 +2950,14 @@ class ShowTwistInfo extends ShowForm {
               ),
           ],
         ),
-      ],
+      ];
+    }
+
+    return FormData(
+      title: twist.name,
+      onRefresh: () async => buildGroups(),
+      refreshOn: SubscriptionService.instance.notifier,
+      groups: buildGroups(),
     );
   }
 }
@@ -2986,12 +3038,12 @@ class SetupTwist extends ShowForm {
       );
     }
 
-    // Pre-fetch integrations and usage
+    // Pre-fetch integrations and usage. Usage is sourced from the
+    // SubscriptionService so the at-limit gates below re-evaluate against the
+    // live plan (see _liveUsage at the tap-time buildCommands).
     final results = await Future.wait([
       TwistApi.getIntegrations(draftId),
-      ManageConnections._dataCache?.usage != null
-          ? Future.value(ManageConnections._dataCache!.usage!)
-          : UpgradeApi.getUsage(),
+      _freshUsage(),
       TwistInstance.get(),
     ]);
     final integrations = results[0] as TwistIntegrations;
@@ -3103,16 +3155,17 @@ class SetupTwist extends ShowForm {
                 key: 'connect',
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
+                  final live = _liveUsage(usage);
                   final premiumGate = _premiumGateCommand(
-                    usage: usage,
+                    usage: live,
                     owner: owner,
                     isPremium: twist.premium,
                   );
                   if (premiumGate != null) return premiumGate;
-                  final team = teams.firstWhereOrNull((t) => t.id == owner);
+                  final team = live.teams.firstWhereOrNull((t) => t.id == owner);
                   final atLimit = team != null
                       ? team.connections.isAtLimit
-                      : usage.personal.connections.isAtLimit;
+                      : live.personal.connections.isAtLimit;
 
                   if (atLimit) {
                     return _connectionAtLimitCommand();
@@ -3150,8 +3203,8 @@ class SetupTwist extends ShowForm {
 
                 // Check twist limit for non-sources
                 if (!twist.isSource) {
-                  final atLimit =
-                      owner == 'personal' && usage.personal.twists.isAtLimit;
+                  final atLimit = owner == 'personal' &&
+                      _liveUsage(usage).personal.twists.isAtLimit;
                   if (atLimit) {
                     return _twistAtLimitCommand();
                   }

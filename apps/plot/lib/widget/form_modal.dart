@@ -69,11 +69,26 @@ class FormModalState extends State<_FormModal> {
   final ScrollController _scrollController = ScrollController();
   int _lastModalStackDepth = 0;
   ValueNotifier<int>? _modalStackNotifier;
+  bool _refreshing = false;
 
   @override
   void initState() {
     super.initState();
     _initForm();
+    widget.form.refreshOn?.addListener(_onExternalRefresh);
+  }
+
+  /// External trigger (e.g. a subscription change) asked the form to rebuild.
+  /// Re-runs [onRefresh] so build-time gates (e.g. the "Upgrade to add more
+  /// connections" button) re-evaluate against the new state. Deferred to a
+  /// post-frame callback so it coalesces with any in-flight build.
+  void _onExternalRefresh() {
+    if (!mounted || widget.form.onRefresh == null) return;
+    final restoreIndex = _highlightedIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshForm(restoreFocusIndex: restoreIndex);
+    });
   }
 
   @override
@@ -129,6 +144,21 @@ class FormModalState extends State<_FormModal> {
   Future<void> _refreshForm({int? restoreFocusIndex}) async {
     final onRefresh = widget.form.onRefresh;
     if (onRefresh == null) return;
+    // Guard against overlapping refreshes (e.g. a child-modal pop and an
+    // external refreshOn firing in the same frame): two concurrent runs would
+    // tear down and dispose the same focus nodes twice.
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      await _doRefreshForm(restoreFocusIndex: restoreFocusIndex);
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  Future<void> _doRefreshForm({int? restoreFocusIndex}) async {
+    final onRefresh = widget.form.onRefresh;
+    if (onRefresh == null) return;
 
     // Capture current values before tearing down old items so user edits
     // aren't lost when the form rebuilds with server-fetched defaults.
@@ -175,6 +205,7 @@ class FormModalState extends State<_FormModal> {
 
   @override
   void dispose() {
+    widget.form.refreshOn?.removeListener(_onExternalRefresh);
     _modalStackNotifier?.removeListener(_onModalStackChanged);
     _teardownItems();
     // Dispose focus nodes

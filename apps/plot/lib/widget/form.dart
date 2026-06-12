@@ -1372,6 +1372,7 @@ class FormData {
     required this.title,
     required this.groups,
     this.onRefresh,
+    this.refreshOn,
     this.dismissable = false,
   });
 
@@ -1381,6 +1382,14 @@ class FormData {
   /// Optional callback to rebuild form groups (e.g. after a child modal adds data).
   /// Called when a child modal is popped. Returns new resolved groups.
   final Future<List<StaticFormGroup>> Function()? onRefresh;
+
+  /// Optional external trigger that re-runs [onRefresh] when it fires (e.g.
+  /// [SubscriptionService.instance.notifier] so an open setup modal rebuilds
+  /// its upgrade/at-limit buttons the moment the user's plan changes — even
+  /// when the upgrade completed out-of-band in a browser, where no child
+  /// modal pop would otherwise refresh the form). Requires [onRefresh] to be
+  /// set; ignored otherwise.
+  final Listenable? refreshOn;
 
   /// When true, the form modal renders a close (X) button in its header
   /// even when the form is the only modal on the stack. Default: false —
