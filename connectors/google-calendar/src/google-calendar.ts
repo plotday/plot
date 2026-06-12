@@ -154,6 +154,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 
   readonly provider = AuthProvider.Google;
+  readonly channelNoun = { singular: "calendar", plural: "calendars" };
   readonly scopes = {
     required: [GoogleCalendar.EVENTS_SCOPE],
     description: [

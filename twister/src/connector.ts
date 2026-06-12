@@ -296,6 +296,39 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   readonly singleChannel?: boolean;
 
   /**
+   * The user-facing noun for this connector's channels — what each
+   * {@link Channel} returned by {@link getChannels} actually represents in the
+   * external service. Many connectors map "channels" onto a domain concept
+   * (folders, projects, calendars, labels, spaces, repositories, …), so the
+   * generic word "channel" reads as jargon. Set this and the UI substitutes it
+   * everywhere it would otherwise say "channel(s)" — e.g. the per-connection
+   * toggle becomes "Sync new folders" / "When a new folder is added, …".
+   *
+   * Provide lowercase nouns (the UI capitalizes where needed):
+   * `{ singular: "folder", plural: "folders" }`. Defaults to
+   * `{ singular: "channel", plural: "channels" }` when omitted.
+   */
+  readonly channelNoun?: { singular: string; plural: string };
+
+  /**
+   * Whether the per-connection "Sync new channels" preference starts ON for
+   * newly added connections of this connector. Defaults to `false` (opt-in).
+   *
+   * Set `true` for connectors that select **all** of their channels by default
+   * (i.e. {@link getChannels} returns no channels marked
+   * `enabledByDefault: false`). If syncing every channel is the intended
+   * default, then channels discovered later should also sync automatically.
+   * Leave `false`/omitted for selective connectors that exclude some channels
+   * by default (e.g. Gmail syncs only Inbox/Sent, Google Calendar only
+   * owner calendars) — for those, a newly discovered channel is just as
+   * uncertain and should wait for the user to opt in.
+   *
+   * Only affects the **default** for new connections; the user's explicit
+   * toggle always wins, and existing connections keep their stored preference.
+   */
+  readonly autoEnableNewChannelsByDefault?: boolean;
+
+  /**
    * Registry of link types this connector creates (e.g., issue, event, message).
    * Used for display in the UI (icons, labels, statuses).
    */

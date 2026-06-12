@@ -231,6 +231,7 @@ export class OutlookMail extends Connector<OutlookMail> {
   ];
 
   readonly provider = AuthProvider.Microsoft;
+  readonly channelNoun = { singular: "folder", plural: "folders" };
   // Merge in People/Contacts scopes so email-only contacts (Graph messages
   // carry name + address but nothing else) can be enriched with display
   // names from the user's People/Contacts data.

@@ -118,6 +118,7 @@ export class GitHub extends Connector<GitHub> {
   static readonly handleReplies = true;
 
   readonly provider = AuthProvider.GitHub;
+  readonly channelNoun = { singular: "repository", plural: "repositories" };
   readonly scopes = GitHub.SCOPES;
   readonly linkTypes = [
     {

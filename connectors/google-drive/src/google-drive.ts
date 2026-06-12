@@ -130,6 +130,8 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Google;
+  readonly channelNoun = { singular: "folder", plural: "folders" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Integrations.MergeScopes(GoogleDrive.SCOPES, GoogleContacts.SCOPES);
   readonly linkTypes = [
     { type: "doc", label: "Document", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googledocs.svg?color=%234285F4", logoMono: "https://api.iconify.design/simple-icons/googledocs.svg" },

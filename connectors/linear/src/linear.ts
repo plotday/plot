@@ -91,6 +91,8 @@ export class Linear extends Connector<Linear> {
   static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Linear;
+  readonly channelNoun = { singular: "team", plural: "teams" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Linear.SCOPES;
   readonly linkTypes = [
     {

@@ -52,6 +52,8 @@ export class Jira extends Connector<Jira> {
   static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Atlassian;
+  readonly channelNoun = { singular: "project", plural: "projects" };
+  readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Jira.SCOPES;
   readonly linkTypes = [
     {
