@@ -1,5 +1,9 @@
 import 'dart:async';
 
+// OverflowBoxFit is part of OverflowBox's public API but flutter/widgets.dart
+// doesn't re-export the enum — this narrow `show` is the only way to name it.
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -38,10 +42,7 @@ bool reserveContactsLabel({
   required bool hasContactIds,
   required bool actorsLoaded,
   required bool hasResolvedLabel,
-}) =>
-    !isChannelThread &&
-    hasContactIds &&
-    (!actorsLoaded || hasResolvedLabel);
+}) => !isChannelThread && hasContactIds && (!actorsLoaded || hasResolvedLabel);
 
 class ThreadWidget extends StatefulWidget {
   const ThreadWidget({
@@ -570,6 +571,25 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   .right;
         final leadingW = iconBaseSize + leadingPad * 2;
         final spacing = buildContext.theme.spacing;
+        // Touch ghost buttons carry a large (14px) icon padding so the circle
+        // and hover commands clear the ~44px touch-target minimum. Pinning the
+        // title row to that height (as desktop does) would leave the 16px title
+        // floating with ~14px of dead space above and below it. The whole row
+        // is the tap-to-open target, so on touch we size the title row to its
+        // text instead (iconBase + `sm`*2, ≈ the desktop row height) and let the
+        // circle/commands overflow their still-tappable bounds. Desktop keeps
+        // the ghost-derived height unchanged.
+        final ghostPadV = buildContext
+            .theme
+            .buttonStyles
+            .ghost
+            .md
+            .iconContentStyle
+            .padding
+            .resolve(TextDirection.ltr)
+            .vertical;
+        final mainRowHeight =
+            iconBaseSize + (isMobilePlatform() ? spacing.sm * 2 : ghostPadV);
 
         final Widget todoIcon;
         final String leadingTitle = !isTodo ? 'To do' : 'Done';
@@ -636,31 +656,53 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         return SizedBox(
           width: leadingW,
           child: Padding(
+            // Mirror the body's vertical rhythm exactly: `sm` top, the
+            // `labelOffset` label slot, the `mainRowHeight` title box, then `sm`
+            // bottom. That makes the circle's box start at the same Y as the
+            // title box, so the centred circle lines up with the centred title
+            // on both labelled and no-label rows.
             padding: EdgeInsets.only(
               top: spacing.sm + labelOffset,
               bottom: spacing.sm,
             ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // Full-area tap/hover target
-                Positioned.fill(
-                  child: MouseRegion(
-                    onEnter: (_) => setState(() => _leadingHovered = true),
-                    onExit: (_) => setState(() => _leadingHovered = false),
-                    child: FTooltip(
-                      tipBuilder: (context, controller) => Text(leadingTitle),
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => buildContext.run(leadingCommand),
-                        onLongPress: longPress,
+            child: SizedBox(
+              height: mainRowHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Full-area tap/hover target
+                  Positioned.fill(
+                    child: MouseRegion(
+                      onEnter: (_) => setState(() => _leadingHovered = true),
+                      onExit: (_) => setState(() => _leadingHovered = false),
+                      child: FTooltip(
+                        tipBuilder: (context, controller) => Text(leadingTitle),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => buildContext.run(leadingCommand),
+                          onLongPress: longPress,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                // Centered icon (visual only)
-                Center(child: IgnorePointer(child: todoIcon)),
-              ],
+                  // Centered icon (visual only). On touch the ghost button is
+                  // intrinsically taller (44px tap padding) than mainRowHeight;
+                  // a plain Center would CLAMP it to the box (Clip.none affects
+                  // painting, not layout), top-anchoring the glyph ~8px below
+                  // the row centre. OverflowBox lets it keep its intrinsic
+                  // height and centres it on the box, overflowing evenly top
+                  // and bottom. Its tap target is the row-sized
+                  // Positioned.fill above, so layout overflow is harmless.
+                  Center(
+                    child: IgnorePointer(
+                      child: OverflowBox(
+                        maxHeight: double.infinity,
+                        child: todoIcon,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -681,6 +723,25 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             ? buildContext.colour.editableBackground
             : buildContext.colour.background;
 
+        // On touch, size the title row to its text rather than the inflated
+        // ghost-button height (see `mainRowHeight` in the leading builder), so
+        // the title doesn't float in dead space. Desktop is unchanged. The
+        // outer `sm` wrapper (which gives the contact-name header row above its
+        // breathing room) stays as-is.
+        final ghostPadV = buildContext
+            .theme
+            .buttonStyles
+            .ghost
+            .md
+            .iconContentStyle
+            .padding
+            .resolve(TextDirection.ltr)
+            .vertical;
+        final mainRowHeight =
+            buildContext.theme.iconSizes.base +
+            (isMobilePlatform()
+                ? buildContext.theme.spacing.sm * 2
+                : ghostPadV);
         return Padding(
           padding: EdgeInsets.only(
             top: buildContext.theme.spacing.sm,
@@ -690,102 +751,104 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (hasTopLabel)
-                DefaultTextStyle(
-                  style: TextStyle(
-                    color:
-                        headerFg ?? buildContext.theme.colors.mutedForeground,
-                    fontSize: buildContext.theme.typography.xs.fontSize,
-                    height: 1,
-                  ),
-                  child: Builder(
-                    builder: (context) {
-                      // Header segments in order: focus · channel ·
-                      // contacts/groups · schedule. The focus is a purely
-                      // static label (no tap-to-move affordance). Each present
-                      // segment is joined to the previous with a dot separator
-                      // below.
-                      final segments = <Widget>[
-                        if (hasSubPriorityLabel)
-                          Flexible(
-                            child: FocusLabel(
-                              priority: activity.priority,
-                              color: headerFg,
-                              fontSize: context.theme.typography.xs.fontSize,
-                              height: 1,
-                              muted: headerFg == null,
+                // Reserve exactly `labelOffset` for the header label — the same
+                // amount the leading column is pushed down by (see its
+                // `top: sm + labelOffset`). The label's intrinsic Figtree height
+                // and the leading's font-agnostic TextPainter estimate drift
+                // apart on touch, which left the title row and the leading
+                // circle starting at slightly different Ys (circle sat low on
+                // labelled rows). Pinning the slot to `labelOffset` keeps them
+                // aligned by construction. The label content is shorter than
+                // the slot, so nothing clips.
+                SizedBox(
+                  height: labelOffset,
+                  child: DefaultTextStyle(
+                    style: TextStyle(
+                      color:
+                          headerFg ?? buildContext.theme.colors.mutedForeground,
+                      fontSize: buildContext.theme.typography.xs.fontSize,
+                      height: 1,
+                    ),
+                    child: Builder(
+                      builder: (context) {
+                        // Header segments in order: focus · channel ·
+                        // contacts/groups · schedule. The focus is a purely
+                        // static label (no tap-to-move affordance). Each present
+                        // segment is joined to the previous with a dot separator
+                        // below.
+                        final segments = <Widget>[
+                          if (hasSubPriorityLabel)
+                            Flexible(
+                              child: FocusLabel(
+                                priority: activity.priority,
+                                color: headerFg,
+                                fontSize: context.theme.typography.xs.fontSize,
+                                height: 1,
+                                muted: headerFg == null,
+                              ),
                             ),
-                          ),
-                        if (hasChannelLabel)
-                          Flexible(
-                            child: Text(
-                              channelLabel,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
+                          if (hasChannelLabel)
+                            Flexible(
+                              child: Text(
+                                channelLabel,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        if (contactsLabel != null)
-                          Flexible(
-                            child: Text(
-                              contactsLabel,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
+                          if (contactsLabel != null)
+                            Flexible(
+                              child: Text(
+                                contactsLabel,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        if (scheduleDate != null)
-                          Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: formatRelativeSchedule(
-                                    scheduleDate,
-                                    context,
-                                  ),
-                                ),
-                                if (activity.duration != null &&
-                                    activity.duration!.inSeconds > 0)
+                          if (scheduleDate != null)
+                            Text.rich(
+                              TextSpan(
+                                children: [
                                   TextSpan(
-                                    text: ' · ${activity.duration!.format()}',
+                                    text: formatRelativeSchedule(
+                                      scheduleDate,
+                                      context,
+                                    ),
                                   ),
-                              ],
+                                  if (activity.duration != null &&
+                                      activity.duration!.inSeconds > 0)
+                                    TextSpan(
+                                      text: ' · ${activity.duration!.format()}',
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                      ];
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (var i = 0; i < segments.length; i++) ...[
-                            if (i > 0) const Text(' · '),
-                            segments[i],
+                        ];
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (var i = 0; i < segments.length; i++) ...[
+                              if (i > 0) const Text(' · '),
+                              segments[i],
+                            ],
                           ],
-                        ],
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               // SizedBox + Stack keeps the title row height stable
-              // regardless of whether ThreadCommands buttons are
-              // visible. The fixed height matches FButton.icon (icon
-              // size + icon-content padding) so it equals the leading
-              // button area. This prevents layout shifts when
-              // ThreadCommands appears on hover, and keeps the Stack
-              // tall enough for buttons to receive hit-test events
-              // (RenderBox.hitTest rejects positions outside its
-              // size, so the Stack must be at least as tall as the
-              // buttons for per-button hover to work).
+              // regardless of whether ThreadCommands buttons are visible.
+              // On desktop the height matches FButton.icon (icon size +
+              // icon-content padding) so it equals the leading button area and
+              // the hover ThreadCommands buttons stay hit-testable (RenderBox
+              // rejects hits outside its size). On touch the ghost padding is
+              // large (44px tap targets) and would leave the title floating, so
+              // we size to the text instead (`mainRowHeight`); the
+              // circle/commands overflow but remain tappable via their
+              // row-sized fill, and touch uses swipes for the command actions.
               SizedBox(
-                height:
-                    buildContext.theme.iconSizes.base +
-                    buildContext
-                        .theme
-                        .buttonStyles
-                        .ghost
-                        .md
-                        .iconContentStyle
-                        .padding
-                        .resolve(TextDirection.ltr)
-                        .vertical,
+                height: mainRowHeight,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
@@ -806,6 +869,19 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               overflow: TextOverflow.ellipsis,
                               style: buildContext.theme.typography.md.copyWith(
                                 color: buildContext.colour.foreground,
+                                // forui's `md` carries height:1.5. With the
+                                // default proportional leading, that ascent-
+                                // heavy extra space sinks the glyph ~0.15·
+                                // fontSize below its line-box centre — invisible
+                                // at desktop's 15px but ~2px at touch's 16px,
+                                // which left titles (and the row) sitting low.
+                                // Centre the glyph in its line box on touch so
+                                // it lines up with the logo and the leading
+                                // circle; desktop keeps forui's default (right
+                                // there).
+                                leadingDistribution: isMobilePlatform()
+                                    ? TextLeadingDistribution.even
+                                    : null,
                               ),
                               TextSpan(
                                 children: [
@@ -889,13 +965,31 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               ),
                               ColoredBox(
                                 color: tileBg,
-                                child: ThreadCommands(
-                                  activity: activity,
-                                  showCommands: isHighlighted,
-                                  showEventTiming: showEventTiming,
-                                  bump: bump,
-                                  isAssociated: widget.isAssociated,
-                                  onDesktopFinish: widget.onDesktopFinish,
+                                // On touch the trailing buttons are
+                                // intrinsically taller (44px tap padding) than
+                                // this Positioned's row band; without an
+                                // escape they'd be layout-clamped and their
+                                // glyphs top-anchored ~8px low (same failure
+                                // as the leading circle). OverflowBox lets the
+                                // commands row keep its intrinsic height and
+                                // centres it on the band. deferToChild keeps
+                                // this box (and the tileBg mask) at the
+                                // band-clamped size so the solid background
+                                // still covers exactly the title strip.
+                                // Hit-testing stays gated by the band's
+                                // height, which covers the visible glyphs.
+                                // Desktop is an exact fit (30-in-30): no-op.
+                                child: OverflowBox(
+                                  fit: OverflowBoxFit.deferToChild,
+                                  maxHeight: double.infinity,
+                                  child: ThreadCommands(
+                                    activity: activity,
+                                    showCommands: isHighlighted,
+                                    showEventTiming: showEventTiming,
+                                    bump: bump,
+                                    isAssociated: widget.isAssociated,
+                                    onDesktopFinish: widget.onDesktopFinish,
+                                  ),
                                 ),
                               ),
                             ],
@@ -949,24 +1043,25 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // shed the priority page tree.
       final priorityBloc = buildContext.read<PriorityBloc?>();
       return ContextMenu(
-        items: (close) => threadCommands(
-              activity,
-              isPlotThread: Thread.isPlotThread(_links),
-              sharingModel: Thread.resolveSharingModel(_links),
-              openInLink: Thread.primaryLink(_links),
-              priorityBloc: priorityBloc,
-            )
-            .map(
-              (cmd) => FItem(
-                title: Text(cmd.title),
-                prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
-                onPress: () {
-                  close();
-                  buildContext.run(cmd);
-                },
-              ),
-            )
-            .toList(),
+        items: (close) =>
+            threadCommands(
+                  activity,
+                  isPlotThread: Thread.isPlotThread(_links),
+                  sharingModel: Thread.resolveSharingModel(_links),
+                  openInLink: Thread.primaryLink(_links),
+                  priorityBloc: priorityBloc,
+                )
+                .map(
+                  (cmd) => FItem(
+                    title: Text(cmd.title),
+                    prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+                    onPress: () {
+                      close();
+                      buildContext.run(cmd);
+                    },
+                  ),
+                )
+                .toList(),
         child: listTile,
       );
     }
@@ -1135,13 +1230,7 @@ class ThreadCommands extends HookWidget {
     final trailingIsNonButton =
         !showCommands && (rsvpChip != null || activity.assigneeId != null);
     final trailingInset = trailingIsNonButton
-        ? context
-              .theme
-              .buttonStyles
-              .ghost
-              .md
-              .iconContentStyle
-              .padding
+        ? context.theme.buttonStyles.ghost.md.iconContentStyle.padding
               .resolve(TextDirection.ltr)
               .right
         : 0.0;
@@ -1152,8 +1241,7 @@ class ThreadCommands extends HookWidget {
         ...allButtons,
         for (final action in conferencingActions)
           _ConferencingIconButton(action: action),
-        if (primaryLink != null)
-          StatusIconButton(link: primaryLink),
+        if (primaryLink != null) StatusIconButton(link: primaryLink),
         ?rsvpChip,
         // Persistent thread-level assignee avatar (any assigned thread).
         if (activity.assigneeId != null) ThreadAssignee(thread: activity),
