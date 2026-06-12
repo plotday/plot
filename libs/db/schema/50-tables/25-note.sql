@@ -178,10 +178,23 @@ BEGIN
             -- exactly the users who can see this note, so the thread
             -- re-emits / re-sorts / unreads only for them. The author's row
             -- is bumped but kept read; other visible users get read_at = NULL.
+            --
+            -- "The author" is identified by NEW.author_id (the contact credited
+            -- with the note), resolved to its owning user, NOT only by
+            -- NEW.created_by. For a reply the user made OUTSIDE Plot (e.g. in
+            -- Gmail) and a connector synced back, created_by is the connector's
+            -- twist_instance_id while author_id is the user's own linked
+            -- contact — so a created_by-only check would mark the author unread
+            -- and notify them about their own reply.
             INSERT INTO thread_state (user_id, thread_id, read_at, bumped_at)
             SELECT v.user_id,
                    NEW.thread_id,
-                   CASE WHEN v.user_id = NEW.created_by THEN now() ELSE NULL END,
+                   CASE
+                       WHEN v.user_id = NEW.created_by
+                            OR NEW.author_id = ANY("user".user_contact_ids(v.user_id))
+                       THEN now()
+                       ELSE NULL
+                   END,
                    now()
             FROM (
                 SELECT tp.user_id
@@ -199,9 +212,15 @@ BEGIN
             ON CONFLICT (user_id, thread_id) DO UPDATE
             SET bumped_at = now(),
                 -- A non-author visible user must see the thread as unread
-                -- again; never clobber the author's own read state.
+                -- again; never clobber the author's own read state. The author
+                -- is matched by NEW.author_id (its owning user) as well as by
+                -- created_by, so a reply synced back from an external system
+                -- (created_by = connector, author_id = the user's contact)
+                -- does not re-surface as unread for its own author.
                 read_at = CASE
-                    WHEN thread_state.user_id = NEW.created_by THEN thread_state.read_at
+                    WHEN thread_state.user_id = NEW.created_by
+                         OR NEW.author_id = ANY("user".user_contact_ids(thread_state.user_id))
+                    THEN thread_state.read_at
                     ELSE NULL
                 END,
                 updated_at = now();
