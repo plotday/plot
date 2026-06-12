@@ -9,12 +9,19 @@ const _desktopSizes = (xs: 11.0, sm: 13.0, base: 15.0, lg: 18.0, xl: 22.0);
 /// Font and icon sizes for mobile platforms with small screens.
 const _mobileSizes = (xs: 12.0, sm: 14.0, base: 16.0, lg: 20.0, xl: 24.0);
 
-/// Detects if we should use larger mobile fonts:
-/// - Mobile platform (iOS/Android, native or web)
-/// - Screen width < 660px (single-panel breakpoint)
+/// Detects if we should use the larger, touch-friendly mobile sizing.
+///
+/// True for any mobile platform (iOS/Android, native or web) — including
+/// wide tablets like iPad. This deliberately mirrors the predicate that
+/// drives ghost button/icon padding in `style/button.dart`
+/// (`isMobilePlatform()`), so a device's type scale and its touch chrome
+/// stay consistent. Previously this was also gated on `screenWidth < 660`,
+/// which left wide iPads with desktop-small fonts inside touch-sized bands —
+/// the header text looked undersized and floated high in the band.
+///
+/// `context` is retained for signature stability with the callers below.
 bool _useMobileFonts(BuildContext context) {
-  final screenWidth = MediaQuery.sizeOf(context).width;
-  return isMobilePlatform() && screenWidth < 660;
+  return isMobilePlatform();
 }
 
 FTypography buildTypography(BuildContext context, FColors colorScheme) {
