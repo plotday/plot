@@ -27,6 +27,7 @@ class PriorityWidget extends StatefulWidget {
     this.borderRadius,
     this.monochrome = false,
     this.boldLeaf = false,
+    this.boldActive = true,
     this.expandable = false,
     this.expanded = false,
     this.onToggleExpand,
@@ -83,6 +84,11 @@ class PriorityWidget extends StatefulWidget {
   /// When true and the priority label is displayed with ancestry, render the
   /// leaf (this priority) in a heavier weight than its ancestor crumbs.
   final bool boldLeaf;
+
+  /// When false, a focus with active threads is NOT rendered bold. The global-
+  /// view (search/filter) sidebar sets this so result tiles read uniformly,
+  /// without the active-state emphasis used during normal navigation.
+  final bool boldActive;
 
   /// When true, render an expand/collapse caret directly after the title.
   /// Tapping the caret runs [onToggleExpand] without changing the active
@@ -161,7 +167,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     // A focus is "bold" when it has active threads (or for search's
     // ancestry-leaf emphasis). Bold tiles are never muted — their colour
     // shows at rest, just like on hover/selection.
-    final bool bold = priority.active || widget.boldLeaf;
+    final bool bold = (widget.boldActive && priority.active) || widget.boldLeaf;
     // The leading focus icon and the title share one colour so they always
     // match: a muted tone at rest on the left-panel frame, the focus colour
     // when bold, hovered, or selected.

@@ -252,10 +252,10 @@ class _GlobalViewSidebar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(height: context.theme.spacing.md),
-            // Everything — the full, unscoped global result set. Selected by
+            // All matches — the full, unscoped global result set. Selected by
             // default (no focus scope picked).
             FixedFocusTile(
-              title: 'Everything',
+              title: 'All matches',
               icon: PlotIcon.inboxes,
               isSelected: scope == null,
               command: SetGlobalViewScope(null),
@@ -289,7 +289,10 @@ class _GlobalViewSidebar extends StatelessWidget {
                 selectedBorder: true,
                 borderRadius: itemBorderRadius,
                 showAncestry: true,
-                boldLeaf: true,
+                // Search results read uniformly: no active-state bold and no
+                // unread dot — those cues belong to normal navigation.
+                boldActive: false,
+                unread: false,
                 // Tap narrows the global view to this focus without navigating.
                 command: SetGlobalViewScope(priority),
                 textStyle: itemStyle.copyWith(
