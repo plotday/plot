@@ -198,6 +198,7 @@
 
 ### Fixes
 
+- Replying to an email or message in its original app no longer pings you about your own reply. When you answer a Gmail thread (or similar) directly in that app, Plot used to sync the reply back, mark the thread unread for you, and notify you about a message you just wrote. Plot now recognizes those replies as yours and leaves the thread read.
 - After you upgrade, the connection screen updates itself. If you were on the "Set up" screen for a connection and tapped "Upgrade to add more connections," that screen now turns the upgrade button back into the normal connect button the moment your new plan takes effect — even when you finished the upgrade in your browser — so you can add the connection right away without closing and reopening it. The same applies to adding a twist.
 - The icons at the right end of a thread row now hold their place when you hover. The always-present ones — like a muted thread's mute icon, a status icon, an RSVP, or an assignee's avatar — stay put, and the extra actions that appear on hover slide in to their left instead of nudging them around. The status icon also now matches the size and look of the other icons beside it.
 - On iPad, the circle button beside each thread now sits perfectly level with the thread's title, instead of drooping below it. The icons at the right end of a row (status, RSVP, and the actions that appear when hovering with a trackpad pointer) line up the same way.
