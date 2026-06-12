@@ -18,7 +18,35 @@
     <link rel="icon" type="image/svg+xml" href="icons/favicon.svg?v=20250908">
     <link rel="shortcut icon" href="icons/favicon.ico?v=20250908">
     <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=20250908">
-  
+
+    <style>
+      /* Host for Clerk's bot-protection (Cloudflare Turnstile) challenge.
+         Flutter renders its canvas over the entire <body>, so by default this
+         host mounts *behind* the Flutter view with zero size. That's fine for
+         the silent/invisible challenge (Chrome), but on Safari the silent
+         Private Access Token path is blocked and Turnstile falls back to an
+         *interactive* widget rendered into this host — which would be invisible
+         and unclickable behind the canvas, leaving Google/OAuth sign-in
+         spinning forever. Pin it above the Flutter view and center it so the
+         challenge is actually reachable. While empty it collapses to 0x0 and
+         intercepts nothing, so the invisible path is unaffected. */
+      #clerk-captcha {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 2147483647;
+      }
+      /* Dim the page only while a challenge is actually mounted. */
+      #clerk-captcha:not(:empty)::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background: rgba(0, 0, 0, 0.45);
+      }
+    </style>
+
     <style id="splash-screen-style">
       html {
         height: 100%
