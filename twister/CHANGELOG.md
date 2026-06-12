@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.59.0
+
+### Added
+
+- `Connector.channelNoun` ({ singular, plural }) so connectors can name what their channels represent (folders, projects, calendars, …) instead of the generic "channel", and `Connector.autoEnableNewChannelsByDefault` so connectors that select all channels by default can also default the per-connection "Sync new channels" preference ON. ([#195](https://github.com/plotday/plot/pull/195) [`aa95a38`](https://github.com/plotday/plot/commit/aa95a38a1060a1a7abe3d556bce1dfdd77aeda2f))
+
 ## 0.58.0
 
 ### Added
