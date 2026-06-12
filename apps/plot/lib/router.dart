@@ -9,6 +9,7 @@ import 'package:logging/logging.dart';
 
 import 'auto_sign_in.dart';
 import 'state/user.dart';
+import 'state/layout.dart';
 import 'state/priority.dart';
 import 'page/page.dart';
 import 'util/url_override.dart';
@@ -121,9 +122,21 @@ class AppRouter extends RootStackRouter {
   /// skip the transition — there's no source page to animate from when
   /// the route is mounted as part of initial route resolution (e.g.
   /// iPad multi-panel auto-forward, deep-linked /t/:id).
+  ///
+  /// Multi-panel (iPad/desktop split view) also skips the slide. The
+  /// thread panel is the *detail* pane of a master-detail layout, and
+  /// the native slide is a push transition for a single navigation
+  /// stack — it animates the incoming page in from the right edge of
+  /// the panel's own Navigator, so on a narrow thread panel the new
+  /// content visibly travels across the shared seam into the middle
+  /// panel. Apple's `UISplitViewController` swaps the detail pane
+  /// instantly (no push slide) when expanded into two columns; the
+  /// slide is reserved for the collapsed/single-panel mode where the
+  /// thread genuinely pushes over the list. So restrict the native
+  /// transition to single-panel.
   final RouteType _threadRouteType = RouteType.custom(
     customRouteBuilder: <T>(context, child, page) {
-      if (!kIsWeb && _appFirstFrameRendered) {
+      if (!kIsWeb && _appFirstFrameRendered && !context.isMultiPanel) {
         switch (defaultTargetPlatform) {
           case TargetPlatform.iOS:
             return CupertinoPageRoute<T>(
