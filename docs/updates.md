@@ -34,6 +34,7 @@
 
 ### Starting a thread
 
+- Starting a thread is quicker, especially on phones. The list of people, channels, and focuses is ready the moment you tap **New** — Plot prepares it in the background while you're working instead of building it from scratch on first open, so it no longer pauses for a beat before the options appear.
 - You can now send a thread to a group through email connections like Gmail — Plot automatically expands the group to its members' email addresses. Group members must have an email address.
 - The "People" list where you start a thread now shows your groups alongside your contacts, and keeps the ones you've used most recently at the top. Add a contact or create a group and it jumps straight to the top, ready to message. Search now finds any group by name too.
 - You can now add and edit contacts and groups right where you start a thread. In the People and twists section, tap **+ Contact** to add someone by name and email, or **+ Group** to gather people into a named group. Hover any person or group row — or press ⌘Enter — for a **…** menu to edit it: rename a contact, or rename a group and change who's in it. And when you've picked several people together, naming them turns the set into a reusable group, so the next thread is one tap away.

@@ -1,8 +1,12 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/main.dart' show navigatorKey;
+import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
@@ -75,6 +79,29 @@ class PrioritiesShell extends StatefulWidget {
 
 class _PrioritiesShellState extends State<PrioritiesShell> {
   Listenable? _navHistory;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-warm the new-thread step-1 picker. In multi-panel layouts
+    // NewThreadPage is always mounted (the right panel), so its picker data
+    // loads at app start; in single-panel — this shell — the page isn't
+    // mounted until the user taps "New", so without this the first open runs
+    // every picker query cold and can take seconds. Warm after the first frame
+    // so the focus feed paints first; fire-and-forget (the bloc caches the
+    // result, so a later open reuses it).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        context.read<ComposeTargetsBloc>().warm().catchError((
+          Object e,
+          StackTrace s,
+        ) {
+          Tracker.captureException(e, s);
+        }),
+      );
+    });
+  }
 
   void _onRouteChanged() {
     if (mounted) setState(() {});

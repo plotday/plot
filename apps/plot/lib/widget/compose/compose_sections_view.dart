@@ -217,14 +217,14 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final bloc = context.read<ComposeTargetsBloc>();
     bloc
         .loadSections(linkMode: _linkMode)
-        .then((sections) async {
-          if (_isDisposed || requestId != _requestId) return;
-          // Co-load priorities in parallel so focus-note pills can resolve.
-          final priorities = await Priority.getRaw();
+        .then((sections) {
           if (_isDisposed || requestId != _requestId) return;
           setState(() {
             _sections = sections;
-            _priorityById = {for (final p in priorities) p.id: p};
+            // Reuse the focuses the bloc already resolved while building this
+            // list (its context build runs Priority.getRaw) instead of issuing
+            // a second identical query here on every load.
+            _priorityById = bloc.priorityById;
           });
         })
         .catchError((Object e, StackTrace s) {
@@ -257,13 +257,13 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final bloc = context.read<ComposeTargetsBloc>();
     bloc
         .searchSections(trimmed)
-        .then((sections) async {
-          if (_isDisposed || requestId != _requestId) return;
-          final priorities = await Priority.getRaw();
+        .then((sections) {
           if (_isDisposed || requestId != _requestId) return;
           setState(() {
             _sections = sections;
-            _priorityById = {for (final p in priorities) p.id: p};
+            // Reuse the bloc's resolved focuses (see [_loadSections]) rather
+            // than re-querying all priorities on every keystroke.
+            _priorityById = bloc.priorityById;
           });
         })
         .catchError((Object e, StackTrace s) {

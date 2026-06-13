@@ -319,6 +319,18 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     emit(state.copyWith(targets: _toViews(targets, ctx)));
   }
 
+  /// Pre-builds the step-1 picker's at-rest data (and the shared, cached
+  /// search context behind it) so the first [loadSections] after the page
+  /// mounts is fast. NewThreadPage is always mounted in multi-panel layouts,
+  /// so this work happens at app load there; in single-panel the page isn't
+  /// mounted until the user taps "New", so the single-panel shell calls this
+  /// on mount to close that gap. The result is discarded — only the cached
+  /// context and warmed entity caches matter — and it's a no-op once warm
+  /// ([_searchContextFor] returns the cached context).
+  Future<void> warm() async {
+    await loadSections();
+  }
+
   /// Filter + synthesize targets for [query].
   ///
   /// - Empty → the cached base list.
@@ -631,13 +643,30 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     _contextToken++;
   }
 
+  /// Focuses-by-id from the most-recently-built search context, for resolving
+  /// focus-note pills in the sections view without a redundant
+  /// `Priority.getRaw()` on every load and keystroke. Populated once
+  /// [loadSections] / [searchSections] (or [warm]) has built the context;
+  /// empty before then. The sections view reads this synchronously right after
+  /// a load resolves — at which point the context is freshly cached — and a
+  /// concurrent invalidate only drops it to an empty map for the brief window
+  /// before the view's reactive reload rebuilds it.
+  Map<Uuid, Priority> get priorityById =>
+      _searchContext?.priorityById ?? const {};
+
   /// Loads the query-independent pieces every base-list/search pass needs:
   /// active teams, the connector create-targets (with per-connector counts and
   /// a signature index), and the recent authored-thread roster scan.
   Future<_ComposeSearchContext> _buildSearchContext() async {
-    final teams = await TeamUser.getActive();
-    final createTargets = await loadCreateTargets();
-    final scan = await _scanAuthoredThreads();
+    // These three reads are independent, so issue them concurrently rather
+    // than awaiting in series — on a cold open (single-panel, first "New")
+    // this chain is the bulk of the wait, and `_scanAuthoredThreads` alone
+    // runs a threads + links query.
+    final (teams, createTargets, scan) = await (
+      TeamUser.getActive(),
+      loadCreateTargets(),
+      _scanAuthoredThreads(),
+    ).wait;
 
     // Warm the Actor cache so the synchronous Actor.fromCache lookups below
     // (the disambiguation tally) and in the used-combo rendering resolve on a
@@ -870,28 +899,16 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
           ms: st.recencyMs,
         ));
       }
-      // Warm caches for pinned ids so just-created entities resolve, then add
-      // them to the candidate pool.
+      // Add the in-memory pinned rosters ("+ Contact"/"+ Group" with no thread
+      // yet) to the candidate pool.
       for (final e in _createdPeopleMru.values) {
-        for (final cid in e.roster.contacts) {
-          try {
-            await Actor.getOne(ActorId.fromUuid(cid));
-          } catch (_) {/* dropped at resolve */}
-        }
-        for (final gid in e.roster.groups) {
-          await Group.getOne(gid);
-        }
         candidates.add((roster: e.roster, ms: e.ms));
       }
-      // Warm member contacts for every candidate group so the at-rest people
-      // list shows a correct member count (the synchronous _groupPeopleEntry
-      // below reads the Actor cache only — see _warmGroupMembers).
-      for (final c in candidates) {
-        for (final gid in c.roster.groups) {
-          final g = Group.fromCache(gid) ?? await Group.getOne(gid);
-          if (g != null) await _warmGroupMembers(g);
-        }
-      }
+      // Warm the Actor/Group caches the synchronous resolve below reads
+      // (_peopleEntryFor / _groupPeopleEntry use *fromCache* only), deduped
+      // across candidates so a group shared by many threads — or a contact on
+      // many rosters — is touched once instead of re-warmed per occurrence.
+      await _warmRostersForResolve(candidates);
 
       // Resolve in MRU order, dropping unresolvable/collapsed rosters, capped.
       final seenRosters = <String>{};
@@ -975,6 +992,39 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       inviteEmails: roster.inviteEmails,
       display: GroupPillData(g, members),
     );
+  }
+
+  /// Warms the Actor/Group caches that the synchronous people-entry resolve
+  /// ([_peopleEntryFor] / [_groupPeopleEntry]) reads via `fromCache`, deduped
+  /// across [candidates]. In the common case this issues **no** queries:
+  /// groups are fully cached at startup and the context build bulk-loads
+  /// contacts, so every `fromCache` hits — this loop only reaches the DB for a
+  /// genuinely un-cached (e.g. just-created/un-synced) entity. Member contacts
+  /// of each candidate group are warmed too, so [_groupPeopleEntry] can show a
+  /// correct member count.
+  Future<void> _warmRostersForResolve(
+    List<({RosterKey roster, int ms})> candidates,
+  ) async {
+    final groupIds = <Uuid>{};
+    final contactIds = <Uuid>{};
+    for (final c in candidates) {
+      groupIds.addAll(c.roster.groups);
+      contactIds.addAll(c.roster.contacts);
+    }
+    // Resolve each distinct group once, collecting its members to warm too.
+    for (final gid in groupIds) {
+      final g = Group.fromCache(gid) ?? await Group.getOne(gid);
+      if (g != null) contactIds.addAll(g.memberContactIds ?? const <Uuid>[]);
+    }
+    // Warm any not-yet-cached contact (group members + pinned-roster contacts).
+    // Cache hits cost nothing; only un-cached ids reach the DB.
+    for (final cid in contactIds) {
+      final aid = ActorId.fromUuid(cid);
+      if (Actor.fromCache(aid) != null) continue;
+      try {
+        await Actor.getOne(aid);
+      } catch (_) {/* contact not present locally — dropped at resolve */}
+    }
   }
 
   /// Warm the in-memory [Actor] cache for [g]'s member contacts so a
