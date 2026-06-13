@@ -22,6 +22,27 @@ class ThreadBloc extends Cubit<ThreadState> {
       _reactionsSubscription = null,
       super(ThreadState(thread: thread)) {
     _loadThread();
+    _initNotesLoaded();
+  }
+
+  /// Resolves the [ThreadState.notesLoaded] latch once this thread's notes are
+  /// guaranteed loaded: immediately if a per-thread pull already ran, otherwise
+  /// after [Note.ensureNotesLoadedForActivity] (the on-demand pull) completes —
+  /// even if the thread turns out to have zero notes. Flipped to true on error
+  /// too, so the loading spinner never spins forever. Called once from the
+  /// constructor (not from [_loadNotes], which re-runs on filter changes) so
+  /// the latch is sticky across filtering. The [_loadNotes] listener also flips
+  /// it the instant any non-empty local list arrives, so already-local threads
+  /// never show a spinner.
+  Future<void> _initNotesLoaded() async {
+    try {
+      await Note.ensureNotesLoadedForActivity(state.thread.id);
+    } catch (e, stackTrace) {
+      log.warning('ensureNotesLoadedForActivity failed', e, stackTrace);
+    }
+    if (!isClosed && !state.notesLoaded) {
+      emit(state.copyWith(notesLoaded: true));
+    }
   }
 
   void toggleShowArchived() {
@@ -450,7 +471,13 @@ class ThreadBloc extends Cubit<ThreadState> {
               : null,
           threadNoteId: state.threadNoteId,
         ).listen((notes) {
-          emit(state.copyWith(notes: notes));
+          // Sticky: any non-empty local emission means notes are present, so
+          // drop the loading spinner immediately (before _initNotesLoaded's
+          // pull resolves). Never flips back to false.
+          emit(state.copyWith(
+            notes: notes,
+            notesLoaded: state.notesLoaded || notes.isNotEmpty,
+          ));
         });
   }
 

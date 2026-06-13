@@ -74,6 +74,15 @@ class _NotificationLandingPageState extends State<NotificationLandingPage> {
           );
         }
       }
+
+      // Warm notes for the notified threads so tapping into any of them from
+      // the feed opens populated even on a cold-start tap. Fire-and-forget;
+      // each thread's bloc de-dupes against the in-flight pull.
+      for (final id in threadIds) {
+        Note.pullForActivity(id).catchError((Object e) {
+          _log.warning('Note prefetch failed for $id', e);
+        });
+      }
     }
 
     if (!mounted) return;

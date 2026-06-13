@@ -29,6 +29,7 @@ noteTags.get("/sync/note-tags", async (c) => {
     limit,
     priorityId,
     priorityPath,
+    threadId,
     rangeStart,
     rangeEnd,
     sortBy,
@@ -48,6 +49,7 @@ noteTags.get("/sync/note-tags", async (c) => {
           archived,
           priorityId,
           priorityPath,
+          threadId,
           rangeStart,
           rangeEnd,
           sortBy,
@@ -191,6 +193,7 @@ async function fetchNoteTagsBySeq(
     archived: boolean | undefined;
     priorityId: string | null;
     priorityPath: string | null;
+    threadId: string | null;
     rangeStart: string | null;
     rangeEnd: string | null;
     sortBy: string;
@@ -205,6 +208,7 @@ async function fetchNoteTagsBySeq(
     archived,
     priorityId,
     priorityPath,
+    threadId,
     rangeStart,
     rangeEnd,
     sortBy,
@@ -216,6 +220,27 @@ async function fetchNoteTagsBySeq(
       : pageSeq
         ? sql`AND tt.seq > ${pageSeq}::xid8`
         : sql``;
+
+  // Per-thread pull (on-demand load of a historical thread's tags).
+  const threadFilter = threadId
+    ? sql`AND n.thread_id = ${threadId}::uuid`
+    : sql``;
+
+  // Bounded initial sync: on a fresh device (seq cursor at 0) with no thread
+  // scope, restrict to tags on unread/active threads — mirrors notes.ts and
+  // /sync/threads. Without this the initial pull backfilled every historical
+  // tag (the dominant cold-sync cost). Per-thread pulls reach historical
+  // threads via threadFilter; incremental pulls (seq>0) stay unfiltered.
+  const initialUnreadActiveFilter =
+    seqSince === "0" && !threadId && archived !== true
+      ? sql`AND n.thread_id IN (
+          SELECT id FROM "user".thread
+          WHERE user_id = ${userId}::uuid
+            AND archived_at IS NULL
+            AND draft = false
+            AND (unread = true OR active = true)
+        )`
+      : sql``;
 
   const archivedFilter =
     archived === true
@@ -301,6 +326,8 @@ async function fetchNoteTagsBySeq(
       ${pageCursor}
       ${archivedFilter}
       ${priorityFilter}
+      ${threadFilter}
+      ${initialUnreadActiveFilter}
       ${rangeStartFilter}
       ${rangeEndFilter}
     ORDER BY tt.seq ASC, n.id ASC

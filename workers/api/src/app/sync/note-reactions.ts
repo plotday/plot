@@ -27,6 +27,7 @@ noteReactions.get("/sync/note-reactions", async (c) => {
     limit,
     priorityId,
     priorityPath,
+    threadId,
     rangeStart,
     rangeEnd,
     sortBy,
@@ -46,6 +47,7 @@ noteReactions.get("/sync/note-reactions", async (c) => {
           archived,
           priorityId,
           priorityPath,
+          threadId,
           rangeStart,
           rangeEnd,
           sortBy,
@@ -130,6 +132,7 @@ async function fetchNoteReactionsBySeq(
     archived: boolean | undefined;
     priorityId: string | null;
     priorityPath: string | null;
+    threadId: string | null;
     rangeStart: string | null;
     rangeEnd: string | null;
     sortBy: string;
@@ -144,6 +147,7 @@ async function fetchNoteReactionsBySeq(
     archived,
     priorityId,
     priorityPath,
+    threadId,
     rangeStart,
     rangeEnd,
     sortBy,
@@ -155,6 +159,26 @@ async function fetchNoteReactionsBySeq(
       : pageSeq
         ? sql`AND nr.seq > ${pageSeq}::xid8`
         : sql``;
+
+  // Per-thread pull (on-demand load of a historical thread's reactions).
+  const threadFilter = threadId
+    ? sql`AND n.thread_id = ${threadId}::uuid`
+    : sql``;
+
+  // Bounded initial sync: on a fresh device (seq cursor at 0) with no thread
+  // scope, restrict to reactions on unread/active threads — mirrors notes.ts
+  // and /sync/threads. Per-thread pulls reach historical threads via
+  // threadFilter; incremental pulls (seq>0) stay unfiltered.
+  const initialUnreadActiveFilter =
+    seqSince === "0" && !threadId && archived !== true
+      ? sql`AND n.thread_id IN (
+          SELECT id FROM "user".thread
+          WHERE user_id = ${userId}::uuid
+            AND archived_at IS NULL
+            AND draft = false
+            AND (unread = true OR active = true)
+        )`
+      : sql``;
 
   const archivedFilter =
     archived === true
@@ -239,6 +263,8 @@ async function fetchNoteReactionsBySeq(
       ${pageCursor}
       ${archivedFilter}
       ${priorityFilter}
+      ${threadFilter}
+      ${initialUnreadActiveFilter}
       ${rangeStartFilter}
       ${rangeEndFilter}
     ORDER BY nr.seq ASC, n.id ASC

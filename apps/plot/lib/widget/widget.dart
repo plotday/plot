@@ -24,6 +24,7 @@ export 'confirm_modal.dart';
 export 'connection_chip.dart';
 export 'connection_targets.dart';
 export 'context_menu.dart';
+export 'delayed_spinner.dart';
 export 'modal.dart';
 export 'dropdown.dart';
 export 'editor.dart';

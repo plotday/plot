@@ -701,6 +701,15 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     InfiniteListController listController,
     BuildContext context,
   ) {
+    // Notes still loading on demand (not yet local, and none arrived): show a
+    // delayed spinner so the list area isn't blank. The 100ms delay means it
+    // never flashes when notes are already local — `notesLoaded` flips within
+    // a frame in that case. The thread header, actions row, and composer keep
+    // rendering around this (they're outside _buildThreadList).
+    if (!state.notesLoaded && state.notes.isEmpty) {
+      return const Center(child: DelayedSpinner());
+    }
+
     final totalItems = _getTotalItemCount(state);
 
     final list = InfiniteList(

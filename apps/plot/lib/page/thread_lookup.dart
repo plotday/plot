@@ -61,6 +61,13 @@ class _ThreadLookupPageState extends State<ThreadLookupPage> {
 
     if (!mounted) return;
     if (thread != null) {
+      // Warm this thread's notes so it opens populated even on a cold-start
+      // notification tap (critical sync pulls no notes). Fire-and-forget — the
+      // ThreadPage shows a 100ms-delayed spinner if the pull is still in
+      // flight, and its bloc de-dupes against this in-flight pull.
+      Note.pullForActivity(threadId).catchError((Object e) {
+        _log.warning('Note prefetch failed for ${widget.threadIdString}', e);
+      });
       context.router.replaceAll([
         PriorityRoute(
           priorityIdString: thread.priority.id.toShortString(),

@@ -39,6 +39,9 @@ class NoteReactionsBase extends BaseTable {
       initial: initial,
       archived: archived,
     );
+    if (threadId != null) {
+      params['thread_id'] = threadId.toString();
+    }
     return params;
   }
 

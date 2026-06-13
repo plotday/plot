@@ -250,34 +250,139 @@ class Note extends Equatable implements Comparable<Note> {
   final int? pending;
   final NoteTagsRow? _tags;
 
-  /// Pull this activity's notes (lazy-loaded on first view).
-  /// Tracked in SyncStates as "notes:{threadId}".
+  /// Pull this activity's notes, tags and reactions (lazy-loaded on first
+  /// view). Tracked in SyncStates as "notes:{threadId}",
+  /// "note_tags:{threadId}", "note_reactions:{threadId}".
   static Future<void> pullForActivity(ThreadId threadId) async {
-    // Pull only THIS activity's notes (thread-scoped: NotesBase adds
-    // `thread_id`, so the server returns just this thread's notes — fast).
-    //
-    // Note tags and reactions are intentionally NOT pulled here. They are
-    // global seq-cursor entities — the server `note-tags`/`note-reactions`
-    // endpoints have no thread filter, so a per-thread `initial: true` pull
-    // re-downloaded the user's ENTIRE tag/reaction history from seq 0 on every
-    // cold open (measured 1.5–5.8s, dominated by note_tags), keyed per-thread
-    // so the horizon was never reused across threads. They are already kept
-    // current by the `note` SyncEntity's `Note.pullUpdates()` — at startup
-    // (syncAll) and on every realtime broadcast touching note/note_tag/
-    // note_reaction — so dropping them here costs nothing but the latency.
+    // Thread-scoped pull: NotesBase/NoteTagsBase/NoteReactionsBase each add
+    // `thread_id`, so the server returns only this thread's rows — fast and
+    // bounded. The server endpoints now honour `thread_id` (previously
+    // note-tags/note-reactions had no thread filter, so a per-thread
+    // `initial: true` pull re-downloaded the user's ENTIRE tag/reaction
+    // history from seq 0 — the reason they were dropped here). With the
+    // filter in place, pulling tags/reactions per-thread is cheap and lets a
+    // historical thread opened on demand show its full tag/reaction state
+    // even though the bounded initial sync (Note.pullInitial) only covered
+    // unread/active threads.
+    await Future.wait([
+      Store.get.pull(Store.get.notes, NotesBase(threadId: threadId), initial: true),
+      Store.get.pull(Store.get.noteTags, NoteTagsBase(threadId: threadId), initial: true),
+      Store.get.pull(
+        Store.get.noteReactions,
+        NoteReactionsBase(threadId: threadId),
+        initial: true,
+      ),
+    ]);
+  }
+
+  /// Bounded initial pull of notes, tags and reactions. The server restricts
+  /// the seq-cursor initial pull (seq=0, no thread_id) to unread/active
+  /// threads — mirroring `Thread.pullInitial` — so a fresh device does NOT
+  /// backfill the user's entire note history; historical threads load on
+  /// demand via [pullForActivity]. The envelope's `next_horizon` seeds each
+  /// cursor to "now", so subsequent [pullUpdates] are unfiltered incremental
+  /// deltas. Tracked in SyncStates as "notes" / "note_tags" / "note_reactions".
+  static Future<void> pullInitial() async {
+    await Store.get.pull(Store.get.notes, NotesBase(), initial: true);
+    await Store.get.pull(Store.get.noteTags, NoteTagsBase(), initial: true);
     await Store.get.pull(
-      Store.get.notes,
-      NotesBase(threadId: threadId),
+      Store.get.noteReactions,
+      NoteReactionsBase(),
       initial: true,
     );
   }
 
-  /// Pull global updates for all notes, tags and reactions (updated since last sync).
-  /// Tracked in SyncStates as "notes".
+  /// Pull global updates for all notes, tags and reactions (updated since last
+  /// sync). Unfiltered — fetches every visible delta with `seq >= horizon`, so
+  /// a new note on a thread that just became unread/active is pulled in the
+  /// same sync that surfaces the thread. Tracked in SyncStates as "notes".
   static Future<void> pullUpdates() async {
     await Store.get.pull(Store.get.notes, NotesBase());
     await Store.get.pull(Store.get.noteTags, NoteTagsBase());
     await Store.get.pull(Store.get.noteReactions, NoteReactionsBase());
+  }
+
+  /// Backfill notes (and tags/reactions) for every locally-unread or active
+  /// thread that has no notes loaded yet, so opening it from Updates/Doing is
+  /// instant. Complements [pullUpdates] (which catches the *new* note that
+  /// surfaced a thread) by ensuring a never-before-loaded thread that becomes
+  /// unread/active also has its full history ready on click.
+  ///
+  /// Bounded and idempotent: skips threads that already have local notes (the
+  /// initial pull / a delta covered them) and threads already backfilled once
+  /// (a "notes:{id}" sync state exists — so genuinely-empty threads aren't
+  /// re-pulled every sync). Capped at [cap]; logs if truncated.
+  static Future<void> ensureUnreadActiveThreadsLoaded({int cap = 50}) async {
+    if (!Store.isAvailable) return;
+    final store = Store.get;
+    final t = store.threads;
+
+    // Unread or active, non-archived threads — most recent first (by last
+    // note time, the best column proxy for thread recency).
+    final candidates =
+        await (store.select(t)
+              ..where(
+                (row) =>
+                    (row.unread.equals(true) | row.active.equals(true)) &
+                    row.archivedAt.isNull(),
+              )
+              ..orderBy([
+                (row) => OrderingTerm.desc(row.lastNoteSourceCreatedAt),
+              ]))
+            .get();
+    if (candidates.isEmpty) return;
+
+    // Thread ids that already have at least one local note — skip them
+    // (covered by the initial pull or an incremental delta).
+    final withNotes = await (store.selectOnly(store.notes, distinct: true)
+          ..addColumns([store.notes.threadId]))
+        .map((row) => row.read(store.notes.threadId))
+        .get();
+    final withNotesSet = withNotes.whereType<ThreadId>().toSet();
+
+    // Thread ids already backfilled once (a per-thread notes sync state
+    // exists) — skip so genuinely-empty threads aren't re-pulled each sync.
+    final loadedStates =
+        await (store.select(store.syncStates)
+              ..where((s) => s.entity.like('notes:%')))
+            .get();
+    final loadedSet = loadedStates
+        .map((s) => s.entity.substring('notes:'.length))
+        .toSet();
+
+    final pending = <ThreadId>[];
+    for (final thread in candidates) {
+      if (withNotesSet.contains(thread.id)) continue;
+      if (loadedSet.contains(thread.id.toString())) continue;
+      pending.add(thread.id);
+    }
+    if (pending.isEmpty) return;
+
+    var targets = pending;
+    if (targets.length > cap) {
+      log.info(
+        'ensureUnreadActiveThreadsLoaded: ${targets.length} unread/active '
+        'threads missing notes, capping to $cap (rest load on demand)',
+      );
+      targets = targets.sublist(0, cap);
+    }
+
+    // Bounded concurrency so a fresh device doesn't open dozens of requests
+    // at once. Each pull is independent; swallow per-thread errors.
+    const chunkSize = 5;
+    for (var i = 0; i < targets.length; i += chunkSize) {
+      final chunk = targets.sublist(
+        i,
+        (i + chunkSize).clamp(0, targets.length),
+      );
+      await Future.wait(
+        chunk.map(
+          (id) => pullForActivity(id).catchError((Object e) {
+            log.warning('Failed to backfill notes for unread/active $id: $e');
+          }),
+        ),
+      );
+    }
   }
 
   /// Push pending changes for notes, note tags, and note reactions.
@@ -351,24 +456,22 @@ class Note extends Equatable implements Comparable<Note> {
     return Note._fromStore(noteRow: noteRow, tags: tagsRow);
   }
 
-  /// Helper to ensure notes are loaded for an activity before watching.
-  /// Triggers pullForActivity if this is the first time viewing the activity.
-  static void _ensureNotesLoadedForActivity(ThreadId threadId) {
+  /// Ensure notes are loaded for an activity, pulling them on first view.
+  /// Resolves once this thread's notes are guaranteed loaded: immediately if a
+  /// "notes:{threadId}" sync state already exists, otherwise after
+  /// [pullForActivity] completes (whether it returned notes or not). Callers
+  /// that don't need to await (e.g. [watch]) can fire-and-forget with
+  /// `.catchError`; the bloc awaits it to drive the loading spinner.
+  static Future<void> ensureNotesLoadedForActivity(ThreadId threadId) async {
     final entity = "notes:$threadId";
-
-    // Check if we've already loaded notes for this activity (async, don't block)
-    (Store.get.select(Store.get.syncStates)
-          ..where((s) => s.entity.equals(entity)))
-        .getSingleOrNull()
-        .then((SyncState? syncState) {
-          if (syncState == null) {
-            // Never loaded notes for this activity - trigger pull in background
-            log.info('First time viewing activity $threadId, pulling notes');
-            pullForActivity(threadId).catchError((Object e) {
-              log.warning('Failed to pull notes for activity $threadId: $e');
-            });
-          }
-        });
+    final syncState =
+        await (Store.get.select(Store.get.syncStates)
+              ..where((s) => s.entity.equals(entity)))
+            .getSingleOrNull();
+    if (syncState != null) return;
+    // Never loaded notes for this activity - pull now.
+    log.info('First time viewing activity $threadId, pulling notes');
+    await pullForActivity(threadId);
   }
 
   static Stream<List<Note>> watch(
@@ -380,7 +483,10 @@ class Note extends Equatable implements Comparable<Note> {
     NoteId? threadNoteId,
   }) {
     // Check if notes for this activity have been loaded, if not trigger pull
-    _ensureNotesLoadedForActivity(threadId);
+    // (fire-and-forget; the watch stream below emits local notes immediately).
+    ensureNotesLoadedForActivity(threadId).catchError((Object e) {
+      log.warning('Failed to pull notes for activity $threadId: $e');
+    });
 
     // Create a copy of filter to avoid mutating the original
     final mutableFilter = filter != null ? List<Tag>.from(filter) : null;

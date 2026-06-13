@@ -8,6 +8,7 @@ class ThreadState extends Equatable {
     List<Note> notes = const [],
     List<Link> links = const [],
     this.linksLoaded = false,
+    this.notesLoaded = false,
     this.showArchived = false,
     List<Tag> filter = const [],
     List<Reaction> reactionFilter = const [],
@@ -50,6 +51,14 @@ class ThreadState extends Equatable {
   /// events) don't briefly render as a plain Plot thread and then swap,
   /// which read as a visible flash.
   final bool linksLoaded;
+
+  /// Whether this thread's notes have been loaded at least once for this bloc
+  /// (i.e. the per-thread pull has completed, or a non-empty list arrived from
+  /// the local store). Sticky: once true it stays true for the life of the
+  /// bloc, so changing a filter never re-shows the loading spinner. Used by
+  /// [ThreadPage] to show a delayed spinner only while notes are genuinely
+  /// still loading on demand — never when they're already local.
+  final bool notesLoaded;
 
   final bool showArchived;
   final List<Tag> filter;
@@ -106,6 +115,7 @@ class ThreadState extends Equatable {
     List<Note>? notes,
     List<Link>? links,
     bool? linksLoaded,
+    bool? notesLoaded,
     bool? showArchived,
     List<Tag>? filter,
     List<Reaction>? reactionFilter,
@@ -130,6 +140,7 @@ class ThreadState extends Equatable {
           ? (links.isNotEmpty ? List.unmodifiable(links) : links)
           : this.links,
       linksLoaded: linksLoaded ?? this.linksLoaded,
+      notesLoaded: notesLoaded ?? this.notesLoaded,
       showArchived: showArchived ?? this.showArchived,
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
@@ -168,6 +179,7 @@ class ThreadState extends Equatable {
     notes,
     links,
     linksLoaded,
+    notesLoaded,
     showArchived,
     filter,
     reactionFilter,

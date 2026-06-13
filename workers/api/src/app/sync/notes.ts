@@ -100,6 +100,27 @@ notes.get("/sync/notes", async (c) => {
     if (id) visibleQ = visibleQ.where("id", "=", id);
     if (threadId) visibleQ = visibleQ.where("thread_id", "=", threadId);
 
+    // Bounded initial sync: on a fresh device (seq cursor at 0) with no
+    // thread/id scope, restrict to notes whose thread is unread or active —
+    // mirroring the /sync/threads initial filter. Without this, the global
+    // note pull backfills the user's ENTIRE note history. Historical threads'
+    // notes load on demand via the thread_id-scoped pull. The next_horizon in
+    // the envelope still seeds the cursor to "now", so incremental pulls
+    // (initial=false / seq>0) stay unfiltered and catch all deltas. Skipped
+    // for archived pulls and per-thread / id fetches (those intentionally
+    // reach historical threads).
+    if (useSeqCursor && isInitialSync && !threadId && !id && archived !== true) {
+      visibleQ = visibleQ.where(
+        sql<boolean>`thread_id IN (
+          SELECT id FROM "user".thread
+          WHERE user_id = ${userId}::uuid
+            AND archived_at IS NULL
+            AND draft = false
+            AND (unread = true OR active = true)
+        )`
+      );
+    }
+
     const visible = await visibleQ.execute();
     const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
     if (isInitialSync) return { rows: visible, horizon: horizonValue };

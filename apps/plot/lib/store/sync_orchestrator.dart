@@ -161,6 +161,10 @@ class SyncOrchestrator {
     dependsOn: [thread, actor],
     pushFn: Note.push,
     pullFn: () async {
+      // pullInitial is a bounded seq=0 pull (unread/active threads only) that
+      // seeds the cursor; it no-ops once initialized. pullUpdates then fetches
+      // incremental deltas. Mirrors the `thread` entity's pullInitial(); pull().
+      await Note.pullInitial();
       await Note.pullUpdates();
     },
   );
@@ -316,6 +320,13 @@ class SyncOrchestrator {
       }
       final pullTotalMs = sw.elapsedMilliseconds;
 
+      // Backfill notes for any unread/active thread that surfaced in this pull
+      // without notes (e.g. a never-before-loaded thread that just became
+      // unread). The unfiltered note pull above already caught the new delta
+      // note; this guarantees the thread's full history is ready on click.
+      // Idempotent + bounded — a near no-op when nothing is missing.
+      await Note.ensureUnreadActiveThreadsLoaded();
+
       // Phase 2: Push all (children → parents)
       final pushLevels = _computePushLevels();
       for (var i = 0; i < pushLevels.length; i++) {
@@ -392,6 +403,10 @@ class SyncOrchestrator {
       pull(channel),
       pull(note),
     ], eagerError: false);
+
+    // After the bounded note pull (unread/active threads), backfill any
+    // unread/active thread that still lacks notes so opening it is instant.
+    await Note.ensureUnreadActiveThreadsLoaded();
 
     // Complete twistInstance updates (initial was done in critical)
     await pull(twistInstance);
