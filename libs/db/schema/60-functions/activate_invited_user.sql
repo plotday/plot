@@ -8,8 +8,8 @@ CREATE OR REPLACE FUNCTION public.activate_invited_user (p_user_id uuid)
     SET search_path TO 'public'
     AS $function$
 DECLARE
-    c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
-    c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
+    c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001'::uuid;
+    c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f'::uuid;
     v_root_priority_id uuid;
     v_new_path ltree;
     v_plot_team_group_id uuid;
@@ -132,49 +132,35 @@ LIMIT 1)) INTO v_plot_team_group_id;
         -- threads) PLUS the user's own contact (load-bearing for the user's
         -- own visibility — _otherContactIds excludes self, so only "Plot Team"
         -- shows). groups carries the Plot Team group so replies reach the team.
+        -- ONBOARDING:BEGIN welcome-user
         INSERT INTO public.thread (created_by, icon, title, preview, key, topic, contacts, groups)
-            VALUES (c_system_instance_id, CASE WHEN v_plot_twist_id IS NOT NULL THEN
-                    'twist:' || v_plot_twist_id::text
-                END, 'Welcome to Plot!', 'Glad something brought you here.', 'welcome-user', 'onboarding', ARRAY[c_system_instance_id] || (CASE WHEN v_user_contact_id IS NOT NULL THEN
-                    ARRAY[v_user_contact_id]
-                ELSE
-                    ARRAY[]::uuid[]
-                END), ARRAY[v_plot_team_group_id])
-        RETURNING
-            id INTO v_welcome_thread_id;
-        -- file_thread_priority_peers short-circuits for twist-authored
-        -- threads, so file the new user into their own Inbox (root) manually.
+            VALUES (c_system_instance_id, CASE WHEN v_plot_twist_id IS NOT NULL THEN 'twist:' || v_plot_twist_id::text END,
+                'Welcome to Plot!', 'We''re so glad something brought you here.', 'welcome-user', 'onboarding',
+                ARRAY[c_system_instance_id] || (CASE WHEN v_user_contact_id IS NOT NULL THEN ARRAY[v_user_contact_id] ELSE ARRAY[]::uuid[] END),
+                ARRAY[v_plot_team_group_id])
+        RETURNING id INTO v_welcome_thread_id;
         INSERT INTO public.thread_priority (thread_id, user_id, priority_id)
             VALUES (v_welcome_thread_id, p_user_id, v_root_priority_id)
-        ON CONFLICT ON CONSTRAINT thread_priority_pkey
-            DO NOTHING;
-        -- importance = 100 puts this thread at the top of Updates, above
-        -- the global onboarding sequence seeded by file_onboarding_schedules
-        -- (which starts at importance = 95 for the 'welcome' thread). It's an
-        -- informational thread with no actionable todo, so no active flag.
-        -- Plot team members are filed by file_thread_priority_for_group_members
-        -- but do NOT receive a thread_state row — the welcome stays off their
-        -- agendas.
+        ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
         INSERT INTO public.thread_state (user_id, thread_id, importance, "order", "on")
             VALUES (p_user_id, v_welcome_thread_id, 100, 50, daterange('1970-01-01', NULL))
-        ON CONFLICT (user_id, thread_id)
-            DO NOTHING;
+        ON CONFLICT (user_id, thread_id) DO NOTHING;
         INSERT INTO public.note (author_id, created_by, thread_id, source_created_at, content, key)
-            VALUES (c_system_instance_id, c_system_instance_id, v_welcome_thread_id, now(), 'Glad something brought you here. Maybe it''s a project you want to move forward, a team you want to work with more clearly, or a sense that more is possible when you direct your best energy into the work only you can do.
+            VALUES (c_system_instance_id, c_system_instance_id, v_welcome_thread_id, now() + interval '0 millisecond', 'We''re so glad something brought you here.
+Maybe you''re trying to get traction on something new by bringing all the scattered pieces together.
+You might be part of a team doing big things and want to overcome collaboration overhead.
+Perhaps your life is full of many good things and you want to give them all your best.
 
-Plot is built for collaborating without getting buried — every conversation has a place, and the best of your day stays yours. Tell us what you''re trying to make progress on, where you''re stuck, or what''s not quite working yet. We read every reply.', 'welcome')
-        ON CONFLICT (thread_id, link_id, key)
-            WHERE key IS NOT NULL
-            DO NOTHING;
-        -- Announce the reverse trial on the same thread so the user sees
-        -- plan status alongside their onboarding message. TrialReminder DO
-        -- adds reminder-7day / reminder-2day / upgraded notes here later
-        -- via addTrialNote() (keyed on note.key for idempotency).
+Plot is built for making progress on what matters and getting more done with others.
+Rather than chasing Inbox Zero, we believe in investing your time and attention based on your priorities.
+Plot supports you working with others in the areas you choose while gathering everything else for the right time.
+
+We''d love to hear what you''re working on and how Plot can help. Feel free to reply in this thread that includes the Plot team.', 'welcome')
+        ON CONFLICT (thread_id, link_id, key) WHERE key IS NOT NULL DO NOTHING;
         INSERT INTO public.note (author_id, created_by, thread_id, source_created_at, content, key)
             VALUES (c_system_instance_id, c_system_instance_id, v_welcome_thread_id, now() + interval '1 millisecond', 'Your account has been upgraded to the **Core plan** free for 30 days so you can try up to 5 connections and 2 twists. You can choose to keep the upgrade or go **Pro** at any time. Otherwise, after 30 days, you''ll automatically continue on the Free plan, which includes unlimited history and sharing. Any connections or twists over your new limit will be archived.', 'core-trial')
-        ON CONFLICT (thread_id, link_id, key)
-            WHERE key IS NOT NULL
-            DO NOTHING;
+        ON CONFLICT (thread_id, link_id, key) WHERE key IS NOT NULL DO NOTHING;
+-- ONBOARDING:END welcome-user
     END IF;
     -- Priority routing is learned from user moves (thread_priority.user_moved).
     -- New users start with no training examples; incoming threads land in the

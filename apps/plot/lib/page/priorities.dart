@@ -16,6 +16,7 @@ import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/scroll_edge_fade.dart';
+import 'package:plot/widget/window_controls_inset.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/sidebar_leading.dart';
 import 'package:plot/widget/icon.dart';
@@ -56,7 +57,13 @@ class PrioritiesPage extends StatelessWidget {
               // is why SafeArea keeps bottom: false.
               child: Padding(
                 padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
-                child: const PrioritiesPanelContent(),
+                child: const Column(
+                  children: [
+                    // Desktop (macOS) traffic-light clearance; nothing on mobile.
+                    WindowControlsInset(),
+                    Expanded(child: PrioritiesPanelContent()),
+                  ],
+                ),
               ),
             ),
     );

@@ -9,6 +9,7 @@ import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/spinner.dart';
+import 'package:plot/widget/window_controls_inset.dart';
 
 /// Single-panel "More" tab. Renders the same top-level settings command
 /// groups that [ShowSettings] shows as a modal, but as the tab's page body.
@@ -57,8 +58,13 @@ class _MorePageState extends State<MorePage> {
         right: false,
         child: Padding(
           padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
-          child: FutureBuilder<List<StaticCommandGroup>>(
-            future: _groupsFuture,
+          child: Column(
+            children: [
+              // Desktop (macOS) traffic-light clearance; nothing on mobile.
+              const WindowControlsInset(),
+              Expanded(
+                child: FutureBuilder<List<StaticCommandGroup>>(
+                  future: _groupsFuture,
             builder: (context, snapshot) {
               // Show a spinner on first load only; keep the old list visible
               // during subsequent refreshes to avoid a flicker.
@@ -124,7 +130,10 @@ class _MorePageState extends State<MorePage> {
                   ],
                 ),
               );
-            },
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -228,41 +228,7 @@ Future<void> pickThreadAssignee(BuildContext context, Thread thread) async {
         ),
       ];
     },
-    itemBuilder: (option, _) {
-      final isCurrent = option.id != null && option.id == currentId;
-      return ListTile(
-        title: option.name,
-        // Current assignee shown by colour + weight, not a checkmark.
-        textStyle: isCurrent
-            ? context.theme.typography.md.copyWith(
-                color: context.theme.colors.primary,
-                fontWeight: FontWeight.w600,
-              )
-            : null,
-        subtitle: (option.id != null &&
-                option.email != null &&
-                option.email != option.name)
-            ? option.email
-            : null,
-        // Leading avatar, matching the share modal's rows. The 20/12 padding
-        // and iconSizes.base size reproduce the spacing the command-based
-        // share rows get from the leading slot + 12px icon gap.
-        leadingBuilder: (isHovered, hasFocus) => Padding(
-          padding: const EdgeInsets.only(left: 20, right: 12),
-          child: option.id != null
-              ? Avatar(
-                  actorId: option.id,
-                  size: context.theme.iconSizes.base,
-                )
-              : Icon(
-                  PlotIcon.shareRemove,
-                  size: context.theme.iconSizes.base,
-                  color: context.theme.plotColors.muted,
-                ),
-        ),
-        disableInternalHover: true,
-      );
-    },
+    itemBuilder: (option, _) => _assigneeOptionTile(option, currentId),
     selectedValue:
         currentId != null ? _AssigneeOption(currentId, '', null) : null,
     prompt: 'Assign to',
@@ -276,4 +242,96 @@ Future<void> pickThreadAssignee(BuildContext context, Thread thread) async {
   } else {
     await Thread.updateAssignee(thread, newId);
   }
+}
+
+/// One row of the assignee picker. Shared by [pickThreadAssignee] and the
+/// thread-agnostic [pickAssignee]. The current assignee is indicated by colour
+/// + weight (not a leading checkmark); the "Unassign" row (null id) shows a
+/// remove glyph.
+///
+/// Wrapped in a [Builder] so every `context.theme` read — including the lazy
+/// [ListTile.leadingBuilder], which the forui sheet only invokes during a
+/// later layout pass — resolves from a live context inside the sheet's own
+/// tree rather than the caller's. Opening the picker on a single-panel
+/// [PriorityPage] navigates to `PriorityOnlyRoute`, which deactivates the
+/// originating thread widget; reading theme off that (now-defunct) context
+/// during the sheet's layout throws "Looking up a deactivated widget's
+/// ancestor is unsafe". See [confirm_modal] for the same pattern.
+Widget _assigneeOptionTile(_AssigneeOption option, ActorId? currentId) {
+  final isCurrent = option.id != null && option.id == currentId;
+  return Builder(
+    builder: (context) => ListTile(
+      title: option.name,
+      textStyle: isCurrent
+          ? context.theme.typography.md.copyWith(
+              color: context.theme.colors.primary,
+              fontWeight: FontWeight.w600,
+            )
+          : null,
+      subtitle:
+          (option.id != null &&
+              option.email != null &&
+              option.email != option.name)
+          ? option.email
+          : null,
+      // Leading avatar, matching the share modal's rows. The 20/12 padding and
+      // iconSizes.base size reproduce the spacing the command-based share rows
+      // get from the leading slot + 12px icon gap.
+      leadingBuilder: (isHovered, hasFocus) => Padding(
+        padding: const EdgeInsets.only(left: 20, right: 12),
+        child: option.id != null
+            ? Avatar(actorId: option.id, size: context.theme.iconSizes.base)
+            : Icon(
+                PlotIcon.shareRemove,
+                size: context.theme.iconSizes.base,
+                color: context.theme.plotColors.muted,
+              ),
+      ),
+      disableInternalHover: true,
+    ),
+  );
+}
+
+/// Thread-agnostic assignee picker for applying one assignee across a
+/// multi-selection. Returns the chosen actor id wrapped in a [Value] —
+/// `Value(id)` for a pick (`id` is null for "Unassign"), or [Value.absent] when
+/// the user cancels. Per-thread connection-aware ranking is dropped in favour
+/// of self-first, then alphabetical.
+Future<Value<ActorId?>> pickAssignee(
+  BuildContext context, {
+  ActorId? currentId,
+  String prompt = 'Assign to',
+}) async {
+  final result = await SelectModal.open<_AssigneeOption>(
+    context,
+    items: (search) async {
+      final actors = await Actor.get(
+        search: search,
+        types: [ActorType.user, ActorType.contact],
+        limit: 50,
+        inviteable: true,
+        primary: true,
+      );
+      actors.sort((a, b) {
+        if (a.self != b.self) return a.self ? -1 : 1;
+        return a.nameOrEmail.toLowerCase().compareTo(
+          b.nameOrEmail.toLowerCase(),
+        );
+      });
+      return [
+        SelectGroup(
+          items: [
+            if (currentId != null) const _AssigneeOption(null, 'Unassign', null),
+            ...actors.map((a) => _AssigneeOption(a.id, a.nameOrEmail, a.email)),
+          ],
+        ),
+      ];
+    },
+    itemBuilder: (option, _) => _assigneeOptionTile(option, currentId),
+    selectedValue:
+        currentId != null ? _AssigneeOption(currentId, '', null) : null,
+    prompt: prompt,
+  );
+  if (!result.present) return const Value.absent();
+  return Value(result.value.id);
 }

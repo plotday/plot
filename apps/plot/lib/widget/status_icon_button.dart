@@ -127,31 +127,39 @@ class StatusIconButton extends StatelessWidget {
       items: (search) async => [
         SelectGroup(items: statuses.map((s) => s.status).toList()),
       ],
-      itemBuilder: (status, _) {
-        final s = statuses.firstWhere((ls) => ls.status == status);
-        return ListTile(
-          title: s.label,
-          leadingBuilder: (isHovered, hasFocus) => Padding(
-            padding: const EdgeInsets.only(left: 16, right: 8),
-            child: s.icon != null
-                ? Icon(
-                    s.icon!.glyph,
-                    size: 14,
-                    color: s.status == link.status
-                        ? context.theme.colors.primary
-                        : context.theme.colors.mutedForeground,
-                  )
-                : s.status == link.status
-                ? Icon(
-                    PlotIcon.done,
-                    size: 14,
-                    color: context.theme.colors.primary,
-                  )
-                : const SizedBox(width: 14),
-          ),
-          disableInternalHover: true,
-        );
-      },
+      // Wrapped in a [Builder] so the lazy [ListTile.leadingBuilder]'s
+      // `context.theme` reads resolve from a live context inside the sheet's
+      // own tree. Opened from a feed row, the caller's context can be
+      // deactivated by the time the forui sheet lays out (e.g. on a
+      // single-panel page the underlying widget is torn down), which would
+      // otherwise throw "Looking up a deactivated widget's ancestor is unsafe".
+      itemBuilder: (status, _) => Builder(
+        builder: (context) {
+          final s = statuses.firstWhere((ls) => ls.status == status);
+          return ListTile(
+            title: s.label,
+            leadingBuilder: (isHovered, hasFocus) => Padding(
+              padding: const EdgeInsets.only(left: 16, right: 8),
+              child: s.icon != null
+                  ? Icon(
+                      s.icon!.glyph,
+                      size: 14,
+                      color: s.status == link.status
+                          ? context.theme.colors.primary
+                          : context.theme.colors.mutedForeground,
+                    )
+                  : s.status == link.status
+                  ? Icon(
+                      PlotIcon.done,
+                      size: 14,
+                      color: context.theme.colors.primary,
+                    )
+                  : const SizedBox(width: 14),
+            ),
+            disableInternalHover: true,
+          );
+        },
+      ),
       selectedValue: link.status,
       prompt: 'Set status',
     );

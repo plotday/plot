@@ -52,6 +52,16 @@ extension type Order._(double value) {
   /// `first()` calls produce ever-smaller values (more negative
   /// `millisecondsSinceEpoch`).
   Order.first() : this(_last());
+
+  /// Creates an order value that places the new item at the visual BOTTOM
+  /// of its list (largest value, sorted ASC). A positive now-timestamp is
+  /// strictly larger than every order assigned earlier — [Order.first]'s
+  /// negative values, [Order.between] midpoints, and one-sided bounds all
+  /// derive from an earlier wall clock — so no neighbour scan is needed.
+  /// NOTE: two `last()` calls in the same millisecond tie-break randomly;
+  /// for bulk appends chain `Order.between(prev, null)` after the first.
+  Order.last() : this(_first());
+
   Order.between(Order? after, Order? before) : this(_between(after, before));
   Order.fromNumber(dynamic number)
     : this(

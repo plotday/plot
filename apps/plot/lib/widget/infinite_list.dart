@@ -306,10 +306,19 @@ class InfiniteList extends StatefulWidget {
   final Widget Function(BuildContext context, int index)? separatorBuilder;
 
   /// Returns a stable identity key for the item at [index].
-  /// When provided, enables anchor-based scroll correction: if items are
-  /// added/removed above the viewport, the scroll offset is adjusted so the
-  /// first visible item stays in place.
+  /// When provided, enables key-based element reuse across index shifts
+  /// (via `findChildIndexCallback`) and — unless [anchorCorrection] is
+  /// false — anchor-based scroll correction: if items are added/removed
+  /// above the viewport, the scroll offset is adjusted so the first
+  /// visible item stays in place.
   final String Function(int index)? itemKey;
+
+  /// Whether [itemKey] also drives the scroll-offset anchor correction.
+  /// Disable when the caller's item heights vary a lot or items are
+  /// inserted/removed at zero height (e.g. the activity feed's collapsing
+  /// move ghosts) — the correction estimates by AVERAGE item extent, so it
+  /// would over-correct those cases. Key-based element reuse stays on.
+  final bool anchorCorrection;
 
   /// Custom cache extent for the underlying [CustomScrollView].
   /// Set to [double.infinity] to keep all items alive and prevent
@@ -356,6 +365,7 @@ class InfiniteList extends StatefulWidget {
     this.nonReorderablePrefixCount = 0,
     this.separatorBuilder,
     this.itemKey,
+    this.anchorCorrection = true,
     this.cacheExtent,
     this.initialScrollOffset = 0.0,
     this.onScrollOffsetChanged,
@@ -577,6 +587,7 @@ class InfiniteListState extends State<InfiniteList> {
     // Anchor-based scroll correction: if items changed and we have a key
     // function, find the first visible item in the new list and adjust offset.
     if (widget.itemKey != null &&
+        widget.anchorCorrection &&
         oldWidget.count != widget.count &&
         _scrollController.hasClients &&
         _scrollController.offset > 0 &&

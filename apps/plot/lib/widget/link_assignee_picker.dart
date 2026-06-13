@@ -48,28 +48,36 @@ Future<void> pickLinkAssignee(BuildContext context, Link link) async {
         ),
       ];
     },
-    itemBuilder: (option, _) {
-      final isSelected = option.id == link.assigneeId;
-      return ListTile(
-        title: option.name,
-        subtitle: (option.id != null &&
-                option.email != null &&
-                option.email != option.name)
-            ? option.email
-            : null,
-        leadingBuilder: (isHovered, hasFocus) => Padding(
-          padding: const EdgeInsets.only(left: 16, right: 8),
-          child: isSelected
-              ? Icon(
-                  PlotIcon.done,
-                  size: 14,
-                  color: context.theme.colors.primary,
-                )
-              : const SizedBox(width: 14),
-        ),
-        disableInternalHover: true,
-      );
-    },
+    // Wrapped in a [Builder] so the lazy [ListTile.leadingBuilder]'s
+    // `context.theme` read resolves from a live context inside the sheet's own
+    // tree. The caller's context can be deactivated by the time the forui sheet
+    // lays out (e.g. opening the picker on a single-panel page navigates and
+    // tears down the originating widget), which would otherwise throw "Looking
+    // up a deactivated widget's ancestor is unsafe".
+    itemBuilder: (option, _) => Builder(
+      builder: (context) {
+        final isSelected = option.id == link.assigneeId;
+        return ListTile(
+          title: option.name,
+          subtitle: (option.id != null &&
+                  option.email != null &&
+                  option.email != option.name)
+              ? option.email
+              : null,
+          leadingBuilder: (isHovered, hasFocus) => Padding(
+            padding: const EdgeInsets.only(left: 16, right: 8),
+            child: isSelected
+                ? Icon(
+                    PlotIcon.done,
+                    size: 14,
+                    color: context.theme.colors.primary,
+                  )
+                : const SizedBox(width: 14),
+          ),
+          disableInternalHover: true,
+        );
+      },
+    ),
     selectedValue: link.assigneeId != null
         ? LinkAssigneeOption(link.assigneeId!, '', null)
         : const LinkAssigneeOption(null, 'Unassigned', null),

@@ -13,6 +13,7 @@ import 'package:plot/widget/unified_header.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/page/agenda.dart';
 import 'package:plot/state/activity_section.dart';
+import 'package:plot/state/feed_move_diff.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
@@ -788,6 +789,71 @@ class _PriorityPageState extends State<PriorityPage>
   ({Map<int, FeedDropSlot> before, FeedDropSlot? afterList})?
   _cachedDropBoundaries;
 
+  // ---- Feed move animation (collapse at source / expand at destination).
+  // Driven by PriorityState.feedMoveGen: explicit user state changes bump
+  // the generation; the diff between the previous and current item lists
+  // is animated with one controller so heights stay synchronized and rows
+  // outside the moved range never shift.
+  int _lastMoveGen = 0;
+  List<AgendaItem> _lastFeedItems = const [];
+  FeedMoveDiff _activeMoveDiff = FeedMoveDiff.empty;
+  AnimationController? _moveController;
+  Animation<double>? _moveAnimation;
+
+  /// Start (or replace) the move animation for [diff]. A new move while
+  /// one is in flight completes the old one instantly.
+  void _startMoveAnimation(FeedMoveDiff diff) {
+    _moveController?.dispose();
+    _moveController = null;
+    _moveAnimation = null;
+    _activeMoveDiff = diff;
+    if (diff.isEmpty) return;
+    final controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _moveController = controller;
+    _moveAnimation = CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeInOutCubic,
+    );
+    controller.forward().whenComplete(() {
+      if (!mounted || _moveController != controller) return;
+      setState(() {
+        _activeMoveDiff = FeedMoveDiff.empty;
+        _moveController = null;
+        _moveAnimation = null;
+      });
+      controller.dispose();
+    });
+  }
+
+  /// Splice the active move's collapsing ghosts into [items] after their
+  /// anchor rows (the nearest stable item above the ghost's old position).
+  /// A ghost whose anchor is missing from [items] is dropped (snaps).
+  List<_FeedEntry> _spliceGhosts(List<AgendaItem> items) {
+    final diff = _activeMoveDiff;
+    if (diff.ghosts.isEmpty) {
+      return [for (final item in items) _FeedEntry(item)];
+    }
+    final byAnchor = <String?, List<AgendaItem>>{};
+    for (final g in diff.ghosts) {
+      byAnchor.putIfAbsent(g.anchorKey, () => []).add(g.item);
+    }
+    final entries = <_FeedEntry>[
+      for (final g in byAnchor[null] ?? const <AgendaItem>[])
+        _FeedEntry(g, ghost: true),
+    ];
+    for (final item in items) {
+      entries.add(_FeedEntry(item));
+      final ghosts = byAnchor[feedItemKey(item)];
+      if (ghosts != null) {
+        entries.addAll([for (final g in ghosts) _FeedEntry(g, ghost: true)]);
+      }
+    }
+    return entries;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -809,6 +875,7 @@ class _PriorityPageState extends State<PriorityPage>
   @override
   void dispose() {
     _activityFeedDragControllerInstance?.dispose();
+    _moveController?.dispose();
     super.dispose();
   }
 
@@ -893,6 +960,14 @@ class _PriorityPageState extends State<PriorityPage>
             // Only handle key down events for plain Up/Down (no modifiers)
             if (event is! KeyDownEvent) {
               return KeyEventResult.ignored;
+            }
+
+            // Escape exits multi-select first when a selection is active;
+            // otherwise it falls through to ClearItemFocusIntent below.
+            if (event.logicalKey == LogicalKeyboardKey.escape &&
+                state.multiSelecting) {
+              context.read<PriorityBloc>().clearSelection();
+              return KeyEventResult.handled;
             }
 
             // Check if this is plain Up/Down with no modifiers
@@ -1067,16 +1142,23 @@ class _PriorityPageState extends State<PriorityPage>
 
   Widget _buildSeparator(
     BuildContext context,
-    List<AgendaItem> listItems,
+    List<_FeedEntry> listItems,
     int index,
     PriorityState state,
     InfiniteListController controller,
   ) {
     final selectedId = state.thread?.id;
-    final rawPrev = index > 0 && index - 1 < listItems.length
+    final prevEntry = index > 0 && index - 1 < listItems.length
         ? listItems[index - 1]
         : null;
-    final rawNext = index < listItems.length ? listItems[index] : null;
+    final nextEntry = index < listItems.length ? listItems[index] : null;
+    final rawPrev = prevEntry?.item;
+    final rawNext = nextEntry?.item;
+    // A move ghost duplicates the moved thread's id; suppress the
+    // selection accent next to ghosts so the open thread doesn't paint
+    // two rings while it animates.
+    final adjacentGhost =
+        (prevEntry?.ghost ?? false) || (nextEntry?.ghost ?? false);
     // The leading separator (above the first item) renders as an invisible
     // background-coloured 1px strip (see BlockListSeparator's `prev == null`
     // branch). In multi-panel mode that strip sits above the feed's leading
@@ -1094,6 +1176,7 @@ class _PriorityPageState extends State<PriorityPage>
       dragController: _activityFeedDragController,
       index: index,
       selectedAccent: (item) {
+        if (adjacentGhost) return null;
         if (item is AgendaThreadItem && item.thread.id == selectedId) {
           // Match the sidebar's selection ring: the lighter, per-focus
           // [borderFromTheme] hue rather than the full-saturation accent.
@@ -1168,6 +1251,20 @@ class _PriorityPageState extends State<PriorityPage>
       displayItems = items;
     }
 
+    // Move animation: an advanced generation means this rebuild was caused
+    // by an explicit user state change — animate the diff (collapsing
+    // ghosts at the source, synchronized expands at the destination).
+    // Stream-driven rebuilds (same generation) snap as before.
+    if (state.feedMoveGen != _lastMoveGen) {
+      _lastMoveGen = state.feedMoveGen;
+      _startMoveAnimation(
+        computeFeedMoveDiff(_lastFeedItems, displayItems, state.feedMovedIds),
+      );
+    }
+    _lastFeedItems = displayItems;
+
+    final renderItems = _spliceGhosts(displayItems);
+
     // A trailing synthetic row is appended when a search footer (spinner,
     // archived hint, or offline note) should be shown.
     final showFooter =
@@ -1230,15 +1327,23 @@ class _PriorityPageState extends State<PriorityPage>
     }
 
     final bloc = context.read<PriorityBloc>();
-    final footerIndex = showFooter ? displayItems.length : -1;
-    final totalCount = displayItems.length + (showFooter ? 1 : 0);
+    final footerIndex = showFooter ? renderItems.length : -1;
+    final totalCount = renderItems.length + (showFooter ? 1 : 0);
 
     // Drop boundaries depend only on `displayItems`, which gets a fresh
     // identity from `_rebuildActivityFeedSections`. Cache by reference so
     // unrelated parent rebuilds (e.g. RSVP changes elsewhere on the page)
-    // don't re-walk the list and re-parse every section marker.
+    // don't re-walk the list and re-parse every section marker. While move
+    // ghosts are spliced in, boundaries are computed over the projected
+    // list WITHOUT touching the cache, so the post-animation rebuild
+    // doesn't serve stale ghost-offset slots.
     final ({Map<int, FeedDropSlot> before, FeedDropSlot? afterList}) boundaries;
-    if (identical(_cachedDropBoundaryItems, displayItems) &&
+    final hasGhosts = renderItems.length != displayItems.length;
+    if (hasGhosts) {
+      boundaries = computeActivityFeedDropBoundaries(
+        items: [for (final e in renderItems) e.item],
+      );
+    } else if (identical(_cachedDropBoundaryItems, displayItems) &&
         _cachedDropBoundaries != null) {
       boundaries = _cachedDropBoundaries!;
     } else {
@@ -1268,9 +1373,25 @@ class _PriorityPageState extends State<PriorityPage>
       onScrollOffsetChanged: (offset) => bloc.activityFeedScrollOffset = offset,
       count: totalCount,
       doneEnd: state.activityFeedDoneEnd,
+      // Stable identities keep the sliver's elements (and their stored
+      // layout offsets) attached to their rows when indices shift — e.g.
+      // when a move ghost splices in or out — so the viewport doesn't
+      // re-anchor by index and jump. The offset CORRECTION is disabled:
+      // ghosts enter/leave at zero height, so the average-extent estimate
+      // it applies would itself cause a jump.
+      itemKey: (index) {
+        if (index == footerIndex) return 'feed_footer';
+        if (index < 0 || index >= renderItems.length) {
+          return 'feed_overflow_$index';
+        }
+        final entry = renderItems[index];
+        final key = feedItemKey(entry.item);
+        return entry.ghost ? 'feed_ghost_${_lastMoveGen}_$key' : key;
+      },
+      anchorCorrection: false,
       fetcher: (first, count) => bloc.fetchMoreActivityFeedItems(first, count),
       separatorBuilder: (context, index) =>
-          _buildSeparator(context, displayItems, index, state, controller),
+          _buildSeparator(context, renderItems, index, state, controller),
       builder: (context, index, focusNode, {reorderableIndex}) {
         if (index < 0 || index >= totalCount) {
           return null;
@@ -1278,39 +1399,18 @@ class _PriorityPageState extends State<PriorityPage>
         if (index == footerIndex) {
           return SearchFooter(state: state);
         }
-        final current = displayItems[index];
-        final dropAbove = boundaries.before[index];
+        final entry = renderItems[index];
+        final current = entry.item;
+        // Ghosts are collapsing copies of moved-away rows — never drop
+        // targets.
+        final dropAbove = entry.ghost ? null : boundaries.before[index];
         // Trailing boundary attached to the last list item (skip when the
         // search footer occupies the last index).
-        final isLast = !showFooter && index == displayItems.length - 1;
+        final isLast = !showFooter && index == renderItems.length - 1;
         final tail = isLast ? boundaries.afterList : null;
+        final itemKey = feedItemKey(current);
 
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          key: ValueKey(
-            current.when(
-              header: (h) => h.date != null
-                  ? 'feed_header_date_${h.date}'
-                  : 'feed_header_${h.text}',
-              activity: (a) => 'feed_activity_${a.thread.id}',
-            ),
-          ),
-          children: [
-            // The Everything feed spans every focus, so per-row gap drop
-            // targets (which schedule into the current scope) don't apply —
-            // suppress them and render one plain unsectioned list.
-            if (dropAbove != null && !state.everything)
-              BlockDropZone(
-                target: dropAbove.target,
-                silent: dropAbove.silent,
-                slotKey: 'feed_drop_above_$index',
-                // Active gap sits directly above the next row in this
-                // column — paint a 1px divider at the bottom of the
-                // expanded gap so the row below isn't flush against
-                // the dimmed preview.
-                dividerBelow: true,
-              ),
-            ...current.when(
+        var children = current.when<List<Widget>>(
               header: (header) {
                 String? displayText = header.text;
                 final marker = displayText == null
@@ -1340,8 +1440,10 @@ class _PriorityPageState extends State<PriorityPage>
                 List<Thread>? sectionThreads;
                 if (canRescheduleAll) {
                   sectionThreads = <Thread>[];
-                  for (var j = index + 1; j < displayItems.length; j++) {
-                    final next = displayItems[j];
+                  for (var j = index + 1; j < renderItems.length; j++) {
+                    final nextEntry = renderItems[j];
+                    if (nextEntry.ghost) continue;
+                    final next = nextEntry.item;
                     if (next is AgendaHeaderItem) break;
                     if (next is AgendaThreadItem) {
                       sectionThreads.add(next.thread);
@@ -1374,7 +1476,9 @@ class _PriorityPageState extends State<PriorityPage>
               },
               activity: (agendaActivity) {
                 final baseThread = agendaActivity.thread;
-                final rowKey = agendaActivity.isAssociated
+                final rowKey = entry.ghost
+                    ? ValueKey('feed_ghost_row_$itemKey')
+                    : agendaActivity.isAssociated
                     ? ValueKey(
                         'feed_activitywidget_${baseThread.id}_assoc_${agendaActivity.associationParentId ?? ''}',
                       )
@@ -1383,7 +1487,9 @@ class _PriorityPageState extends State<PriorityPage>
                   key: rowKey,
                   baseThread: baseThread,
                   selected:
-                      state.thread != null && baseThread.id == state.thread!.id,
+                      !entry.ghost &&
+                      state.thread != null &&
+                      baseThread.id == state.thread!.id,
                   now: agendaActivity.now,
                   focusNode: focusNode,
                   // Use the context the displayed items were built for (not the
@@ -1394,10 +1500,15 @@ class _PriorityPageState extends State<PriorityPage>
                   priorityContext: state.activeTabContext ?? state.context,
                   isAssociated: agendaActivity.isAssociated,
                   isSearch: isSearching,
+                  multiSelected:
+                      !entry.ghost && state.selected.contains(baseThread.id),
+                  multiSelectMode: state.multiSelecting,
                 );
-                if (agendaActivity.pinned) {
-                  // Pinned event row: not draggable, not a drop target —
-                  // it always leads the Event Agenda section.
+                if (agendaActivity.pinned ||
+                    entry.ghost ||
+                    state.multiSelecting) {
+                  // Pinned event rows, move ghosts, and any row while
+                  // multi-selecting: not draggable, not drop targets.
                   return [item];
                 }
                 return [
@@ -1408,7 +1519,73 @@ class _PriorityPageState extends State<PriorityPage>
                   ),
                 ];
               },
-            ),
+        );
+
+        // Move animation wrappers: ghosts collapse 1→0 at the source while
+        // destination rows expand 0→1, driven by one shared controller so
+        // total height between source and destination stays constant and
+        // rows outside that range never shift.
+        final anim = _moveAnimation;
+        if (anim != null) {
+          if (entry.ghost) {
+            children = [
+              SizeTransition(
+                sizeFactor: ReverseAnimation(anim),
+                alignment: Alignment.topCenter,
+                child: ExcludeFocus(
+                  child: IgnorePointer(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: children,
+                    ),
+                  ),
+                ),
+              ),
+            ];
+          } else if (_activeMoveDiff.expandingKeys.contains(itemKey)) {
+            children = [
+              SizeTransition(
+                sizeFactor: anim,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: children,
+                ),
+              ),
+            ];
+          }
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          key: ValueKey(
+            entry.ghost
+                ? 'feed_ghost_${_lastMoveGen}_$itemKey'
+                : current.when(
+                    header: (h) => h.date != null
+                        ? 'feed_header_date_${h.date}'
+                        : 'feed_header_${h.text}',
+                    activity: (a) => 'feed_activity_${a.thread.id}',
+                  ),
+          ),
+          children: [
+            // The Everything feed spans every focus, so per-row gap drop
+            // targets (which schedule into the current scope) don't apply —
+            // suppress them and render one plain unsectioned list.
+            if (dropAbove != null && !state.everything)
+              BlockDropZone(
+                target: dropAbove.target,
+                silent: dropAbove.silent,
+                slotKey: 'feed_drop_above_$index',
+                // Active gap sits directly above the next row in this
+                // column — paint a 1px divider at the bottom of the
+                // expanded gap so the row below isn't flush against
+                // the dimmed preview.
+                dividerBelow: true,
+              ),
+            ...children,
             if (tail != null && !state.everything)
               BlockDropZone(
                 target: tail.target,
@@ -1425,6 +1602,14 @@ class _PriorityPageState extends State<PriorityPage>
       child: ScrollEdgeFade(background: context.colour.background, child: list),
     );
   }
+}
+
+/// A row in the rendered activity feed: a live [AgendaItem], or a
+/// collapsing ghost of one (the source side of a move animation).
+class _FeedEntry {
+  const _FeedEntry(this.item, {this.ghost = false});
+  final AgendaItem item;
+  final bool ghost;
 }
 
 /// Section header (Doing or a Scheduled-day bucket) paired with a small

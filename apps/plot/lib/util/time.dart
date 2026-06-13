@@ -681,6 +681,17 @@ class BoundedDateTimeRange extends DateTimeRange {
   );
 }
 
+/// English [timeago] messages identical to the default locale but without the
+/// trailing "ago" suffix, e.g. "5 minutes" instead of "5 minutes ago".
+/// Registered lazily the first time a suffix-less label is requested (see
+/// [PlotDateTimeExtension.toTimeAgo]).
+class _EnNoSuffixMessages extends timeago.EnMessages {
+  @override
+  String suffixAgo() => '';
+}
+
+bool _enNoSuffixRegistered = false;
+
 extension PlotDateTimeExtension on DateTime {
   String toDb() {
     return toUtc().toIso8601String();
@@ -700,7 +711,24 @@ extension PlotDateTimeExtension on DateTime {
   DateTime previousMidnight() => toDate().subDays(1).toDateTime();
   DateTime nextMidnight() => toDate().addDays(1).toDateTime();
 
-  String toTimeAgo() => timeago.format(this, clock: Time.now());
+  /// Relative time like "5 minutes ago". Pass [suffix] as `false` to drop the
+  /// trailing "ago" (e.g. for narrow layouts), yielding "5 minutes".
+  String toTimeAgo({bool suffix = true}) {
+    if (!suffix && !_enNoSuffixRegistered) {
+      timeago.setLocaleMessages('en_no_suffix', _EnNoSuffixMessages());
+      _enNoSuffixRegistered = true;
+    }
+    final result = timeago.format(
+      this,
+      clock: Time.now(),
+      locale: suffix ? null : 'en_no_suffix',
+    );
+    // timeago renders the 24–48h bucket as "a day ago" (or "a day" without the
+    // suffix); show the friendlier "yesterday" everywhere. Exact-match so other
+    // buckets like "2 days ago" are untouched.
+    if (result == 'a day ago' || result == 'a day') return 'yesterday';
+    return result;
+  }
 }
 
 Duration durationFromString(String durationString) {

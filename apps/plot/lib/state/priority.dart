@@ -11,6 +11,8 @@ import 'package:plot/state/activity_feed_drop.dart';
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/agenda_builder.dart';
 import 'package:plot/state/agenda_model.dart';
+import 'package:plot/state/feed_navigation.dart';
+import 'package:plot/state/order_repair.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) so it
 // doesn't shadow the agenda_model.dart `PriorityBlock` UI type already
 // re-exported from this file. The row + top-level helpers
@@ -143,8 +145,6 @@ class _Overlay {
     this.watched = _OptimisticOverride._defaultWatched,
     this.catchUpSortKeys,
     this.sticky = false,
-    this.pinnedSection,
-    this.pinnedInUnread = false,
   });
 
   /// Expect the thread to drop out of the active tab. Settled when the
@@ -154,14 +154,13 @@ class _Overlay {
   }) : this(expected: null, watched: watched);
 
   /// Sticky-unread: a Catch up thread the user just opened should remain
-  /// visible at its pre-read sort position until well after the user has
-  /// navigated away (see [PriorityBloc._stickyMoveDelay]). The snapshot is
-  /// frozen as *read* (`unread: false`) so the unread dot clears the moment
-  /// the thread is opened, while the entry's presence (matched via
+  /// visible at its pre-read sort position while it is open. The snapshot
+  /// is frozen as *read* (`unread: false`) so the unread dot clears the
+  /// moment the thread is opened, while the entry's presence (matched via
   /// [PriorityBloc._isStickyPinned]) keeps the row pinned in the unread
-  /// cluster regardless of that flag. Never auto-settles — cleared only by
-  /// explicit triggers (tab switch, post-unfocus delay, archive,
-  /// drop-to-Done).
+  /// cluster regardless of that flag. Never auto-settles — cleared the
+  /// moment the user navigates away ([PriorityBloc._removeSticky]) or by
+  /// explicit triggers (tab switch, archive, drop-to-Done).
   factory _Overlay.stickyUnread(
     Thread thread, {
     required ({int urgent, int importance, DateTime activityAt}) sortKeys,
@@ -172,41 +171,10 @@ class _Overlay {
     sticky: true,
   );
 
-  /// Sticky-todo: the user toggled the To do / Done state of the thread
-  /// they currently have open. The leading icon should flip immediately
-  /// (so [expected] carries the post-toggle state), but the row must NOT
-  /// jump to its new section yet — it holds at the section it currently
-  /// renders in until [_stickyMoveDelay] after the user changes threads
-  /// (mirrors [_Overlay.stickyUnread]). Positioning is driven by
-  /// [pinnedSection] (consulted in [PriorityBloc._buildUnifiedFeedItems])
-  /// rather than `primarySectionFor(expected)`, so the icon and position
-  /// can disagree during the grace window. Never auto-settles.
-  factory _Overlay.stickyTodo(
-    Thread thread, {
-    required ActivitySection pinnedSection,
-    required ({int urgent, int importance, DateTime activityAt}) sortKeys,
-    bool pinnedInUnread = false,
-  }) => _Overlay(
-    expected: thread,
-    watched: const <_OverrideField>{},
-    catchUpSortKeys: sortKeys,
-    sticky: true,
-    pinnedSection: pinnedSection,
-    pinnedInUnread: pinnedInUnread,
-  );
-
   final Thread? expected;
   final Set<_OverrideField> watched;
   final ({int urgent, int importance, DateTime activityAt})? catchUpSortKeys;
   final bool sticky;
-  final bool pinnedInUnread;
-
-  /// When set (sticky-todo only), the feed builder buckets this row into
-  /// [pinnedSection] instead of `primarySectionFor(expected)`, holding it
-  /// in place while its post-toggle icon shows. Null for every other
-  /// overlay kind (including sticky-unread, which clusters via
-  /// [PriorityBloc._isStickyPinned]).
-  final ActivitySection? pinnedSection;
 
   /// True when [actual] (the stream's copy, or null) makes this overlay
   /// safe to drop. Sticky entries never settle implicitly.
@@ -379,7 +347,13 @@ class PriorityBloc extends Cubit<PriorityState> {
   void setGlobalViewScope(Priority? scope) {
     if (state.globalViewScope?.id == scope?.id) return;
     log.info('Setting global-view scope to ${scope?.title ?? 'Everything'}');
-    emit(state.copyWith(globalViewScope: Value(scope)));
+    // Narrowing/widening the global view changes the visible rows — clear any
+    // multi-selection so it can't carry across to a different result set.
+    emit(state.copyWith(
+      globalViewScope: Value(scope),
+      selected: const {},
+      selectionAnchor: const Value(null),
+    ));
   }
 
   void toggleShowArchived() {
@@ -406,7 +380,12 @@ class PriorityBloc extends Cubit<PriorityState> {
   void toggleMuteOnly() {
     final next = !state.muteOnly;
     log.info('Toggling muteOnly to $next');
-    emit(state.copyWith(muteOnly: next));
+    // The muted-only filter changes which rows are visible — clear selection.
+    emit(state.copyWith(
+      muteOnly: next,
+      selected: const {},
+      selectionAnchor: const Value(null),
+    ));
     _loadPriority();
     _restartActiveTabSubscription();
   }
@@ -703,61 +682,50 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// activity feed.
   final Map<ThreadId, _Overlay> _overlay = {};
 
-  /// How long a just-read thread stays pinned at its pre-read position
-  /// after the user navigates away from it, before it animates to its
-  /// natural (read) section. Avoids the disconcerting jump where a thread
-  /// moves out from under the cursor the instant the user clicks away.
-  static const _stickyMoveDelay = Duration(milliseconds: 1500);
+  /// Whether [id] currently has a sticky-unread overlay entry — the open
+  /// thread the user just read holds its position in the unread cluster
+  /// (with the dot already cleared) until they navigate away.
+  bool _isStickyPinned(ThreadId id) => _overlay[id]?.sticky ?? false;
 
-  /// Pending [_stickyMoveDelay] timers, keyed by thread. While a timer is
-  /// live the thread keeps its sticky overlay entry (pinned at its pre-read
-  /// position); when it fires the entry is dropped and the feed rebuilds so
-  /// the thread settles into its natural section. Re-focusing the thread
-  /// cancels its pending timer. Cancelled wholesale on overlay clear / close.
-  final Map<ThreadId, Timer> _stickyRemovalTimers = {};
+  /// Whether two snapshots of a thread occupy the same feed position
+  /// (section + slot): used to decide if an optimistic update may keep a
+  /// sticky-unread pin alive.
+  static bool _samePosition(Thread a, Thread b) =>
+      a.todo == b.todo &&
+      a.active == b.active &&
+      a.on == b.on &&
+      a.at == b.at &&
+      a.order.compareTo(b.order) == 0 &&
+      a.priority.id == b.priority.id &&
+      a.archivedAt == b.archivedAt;
 
-  /// Pre-toggle snapshot of a thread captured the first time the user toggles
-  /// its To do / Done state while it is the open thread (see [pinTodoInPlace]).
-  /// Lets the To do / Done commands tell a genuine state change from a
-  /// round-trip the user undoes before unfocusing, so the thread's sort
-  /// position only changes for genuine changes:
-  ///   * [toggleOriginalFor] is true (was Active) → finishing bumps it to the
-  ///     top of Done; re-marking To do restores its prior Doing slot.
-  ///   * false (was inactive) → a To do → Done round-trip returns it to its
-  ///     prior Activity slot (no bump).
-  /// Cleared when the thread's sticky entry is dropped (post-unfocus grace
-  /// window), on overlay clear, and on close.
-  final Map<ThreadId, Thread> _toggleOriginal = {};
+  /// Monotonic generation for explicit user state-change rebuilds of the
+  /// sectioned feed. Stamped onto [ActivityFeedTabData.moveGen]; the page
+  /// animates the items diff (collapse at source / expand at destination)
+  /// when it advances. Stream-driven rebuilds never advance it.
+  int _feedMoveGen = 0;
 
-  /// The pre-toggle snapshot for [id] captured at the start of the current
-  /// To do / Done toggle session, or null when none is active. See
-  /// [_toggleOriginal].
-  Thread? toggleOriginalFor(ThreadId id) => _toggleOriginal[id];
+  /// The thread ids that produced [_feedMoveGen]'s generation. Kept (not
+  /// recomputed) so a follow-up rebuild in the same frame — e.g. the
+  /// sticky-unread pin written by [setThread] right after a state change
+  /// navigates — re-emits the SAME gen+ids pair. Emitting the gen with an
+  /// empty id set would make the page's diff treat the moved row as
+  /// stable-but-reordered and bail out of the animation.
+  Set<ThreadId> _feedMovedIds = const {};
 
-  /// Whether [id] currently has a sticky-unread overlay entry — i.e. one
-  /// that clusters into the unread Doing block regardless of its live
-  /// `unread` flag, so a thread the user just read holds its pre-read
-  /// position (with the dot already cleared) until its [_stickyMoveDelay]
-  /// elapses. Excludes sticky-*todo* pins, which hold at an explicit
-  /// [_Overlay.pinnedSection] instead (see [_pinnedSectionFor]).
-  bool _isStickyPinned(ThreadId id) {
-    final o = _overlay[id];
-    return o != null && o.sticky && o.pinnedSection == null;
-  }
+  /// Threads whose state the user explicitly changed since the last
+  /// sectioned-feed rebuild; consumed (and cleared) by
+  /// [_rebuildActiveTabSection].
+  final Set<ThreadId> _pendingMoveIds = {};
 
-  /// The section a sticky-todo pin holds [id] in (see [_Overlay.stickyTodo]),
-  /// or null when there is no such pin. While set, the feed builder buckets
-  /// the row here rather than at `primarySectionFor`, so a To do / Done
-  /// toggle on the open thread flips its icon immediately without moving it.
-  ActivitySection? _pinnedSectionFor(ThreadId id) {
-    final o = _overlay[id];
-    return (o != null && o.sticky) ? o.pinnedSection : null;
-  }
-
-  /// Whether [id] has a sticky-todo pin that was pinned in the unread cluster.
-  bool _isPinnedInUnread(ThreadId id) {
-    final o = _overlay[id];
-    return o != null && o.sticky && o.pinnedInUnread;
+  /// Flag [id] as explicitly state-changed by the user so the next
+  /// sectioned-feed rebuild animates its repositioning. Flat feeds
+  /// (Everything / search / filter) never reposition on state changes, so
+  /// this is a no-op there. Drag-and-drop deliberately does NOT mark —
+  /// the drag's own visuals already animate the move.
+  void markFeedMove(ThreadId id) {
+    if (_activeTabFlatMode) return;
+    _pendingMoveIds.add(id);
   }
 
   /// Live subscription for the currently-active activity-feed tab's
@@ -954,11 +922,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _doneHeadTailCursor = null;
     _doneAppendCursor = null;
     _overlay.clear();
-    _toggleOriginal.clear();
-    for (final timer in _stickyRemovalTimers.values) {
-      timer.cancel();
-    }
-    _stickyRemovalTimers.clear();
+    _pendingMoveIds.clear();
 
     // Unified feed: a single subscription returns every visible thread.
     // The section structure (Updates / Doing / Scheduled / Activity) is
@@ -1205,10 +1169,22 @@ class PriorityBloc extends Cubit<PriorityState> {
     // feed rebuilding.
     final everythingFeed =
         state.everything && state.search.isEmpty && !_hasActiveFilter;
+    // Consume pending explicit-state-change marks: advance the move
+    // generation so the page animates this rebuild's diff. Flat feeds
+    // never reposition on state changes, so marks are dropped there.
+    if (_pendingMoveIds.isNotEmpty) {
+      if (!_activeTabFlatMode) {
+        _feedMoveGen++;
+        _feedMovedIds = Set.unmodifiable(Set.of(_pendingMoveIds));
+      }
+      _pendingMoveIds.clear();
+    }
     byTab[tab] = ActivityFeedTabData(
       items: items,
       everythingFeed: everythingFeed,
       context: state.context,
+      moveGen: _feedMoveGen,
+      movedIds: _feedMovedIds,
     );
     emit(
       state.copyWith(
@@ -1235,38 +1211,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     final activity = <Thread>[];
 
     for (final t in merged) {
-      // Sticky-todo pin: the user just toggled To do / Done on this open
-      // thread. Its icon already reflects the new state, but it holds at
-      // the section it rendered in before the toggle until the post-unfocus
-      // grace window elapses — so it doesn't jump out from under the user.
-      final pinned = _pinnedSectionFor(t.id);
-      if (pinned != null) {
-        if (_isPinnedInUnread(t.id)) {
-          unreadDoing.add(t);
-        } else {
-          switch (pinned) {
-            case ActivitySection.doing:
-              readDoing.add(t);
-            case ActivitySection.scheduled:
-              scheduled.add(t);
-            case ActivitySection.activity:
-              activity.add(t);
-            case ActivitySection.eventAgenda:
-              break;
-          }
-        }
-        continue;
-      }
-
       if (t.unread || _isStickyPinned(t.id)) {
         // All unread threads cluster at the top of Doing — regardless
         // of whether they would otherwise be active, scheduled, or
         // inactive. Underlying state is preserved so the thread returns
-        // to its natural section once read. Sticky-pinned threads (the
-        // one the user just opened, plus any in their post-unfocus
-        // grace window) stay in this cluster too even though their dot
-        // has cleared, so they hold their pre-read position until the
-        // sticky overlay is dropped.
+        // to its natural section once read. The sticky-pinned thread
+        // (the open one the user just read) stays in this cluster too
+        // even though its dot has cleared, so it holds its pre-read
+        // position until the user navigates away.
         unreadDoing.add(t);
         continue;
       }
@@ -1453,8 +1405,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// flat "Everything" feed sorts purely by `activity_at` via
   /// [_flatFeedCompare] instead.
   int _catchUpCompare(Thread a, Thread b) {
-    final aUn = (a.unread || _isStickyPinned(a.id) || _isPinnedInUnread(a.id)) ? 1 : 0;
-    final bUn = (b.unread || _isStickyPinned(b.id) || _isPinnedInUnread(b.id)) ? 1 : 0;
+    final aUn = (a.unread || _isStickyPinned(a.id)) ? 1 : 0;
+    final bUn = (b.unread || _isStickyPinned(b.id)) ? 1 : 0;
     if (aUn != bUn) return bUn.compareTo(aUn);
 
     final aUrg = a.urgent ? 1 : 0;
@@ -2219,16 +2171,6 @@ class PriorityBloc extends Cubit<PriorityState> {
         if (item.thread.id == nextId) nextThread = item.thread;
       }
     }
-    // Scheduled lives in a single order space per day, so a naive
-    // Order.between is fine here. Doing spans the unread/read boundary
-    // and its sub-clusters have independent order spaces — its newOrder
-    // is computed inside the Doing case below, after resolveDoingDrop
-    // tells us which neighbours are safe to use as bounds.
-    final Order? scheduledNewOrder =
-        targetSection == ActivitySection.scheduled
-        ? Order.between(prevThread?.order, nextThread?.order)
-        : null;
-
     Thread updated;
     switch (targetSection) {
       case ActivitySection.eventAgenda:
@@ -2250,10 +2192,30 @@ class PriorityBloc extends Cubit<PriorityState> {
           dragged: clusterOf(dragged),
         );
         final destination = resolution.destination;
-        final Order doingNewOrder = Order.between(
-          resolution.usePrev ? prevThread?.order : null,
-          resolution.useNext ? nextThread?.order : null,
+        // Legacy data contains runs of identical persisted orders (seeded
+        // constants; NULL state_order rows all sharing the lowerBound
+        // fallback). A plain Order.between inside such a run lands the
+        // drop at the bottom of the run instead of in the gap, so resolve
+        // against the destination cluster's visual rows and repair the
+        // tied run when needed (see [resolveDropOrderWithRepair]).
+        final doingBucket = [
+          for (final t in feedSectionBucket(
+            state.activityFeedItems,
+            section: ActivitySection.doing,
+            exclude: draggedId,
+          ))
+            if (clusterOf(t) == destination) t,
+        ];
+        final doingResolved = resolveDropOrderWithRepair(
+          bucket: doingBucket,
+          gapIndex: feedDropGapIndex(
+            doingBucket,
+            prevId: resolution.usePrev ? prevId : null,
+            nextId: resolution.useNext ? nextId : null,
+          ),
         );
+        _persistOrderRepairs(doingResolved.rewrites);
+        final doingNewOrder = doingResolved.dropOrder;
         if (destination.unread) {
           // Land in an unread sub-cluster: mark/keep unread, set the
           // sub-cluster fields (urgent, importance), and place via
@@ -2274,9 +2236,26 @@ class PriorityBloc extends Cubit<PriorityState> {
         break;
       case ActivitySection.scheduled:
         if (targetScheduledDate == null) return;
+        // Scheduled lives in a single order space per day; repair tied
+        // legacy orders around the gap the same way as Doing above.
+        final dayBucket = feedSectionBucket(
+          state.activityFeedItems,
+          section: ActivitySection.scheduled,
+          date: targetScheduledDate,
+          exclude: draggedId,
+        );
+        final dayResolved = resolveDropOrderWithRepair(
+          bucket: dayBucket,
+          gapIndex: feedDropGapIndex(
+            dayBucket,
+            prevId: prevId,
+            nextId: nextId,
+          ),
+        );
+        _persistOrderRepairs(dayResolved.rewrites);
         updated = dragged.asScheduled(
           targetScheduledDate,
-          order: scheduledNewOrder,
+          order: dayResolved.dropOrder,
         );
         // Dropping to a future day is a deliberate move out of the
         // unread cluster — clear any sticky pin.
@@ -2321,6 +2300,28 @@ class PriorityBloc extends Cubit<PriorityState> {
     // triggered `_rebuildActiveTabSection` (via _rebuildAgendaModel),
     // so the dragged row already shows in its target section/order.
     await updated.save();
+  }
+
+  /// Persist the order rewrites produced by [resolveDropOrderWithRepair].
+  /// The rewrites preserve the rows' visual positions exactly, so no
+  /// optimistic overlay is needed — they only make the persisted orders
+  /// match what is already displayed, repairing legacy identical-order
+  /// data (seeded constants, NULL-state lowerBound fallbacks) so this and
+  /// future drops bracket correctly.
+  void _persistOrderRepairs(List<(Thread, Order)> rewrites) {
+    if (rewrites.isEmpty) return;
+    log.info('[orderRepair] rewriting ${rewrites.length} tied order(s)');
+    unawaited(() async {
+      try {
+        await Future.wait([
+          for (final (thread, order) in rewrites)
+            thread.copyWith(order: order).save(),
+        ]);
+      } catch (e, stackTrace) {
+        log.warning('[orderRepair] failed to persist rewrites', e, stackTrace);
+        Tracker.captureException(e, stackTrace);
+      }
+    }());
   }
 
   /// Shared implementation for `dropThreadIntoBlock` /
@@ -2449,11 +2450,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activeTabSubscription?.cancel();
     _pendingFeedSyncFallback?.cancel();
     _pendingFeedSync = null;
-    for (final timer in _stickyRemovalTimers.values) {
-      timer.cancel();
-    }
-    _stickyRemovalTimers.clear();
-    _toggleOriginal.clear();
+    _pendingMoveIds.clear();
     return super.close();
   }
 
@@ -2475,12 +2472,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     final finished = (finishTodo && existing != null)
         ? existing.copyWith(todo: false, bump: true)
         : null;
-    // A sticky-todo pin (set by [pinTodoInPlace] just before FinishThread
-    // navigated away) must survive the feed-overlay write below: it holds
-    // the just-finished open thread at its pre-Done section until the grace
-    // window elapses. The agenda override still updates so the left-panel
-    // agenda reflects completion immediately.
-    final keepStickyTodo = _pinnedSectionFor(id) != null;
     if (existing != null) {
       if (finishTodo) {
         _optimisticOverrides[id] = _OptimisticOverride.expect(
@@ -2492,17 +2483,15 @@ class PriorityBloc extends Cubit<PriorityState> {
         // re-render the thread under a fresh "Today" scheduled bucket for
         // one frame before the SQL update arrives. Drop so the per-tab
         // feed matches the post-write reality.
-        if (!keepStickyTodo) {
-          _overlay[id] = _activeTabSubscriptionTab?.isActionTab == true
-              ? const _Overlay.drop()
-              : _Overlay(
-                  expected: finished,
-                  watched: const {_OverrideField.todo},
-                );
-        }
+        _overlay[id] = _activeTabSubscriptionTab?.isActionTab == true
+            ? const _Overlay.drop()
+            : _Overlay(
+                expected: finished,
+                watched: const {_OverrideField.todo},
+              );
       } else {
         _optimisticOverrides[id] = _OptimisticOverride.absent();
-        if (!keepStickyTodo) _overlay[id] = const _Overlay.drop();
+        _overlay[id] = const _Overlay.drop();
       }
     }
     // Drop non-link-instance copies of the thread from the cached
@@ -2605,20 +2594,29 @@ class PriorityBloc extends Cubit<PriorityState> {
       expected: updatedThread,
       fields: fields,
     );
-    // Mirror in the per-tab activity-feed overlay so the active tab
-    // shows the optimistic state in the same frame as the edit — unless a
-    // sticky-todo pin already holds this row in place (a To do / Done
-    // toggle on the open thread, set by [pinTodoInPlace] before this runs).
-    // That pin already carries the post-toggle state and must not be
-    // replaced with a non-sticky overlay, which would let the row jump to
-    // its new section before the grace window elapses. The agenda override
-    // above still updates so the left-panel agenda reflects the edit.
-    if (_pinnedSectionFor(updatedThread.id) == null) {
-      _overlay[updatedThread.id] = _Overlay(
-        expected: updatedThread,
-        watched: fields ?? _OptimisticOverride._defaultWatched,
-      );
-    }
+    // Mirror in the per-tab activity-feed overlay so the active tab shows
+    // the optimistic state in the same frame as the edit. A sticky-unread
+    // pin (the open thread the user just read) survives position-neutral
+    // updates — the row must hold its cluster spot while open — but an
+    // update that changes positioning state (to-do/done, schedule, move)
+    // replaces the pin so the row relocates immediately.
+    final existingOverlay = _overlay[updatedThread.id];
+    final keepSticky =
+        existingOverlay != null &&
+        existingOverlay.sticky &&
+        existingOverlay.expected != null &&
+        _samePosition(existingOverlay.expected!, updatedThread);
+    _overlay[updatedThread.id] = keepSticky
+        ? _Overlay(
+            expected: updatedThread.copyWith(unread: false),
+            watched: const <_OverrideField>{},
+            catchUpSortKeys: existingOverlay.catchUpSortKeys,
+            sticky: true,
+          )
+        : _Overlay(
+            expected: updatedThread,
+            watched: fields ?? _OptimisticOverride._defaultWatched,
+          );
 
     // Mutate the cached threads list to reflect the update. Sibling
     // occurrences of recurring threads share an id but have different
@@ -2751,6 +2749,10 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> setPriority(Priority newPriority) async {
     if (state.context.id == newPriority.id) return;
+
+    // Leaving the current focus invalidates any multi-selection (the new
+    // focus shows a different set of rows).
+    clearSelection();
 
     // Bump the generation so any in-flight chain-draft lookup or background
     // finalization from a previous setPriority is fenced off — they check
@@ -3066,23 +3068,17 @@ class PriorityBloc extends Cubit<PriorityState> {
       headerNotifier?.isThreadVisible = false;
     }
 
-    // Sticky-unread tracking: when navigating away from a thread, keep
-    // its overlay entry pinned for [_stickyMoveDelay] before dropping it,
-    // so the just-read thread doesn't jump out from under the cursor the
-    // instant the user clicks away — it settles into its natural section
-    // only after the grace window. When selecting an unread thread, pin
-    // it via the overlay so the per-tab Catch up subscription keeps it
-    // visible at its pre-read position; the snapshot is frozen as read so
-    // the unread dot clears immediately on open. The thread's own
-    // unread → read DB write happens in `page/thread.dart`.
+    // Sticky-unread tracking: when navigating away from a thread, drop its
+    // overlay entry immediately so the just-read thread settles into its
+    // natural section right away (the page animates the move). When
+    // selecting an unread thread, pin it via the overlay so the per-tab
+    // Catch up subscription keeps it visible at its pre-read position; the
+    // snapshot is frozen as read so the unread dot clears immediately on
+    // open. The thread's own unread → read DB write happens in
+    // `page/thread.dart`.
     final oldThread = state.thread;
     if (oldThread != null && thread?.id != oldThread.id) {
-      _scheduleStickyRemoval(oldThread.id);
-    }
-    // Re-focusing a thread (or focusing a fresh one) cancels any pending
-    // move for it so it stays put while open.
-    if (thread != null) {
-      _stickyRemovalTimers.remove(thread.id)?.cancel();
+      _removeSticky(oldThread.id);
     }
     if (thread != null &&
         thread.unread &&
@@ -3113,92 +3109,78 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  /// Schedule a just-unfocused sticky-unread thread to drop out of the
-  /// unread cluster after [_stickyMoveDelay]. While the timer is live the
-  /// thread keeps its (read) sticky overlay entry, so it holds its pre-read
-  /// position; when the timer fires the entry is dropped and the feed
-  /// rebuilds so the thread animates to its natural section. No-op when the
-  /// thread has no live sticky entry. The timer re-checks that the entry is
-  /// still sticky before dropping it, so a thread that was meanwhile
-  /// archived / dropped / reordered (which overwrites the overlay entry) is
-  /// left for that path to manage.
-  void _scheduleStickyRemoval(ThreadId id) {
+  /// Drop a sticky-unread overlay the moment the user navigates away so
+  /// the just-read thread settles into its natural section immediately
+  /// (animated via [markFeedMove]). No-op when the thread has no live
+  /// sticky entry — e.g. its overlay was already replaced by an explicit
+  /// state change, which manages its own move.
+  void _removeSticky(ThreadId id) {
     final overlay = _overlay[id];
     if (overlay == null || !overlay.sticky) return;
-    _stickyRemovalTimers[id]?.cancel();
-    _stickyRemovalTimers[id] = Timer(_stickyMoveDelay, () {
-      _stickyRemovalTimers.remove(id);
-      if (isClosed) return;
-      final current = _overlay[id];
-      if (current == null || !current.sticky) return;
-      _overlay.remove(id);
-      _toggleOriginal.remove(id);
-      if (_activeTabSubscriptionTab == ActivityTab.catchUp) {
-        _rebuildActiveTabSection();
-      }
-    });
+    _overlay.remove(id);
+    markFeedMove(id);
+    if (_activeTabSubscriptionTab == ActivityTab.catchUp) {
+      _rebuildActiveTabSection();
+    }
   }
 
-  /// The section [t] currently renders in within the sectioned feed.
-  /// Unread (and sticky-unread) threads render in the unread cluster at the
-  /// top of [ActivitySection.doing]; everything else falls to its
-  /// `primarySectionFor`. Used to capture where a row sits *before* a To do
-  /// / Done toggle so [pinTodoInPlace] can hold it there.
-  ActivitySection _renderedSectionFor(Thread t) {
-    if (t.unread || _isStickyPinned(t.id) || _isPinnedInUnread(t.id)) return ActivitySection.doing;
-    return primarySectionFor(t);
+  // --- Multi-select (bulk operations) ---
+
+  /// Toggle a thread's membership in the multi-select set (Cmd/Ctrl+click).
+  /// When multi-select is starting and a thread is open, the open thread joins
+  /// the selection first so it's included per the bulk-select rules. The
+  /// toggled row becomes the new anchor for a subsequent shift-click range.
+  void toggleSelected(Thread thread) {
+    final next = Set<ThreadId>.of(state.selected);
+    if (next.isEmpty && state.thread != null) {
+      next.add(state.thread!.id);
+    }
+    if (!next.remove(thread.id)) {
+      next.add(thread.id);
+    }
+    emit(state.copyWith(
+      selected: next,
+      selectionAnchor: Value<ThreadId?>(thread.id),
+    ));
   }
 
-  /// Pin the open thread at its current feed section after a To do / Done
-  /// toggle so it doesn't jump to its new section out from under the user.
-  /// [newState] is the post-toggle thread — its leading icon flips
-  /// immediately — but the row holds at the section it rendered in before
-  /// the toggle until [_stickyMoveDelay] after the user next changes
-  /// threads (the grace window is driven by [_scheduleStickyRemoval], which
-  /// already handles any sticky entry). Mirrors the sticky-unread pin.
-  ///
-  /// Scoped to the currently-open thread: only that thread has a
-  /// "navigate away" event to start the grace window, so toggling To do
-  /// directly from a feed row (without opening it) is intentionally left to
-  /// move immediately. The pre-toggle section is read from [state.thread]
-  /// (the open thread, not yet mutated by the optimistic overlay) rather
-  /// than the feed item, which may already show the post-toggle state. A
-  /// no-op outside the sectioned Catch up feed.
-  void pinTodoInPlace(Thread newState) {
-    if (_activeTabSubscriptionTab != ActivityTab.catchUp ||
-        _activeTabFlatMode) {
+  /// Select the contiguous range of feed rows from the current anchor to
+  /// [thread] (Shift+click), replacing the prior range. The anchor is the last
+  /// toggled row, or — when shift-click starts the multi-select — the open
+  /// thread, or the clicked row itself. The anchor is left in place so
+  /// successive shift-clicks re-pivot from the same origin.
+  void selectRange(Thread thread) {
+    final ids = state.orderedFeedThreadIds;
+    final targetIdx = ids.indexOf(thread.id);
+    if (targetIdx < 0) {
+      // Clicked row isn't in the visible feed (shouldn't happen) — fall back
+      // to a single-row selection anchored on it.
+      emit(state.copyWith(
+        selected: {thread.id},
+        selectionAnchor: Value<ThreadId?>(thread.id),
+      ));
       return;
     }
-    final current = state.thread;
-    if (current == null || current.id != newState.id) return;
-    // Capture the held section ONCE — on the first toggle while the thread is
-    // focused — and reuse it for every later toggle, so the user can flip
-    // To do / Done repeatedly on the open thread without it ever moving (it
-    // only relocates after the post-unfocus grace window). Recomputing here
-    // would read the already-mutated todo state and re-pin to the NEW
-    // section, making the row jump on the second toggle.
-    final firstToggle = _pinnedSectionFor(newState.id) == null;
-    final section = firstToggle
-        ? _renderedSectionFor(current)
-        : _pinnedSectionFor(newState.id)!;
-    final pinnedInUnread = firstToggle
-        ? (current.unread || _isStickyPinned(current.id))
-        : _isPinnedInUnread(newState.id);
-    // Snapshot the pre-toggle thread on the first toggle so the To do / Done
-    // commands can distinguish a genuine state change from a round-trip and
-    // keep the persisted sort position stable across toggles ([_toggleOriginal]).
-    if (firstToggle) _toggleOriginal[newState.id] = current;
-    _overlay[newState.id] = _Overlay.stickyTodo(
-      newState,
-      pinnedSection: section,
-      sortKeys: (
-        urgent: newState.urgent ? 1 : 0,
-        importance: newState.importance,
-        activityAt: newState.activityAt,
-      ),
-      pinnedInUnread: pinnedInUnread,
-    );
-    _rebuildActiveTabSection();
+    final anchorId = state.selectionAnchor ?? state.thread?.id ?? thread.id;
+    var anchorIdx = ids.indexOf(anchorId);
+    if (anchorIdx < 0) anchorIdx = targetIdx;
+    final lo = anchorIdx < targetIdx ? anchorIdx : targetIdx;
+    final hi = anchorIdx < targetIdx ? targetIdx : anchorIdx;
+    emit(state.copyWith(
+      selected: ids.sublist(lo, hi + 1).toSet(),
+      selectionAnchor: Value<ThreadId?>(anchorId),
+    ));
+  }
+
+  /// Exit multi-select mode, clearing the selection and anchor. No-op (no
+  /// emit) when nothing is selected so ordinary thread opens don't churn
+  /// state on every click.
+  void clearSelection() {
+    if (state.selected.isEmpty && state.selectionAnchor == null) return;
+    emit(state.copyWith(
+      selected: const {},
+      selectionAnchor: const Value(null),
+    ));
   }
 
   /// Resets the draft to a new empty thread for the current priority.
@@ -3495,6 +3477,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     return items[targetIndex];
+  }
+
+  /// True when the active feed renders as a flat list (Everything, search,
+  /// or filters) — state changes never reposition rows there.
+  bool get activeFeedIsFlat => _activeTabFlatMode;
+
+  /// Rule 2/3 navigation decision for an explicit state change on the
+  /// open thread. Computed against the CURRENT feed items — call BEFORE
+  /// applying the optimistic update.
+  StateChangeNav threadAfterStateChange(ThreadId changedId) {
+    if (_activeTabFlatMode) return (open: null, stay: true);
+    return nextThreadAfterStateChange(state.activityFeedItems, changedId);
   }
 
   /// Determines which list to navigate based on prior context.
@@ -4237,7 +4231,12 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// clearing the overlay so the new tab's first emission is canonical.
   void selectActivityTab(ActivityTab tab) {
     if (state.activeTab == tab) return;
-    emit(state.copyWith(activeTab: tab));
+    // Switching tabs shows a different set of rows — drop any multi-selection.
+    emit(state.copyWith(
+      activeTab: tab,
+      selected: const {},
+      selectionAnchor: const Value(null),
+    ));
     _restartActiveTabSubscription();
   }
 

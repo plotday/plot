@@ -12,12 +12,16 @@ import 'package:forui/forui.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/router.dart';
 import 'package:plot/widget/activity_feed_thread_row.dart';
 import 'package:plot/widget/priorities_shell.dart' show BottomNavInset;
+import 'package:plot/widget/scaffold.dart';
+import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/widget/search_footer.dart';
+import 'package:plot/widget/window_controls_inset.dart';
 
 /// Global Search tab (single-panel). Hosts its own [PriorityBloc] scoped to
 /// the default/root priority in `everything: true` mode, so search spans every
@@ -165,24 +169,47 @@ class _SearchViewState extends State<_SearchView> {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
+        // Match the per-focus feed (the "usual threads view"). The feed wraps
+        // its list in `ScrollEdgeFade(background: context.colour.background)`,
+        // which paints a solid [background] fill behind the rows (NOT the
+        // darker [panelDarkestBackground], which is only the header/frame
+        // shade). The Search tab renders the same [ActivityFeedThreadRow]s, so
+        // it must sit on the same [background] surface — previously it had no
+        // Scaffold at all and fell through to the frosted window gradient.
+        // The default (non-translucent) Scaffold paints [background] for the
+        // field area and, single-panel, injects the Windows drag bar / hosts
+        // modals like the other tab roots; the results get the feed's exact
+        // [ScrollEdgeFade] treatment (same fill + scroll-edge fades) below.
+        //
         // Inset below the status bar (top) like every other single-panel tab
         // (Focus/Agenda/More). The bottom nav is overlaid as a separate layer,
         // so [bottom] is false here and the results list adds [BottomNavInset]
         // padding itself so its last row clears the bar.
-        return SafeArea(
-          top: true,
-          bottom: false,
-          left: false,
-          right: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _SearchField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-              ),
-              Expanded(child: _buildResults(context, state)),
-            ],
+        return Scaffold(
+          scrollable: false,
+          childPad: false,
+          body: SafeArea(
+            top: true,
+            bottom: false,
+            left: false,
+            right: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Desktop (macOS) traffic-light clearance; nothing on mobile.
+                const WindowControlsInset(),
+                _SearchField(
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                ),
+                Expanded(
+                  child: ScrollEdgeFade(
+                    background: context.colour.background,
+                    child: _buildResults(context, state),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },

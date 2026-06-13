@@ -26,7 +26,6 @@ DECLARE
     v_author_id uuid;
     v_assignee_id uuid;
     v_priority_id uuid;
-    v_role text;
 BEGIN
     -- Extract required fields from JSONB, with fallback to p_defaults for INSERT
     v_id := COALESCE((p_link ->> 'id')::uuid, (p_defaults ->> 'id')::uuid);

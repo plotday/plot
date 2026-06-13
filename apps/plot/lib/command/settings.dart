@@ -12,6 +12,7 @@ import 'package:forui/forui.dart';
 
 import 'package:collection/collection.dart';
 import 'package:plot/notifications/notification_service.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
@@ -26,7 +27,7 @@ import 'package:plot/api/twist_permission.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/env.dart';
 import 'package:plot/page/loading.dart';
-import 'package:plot/page/new_thread.dart' show NewThreadPageState;
+import 'package:plot/widget/priorities_shell.dart' show PrioritiesShell;
 import 'package:plot/widget/confirm_modal.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
@@ -72,6 +73,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
+  bool isMultiPanel = true,
 }) {
   final rootPriority = prioritiesState?.root;
 
@@ -82,6 +84,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
     adminOrgs: adminOrgs,
     subscription: subscription,
     showAllPriorities: showAllPriorities,
+    isMultiPanel: isMultiPanel,
   );
 }
 
@@ -92,6 +95,7 @@ List<StaticCommandGroup> settingsCommands({
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
   bool showAllPriorities = false,
+  bool isMultiPanel = true,
 }) => [
   StaticCommandGroup(
     title: 'Settings',
@@ -144,7 +148,11 @@ List<StaticCommandGroup> settingsCommands({
         ShowUpgradeOptions(),
       if (UpgradeUi.isAppStoreBuild) RestorePurchasesCommand(),
       if (rootPriority != null) HelpAndFeedback(rootPriority),
-      CopyPageLink(),
+      // In single-panel mode the settings list lives on its own "More" tab
+      // page, so "Copy page link" would only copy a link to that settings
+      // page rather than the content being viewed — hide it there. In
+      // multi-panel mode settings is a modal over real content, so it stays.
+      if (isMultiPanel) CopyPageLink(),
       OpenCopiedPageLink(),
       FullResync(),
       DeleteAccount(),
@@ -214,6 +222,7 @@ Future<List<StaticCommandGroup>> buildSettingsGroups(
         adminOrgs: adminOrgs,
         subscription: subscription,
         showAllPriorities: showAllPriorities,
+        isMultiPanel: context.mounted && context.isMultiPanel,
       ),
   ];
   final debugCmds = buildDebugCommands();
@@ -1361,22 +1370,39 @@ class HelpAndFeedback extends Command {
       );
 
   /// The user's Inbox (root). Help & Feedback opens a new thread here,
-  /// pre-shared with the Plot Team group (see [NewThreadPage.feedback]).
+  /// addressed to the Plot Team group (see [NewThreadPage.feedback]).
   final Priority rootPriority;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // AutoRoute reuses an already-mounted NewThreadPage (it does not build a
-    // fresh State), so a live page sitting on step 1 — or mid-compose on step
-    // 2 — would otherwise ignore the `feedback` route param. Signal it to
-    // reconfigure for feedback; a fresh mount reacts to the param instead.
-    NewThreadPageState.requestFeedback();
-    return CommandRoute(
-      PriorityRoute(
-        priorityIdString: rootPriority.id.toShortString(),
-        children: [NewThreadRoute(feedback: true)],
-      ),
-    );
+    // Open the final compose screen addressed to the Plot Team. Navigation is
+    // handled by [OpenFeedbackThread.go] (which drives the Activity-tab inner
+    // stack so it works in single- AND multi-panel) — returning it via the
+    // CommandRoute dispatch also closes any open settings modal first.
+    return OpenFeedbackThread(rootPriority.id.toShortString());
+  }
+}
+
+/// Navigates to the new-thread compose flow in Help & Feedback mode.
+///
+/// Subclasses [CommandRoute] so the command/modal dispatch closes open modals
+/// (`Modal.popAll`) before navigating, but overrides [go] to drive the
+/// Activity-tab inner stack via [PrioritiesShell.openFeedbackThread] instead of
+/// a plain `navigate`: `navigate(PriorityRoute(children: [NewThreadRoute]))`
+/// silently drops the inner child once PriorityRoute is already mounted, which
+/// is why the previous implementation left the user on whatever screen they
+/// were viewing. The [PriorityRoute] passed to `super` is only a placeholder so
+/// `route` stays non-null; [go] never uses it.
+class OpenFeedbackThread extends CommandRoute {
+  OpenFeedbackThread(this.rootPriorityIdString)
+    : super(PriorityRoute(priorityIdString: rootPriorityIdString));
+
+  final String rootPriorityIdString;
+
+  @override
+  Future<void> go(BuildContext context) async {
+    if (!context.mounted) return;
+    PrioritiesShell.openFeedbackThread(context, rootPriorityIdString);
   }
 }
 

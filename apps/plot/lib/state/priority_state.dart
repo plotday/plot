@@ -40,6 +40,8 @@ class PriorityState extends Equatable {
     bool showSubPriorities = true,
     bool everything = false,
     Priority? globalViewScope,
+    Set<ThreadId> selected = const {},
+    ThreadId? selectionAnchor,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -95,6 +97,8 @@ class PriorityState extends Equatable {
       showSubPriorities: showSubPriorities,
       everything: everything,
       globalViewScope: globalViewScope,
+      selected: selected.isNotEmpty ? Set.unmodifiable(selected) : selected,
+      selectionAnchor: selectionAnchor,
     );
   }
 
@@ -132,6 +136,8 @@ class PriorityState extends Equatable {
     this.showSubPriorities = true,
     this.everything = false,
     this.globalViewScope,
+    this.selected = const {},
+    this.selectionAnchor,
   });
 
   final Priority context;
@@ -180,6 +186,14 @@ class PriorityState extends Equatable {
   /// `state.activityFeedItems` without knowing about tabs.
   List<AgendaItem> get activityFeedItems =>
       activityFeedByTab[activeTab]?.items ?? const [];
+
+  /// Move-animation generation of the active feed (see
+  /// [ActivityFeedTabData.moveGen]).
+  int get feedMoveGen => activityFeedByTab[activeTab]?.moveGen ?? 0;
+
+  /// Threads whose explicit state change produced [feedMoveGen].
+  Set<ThreadId> get feedMovedIds =>
+      activityFeedByTab[activeTab]?.movedIds ?? const {};
 
   /// True when the active tab's items were built for the dedicated
   /// "Everything" feed (see [ActivityFeedTabData.everythingFeed]). The page
@@ -250,6 +264,20 @@ class PriorityState extends Equatable {
   /// selected when the view opened. Always `null` outside a global view.
   final Priority? globalViewScope;
 
+  /// Ids of threads the user has multi-selected in the activity feed for a
+  /// bulk operation. Empty means not in multi-select mode (see
+  /// [multiSelecting]). Desktop-only — populated by modifier-click. The
+  /// display-ordered, resolved view is [selectedThreads]; this raw set is
+  /// membership-only.
+  final Set<ThreadId> selected;
+
+  /// Pivot row for shift-click range selection — the last row toggled (or the
+  /// open thread when multi-select began on it). Null outside multi-select.
+  final ThreadId? selectionAnchor;
+
+  /// True when a multi-select is in progress (any thread is [selected]).
+  bool get multiSelecting => selected.isNotEmpty;
+
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
 
@@ -286,6 +314,36 @@ class PriorityState extends Equatable {
         pendingHeaders.clear();
         result.add(item);
       }
+    }
+    return result;
+  }
+
+  /// Thread ids of the currently visible feed rows, in display order. Drives
+  /// shift-click range selection. Derived from [activityFeedViewItems] so it
+  /// already respects the muteOnly / global-scope filters and skips section
+  /// headers (which aren't [AgendaThreadItem]s).
+  List<ThreadId> get orderedFeedThreadIds => activityFeedViewItems
+      .whereType<AgendaThreadItem>()
+      .map((i) => i.thread.id)
+      .toList();
+
+  /// The [selected] threads resolved to [Thread] objects in feed order. Walks
+  /// the visible feed first, then appends the open [thread] if it is selected
+  /// but scrolled/filtered out of the feed (it still counts as selected per
+  /// the "open thread joins the selection" rule). Used by the header to show
+  /// the count and to construct the bulk commands.
+  List<Thread> get selectedThreads {
+    if (selected.isEmpty) return const [];
+    final result = <Thread>[];
+    final seen = <ThreadId>{};
+    for (final item in activityFeedViewItems) {
+      if (item is AgendaThreadItem && selected.contains(item.thread.id)) {
+        if (seen.add(item.thread.id)) result.add(item.thread);
+      }
+    }
+    final open = thread;
+    if (open != null && selected.contains(open.id) && !seen.contains(open.id)) {
+      result.add(open);
     }
     return result;
   }
@@ -395,6 +453,8 @@ class PriorityState extends Equatable {
     bool? showSubPriorities,
     bool? everything,
     Value<Priority?> globalViewScope = const Value.absent(),
+    Set<ThreadId>? selected,
+    Value<ThreadId?> selectionAnchor = const Value.absent(),
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -461,6 +521,8 @@ class PriorityState extends Equatable {
       showSubPriorities: showSubPriorities ?? this.showSubPriorities,
       everything: everything ?? this.everything,
       globalViewScope: globalViewScope.or(this.globalViewScope),
+      selected: selected ?? this.selected,
+      selectionAnchor: selectionAnchor.or(this.selectionAnchor),
     );
   }
 
@@ -499,6 +561,8 @@ class PriorityState extends Equatable {
     showSubPriorities,
     everything,
     globalViewScope,
+    selected,
+    selectionAnchor,
   ];
 
   @override

@@ -24,9 +24,13 @@ Priority _priority({String path = 'test'}) {
 
 /// The Done section sorts by `activity_at`, which folds in `bumpedAt`. So a
 /// non-null `bumpedAt` after an operation means "this thread will surface at
-/// the top of Done." The rule (per product spec): bump ONLY when a thread
-/// moves INTO the Done section from outside it (Active or the unread cluster).
-/// A thread already sitting in Done must never re-bump.
+/// the top of Done." The rule (per product spec): bump exactly when a thread
+/// moves INTO the Done section from outside it — explicit completion of an
+/// Active/Scheduled thread, or an unread no-active-state thread leaving the
+/// unread cluster on read/mute. A thread already sitting in Done must never
+/// re-bump (no-op completions, re-opens). The flat Everything/search feeds
+/// sort by `contentActivityAt` (bump excluded), so bumps never move rows
+/// there.
 void main() {
   group('Thread.copyWith Done bump (bumpedAt)', () {
     test('completing an active thread bumps it into Done', () {
@@ -66,10 +70,11 @@ void main() {
       );
     });
 
-    test('reading an unread inactive thread does NOT bump it', () {
-      // Unread + inactive. In a focus, reading drops it into Done (by recency);
-      // in the flat "Everything" feed it is already inline — bumping it would
-      // yank a visible row to the top. Reading must never set bumpedAt.
+    test('reading an unread inactive thread bumps it to the top of Done', () {
+      // Unread + inactive: the thread renders in the unread cluster (top of
+      // Active) and leaves it on read. It should land at the TOP of Done,
+      // not sink to its old recency slot. Safe for the flat feeds — their
+      // sort uses contentActivityAt, which excludes the bump.
       final unreadDone = Thread(
         priority: _priority(),
         active: false,
@@ -87,8 +92,50 @@ void main() {
       expect(read.unread, isFalse, reason: 'reading still clears unread');
       expect(
         read.bumpedAt,
+        isNotNull,
+        reason: 'leaving the unread cluster into Done lands at the top',
+      );
+    });
+
+    test('muting an unread inactive thread bumps it to the top of Done', () {
+      // Mirrors MuteSimilarThreads: asInactive() then the unread/readAt
+      // clear. The mute moves the row from the unread cluster to Done, so
+      // it lands at the top.
+      final unreadMail = Thread(
+        priority: _priority(),
+        active: false,
+        unread: true,
+      );
+      final muted = unreadMail
+          .asInactive()
+          .copyWith(
+            unread: false,
+            readAt: Value(unreadMail.contentTimestamp),
+          );
+      expect(muted.unread, isFalse);
+      expect(
+        muted.bumpedAt,
+        isNotNull,
+        reason: 'a muted unread thread enters Done at the top',
+      );
+    });
+
+    test('re-reading an already-read inactive thread does NOT bump it', () {
+      // The original top-of-Done bug: opening a thread already sitting in
+      // Done must not move it. The cluster-exit bump requires the thread to
+      // have been unread before this write.
+      final inDone = Thread(priority: _priority(), active: false);
+      expect(inDone.unread, isFalse, reason: 'precondition: already read');
+
+      final reopened = inDone.copyWith(
+        unread: false,
+        readAt: Value(inDone.contentTimestamp),
+      );
+
+      expect(
+        reopened.bumpedAt,
         isNull,
-        reason: 'reading must not reposition the thread in any feed',
+        reason: 'opening a Done thread must not reposition it',
       );
     });
 

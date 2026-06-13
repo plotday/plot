@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
@@ -8,6 +9,8 @@ import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/util/platform.dart';
+import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/toast.dart';
@@ -177,28 +180,43 @@ class Modal extends StatelessWidget {
               : constraints.maxHeight,
         );
 
-        return ConstrainedBox(
+        final content = ConstrainedBox(
           constraints: effectiveConstraints,
-          child: Stack(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ?header,
-                  Flexible(
-                    child: Container(padding: padding, child: builder(context)),
-                  ),
-                ],
+              ?header,
+              Flexible(
+                child: Container(padding: padding, child: builder(context)),
               ),
-              if (showCloseButton)
-                const Positioned(
-                  top: 8,
-                  right: 8,
-                  child: _ModalCloseButton(),
-                ),
             ],
           ),
         );
+
+        final Widget? closeButton = showCloseButton
+            ? const Positioned(top: 8, right: 8, child: _ModalCloseButton())
+            : null;
+
+        // In single-panel mode the modal is presented as a full-width bottom
+        // sheet. Stretch horizontally (Row.mainAxisSize.max) so the content is
+        // centred within the sheet while the close (X) button anchors to the
+        // top-right of the whole panel rather than the (narrower) content.
+        // Using a Row keeps the vertical axis shrink-wrapped to the content so
+        // the sheet still sizes to its content height. Multi-panel dialogs
+        // instead size to the content, so the X sits at the content's corner.
+        if (!context.isMultiPanel) {
+          return Stack(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [Flexible(child: content)],
+              ),
+              ?closeButton,
+            ],
+          );
+        }
+
+        return Stack(children: [content, ?closeButton]);
       },
     );
   }
@@ -209,8 +227,38 @@ class Modal extends StatelessWidget {
 /// (multi-panel) and bottom sheets (single-panel) — every top-level modal
 /// gets an explicit close affordance, in addition to swipe-to-dismiss on
 /// sheets. Nested modals show their own back button instead.
-class _ModalCloseButton extends StatelessWidget {
+///
+/// Hovering brightens the X from [mutedForeground] to [foreground] and shows
+/// a "Close" tooltip with the "Esc" shortcut below (on devices with a physical
+/// keyboard, where Esc dismisses the modal).
+class _ModalCloseButton extends StatefulWidget {
   const _ModalCloseButton();
+
+  @override
+  State<_ModalCloseButton> createState() => _ModalCloseButtonState();
+}
+
+class _ModalCloseButtonState extends State<_ModalCloseButton> {
+  static const _shortcut = SingleActivator(LogicalKeyboardKey.escape);
+
+  bool _isHovered = false;
+
+  Widget _buildTooltip(BuildContext context) {
+    if (!hasPhysicalKeyboard()) return const Text('Close');
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Close'),
+        Text(
+          formatShortcut(_shortcut),
+          style: context.theme.typography.xs.copyWith(
+            color: context.theme.colors.mutedForeground,
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -218,14 +266,23 @@ class _ModalCloseButton extends StatelessWidget {
       valueListenable: ModalProvider.of(context).modalStackNotifier,
       builder: (context, stackLength, _) {
         if (stackLength > 1) return const SizedBox.shrink();
-        return FButton.icon(
-          variant: FButtonVariant.ghost,
-          onPress: () =>
-              Modal.pop<dynamic>(context, Value<dynamic>.absent()),
-          child: Icon(
-            PlotIcon.close,
-            size: context.theme.iconSizes.sm,
-            color: context.theme.colors.mutedForeground,
+        return FTooltip(
+          tipBuilder: (context, _) => _buildTooltip(context),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            child: FButton.icon(
+              variant: FButtonVariant.ghost,
+              onPress: () =>
+                  Modal.pop<dynamic>(context, Value<dynamic>.absent()),
+              child: Icon(
+                PlotIcon.close,
+                size: context.theme.iconSizes.sm,
+                color: _isHovered
+                    ? context.theme.colors.foreground
+                    : context.theme.colors.mutedForeground,
+              ),
+            ),
           ),
         );
       },
@@ -423,9 +480,18 @@ class _ModalProviderState extends State<ModalProvider> {
             // constraints — that breaks the sheet's shrink-wrap to content.
             // The app-level FToaster in app.dart is still an ancestor of
             // root-navigator routes, so showFToast calls keep working.
+            // The modal content stretches edge-to-edge in single-panel mode
+            // (see Modal.build), so the sheet background and its top border
+            // span the full width. A 1px top border separates the sheet from
+            // the dimmed feed behind it.
             return material.Material(
-              child: Container(
-                color: dialogContext.theme.colors.background,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: dialogContext.theme.colors.background,
+                  border: Border(
+                    top: BorderSide(color: dialogContext.theme.colors.border),
+                  ),
+                ),
                 child: buildModalContent(dialogContext),
               ),
             );

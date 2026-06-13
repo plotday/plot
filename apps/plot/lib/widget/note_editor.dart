@@ -921,15 +921,20 @@ class NoteEditorState extends State<NoteEditor> {
     switch (cfg.sharingModel) {
       case SharingModel.message:
         final replyAudience = _replyAudience(s);
+        // "Reply all" + count + edit-recipients icon are driven by how many
+        // people the reply actually reaches — NOT by whether a *distinct*
+        // original author exists. A thread the current user started for two
+        // others still replies to both, so it's "Reply all (2)". The separate
+        // "Reply to original" pill below is the only thing keyed on `orig`.
+        final isReplyAll = replyAudience.total >= 2;
         final orig = _originalAuthorIfDistinct(s);
-        final bothTabs = orig != null;
         pills.add(
           TopBarPill(
             id: 'reply',
-            label: bothTabs ? 'Reply all' : 'Reply',
-            leadingIcon: bothTabs ? FontAwesomeIcons.replyAll : null,
-            recipientCount: bothTabs ? replyAudience.total : null,
-            editIcon: bothTabs ? PlotIcon.edit : PlotIcon.share,
+            label: isReplyAll ? 'Reply all' : 'Reply',
+            leadingIcon: isReplyAll ? FontAwesomeIcons.replyAll : null,
+            recipientCount: isReplyAll ? replyAudience.total : null,
+            editIcon: isReplyAll ? PlotIcon.edit : PlotIcon.share,
             editTooltip: 'Edit recipients',
             onTap: _activateConnectorReply,
             onEdit: _openRecipientPicker,

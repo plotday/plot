@@ -11,6 +11,7 @@ import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/list_view_selector.dart';
+import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/spacing.dart';
 import 'icon.dart';
@@ -1544,7 +1545,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                     ),
                   ?errorBox,
                   Flexible(
-                    child: widget.gridColumns != null
+                    child: ScrollEdgeFade(
+                      background: context.theme.colors.background,
+                      child: widget.gridColumns != null
                         ? _buildGridList(listController)
                         : ListView.builder(
                       controller: _scrollController,
@@ -1785,6 +1788,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           ],
                         );
                       },
+                    ),
                     ),
                   ),
                   ?loadingIndicator,

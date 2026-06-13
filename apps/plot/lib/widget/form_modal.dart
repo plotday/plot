@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/list_view_selector.dart';
+import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/style/spacing.dart';
 import 'icon.dart';
@@ -28,12 +29,17 @@ class FormModal extends Modal {
     return FormModal._(formModal, form, constraints, maxWidthPercentage);
   }
 
-  FormModal._(Widget formModal, FormData form, BoxConstraints? constraints, double? maxWidthPercentage)
-    : super(
+  FormModal._(
+    Widget formModal,
+    FormData form,
+    BoxConstraints? constraints,
+    double? maxWidthPercentage,
+  ) : super(
         padding: const EdgeInsets.all(0),
         builder: (_) => formModal,
         key: ObjectKey(form),
-        constraints: constraints ?? const BoxConstraints(maxHeight: 640, maxWidth: 750),
+        constraints:
+            constraints ?? const BoxConstraints(maxHeight: 640, maxWidth: 750),
         maxWidthPercentage: maxWidthPercentage ?? 0.8,
         showCloseButton: form.dismissable,
       );
@@ -196,8 +202,7 @@ class FormModalState extends State<_FormModal> {
 
     _initForm(newGroups);
     // Restore focus to the item that was highlighted before refresh
-    if (restoreFocusIndex != null &&
-        restoreFocusIndex < _focusNodes.length) {
+    if (restoreFocusIndex != null && restoreFocusIndex < _focusNodes.length) {
       _highlightedIndex = restoreFocusIndex;
     }
     setState(() {});
@@ -661,7 +666,9 @@ class FormModalState extends State<_FormModal> {
                 ActivateListSelectionIntent: CallbackAction<ActivateListSelectionIntent>(
                   onInvoke: (intent) {
                     if (_allFocusSlotsCount() > 0) {
-                      final (item, subIndex) = _getItemAndSubIndex(_highlightedIndex);
+                      final (item, subIndex) = _getItemAndSubIndex(
+                        _highlightedIndex,
+                      );
                       if (item is FormButton) {
                         // Run the specific button that's focused
                         final controller = _buttonControllers[item];
@@ -770,7 +777,9 @@ class FormModalState extends State<_FormModal> {
                                     child: Text(
                                       widget.form.title,
                                       style: context.theme.typography.md
-                                          .copyWith(fontWeight: FontWeight.w600),
+                                          .copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ),
                                 ),
@@ -783,133 +792,161 @@ class FormModalState extends State<_FormModal> {
                           constraints: BoxConstraints(
                             maxHeight: availableContentHeight,
                           ),
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            shrinkWrap: true,
-                            itemCount: totalItemCount,
-                            itemBuilder: (context, index) {
-                              final group = _getGroupAtIndex(index);
-                              final item = _getItemAtIndex(index);
-                              Widget? header;
+                          child: ScrollEdgeFade(
+                            background: context.theme.colors.background,
+                            child: ListView.builder(
+                              controller: _scrollController,
+                              shrinkWrap: true,
+                              itemCount: totalItemCount,
+                              itemBuilder: (context, index) {
+                                final group = _getGroupAtIndex(index);
+                                final item = _getItemAtIndex(index);
+                                Widget? header;
 
-                              if (group.title != null &&
-                                  (index == 0 ||
-                                      group != _getGroupAtIndex(index - 1))) {
-                                header = Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: context.theme.spacing.xl,
-                                    vertical: context.theme.spacing.sm,
-                                  ),
-                                  child: group.subtitle != null
-                                      ? Row(
-                                          children: [
-                                            Text(
-                                              group.title!,
-                                              style: TextStyle(
-                                                color: context.theme.colors
-                                                    .mutedForeground,
-                                                fontSize: context.theme
-                                                    .typography.sm.fontSize,
+                                if (group.title != null &&
+                                    (index == 0 ||
+                                        group != _getGroupAtIndex(index - 1))) {
+                                  header = Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: context.theme.spacing.xl,
+                                      vertical: context.theme.spacing.sm,
+                                    ),
+                                    child: group.subtitle != null
+                                        ? Row(
+                                            children: [
+                                              Text(
+                                                group.title!,
+                                                style: TextStyle(
+                                                  color: context
+                                                      .theme
+                                                      .colors
+                                                      .mutedForeground,
+                                                  fontSize: context
+                                                      .theme
+                                                      .typography
+                                                      .sm
+                                                      .fontSize,
+                                                ),
                                               ),
-                                            ),
-                                            const Spacer(),
-                                            Text(
-                                              group.subtitle!,
-                                              style: TextStyle(
-                                                color: context.theme.colors
-                                                    .mutedForeground,
-                                                fontSize: context.theme
-                                                    .typography.sm.fontSize,
+                                              const Spacer(),
+                                              Text(
+                                                group.subtitle!,
+                                                style: TextStyle(
+                                                  color: context
+                                                      .theme
+                                                      .colors
+                                                      .mutedForeground,
+                                                  fontSize: context
+                                                      .theme
+                                                      .typography
+                                                      .sm
+                                                      .fontSize,
+                                                ),
                                               ),
+                                            ],
+                                          )
+                                        : Text(
+                                            group.title!,
+                                            style: TextStyle(
+                                              color: context
+                                                  .theme
+                                                  .colors
+                                                  .mutedForeground,
+                                              fontSize: context
+                                                  .theme
+                                                  .typography
+                                                  .sm
+                                                  .fontSize,
                                             ),
-                                          ],
-                                        )
-                                      : Text(
-                                          group.title!,
-                                          style: TextStyle(
-                                            color: context.theme.colors
-                                                .mutedForeground,
-                                            fontSize: context.theme
-                                                .typography.sm.fontSize,
                                           ),
-                                        ),
+                                  );
+                                }
+
+                                // Map item index to focus slot range
+                                final focusSlotStart = _focusSlotForItemIndex(
+                                  index,
                                 );
-                              }
+                                final focusCount = item.focusableCount;
 
-                              // Map item index to focus slot range
-                              final focusSlotStart = _focusSlotForItemIndex(index);
-                              final focusCount = item.focusableCount;
+                                // Determine which sub-item is highlighted (-1 = none)
+                                final int highlightedSubIndex;
+                                if (hasPhysicalKeyboard() &&
+                                    _highlightedIndex >= focusSlotStart &&
+                                    _highlightedIndex <
+                                        focusSlotStart + focusCount) {
+                                  highlightedSubIndex =
+                                      _highlightedIndex - focusSlotStart;
+                                } else {
+                                  highlightedSubIndex = -1;
+                                }
 
-                              // Determine which sub-item is highlighted (-1 = none)
-                              final int highlightedSubIndex;
-                              if (hasPhysicalKeyboard() &&
-                                  _highlightedIndex >= focusSlotStart &&
-                                  _highlightedIndex < focusSlotStart + focusCount) {
-                                highlightedSubIndex = _highlightedIndex - focusSlotStart;
-                              } else {
-                                highlightedSubIndex = -1;
-                              }
+                                // Slice of focus nodes for this item
+                                final itemFocusNodes =
+                                    focusSlotStart < _focusNodes.length
+                                    ? _focusNodes.sublist(
+                                        focusSlotStart,
+                                        (focusSlotStart + focusCount).clamp(
+                                          0,
+                                          _focusNodes.length,
+                                        ),
+                                      )
+                                    : <FocusNode>[];
 
-                              // Slice of focus nodes for this item
-                              final itemFocusNodes = focusSlotStart < _focusNodes.length
-                                  ? _focusNodes.sublist(
-                                      focusSlotStart,
-                                      (focusSlotStart + focusCount).clamp(0, _focusNodes.length),
-                                    )
-                                  : <FocusNode>[];
-
-                              return GestureDetector(
-                                onTap: () async {
-                                  final item = _getItemAtIndex(index);
-                                  // Items with multiple focusable sub-items handle
-                                  // their own taps via ListTile commands
-                                  if (item.canActivate && item.focusableCount <= 1) {
-                                    await item.activate(context);
-                                  }
-                                },
-                                child: MouseRegion(
-                                  cursor: SystemMouseCursors.basic,
-                                  onEnter: (_) {
-                                    if (_mouseHasMoved) {
-                                      listController.setHovered(index);
+                                return GestureDetector(
+                                  onTap: () async {
+                                    final item = _getItemAtIndex(index);
+                                    // Items with multiple focusable sub-items handle
+                                    // their own taps via ListTile commands
+                                    if (item.canActivate &&
+                                        item.focusableCount <= 1) {
+                                      await item.activate(context);
                                     }
                                   },
-                                  onExit: (_) {
-                                    if (_mouseHasMoved) {
-                                      listController.setHovered(null);
-                                    }
-                                  },
-                                  onHover: (_) {
-                                    if (!_mouseHasMoved) {
-                                      setState(() => _mouseHasMoved = true);
-                                      listController.setHovered(index);
-                                    }
-                                  },
-                                  child: Column(
-                                    key: ValueKey(index),
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      ?header,
-                                      item.build(
-                                        context,
-                                        highlightedSubIndex,
-                                        enabled: item is FormButton
-                                            ? (item.skipValidation || _isFormValid())
-                                            : true,
-                                        focusNodes: itemFocusNodes,
-                                        controller: item is FormButton
-                                            ? _buttonControllers.putIfAbsent(
-                                                item,
-                                                () => FormButtonController(),
-                                              )
-                                            : null,
-                                      ),
-                                    ],
+                                  child: MouseRegion(
+                                    cursor: SystemMouseCursors.basic,
+                                    onEnter: (_) {
+                                      if (_mouseHasMoved) {
+                                        listController.setHovered(index);
+                                      }
+                                    },
+                                    onExit: (_) {
+                                      if (_mouseHasMoved) {
+                                        listController.setHovered(null);
+                                      }
+                                    },
+                                    onHover: (_) {
+                                      if (!_mouseHasMoved) {
+                                        setState(() => _mouseHasMoved = true);
+                                        listController.setHovered(index);
+                                      }
+                                    },
+                                    child: Column(
+                                      key: ValueKey(index),
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        ?header,
+                                        item.build(
+                                          context,
+                                          highlightedSubIndex,
+                                          enabled: item is FormButton
+                                              ? (item.skipValidation ||
+                                                    _isFormValid())
+                                              : true,
+                                          focusNodes: itemFocusNodes,
+                                          controller: item is FormButton
+                                              ? _buttonControllers.putIfAbsent(
+                                                  item,
+                                                  () => FormButtonController(),
+                                                )
+                                              : null,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
                         ),
                         SizedBox(height: context.theme.spacing.md),

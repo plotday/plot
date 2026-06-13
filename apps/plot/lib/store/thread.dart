@@ -5667,7 +5667,7 @@ SELECT
   /// dot on something they're already acting on). Used by the Activity-tab
   /// drag dispatcher when a thread is dropped in the Today section.
   Thread asActiveToday({Order? order}) {
-    final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
+    final effectiveOrder = order ?? _thread.stateOrder ?? Order.last();
     final restored = withScheduleRestored(order: effectiveOrder);
     if (!unread) return restored;
     return restored.copyWith(unread: false, readAt: Value(contentTimestamp));
@@ -5678,7 +5678,7 @@ SELECT
   /// and (when unread) marks the thread acknowledged since the user has
   /// committed it to a future day.
   Thread asScheduled(Date date, {Order? order}) {
-    final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
+    final effectiveOrder = order ?? _thread.stateOrder ?? Order.last();
     final restored = withScheduleRestored(order: effectiveOrder, date: date);
     if (!unread) return restored;
     return restored.copyWith(unread: false, readAt: Value(contentTimestamp));
@@ -6203,10 +6203,11 @@ SELECT
           // Promoting an inactive thread to active — populate state_order
           // when the caller didn't pass one and no prior order exists, so
           // Doing/Scheduled drag-reorders against this row sort
-          // deterministically. See [Thread.order] doc for the failure mode
-          // a NULL state_order causes.
+          // deterministically. Newly scheduled items append to the BOTTOM
+          // of their day. See [Thread.order] doc for the failure mode a
+          // NULL state_order causes.
           if (order == null && _thread.stateOrder == null) {
-            tsStateOrder = Value(Order.first());
+            tsStateOrder = Value(Order.last());
           }
         }
         // A pure clear on an inactive thread has no per-user state to write,
@@ -6235,10 +6236,10 @@ SELECT
       tsActive = true;
       tsStateOn = Value(Thread.todoNowDate);
       tsStateAt = const Value(null);
-      // Honor an explicitly-passed order so re-activating a thread (a
-      // Done → To do round-trip) can restore its prior Doing slot;
-      // otherwise a freshly-activated to-do lands at the top of Doing.
-      tsStateOrder = order != null ? Value(order) : Value(Order.first());
+      // Honor an explicitly-passed order (drag-drop positions rows
+      // precisely); otherwise a newly-activated to-do appends to the
+      // BOTTOM of Active.
+      tsStateOrder = order != null ? Value(order) : Value(Order.last());
       stateDirty = true;
     }
 
@@ -6254,24 +6255,27 @@ SELECT
     }
 
     // Bump rule — surface a thread at the top of the Done (Activity) section
-    // ONLY when it is completed (`bump: true, todo: false`) from OUTSIDE Done,
-    // i.e. it just left Active / Scheduled. It then drifts down naturally as
-    // newer activity lands above it.
+    // when it moves into Done from OUTSIDE it:
+    //   * explicit completion (`bump: true, todo: false`) of an Active /
+    //     Scheduled thread, or
+    //   * an unread thread with no active state being marked read (or
+    //     muted) — it leaves the unread cluster at the top of Active, so
+    //     it lands at the top of Done rather than sinking to its old
+    //     recency slot.
+    // It then drifts down naturally as newer activity lands above it.
     //
-    // Reading does NOT bump. In a focus the Done section excludes unread
-    // threads (they sit in the unread cluster), so a just-read thread settles
-    // into Done by recency on its own. But the flat "Everything" feed sorts by
-    // the same recency key WITH unread threads inline, so a read-bump there
-    // would yank an already-visible row to the top. Because `bumpedAt` is a
-    // single persisted key feeding both feeds, the safe rule is to never bump
-    // on a passive read — only explicit user actions reposition a thread.
-    // (Clearing unread / stamping readAt still happens, via the param-applied
-    // activity copyWith above.)
+    // The flat "Everything" / search feeds are unaffected: they sort by
+    // [contentActivityAt], which excludes `bumped_at`, so a read-bump never
+    // yanks an inline row there.
     //
-    // A thread already in Done (inactive) is not re-bumped on completion.
-    // Synced via /sync/thread-read (read-state fields), so this path does not
-    // need activityRemoteDirty.
-    final entersDone = bump && todo == false && _thread.active;
+    // A thread already in Done (read + inactive) is never re-bumped — not by
+    // a no-op completion and not by being opened/re-read (the
+    // `_thread.unread` guard). Synced via /sync/thread-read (read-state
+    // fields), so this path does not need activityRemoteDirty.
+    final leavesUnreadIntoDone =
+        unread == false && _thread.unread && !_thread.active && todo != true;
+    final entersDone =
+        (bump && todo == false && _thread.active) || leavesUnreadIntoDone;
     if (entersDone) {
       activityDirty = true;
       activity = activity.copyWith(
@@ -6581,7 +6585,7 @@ SELECT
     final wasArchived = _thread.archivedAt != null;
     final newActivity = _thread.copyWith(
       active: true,
-      stateOrder: Value(Order.first()),
+      stateOrder: Value(Order.last()),
       stateOn: Value(Thread.todoNowDate),
       stateAt: const Value(null),
       readAt: const Value(null),

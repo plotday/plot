@@ -333,7 +333,20 @@ class Tracker {
         _log.severe('Uncaught Flutter error', details.exception, details.stack);
         await _captureException(details.exception, details.stack);
       }
-      FlutterError.presentError(details);
+      // `presentError` (the widget inspector's structured-error reporter in
+      // debug/profile) enriches the error with its widget-creation location by
+      // walking the associated element's ancestors. When that element has
+      // already been deactivated — routine during navigation/teardown — the
+      // walk throws "Looking up a deactivated widget's ancestor is unsafe".
+      // Because this handler is async, an uncaught throw here escapes as a
+      // fresh top-level error and re-enters the pipeline, getting logged and
+      // captured as a phantom that masks nothing (the genuine exception was
+      // already handled above). Swallow it; presentError is purely cosmetic.
+      try {
+        FlutterError.presentError(details);
+      } catch (_) {
+        // Inspector failed to render the error — already logged/captured above.
+      }
     };
 
     // Catch async errors that occur outside of the Flutter framework

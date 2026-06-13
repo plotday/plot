@@ -19,6 +19,13 @@ import 'package:plot/main.dart' show instanceLock;
 import 'package:plot/widget/modal.dart';
 import 'logging.dart';
 
+/// Height of the app's top header band — the [UnifiedHeader] used by the
+/// feed/thread views and, on desktop, the [WindowControlsInset] band that
+/// keeps single-panel tab-root pages clear of the macOS traffic lights.
+/// Shared so the two never drift, which would otherwise make the traffic
+/// lights jump as the user moves between a tab root and a thread.
+const double kAppHeaderHeight = 44.0;
+
 class Window extends StatefulWidget {
   static late final double toolbarHeight;
   static late final EdgeInsetsGeometry toolbarPadding;

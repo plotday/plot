@@ -183,9 +183,20 @@ class ActivityFeedTabData {
     required this.items,
     this.everythingFeed = false,
     this.context,
+    this.moveGen = 0,
+    this.movedIds = const {},
   });
 
   final List<AgendaItem> items;
+
+  /// Generation counter advanced when this rebuild was caused by an
+  /// explicit user state change in the sectioned feed; the page animates
+  /// the items diff when it advances. Unchanged for stream-driven
+  /// rebuilds.
+  final int moveGen;
+
+  /// The threads whose explicit state change produced this generation.
+  final Set<ThreadId> movedIds;
 
   /// The priority context these items were built for. The page compares each
   /// row's filed priority against THIS (via [PriorityState.activeTabContext])

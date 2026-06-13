@@ -51,7 +51,10 @@ enum HeaderVariant { single, sidebar, main }
 /// Fixed height for every header variant. Locked to a constant so swapping
 /// trailing controls (timer pill vs. plain icon button, etc.) never makes
 /// the header shrink — content stays vertically centered within this band.
-const double _kHeaderHeight = 44.0;
+/// Aliases [kAppHeaderHeight] so the desktop [WindowControlsInset] band on
+/// header-less tab pages stays the same height (and the traffic lights stay
+/// put as the user moves between a tab root and a thread).
+const double _kHeaderHeight = kAppHeaderHeight;
 
 /// A single header spanning the full window width, placed above all panels.
 ///
@@ -551,6 +554,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       );
     }
 
+    // Multi-select bar replaces the single-panel header while a selection is
+    // active (only reachable with the feed showing — no thread open).
+    if (state.multiSelecting) {
+      return _buildMultiSelectBar(
+        context,
+        layoutState,
+        state,
+        reserveLeftPad: true,
+      );
+    }
+
     final decoration = BoxDecoration(
       color: context.colour.panelDarkestBackground,
       border: Border(
@@ -692,6 +706,16 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     PriorityState state,
     ThreadHeaderNotifier? notifier,
   ) {
+    // While a multi-selection is active, the header becomes the bulk-command
+    // bar (count + applicable actions + ✕) instead of title/search/new/menu.
+    if (state.multiSelecting) {
+      return _buildMultiSelectBar(
+        context,
+        layoutState,
+        state,
+        reserveLeftPad: !layoutState.leftPanelVisible,
+      );
+    }
     final resolvedToolbarPadding = Window.toolbarPadding.resolve(
       TextDirection.ltr,
     );
@@ -739,6 +763,103 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       ...leading,
       titleSection,
     ], suffixes: trailing);
+  }
+
+  /// The feed header's multi-select command bar. Replaces the normal header
+  /// while a selection is active: the count, the applicable bulk commands
+  /// (omitting any that apply to no selected thread), overflowing into a "…"
+  /// menu when the column is too narrow, and a trailing ✕ to exit.
+  Widget _buildMultiSelectBar(
+    BuildContext context,
+    LayoutState layoutState,
+    PriorityState state, {
+    bool reserveLeftPad = false,
+  }) {
+    final resolvedToolbarPadding = Window.toolbarPadding.resolve(
+      TextDirection.ltr,
+    );
+    final threads = state.selectedThreads;
+    final count = threads.length;
+    final bloc = context.read<PriorityBloc?>();
+
+    // Applicable bulk commands in priority order; each omits itself when it
+    // applies to no selected thread.
+    final commands = <Command>[
+      if (BulkSetTodo.applies(threads)) BulkSetTodo(threads),
+      if (BulkFinish.applies(threads)) BulkFinish(threads),
+      if (BulkSchedule.applies(threads)) BulkSchedule(threads),
+      if (BulkMarkRead.applies(threads)) BulkMarkRead(threads),
+      if (BulkMove.applies(threads)) BulkMove(threads, bloc: bloc),
+      if (BulkMute.applies(threads)) BulkMute(threads),
+      if (BulkAssign.applies(threads)) BulkAssign(threads),
+    ];
+
+    final label = Flexible(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          count == 1 ? '1 thread' : '$count threads',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.theme.typography.sm.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+
+    final leftPad = reserveLeftPad ? resolvedToolbarPadding.left : 0.0;
+    final rightPad = resolvedToolbarPadding.right;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Approximate ghost icon-button footprint; used only to decide how many
+        // actions fit inline before folding the rest into the overflow menu.
+        const btnW = 36.0;
+        final reserved = leftPad + 56 + btnW + rightPad;
+        var inlineCount = ((constraints.maxWidth - reserved) / btnW).floor();
+        if (inlineCount < 0) inlineCount = 0;
+
+        List<Command> inline;
+        List<Command> overflow;
+        if (inlineCount >= commands.length) {
+          inline = commands;
+          overflow = const [];
+        } else {
+          // Leave one inline slot for the overflow (…) button.
+          final n = (inlineCount - 1).clamp(0, commands.length);
+          inline = commands.take(n).toList();
+          overflow = commands.skip(n).toList();
+        }
+
+        return _wrapHeader(
+          context,
+          layoutState,
+          [
+            if (leftPad != 0) SizedBox(width: leftPad),
+            label,
+            // Bulk command buttons — including the ✕ exit affordance — sit
+            // directly after the count label rather than right-aligned at the
+            // far edge of the header.
+            ...inline.map((c) => Button.icon(c)),
+            if (overflow.isNotEmpty)
+              Button.icon(
+                ShowCommands(
+                  title: 'More',
+                  icon: PlotIcon.more,
+                  commands: Commands(
+                    groups: [StaticCommandGroup(commands: overflow)],
+                  ),
+                ),
+              ),
+            Button.icon(ClearSelection()),
+          ],
+          suffixes: <Widget>[
+            if (rightPad != 0) SizedBox(width: rightPad),
+          ],
+        );
+      },
+    );
   }
 
   /// Wraps a text-bearing widget so its bounding box hugs the actual

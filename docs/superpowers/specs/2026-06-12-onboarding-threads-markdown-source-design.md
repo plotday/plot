@@ -68,12 +68,17 @@ All matching is by **stable keys**, never string matching on titles.
 
 4. **Visibility (groups / contacts / topic) is hardcoded in the generator**, not
    authored per file:
-   - Global threads: groups = `[Everyone, Plot Team]`, topic = the current
-     Using-Plot / onboarding topic.
-   - Per-user welcome: groups = `[Plot Team]`, contacts = `[the user]`.
-   These resolve at migration runtime via the same deterministic lookups the
-   current code uses (the `auto_maintained` "Everyone" topic, the Plot Team
-   auto-group), so no per-environment UUIDs are written into files.
+   - Global threads: groups = `[Plot Users, Plot Team]`, topic (the `thread.topic`
+     text column) = `'onboarding'`.
+   - Per-user welcome: groups = `[Plot Team]`, contacts = `[the user]`, topic =
+     `'onboarding'`.
+   - "Plot Users" is the auto-maintained everyone group (formerly "Everyone");
+     "Plot Team" is the Plot publisher/team auto-group. Both resolve at migration
+     runtime by their `auto_maintained` flags (the same lookups the current code
+     uses), so no per-environment UUIDs or display names are written into files.
+   - These values must match whatever is currently in place; the generator
+     mirrors the existing resolution queries in `activate_invited_user` and the
+     original global-thread migration.
 
 ## Source layout
 
@@ -173,8 +178,9 @@ the existing global migration's guards).
   preserved exactly as the current rows** — no `twist_id`/attribution change, to
   avoid altering filing or visibility behavior.
 - **Threads** — upsert by `key`: `SELECT id` by key (scoped to onboarding via
-  the snapshot key-registry + the Everyone-topic guard); if found `UPDATE`
-  title/preview, else `INSERT`. Capture `thread_id` in a `DO $$` block.
+  the snapshot key-registry + a `topic = 'onboarding'` guard); if found `UPDATE`
+  title/preview, else `INSERT` with the hardcoded groups (`Plot Users`, `Plot
+  Team`) and `topic = 'onboarding'`. Capture `thread_id` in a `DO $$` block.
 - **Notes** — upsert by `(thread_id, key)` using the existing partial unique
   index `note_thread_link_key_unique (thread_id, link_id, key)` where
   `key IS NOT NULL`. Set `source_created_at` from section order. `content` from
@@ -230,7 +236,7 @@ empty/no-op diff — confirming round-trip fidelity before any real edit.
 
 | Entity | Identity | On removal |
 |---|---|---|
-| Global thread | `key` (scoped via snapshot registry + Everyone-topic guard) | `archived_at = now()` |
+| Global thread | `key` (scoped via snapshot registry + `topic = 'onboarding'` guard) | `archived_at = now()` |
 | Global note | `(thread_id, key)` | `archived_at = now()` |
 | Per-user welcome thread/notes | regenerated in function body | n/a (new users only) |
 | Per-user state (schedules/todos) | regenerated `CASE`/key-list | n/a (new users only) |

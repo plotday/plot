@@ -22,9 +22,9 @@ BEGIN
     END IF;
 
     SELECT key INTO v_thread_key FROM public.thread WHERE id = NEW.thread_id;
-    IF v_thread_key NOT IN ('priorities', 'connections', 'twists', 'notifications') THEN
-        RETURN NEW;
-    END IF;
+    -- ONBOARDING:BEGIN todos
+    RETURN NEW;
+-- ONBOARDING:END todos
 
     -- Use the user's primary linked contact as the actor — same actor used
     -- elsewhere for per-user task ownership.

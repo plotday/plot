@@ -207,7 +207,7 @@ class PlotIcon {
   static const assignRemove = FontAwesomeIcons.circleUserCircleXmark;
   static const shareAdd = FontAwesomeIcons.userPlus;
   static const shareRemove = FontAwesomeIcons.userXmark;
-  static const doneAll = FontAwesomeIcons.checkDouble;
+  static const doneAll = FontAwesomeIcons.envelopeOpen;
 
   // Tags
   static const todo = FontAwesomeIcons.play;

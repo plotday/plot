@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/main.dart' show navigatorKey;
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
@@ -56,6 +57,17 @@ class PrioritiesShell extends StatefulWidget {
   /// switching between priorities while already on `/p/:id`) leave this
   /// untouched so the back gesture still returns to the original origin.
   static int? sourceTab;
+
+  /// Opens the new-thread compose flow in **Help & Feedback** mode (Plot-Team
+  /// chat filed under the user's Inbox), driving the Activity-tab inner stack
+  /// so it works in single- AND multi-panel. The public entry point for the
+  /// [HelpAndFeedback] command; delegates to the state's navigation logic
+  /// (which doesn't depend on `this`). [rootPriorityIdString] seeds the
+  /// Activity-tab PriorityRoute on cold start.
+  static void openFeedbackThread(
+    BuildContext context,
+    String rootPriorityIdString,
+  ) => _PrioritiesShellState._openFeedbackThread(context, rootPriorityIdString);
 
   @override
   State<PrioritiesShell> createState() => _PrioritiesShellState();
@@ -309,34 +321,112 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   /// the inner router becomes discoverable, then push NewThreadRoute.
   /// The 120-frame budget (~2s at 60Hz) covers slow disks while still
   /// bailing out if something goes wrong.
-  void _pushNewThreadWhenInnerReady(
+  static void _pushNewThreadWhenInnerReady(
     BuildContext context, {
     required int attempt,
+    bool feedback = false,
   }) {
     if (!context.mounted) return;
     final innerRouter = _findPriorityInnerRouter(context.router.root);
     if (innerRouter != null) {
       if (innerRouter.current.name != NewThreadRoute.name) {
-        innerRouter.push(NewThreadRoute());
+        innerRouter.push(NewThreadRoute(feedback: feedback));
       }
       return;
     }
     if (attempt >= 120) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pushNewThreadWhenInnerReady(context, attempt: attempt + 1);
+      _pushNewThreadWhenInnerReady(
+        context,
+        attempt: attempt + 1,
+        feedback: feedback,
+      );
     });
+  }
+
+  /// Opens the new-thread compose flow in **Help & Feedback** mode (a Plot-Team
+  /// chat filed under the user's Inbox), driving the Activity-tab inner stack
+  /// directly so it works in BOTH single- and multi-panel.
+  ///
+  /// The [HelpAndFeedback] command used to return
+  /// `CommandRoute(PriorityRoute(children: [NewThreadRoute(feedback: true)]))`,
+  /// but `navigate` silently DROPS that inner child whenever PriorityRoute is
+  /// already mounted (e.g. the user was viewing a thread when they opened
+  /// settings), so the compose screen never appeared — the same trap
+  /// documented on [_openNewThread] and in the onboarding overlay. This mirrors
+  /// [_openNewThread]: reconfigure an already-live page via
+  /// [NewThreadPageState.requestFeedback], otherwise push a fresh feedback
+  /// compose onto the inner stack (polling for the inner router on cold start).
+  ///
+  /// [rootPriorityIdString] seeds the Activity-tab PriorityRoute on cold start;
+  /// the page forces the Inbox focus itself once mounted (see
+  /// `NewThreadPageState._applyFeedbackMode`).
+  static void _openFeedbackThread(
+    BuildContext context,
+    String rootPriorityIdString,
+  ) {
+    // Prefer the always-mounted root navigator context so the cold-start poll
+    // survives the settings modal / More-tab row that triggered this being
+    // torn down. Falls back to the passed context if it isn't available yet.
+    final ctx = navigatorKey?.currentContext ?? context;
+    if (!ctx.mounted) return;
+
+    // Reconfigure an already-live (AutoRoute-reused) new-thread page for
+    // feedback; a fresh mount instead reacts to the `feedback` route param.
+    NewThreadPageState.requestFeedback();
+
+    final tabsRouter = _findTabsRouter(ctx.router.root);
+    final innerRouter = _findPriorityInnerRouter(ctx.router.root);
+    if (tabsRouter != null && innerRouter != null) {
+      // Reveal the Activity tab (single-panel may be on More/Search; multi-
+      // panel is already there).
+      if (tabsRouter.activeIndex != _kTabActivity) {
+        tabsRouter.setActiveIndex(_kTabActivity);
+      }
+      // Not already composing → push a fresh feedback compose; otherwise the
+      // requestFeedback() above reconfigures the live page in place.
+      if (innerRouter.current.name != NewThreadRoute.name) {
+        innerRouter.push(NewThreadRoute(feedback: true));
+      }
+      return;
+    }
+
+    // Cold-start path: the Activity-tab PriorityRoute isn't mounted yet (e.g.
+    // single-panel launch → More tab without ever visiting a focus). Mount the
+    // Inbox PriorityRoute (which also activates the Activity tab) then push the
+    // feedback compose once the inner router materializes.
+    ThreadHeaderNotifier.pendingNewThreadIntent.value = true;
+    Future.delayed(const Duration(seconds: 3), () {
+      ThreadHeaderNotifier.pendingNewThreadIntent.value = false;
+    });
+    ctx.router.navigate(PriorityRoute(priorityIdString: rootPriorityIdString));
+    _pushNewThreadWhenInnerReady(ctx, attempt: 0, feedback: true);
   }
 
   /// Walks the controller tree to find the [StackRouter] hosted by the
   /// active [PriorityRoute]. [innerRouterOf] is non-recursive, so a deeply
   /// nested route like PriorityRoute (root → AppShell → tabs → ActivityShell
   /// → PriorityRoute) needs an explicit walk.
-  StackRouter? _findPriorityInnerRouter(RoutingController root) {
+  static StackRouter? _findPriorityInnerRouter(RoutingController root) {
     final direct =
         root.innerRouterOf<StackRouter>(PriorityRoute.name);
     if (direct != null) return direct;
     for (final child in root.childControllers) {
       final hit = _findPriorityInnerRouter(child);
+      if (hit != null) return hit;
+    }
+    return null;
+  }
+
+  /// Walks the controller tree to find the root [TabsRouter] (the
+  /// [AutoTabsRouter] hosted in [build]). Mirrors [_findPriorityInnerRouter] so
+  /// the static [openFeedbackThread] entry point can switch tabs without an
+  /// [AutoTabsRouter.of] lookup (the command may run from a modal outside the
+  /// tabs subtree).
+  static TabsRouter? _findTabsRouter(RoutingController root) {
+    if (root is TabsRouter) return root;
+    for (final child in root.childControllers) {
+      final hit = _findTabsRouter(child);
       if (hit != null) return hit;
     }
     return null;

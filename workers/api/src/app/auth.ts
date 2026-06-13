@@ -61,7 +61,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   const access_token = authHeader.replace(/\s*Bearer\s+/, "");
 
   // Validate Clerk JWT using local PEM key (no network call)
-  const { user, claims } = await getUser(
+  const { user, claims, dbUnavailable } = await getUser(
     c.var.db,
     access_token,
     c.env.CLERK_JWT_KEY
@@ -71,6 +71,18 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     c.set("user", user);
     if (claims) c.set("clerkClaims", claims);
     return next();
+  }
+
+  // JWT verified but the DB was unreachable while looking up the user (e.g.
+  // Postgres restarting / in recovery). This is transient and unrelated to the
+  // user's credentials — return 503 so the client retries with backoff. A 401
+  // here would make the app treat a brief DB blip as a dead session and sign
+  // the user out (the local-first app should ride out a server outage).
+  if (dbUnavailable) {
+    console.warn(
+      `Auth deferred on ${c.req.method} ${c.req.path}: DB unavailable during user lookup`
+    );
+    return c.json({ message: "Service Unavailable" }, 503);
   }
 
   // JWT was valid but user doesn't exist in DB — allow /activate to create them.

@@ -92,6 +92,10 @@ class ChangeCurrentThread extends ThreadCommand {
     final nowBloc = context.read<NowBloc>();
     final layoutBloc = context.read<LayoutBloc>();
 
+    // A plain (unmodified) click opens the thread and exits any multi-select.
+    // No-op when nothing is selected, so ordinary opens don't churn state.
+    priorityBloc.clearSelection();
+
     // Opening an event thread also selects it as the current event.
     // Done BEFORE the no-op short-circuit so re-selecting the same
     // event from the agenda (after returning from another priority
@@ -666,17 +670,28 @@ class MuteSimilarThreads extends Command {
       // Set: mark the seed read + inactive (move to Done) and stamp it as
       // the rule anchor. Server-side apply_mute fans out to matching peers;
       // clients see the additional reads + inactives on the next sync pull.
+      // `unread: false` matters for the optimistic state: without it a
+      // muted unread thread stays bucketed in the unread cluster until the
+      // sync echo arrives, so the row never animates to Done.
       final muted = _thread.asInactive().copyWith(
         muteByThreadId: Value(_thread.id),
+        unread: false,
+        readAt: _thread.unread
+            ? Value(_thread.contentTimestamp)
+            : const Value.absent(),
       );
-      // If this is the open thread, hold it at its current feed section so
-      // muting flips it inactive without yanking the row to Done until the
-      // user changes threads (mirrors the To do / Done toggle). Pin BEFORE
-      // the optimistic update so its overlay leaves the pin in place. See
-      // [PriorityBloc.pinTodoInPlace].
-      priorityBloc?.pinTodoInPlace(muted);
+      // Rule 2: muting the open thread moves it to Done immediately and
+      // opens the next thread (decided against pre-change positions).
+      final isCurrentThread = priorityBloc?.state.thread?.id == _thread.id;
+      final nav = isCurrentThread
+          ? priorityBloc?.threadAfterStateChange(_thread.id)
+          : null;
+      priorityBloc?.markFeedMove(_thread.id);
       priorityBloc?.optimisticallyUpdateThread(muted);
       await muted.save();
+      if (nav?.open != null && context.mounted) {
+        await ChangeCurrentThread(nav!.open!).run(context);
+      }
     }
     return const CommandDone();
   }
@@ -886,6 +901,9 @@ abstract class _UpdateThreadCommand extends Command {
       await bloc.updateDraft(updatedThread);
       return;
     }
+    // Every save through this path is an explicit user action; flag it so
+    // the sectioned feed animates any resulting reposition.
+    bloc?.markFeedMove(updatedThread.id);
     bloc?.optimisticallyUpdateThread(
       updatedThread,
       watchScheduleAction: watchScheduleAction,
@@ -927,14 +945,12 @@ class ToggleThreadActive extends _UpdateThreadCommand {
   Future<CommandReturn> run(BuildContext context) async {
     final markingDone = thread.todo;
     final priorityBloc = context.read<PriorityBloc?>();
-    // If this re-activates a thread the user only just finished (a Done →
-    // To do round-trip on the open thread), restore its prior Doing slot so
-    // it returns to where it was instead of jumping to the top. Genuinely
-    // activating an inactive thread (no session original, or it wasn't
-    // Active at the start) keeps the default top-of-Doing placement.
-    final original = priorityBloc?.toggleOriginalFor(thread.id);
-    final restoreOrder = !thread.todo && (original?.todo ?? false)
-        ? original!.order
+    final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
+    // Rule 2/3: decide navigation against pre-change feed positions. When
+    // re-activating from Done the helper returns stay (no navigation) and
+    // the thread moves to the bottom of Active while remaining open.
+    final nav = isCurrentThread
+        ? priorityBloc?.threadAfterStateChange(thread.id)
         : null;
     final updated = thread.copyWith(
       todo: !thread.todo,
@@ -942,20 +958,15 @@ class ToggleThreadActive extends _UpdateThreadCommand {
       readAt: thread.unread
           ? Value(thread.contentTimestamp)
           : const Value.absent(),
-      order: restoreOrder,
     );
-    // If this is the open thread, hold it at its current feed section so the
-    // To do / Done toggle flips its icon without yanking the row to its new
-    // section until the user navigates away. Pin BEFORE saveOptimistically so
-    // the overlay it writes doesn't first bounce the row to its new section
-    // for a frame; pinTodoInPlace reads the pre-toggle section from the open
-    // thread and optimisticallyUpdateThread then leaves the pin in place.
-    priorityBloc?.pinTodoInPlace(updated);
     await saveOptimistically(context, updated);
     // Marking the thread done also completes the user's todo notes on it
     // (matches FinishThread). Flipping back to todo leaves notes untouched.
     if (markingDone) {
       await _completeUserTodoNotes(thread.id, Base.actorId);
+    }
+    if (nav?.open != null && context.mounted) {
+      await ChangeCurrentThread(nav!.open!).run(context);
     }
     return const CommandDone();
   }
@@ -1051,36 +1062,23 @@ class FinishThread extends _UpdateThreadCommand {
     // Capture navigation BEFORE removal (thread must still be in agenda list)
     final priorityBloc = context.read<PriorityBloc?>();
     final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
-    final isAgenda =
-        priorityBloc?.resolveThreadListSource() == ThreadListSource.agenda;
-    // Bump to the top of Done only when the thread was genuinely Active at the
-    // start of this toggle session. A To do → Done round-trip (the user marked
-    // it To do then immediately Done on the open thread) must return to its
-    // prior Activity slot, so suppress the bump. With no session original
-    // (e.g. finishing a standing todo straight from the feed) keep the
-    // caller's `bump`.
-    final original = priorityBloc?.toggleOriginalFor(thread.id);
-    final effectiveBump = original == null ? bump : (bump && original.todo);
     final finished = thread.copyWith(
       todo: false,
-      bump: effectiveBump,
+      bump: bump,
       unread: false,
       readAt: thread.unread
           ? Value(thread.contentTimestamp)
           : const Value.absent(),
     );
-    // When finishing the open thread, hold it at its current feed section so
-    // the Done toggle flips its icon immediately but the row only relocates
-    // to Activity once the grace window elapses after we navigate away (the
-    // OpenNextThread below). Must run before navigation so the resulting
-    // setThread schedules its sticky removal. See [PriorityBloc.pinTodoInPlace].
-    if (isCurrentThread) {
-      priorityBloc?.pinTodoInPlace(finished);
-    }
+    // Rule 2/3 navigation, decided against pre-change feed positions. In
+    // the Done section (or a flat feed) the thread stays open; when the
+    // feed has nothing else to open, fall back to the compose page.
     CommandReturn? navigationResult;
-    if (isCurrentThread && isAgenda) {
-      navigationResult = await OpenNextThread().run(context);
-      if (navigationResult is CommandSkipped) {
+    if (isCurrentThread) {
+      final nav = priorityBloc?.threadAfterStateChange(thread.id);
+      if (nav?.open != null) {
+        navigationResult = await ChangeCurrentThread(nav!.open!).run(context);
+      } else if (nav != null && !nav.stay) {
         if (!context.mounted) return const CommandDone();
         navigationResult = await NewThread().run(context);
       }
@@ -1103,6 +1101,7 @@ class FinishThread extends _UpdateThreadCommand {
     try {
       context.read<ThreadBloc>().optimisticallyUpdateThread(finished);
     } catch (_) {}
+    priorityBloc?.markFeedMove(thread.id);
     if (onBeforeRun != null) {
       // Animation layer handles optimistic removal
       await onBeforeRun!(context);
@@ -1126,10 +1125,11 @@ class FinishThread extends _UpdateThreadCommand {
   }
 
   static Future<void> _setLinkDoneStatusForUser(
-    BuildContext context,
+    BuildContext? context,
     ThreadId threadId,
-    ActorId actorId,
-  ) async {
+    ActorId actorId, {
+    bool interactive = true,
+  }) async {
     final links = await Link.getForThread(threadId);
 
     // Block if any link belongs to an unconnected source
@@ -1138,7 +1138,7 @@ class FinishThread extends _UpdateThreadCommand {
       if (ptId != null) {
         final pt = TwistInstance.fromCache(ptId);
         if (pt != null && pt.isSource && !pt.userConnected) {
-          if (context.mounted) {
+          if (context != null && context.mounted) {
             context.showToast(
               message: 'Connect your ${pt.name} account',
               isError: true,
@@ -1183,10 +1183,13 @@ class FinishThread extends _UpdateThreadCommand {
     } else {
       // Multiple done statuses - handle per link
       for (final (link, doneStatuses) in linksWithDoneStatuses) {
-        if (!context.mounted) return;
         if (doneStatuses.length == 1) {
           await Link.updateStatus(link, doneStatuses.first.status);
         } else {
+          // Multiple done statuses on one link need a user pick. In
+          // non-interactive (bulk) mode — or with no live context — leave the
+          // link untouched rather than stack a picker per selected thread.
+          if (!interactive || context == null || !context.mounted) continue;
           // Show picker for links with multiple done statuses
           final result = await SelectModal.open<String>(
             context,
@@ -1263,17 +1266,31 @@ class ScheduleThread extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    PriorityBloc? bloc = priorityBloc;
+    if (bloc == null) {
+      try {
+        bloc = context.read<PriorityBloc>();
+      } catch (_) {}
+    }
+    // Rule 2/3: rescheduling the open thread opens the next thread below
+    // (decided against pre-change feed positions).
+    final isCurrentThread = bloc?.state.thread?.id == thread.id;
+    final nav = isCurrentThread ? bloc?.threadAfterStateChange(thread.id) : null;
     var updated = thread;
     // Ensure thread is a todo (creates per-user schedule if needed)
     if (!updated.todo) {
       updated = updated.copyWith(todo: true);
     }
-    // Move to the target date on the per-user schedule only
+    // Move to the target date on the per-user schedule only, appending to
+    // the BOTTOM of the destination day.
     updated = updated.reorderTo(
-      updated.order,
+      Order.last(),
       date: when == Thread.todoNowDate ? null : when,
     );
     await saveOptimistically(context, updated);
+    if (nav?.open != null && context.mounted) {
+      await ChangeCurrentThread(nav!.open!).run(context);
+    }
     return const CommandDone();
   }
 }
@@ -1576,17 +1593,24 @@ class RescheduleAllInBlock extends Command {
 
     // Compute the new state for each thread up front. Mirrors ScheduleThread:
     // ensure it's a todo (creates per-user schedule if needed), then move to
-    // the target date on the per-user schedule.
+    // the target date on the per-user schedule, appending the block to the
+    // BOTTOM of the target day preserving its relative order. A
+    // strictly-increasing order chain is used because plain Order.last()
+    // per item could tie-break randomly within the same millisecond.
     final date = picked.value == Thread.todoNowDate ? null : picked.value;
+    Order? prev;
     final updates = threads.map((thread) {
       final asTodo = thread.todo ? thread : thread.copyWith(todo: true);
-      return asTodo.reorderTo(asTodo.order, date: date);
+      final order = prev == null ? Order.last() : Order.between(prev, null);
+      prev = order;
+      return asTodo.reorderTo(order, date: date);
     }).toList();
 
     // Apply optimistic updates synchronously so every thread visibly moves
     // in the same frame. Each call mutates bloc state in memory; the agenda
     // repaints once on the next vsync regardless of how many we apply.
     for (final updated in updates) {
+      bloc?.markFeedMove(updated.id);
       bloc?.optimisticallyUpdateThread(updated);
     }
 
@@ -1646,6 +1670,446 @@ class MarkAllReadInNewSection extends Command {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Multi-select (bulk operations)
+//
+// Desktop modifier-click builds a selection in [PriorityState.selected]; the
+// feed header swaps to a bulk-command bar. The selection commands below mutate
+// the set; the Bulk* commands apply one action across [selectedThreads],
+// mirroring the single-thread implementations but batching optimistic updates
+// + saves (see [RescheduleAllInBlock] / [MarkAllReadInNewSection] for the
+// pattern) and clearing the selection when done.
+// ---------------------------------------------------------------------------
+
+/// Toggle a thread's membership in the multi-select set (Cmd/Ctrl+click).
+class ToggleThreadSelection extends Command {
+  ToggleThreadSelection(this.thread)
+    : super(
+        title: 'Select',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: FontAwesomeIcons.squareCheck,
+      );
+
+  final Thread thread;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.read<PriorityBloc>().toggleSelected(thread);
+    return const CommandDone();
+  }
+}
+
+/// Select the contiguous range from the anchor to [thread] (Shift+click).
+class SelectThreadRange extends Command {
+  SelectThreadRange(this.thread)
+    : super(
+        title: 'Select range',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: FontAwesomeIcons.squareCheck,
+      );
+
+  final Thread thread;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.read<PriorityBloc>().selectRange(thread);
+    return const CommandDone();
+  }
+}
+
+/// Exit multi-select mode (the header's trailing ✕).
+class ClearSelection extends Command {
+  ClearSelection()
+    : super(
+        title: 'Clear selection',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.close,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.read<PriorityBloc>().clearSelection();
+    return const CommandDone();
+  }
+}
+
+/// "To do" — marks every selected non-todo thread active. Mirrors the activate
+/// path of [ToggleThreadActive].
+class BulkSetTodo extends Command {
+  BulkSetTodo(this.threads)
+    : super(
+        title: 'To do',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.started,
+        icon: FontAwesomeIcons.circlePlus,
+      );
+
+  final List<Thread> threads;
+
+  /// True when at least one selected thread would be affected.
+  static bool applies(List<Thread> threads) =>
+      threads.any((t) => !t.todo && !t.isReadOnly);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final targets = threads.where((t) => !t.todo && !t.isReadOnly).toList();
+    if (targets.isEmpty) return const CommandSkipped();
+    final bloc = context.read<PriorityBloc?>();
+    final updates = targets
+        .map(
+          (t) => t.copyWith(
+            todo: true,
+            unread: false,
+            readAt: t.unread
+                ? Value(t.contentTimestamp)
+                : const Value.absent(),
+          ),
+        )
+        .toList();
+    for (final u in updates) {
+      bloc?.markFeedMove(u.id);
+      bloc?.optimisticallyUpdateThread(u);
+    }
+    unawaited(() async {
+      try {
+        await Future.wait(updates.map((t) => t.save()));
+      } catch (e, stackTrace) {
+        log.warning('Error setting threads to-do in bulk', e, stackTrace);
+        Tracker.captureException(e, stackTrace);
+      } finally {
+        bloc?.refreshAgenda();
+      }
+    }());
+    bloc?.clearSelection();
+    return const CommandDone();
+  }
+}
+
+/// "Done" — finishes every selected todo thread. Mirrors [FinishThread]'s data
+/// path (read + complete user notes + set link done status) but batches: one
+/// navigation for the open thread, one haptic, background persistence. Link
+/// status resolution runs non-interactively so it never stacks pickers.
+class BulkFinish extends Command {
+  BulkFinish(this.threads)
+    : super(
+        title: 'Done',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.finished,
+        icon: FontAwesomeIcons.circleCheck,
+      );
+
+  final List<Thread> threads;
+
+  static bool applies(List<Thread> threads) =>
+      threads.any((t) => t.todo && !t.isReadOnly);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final targets = threads.where((t) => t.todo && !t.isReadOnly).toList();
+    if (targets.isEmpty) return const CommandSkipped();
+    final priorityBloc = context.read<PriorityBloc?>();
+    final actorId = Base.actorId;
+
+    // Rule 2/3 navigation for the open thread, decided while it is still in
+    // the list (mirrors FinishThread). Only one selected thread can be open.
+    final openId = priorityBloc?.state.thread?.id;
+    CommandReturn? navigationResult;
+    if (openId != null && targets.any((t) => t.id == openId)) {
+      final nav = priorityBloc?.threadAfterStateChange(openId);
+      if (nav?.open != null) {
+        navigationResult = await ChangeCurrentThread(nav!.open!).run(context);
+      } else if (nav != null && !nav.stay) {
+        if (!context.mounted) return const CommandDone();
+        navigationResult = await NewThread().run(context);
+      }
+    }
+    if (navigationResult is CommandRoute) {
+      if (!context.mounted) return const CommandDone();
+      await navigationResult.go(context);
+      navigationResult = null;
+    }
+
+    final finished = targets
+        .map(
+          (t) => t.copyWith(
+            todo: false,
+            bump: true,
+            unread: false,
+            readAt: t.unread
+                ? Value(t.contentTimestamp)
+                : const Value.absent(),
+          ),
+        )
+        .toList();
+    for (final t in targets) {
+      priorityBloc?.markFeedMove(t.id);
+      priorityBloc?.optimisticallyRemoveThread(t.id, finishTodo: true);
+    }
+    HapticFeedback.mediumImpact();
+
+    // Persist + side effects in the background (no context — link status runs
+    // non-interactively), refreshing the agenda once at the end.
+    unawaited(() async {
+      try {
+        await Future.wait(finished.map((t) => t.save()));
+        for (final t in finished) {
+          await _completeUserTodoNotes(t.id, actorId);
+          await FinishThread._setLinkDoneStatusForUser(
+            null,
+            t.id,
+            actorId,
+            interactive: false,
+          );
+        }
+      } catch (e, stackTrace) {
+        log.warning('Error finishing threads in bulk', e, stackTrace);
+        Tracker.captureException(e, stackTrace);
+      } finally {
+        priorityBloc?.refreshAgenda();
+      }
+    }());
+
+    priorityBloc?.clearSelection();
+    return navigationResult ?? const CommandDone();
+  }
+}
+
+/// "Do later" — reschedules the selection to a picked date. Reuses
+/// [RescheduleAllInBlock]'s date picker + reschedule, then clears the
+/// selection.
+class BulkSchedule extends Command {
+  BulkSchedule(this.threads)
+    : super(
+        title: 'Do later',
+        eventObject: EventObject.modal,
+        eventAction: EventAction.opened,
+        icon: PlotIcon.doLater,
+      );
+
+  final List<Thread> threads;
+
+  static bool applies(List<Thread> threads) =>
+      threads.any((t) => !t.isReadOnly);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final targets = threads.where((t) => !t.isReadOnly).toList();
+    if (targets.isEmpty) return const CommandSkipped();
+    final bloc = context.read<PriorityBloc?>();
+    final result = await RescheduleAllInBlock(
+      targets,
+      sectionLabel: 'the selection',
+    ).run(context);
+    if (result is CommandDone) bloc?.clearSelection();
+    return result;
+  }
+}
+
+/// "Mark read" — clears the unread flag on every selected unread thread.
+/// Generalises [MarkAllReadInNewSection].
+class BulkMarkRead extends Command {
+  BulkMarkRead(this.threads)
+    : super(
+        title: 'Mark read',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.doneAll,
+      );
+
+  final List<Thread> threads;
+
+  static bool applies(List<Thread> threads) => threads.any((t) => t.unread);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final targets = threads.where((t) => t.unread).toList();
+    if (targets.isEmpty) return const CommandSkipped();
+    final bloc = context.read<PriorityBloc?>();
+    for (final t in targets) {
+      final updated = t.copyWith(
+        unread: false,
+        readAt: Value(t.contentTimestamp),
+      );
+      bloc?.optimisticallyUpdateThread(updated);
+      unawaited(updated.save());
+    }
+    bloc?.clearSelection();
+    return const CommandDone();
+  }
+}
+
+/// "Mute" — applies the "skip active for threads like this" rule to every
+/// not-already-muted selected thread. Mirrors [MuteSimilarThreads]'s set path.
+class BulkMute extends Command {
+  BulkMute(this.threads)
+    : super(
+        title: 'Mute',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.tagged,
+        icon: PlotIcon.volumeSlash,
+      );
+
+  final List<Thread> threads;
+
+  static bool applies(List<Thread> threads) =>
+      threads.any((t) => t.muteByThreadId == null);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final targets = threads.where((t) => t.muteByThreadId == null).toList();
+    if (targets.isEmpty) return const CommandSkipped();
+    final bloc = context.read<PriorityBloc?>();
+    final updates = targets
+        .map(
+          (t) => t.asInactive().copyWith(
+            muteByThreadId: Value(t.id),
+            unread: false,
+            readAt: t.unread
+                ? Value(t.contentTimestamp)
+                : const Value.absent(),
+          ),
+        )
+        .toList();
+    for (final u in updates) {
+      bloc?.markFeedMove(u.id);
+      bloc?.optimisticallyUpdateThread(u);
+    }
+    unawaited(() async {
+      try {
+        await Future.wait(updates.map((t) => t.save()));
+      } catch (e, stackTrace) {
+        log.warning('Error muting threads in bulk', e, stackTrace);
+        Tracker.captureException(e, stackTrace);
+      } finally {
+        bloc?.refreshAgenda();
+      }
+    }());
+    bloc?.clearSelection();
+    return const CommandDone();
+  }
+}
+
+/// "Assign" — assigns one actor across the selection. Opens a single
+/// [pickAssignee] picker, then writes each thread's primary assignment link
+/// (connector threads) or `thread.assignee_id` (Plot threads).
+class BulkAssign extends Command {
+  BulkAssign(this.threads)
+    : super(
+        title: 'Assign',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.assignAdd,
+      );
+
+  final List<Thread> threads;
+
+  static bool applies(List<Thread> threads) =>
+      threads.any((t) => !t.isReadOnly);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final targets = threads.where((t) => !t.isReadOnly).toList();
+    if (targets.isEmpty) return const CommandSkipped();
+    final bloc = context.read<PriorityBloc?>();
+    final picked = await pickAssignee(context);
+    if (!picked.present) return const CommandSkipped();
+    final newId = picked.value;
+    for (final t in targets) {
+      final links = await Link.getForThread(t.id);
+      final primaryLink = Thread.resolvePrimaryAssignmentLink(links);
+      if (primaryLink != null) {
+        await Link.updateAssignee(primaryLink, newId);
+      } else {
+        await Thread.updateAssignee(t, newId);
+      }
+    }
+    bloc?.clearSelection();
+    return const CommandDone();
+  }
+}
+
+/// "Move" — moves the whole selection to one picked focus. Reuses the focus
+/// list from [MoveThreadToPriority] and [_applyPriorityMove] per thread.
+class BulkMove extends ShowCommands {
+  BulkMove(this.threads, {PriorityBloc? bloc})
+    : super(
+        title: 'Move',
+        icon: PlotIcon.move,
+        commandsBuilder: (context) =>
+            _getBulkMoveCommands(threads, bloc ?? context.read<PriorityBloc?>()),
+      );
+
+  final List<Thread> threads;
+
+  static bool applies(List<Thread> threads) => threads.isNotEmpty;
+
+  static Future<Commands> _getBulkMoveCommands(
+    List<Thread> threads,
+    PriorityBloc? bloc,
+  ) async {
+    final priorities = await Priority.getRaw(order: PriorityOrder.recent);
+    Priority? root;
+    final focuses = <Priority>[];
+    for (final p in priorities) {
+      if (p.root) {
+        root = p;
+      } else {
+        focuses.add(p);
+      }
+    }
+    final commands = <Command>[
+      ...focuses.map((priority) => _BulkMoveToPriority(threads, priority, bloc: bloc)),
+      if (root != null)
+        _BulkMoveToPriority(
+          threads,
+          root,
+          bloc: bloc,
+          label: 'Inbox',
+          glyph: PlotIcon.inbox,
+        ),
+    ];
+    return Commands(
+      prompt: threads.length == 1
+          ? 'Move thread to focus'
+          : 'Move ${threads.length} threads to focus',
+      groups: [StaticCommandGroup(title: 'Focuses', commands: commands)],
+    );
+  }
+}
+
+class _BulkMoveToPriority extends PriorityCommand {
+  _BulkMoveToPriority(
+    this.threads,
+    Priority priority, {
+    PriorityBloc? bloc,
+    super.label,
+    super.glyph,
+    // ignore: prefer_initializing_formals
+  }) : _bloc = bloc,
+       super(
+         priority,
+         eventObject: EventObject.activity,
+         eventAction: EventAction.moved,
+       );
+
+  final List<Thread> threads;
+  final PriorityBloc? _bloc;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final bloc = _bloc ?? context.read<PriorityBloc?>();
+    for (final t in threads) {
+      if (!context.mounted) break;
+      await _applyPriorityMove(context, bloc, t, priority!);
+    }
+    bloc?.clearSelection();
+    return const CommandDone();
+  }
+}
+
 class ToggleThreadTag extends _UpdateThreadCommand {
   ToggleThreadTag(super.thread, this.tag, {super.onUpdate})
     : super(
@@ -1691,30 +2155,88 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 }
 
 class MoveToPriority extends PriorityCommand {
-  MoveToPriority(this.thread, Priority priority, {super.label, super.glyph})
-    : super(
-        priority,
-        eventObject: EventObject.activity,
-        eventAction: EventAction.moved,
-      );
+  MoveToPriority(
+    this.thread,
+    Priority priority, {
+    PriorityBloc? bloc,
+    super.label,
+    super.glyph,
+    // ignore: prefer_initializing_formals
+  }) : _bloc = bloc,
+       super(
+         priority,
+         eventObject: EventObject.activity,
+         eventAction: EventAction.moved,
+       );
 
   final Thread thread;
 
+  /// Commands picked from the nested Move modal run with a modal context
+  /// that has no page providers, so the bloc is captured when the menu is
+  /// built and passed in explicitly (mirrors [MuteSimilarThreads]).
+  final PriorityBloc? _bloc;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Drive the agenda rebuild from PriorityBloc so the thread visibly
-    // jumps to its new priority block before the Drift watch fires. The
-    // override clears once the stream's emitted thread has the new
-    // priority.id (default watched fields include priorityId).
-    final priorityBloc = context.read<PriorityBloc?>();
-    final updated = thread.copyWith(priority: priority!);
-    priorityBloc?.optimisticallyUpdateThread(updated);
-    // Fire-and-forget the local save + learning signal so the modal closes
-    // the moment the user picks a priority. The optimistic override above
-    // already moved the thread in the UI; settling on the Drift watch
-    // emission only requires save() to land eventually.
-    unawaited(_persistPriorityMove(updated, priority!));
+    await _applyPriorityMove(
+      context,
+      _bloc ?? context.read<PriorityBloc?>(),
+      thread,
+      priority!,
+    );
     return const CommandDone();
+  }
+}
+
+/// Shared implementation for [MoveToPriority] and
+/// [_CreateAndMoveToNewPriority]: optimistically refile [thread] into
+/// [priority] (driving the feed move animation via
+/// [PriorityBloc.markFeedMove]), persist in the background, and apply the
+/// rule-2 open-next navigation when the open thread leaves the current
+/// focus context.
+Future<void> _applyPriorityMove(
+  BuildContext context,
+  PriorityBloc? priorityBloc,
+  Thread thread,
+  Priority priority,
+) async {
+  final contextPriority = priorityBloc?.state.context;
+  // Moving the thread outside what this feed displays removes it (open the
+  // next thread, rule 2); a move within the subtree (or in a flat feed)
+  // keeps it visible in place. The root context is the Inbox, which shows
+  // only unfiled threads — ANY move to a focus leaves it.
+  final sectioned = !(priorityBloc?.activeFeedIsFlat ?? true);
+  final leavesContext =
+      sectioned &&
+      contextPriority != null &&
+      priority.id != contextPriority.id &&
+      (contextPriority.root || !priority.path.isChild(contextPriority.path));
+  final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
+  final nav = (isCurrentThread && leavesContext)
+      ? priorityBloc?.threadAfterStateChange(thread.id)
+      : null;
+  final updated = thread.copyWith(priority: priority);
+  priorityBloc?.markFeedMove(thread.id);
+  if (leavesContext) {
+    // Collapse the row out of this focus immediately; the stream stops
+    // returning it once the move lands.
+    priorityBloc?.optimisticallyRemoveThread(thread.id);
+  } else {
+    priorityBloc?.optimisticallyUpdateThread(updated);
+  }
+  // Fire-and-forget the local save + learning signal so the modal closes
+  // the moment the user picks a priority. The optimistic override above
+  // already moved the thread in the UI; settling on the Drift watch
+  // emission only requires save() to land eventually.
+  unawaited(_persistPriorityMove(updated, priority));
+  if (nav?.open != null && context.mounted) {
+    if (context.read<PriorityBloc?>() != null) {
+      await ChangeCurrentThread(nav!.open!).run(context);
+    } else {
+      // Nested-modal context (no page providers): fall back to the
+      // captured bloc for the minimal navigation.
+      priorityBloc?.setThread(nav!.open);
+    }
   }
 }
 
@@ -1777,17 +2299,25 @@ class MoveToNewThread extends Command {
 }
 
 class MoveThreadToPriority extends ShowCommands {
-  MoveThreadToPriority(this.thread)
+  MoveThreadToPriority(this.thread, {PriorityBloc? bloc})
     : super(
         title: 'Move',
         icon: PlotIcon.move,
         shortcut: platformSingleActivator(LogicalKeyboardKey.period),
-        commandsBuilder: (context) => _getMoveCommands(thread),
+        // When opened from a row/header button the builder context has the
+        // page providers; when opened from the "…" menu it is a modal
+        // context, so the caller must pass [bloc] (the leaf MoveToPriority
+        // commands run with another modal context and can't read it).
+        commandsBuilder: (context) =>
+            _getMoveCommands(thread, bloc ?? context.read<PriorityBloc?>()),
       );
 
   final Thread thread;
 
-  static Future<Commands> _getMoveCommands(Thread thread) async {
+  static Future<Commands> _getMoveCommands(
+    Thread thread,
+    PriorityBloc? bloc,
+  ) async {
     // `getRaw` skips `pullArchived` and the active/unread enrichment (two
     // join queries on threads + schedules) — none of which the move modal
     // displays — so the modal opens immediately instead of stalling on the
@@ -1806,22 +2336,33 @@ class MoveThreadToPriority extends ShowCommands {
       }
     }
     final commands = <Command>[
-      ...focuses.map((priority) => MoveToPriority(thread, priority)),
+      ...focuses.map(
+        (priority) => MoveToPriority(thread, priority, bloc: bloc),
+      ),
       if (root != null && thread.priority.id != root.id)
-        MoveToPriority(thread, root, label: 'Inbox', glyph: PlotIcon.inbox),
+        MoveToPriority(
+          thread,
+          root,
+          bloc: bloc,
+          label: 'Inbox',
+          glyph: PlotIcon.inbox,
+        ),
     ];
 
     return Commands(
       prompt: 'Move thread to focus',
       groups: [StaticCommandGroup(title: 'Focuses', commands: commands)],
-      secondaryCommand: (prompt) => _CreateAndMoveToNewPriority(thread),
+      secondaryCommand: (prompt) =>
+          _CreateAndMoveToNewPriority(thread, bloc: bloc),
     );
   }
 }
 
 class _CreateAndMoveToNewPriority extends Command {
-  _CreateAndMoveToNewPriority(this.thread)
-    : super(
+  _CreateAndMoveToNewPriority(this.thread, {PriorityBloc? bloc})
+    // ignore: prefer_initializing_formals
+    : _bloc = bloc,
+      super(
         title: 'Add a focus',
         icon: PlotIcon.add,
         eventObject: EventObject.activity,
@@ -1829,21 +2370,18 @@ class _CreateAndMoveToNewPriority extends Command {
       );
 
   final Thread thread;
+  final PriorityBloc? _bloc;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final priorityBloc = context.read<PriorityBloc?>();
+    final priorityBloc = _bloc ?? context.read<PriorityBloc?>();
     final priority = await createPriorityInline(
       context,
       parent: thread.priority,
     );
     if (priority == null) return const CommandSkipped();
-    final updated = thread.copyWith(priority: priority);
-    priorityBloc?.optimisticallyUpdateThread(updated);
-    // Fire-and-forget so the modal closes immediately. The optimistic
-    // override moved the thread in the UI; save() and the learning signal
-    // settle in the background. See [_persistPriorityMove].
-    unawaited(_persistPriorityMove(updated, priority));
+    if (!context.mounted) return const CommandDone();
+    await _applyPriorityMove(context, priorityBloc, thread, priority);
     return const CommandDone();
   }
 }
@@ -2748,14 +3286,16 @@ IconData _computeSharedIcon(Thread thread) {
 ///
 /// System participants don't count as user-initiated sharing:
 /// - twist-instance contacts (a thread shared only with twists is unshared);
-/// - auto-maintained groups (e.g. workspace-wide "Everyone"/announce groups
-///   that twists publish into) — the viewer didn't initiate that share.
+/// - `announce` broadcast groups (e.g. the workspace-wide "Everyone" group
+///   that twists publish into) — the viewer didn't initiate that share, and
+///   can't add or remove themselves. Real team/private groups the user shares
+///   with are NOT excluded — their members count (see [_isBroadcastGroup]).
 ///
 /// [_sharedCount] and [_sharedDisplayActors] apply the same filters so the
 /// count, the rendered actors, and this predicate can never disagree.
 bool isThreadShared(Thread thread) {
   if (thread.inviteEmails.isNotEmpty) return true;
-  if (thread.groups.any((id) => !_isSystemGroup(id))) return true;
+  if (thread.groups.any((id) => !_isBroadcastGroup(id))) return true;
   if (thread.contacts.isEmpty) return false;
   final selfUuids = Actor.getCurrentUserActorIds()
       .map((a) => a.toUuid())
@@ -2773,13 +3313,18 @@ bool _isTwistContact(Uuid id) {
   return Actor.fromCache(actorId)?.type == ActorType.twistInstance;
 }
 
-/// True for groups whose membership the system manages — e.g. workspace
-/// "Everyone" announce groups twists publish into. The viewer can't add or
-/// remove themselves from these groups, so a thread filed only into such a
-/// group isn't "shared" from a user-initiated standpoint. Cache misses
+/// True only for `announce` broadcast groups — the workspace-wide "Everyone"
+/// group (and publisher announce groups) that twists publish into. The viewer
+/// can't add or remove themselves and didn't initiate the share, so a thread
+/// filed only into such a group isn't "shared" from a user-initiated
+/// standpoint and its membership isn't counted.
+///
+/// Note this is narrower than `autoMaintained`: team and private groups
+/// (e.g. "Plot Team") are also system-maintained, but they ARE genuine
+/// sharing targets, so their members must be counted. Cache misses
 /// conservatively return false so a synced-but-uncached group keeps its
 /// existing visible behaviour.
-bool _isSystemGroup(Uuid id) => Group.fromCache(id)?.autoMaintained ?? false;
+bool _isBroadcastGroup(Uuid id) => Group.fromCache(id)?.type == 'announce';
 
 int _sharedCount(Thread thread) {
   final selfUuids = Actor.getCurrentUserActorIds()
@@ -2787,7 +3332,7 @@ int _sharedCount(Thread thread) {
       .toSet();
 
   // Distinct *other* people on the thread: contacts named directly plus the
-  // members of every non-system group it's shared into. Deduping by contact id
+  // members of every non-broadcast group it's shared into. Deduping by contact id
   // means someone who is both named directly and a member of a shared group is
   // counted once, and overlapping groups don't double-count. Self and twist
   // contacts are always excluded — every visible thread is implicitly the
@@ -2800,7 +3345,7 @@ int _sharedCount(Thread thread) {
   // dropping it (a clearly-shared thread should never read as unshared).
   var unexpandedGroups = 0;
   for (final groupId in thread.groups) {
-    if (_isSystemGroup(groupId)) continue;
+    if (_isBroadcastGroup(groupId)) continue;
     final members = Group.fromCache(groupId)?.memberContactIds;
     if (members == null || members.isEmpty) {
       unexpandedGroups++;
@@ -3742,7 +4287,7 @@ List<Command> threadCommands(
   if (thread.isReadOnly) {
     return [
       if (open) ChangeCurrentThread(thread),
-      if (!skipInfrequent) MoveThreadToPriority(thread),
+      if (!skipInfrequent) MoveThreadToPriority(thread, bloc: priorityBloc),
       if (!skipInfrequent) MuteSimilarThreads(thread, bloc: priorityBloc),
     ];
   }
@@ -3779,7 +4324,7 @@ List<Command> threadCommands(
     // created). Connector-created threads (Gmail, Calendar, …) take their
     // title from the source, so renaming is disallowed.
     if (!skipInfrequent && isPlotThread) EditThread(thread),
-    if (!skipInfrequent) MoveThreadToPriority(thread),
+    if (!skipInfrequent) MoveThreadToPriority(thread, bloc: priorityBloc),
     // Share/Sharing only applies to the default thread roster model. In
     // message mode (email) the roster is an auto-maintained union of per-note
     // recipients (chosen per-reply in the composer); in channel mode (Slack

@@ -2,7 +2,9 @@ import 'dart:async';
 
 // OverflowBoxFit is part of OverflowBox's public API but flutter/widgets.dart
 // doesn't re-export the enum — this narrow `show` is the only way to name it.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
+import 'package:flutter/services.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -44,6 +46,9 @@ bool reserveContactsLabel({
   required bool hasResolvedLabel,
 }) => !isChannelThread && hasContactIds && (!actorsLoaded || hasResolvedLabel);
 
+/// How a plain row tap should be interpreted (see [_rowClickIntent]).
+enum _RowClickIntent { open, toggle, range }
+
 class ThreadWidget extends StatefulWidget {
   const ThreadWidget({
     required this.activity,
@@ -65,6 +70,8 @@ class ThreadWidget extends StatefulWidget {
     this.onDesktopFinish,
     this.onMobileFinish,
     this.onActivate,
+    this.multiSelected = false,
+    this.multiSelectMode = false,
     super.key,
   });
 
@@ -107,6 +114,15 @@ class ThreadWidget extends StatefulWidget {
   /// PriorityRoute→ThreadRoute stack rather than the current priority's.
   /// When null, the default in-place [ChangeCurrentThread] navigation runs.
   final VoidCallback? onActivate;
+
+  /// True when this row is part of the current multi-selection. Drives the
+  /// opened-thread background tint and the checked leading checkbox.
+  final bool multiSelected;
+
+  /// True when a multi-selection is in progress anywhere in the feed. Every row
+  /// swaps its leading to-do circle for a selection checkbox and suppresses
+  /// hover affordances (the move-on-hover logo, the trailing command cluster).
+  final bool multiSelectMode;
 
   @override
   State<ThreadWidget> createState() => _ThreadWidgetState();
@@ -353,9 +369,37 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   bool get isSearch => widget.isSearch;
   bool get showEventTiming => widget.showEventTiming;
   bool get bump => widget.bump;
+  bool get multiSelected => widget.multiSelected;
+  bool get multiSelectMode => widget.multiSelectMode;
   FocusNode? get focusNode => widget.focusNode;
   void Function(bool hovered)? get onHover => widget.onHover;
   int? get reorderableIndex => widget.reorderableIndex;
+
+  /// Resolves a plain row tap to its intent based on held modifier keys and
+  /// platform. Multi-select needs a physical keyboard, so touch always opens.
+  /// Toggle modifier is Cmd on macOS, Ctrl elsewhere; Shift selects a range.
+  _RowClickIntent _rowClickIntent() {
+    if (!hasPhysicalKeyboard()) return _RowClickIntent.open;
+    final keys = HardwareKeyboard.instance;
+    if (keys.isShiftPressed) return _RowClickIntent.range;
+    final togglePressed = defaultTargetPlatform == TargetPlatform.macOS
+        ? keys.isMetaPressed
+        : keys.isControlPressed;
+    if (togglePressed) return _RowClickIntent.toggle;
+    return _RowClickIntent.open;
+  }
+
+  void _handleRowTap(BuildContext context) {
+    switch (_rowClickIntent()) {
+      case _RowClickIntent.toggle:
+        context.run(ToggleThreadSelection(activity));
+      case _RowClickIntent.range:
+        context.run(SelectThreadRange(activity));
+      case _RowClickIntent.open:
+        // Opens the thread; ChangeCurrentThread also exits any multi-select.
+        context.run(ChangeCurrentThread(activity));
+    }
+  }
 
   // Short right: Toggle active. Universal "deal with this now" — flips
   // active on so the thread lands in Doing (or off, mirroring the leading
@@ -464,22 +508,28 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     final hasScheduleLabel = scheduleDate != null;
     final hasTopLabel = hasBodyLabel || hasScheduleLabel;
 
-    // When a priority label is shown above the title row, compute its
-    // rendered height + the 2px gap so we can push leading/trailing down
+    // The header band is always shown now — it carries the most-recent-note
+    // relative time at its trailing end even on otherwise-bare private threads
+    // — so always reserve its rendered height and push leading/trailing down
     // by the same amount, keeping them vertically centred with the title.
-    final labelOffset = hasTopLabel
-        ? (TextPainter(
-            text: TextSpan(
-              text: 'A',
-              style: TextStyle(
-                fontSize: buildContext.theme.typography.xs.fontSize,
-                height: 1,
-              ),
-            ),
-            maxLines: 1,
-            textDirection: TextDirection.ltr,
-          )..layout()).height
-        : 0.0;
+    final labelOffset = (TextPainter(
+      text: TextSpan(
+        text: 'A',
+        style: TextStyle(
+          fontSize: buildContext.theme.typography.xs.fontSize,
+          height: 1,
+        ),
+      ),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout()).height;
+
+    // Relative time of the most recent note (matches the note footer, e.g.
+    // "5 minutes ago"), shown right-aligned in the header. The word "ago" is
+    // dropped on narrow single-panel layouts to conserve horizontal space.
+    final relativeTime = activity.contentTimestamp.toTimeAgo(
+      suffix: buildContext.isMultiPanel,
+    );
 
     final threadColor = buildContext.colour.colours.fromTheme(
       activity.priority.displayColor,
@@ -487,6 +537,9 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     final selectedBg = buildContext.colour.colours.backgroundFromTheme(
       activity.priority.displayColor,
     );
+    // Multi-selected rows get the same background as the open thread (the open
+    // thread additionally keeps its selection ring, drawn by the separator).
+    final showSelected = selected || multiSelected;
 
     final listTile = ListTile(
       // When [onActivate] is provided (e.g. Search results), the row's tap
@@ -499,12 +552,9 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // Bypass ListTile's run() spinner tracking. The command returns
       // CommandDone immediately (navigation is fire-and-forget), but routing
       // it through context.run directly keeps the spinner machinery out of
-      // the hot tap path entirely.
-      onTap:
-          widget.onActivate ??
-          () {
-            buildContext.run(ChangeCurrentThread(activity));
-          },
+      // the hot tap path entirely. Modifier-clicks (Cmd/Ctrl/Shift) are routed
+      // to the selection commands by [_handleRowTap] instead of opening.
+      onTap: widget.onActivate ?? () => _handleRowTap(buildContext),
       // Menu opens via long-left swipe on touch (see Swipeable wrapper
       // below) and via right-click on desktop (see ContextMenu wrapper
       // below). Long-press is reserved for starting a reorder drag.
@@ -590,6 +640,39 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             .vertical;
         final mainRowHeight =
             iconBaseSize + (isMobilePlatform() ? spacing.sm * 2 : ghostPadV);
+
+        // Multi-select mode: the leading slot is a selection checkbox. Tapping
+        // it toggles this thread in/out of the selection (it never opens the
+        // thread). Hover affordances are suppressed in this mode.
+        if (multiSelectMode) {
+          return SizedBox(
+            width: leadingW,
+            child: Padding(
+              padding: EdgeInsets.only(
+                top: spacing.sm + labelOffset,
+                bottom: spacing.sm,
+              ),
+              child: SizedBox(
+                height: mainRowHeight,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => buildContext.run(ToggleThreadSelection(activity)),
+                  child: Center(
+                    child: Icon(
+                      multiSelected
+                          ? FontAwesomeIcons.squareCheck
+                          : FontAwesomeIcons.square,
+                      size: iconBaseSize,
+                      color: multiSelected
+                          ? threadColor
+                          : buildContext.colour.muted,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
 
         final Widget todoIcon;
         final String leadingTitle = !isTodo ? 'To do' : 'Done';
@@ -711,13 +794,17 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         // While a block drag is in progress, treat the thread as not
         // highlighted so it doesn't render edit affordances or the
         // ThreadCommands row that would make it look like a drop target.
-        final isHighlighted = _isBlockDragging ? false : rawHighlighted;
+        // Suppress all hover affordances (move-on-hover logo, the trailing
+        // command cluster, hover background) while a block drag or a
+        // multi-select is in progress.
+        final isHighlighted =
+            (_isBlockDragging || multiSelectMode) ? false : rawHighlighted;
         // State-dependent colors – only selection unmutes foreground;
         // hover should not change any foreground colors.
-        final headerFg = selected ? threadColor : null;
+        final headerFg = showSelected ? threadColor : null;
 
         // Opaque composited bg for ThreadCommands gradient
-        final compositedBg = selected
+        final compositedBg = showSelected
             ? selectedBg
             : isHighlighted
             ? buildContext.colour.editableBackground
@@ -750,93 +837,115 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (hasTopLabel)
-                // Reserve exactly `labelOffset` for the header label — the same
-                // amount the leading column is pushed down by (see its
-                // `top: sm + labelOffset`). The label's intrinsic Figtree height
-                // and the leading's font-agnostic TextPainter estimate drift
-                // apart on touch, which left the title row and the leading
-                // circle starting at slightly different Ys (circle sat low on
-                // labelled rows). Pinning the slot to `labelOffset` keeps them
-                // aligned by construction. The label content is shorter than
-                // the slot, so nothing clips.
-                SizedBox(
-                  height: labelOffset,
-                  child: DefaultTextStyle(
-                    style: TextStyle(
-                      color:
-                          headerFg ?? buildContext.theme.colors.mutedForeground,
-                      fontSize: buildContext.theme.typography.xs.fontSize,
-                      height: 1,
-                    ),
-                    child: Builder(
-                      builder: (context) {
-                        // Header segments in order: focus · channel ·
-                        // contacts/groups · schedule. The focus is a purely
-                        // static label (no tap-to-move affordance). Each present
-                        // segment is joined to the previous with a dot separator
-                        // below.
-                        final segments = <Widget>[
-                          if (hasSubPriorityLabel)
-                            Flexible(
-                              child: FocusLabel(
-                                priority: activity.priority,
-                                color: headerFg,
-                                fontSize: context.theme.typography.xs.fontSize,
-                                height: 1,
-                                muted: headerFg == null,
-                              ),
+              // Header band. Always shown (even bare private threads carry the
+              // trailing relative time). Reserve exactly `labelOffset` — the
+              // same amount the leading column is pushed down by (see its
+              // `top: sm + labelOffset`). The label's intrinsic Figtree height
+              // and the leading's font-agnostic TextPainter estimate drift
+              // apart on touch, which left the title row and the leading circle
+              // starting at slightly different Ys (circle sat low on labelled
+              // rows). Pinning the slot to `labelOffset` keeps them aligned by
+              // construction. The label content is shorter than the slot, so
+              // nothing clips.
+              SizedBox(
+                height: labelOffset,
+                child: DefaultTextStyle(
+                  style: TextStyle(
+                    color:
+                        headerFg ?? buildContext.theme.colors.mutedForeground,
+                    fontSize: buildContext.theme.typography.xs.fontSize,
+                    height: 1,
+                  ),
+                  child: Builder(
+                    builder: (context) {
+                      // Left-side header segments in order: focus · channel ·
+                      // contacts/groups · schedule. The focus is a purely
+                      // static label (no tap-to-move affordance). Each present
+                      // segment is joined to the previous with a dot separator.
+                      final segments = <Widget>[
+                        if (hasSubPriorityLabel)
+                          Flexible(
+                            child: FocusLabel(
+                              priority: activity.priority,
+                              color: headerFg,
+                              fontSize: context.theme.typography.xs.fontSize,
+                              height: 1,
+                              muted: headerFg == null,
                             ),
-                          if (hasChannelLabel)
-                            Flexible(
-                              child: Text(
-                                channelLabel,
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                          ),
+                        if (hasChannelLabel)
+                          Flexible(
+                            child: Text(
+                              channelLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          if (contactsLabel != null)
-                            Flexible(
-                              child: Text(
-                                contactsLabel,
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                          ),
+                        if (contactsLabel != null)
+                          Flexible(
+                            child: Text(
+                              contactsLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          if (scheduleDate != null)
-                            Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: formatRelativeSchedule(
-                                      scheduleDate,
-                                      context,
-                                    ),
+                          ),
+                        if (scheduleDate != null)
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: formatRelativeSchedule(
+                                    scheduleDate,
+                                    context,
                                   ),
-                                  if (activity.duration != null &&
-                                      activity.duration!.inSeconds > 0)
-                                    TextSpan(
-                                      text: ' · ${activity.duration!.format()}',
-                                    ),
-                                ],
-                              ),
+                                ),
+                                if (activity.duration != null &&
+                                    activity.duration!.inSeconds > 0)
+                                  TextSpan(
+                                    text: ' · ${activity.duration!.format()}',
+                                  ),
+                              ],
                             ),
-                        ];
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (var i = 0; i < segments.length; i++) ...[
-                              if (i > 0) const Text(' · '),
-                              segments[i],
-                            ],
-                          ],
-                        );
-                      },
-                    ),
+                          ),
+                      ];
+                      final joined = <Widget>[
+                        for (var i = 0; i < segments.length; i++) ...[
+                          if (i > 0) const Text(' · '),
+                          segments[i],
+                        ],
+                      ];
+                      // Left segments take the available width (ellipsizing
+                      // when long); the relative time keeps its intrinsic width
+                      // pinned to the trailing end. `hasTopLabel` guards the
+                      // empty case so a bare thread shows only the time.
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: hasTopLabel
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: joined,
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.only(
+                              left: context.theme.spacing.sm,
+                            ),
+                            child: Text(
+                              relativeTime,
+                              maxLines: 1,
+                              softWrap: false,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
+              ),
               // SizedBox + Stack keeps the title row height stable
               // regardless of whether ThreadCommands buttons are visible.
               // On desktop the height matches FButton.icon (icon size +
@@ -896,7 +1005,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                                       .displayColor,
                                                 ),
                                           )
-                                        : selected
+                                        : showSelected
                                         ? TextStyle(
                                             color:
                                                 buildContext.colour.foreground,
@@ -1004,7 +1113,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           ),
         );
       },
-      selected: selected,
+      selected: showSelected,
       // The selected-row outline is drawn by the BlockListSeparator between
       // rows (a single borderFromTheme line, matching the agenda). Suppress
       // the ListTile's own top/bottom selected border so the two don't stack
@@ -1243,8 +1352,7 @@ class ThreadCommands extends HookWidget {
     // assignee avatar whenever either is present, so apply the inset based on
     // that — independent of hover — so the chip/avatar holds its position
     // instead of shifting right when hover commands appear.
-    final trailingIsNonButton =
-        rsvpChip != null || activity.assigneeId != null;
+    final trailingIsNonButton = rsvpChip != null || activity.assigneeId != null;
     final trailingInset = trailingIsNonButton
         ? context.theme.buttonStyles.ghost.md.iconContentStyle.padding
               .resolve(TextDirection.ltr)

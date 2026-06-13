@@ -16,9 +16,13 @@ CREATE OR REPLACE FUNCTION public.match_priority_for_user (
     RETURNS uuid
     LANGUAGE plpgsql
     AS $function$
+-- Legacy parameters (embedding, thread_data, filters, threshold) are
+-- intentionally ignored — they exist only for backward-compatible call
+-- signatures. Tell plpgsql_check not to flag them as unused.
+-- @plpgsql_check_options: extra_warnings=false
 BEGIN
-    -- Legacy parameters are ignored; classification scores against
-    -- thread_priority.user_moved = TRUE training examples.
+    -- Classification scores against thread_priority.user_moved = TRUE
+    -- training examples; the legacy parameters are not consulted.
     RETURN public.classify_thread_for_user(p_user_id);
 END;
 $function$;

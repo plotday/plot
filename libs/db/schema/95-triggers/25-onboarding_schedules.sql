@@ -23,40 +23,20 @@ BEGIN
 
     SELECT key INTO v_thread_key FROM public.thread WHERE id = NEW.thread_id;
 
-    IF v_thread_key IN ('welcome', 'priorities', 'connections', 'getting-around', 'twists', 'notifications', 'clean-up') THEN
-        -- Onboarding partitions each thread into the unified feed:
-        --   active=true  — threads that ask the user to take a concrete
-        --                  action (matches the keys handled by
-        --                  file_onboarding_todos). Lands in Doing.
-        --   active=false — informational threads with no actionable todo.
-        -- importance controls Updates ordering (higher = nearer the top).
-        -- Values descend in the natural reading order; 'welcome-user'
-        -- (importance 100, handled in activate_invited_user) sits above
-        -- the global 'welcome' here.
+    -- ONBOARDING:BEGIN schedules
+    IF v_thread_key IN ('welcome', 'getting-around') THEN
         CASE v_thread_key
-            WHEN 'welcome'           THEN v_date_offset := 0; v_order := 100; v_active := FALSE; v_importance := 95;
-            WHEN 'priorities'        THEN v_date_offset := 0; v_order := 200; v_active := TRUE;  v_importance := 90;
-            WHEN 'connections'       THEN v_date_offset := 0; v_order := 300; v_active := TRUE;  v_importance := 85;
-            WHEN 'getting-around'    THEN v_date_offset := 0; v_order := 400; v_active := FALSE; v_importance := 80;
-            WHEN 'twists'            THEN v_date_offset := 1; v_order := 100; v_active := TRUE;  v_importance := 70;
-            WHEN 'notifications'     THEN v_date_offset := 2; v_order := 100; v_active := TRUE;  v_importance := 65;
-            WHEN 'clean-up'          THEN v_date_offset := 3; v_order := 100; v_active := FALSE; v_importance := 60;
+            WHEN 'welcome' THEN v_date_offset := 0; v_order := 100; v_active := TRUE; v_importance := 95;
+            WHEN 'getting-around' THEN v_date_offset := 0; v_order := 400; v_active := FALSE; v_importance := 80;
         END CASE;
 
         INSERT INTO public.thread_state (user_id, thread_id, active, importance, "order", "on")
-        VALUES (
-            NEW.user_id,
-            NEW.thread_id,
-            v_active,
-            v_importance,
-            v_order,
-            CASE
-                WHEN v_date_offset = 0 THEN daterange('1970-01-01', NULL)
-                ELSE daterange((CURRENT_DATE + v_date_offset), NULL)
-            END
-        )
+        VALUES (NEW.user_id, NEW.thread_id, v_active, v_importance, v_order,
+            CASE WHEN v_date_offset = 0 THEN daterange('1970-01-01', NULL)
+                 ELSE daterange((CURRENT_DATE + v_date_offset), NULL) END)
         ON CONFLICT (user_id, thread_id) DO NOTHING;
     END IF;
+-- ONBOARDING:END schedules
 
     RETURN NEW;
 END;

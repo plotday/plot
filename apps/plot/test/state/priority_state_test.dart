@@ -282,4 +282,96 @@ void main() {
       expect(state.activeTabContext, isNull);
     });
   });
+
+  // Multi-select getters that drive the bulk-operations header bar and the
+  // shift-click range selection (see PriorityBloc.toggleSelected/selectRange).
+  group('PriorityState selection', () {
+    PriorityState selState({
+      required Priority priority,
+      required List<Thread> feed,
+      Set<ThreadId> selected = const {},
+      Thread? open,
+    }) {
+      final draft = Thread(priority: priority, draft: true);
+      final draftNote = Note(
+        id: Uuid.generate(),
+        threadId: draft.id,
+        authorId: ActorId(Uuid.generate()),
+        draft: true,
+        createdAt: DateTime(2026, 1, 1),
+        sourceCreatedAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      return PriorityState(
+        context: priority,
+        draft: draft,
+        draftNote: draftNote,
+        agendaItems: const [],
+        thread: open,
+        selected: selected,
+        activityFeedByTab: {
+          ActivityTab.catchUp: ActivityFeedTabData(
+            items: [
+              AgendaHeaderItem(
+                text: ActivitySectionMarker.encode(ActivitySection.doing),
+              ),
+              ...feed.map((t) => AgendaThreadItem(t)),
+            ],
+          ),
+        },
+      );
+    }
+
+    test('multiSelecting reflects whether anything is selected', () {
+      final p = _testPriority();
+      final t = Thread(priority: p, title: 'A');
+      expect(selState(priority: p, feed: [t]).multiSelecting, isFalse);
+      expect(
+        selState(priority: p, feed: [t], selected: {t.id}).multiSelecting,
+        isTrue,
+      );
+    });
+
+    test('orderedFeedThreadIds lists visible thread rows in order, skipping '
+        'section headers', () {
+      final p = _testPriority();
+      final a = Thread(priority: p, title: 'A');
+      final b = Thread(priority: p, title: 'B');
+      final c = Thread(priority: p, title: 'C');
+      final state = selState(priority: p, feed: [a, b, c]);
+      expect(state.orderedFeedThreadIds, [a.id, b.id, c.id]);
+    });
+
+    test('selectedThreads resolves selected ids in feed order', () {
+      final p = _testPriority();
+      final a = Thread(priority: p, title: 'A');
+      final b = Thread(priority: p, title: 'B');
+      final c = Thread(priority: p, title: 'C');
+      final state =
+          selState(priority: p, feed: [a, b, c], selected: {c.id, a.id});
+      expect(state.selectedThreads.map((t) => t.id).toList(), [a.id, c.id]);
+    });
+
+    test('selectedThreads includes the open thread when selected but absent '
+        'from the feed', () {
+      final p = _testPriority();
+      final a = Thread(priority: p, title: 'A');
+      final open = Thread(priority: p, title: 'Open elsewhere');
+      final state = selState(
+        priority: p,
+        feed: [a],
+        selected: {a.id, open.id},
+        open: open,
+      );
+      final ids = state.selectedThreads.map((t) => t.id).toList();
+      expect(ids, containsAll(<ThreadId>[a.id, open.id]));
+      expect(ids.length, 2);
+    });
+
+    test('selectedThreads is empty when nothing is selected', () {
+      final p = _testPriority();
+      final a = Thread(priority: p, title: 'A');
+      expect(selState(priority: p, feed: [a]).selectedThreads, isEmpty);
+    });
+  });
 }

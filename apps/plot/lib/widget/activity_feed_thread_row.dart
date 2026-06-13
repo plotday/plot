@@ -29,6 +29,8 @@ class ActivityFeedThreadRow extends StatefulWidget {
     this.isAssociated = false,
     this.isSearch = false,
     this.onActivate,
+    this.multiSelected = false,
+    this.multiSelectMode = false,
   });
 
   final Thread baseThread;
@@ -38,6 +40,12 @@ class ActivityFeedThreadRow extends StatefulWidget {
   final Priority priorityContext;
   final bool isAssociated;
   final bool isSearch;
+
+  /// Whether this row is part of the current multi-selection.
+  final bool multiSelected;
+
+  /// Whether a multi-selection is in progress anywhere in the feed.
+  final bool multiSelectMode;
 
   /// Overrides the row's tap-to-open behaviour. Forwarded to [ThreadWidget].
   /// When null, the default [ChangeCurrentThread] navigation runs (the
@@ -102,6 +110,8 @@ class _ActivityFeedThreadRowState extends State<ActivityFeedThreadRow> {
           showEventTiming: rep != null,
           isAssociated: widget.isAssociated,
           onActivate: widget.onActivate,
+          multiSelected: widget.multiSelected,
+          multiSelectMode: widget.multiSelectMode,
         );
       },
     );

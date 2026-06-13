@@ -133,6 +133,10 @@ Plot isn't a read-only digest. Reply to an email, comment on a Linear issue, ans
 - AI task detection (via twists) creates to-dos automatically when someone asks you to do something in Gmail, Slack, or Google Chat.
 - Starring a message in Gmail still adds it to your to-dos; unstarring clears it.
 
+### Many at once
+
+- Multi-select your threads the standard way — Cmd/Ctrl-click to pick individual threads, Shift-click for a range — and the header becomes a bulk action bar: to do, done, do later, mark read, move, mute, or assign every selected thread in one tap.
+
 ## 4. Your time stays yours
 
 Plot bounds your inbox time to deliberate windows so you can respond, then carry on with the work only you can do. Urgent things still surface; the rest waits its turn.
