@@ -3,12 +3,17 @@ import { Version3Client } from "jira.js";
 import {
   type Action,
   ActionType,
+  type Link,
   type Note,
   type Thread,
   type NewLinkWithNotes,
   NewContact,
 } from "@plotday/twister";
-import { Connector, type NoteWriteBackResult } from "@plotday/twister/connector";
+import {
+  Connector,
+  type CreateLinkDraft,
+  type NoteWriteBackResult,
+} from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
   AuthProvider,
@@ -21,6 +26,33 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+import { Files } from "@plotday/twister/tools/files";
+
+import { textToADF, adfToText } from "./jira-adf";
+
+/**
+ * Map a Jira status category key to a curated Plot status icon.
+ *
+ * Jira status categories are a fixed, workflow-independent classification:
+ *   - `new`           → not started   → "todo"
+ *   - `indeterminate` → in progress   → "inProgress"
+ *   - `done`          → complete       → "done"
+ * Anything unexpected falls back to "todo".
+ */
+export function statusCategoryToIcon(
+  key: string | null | undefined
+): StatusIcon {
+  switch (key) {
+    case "new":
+      return "todo";
+    case "indeterminate":
+      return "inProgress";
+    case "done":
+      return "done";
+    default:
+      return "todo";
+  }
+}
 
 type Project = {
   id: string;
@@ -73,14 +105,26 @@ export class Jira extends Connector<Jira> {
         { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: true,
+      supportsFileAttachments: true,
+      // `compose.status` is symbolic ("new"): onCreateLink resolves the
+      // project's default workflow status itself. Per-channel linkTypes from
+      // getChannels() override this with the project's real first "new"
+      // status id.
+      compose: { status: "new" },
     },
   ];
 
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
-      network: build(Network, { urls: ["https://*.atlassian.net/*"] }),
+      // api.atlassian.com is the OAuth-scoped Jira Cloud host this connector
+      // talks to (jira.js Version3Client `host`); *.atlassian.net covers
+      // attachment `content` URLs.
+      network: build(Network, {
+        urls: ["https://*.atlassian.net/*", "https://api.atlassian.com/*"],
+      }),
       tasks: build(Tasks),
+      files: build(Files),
     };
   }
 
@@ -119,10 +163,111 @@ export class Jira extends Connector<Jira> {
       authentication: { oauth2: { accessToken: token.token } },
     });
     const projects = await client.projects.searchProjects({ maxResults: 100 });
-    return (projects.values || []).map((p) => ({
-      id: p.id,
-      title: p.name,
-    }));
+
+    return Promise.all(
+      (projects.values || []).map(async (p) => {
+        const { statuses, composeStatus } = await this.buildProjectStatuses(
+          client,
+          p.id
+        );
+        return {
+          id: p.id,
+          title: p.name,
+          linkTypes: [
+            {
+              type: "issue",
+              label: "Issue",
+              noteLabel: "Comment",
+              // Channel-level configs fully shadow the twist-level linkTypes,
+              // so sharingModel + logos must be repeated here (matches Linear).
+              sharingModel: "channel" as const,
+              logo: "https://api.iconify.design/logos/jira.svg",
+              logoMono: "https://api.iconify.design/simple-icons/jira.svg",
+              statuses,
+              supportsAssignee: true,
+              supportsFileAttachments: true,
+              compose: { status: composeStatus },
+            },
+          ],
+        };
+      })
+    );
+  }
+
+  /**
+   * Build the per-project workflow status list for the dynamic channel
+   * linkType. Flattens `getAllStatuses` (statuses grouped by issue type) into
+   * a deduped list keyed by status id, mapping each status category to a Plot
+   * icon. Returns the id of the first "new"-category status for `compose`
+   * (falls back to "new" symbolic id, resolved in onCreateLink).
+   */
+  private async buildProjectStatuses(
+    client: Version3Client,
+    projectId: string
+  ): Promise<{
+    statuses: Array<{
+      status: string;
+      label: string;
+      icon: StatusIcon;
+      done?: boolean;
+    }>;
+    composeStatus: string;
+  }> {
+    try {
+      const issueTypeStatuses = await client.projects.getAllStatuses({
+        projectIdOrKey: projectId,
+      });
+
+      const byId = new Map<
+        string,
+        { status: string; label: string; icon: StatusIcon; done?: boolean }
+      >();
+      let firstNewStatusId: string | undefined;
+
+      for (const issueType of issueTypeStatuses || []) {
+        for (const status of issueType.statuses || []) {
+          if (!status.id || byId.has(status.id)) continue;
+          const categoryKey = status.statusCategory?.key;
+          byId.set(status.id, {
+            status: status.id,
+            label: status.name ?? status.id,
+            icon: statusCategoryToIcon(categoryKey),
+            ...(categoryKey === "done" ? { done: true } : {}),
+          });
+          if (categoryKey === "new" && !firstNewStatusId) {
+            firstNewStatusId = status.id;
+          }
+        }
+      }
+
+      const statuses = [...byId.values()];
+      if (statuses.length === 0) {
+        // No statuses discoverable — fall back to the static open/done pair.
+        return {
+          statuses: [
+            { status: "open", label: "Open", icon: "todo" },
+            { status: "done", label: "Done", done: true, icon: "done" },
+          ],
+          composeStatus: "new",
+        };
+      }
+      return {
+        statuses,
+        composeStatus: firstNewStatusId ?? statuses[0].status,
+      };
+    } catch (error) {
+      console.error(
+        `Failed to load Jira statuses for project ${projectId}:`,
+        error
+      );
+      return {
+        statuses: [
+          { status: "open", label: "Open", icon: "todo" },
+          { status: "done", label: "Done", done: true, icon: "done" },
+        ],
+        composeStatus: "new",
+      };
+    }
   }
 
   /**
@@ -200,6 +345,16 @@ export class Jira extends Connector<Jira> {
   /**
    * Setup Jira webhook for real-time updates.
    * Registers a dynamic webhook via the Jira REST API (expires after 30 days, auto-renewed).
+   *
+   * Signature verification: Jira dynamic webhooks are NOT HMAC-signed (Atlassian
+   * only signs Connect-app webhooks, not REST-registered dynamic webhooks). To
+   * harden inbound requests we rely on two layers:
+   *   1. The platform-generated webhook URL already carries an unguessable token
+   *      in its path (createWebhook), so the endpoint itself is a capability.
+   *   2. We additionally generate a random per-project secret, store it under
+   *      `webhook_secret_<projectId>`, and append it as a `?secret=` query param
+   *      on the URL we register with Jira. onWebhook rejects any inbound request
+   *      whose `secret` query param doesn't match (constant-time compare).
    */
   async setupJiraWebhook(
     projectId: string
@@ -227,10 +382,19 @@ export class Jira extends Connector<Jira> {
         return;
       }
 
+      // Generate (or reuse) a random per-project secret and embed it in the
+      // registered URL so we can reject forged inbound requests.
+      let secret = await this.get<string>(`webhook_secret_${projectId}`);
+      if (!secret) {
+        secret = crypto.randomUUID();
+        await this.set(`webhook_secret_${projectId}`, secret);
+      }
+      const registeredUrl = `${webhookUrl}${webhookUrl.includes("?") ? "&" : "?"}secret=${encodeURIComponent(secret)}`;
+
       const client = await this.getClient(projectId);
 
       const result = await client.webhooks.registerDynamicWebhooks({
-        url: webhookUrl,
+        url: registeredUrl,
         webhooks: [
           {
             jqlFilter: `project = ${projectId}`,
@@ -400,6 +564,7 @@ export class Jira extends Connector<Jira> {
         "reporter",
         "creator",
         "comment",
+        "attachment",
         "created",
         "updated",
       ],
@@ -502,14 +667,15 @@ export class Jira extends Connector<Jira> {
     // Build notes array: always create initial note with description and link
     const notes: any[] = [];
 
-    // Extract description (if any)
+    // Extract description (if any). Jira stores rich text as ADF; convert to
+    // plain text with the shared symmetric transform so the baseline matches
+    // the write-back path (`adfToText(textToADF(body))`).
     let description: string | null = null;
     if (fields.description) {
-      // Jira uses Atlassian Document Format (ADF), need to convert to plain text
       const extracted =
         typeof fields.description === "string"
           ? fields.description
-          : this.extractTextFromADF(fields.description);
+          : adfToText(fields.description);
       if (extracted && extracted.trim().length > 0) {
         description = extracted;
       }
@@ -527,6 +693,24 @@ export class Jira extends Connector<Jira> {
         type: ActionType.external,
         title: `Open in Jira`,
         url: issueUrl,
+      });
+    }
+
+    // Inbound attachments → fileRef actions. Cache attachment id → projectId
+    // so downloadAttachment can resolve the right client later.
+    for (const att of fields.attachment || []) {
+      if (!att?.id) continue;
+      // Intentionally retained for the connector instance's lifetime: this
+      // cache is not cleared on disable (the store has no prefix-clear). Low,
+      // bounded cardinality and self-correcting on re-sync, so leaving stale
+      // entries is acceptable.
+      await this.set(`jira:att-project:${att.id}`, projectId);
+      threadActions.push({
+        type: ActionType.fileRef,
+        ref: String(att.id),
+        fileName: att.filename ?? "attachment",
+        fileSize: typeof att.size === "number" ? att.size : null,
+        mimeType: att.mimeType ?? "application/octet-stream",
       });
     }
 
@@ -555,7 +739,7 @@ export class Jira extends Connector<Jira> {
       const commentText =
         typeof comment.body === "string"
           ? comment.body
-          : this.extractTextFromADF(comment.body);
+          : adfToText(comment.body);
       notes.push({
         key: `comment-${comment.id}`,
         content: commentText,
@@ -575,7 +759,11 @@ export class Jira extends Connector<Jira> {
       },
       author: authorContact,
       assignee: assigneeContact ?? null, // Explicitly set to null for unassigned issues
-      status: fields.resolutiondate ? "done" : "open",
+      // Use the issue's real workflow status id — matches the per-project
+      // statuses emitted from getChannels(). Falls back to open/done only when
+      // status is absent.
+      status:
+        fields.status?.id ?? (fields.resolutiondate ? "done" : "open"),
       actions: threadActions.length > 0 ? threadActions : undefined,
       sourceUrl: issueUrl ?? null,
       notes,
@@ -584,39 +772,11 @@ export class Jira extends Connector<Jira> {
   }
 
   /**
-   * Extract plain text from Atlassian Document Format (ADF)
+   * Update issue with new values from the app: title, description-less field
+   * edits, assignee (resolved email → accountId), and status (via the
+   * transition whose target status id matches `link.status`).
    */
-  private extractTextFromADF(adf: any): string {
-    if (!adf || typeof adf !== "object") {
-      return "";
-    }
-
-    let text = "";
-
-    const traverse = (node: any) => {
-      if (node.type === "text") {
-        text += node.text || "";
-      }
-
-      if (node.content && Array.isArray(node.content)) {
-        for (const child of node.content) {
-          traverse(child);
-        }
-        // Add newline after paragraphs
-        if (node.type === "paragraph") {
-          text += "\n";
-        }
-      }
-    };
-
-    traverse(adf);
-    return text.trim();
-  }
-
-  /**
-   * Update issue with new values from the app
-   */
-  async updateIssue(link: import("@plotday/twister").Link): Promise<void> {
+  async updateIssue(link: Link): Promise<void> {
     const issueKey = link.meta?.issueKey as string | undefined;
     if (!issueKey) {
       throw new Error("Jira issue key not found in link meta");
@@ -625,16 +785,27 @@ export class Jira extends Connector<Jira> {
 
     const client = await this.getClient(projectId);
 
-    // Handle field updates (title, assignee)
-    const updateFields: any = {};
+    // Handle field updates (title, assignee).
+    const updateFields: Record<string, unknown> = {};
 
     if (link.title) {
       updateFields.summary = link.title;
     }
 
-    updateFields.assignee = link.assignee
-      ? { id: link.assignee.id }
-      : null;
+    // Assignee: resolve the Plot actor's email to a Jira accountId. `null`
+    // unassigns. Skip the field entirely if we can't resolve (don't clobber).
+    if (!link.assignee) {
+      updateFields.assignee = null;
+    } else {
+      const accountId = await this.resolveAccountId(client, link.assignee.email);
+      if (accountId) {
+        updateFields.assignee = { id: accountId };
+      } else {
+        console.warn(
+          `No Jira user found for assignee email ${link.assignee.email ?? "(none)"}, skipping assignee update`
+        );
+      }
+    }
 
     if (Object.keys(updateFields).length > 0) {
       await client.issues.editIssue({
@@ -643,49 +814,199 @@ export class Jira extends Connector<Jira> {
       });
     }
 
-    // Handle workflow state transitions based on link status and assignee
-    const transitions = await client.issues.getTransitions({
-      issueIdOrKey: issueKey,
-    });
+    // Status: find the transition whose target status id matches link.status
+    // (status ids come from the expanded per-project model). Fall back to a
+    // transition whose target status category matches, in case the link still
+    // carries a category-shaped status ("done"/"open"/etc.) from the static
+    // linkType fallback.
+    if (link.status) {
+      const transitions = await client.issues.getTransitions({
+        issueIdOrKey: issueKey,
+      });
+      const list = transitions.transitions ?? [];
 
-    let targetTransition;
+      let target = list.find((tr) => tr.to?.id === link.status);
+      if (!target) {
+        const wantCategory =
+          link.status === "done"
+            ? "done"
+            : link.status === "open"
+              ? "new"
+              : link.status;
+        target = list.find(
+          (tr) => tr.to?.statusCategory?.key === wantCategory
+        );
+      }
 
-    const isDone = link.status === "done" || link.status === "closed" || link.status === "completed" || link.status === "resolved";
-    if (isDone) {
-      targetTransition = transitions.transitions?.find(
-        (tr) =>
-          tr.name?.toLowerCase() === "done" ||
-          tr.name?.toLowerCase() === "close" ||
-          tr.name?.toLowerCase() === "resolve" ||
-          tr.to?.name?.toLowerCase() === "done" ||
-          tr.to?.name?.toLowerCase() === "closed" ||
-          tr.to?.name?.toLowerCase() === "resolved"
-      );
-    } else if (link.assignee) {
-      targetTransition = transitions.transitions?.find(
-        (tr) =>
-          tr.name?.toLowerCase() === "start progress" ||
-          tr.name?.toLowerCase() === "in progress" ||
-          tr.to?.name?.toLowerCase() === "in progress"
-      );
-    } else {
-      targetTransition = transitions.transitions?.find(
-        (tr) =>
-          tr.name?.toLowerCase() === "reopen" ||
-          tr.name?.toLowerCase() === "to do" ||
-          tr.name?.toLowerCase() === "open" ||
-          tr.to?.name?.toLowerCase() === "to do" ||
-          tr.to?.name?.toLowerCase() === "open"
+      if (target?.id) {
+        await client.issues.doTransition({
+          issueIdOrKey: issueKey,
+          transition: { id: target.id },
+        });
+      }
+    }
+  }
+
+  /**
+   * Called when a link's status / assignee / title is changed from the Plot
+   * app. Delegates to updateIssue. Best-effort: a failed external write is
+   * reconciled on the next sync-in (external is the source of truth).
+   */
+  async onLinkUpdated(link: Link): Promise<void> {
+    const issueKey = link.meta?.issueKey as string | undefined;
+    const projectId = link.meta?.projectId as string | undefined;
+    if (!issueKey || !projectId) return;
+
+    try {
+      await this.updateIssue(link);
+    } catch (error) {
+      console.error(
+        "[jira] onLinkUpdated write-back failed:",
+        error instanceof Error ? error.message : String(error)
       );
     }
+  }
 
-    if (targetTransition) {
-      await client.issues.doTransition({
-        issueIdOrKey: issueKey,
-        transition: {
-          id: targetTransition.id!,
+  /**
+   * Resolve a Plot actor email to a Jira accountId via user search, cached
+   * under `jira_user:<email>`. Returns null when no email or no match.
+   */
+  private async resolveAccountId(
+    client: Version3Client,
+    email: string | null | undefined
+  ): Promise<string | null> {
+    if (!email) return null;
+    const cached = await this.get<string>(`jira_user:${email}`);
+    if (cached) return cached;
+
+    const users = await client.userSearch.findUsers({ query: email });
+    // Prefer an exact emailAddress match; fall back to the first result.
+    const match =
+      users.find(
+        (u) => u.emailAddress?.toLowerCase() === email.toLowerCase()
+      ) ?? users[0];
+    if (match?.accountId) {
+      // Intentionally retained for the connector instance's lifetime: this
+      // cache is not cleared on disable (the store has no prefix-clear). Low,
+      // bounded cardinality and self-correcting on re-sync, so leaving stale
+      // entries is acceptable.
+      await this.set(`jira_user:${email}`, match.accountId);
+      return match.accountId;
+    }
+    return null;
+  }
+
+  /**
+   * Create a new Jira issue from a Plot thread. `draft.channelId` is the Jira
+   * project id; `draft.status` is the project's first "new"-category status id
+   * (from the per-project compose config) or the symbolic "new" fallback.
+   */
+  async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== "issue") return null;
+
+    const projectId = draft.channelId;
+    const client = await this.getClient(projectId);
+
+    // Resolve the default issue type: prefer a non-subtask named "Task",
+    // else the first non-subtask issue type.
+    const meta = await client.issues.getCreateIssueMetaIssueTypes({
+      projectIdOrKey: projectId,
+    });
+    const issueTypes = (meta.issueTypes ?? []).filter((it) => !it.subtask);
+    const issueType =
+      issueTypes.find((it) => it.name?.toLowerCase() === "task") ??
+      issueTypes[0];
+    if (!issueType?.id) {
+      console.error(
+        `No usable Jira issue type found for project ${projectId}`
+      );
+      return null;
+    }
+
+    const created = await client.issues.createIssue({
+      fields: {
+        summary: draft.title,
+        project: { id: projectId },
+        issuetype: { id: issueType.id },
+        ...(draft.noteContent
+          ? { description: textToADF(draft.noteContent) }
+          : {}),
+      },
+    });
+
+    if (!created.id) return null;
+
+    // Fetch the created issue for its key + URL.
+    let issueKey: string | undefined = created.key;
+    let issueUrl: string | undefined;
+    try {
+      const cloudId = await this.getCloudId(projectId);
+      issueUrl = issueKey
+        ? `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issueKey}`
+        : undefined;
+      const source = `jira:${cloudId}:issue:${created.id}`;
+
+      // Resolve the REAL workflow status id the issue landed in. `draft.status`
+      // may be the symbolic "new" fallback (when the per-project compose path
+      // couldn't discover a real status id), which is NOT a valid Jira status
+      // id — persisting it would leave the link with a phantom status until the
+      // first sync-in corrects it. Fetch the created issue's actual
+      // fields.status.id (mirrors how Linear resolves the real state on create)
+      // and fall back to draft.status only if the fetch fails.
+      let resolvedStatus: string | undefined = draft.status ?? undefined;
+      try {
+        const issue = await client.issues.getIssue({
+          issueIdOrKey: created.id,
+          fields: ["status"],
+        });
+        const realStatusId = issue.fields?.status?.id;
+        if (realStatusId) {
+          resolvedStatus = realStatusId;
+        }
+      } catch (statusError) {
+        console.error(
+          "Failed to resolve created Jira issue status, falling back to draft status:",
+          statusError
+        );
+      }
+
+      const threadActions: Action[] = [];
+      if (issueUrl) {
+        threadActions.push({
+          type: ActionType.external,
+          title: "Open in Jira",
+          url: issueUrl,
+        });
+      }
+
+      return {
+        source,
+        type: "issue",
+        title: draft.title,
+        status: resolvedStatus,
+        meta: {
+          issueKey: issueKey ?? created.id,
+          projectId,
         },
-      });
+        actions: threadActions.length > 0 ? threadActions : undefined,
+        sourceUrl: issueUrl ?? null,
+        // Bind the opening note to the issue description (the same
+        // "description" key sync-in emits) so edits round-trip via
+        // onNoteUpdated. externalContent is the description as Jira stored it
+        // — adfToText(textToADF(body)) matches convertIssueToLink's inbound
+        // adfToText so the baseline hash lines up.
+        originatingNote: {
+          key: "description",
+          externalContent: draft.noteContent
+            ? adfToText(textToADF(draft.noteContent))
+            : undefined,
+        },
+      };
+    } catch (error) {
+      console.error("Failed to finalize created Jira issue:", error);
+      return null;
     }
   }
 
@@ -695,25 +1016,26 @@ export class Jira extends Connector<Jira> {
    * Returns a {@link NoteWriteBackResult} so the runtime can set the note's
    * key to `comment-{id}` and record the ADF-extracted plain text as the
    * sync baseline. Sync-in (both batch search and webhook paths) runs the
-   * comment's ADF body through `extractTextFromADF` before building the
-   * NewNote, so we mirror that same extraction here — when nothing has
-   * changed on the Jira side the hash matches and Plot's richer content is
-   * preserved.
+   * comment's ADF body through `adfToText` before building the NewNote, so we
+   * mirror that same extraction here — when nothing has changed on the Jira
+   * side the hash matches and Plot's richer content is preserved.
    */
   async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
-    return this.addIssueComment(thread.meta ?? {}, note.content ?? "");
+    const fileActions = (note.actions ?? []).filter(
+      (a): a is Extract<Action, { type: typeof ActionType.file }> =>
+        a.type === ActionType.file
+    );
+    return this.addIssueComment(thread.meta ?? {}, note.content ?? "", fileActions);
   }
 
   /**
    * Called when a Plot user edits an existing note on a Jira-owned thread.
-   * Pushes the new content (converted to ADF) to the corresponding Jira
-   * comment and refreshes the sync baseline from the Jira-stored ADF.
+   * For the "description" note, edits the issue description; for comment notes
+   * (key `comment-<id>`), edits the corresponding comment. Refreshes the sync
+   * baseline from the round-tripped ADF text so the next sync-in matches.
    */
   async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     if (!note.key) return;
-    const commentMatch = note.key.match(/^comment-(.+)$/);
-    if (!commentMatch) return;
-    const commentId = commentMatch[1];
 
     const issueKey = thread.meta?.issueKey as string | undefined;
     if (!issueKey) {
@@ -723,8 +1045,24 @@ export class Jira extends Connector<Jira> {
     const client = await this.getClient(projectId);
 
     const body = note.content ?? "";
-    const adfBody = this.convertTextToADF(body);
 
+    // The opening note maps to the issue description (key "description"),
+    // which is part of the issue body, not a comment.
+    if (note.key === "description") {
+      await client.issues.editIssue({
+        issueIdOrKey: issueKey,
+        fields: { description: textToADF(body) },
+      });
+      // Sync-in runs the description ADF through adfToText, so match that with
+      // adfToText(textToADF(body)) for the baseline.
+      return { externalContent: adfToText(textToADF(body)) };
+    }
+
+    const commentMatch = note.key.match(/^comment-(.+)$/);
+    if (!commentMatch) return;
+    const commentId = commentMatch[1];
+
+    const adfBody = textToADF(body);
     const result = await client.issueComments.updateComment({
       issueIdOrKey: issueKey,
       id: commentId,
@@ -734,26 +1072,30 @@ export class Jira extends Connector<Jira> {
     // Sync-in extracts plain text from the comment's ADF body — mirror that
     // here so the baseline hash matches on the next sync-in pass.
     const externalContent = result?.body
-      ? (typeof result.body === "string"
-          ? result.body
-          : this.extractTextFromADF(result.body))
-      : body;
+      ? typeof result.body === "string"
+        ? result.body
+        : adfToText(result.body)
+      : adfToText(adfBody);
 
-    return {
-      externalContent,
-    };
+    return { externalContent };
   }
 
   /**
-   * Add a comment to a Jira issue
+   * Add a comment to a Jira issue, optionally uploading file attachments.
+   *
+   * Jira attaches files to the issue (not to a specific comment), so file
+   * actions are uploaded via `issueAttachments.addAttachment` and the comment
+   * body itself is left as the note text.
    *
    * @param meta - Thread metadata containing issueKey and projectId
    * @param body - Comment text (converted to ADF format)
+   * @param fileActions - Optional file actions to upload as issue attachments
    * @param noteId - Optional Plot note ID for dedup
    */
   async addIssueComment(
     meta: import("@plotday/twister").ThreadMeta,
     body: string,
+    fileActions: Array<Extract<Action, { type: typeof ActionType.file }>> = [],
     noteId?: string,
   ): Promise<NoteWriteBackResult | void> {
     const issueKey = meta.issueKey as string | undefined;
@@ -763,8 +1105,31 @@ export class Jira extends Connector<Jira> {
     const projectId = meta.projectId as string;
     const client = await this.getClient(projectId);
 
+    // Upload any attached files to the issue. Jira attaches to the issue, not
+    // the comment — best-effort per file.
+    for (const action of fileActions) {
+      try {
+        const file = await this.tools.files.read(action.fileId);
+        // Use a Blob (universally supported under the Workers runtime) for the
+        // multipart body rather than a Node Buffer.
+        const blob = new Blob([file.data as BlobPart], {
+          type: file.mimeType,
+        });
+        await client.issueAttachments.addAttachment({
+          issueIdOrKey: issueKey,
+          attachment: {
+            filename: file.fileName,
+            file: blob,
+            mimeType: file.mimeType,
+          },
+        });
+      } catch (e) {
+        console.error("Jira file attachment upload failed", action.fileId, e);
+      }
+    }
+
     // Convert plain text to Atlassian Document Format (ADF)
-    const adfBody = this.convertTextToADF(body);
+    const adfBody = textToADF(body);
 
     const result = await client.issueComments.addComment({
       issueIdOrKey: issueKey,
@@ -777,10 +1142,10 @@ export class Jira extends Connector<Jira> {
       // that same extraction here so the next sync-in's hash matches the
       // baseline we're about to record.
       const externalContent = result.body
-        ? (typeof result.body === "string"
-            ? result.body
-            : this.extractTextFromADF(result.body))
-        : body;
+        ? typeof result.body === "string"
+          ? result.body
+          : adfToText(result.body)
+        : adfToText(adfBody);
       return {
         key: `comment-${result.id}`,
         externalContent,
@@ -789,24 +1154,38 @@ export class Jira extends Connector<Jira> {
   }
 
   /**
-   * Convert plain text to Atlassian Document Format (ADF)
+   * Download a Jira attachment identified by its attachment id (`ref`).
+   *
+   * The ref is emitted as an `ActionType.fileRef` action during inbound sync
+   * in `convertIssueToLink`, which also caches `jira:att-project:<id>`. Jira
+   * attachment `content` URLs require an Authorization header, so a bare
+   * redirect would 401 — we fetch the bytes via `getAttachmentContent` (which
+   * carries OAuth auth) and stream the Buffer back instead.
    */
-  private convertTextToADF(text: string): any {
-    // Split text into paragraphs
-    const paragraphs = text.split("\n\n").filter((p) => p.trim());
-
+  override async downloadAttachment(
+    ref: string
+  ): Promise<{ body: Uint8Array; mimeType: string }> {
+    const projectId = await this.get<string>(`jira:att-project:${ref}`);
+    if (!projectId) {
+      throw new Error(
+        `Unknown Jira attachment: ${ref}. The attachment may have been ` +
+          `synced before file support was enabled. Try re-syncing the Jira connection.`
+      );
+    }
+    const client = await this.getClient(projectId);
+    // getAttachmentContent returns a Buffer (a Uint8Array subclass) in Node,
+    // or an ArrayBuffer-like under the Workers runtime. Normalize to Uint8Array
+    // without re-interpreting the bytes.
+    const content = (await client.issueAttachments.getAttachmentContent({
+      id: ref,
+    })) as unknown;
+    const body =
+      content instanceof Uint8Array
+        ? content
+        : new Uint8Array(content as ArrayBuffer);
     return {
-      version: 1,
-      type: "doc",
-      content: paragraphs.map((paragraph) => ({
-        type: "paragraph",
-        content: [
-          {
-            type: "text",
-            text: paragraph.trim(),
-          },
-        ],
-      })),
+      body,
+      mimeType: "application/octet-stream",
     };
   }
 
@@ -817,6 +1196,21 @@ export class Jira extends Connector<Jira> {
     request: WebhookRequest,
     projectId: string
   ): Promise<void> {
+    // Verify the registration secret. Jira dynamic webhooks aren't HMAC-signed,
+    // so we compare the `secret` query param against the per-project secret we
+    // embedded in the registered URL (constant-time). A missing stored secret
+    // (e.g. webhook registered before this hardening landed) is allowed through
+    // for backwards compatibility, but a present-and-mismatched secret is
+    // rejected.
+    const storedSecret = await this.get<string>(`webhook_secret_${projectId}`);
+    if (storedSecret) {
+      const providedSecret = request.params?.secret ?? "";
+      if (!constantTimeEqual(providedSecret, storedSecret)) {
+        console.warn("Jira webhook secret mismatch, dropping request");
+        return;
+      }
+    }
+
     const payload = request.body as any;
 
     // Split handling by webhook event type for efficiency
@@ -886,7 +1280,7 @@ export class Jira extends Connector<Jira> {
       const extracted =
         typeof fields.description === "string"
           ? fields.description
-          : this.extractTextFromADF(fields.description);
+          : adfToText(fields.description);
       if (extracted && extracted.trim().length > 0) {
         description = extracted;
       }
@@ -904,7 +1298,7 @@ export class Jira extends Connector<Jira> {
       },
       author: authorContact,
       assignee: assigneeContact ?? null,
-      status: fields.resolutiondate ? "done" : "open",
+      status: fields.status?.id ?? (fields.resolutiondate ? "done" : "open"),
       preview: description || null,
       notes: [],
     };
@@ -956,7 +1350,7 @@ export class Jira extends Connector<Jira> {
     const commentText =
       typeof comment.body === "string"
         ? comment.body
-        : this.extractTextFromADF(comment.body);
+        : adfToText(comment.body);
 
     // Check for Plot note ID in comment properties (set when comment was created from Plot)
     const plotNoteId = comment.properties?.find(
@@ -1021,6 +1415,7 @@ export class Jira extends Connector<Jira> {
     // Cleanup stored state
     await this.clear(`webhook_id_${projectId}`);
     await this.clear(`webhook_url_${projectId}`);
+    await this.clear(`webhook_secret_${projectId}`);
     await this.clear(`sync_state_${projectId}`);
   }
 }
@@ -1034,6 +1429,20 @@ function atlassianSource(accountId: string | undefined): Pick<NewContact, "sourc
     return { source: { accountId } };
   }
   return {};
+}
+
+/**
+ * Constant-time string comparison to avoid leaking secret length / content via
+ * timing. Returns false immediately on length mismatch (length is not secret),
+ * then XORs all bytes so the loop runtime doesn't depend on where they differ.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
 }
 
 export default Jira;
