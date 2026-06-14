@@ -12,7 +12,7 @@ function trustedAuthResults(headers: GraphHeader[] | null): string | null {
   for (const h of headers ?? []) {
     if (h.name.toLowerCase() !== "authentication-results") continue;
     const authservId = h.value.split(";", 1)[0].trim().toLowerCase();
-    if (authservId.includes("protection.outlook.com")) return h.value;
+    if (authservId === "protection.outlook.com" || authservId.endsWith(".protection.outlook.com")) return h.value;
   }
   return null;
 }

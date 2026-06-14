@@ -421,8 +421,7 @@ export function getHeaders(message: GmailMessage, name: string): string[] {
 
 /** Decoded HTML body for a message (empty string if none). For link extraction. */
 export function getMessageHtml(message: GmailMessage): string {
-  const html = findPartContent(message.payload, "text/html");
-  return html ? decodeBase64Url(html) : "";
+  return findPartContent(message.payload, "text/html") ?? "";
 }
 
 /**
