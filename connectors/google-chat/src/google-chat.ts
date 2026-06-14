@@ -1180,18 +1180,11 @@ export class GoogleChat extends Connector<GoogleChat> {
   // ---- Write-back: reactions from Plot ----
 
   /**
-   * Pushes note-level updates back to Google Chat.
-   *
-   * Two channels of state are syncable here:
-   * 1. Reactions — mirrored from `note.tags` to Chat reactions owned by the
-   *    authenticated user (pre-existing behavior).
-   * 2. Content — if `note.content` changed, PATCH the message's `text`
-   *    via `messages.patch`. We only return a `NoteWriteBackResult` when
-   *    we actually pushed content; otherwise baseline tracking stays
-   *    untouched for this call.
-   *
-   * Content push runs before reactions so a failed text patch (e.g. user
-   * isn't the message author) doesn't block reaction sync.
+   * Pushes a Plot-side content edit of a Google Chat message back via
+   * `messages.patch`. Reactions are handled separately by
+   * `onNoteReactionChanged` so each emoji is attributed to the user who made
+   * it (that callback is dispatched on the reacting user's own connector
+   * instance via `twist_instance_for_actor`).
    */
   async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
@@ -1205,89 +1198,91 @@ export class GoogleChat extends Connector<GoogleChat> {
     if (!spaceName) return;
     const messageName = `${spaceName}/messages/${messageId}`;
 
+    if (note.content === null || note.content === undefined) return;
+
     const api = await this.getApi(channelId ?? DM_CHANNEL_ID);
 
-    // Identify the authenticated user's Google user ID
-    const authUser = await this.get<{ googleUserId: string }>("auth_google_user");
-    if (!authUser?.googleUserId) return;
+    // Content sync is best-effort; only the message author can patch.
+    try {
+      const updated = await api.updateMessage(messageName, note.content);
+      // Mirror sync-in: prefer formattedText + "html", else text + "text".
+      // `updateMessage` returns whatever Google stored for this message,
+      // which is what the next list/fetch will also return.
+      const hasFormatted =
+        typeof updated.formattedText === "string" && updated.formattedText.length > 0;
+      const externalContent = hasFormatted
+        ? updated.formattedText!
+        : (updated.text ?? note.content);
+      return { externalContent };
+    } catch (error) {
+      // Non-fatal: user may not own the message, or the message may be gone.
+      console.warn(
+        "[google-chat] messages.patch failed; skipping content write-back:",
+        error
+      );
+    }
+  }
 
-    // --- Content sync (best-effort; only the message author can patch) ---
-    let writeBack: NoteWriteBackResult | undefined;
-    if (note.content !== null && note.content !== undefined) {
+  /**
+   * Pushes a single emoji add/remove back to Google Chat, attributed to the
+   * reacting user. Dispatched on that user's own connector instance (routed via
+   * `twist_instance_for_actor`), so `getApi` resolves to their token and
+   * `auth_google_user` is their identity. Google Chat allows multiple distinct
+   * reactions per user, so each transition maps directly to create/delete —
+   * no per-user state needed.
+   *
+   * Custom (workspace) emoji are skipped here, symmetric with sync-in, until
+   * the custom-emoji image cache lands (see `reactionCapabilities`).
+   */
+  async onNoteReactionChanged(
+    note: Note,
+    thread: Thread,
+    _actor: Actor,
+    emoji: string,
+    added: boolean
+  ): Promise<void> {
+    const meta = thread.meta ?? {};
+    const channelId = (meta.channelId ?? meta.syncableId) as string | undefined;
+
+    const noteKey = note.key;
+    if (!noteKey?.startsWith("message-")) return;
+    const messageId = noteKey.substring("message-".length);
+    const spaceName = meta.spaceName as string | undefined;
+    if (!spaceName) return;
+    const messageName = `${spaceName}/messages/${messageId}`;
+
+    // Custom workspace emoji aren't round-tripped yet (symmetric with sync-in).
+    if (emoji.includes(":")) return;
+
+    const api = await this.getApi(channelId ?? DM_CHANNEL_ID);
+
+    if (added) {
       try {
-        const updated = await api.updateMessage(messageName, note.content);
-        // Mirror sync-in: prefer formattedText + "html", else text + "text".
-        // `updateMessage` returns whatever Google stored for this message,
-        // which is what the next list/fetch will also return.
-        const hasFormatted =
-          typeof updated.formattedText === "string" && updated.formattedText.length > 0;
-        const externalContent = hasFormatted
-          ? updated.formattedText!
-          : (updated.text ?? note.content);
-        writeBack = { externalContent };
+        await api.createReaction(messageName, emoji);
       } catch (error) {
-        // Non-fatal: user may not own the message, or the message may be
-        // gone. Fall through to reaction sync and skip baseline update.
-        console.warn(
-          "[google-chat] messages.patch failed; skipping content write-back:",
-          error
-        );
+        console.warn(`[google-chat] createReaction failed for ${emoji}:`, error);
       }
+      return;
     }
 
-    // Get current reactions from Google Chat for this message
+    // Removal: find this user's reaction resource for the emoji, then delete it.
+    const authUser = await this.get<{ googleUserId: string }>("auth_google_user");
+    if (!authUser?.googleUserId) return;
     let currentReactions: EmojiReaction[];
     try {
       currentReactions = await api.listReactions(messageName);
     } catch {
-      return writeBack; // Message may not exist anymore
+      return; // message may be gone
     }
-
-    // Plot-side: any emoji with at least one reactor is "present in Plot".
-    // Currently writes back as the connected (authenticated) user for every
-    // reaction. For correct per-actor attribution, migrate to
-    // `onNoteReactionChanged` — that callback is dispatched on the reacting
-    // user's own connector instance via `twist_instance_for_actor`, so each
-    // emoji add/remove runs under the right user's token.
-    const plotEmojis = new Set<string>();
-    for (const [emoji, actorIds] of Object.entries(note.reactions)) {
-      // Only Unicode emoji round-trip today (custom emoji are skipped
-      // on sync-in and have no createReaction path here yet).
-      if (emoji.includes(":")) continue;
-      if (actorIds && actorIds.length > 0) plotEmojis.add(emoji);
+    const match = currentReactions.find(
+      (r) => r.user.name === authUser.googleUserId && r.emoji.unicode === emoji
+    );
+    if (!match) return;
+    try {
+      await api.deleteReaction(match.name);
+    } catch (error) {
+      console.warn("[google-chat] deleteReaction failed:", error);
     }
-
-    // Google Chat side: the authenticated user's existing reactions on
-    // this message, keyed by unicode → reaction resource name.
-    const chatEmojis = new Map<string, string>();
-    for (const reaction of currentReactions) {
-      if (reaction.user.name !== authUser.googleUserId) continue;
-      const unicode = reaction.emoji.unicode;
-      if (!unicode) continue;
-      chatEmojis.set(unicode, reaction.name);
-    }
-
-    // Add reactions present in Plot but not in Google Chat
-    for (const emoji of plotEmojis) {
-      if (chatEmojis.has(emoji)) continue;
-      try {
-        await api.createReaction(messageName, emoji);
-      } catch (error) {
-        console.error(`[google-chat] Failed to create reaction ${emoji}:`, error);
-      }
-    }
-
-    // Remove reactions present in Google Chat but not in Plot
-    for (const [emoji, reactionName] of chatEmojis) {
-      if (plotEmojis.has(emoji)) continue;
-      try {
-        await api.deleteReaction(reactionName);
-      } catch (error) {
-        console.error("[google-chat] Failed to delete reaction:", error);
-      }
-    }
-
-    return writeBack;
   }
 
   // ---- Write-back: reply from Plot ----
