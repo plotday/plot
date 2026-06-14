@@ -149,7 +149,13 @@ describe.skipIf(!DATABASE_URL)(
       await sql`INSERT INTO "user" (id, email) VALUES (${USER}, 'two-phase-test@invalid.test')`.execute(trx);
       await sql`INSERT INTO contact (id, email, user_id, "primary") VALUES (${CONTACT}, 'two-phase-test-c@invalid.test', ${USER}, true)`.execute(trx);
       await sql`INSERT INTO user_contact (user_id, contact_id, linked, "primary") VALUES (${USER}, ${CONTACT}, true, true)`.execute(trx);
-      await sql`INSERT INTO priority (id, created_by, title, path, user_id) VALUES (${PRIORITY}, ${USER}, 'Test Root', 'twophasetestroot', ${USER})`.execute(trx);
+      // role_id is required (priority_role_or_fyi CHECK). Triggers are off in
+      // replica mode, so create a role inline and file the root under it.
+      await sql`WITH r AS (
+          INSERT INTO role (created_by, user_id, name) VALUES (${USER}, ${USER}, 'Test role') RETURNING id
+        )
+        INSERT INTO priority (id, created_by, title, path, user_id, role_id)
+        SELECT ${PRIORITY}, ${USER}, 'Test Root', 'twophasetestroot', ${USER}, r.id FROM r`.execute(trx);
 
       for (let i = 1; i <= count; i++) {
         const seq = String(base + BigInt(i));

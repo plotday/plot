@@ -54,9 +54,10 @@ BEGIN
     -- This prevents pre-existing "Everyone" group threads (filed under the root
     -- priority) from producing false-positive priority_unread hits.
     v_root_priority_id := (SELECT id FROM public.priority WHERE user_id = v_member LIMIT 1);
-    INSERT INTO public.priority (user_id, created_by, title, path)
+    INSERT INTO public.priority (user_id, created_by, title, path, role_id)
     VALUES (v_member, v_member, 'T57 topic',
-            text2ltree(ltree2text((SELECT path FROM public.priority WHERE id = v_root_priority_id)) || '.t57iso'))
+            text2ltree(ltree2text((SELECT path FROM public.priority WHERE id = v_root_priority_id)) || '.t57iso'),
+            public.default_role_id(v_member))
     RETURNING id INTO v_iso_priority_id;
 
     -- Settle the member's auto-filed thread_priority row under the isolated priority.

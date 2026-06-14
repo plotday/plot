@@ -53,8 +53,14 @@ async function seedAndSelect(opts: SeedOpts) {
         VALUES (${contactId}::uuid, ${userId}::uuid, true, ${email})`.execute(trx);
       await sql`INSERT INTO user_contact (user_id, contact_id, linked, "primary")
         VALUES (${userId}::uuid, ${contactId}::uuid, true, true)`.execute(trx);
-      await sql`INSERT INTO priority (id, created_by, user_id, title, path)
-        VALUES (${priorityId}::uuid, ${userId}::uuid, ${userId}::uuid, 'Inbox', 'inbox'::ltree)`.execute(trx);
+      // role_id is required (priority_role_or_fyi CHECK). Triggers are off in
+      // replica mode, so create a role inline and file the focus under it.
+      await sql`WITH r AS (
+          INSERT INTO role (created_by, user_id, name)
+          VALUES (${userId}::uuid, ${userId}::uuid, 'Test role') RETURNING id
+        )
+        INSERT INTO priority (id, created_by, user_id, title, path, role_id)
+        SELECT ${priorityId}::uuid, ${userId}::uuid, ${userId}::uuid, 'Inbox', 'inbox'::ltree, r.id FROM r`.execute(trx);
       await sql`INSERT INTO thread (id, created_by, title, contacts, twist_id)
         VALUES (${threadId}::uuid, ${userId}::uuid, 'Test thread', ARRAY[${contactId}::uuid]::uuid[], ${opts.twistId})`.execute(trx);
       await sql`INSERT INTO thread_priority (thread_id, user_id, priority_id)

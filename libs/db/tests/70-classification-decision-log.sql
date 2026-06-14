@@ -132,8 +132,10 @@ BEGIN
     INSERT INTO "public"."user" (id, email) VALUES (v_owner, 'cdl-owner@test.plot');
     v_owner_c := public.upsert_user_contact(v_owner, 'cdl-owner@test.plot', 'CDL Owner', NULL);
     SELECT id, path INTO v_root, v_rootp FROM priority WHERE user_id = v_owner AND nlevel(path) = 1;
-    INSERT INTO priority (id, created_by, user_id, title, path)
-    VALUES (v_focus, v_owner, v_owner, 'cdl-channel-focus', v_rootp || 'cdlfocus');
+    -- role_id required (priority_role_or_fyi CHECK); file under the owner's
+    -- default role created by the activate_invited_user trigger above.
+    INSERT INTO priority (id, created_by, user_id, title, path, role_id)
+    VALUES (v_focus, v_owner, v_owner, 'cdl-channel-focus', v_rootp || 'cdlfocus', public.default_role_id(v_owner));
     INSERT INTO twist (twist_package_id, user_id, name, handle, version)
     VALUES (gen_random_uuid(), v_owner, 'CDL Twist', 'cdl-twist', '1.0') RETURNING id INTO v_twist;
     INSERT INTO twist_instance (id, twist_id, owner_id, name) VALUES (v_ti, v_twist, v_owner, 'CDL Conn');

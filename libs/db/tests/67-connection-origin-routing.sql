@@ -45,9 +45,11 @@ BEGIN
         (v_ti_work_slack, v_user, 'slack', v_user_c),
         (v_ti_personal,   v_user, 'gmail', v_c_pers);
 
-    INSERT INTO priority (id, created_by, user_id, title, path) VALUES
-        (v_acme, v_user, v_user, 'Acme admin',       v_rootp || 'acme'),
-        (v_fin,  v_user, v_user, 'Personal finance', v_rootp || 'finance');
+    -- role_id required (priority_role_or_fyi CHECK); file under the user's
+    -- default role created by the activate_invited_user trigger above.
+    INSERT INTO priority (id, created_by, user_id, title, path, role_id) VALUES
+        (v_acme, v_user, v_user, 'Acme admin',       v_rootp || 'acme',    public.default_role_id(v_user)),
+        (v_fin,  v_user, v_user, 'Personal finance', v_rootp || 'finance', public.default_role_id(v_user));
 
     -- One moved example per focus. Both share the SAME contact (vendor) so the
     -- content (con) signal is identical for both focuses; only the originating

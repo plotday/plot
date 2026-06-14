@@ -50,10 +50,12 @@ BEGIN
     ORDER BY created_at ASC
     LIMIT 1;
 
-    INSERT INTO public.priority (id, created_by, title, path, user_id) VALUES
-        (v_focus_r, v_user, 'Reclassify focus', v_root_path || 'mrtfocusr', v_user),
-        (v_focus_a, v_user, 'Merge source', v_root_path || 'mrtfocusa', v_user),
-        (v_focus_b, v_user, 'Merge target', v_root_path || 'mrtfocusb', v_user);
+    -- role_id required (priority_role_or_fyi CHECK); file under the user's
+    -- default role created by the activate_invited_user trigger above.
+    INSERT INTO public.priority (id, created_by, title, path, user_id, role_id) VALUES
+        (v_focus_r, v_user, 'Reclassify focus', v_root_path || 'mrtfocusr', v_user, public.default_role_id(v_user)),
+        (v_focus_a, v_user, 'Merge source', v_root_path || 'mrtfocusa', v_user, public.default_role_id(v_user)),
+        (v_focus_b, v_user, 'Merge target', v_root_path || 'mrtfocusb', v_user, public.default_role_id(v_user));
 
     -- Threads for the reclassify-scope tests (filed in focus R):
     --   d0 sticky  — training example so the function doesn't no-op

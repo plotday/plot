@@ -50,10 +50,12 @@ describe.skipIf(!DATABASE_URL)(
         ORDER BY created_at ASC LIMIT 1
       `.execute(trx);
       const rootPath = root.rows[0].path;
+      // role_id is required (priority_role_or_fyi CHECK). The user-insert
+      // trigger above created the user's Personal role; file both focuses there.
       await sql`
-        INSERT INTO priority (id, created_by, title, path, user_id) VALUES
-          (${SOURCE}, ${USER}, 'Merge source', ${rootPath + ".mergerpcsrc"}, ${USER}),
-          (${TARGET}, ${USER}, 'Merge target', ${rootPath + ".mergerpctgt"}, ${USER})
+        INSERT INTO priority (id, created_by, title, path, user_id, role_id) VALUES
+          (${SOURCE}, ${USER}, 'Merge source', ${rootPath + ".mergerpcsrc"}, ${USER}, public.default_role_id(${USER}::uuid)),
+          (${TARGET}, ${USER}, 'Merge target', ${rootPath + ".mergerpctgt"}, ${USER}, public.default_role_id(${USER}::uuid))
       `.execute(trx);
       for (let i = 1; i <= 2; i++) {
         await sql`

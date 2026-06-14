@@ -5,7 +5,6 @@ import { createClerkClient } from "@clerk/backend";
 import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
 import type { AuthUser } from "../utils/auth";
-import { generatePath } from "../utils/path";
 import {
   createFreeTierBillingCycle,
   createInitialTrialSubscription,
@@ -370,31 +369,27 @@ account.post("/activate", async (c) => {
     });
     priority = existingRoot;
   } else {
-    // Step 2: Generate path for root priority (TypeScript, not DB — see utils/path.ts)
-    const rootPath = generatePath(null);
-
-    // Step 3: Create root priority
+    // No root yet. The accept_invitations_after_user_created trigger normally
+    // creates it on user INSERT; if we reach here it didn't, so recover by
+    // running the canonical, idempotent activation routine. It creates the root
+    // as the default role's Inbox (role_id set) plus the user's FYI focus, so
+    // every focus stays role-or-FYI as the priority_role_or_fyi CHECK requires.
+    // Never hand-roll a role-less root here.
     let newPriority: { id: string };
     try {
-      newPriority = await c.var.db
-        .insertInto("priority")
-        .values({
-          created_by: user.id,
-          user_id: user.id,
-          title: "Everything",
-          path: rootPath,
-          color: 0,
-          updated_by: 0,
-        })
-        .returning("id")
-        .executeTakeFirstOrThrow();
+      const activated = await sql<{
+        activate_invited_user: { root_priority_id: string };
+      }>`SELECT public.activate_invited_user(${user.id}::uuid)`.execute(c.var.db);
+      const rootId = activated.rows[0]?.activate_invited_user?.root_priority_id;
+      if (!rootId) {
+        throw new Error("activate_invited_user returned no root_priority_id");
+      }
+      newPriority = { id: rootId };
     } catch (err) {
       return captureServerError(c, err as Error, `Failed to create root priority: ${(err as Error).message}`, {
         user_id: user.id,
       });
     }
-
-    // priority.user_id is set automatically by the default_priority_user_id trigger
 
     // Step 3.6: Seed default early-notification settings on the root
     // priority. Sub-priorities inherit via priority_setting_inherited

@@ -32,25 +32,25 @@ BEGIN
     IF v_root_priority_id IS NOT NULL THEN
         RETURN jsonb_build_object('activated', FALSE, 'already_active', TRUE, 'root_priority_id', v_root_priority_id);
     END IF;
-    -- Create the root priority. default_priority_user_id fills user_id
-    -- from created_by, so the new row is fully owned by the user.
-    v_new_path := generate_path (NULL);
-    INSERT INTO public.priority (created_by, user_id, title, path, color)
-        VALUES (p_user_id, p_user_id, 'Everything', v_new_path, 0)
-    RETURNING
-        id INTO v_root_priority_id;
-    -- Every user gets a default "Personal" role (theme 0); the root becomes its
-    -- Inbox. Mirrors the focus-roles backfill so new users match existing ones,
+    -- Every user gets a default "Personal" role (theme 0); the root priority
+    -- becomes its Inbox. Create the role FIRST so the root can be inserted with
+    -- role_id already set: the priority_role_or_fyi CHECK is evaluated at INSERT
+    -- time, so the old "insert root, then UPDATE role_id" ordering would now
+    -- fail. Mirrors the focus-roles backfill so new users match existing ones,
     -- guaranteeing every user has >=1 role and no role-less focus.
-    -- default_role_user_id fills "order"; the root's colour is already 0 and
+    -- default_role_user_id fills "order"; the root's colour is 0 and
     -- notifications NULL, so the Inbox trivially follows the role.
     INSERT INTO public.role (created_by, user_id, name, color)
         VALUES (p_user_id, p_user_id, 'Personal', 0)
     RETURNING
         id INTO v_default_role_id;
-    UPDATE public.priority
-        SET role_id = v_default_role_id, is_inbox = TRUE
-        WHERE id = v_root_priority_id;
+    -- Create the root priority as that role's Inbox. default_priority_user_id
+    -- fills user_id from created_by, so the new row is fully owned by the user.
+    v_new_path := generate_path (NULL);
+    INSERT INTO public.priority (created_by, user_id, title, path, color, role_id, is_inbox)
+        VALUES (p_user_id, p_user_id, 'Everything', v_new_path, 0, v_default_role_id, TRUE)
+    RETURNING
+        id INTO v_root_priority_id;
     -- Every user gets one global, role-less FYI focus (child of the root in the
     -- legacy ltree, role_id NULL, is_fyi TRUE). Muted by default
     -- (early_notifications_enabled = FALSE, no notify_window). The classifier

@@ -34,10 +34,12 @@ BEGIN
         (v_a, 'sender@acme.com', 'A Sender'),
         (v_b, 'b@elsewhere.com', 'B Recipient');
 
-    -- Insert child priorities under the auto-created root path.
-    INSERT INTO priority (id, created_by, user_id, title, path) VALUES
-        (v_focus, v_user, v_user, 'Reading', v_root_path || 'reading'),
-        (v_trust, v_user, v_user, 'People',  v_root_path || 'people');
+    -- Insert child priorities under the auto-created root path. role_id is
+    -- required (priority_role_or_fyi CHECK); file them under the user's default
+    -- role (created by the activate_invited_user trigger above).
+    INSERT INTO priority (id, created_by, user_id, title, path, role_id) VALUES
+        (v_focus, v_user, v_user, 'Reading', v_root_path || 'reading', public.default_role_id(v_user)),
+        (v_trust, v_user, v_user, 'People',  v_root_path || 'people',  public.default_role_id(v_user));
     UPDATE priority SET facet_filters = '{"format":{"exclude":["notification"]}}'::jsonb WHERE id = v_focus;
     UPDATE priority SET facet_filters = '{"trustedSendersOnly":true}'::jsonb WHERE id = v_trust;
 

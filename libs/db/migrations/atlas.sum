@@ -1,4 +1,4 @@
-h1:zNKWBZzIHqf1rWQIiwCGxCccMxu8/0xVAGHjWf9TtpQ=
+h1:Hqgz5RAKrU033zYW0n4il8SCXmaDTXmaKo7hFEk2bqo=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -529,3 +529,4 @@ h1:zNKWBZzIHqf1rWQIiwCGxCccMxu8/0xVAGHjWf9TtpQ=
 20260614164918_add_priority_is_fyi.sql h1:YGTAQzjS3EfvE2x7uV/BbHoNKexDzsTfnLLvx77qHE4=
 20260614170023_backfill_fyi_focus.sql h1:jH+SoYyF/XpltUrcw0/It8HVWl9HrG+fTkKOMIRrOZA=
 20260614171107_activate_creates_fyi_focus.sql h1:pTUjc3khF3ETcrMhz7NQwdAmUkNBtZsZKmJgm3r73lU=
+20260614192642_require_role_or_fyi.sql h1:IuXf/S+YVEMAOEo+fHivjmppLEYWliSTiVkQft7vgjo=

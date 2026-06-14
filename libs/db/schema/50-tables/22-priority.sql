@@ -33,16 +33,16 @@ CREATE TABLE "public"."priority" (
     "config" jsonb,
     "facet_filters" jsonb,
     "description" text,
-    -- Role grouping (Plan: focus-roles). Nullable here; backfilled and set
-    -- NOT NULL in the contract migration once it has soaked.
+    -- Role grouping (Plan: focus-roles). Every focus belongs to a role except
+    -- the single global FYI focus; enforced by the priority_role_or_fyi CHECK
+    -- below. Kept nullable at the column level precisely so the FYI row
+    -- (role_id NULL, is_fyi TRUE) is allowed — a plain NOT NULL would reject it.
     "role_id" uuid REFERENCES public.role,
     -- Marks the role's single auto-managed Inbox focus. Partial-unique below.
     "is_inbox" boolean NOT NULL DEFAULT FALSE,
     -- Marks the user's single global FYI focus (low-signal mail). Role-less
-    -- (role_id IS NULL); partial-unique per user below. Server-managed.
-    -- Note: focus-roles' future contract should enforce `role_id NOT NULL` as
-    -- `CHECK (role_id IS NOT NULL OR is_fyi)` — not done here; would break
-    -- role-less focus-creation paths.
+    -- (role_id IS NULL); partial-unique per user below. Server-managed. This is
+    -- the only focus permitted to have a NULL role_id (see priority_role_or_fyi).
     "is_fyi" boolean NOT NULL DEFAULT FALSE,
     -- Concrete notification settings the focus follows from its role
     -- (see 95-triggers/30-role-propagation.sql). NULL = app default.
@@ -50,7 +50,13 @@ CREATE TABLE "public"."priority" (
     "notify_window" jsonb,
     "see_within" jsonb,
     "notification_cleared_at" timestamp with time zone,
-    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
+    -- Every focus must belong to a role, except the single global FYI focus
+    -- (intentionally role-less). focus-roles wires role_id into every creation
+    -- path, with default_role_id() as the fallback for paths that don't supply
+    -- one. This supersedes the once-planned `ALTER COLUMN role_id SET NOT NULL`
+    -- contract step, which would have rejected the FYI row (role_id NULL).
+    CONSTRAINT priority_role_or_fyi CHECK ("role_id" IS NOT NULL OR "is_fyi")
 );
 
 -- Per-user owner lookups

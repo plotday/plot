@@ -174,6 +174,10 @@ priority.post("/priority", async (c) => {
         title: title,
         path: childPath,
         updated_by: 0,
+        // This endpoint doesn't accept a role, so default the new focus to the
+        // user's default role: it groups under a role in the sidebar and
+        // satisfies the priority_role_or_fyi CHECK (role_id IS NOT NULL OR is_fyi).
+        role_id: sql<string>`public.default_role_id(${createdBy}::uuid)`,
       })
       .returningAll()
       .executeTakeFirstOrThrow();

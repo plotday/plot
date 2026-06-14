@@ -100,7 +100,13 @@ export async function createFocus(
 
   const result = await plot.db
     .insertInto("priority")
-    .values(dbPriority as any)
+    .values({
+      ...dbPriority,
+      // Twists don't know about roles, so default every twist-created focus to
+      // the user's default role. This groups it under a role in the sidebar and
+      // satisfies the priority_role_or_fyi CHECK (role_id IS NOT NULL OR is_fyi).
+      role_id: sql<string>`public.default_role_id(${parentResult.created_by}::uuid)`,
+    } as any)
     .returningAll()
     .executeTakeFirstOrThrow();
 

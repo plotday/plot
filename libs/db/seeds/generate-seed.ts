@@ -1592,8 +1592,12 @@ function generateSQL(
   // Priorities
   if (priorities.length > 0) {
     lines.push("-- Priorities");
+    // role_id defaults to the owner's default role (their oldest live role) so
+    // every seeded focus groups under a role and satisfies the
+    // priority_role_or_fyi CHECK (role_id IS NOT NULL OR is_fyi). Seeded users
+    // are pre-existing and activated, so default_role_id() is non-null.
     lines.push(
-      "INSERT INTO priority (id, created_by, title, icon, path, archived_at, created_at, updated_at)"
+      "INSERT INTO priority (id, created_by, title, icon, path, archived_at, role_id, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < priorities.length; i++) {
@@ -1604,7 +1608,7 @@ function generateSQL(
           p.title
         )}, ${sqlString(p.icon)}, ${sqlString(p.path)}, ${sqlString(
           p.archived_at
-        )}, NOW(), NOW())${comma}`
+        )}, public.default_role_id(${sqlString(p.created_by)}::uuid), NOW(), NOW())${comma}`
       );
     }
     lines.push("");

@@ -566,15 +566,12 @@ BEGIN
     -- role. Existing focuses keep their stored role (role change is modal-only
     -- and guarded by present-key semantics in the ON CONFLICT branch below).
     IF NOT _priority_exists THEN
-        -- Role: explicit from input (API >= 5), else the user's first role
-        -- (their Personal role). Every user has >= 1 role after backfill /
-        -- activation, so this is non-null for live focuses.
+        -- Role: explicit from input (API >= 5), else the user's default role
+        -- (their oldest live role — the Personal role). Every user has >= 1 role
+        -- after backfill / activation, so this is non-null for live focuses and
+        -- satisfies the priority_role_or_fyi CHECK.
         IF _input.role_id IS NULL THEN
-            SELECT id INTO _input.role_id
-            FROM public.role
-            WHERE user_id = upsert_priority.user_id AND archived_at IS NULL
-            ORDER BY created_at ASC
-            LIMIT 1;
+            _input.role_id := public.default_role_id (upsert_priority.user_id);
         END IF;
         -- Colour: the creator's chosen colour, else the role's colour, so a
         -- new focus starts out following its role.
