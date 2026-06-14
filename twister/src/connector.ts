@@ -195,8 +195,6 @@ export type OptionalScopeGroup = {
  */
 export type ScopeConfig = {
   required: string[];
-  /** Friendly bullets describing what the always-on (required) access does. */
-  description?: string[];
   optional?: OptionalScopeGroup[];
 };
 
@@ -260,6 +258,15 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   /** OAuth scopes to request for this connector — a flat list (all required), or
    *  a {@link ScopeConfig} declaring required + optional scope groups. */
   readonly scopes?: string[] | ScopeConfig;
+
+  /**
+   * Plain-language bullets describing what access connecting this service
+   * grants the user — shown on the connect screen regardless of auth mechanism
+   * (OAuth, API key, or hosted). For OAuth connectors it also previews what the
+   * provider's consent screen will request. These are justifications for what
+   * Plot accesses, not a one-to-one mapping of scope strings.
+   */
+  readonly access?: string[];
 
   // ---- Auth model ----
 
