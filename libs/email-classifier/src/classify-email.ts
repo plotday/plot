@@ -34,6 +34,14 @@ export type EmailSignals = {
   bodyLength: number;
   /** Gmail system category labels (e.g. ["CATEGORY_PROMOTIONS"]). */
   gmailCategories: string[];
+  /** Plain-text body for code-keyword scanning. Null if unavailable. */
+  bodyText: string | null;
+  /** Sender display name (e.g. "Acme Security"), for service-name derivation. Null if unavailable. */
+  fromName: string | null;
+  /** Anchor candidates from the HTML body: visible text → href. Empty if none. */
+  links: { text: string; href: string }[];
+  /** Raw Authentication-Results header value, for DMARC parsing. Null if unavailable. */
+  authResults: string | null;
 };
 
 // Recipient count at/above which a directly-addressed email is treated as a list.
