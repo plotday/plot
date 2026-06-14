@@ -7,6 +7,7 @@ import type {
 import { scoringStage } from "./ts-hybrid-scoring";
 import {
   channelDefault,
+  fyiFallback,
   keyedPriority,
   priorityPrefix,
   priorityTitleOverride,
@@ -51,6 +52,9 @@ export function makeHybridClassifier(
 
       const cd = await channelDefault(ctx, candidate.topic);
       if (cd) return done(cd, start);
+
+      const fyi = await fyiFallback(ctx, candidate);
+      if (fyi) return done(fyi, start);
 
       const score = await scoringStage(ctx, candidate, params);
       if (score.matched) {

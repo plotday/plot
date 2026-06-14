@@ -2530,7 +2530,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 370;
+  int get schemaVersion => 371;
 
   @override
   MigrationStrategy get migration {
@@ -3927,6 +3927,7 @@ class Store extends _$Store {
             priorities.notificationClearedAt,
             priorities.roleId,
             priorities.isInbox,
+            priorities.isFyi,
           ],
         ),
       );
@@ -4151,6 +4152,10 @@ class Store extends _$Store {
 
     if (from < 370) {
       await m.addColumn(notes, notes.cta);
+    }
+
+    if (from < 371) {
+      await _safeAddColumn(m, priorities, priorities.isFyi);
     }
   }
 

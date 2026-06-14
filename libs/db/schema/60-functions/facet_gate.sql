@@ -143,3 +143,31 @@ END;
 $function$;
 
 COMMENT ON FUNCTION public.thread_facets_gated IS 'True if a thread is excluded from a focus by facet filters. Bypassed for per-focus trusted senders; trustedSendersOnly admits trusted-for-focus or org-domain authors.';
+
+-- True when the author already has a LEARNED home in a real focus — i.e. the
+-- user has explicitly moved into, or composed into, a non-Inbox / non-FYI
+-- focus a thread this author participates in. The FYI stage yields when this
+-- holds, so scoring routes the thread to the learned focus instead of FYI.
+CREATE OR REPLACE FUNCTION public.author_has_real_focus_home (
+    p_user_id uuid,
+    p_author_id uuid
+)
+    RETURNS boolean
+    LANGUAGE sql
+    STABLE
+    AS $function$
+    SELECT p_author_id IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM public.thread_priority tp
+        JOIN public.thread t ON t.id = tp.thread_id
+        JOIN public.priority p ON p.id = tp.priority_id
+        WHERE tp.user_id = p_user_id
+          AND (tp.user_moved = TRUE OR t.created_by = p_user_id)
+          AND p_author_id = ANY(t.contacts)
+          AND p.is_inbox = FALSE
+          AND p.is_fyi = FALSE
+          AND p.archived_at IS NULL
+    );
+$function$;
+
+COMMENT ON FUNCTION public.author_has_real_focus_home IS 'True when the author has a learned home in a real (non-Inbox, non-FYI) focus — the user moved into or composed a thread this author participates in. The FYI stage yields to that learned focus.';

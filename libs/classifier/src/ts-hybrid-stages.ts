@@ -1,6 +1,26 @@
 import type { Candidate, ClassifierContext } from "./types";
 import { priorityTitleMatch } from "./ts-hybrid-signals";
 
+/**
+ * Facet `format` values considered "FYI-worthy": non-actionable, low-urgency
+ * mail. Tunable — the single dial for FYI breadth. Excludes `message`/`chat`
+ * (human collaboration → Inbox), `invoice` (pay-me), and `otp`/`confirm`
+ * (actionable, surfaced by their own toast). `notification` is the first
+ * member to narrow if FYI over-captures.
+ */
+export const FYI_FORMATS: ReadonlySet<string> = new Set([
+  "promotion",
+  "reading",
+  "receipt",
+  "notification",
+]);
+
+/** Pure: does this candidate's facet `format` qualify for FYI? Fails open on null. */
+export function isFyiFormat(facets: Record<string, string> | null): boolean {
+  const format = facets?.["format"];
+  return format != null && FYI_FORMATS.has(format);
+}
+
 export type StageResult =
   | { priorityId: string; stage: string; scores: Record<string, unknown> }
   | null;
@@ -262,5 +282,49 @@ export async function roleInboxFallback(
     priorityId: row.priority_id,
     stage: "role_inbox_fallback",
     scores: { role_id: row.role_id, affinity: row.n },
+  };
+}
+
+/**
+ * FYI stage. Low-signal mail (by facet format) routes to the user's single
+ * global FYI focus — beating soft scoring and the role-Inbox fallback — UNLESS
+ * the sender already has a learned home in a real (non-Inbox, non-FYI) focus,
+ * in which case we yield so scoring routes it there. Fails open (null) when the
+ * format doesn't qualify or the user somehow has no FYI focus.
+ */
+export async function fyiFallback(
+  ctx: ClassifierContext,
+  candidate: Candidate
+): Promise<StageResult> {
+  if (!isFyiFormat(candidate.facets)) return null;
+
+  // Yield to explicit user training: if the sender already has a learned home
+  // in a real focus, let scoring route the thread there instead of FYI.
+  if (candidate.authorContactId !== null) {
+    const trained = await ctx.rawQuery(
+      `SELECT public.author_has_real_focus_home($1::uuid, $2::uuid) AS trained`,
+      [ctx.userId, candidate.authorContactId]
+    );
+    const trainedRow = trained.rows[0] as { trained: boolean } | undefined;
+    if (trainedRow?.trained) return null;
+  }
+
+  // Resolve the user's single global FYI focus.
+  const res = await ctx.rawQuery(
+    `SELECT p.id
+       FROM public.priority p
+      WHERE p.user_id = $1::uuid
+        AND p.is_fyi = TRUE
+        AND p.archived_at IS NULL
+      LIMIT 1`,
+    [ctx.userId]
+  );
+  const fyi = res.rows[0] as { id: string } | undefined;
+  if (!fyi?.id) return null;
+
+  return {
+    priorityId: fyi.id,
+    stage: "fyi_fallback",
+    scores: { format: candidate.facets?.["format"] ?? null },
   };
 }

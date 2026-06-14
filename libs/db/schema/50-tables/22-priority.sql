@@ -38,6 +38,12 @@ CREATE TABLE "public"."priority" (
     "role_id" uuid REFERENCES public.role,
     -- Marks the role's single auto-managed Inbox focus. Partial-unique below.
     "is_inbox" boolean NOT NULL DEFAULT FALSE,
+    -- Marks the user's single global FYI focus (low-signal mail). Role-less
+    -- (role_id IS NULL); partial-unique per user below. Server-managed.
+    -- Note: focus-roles' future contract should enforce `role_id NOT NULL` as
+    -- `CHECK (role_id IS NOT NULL OR is_fyi)` — not done here; would break
+    -- role-less focus-creation paths.
+    "is_fyi" boolean NOT NULL DEFAULT FALSE,
     -- Concrete notification settings the focus follows from its role
     -- (see 95-triggers/30-role-propagation.sql). NULL = app default.
     "early_notifications_enabled" boolean,
@@ -63,6 +69,12 @@ CREATE INDEX idx_priority_seq ON "public"."priority" ("seq");
 CREATE UNIQUE INDEX idx_priority_role_inbox ON "public"."priority" ("role_id")
 WHERE
     "is_inbox" AND "archived_at" IS NULL;
+
+-- At most one live FYI focus per user. Keyed on user_id (not role_id) because
+-- the FYI focus is role-less, so role_id is NULL and can't be the unique key.
+CREATE UNIQUE INDEX idx_priority_user_fyi ON "public"."priority" ("user_id")
+WHERE
+    "is_fyi" AND "archived_at" IS NULL;
 
 -- Role membership lookups.
 CREATE INDEX idx_priority_role_id ON "public"."priority" ("role_id");

@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
@@ -33,6 +34,12 @@ class PrioritiesList extends StatelessWidget {
   final Priority root;
   final Priority? selected;
 
+  /// The single, role-less global "FYI" focus, if it exists. Rendered as a
+  /// fixed row just above "Everything" (outside the role accordion), with a
+  /// subtle unread dot but never bold. Excluded from [focuses] so it never
+  /// appears in the flat/accordion list. Null when the user has no FYI focus.
+  final Priority? fyi;
+
   /// The user's live roles, already sorted for the sidebar (see
   /// [PrioritiesState.sortedRoles]). With <= 1 role the list renders flat.
   final List<Role> roles;
@@ -61,8 +68,12 @@ class PrioritiesList extends StatelessWidget {
     // roots would make it vanish for backfilled users. The non-inbox root (if
     // any survives pre-backfill) is still dropped — the Everything tile covers
     // it.
-  }) : focuses = (priorities.where((p) => !p.root || p.isInbox).toList()
-         ..sort(_byOrder));
+  }) : focuses =
+           (priorities.where((p) => (!p.root || p.isInbox) && !p.isFyi).toList()
+             ..sort(_byOrder)),
+       fyi = priorities
+           .where((p) => p.isFyi && p.archivedAt == null)
+           .firstOrNull;
 
   /// Sidebar focus ordering: the (per-role) Inbox last, then by [Order], then
   /// creation time. Shared by the flat list and each role's inner list so both
@@ -249,6 +260,23 @@ class PrioritiesList extends StatelessWidget {
                     ),
                   ),
                 addFocusTile,
+                // The global, role-less FYI focus — a fixed row just above
+                // "Everything", outside the accordion/reorderable list. Carries
+                // a subtle unread dot but never bolds (active: false), and the
+                // app badge / global unread indicator excludes it (Task 5.2).
+                if (fyi != null)
+                  FixedFocusTile(
+                    title: 'FYI',
+                    icon: PlotIcon.bullhorn,
+                    isSelected: !everything && selected?.id == fyi!.id,
+                    command: ChangeCurrentPriority(fyi!),
+                    menuCommand: null,
+                    hasUnread: fyi!.unread,
+                    active: false,
+                    borderRadius: itemBorderRadius,
+                    textStyle: itemStyle,
+                    monochrome: monochrome,
+                  ),
                 everythingTile,
                 SizedBox(height: context.theme.spacing.md),
               ],

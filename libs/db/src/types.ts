@@ -1276,6 +1276,7 @@ export type Database = {
           icon: string | null
           id: string
           inherit_members: boolean
+          is_fyi: boolean
           is_inbox: boolean
           key: string | null
           notification_cleared_at: string | null
@@ -1303,6 +1304,7 @@ export type Database = {
           icon?: string | null
           id?: string
           inherit_members?: boolean
+          is_fyi?: boolean
           is_inbox?: boolean
           key?: string | null
           notification_cleared_at?: string | null
@@ -1330,6 +1332,7 @@ export type Database = {
           icon?: string | null
           id?: string
           inherit_members?: boolean
+          is_fyi?: boolean
           is_inbox?: boolean
           key?: string | null
           notification_cleared_at?: string | null
@@ -4886,6 +4889,10 @@ export type Database = {
         Args: { p_contact_ids: string[] }
         Returns: undefined
       }
+      author_has_real_focus_home: {
+        Args: { p_author_id: string; p_user_id: string }
+        Returns: boolean
+      }
       author_matches_org_domain: {
         Args: { p_author_id: string; p_user_id: string }
         Returns: boolean
@@ -5767,6 +5774,7 @@ export type Database = {
           icon: string | null
           id: string | null
           inherit_members: boolean | null
+          is_fyi: boolean | null
           is_inbox: boolean | null
           key: string | null
           notification_cleared_at: string | null
@@ -6799,6 +6807,7 @@ export type Database = {
           icon: string | null
           id: string | null
           inherit_members: boolean | null
+          is_fyi: boolean | null
           is_inbox: boolean | null
           key: string | null
           notification_cleared_at: string | null

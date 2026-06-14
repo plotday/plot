@@ -87,6 +87,11 @@ you, so newsletters, receipts, and cold outreach never interrupt the conversatio
   an unread indicator or send a notification.
 - Low-importance material (promotions, unsolicited pitches, cold outreach) is kept available but
   never pings you, never lands in a digest, and never lights up a focus.
+- A global **FYI** focus, just above Everything, gathers this low-signal mail — promotions,
+  newsletters and long reads, receipts, and routine notifications — so the Inbox stays human
+  collaboration. It's muted by default (no notifications, no unread count) for skimming on your own
+  schedule, and moving anything out teaches Plot to route similar messages elsewhere. Actionable
+  items (bills to pay, one-time codes, confirm links) are deliberately kept out.
 - Truly time-sensitive threads are flagged urgent and notify you right away — even outside your
   normal notification hours.
 - You stay in control: drag a thread to reclassify it, and Plot honors the correction.

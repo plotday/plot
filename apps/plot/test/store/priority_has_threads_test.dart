@@ -13,6 +13,7 @@ PriorityRow _row({DateTime? archivedAt}) => PriorityRow(
       unread: false,
       role: 'member',
       isInbox: false,
+      isFyi: false,
       archivedAt: archivedAt,
       attentionWindowSet: false,
       seeWithinSet: false,

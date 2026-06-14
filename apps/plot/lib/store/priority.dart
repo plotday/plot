@@ -77,6 +77,10 @@ class Priorities extends Table
   /// Marks the role's auto-managed Inbox focus (server-managed; the client
   /// never sets it). The classifier's per-role catch-all.
   BoolColumn get isInbox => boolean().withDefault(const Constant(false))();
+
+  /// Marks the user's single global FYI focus (server-managed; the client
+  /// never sets it). Low-signal mail; renders just above "Everything".
+  BoolColumn get isFyi => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -176,6 +180,7 @@ class PrioritiesBase extends BaseTable {
     // kept in the body so a modal-driven role change persists and fires the
     // server's role-propagation triggers.
     json.remove('is_inbox');
+    json.remove('is_fyi');
     return json;
   }
 }
@@ -1037,6 +1042,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          role: parent.role,
          roleId: parent.roleId,
          isInbox: false,
+         isFyi: false,
          attentionWindowSet: false,
          seeWithinSet: false,
          earlyNotificationsEnabledSet: false,
@@ -1119,6 +1125,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          notificationClearedAt: row.notificationClearedAt,
          roleId: row.roleId,
          isInbox: row.isInbox,
+         isFyi: row.isFyi,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -1343,6 +1350,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<DateTime?> notificationClearedAt = const Value.absent(),
     Value<Uuid?> roleId = const Value.absent(),
     bool? isInbox,
+    bool? isFyi,
   }) {
     final newDraft = draft ?? this.draft;
     final currentParent = parent ?? this.parent;
@@ -1388,6 +1396,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         notificationClearedAt: notificationClearedAt,
         roleId: roleId,
         isInbox: isInbox,
+        isFyi: isFyi,
       ),
       parent: currentParent,
       children: children,

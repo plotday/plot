@@ -92,6 +92,8 @@ notificationContent.get("/notification-content", async (c) => {
           OR t.groups && "user".user_group_ids(${userId}::uuid)
         )
         AND COALESCE(t.facets ->> 'format', '') NOT IN ('notification', 'promotion')
+        -- FYI is a muted focus — never summarize or stamp its watermark.
+        AND focus.is_fyi = FALSE
       ORDER BY tu.urgent DESC, tu.importance DESC
     `.execute(db);
 

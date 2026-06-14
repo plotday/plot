@@ -37,4 +37,21 @@ describe("projectPriority", () => {
     expect(out.title).toBe("Marketing");
     expect("flat_title" in out).toBe(false);
   });
+
+  it("emits is_fyi for v5+ clients", () => {
+    const out = projectPriority(
+      { id: "f", root: false, title: "FYI", is_fyi: true },
+      5,
+    );
+    expect(out.is_fyi).toBe(true);
+  });
+
+  it("strips is_fyi for pre-v5 clients (degrades to an ordinary focus)", () => {
+    const out = projectPriority(
+      { id: "f", root: false, title: "FYI", is_fyi: true },
+      4,
+    );
+    expect("is_fyi" in out).toBe(false);
+    expect(out.title).toBe("FYI");
+  });
 });

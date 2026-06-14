@@ -824,6 +824,12 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       final firstLevel = _firstLevelFocusFor(priority);
       if (firstLevel == null) continue;
 
+      // The FYI focus is low-priority informational material: its push is
+      // muted server-side, and it never contributes to the app's local
+      // notifications / badge either (Task 5.2). Its unread still shows on
+      // the FYI sidebar row.
+      if (firstLevel.isFyi) continue;
+
       // Filter out stale threads already cleared at the focus level. The
       // high-water mark lives on the first-level focus (matching how the
       // server stamps it and how opening a focus clears it), so read it from

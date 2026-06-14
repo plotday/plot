@@ -565,8 +565,14 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         return FBottomNavigationBarItem(
           icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
             builder: (context, state) {
+              // The global Focus-tab unread dot excludes the FYI focus: FYI
+              // is low-priority informational material and never contributes
+              // to the app's global unread indicator (Task 5.2). Its own
+              // sidebar row keeps a subtle per-row dot.
               final hasUnread = state.priorities.any(
-                (p) => p.unread || p.descendants().any((d) => d.unread),
+                (p) =>
+                    !p.isFyi &&
+                    (p.unread || p.descendants().any((d) => d.unread)),
               );
 
               return Stack(

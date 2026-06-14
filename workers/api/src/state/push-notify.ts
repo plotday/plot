@@ -110,6 +110,8 @@ export class PushNotify extends DurableObject<Bindings> {
               focus.notification_cleared_at IS NULL
               OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
             )
+            -- FYI is a muted, low-signal focus — never wake the client for it.
+            AND focus.is_fyi = FALSE
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${userId}::uuid)
             AND (
@@ -252,6 +254,8 @@ export class PushNotify extends DurableObject<Bindings> {
               focus.notification_cleared_at IS NULL
               OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
             )
+            -- FYI is a muted, low-signal focus — never wake the client for it.
+            AND focus.is_fyi = FALSE
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
             AND (

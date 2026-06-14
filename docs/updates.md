@@ -48,6 +48,11 @@
 
 ### Focuses
 
+- Low-signal mail now gathers in a new **FYI** focus, sitting just above Everything. Promotions,
+  newsletters and long reads, receipts, and routine notifications land there automatically — so your
+  Inbox stays focused on messages from people. FYI is quiet by default: it doesn't notify you and
+  never lights up the unread count, so you can skim it whenever you like. Move anything out into
+  another focus and Plot learns to send similar messages there from then on.
 - New to Plot? Setup now asks where you want to use Plot first — Work, Personal, Volunteering,
   School, or Other — and names your first role from your answer (tell it where you work, and that
   becomes the role's name). You can add more roles later.

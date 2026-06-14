@@ -32,8 +32,12 @@ export function projectPriority(row: any, apiVersion: number) {
   // Defensive: tolerate a stale view that still carries flat_title during a
   // deploy window — strip it so it never reaches the client as data.
   const { flat_title: _flat, ...rest } = row;
-  if (apiVersion < 4) {
-    return rest;
+  if (apiVersion < 5) {
+    // is_fyi is a v5 concept; pre-v5 clients don't model the column, so strip
+    // it and let the FYI focus appear as an ordinary focus.
+    const { is_fyi: _fyi, ...preV5 } = rest;
+    if (apiVersion < 4) return preV5;
+    return { ...preV5, title: row.root ? "Inbox" : row.title };
   }
   return { ...rest, title: row.root ? "Inbox" : row.title };
 }

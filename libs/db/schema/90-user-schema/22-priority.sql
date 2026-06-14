@@ -103,7 +103,8 @@ SELECT
     p.icon,
     p.notification_cleared_at,
     p.role_id,
-    p.is_inbox
+    p.is_inbox,
+    p.is_fyi
 FROM priority p
     LEFT JOIN user_root ur ON ur.user_id = p.user_id
     LEFT JOIN direct_settings direct ON direct.user_id = p.user_id AND direct.priority_id = p.id
