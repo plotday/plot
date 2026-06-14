@@ -3,6 +3,7 @@ import {
   profileToContact,
   joinParticipantNames,
   pickDesiredReaction,
+  reconcilePerUserReaction,
   buildReactionsFromMessage,
   buildNoteFromMessage,
   assembleConversationLink,
@@ -170,5 +171,32 @@ describe("assembleGroupLink", () => {
     expect(dflt.type).toBe("group");
     const linkedin = assembleGroupLink({ provider: "linkedin", channelId: "acc1", chat: groupChat, messages, initialSync: true, type: "conversation" });
     expect(linkedin.type).toBe("conversation");
+  });
+});
+
+describe("reconcilePerUserReaction", () => {
+  test("sets a newly added emoji when none was pushed", () => {
+    expect(reconcilePerUserReaction(null, "👍", true)).toEqual({ action: "set", emoji: "👍" });
+  });
+  test("replaces the previously pushed emoji when a different one is added", () => {
+    expect(reconcilePerUserReaction("👍", "❤️", true)).toEqual({ action: "set", emoji: "❤️" });
+  });
+  test("no-ops when the added emoji is already the pushed one", () => {
+    expect(reconcilePerUserReaction("👍", "👍", true)).toEqual({ action: "none" });
+  });
+  test("clears when the removed emoji is the one currently pushed", () => {
+    expect(reconcilePerUserReaction("👍", "👍", false)).toEqual({ action: "clear" });
+  });
+  test("no-ops when removing an emoji that is not the one currently pushed", () => {
+    expect(reconcilePerUserReaction("❤️", "👍", false)).toEqual({ action: "none" });
+  });
+  test("no-ops when removing while nothing is pushed", () => {
+    expect(reconcilePerUserReaction(null, "👍", false)).toEqual({ action: "none" });
+  });
+  test("no-ops when adding an emoji outside the allowed set (fixed-set platforms)", () => {
+    expect(reconcilePerUserReaction(null, "🎉", true, ["👍", "❤️"])).toEqual({ action: "none" });
+  });
+  test("sets an allowed emoji on a fixed-set platform", () => {
+    expect(reconcilePerUserReaction(null, "❤️", true, ["👍", "❤️"])).toEqual({ action: "set", emoji: "❤️" });
   });
 });

@@ -64,6 +64,40 @@ export function pickDesiredReaction(
   return null;
 }
 
+/**
+ * The single outbound action for a one-reaction-per-user platform (LinkedIn,
+ * Instagram, WhatsApp via Unipile — each member holds at most one reaction per
+ * message). `lastSent` is the emoji this connector last pushed for THIS user on
+ * THIS message (tracked in per-user connector state); `(emoji, added)` is the
+ * incoming transition from `onNoteReactionChanged`. `allowed` (fixed-set
+ * platforms like LinkedIn) filters emoji the platform can't represent.
+ *
+ * Limitation: because the reaction dispatch does not carry the full
+ * `note.reactions` map, a single user who stacks multiple emoji on one message
+ * is reconciled to last-write-wins; removing the last-pushed emoji clears the
+ * user's platform reaction even if another Plot emoji of theirs remains. Plot
+ * retains all reactions; the external platform is inherently one-per-user.
+ */
+export type ReactionWriteback =
+  | { action: "set"; emoji: string }
+  | { action: "clear" }
+  | { action: "none" };
+
+export function reconcilePerUserReaction(
+  lastSent: string | null,
+  emoji: string,
+  added: boolean,
+  allowed?: readonly string[]
+): ReactionWriteback {
+  if (added) {
+    if (allowed && !allowed.includes(emoji)) return { action: "none" };
+    if (lastSent === emoji) return { action: "none" };
+    return { action: "set", emoji };
+  }
+  if (lastSent === emoji) return { action: "clear" };
+  return { action: "none" };
+}
+
 export function buildReactionsFromMessage(
   msg: ChatMessage,
   chat: ChatThread,

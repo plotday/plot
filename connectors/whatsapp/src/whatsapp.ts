@@ -22,7 +22,7 @@ import { Tasks } from "@plotday/twister/tools/tasks";
 import {
   backfillChats,
   buildLinkForChat,
-  pickDesiredReaction,
+  reconcilePerUserReaction,
   WhatsAppMessaging,
 } from "@plotday/unipile";
 
@@ -258,15 +258,19 @@ export class WhatsApp extends Connector<WhatsApp> {
   }
 
   /**
-   * Push reaction changes back to WhatsApp. WhatsApp supports open-unicode
-   * reactions so we pick the first emoji that has any reactor in Plot (sorted
-   * for determinism). The last reaction pushed is tracked in connector state
-   * so we only call WhatsApp when the desired value actually changes.
+   * Pushes a single emoji add/remove back to WhatsApp, attributed to the
+   * reacting user (dispatched on their own connector instance via
+   * `twist_instance_for_actor`). WhatsApp allows one open-unicode reaction per
+   * user per message; we track the last-pushed emoji per user/message in
+   * `reaction_sent:${messageId}` and reconcile via `reconcilePerUserReaction`.
    */
-  override async onNoteUpdated(
+  override async onNoteReactionChanged(
     note: Note,
-    thread: Thread
-  ): Promise<NoteWriteBackResult | void> {
+    thread: Thread,
+    _actor: Actor,
+    emoji: string,
+    added: boolean
+  ): Promise<void> {
     const meta = (thread.meta ?? {}) as Record<string, unknown>;
     const channelId = meta.channelId as string | undefined;
     if (!channelId) return;
@@ -274,25 +278,21 @@ export class WhatsApp extends Connector<WhatsApp> {
     const messageId = note.key.slice("message-".length);
     if (!messageId) return;
 
-    // Open-unicode: no `allowed` arg — any emoji is acceptable.
-    const desired = pickDesiredReaction(note.reactions ?? {});
     const stateKey = `reaction_sent:${messageId}`;
     const lastSent = (await this.get<string>(stateKey)) ?? null;
-    if (desired === lastSent) return;
+    const decision = reconcilePerUserReaction(lastSent, emoji, added);
+    if (decision.action === "none") return;
 
     try {
-      if (desired) {
+      if (decision.action === "set") {
         await this.tools.whatsapp.setMessageReaction({
           channelId,
           messageId,
-          reaction: desired,
+          reaction: decision.emoji,
         });
-        await this.set(stateKey, desired);
+        await this.set(stateKey, decision.emoji);
       } else {
-        await this.tools.whatsapp.clearMessageReaction({
-          channelId,
-          messageId,
-        });
+        await this.tools.whatsapp.clearMessageReaction({ channelId, messageId });
         await this.clear(stateKey);
       }
     } catch (error) {

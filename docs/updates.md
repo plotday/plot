@@ -1,5 +1,13 @@
 ## Next release
 
+### Reactions
+
+- Emoji reactions you add to messages from Microsoft Teams, Google Chat, LinkedIn, Instagram, and
+  WhatsApp now sync back to the original conversation, posted as you — so the people you're chatting
+  with see your reaction where the message lives, not just inside Plot. Each person's reaction is
+  attributed to their own account, and removing a reaction in Plot takes it down on the other side
+  too.
+
 ### Codes & confirmations
 
 - When a one-time verification code or a "confirm your account" email arrives, Plot now pops up a

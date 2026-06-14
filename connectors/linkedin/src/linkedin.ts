@@ -33,8 +33,8 @@ import {
   buildLinkForChat,
   type LinkedInInvitation,
   LinkedInMessaging,
-  pickDesiredReaction,
   profileToContact,
+  reconcilePerUserReaction,
 } from "@plotday/unipile";
 
 // LinkedIn has a single composable link type: `conversation` covers 1:1 AND
@@ -490,29 +490,24 @@ export class LinkedIn extends Connector<LinkedIn> {
   }
 
   /**
-   * Push reaction changes back to LinkedIn. Content edits are not
-   * supported by Unipile for LinkedIn messages, so this only reconciles
-   * reactions.
+   * Pushes a single emoji add/remove the user made in Plot back to LinkedIn,
+   * attributed to that user (dispatched on their own connector instance via
+   * `twist_instance_for_actor`, so the Unipile call runs under their account).
    *
-   * LinkedIn allows each member at most one reaction per message, while
-   * Plot's model is multi-emoji × multi-reactor. The connector resolves
-   * the mismatch by picking exactly one emoji to push as the connected
-   * account's reaction (deterministic — first allowed emoji that has any
-   * reactor in Plot, in the order declared by `LINKEDIN_REACTIONS`).
-   * That matches the Slack v1 pattern of acting as the connected user for
-   * every diff; per-actor `actAs()` write-back can follow once Plot
-   * exposes the relevant hook.
-   *
-   * The last reaction this connector pushed for each message is tracked
-   * in connector state so we only call LinkedIn when the desired value
-   * actually changes. If the user clears the reaction in Plot we attempt
-   * a removal (best effort — `LinkedInMessaging.clearMessageReaction`
-   * swallows `404/405`).
+   * LinkedIn allows each member at most one reaction per message and only the
+   * seven `LINKEDIN_REACTIONS`. We track the emoji we last pushed for this
+   * user/message in connector state (`reaction_sent:${messageId}`, which is
+   * per-user since this runs on the user's instance) and reconcile via
+   * `reconcilePerUserReaction`. Removal is best effort —
+   * `LinkedInMessaging.clearMessageReaction` swallows `404/405`.
    */
-  override async onNoteUpdated(
+  override async onNoteReactionChanged(
     note: Note,
-    thread: Thread
-  ): Promise<NoteWriteBackResult | void> {
+    thread: Thread,
+    _actor: Actor,
+    emoji: string,
+    added: boolean
+  ): Promise<void> {
     const meta = (thread.meta ?? {}) as Record<string, unknown>;
     const channelId = meta.channelId as string | undefined;
     if (!channelId) return;
@@ -520,24 +515,21 @@ export class LinkedIn extends Connector<LinkedIn> {
     const messageId = note.key.slice("message-".length);
     if (!messageId) return;
 
-    const desired = pickDesiredReaction(note.reactions ?? {}, LINKEDIN_REACTIONS);
     const stateKey = `reaction_sent:${messageId}`;
     const lastSent = (await this.get<string>(stateKey)) ?? null;
-    if (desired === lastSent) return;
+    const decision = reconcilePerUserReaction(lastSent, emoji, added, LINKEDIN_REACTIONS);
+    if (decision.action === "none") return;
 
     try {
-      if (desired) {
+      if (decision.action === "set") {
         await this.tools.linkedin.setMessageReaction({
           channelId,
           messageId,
-          reaction: desired,
+          reaction: decision.emoji,
         });
-        await this.set(stateKey, desired);
+        await this.set(stateKey, decision.emoji);
       } else {
-        await this.tools.linkedin.clearMessageReaction({
-          channelId,
-          messageId,
-        });
+        await this.tools.linkedin.clearMessageReaction({ channelId, messageId });
         await this.clear(stateKey);
       }
     } catch (error) {
