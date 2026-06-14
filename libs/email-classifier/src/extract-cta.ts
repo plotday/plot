@@ -34,7 +34,11 @@ function titleCase(s: string): string {
 }
 
 function serviceName(s: EmailSignals): string {
-  const name = (s.fromName ?? "").replace(SERVICE_NOISE, " ").replace(/\s+/g, " ").trim();
+  const name = (s.fromName ?? "")
+    .replace(SERVICE_NOISE, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
   if (name) return name;
   const reg = registrableDomain(domainOfAddress(s.fromAddress));
   if (reg) return titleCase(reg.split(".")[0]);
@@ -44,7 +48,9 @@ function serviceName(s: EmailSignals): string {
 // ---- OTP code --------------------------------------------------------------
 const CODE_KEYWORD =
   /(one[\s-]?time|verification|security|confirmation|access|login|sign[\s-]?in|auth(entication)?|2fa|two[\s-]?factor|otp|passcode|pass\s?code|pin|code)/i;
-const CODE_TOKEN = /\b([A-Z]{0,4}-?\d{3,8}|\d{4,8})\b/;
+// Alphanumeric (e.g. "G-557812", "ABZ419") OR a 4–8 digit numeric code.
+// Numeric-only requires ≥4 digits to avoid matching short incidental numbers.
+const CODE_TOKEN = /\b([A-Z]{1,4}-\d{3,8}|[A-Z]{1,4}\d{3,8}|\d{4,8})\b/;
 
 function looksLikeYear(t: string): boolean {
   return /^\d{4}$/.test(t) && Number(t) >= 1900 && Number(t) <= 2100;
@@ -77,10 +83,14 @@ function extractOtp(s: EmailSignals): string | null {
 // Outlook connector tasks for trusted-header selection.
 function dmarcVerifiedDomain(authResults: string | null): string | null {
   if (!authResults) return null;
+  // NOTE: header.from is normally a bare domain (RFC 7489 §6.6.1), but some
+  // MTAs emit the full mailbox form (user@domain) — strip the localpart.
   const m = authResults.match(
-    /dmarc\s*=\s*pass\b[^;]*?header\.from\s*=\s*"?([a-z0-9.-]+)"?/i
+    /dmarc\s*=\s*pass\b[^;]*?header\.from\s*=\s*"?([a-z0-9.@-]+)"?/i
   );
-  return m ? registrableDomain(m[1]) : null;
+  if (!m) return null;
+  const raw = m[1].includes("@") ? m[1].split("@")[1] : m[1];
+  return registrableDomain(raw);
 }
 
 function httpHost(href: string): string | null {

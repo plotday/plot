@@ -120,6 +120,14 @@ describe("extractCta — confirm link", () => {
     }))).toBeNull();
   });
 
+  it("SKIPS a userinfo-spoofed link (https://sender.com@evil.com/...)", () => {
+    expect(extractCta(signals({
+      fromAddress: "hello@acme.com", subject: "Confirm",
+      authResults: dmarcPass, // header.from=acme.com
+      links: [{ text: "Confirm email", href: "https://acme.com@evil.example/confirm" }],
+    }))).toBeNull();
+  });
+
   it("ALLOWS a confirm link on a subdomain of the verified sender domain", () => {
     const cta = extractCta(signals({
       fromAddress: "hello@acme.com", fromName: "Acme", subject: "Confirm your email",
