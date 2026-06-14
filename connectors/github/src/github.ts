@@ -120,6 +120,11 @@ export class GitHub extends Connector<GitHub> {
   readonly provider = AuthProvider.GitHub;
   readonly channelNoun = { singular: "repository", plural: "repositories" };
   readonly scopes = GitHub.SCOPES;
+  readonly access = [
+    "Reads your repositories' issues and pull requests",
+    "Posts comments and updates you make in Plot",
+    "Keeps Plot up to date as issues and pull requests change in GitHub",
+  ];
   readonly linkTypes = [
     {
       type: "pull_request",

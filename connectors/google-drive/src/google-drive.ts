@@ -133,6 +133,11 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   readonly channelNoun = { singular: "folder", plural: "folders" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Integrations.MergeScopes(GoogleDrive.SCOPES, GoogleContacts.SCOPES);
+  readonly access = [
+    "Reads your files to bring documents into Plot",
+    "Adds the comments and replies you write in Plot. Google has no comments-only permission, so Plot must request full Drive access — but commenting is the only change it makes",
+    "Reads your contacts to show who shared or commented",
+  ];
   readonly linkTypes = [
     { type: "doc", label: "Document", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googledocs.svg?color=%234285F4", logoMono: "https://api.iconify.design/simple-icons/googledocs.svg" },
     { type: "sheet", label: "Spreadsheet", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%2334A853", logoMono: "https://api.iconify.design/simple-icons/googlesheets.svg" },

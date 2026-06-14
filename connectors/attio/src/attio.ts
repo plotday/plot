@@ -60,6 +60,10 @@ type SyncState = {
 export class Attio extends Connector<Attio> {
   static readonly handleReplies = true;
   readonly singleChannel = true;
+  readonly access = [
+    "Reads your records — people, companies, and deals",
+    "Updates records and adds notes you make in Plot",
+  ];
 
   /** Record types synced under the single channel. */
   private static readonly ENTITY_TYPES = ["deals", "people", "companies"] as const;

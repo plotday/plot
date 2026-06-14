@@ -53,6 +53,11 @@ export class Asana extends Connector<Asana> {
   readonly channelNoun = { singular: "project", plural: "projects" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Asana.SCOPES;
+  readonly access = [
+    "Reads your tasks, projects, and comments",
+    "Creates and updates tasks and posts comments you make in Plot",
+    "Keeps Plot up to date as tasks change in Asana",
+  ];
   readonly linkTypes = [
     {
       type: "task",

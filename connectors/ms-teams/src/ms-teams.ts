@@ -64,6 +64,11 @@ export class MsTeams extends Connector<MsTeams> {
 
   readonly provider = AuthProvider.Microsoft;
   readonly scopes = MsTeams.SCOPES;
+  readonly access = [
+    "Reads your Teams channels and chats to bring conversations into Plot",
+    "Sends messages and replies you write in Plot, and can start new chats",
+    "Reads your team and user profiles to show who's who",
+  ];
   // Teams Graph API accepts both legacy enum reaction types (like,
   // heart, laugh, surprised, sad, angry) and Unicode emoji directly.
   // Teams allows only one reaction per user per message; bidirectional

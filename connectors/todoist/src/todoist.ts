@@ -61,6 +61,10 @@ export class Todoist extends Connector<Todoist> {
   readonly channelNoun = { singular: "project", plural: "projects" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Todoist.SCOPES;
+  readonly access = [
+    "Reads and updates your tasks and projects so they stay in sync with Plot",
+    "Creates and completes tasks you change in Plot",
+  ];
   readonly linkTypes = [
     {
       type: "task",

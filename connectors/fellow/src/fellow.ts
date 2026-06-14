@@ -38,6 +38,9 @@ export class Fellow extends Connector<Fellow> {
   // No provider or scopes — uses API key auth via Options
 
   readonly singleChannel = true;
+  readonly access = [
+    "Reads your meeting notes to attach them to the right events in Plot",
+  ];
 
   build(build: ToolBuilder) {
     return {

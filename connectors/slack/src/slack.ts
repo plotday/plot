@@ -121,6 +121,11 @@ export class Slack extends Connector<Slack> {
     customEmoji: "workspace" as const,
   };
   readonly scopes = Slack.SCOPES;
+  readonly access = [
+    "Reads messages in the channels and DMs you sync",
+    "Sends messages and replies you write in Plot",
+    "Adds and removes emoji reactions you make in Plot",
+  ];
   readonly linkTypes = [
     {
       type: "thread",

@@ -63,6 +63,10 @@ export class GoogleTasks extends Connector<GoogleTasks> {
   readonly channelNoun = { singular: "list", plural: "lists" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = GoogleTasks.SCOPES;
+  readonly access = [
+    "Reads and updates your Google Tasks so they stay in sync with Plot",
+    "Creates and completes tasks you change in Plot",
+  ];
   readonly linkTypes = [
     {
       type: "task",

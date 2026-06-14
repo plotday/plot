@@ -157,10 +157,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   readonly channelNoun = { singular: "calendar", plural: "calendars" };
   readonly scopes = {
     required: [GoogleCalendar.EVENTS_SCOPE],
-    description: [
-      "Reads your events to add them to your agenda",
-      "Writes your event RSVPs",
-    ],
     optional: [
       {
         id: "contacts",
@@ -178,6 +174,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       },
     ],
   };
+  readonly access = [
+    "Reads your events to add them to your agenda",
+    "Writes your event RSVPs",
+  ];
   readonly linkTypes = [
     {
       type: "event",

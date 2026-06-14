@@ -33,6 +33,9 @@ export class PostHog extends Connector<PostHog> {
   // No provider or scopes — uses API key auth via options
   readonly channelNoun = { singular: "event type", plural: "event types" };
   readonly autoEnableNewChannelsByDefault = true;
+  readonly access = [
+    "Reads the people from the project you connect",
+  ];
 
   build(build: ToolBuilder) {
     return {

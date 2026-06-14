@@ -200,6 +200,11 @@ export class Gmail extends Connector<Gmail> {
     Gmail.SCOPES,
     GOOGLE_PEOPLE_SCOPES,
   );
+  readonly access = [
+    "Reads your email so Plot can turn messages into threads and tasks",
+    "Sends replies, creates drafts, and updates labels and read state from Plot",
+    "Reads your contacts to recognise senders by name and photo",
+  ];
   readonly linkTypes = [
     {
       type: "email",

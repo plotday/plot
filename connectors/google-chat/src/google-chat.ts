@@ -93,6 +93,11 @@ export class GoogleChat extends Connector<GoogleChat> {
     GoogleChat.SCOPES,
     GoogleContacts.SCOPES
   );
+  readonly access = [
+    "Reads messages in the spaces you sync",
+    "Sends messages and replies you write in Plot, and can start new spaces",
+    "Reads your contacts to show who's in each conversation",
+  ];
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
     // Custom workspace emojis are skipped on sync-in and not yet pushed
