@@ -102,6 +102,11 @@ export class Airtable extends Connector<Airtable> {
   readonly channelNoun = { singular: "base", plural: "bases" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Airtable.SCOPES;
+  readonly access = [
+    "Reads your bases and their records",
+    "Updates records you change in Plot",
+    "Keeps Plot up to date as records change in Airtable",
+  ];
   readonly linkTypes = [
     {
       type: "task",

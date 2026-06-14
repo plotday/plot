@@ -44,6 +44,9 @@ type SyncState = {
  */
 export class Granola extends Connector<Granola> {
   readonly singleChannel = true;
+  readonly access = [
+    "Reads your meeting notes and transcripts to attach them to the right events in Plot",
+  ];
 
   build(build: ToolBuilder) {
     return {

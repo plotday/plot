@@ -94,6 +94,11 @@ export class Linear extends Connector<Linear> {
   readonly channelNoun = { singular: "team", plural: "teams" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Linear.SCOPES;
+  readonly access = [
+    "Reads your issues, projects, and comments",
+    "Creates and updates issues and posts comments you make in Plot",
+    "Keeps Plot up to date as issues change in Linear",
+  ];
   readonly linkTypes = [
     {
       type: "issue",

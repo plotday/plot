@@ -239,6 +239,11 @@ export class OutlookMail extends Connector<OutlookMail> {
     OutlookMail.SCOPES,
     OUTLOOK_PEOPLE_SCOPES
   );
+  readonly access = [
+    "Reads your email so Plot can turn messages into threads and tasks",
+    "Sends replies, creates drafts, and updates messages from Plot",
+    "Reads your contacts to recognise senders by name",
+  ];
   readonly linkTypes = [
     {
       type: "email",

@@ -157,6 +157,10 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   readonly channelNoun = { singular: "calendar", plural: "calendars" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = OutlookCalendar.SCOPES;
+  readonly access = [
+    "Reads your events to add them to your agenda",
+    "Writes your event RSVPs",
+  ];
   readonly linkTypes = [{ type: "event", label: "Event", sharingModel: "thread" as const, includesSchedules: true, logo: "https://api.iconify.design/logos/microsoft-icon.svg", logoDark: "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4", logoMono: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
 
   build(build: ToolBuilder) {

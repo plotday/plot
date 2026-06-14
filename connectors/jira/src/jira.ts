@@ -55,6 +55,11 @@ export class Jira extends Connector<Jira> {
   readonly channelNoun = { singular: "project", plural: "projects" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly scopes = Jira.SCOPES;
+  readonly access = [
+    "Reads your issues, projects, and users",
+    "Creates and updates issues and posts comments you make in Plot",
+    "Keeps Plot up to date as issues change in Jira",
+  ];
   readonly linkTypes = [
     {
       type: "issue",

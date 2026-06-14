@@ -106,6 +106,10 @@ export class AppleCalendar extends Connector<AppleCalendar> {
   ];
   readonly channelNoun = { singular: "calendar", plural: "calendars" };
   readonly autoEnableNewChannelsByDefault = true;
+  readonly access = [
+    "Reads your iCloud calendar events to add them to your agenda",
+    "Writes your event RSVPs",
+  ];
 
   // Lock TTL covering the worst-case full backfill. The framework releases
   // the lock automatically after this window even if a worker crashes, so
