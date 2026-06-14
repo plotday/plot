@@ -15,6 +15,10 @@ function signals(overrides: Partial<EmailSignals> = {}): EmailSignals {
     subject: "Hello",
     bodyLength: 300,
     gmailCategories: [],
+    bodyText: null,
+    fromName: null,
+    links: [],
+    authResults: null,
     ...overrides,
   };
 }
