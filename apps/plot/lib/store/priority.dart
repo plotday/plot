@@ -6,7 +6,11 @@ typedef PriorityId = Uuid;
 class Priorities extends Table
     with SyncableTable, UuidTable, CreatedTable, DeletableTable {
   TextColumn get title => text()();
-  TextColumn get path => text().map(const PathConverter())();
+  // Nullable so a future API that stops sending `path` to path-independent
+  // (apiVersion >= 5) clients can't crash `PriorityRow.fromJson`. The client
+  // no longer reads `path`; the server still synthesizes it on save during the
+  // expand phase. PathConverter still maps the value when present.
+  TextColumn get path => text().nullable().map(const PathConverter())();
   BlobColumn get createdBy => blob().map(const UuidConverter())();
   RealColumn get topOrder => real().nullable().map(const OrderConverter())();
   RealColumn get order => real()
@@ -64,6 +68,15 @@ class Priorities extends Table
   /// The high-water mark for notifications in this focus. Updated by the
   /// server when sending summaries, and by the client when opening the focus.
   DateTimeColumn get notificationClearedAt => dateTime().nullable()();
+
+  /// The role ([Roles]) this focus belongs to. Nullable for focuses synced
+  /// before the role model; the server backfills every focus, so it is
+  /// effectively always set once a fresh sync has run.
+  BlobColumn get roleId => blob().nullable().map(const UuidConverter())();
+
+  /// Marks the role's auto-managed Inbox focus (server-managed; the client
+  /// never sets it). The classifier's per-role catch-all.
+  BoolColumn get isInbox => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -158,6 +171,11 @@ class PrioritiesBase extends BaseTable {
     json.remove('notify_window_set');
     // config is read-only from the client's perspective.
     json.remove('config');
+    // is_inbox is server-managed (set when a role's Inbox focus is
+    // auto-created); the client never writes it. role_id is intentionally
+    // kept in the body so a modal-driven role change persists and fires the
+    // server's role-propagation triggers.
+    json.remove('is_inbox');
     return json;
   }
 }
@@ -831,22 +849,31 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     }
 
     final p = Store.get.alias(Store.get.priorities, 'p');
+    // Path-prefix tree predicate (descendants/ancestors via `path LIKE`).
+    // Only valid when `base.path` is non-null. A focus created locally has
+    // `path == null` until the server sync synthesizes one, so a bare
+    // `LIKE base.path || '%'` would evaluate to NULL → zero rows. In that
+    // case fall back to a self-join on id (the focus itself, no
+    // descendants/ancestors, depth 0 — correct until sync fills in path).
+    final pathTreePredicate =
+        p.path.likeExp(base.path + Constant('%')) &
+        ((ancestors
+                ? base.path.likeExp(p.path + Constant('%'))
+                : Constant(true)) |
+            (p.path.likeExp(base.path + Constant('%')))) &
+        (depth == null
+            ? Constant(true)
+            : CustomExpression<int>("""
+  LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')) -
+  (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
+  """).isSmallerOrEqualValue(depth));
     var query = startingQuery.join([
       innerJoin(
         p,
         id == null && path == null
             ? base.id.equalsExp(p.id)
-            : p.path.likeExp(base.path + Constant('%')) &
-                  ((ancestors
-                          ? base.path.likeExp(p.path + Constant('%'))
-                          : Constant(true)) |
-                      (p.path.likeExp(base.path + Constant('%')))) &
-                  (depth == null
-                      ? Constant(true)
-                      : CustomExpression<int>("""
-  LENGTH(p.path) - LENGTH(REPLACE(p.path, '.', '')) -
-  (CASE WHEN base.path IS NULL THEN 0 ELSE LENGTH(base.path) - LENGTH(REPLACE(base.path, '.', '')) END)
-  """).isSmallerOrEqualValue(depth)),
+            : (base.path.isNull() & base.id.equalsExp(p.id)) |
+                  (base.path.isNotNull() & pathTreePredicate),
       ),
     ]);
 
@@ -953,39 +980,24 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return priorities;
   }
 
-  /// Transform a flat list in PriorityOrder.nested order to a list of the top-level items with descendants.
+  /// Select priorities from a flat list, path-independent.
+  ///
+  /// In the flat/role model focuses do not nest (the sidebar groups them by
+  /// role, not by a path tree), so the historical parent/child linking this
+  /// performed is no longer consumed. This now simply filters the list:
+  ///   • [id] set → the single matching priority (or empty).
+  ///   • otherwise → the root priority(ies) (`root == true`).
+  /// Each returned [Priority] keeps the `_ancestors` it was built with (from
+  /// the ancestry join in [_get]), so `ancestorsLabel()` is unaffected.
   static List<Priority> asNested(
     List<Priority> priorities, {
     PriorityId? id,
-    Path? path,
-    bool flat = false,
   }) {
-    List<Priority> matches = [];
-    List<Priority> stack = [];
-
-    for (var priority in priorities) {
-      if (stack.isNotEmpty && !stack.last.path.isParent(priority.path)) {
-        stack.removeWhere((c) => !c.path.isParent(priority.path));
-      }
-
-      if (stack.isNotEmpty) {
-        priority = priority.copyWith(parent: stack.last);
-      }
-
-      if ((id == null && path == null && priority.path.isRoot) ||
-          priority.path == path ||
-          priority.id == id) {
-        matches.add(priority);
-        stack.clear();
-      } else if (flat) {
-        matches.add(priority);
-      }
-
-      stack.add(priority);
+    if (id != null) {
+      final match = priorities.firstWhereOrNull((p) => p.id == id);
+      return match != null ? [match] : [];
     }
-
-    matches.sort((a, b) => a.path.value.compareTo(b.path.value));
-    return matches;
+    return priorities.where((p) => p.root).toList();
   }
 
   Priority({
@@ -1007,7 +1019,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
            ],
        minAncestorTopOrder = null,
        displayColor = color ?? parent.displayColor,
-       _originalPath = null,
        _activeComputed = null,
        _unreadComputed = null,
        _hasThreadsComputed = null,
@@ -1016,11 +1027,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: Base.userId,
          createdAt: DateTime.now(),
          updatedAt: DateTime.now(),
-         path: Path.generate(parent: parent.path),
+         // Path is intentionally left null: the client is path-independent;
+         // the server's `upsert_priority` synthesizes `path` on save during
+         // the expand phase.
+         path: null,
          order: Order(DateTime.now().millisecondsSinceEpoch.toDouble()),
          root: false,
          unread: false,
          role: parent.role,
+         roleId: parent.roleId,
+         isInbox: false,
          attentionWindowSet: false,
          seeWithinSet: false,
          earlyNotificationsEnabledSet: false,
@@ -1039,7 +1055,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     List<PriorityAncestor>? ancestors,
     Order? minAncestorTopOrder,
     this.draft = false,
-    Path? originalPath,
     bool? active,
     bool? unreadComputed,
     bool? hasThreads,
@@ -1061,7 +1076,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                : PriorityAncestor.fromStore(ancestry)),
        minAncestorTopOrder =
            minAncestorTopOrder ?? ancestry?.minAncestorTopOrder,
-       _originalPath = originalPath ?? row.path,
        displayColor =
            displayColor ??
            row.color ??
@@ -1102,6 +1116,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          earlyNotificationsEnabledSet: row.earlyNotificationsEnabledSet,
          notifyWindowSet: row.notifyWindowSet,
          config: row.config,
+         notificationClearedAt: row.notificationClearedAt,
+         roleId: row.roleId,
+         isInbox: row.isInbox,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -1193,10 +1210,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   final Order? minAncestorTopOrder;
   final ThemeColor displayColor;
 
-  /// The original path from the database, used to detect parent changes.
-  /// Null for newly created priorities that haven't been saved yet.
-  final Path? _originalPath;
-
   /// Whether this priority is a draft (not added to parent's children list).
   /// This is an in-memory property only, not persisted to the database.
   final bool draft;
@@ -1220,7 +1233,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// title), yet it is always presented to users as "Inbox". Read this
   /// anywhere a priority name is shown to the user instead of the raw
   /// [title], so the stored "Everything" never leaks into the UI.
-  String get displayTitle => root ? 'Inbox' : title;
+  ///
+  /// A role's auto-managed Inbox focus ([isInbox]) is always presented as
+  /// "Inbox". `root` is also honoured for back-compat during the additive
+  /// rollout: a legacy per-user root still labels "Inbox" until the server
+  /// has backfilled [isInbox]. (Plan 6 removes `root` entirely.)
+  String get displayTitle => (isInbox || root) ? 'Inbox' : title;
 
   /// Parsed attention window settings (inherited from this priority or ancestors).
   List<AttentionWindow>? get attentionWindows =>
@@ -1298,7 +1316,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     DateTime? createdAt,
     Value<DateTime?> archivedAt = const Value.absent(),
     String? title,
-    Path? path,
+    Value<Path?> path = const Value.absent(),
     Uuid? createdBy,
     Value<Order?> topOrder = const Value.absent(),
     Order? order,
@@ -1323,6 +1341,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<String?> config = const Value.absent(),
     bool? draft,
     Value<DateTime?> notificationClearedAt = const Value.absent(),
+    Value<Uuid?> roleId = const Value.absent(),
+    bool? isInbox,
   }) {
     final newDraft = draft ?? this.draft;
     final currentParent = parent ?? this.parent;
@@ -1345,7 +1365,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         pending: pending,
         archivedAt: archivedAt,
         title: title ?? this.title,
-        path: path ?? this.path,
+        path: path,
         topOrder: topOrder,
         order: order,
         pomodoro: pomodoro,
@@ -1366,13 +1386,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         notifyWindowSet: notifyWindowSet,
         config: config,
         notificationClearedAt: notificationClearedAt,
+        roleId: roleId,
+        isInbox: isInbox,
       ),
       parent: currentParent,
       children: children,
       draft: newDraft,
       ancestors: _ancestors,
       minAncestorTopOrder: minAncestorTopOrder,
-      originalPath: _originalPath,
       active: _activeComputed,
       unreadComputed: _unreadComputed,
       hasThreads: _hasThreadsComputed,
@@ -1390,7 +1411,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     draft: draft,
     ancestors: _ancestors,
     minAncestorTopOrder: minAncestorTopOrder,
-    originalPath: _originalPath,
     active: _activeComputed,
     unreadComputed: _unreadComputed,
     hasThreads: value,
@@ -1406,106 +1426,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     ).replaceSorted(child, (a, b) => a.id == b.id);
   }
 
-  bool isParent(Priority other) => path.isParent(other.path);
   List<Priority> get peers => parent?.children ?? [];
-
-  /// Compute what the path should be based on the current parent.
-  /// Preserves the priority's own label (last segment of path).
-  Path _computePathFromParent() {
-    // Extract this priority's label (last segment of path)
-    final segments = path.value.split('.');
-    final label = segments.last;
-
-    // Compute new path based on parent
-    if (parent == null) {
-      // Moving to root is never allowed. If parent is null, it means the
-      // in-memory parent field isn't populated, so keep the original path.
-      return _originalPath ?? path;
-    } else {
-      // Moving to a parent - combine parent path + label
-      return Path('${parent!.path.value}.$label');
-    }
-  }
-
-  /// Check if the parent has changed since the priority was loaded from the database.
-  bool _hasParentChanged() {
-    // New priorities don't have an original path yet
-    if (_originalPath == null) return false;
-
-    // Compare original path with what the path should be based on current parent
-    final computedPath = _computePathFromParent();
-    return _originalPath!.value != computedPath.value;
-  }
-
-  /// Validate that moving to the new parent won't create a circular reference.
-  /// Throws an exception if the new parent is a descendant of this priority.
-  void _validateNoCircularReference(Path newPath) {
-    if (_originalPath == null) {
-      return; // New priorities can't have circular refs
-    }
-
-    // Check if the new path would make this priority its own descendant
-    // This happens if the new parent path starts with the original path
-    if (parent != null && _originalPath!.isParent(parent!.path)) {
-      throw ArgumentError(
-        'Cannot move priority to be its own descendant. '
-        'Original path: ${_originalPath!.value}, '
-        'New parent path: ${parent!.path.value}',
-      );
-    }
-  }
-
-  /// Find all descendants of a priority with the given path.
-  /// Returns all priorities whose path starts with the given path (excluding the priority itself).
-  Future<List<Priority>> _findDescendants(Path ancestorPath) async {
-    final query = Store.get.select(table)
-      ..where((t) => t.path.like('${ancestorPath.value}.%'));
-    return query.map(Priority.fromStore).get();
-  }
-
-  /// Update paths when a priority is moved to a new parent.
-  /// This handles updating both this priority and all its descendants.
-  Future<void> _updatePathsForMove() async {
-    final oldPath = _originalPath!;
-    final newPath = _computePathFromParent();
-
-    // Validate that non-root priorities cannot be moved to root level
-    if (!root && newPath.isRoot) {
-      throw ArgumentError(
-        'Cannot move priority to root level. '
-        'Only the priority created with root=true can have a root-level path. '
-        'Attempted to change path from "${oldPath.value}" to "${newPath.value}".',
-      );
-    }
-
-    // Validate no circular reference
-    _validateNoCircularReference(newPath);
-
-    // Find all descendants
-    final descendants = await _findDescendants(oldPath);
-
-    // Update all descendant paths
-    for (final descendant in descendants) {
-      final updatedPath = descendant.path.replacePrefix(oldPath, newPath);
-      final updatedDescendant = descendant.copyWith(
-        path: updatedPath,
-        pending: const Value(2),
-      );
-      await Store.get.save(
-        table,
-        updatedDescendant.toCompanion(false),
-        PrioritiesBase(),
-      );
-    }
-
-    // Update this priority's path
-    final updatedPriority = copyWith(path: newPath, pending: const Value(2));
-    await Store.get.save(
-      table,
-      updatedPriority.toCompanion(false),
-      PrioritiesBase(),
-    );
-  }
 
   Future<Priority> save() async {
     if (draft) {
@@ -1517,22 +1438,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         PrioritiesBase(),
       );
       return nonDraft;
-    } else {
-      // Check if parent has changed and update paths if needed
-      if (_hasParentChanged()) {
-        await _updatePathsForMove();
-        // Return updated priority with new path
-        // Set pending to trigger sync of the path change
-        return copyWith(
-          path: _computePathFromParent(),
-          pending: const Value(2),
-        );
-      } else {
-        // No parent change, save normally
-        await Store.get.save(table, toCompanion(false), PrioritiesBase());
-        return this;
-      }
     }
+    // Flat/role model: focuses don't nest or reparent (role membership is set
+    // via `role_id`, not a path move), so there is no descendant-path
+    // propagation to perform. Save the row as-is.
+    await Store.get.save(table, toCompanion(false), PrioritiesBase());
+    return this;
   }
 
   @override

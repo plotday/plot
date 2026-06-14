@@ -31,11 +31,13 @@ import topics from "./topics";
 import priorityMoves from "./priority-moves";
 import priorityMatch from "./priority-match";
 import teamUsers from "./team-users";
+import roles from "./roles";
 
 const sync = new Hono<{ Bindings: Bindings }>();
 
 sync.route("/", actors);
 sync.route("/", priorities);
+sync.route("/", roles);
 sync.route("/", priorityBlocks);
 sync.route("/", prioritySuggestions);
 sync.route("/", twistInstances);

@@ -7,6 +7,8 @@ export 'global.dart';
 export 'global_view_scope.dart';
 export 'navigation.dart';
 export 'priority.dart';
+export 'role.dart';
+export 'role_notifications.dart';
 export 'timer.dart';
 export 'agenda.dart';
 export 'early_notifications.dart';

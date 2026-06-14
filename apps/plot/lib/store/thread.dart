@@ -313,7 +313,6 @@ class RecurrenceRuleConverter extends TypeConverter<RecurrenceRule?, String?>
 class ThreadsBase extends BaseTable {
   ThreadsBase({
     this.priorityId,
-    this.priorityPath,
     this.initial = false,
     String? syncName,
     String? sortBy,
@@ -322,7 +321,10 @@ class ThreadsBase extends BaseTable {
          table: 'user_thread',
          syncEndpoint: 'threads',
          name: syncName ?? "threads",
-         filterName: priorityPath,
+         // The per-focus sync cursor anchor keys on the priority id string
+         // (path-independent). The server filters by `priority_id`; path is
+         // never sent.
+         filterName: priorityId?.toString(),
          order: sortBy ?? 'activity_at',
          limit: initial
              ? null
@@ -330,7 +332,6 @@ class ThreadsBase extends BaseTable {
        );
 
   final PriorityId? priorityId;
-  final String? priorityPath;
   final bool initial;
 
   /// Thread IDs that should be auto-filed by the server after push.
@@ -612,18 +613,17 @@ class ThreadsBase extends BaseTable {
 }
 
 class SchedulesBase extends BaseTable {
-  SchedulesBase({this.priorityId, this.priorityPath})
+  SchedulesBase({this.priorityId})
     : super(
         table: 'user_schedule',
         syncEndpoint: 'schedules',
         name: "schedules",
-        filterName: priorityPath,
+        filterName: priorityId?.toString(),
         order: 'updated_at',
         ascending: false,
       );
 
   final PriorityId? priorityId;
-  final String? priorityPath;
 
   @override
   Map<String, String> buildParams({
@@ -838,8 +838,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
 
     // Fetch current agenda and recent feed so views have data immediately
-    await Thread.pullAgenda(null, null);
-    await Thread.pullActivityFeed(null, null);
+    await Thread.pullAgenda(null);
+    await Thread.pullActivityFeed(null);
   }
 
   static Future<void> pull() async {
@@ -896,7 +896,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   /// Pull one page of activity feed (backward from now).
-  /// Uses SyncState entity "activity-feed:{priorityPath}" to track position.
+  /// Uses SyncState entity "activity-feed:{priorityId}" to track position.
   ///
   /// This method is also called from `_threadCritical` in the initial sync
   /// critical path (alongside `pullAgenda`), so it MUST remain bounded —
@@ -905,17 +905,13 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// unbounded `Store.pull(...)` call here; that's what blew the 30s
   /// critical budget for accounts with large link histories.
   static Future<void> pullActivityFeed(
-    PriorityId? priorityId,
-    Path? priorityPath, {
+    PriorityId? priorityId, {
     bool archived = false,
   }) async {
-    final path = priorityPath?.value ?? '';
-
     final pulledTo = await Store.get.pullTo(
       Store.get.threads,
       ThreadsBase(
         priorityId: priorityId,
-        priorityPath: path,
         syncName: 'activity-feed',
         sortBy: 'activity_at',
         ascending: false,
@@ -929,21 +925,21 @@ class Thread extends Equatable implements Comparable<Thread> {
     await Future.wait([
       Store.get.pullTo(
         Store.get.links,
-        LinksBase(priorityId: priorityId, priorityPath: path),
+        LinksBase(priorityId: priorityId),
         pullTo: pulledTo,
         ascending: false,
         archived: archived,
       ),
       Store.get.pullTo(
         Store.get.schedules,
-        SchedulesBase(priorityId: priorityId, priorityPath: path),
+        SchedulesBase(priorityId: priorityId),
         pullTo: pulledTo,
         ascending: false,
         archived: archived,
       ),
       Store.get.pullTo(
         Store.get.threadTags,
-        ThreadTagsBase(priorityId: priorityId, priorityPath: path),
+        ThreadTagsBase(priorityId: priorityId),
         pullTo: pulledTo,
         ascending: false,
         archived: archived,
@@ -952,23 +948,19 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   /// Pull one page of agenda (forward from today).
-  /// Uses SyncState entity "agenda:{priorityPath}" to track position.
+  /// Uses SyncState entity "agenda:{priorityId}" to track position.
   ///
   /// Also called from `_threadCritical` in the initial sync critical path.
   /// See `pullActivityFeed` for the bounded-pull invariant — same rules
   /// apply here.
   static Future<void> pullAgenda(
-    PriorityId? priorityId,
-    Path? priorityPath, {
+    PriorityId? priorityId, {
     bool archived = false,
   }) async {
-    final path = priorityPath?.value ?? '';
-
     final pulledTo = await Store.get.pullTo(
       Store.get.threads,
       ThreadsBase(
         priorityId: priorityId,
-        priorityPath: path,
         syncName: 'agenda',
         sortBy: 'agenda_at',
         ascending: true,
@@ -983,21 +975,21 @@ class Thread extends Equatable implements Comparable<Thread> {
     await Future.wait([
       Store.get.pullTo(
         Store.get.links,
-        LinksBase(priorityId: priorityId, priorityPath: path),
+        LinksBase(priorityId: priorityId),
         pullTo: pulledTo,
         ascending: true,
         archived: archived,
       ),
       Store.get.pullTo(
         Store.get.schedules,
-        SchedulesBase(priorityId: priorityId, priorityPath: path),
+        SchedulesBase(priorityId: priorityId),
         pullTo: pulledTo,
         ascending: true,
         archived: archived,
       ),
       Store.get.pullTo(
         Store.get.threadTags,
-        ThreadTagsBase(priorityId: priorityId, priorityPath: path),
+        ThreadTagsBase(priorityId: priorityId),
         pullTo: pulledTo,
         ascending: true,
         archived: archived,
@@ -1171,7 +1163,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     DateTime? eventsActiveAt,
     ThreadId? id,
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool? draft = false,
     String? search,
@@ -1190,7 +1181,6 @@ class Thread extends Equatable implements Comparable<Thread> {
       eventsActiveAt: eventsActiveAt,
       id: id,
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       order: order,
@@ -1212,7 +1202,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     DateRange? occurrenceRange,
     ThreadId? id,
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool? draft = false,
     String? search,
@@ -1251,7 +1240,6 @@ class Thread extends Equatable implements Comparable<Thread> {
       if (useFeedFastPath) {
         return _watchActivityFeedIds(
           priorityId: priorityId,
-          priorityPath: priorityPath,
           archived: archived,
           draft: draft ?? false,
           search: search,
@@ -1308,7 +1296,6 @@ class Thread extends Equatable implements Comparable<Thread> {
         eventsActiveAt: eventsActiveAt,
         id: id,
         priorityId: priorityId,
-        priorityPath: priorityPath,
         archived: archived,
         draft: draft,
         order: order,
@@ -1443,24 +1430,24 @@ class Thread extends Equatable implements Comparable<Thread> {
       order: ThreadOrder.sorted,
     );
     if (drafts.isEmpty) return null;
-    final pathStr = priority.path.value;
-    final chainDrafts = drafts.where((d) {
-      final dp = d.priority.path.value;
-      return dp == pathStr ||
-          pathStr.startsWith('$dp.') || // ancestor
-          dp.startsWith('$pathStr.'); // descendant
-    }).toList();
+    // Flat model: a focus has no ancestor/descendant focuses, so the chain is
+    // exactly the drafts filed in the same priority (path-independent).
+    final chainDrafts = drafts
+        .where((d) => d.priority.id == priority.id)
+        .toList();
     if (chainDrafts.isEmpty) return null;
     chainDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return chainDrafts.first;
   }
 
-  /// Watch all tags present in threads. When [priorityPath] is provided the
-  /// counts are scoped to that priority and its descendants; when null
-  /// (the default) the counts are global across every priority — header
-  /// search is global, so the filter chips it offers must be too.
+  /// Watch all tags present in threads. When [priorityId] is provided the
+  /// counts are scoped to that priority; when null (the default) the counts
+  /// are global across every priority — header search is global, so the
+  /// filter chips it offers must be too.
   /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
-  static Stream<List<(Tag, int)>> watchTagsForPriority([Path? priorityPath]) {
+  static Stream<List<(Tag, int)>> watchTagsForPriority([
+    PriorityId? priorityId,
+  ]) {
     final at = Store.get.threadTags;
     final a = Store.get.threads;
     final p = Store.get.priorities;
@@ -1468,18 +1455,17 @@ class Thread extends Equatable implements Comparable<Thread> {
     final now = Time.now();
     final today = Date.today().toString();
 
-    // Each query inner-joins the thread to its priority only when scoping to
-    // one (priorityPath != null); a fresh Join is built per statement.
+    // Each query scopes the thread to its filed priority only when scoping to
+    // one (priorityId != null), via the thread's own `priority_id` column
+    // (path-independent).
 
     // Query for stored tags from activity_tags table
     final tagsQuery = Store.get.select(at).join([
       innerJoin(a, a.id.equalsExp(at.id)),
-      if (priorityPath != null)
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-        ),
     ]);
+    if (priorityId != null) {
+      tagsQuery.where(a.priorityId.equalsValue(priorityId));
+    }
 
     tagsQuery.where(a.archivedAt.isNull());
 
@@ -1487,13 +1473,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     final s = Store.get.schedules;
     final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
     nowQuery.join([
-      if (priorityPath != null)
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-        ),
       leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.linkId.isNull()),
     ]);
+    if (priorityId != null) {
+      nowQuery.where(a.priorityId.equalsValue(priorityId));
+    }
     nowQuery.where(
       a.archivedAt.isNull() &
           (
@@ -1511,13 +1495,9 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // COUNT query for Tag.archived
     final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
-    archivedQuery.join([
-      if (priorityPath != null)
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-        ),
-    ]);
+    if (priorityId != null) {
+      archivedQuery.where(a.priorityId.equalsValue(priorityId));
+    }
     archivedQuery.where(a.archivedAt.isNotNull());
     final archivedCountStream = archivedQuery.watch().map(
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
@@ -1526,8 +1506,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     // COUNT query for archived priorities
     final archivedPriorityQuery = Store.get.selectOnly(p)..addColumns([p.id]);
     archivedPriorityQuery.where(
-      priorityPath != null
-          ? p.path.equalsValue(priorityPath) & p.archivedAt.isNotNull()
+      priorityId != null
+          ? p.id.equalsValue(priorityId) & p.archivedAt.isNotNull()
           : p.archivedAt.isNotNull(),
     );
     final archivedPriorityCountStream = archivedPriorityQuery.watch().map(
@@ -1536,13 +1516,9 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // COUNT query for Tag.unread
     final unreadQuery = Store.get.selectOnly(a)..addColumns([a.id]);
-    unreadQuery.join([
-      if (priorityPath != null)
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-        ),
-    ]);
+    if (priorityId != null) {
+      unreadQuery.where(a.priorityId.equalsValue(priorityId));
+    }
     unreadQuery.where(
       a.archivedAt.isNull() &
           a.draft.equals(false) &
@@ -1596,27 +1572,24 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
-  /// Watch all reactions present on threads. When [priorityPath] is provided
-  /// the counts are scoped to that priority and its descendants; when null
-  /// (the default) the counts are global across every priority. Returns a
+  /// Watch all reactions present on threads. When [priorityId] is provided
+  /// the counts are scoped to that priority; when null (the default) the
+  /// counts are global across every priority. Returns a
   /// stream of (Reaction, count) tuples sorted by thread count descending.
   /// Scoped to thread-level reactions only — note-level reaction filtering is
   /// handled by [Note.watch].
   static Stream<List<(Reaction, int)>> watchReactionsForPriority([
-    Path? priorityPath,
+    PriorityId? priorityId,
   ]) {
     final tr = Store.get.threadReactions;
     final a = Store.get.threads;
-    final p = Store.get.priorities;
 
     final query = Store.get.select(tr).join([
       innerJoin(a, a.id.equalsExp(tr.id) & a.archivedAt.isNull()),
-      if (priorityPath != null)
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-        ),
     ]);
+    if (priorityId != null) {
+      query.where(a.priorityId.equalsValue(priorityId));
+    }
 
     return query.watch().map((rows) {
       final counts = <Reaction, Set<ThreadId>>{};
@@ -1634,25 +1607,23 @@ class Thread extends Equatable implements Comparable<Thread> {
     });
   }
 
-  /// Watches icon value counts for non-archived threads. When [priorityPath]
-  /// is provided the counts are scoped to that priority and its descendants;
-  /// when null (the default) the counts are global across every priority.
+  /// Watches icon value counts for non-archived threads. When [priorityId]
+  /// is provided the counts are scoped to that priority; when null (the
+  /// default) the counts are global across every priority.
   static Stream<List<(String, int)>> watchIconCountsForPriority([
-    Path? priorityPath,
+    PriorityId? priorityId,
   ]) {
     final a = Store.get.threads;
-    final p = Store.get.priorities;
 
     final query = Store.get.selectOnly(a)
       ..addColumns([a.icon, a.id.count()])
-      ..join([
-        if (priorityPath != null)
-          innerJoin(
-            p,
-            p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-          ),
-      ])
-      ..where(a.archivedAt.isNull() & a.draft.equals(false))
+      ..where(
+        a.archivedAt.isNull() &
+            a.draft.equals(false) &
+            (priorityId == null
+                ? const Constant(true)
+                : a.priorityId.equalsValue(priorityId)),
+      )
       ..groupBy([a.icon]);
 
     return query.watch().map((rows) {
@@ -1695,7 +1666,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     /* Selectors */
     ThreadId? id,
     PriorityId? priorityId,
-    Path? priorityPath,
 
     /* Filters */
     bool self = true,
@@ -1726,7 +1696,6 @@ class Thread extends Equatable implements Comparable<Thread> {
       strictRange: strictRange,
       id: id,
       priorityId: priorityId,
-      priorityPath: priorityPath,
       self: self,
       archived: archived,
       draft: draft,
@@ -1766,7 +1735,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     /* Selectors */
     ThreadId? id,
     PriorityId? priorityId,
-    Path? priorityPath,
 
     /* Filters */
     bool self = true,
@@ -1834,7 +1802,10 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (id != null) {
       startingQuery.where((t) => t.id.equalsValue(id));
     }
-    if (priorityId != null) {
+    // Exact filed-priority scope (flat model: a focus shows only what's filed
+    // directly in it). Skipped when [includeAllFutureEvents] is set so the
+    // future-event widening below can admit events from any priority.
+    if (priorityId != null && !includeAllFutureEvents && !linkScheduledOnly) {
       startingQuery.where((t) => t.priorityId.equalsValue(priorityId));
     }
 
@@ -1854,53 +1825,39 @@ class Thread extends Equatable implements Comparable<Thread> {
     final now = Time.now();
 
     // Add priority filtering:
-    // 1. Filter by priorityPath if provided
-    // 2. Exclude activities with archived priorities when archived == false
+    // 1. Filter by the filed priority id (path-independent). The exact
+    //    `a.priorityId == priorityId` predicate is applied above on
+    //    [startingQuery] (flat model: a focus shows only what's filed
+    //    directly in it).
+    // 2. Exclude activities with archived priorities when archived == false.
+    //
+    // The priorities table is always LEFT JOINed (never filters) so Drift's
+    // `.watch()` tracks it as a read source and re-fires when a priority
+    // changes. Without this, editing a focus's colour/title never re-runs the
+    // query, so the `Priority` embedded in each emitted `Thread` (hydrated by
+    // [_mapResultsToThreads] via [Priority.getRaw]) stays frozen at its old
+    // colour. The join is 1:1 on `priorityId`, so the result set is unchanged
+    // and [_mapResultsToThreads] ignores the joined row (it re-hydrates the
+    // priority itself).
     final p = Store.get.alias(Store.get.priorities, 'p');
-    if (linkScheduledOnly) {
-      // linkScheduledOnly: fetch link-scheduled threads from all priorities.
-      // Use LEFT JOIN for priority data hydration (needed by _mapResultsToThreads)
-      // but do not filter by path.
-      Expression<bool> joinCondition = p.id.equalsExp(a.priorityId);
-      query = query.join([leftOuterJoin(p, joinCondition)]);
+    query = query.join([leftOuterJoin(p, p.id.equalsExp(a.priorityId))]);
 
-      // Require a link schedule to exist
+    if (linkScheduledOnly) {
+      // linkScheduledOnly: fetch link-scheduled threads from all priorities
+      // (no priority scope); require a link schedule to exist.
       query.where(
         linkSched.startAt.isNotNull() | linkSched.startOn.isNotNull(),
       );
-    } else if (priorityPath != null) {
-      // Flat priority model: a priority shows only what's filed directly
-      // in it. The path equality is the join key (combined with the id
-      // match so each thread's filed priority must equal this priority).
-      Expression<bool> pathCondition = p.path.equalsValue(priorityPath);
-
-      if (includeAllFutureEvents) {
-        // Per-user state has no end-at (no recurrence / end columns), so
-        // a future per-user todo with no shared schedule is matched by the
-        // active-todo branch in the range block below, not here.
-        pathCondition =
-            pathCondition |
+    } else if (priorityId != null && includeAllFutureEvents) {
+      // Widen the id-scoped feed to also admit future-scheduled threads from
+      // any priority. Per-user state has no end-at (no recurrence / end
+      // columns), so a future per-user todo with no shared schedule is matched
+      // by the active-todo branch in the range block below, not here.
+      query.where(
+        a.priorityId.equalsValue(priorityId) |
             sched.endAt.isBiggerOrEqualValue(now) |
-            linkSched.endAt.isBiggerOrEqualValue(now);
-      }
-
-      Expression<bool> joinCondition =
-          p.id.equalsExp(a.priorityId) & pathCondition;
-
-      query = query.join([innerJoin(p, joinCondition)]);
-    } else {
-      // No priority/path filter (e.g. the agenda's universal events stream
-      // or [watchOne]). Still LEFT JOIN the priorities table so Drift's
-      // `.watch()` tracks it as a read source and re-fires when a priority
-      // changes. Without this, editing a focus's colour/title never re-runs
-      // the query, so the `Priority` embedded in each emitted `Thread`
-      // (hydrated by [_mapResultsToThreads] via [Priority.getRaw]) stays
-      // frozen at its old colour — the agenda's current event and the open
-      // thread's panel background would keep rendering the previous colour.
-      // The join is 1:1 on `priorityId`, so the result set is unchanged and
-      // [_mapResultsToThreads] ignores the joined row (it re-hydrates the
-      // priority itself).
-      query = query.join([leftOuterJoin(p, p.id.equalsExp(a.priorityId))]);
+            linkSched.endAt.isBiggerOrEqualValue(now),
+      );
     }
 
     if (doTodo) {
@@ -2348,12 +2305,11 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// order.
   ///
   /// Variable order produced by this helper, in lookup order:
-  /// 1. (if [priorityPath] != null) path, pathPrefix
-  /// 2. (else if [priorityId] != null) priorityId
-  /// 3. draft flag
-  /// 4. (if [stateFlag] != null) state flag column
-  /// 5. iconFilter values, in order
-  /// 6. (if [requireTodoPredicate]) today, now, now, today, now, now
+  /// 1. (if [priorityId] != null) priorityId
+  /// 2. draft flag
+  /// 3. (if [stateFlag] != null) state flag column
+  /// 4. iconFilter values, in order
+  /// 5. (if [requireTodoPredicate]) today, now, now, today, now, now
   ///
   /// The caller is responsible for any variables bound by its SELECT
   /// clause (e.g. the `now` for the activity_at end-of-window predicate)
@@ -2365,7 +2321,6 @@ class Thread extends Equatable implements Comparable<Thread> {
   })
   _buildFeedFilter({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -2426,17 +2381,11 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       );
     }
 
-    // Priority scope: exact filing only (flat priority model).
-    if (priorityPath != null) {
-      sqlBuf.writeln(
-        'INNER JOIN priorities p ON p.id = a.priority_id AND p.path = ?',
-      );
-      variables.add(Variable.withString(priorityPath.toString()));
-    }
-
     // WHERE clauses.
+    // Priority scope: exact filed-priority id only (flat priority model,
+    // path-independent).
     final wheres = <String>[];
-    if (priorityPath == null && priorityId != null) {
+    if (priorityId != null) {
       wheres.add('a.priority_id = ?');
       variables.add(Variable.withBlob(priorityId.toBytes()));
     }
@@ -2601,9 +2550,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       Store.get.schedules,
       Store.get.links,
     };
-    if (priorityPath != null) {
-      readsFrom.add(Store.get.priorities);
-    }
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
       readsFrom.add(Store.get.threadTags);
     }
@@ -2638,7 +2584,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   static Stream<List<({ThreadId id, int unreadSort, String activityAt})>>
   _watchActivityFeedIds({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -2696,17 +2641,11 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       );
     }
 
-    // Priority scope: exact filing only (flat priority model).
-    if (priorityPath != null) {
-      sqlBuf.writeln(
-        'INNER JOIN priorities p ON p.id = a.priority_id AND p.path = ?',
-      );
-      variables.add(Variable.withString(priorityPath.toString()));
-    }
-
     // WHERE clauses.
+    // Priority scope: exact filed-priority id only (flat priority model,
+    // path-independent).
     final wheres = <String>[];
-    if (priorityPath == null && priorityId != null) {
+    if (priorityId != null) {
       wheres.add('a.priority_id = ?');
       variables.add(Variable.withBlob(priorityId.toBytes()));
     }
@@ -2862,9 +2801,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       Store.get.schedules,
       Store.get.links,
     };
-    if (priorityPath != null) {
-      readsFrom.add(Store.get.priorities);
-    }
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
       readsFrom.add(Store.get.threadTags);
     }
@@ -2908,7 +2844,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// `Thread.watch(..., limit: pageSize)`) is the only live region.
   static Future<ActivityFeedPage> fetchActivityFeedPage({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -2921,7 +2856,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final idRows = await _watchActivityFeedIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3029,7 +2963,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   >
   watchCatchUpHead({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3041,7 +2974,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     yield* _watchCatchUpIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3089,7 +3021,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   >
   fetchCatchUpPage({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3102,7 +3033,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final idRows = await _watchCatchUpIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3153,7 +3083,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   >
   _watchCatchUpIds({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3190,7 +3119,6 @@ SELECT
 
     final parts = _buildFeedFilter(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3257,7 +3185,6 @@ SELECT
   >
   watchAllTabHead({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3270,7 +3197,6 @@ SELECT
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     yield* _watchAllTabIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3312,7 +3238,6 @@ SELECT
   >
   fetchAllTabPage({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3325,7 +3250,6 @@ SELECT
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final idRows = await _watchAllTabIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3370,7 +3294,6 @@ SELECT
   /// sectioned feeds' [watchUnreadHead], which this query never feeds.)
   static Stream<List<({ThreadId id, String activityAt})>> _watchAllTabIds({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3410,7 +3333,6 @@ SELECT
 
     final parts = _buildFeedFilter(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3469,7 +3391,6 @@ SELECT
   watchActionTabHead({
     required String action,
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3483,7 +3404,6 @@ SELECT
     yield* _watchActionTabIds(
       action: action,
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3538,7 +3458,6 @@ SELECT
   fetchActionTabPage({
     required String action,
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3553,7 +3472,6 @@ SELECT
     final idRows = await _watchActionTabIds(
       action: action,
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3621,7 +3539,6 @@ SELECT
   _watchActionTabIds({
     required String action,
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3688,7 +3605,6 @@ SELECT
 
     final parts = _buildFeedFilter(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3792,7 +3708,6 @@ ORDER BY
   >
   watchUnreadHead({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3804,7 +3719,6 @@ ORDER BY
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     yield* _watchUnreadIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3848,7 +3762,6 @@ ORDER BY
   static Stream<List<({ThreadId id, int urgent, int importance, double order})>>
   _watchUnreadIds({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3872,7 +3785,6 @@ SELECT
 
     final parts = _buildFeedFilter(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3939,7 +3851,6 @@ SELECT
   >
   watchDoneHead({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -3951,7 +3862,6 @@ SELECT
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     yield* _watchDoneIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -3994,7 +3904,6 @@ SELECT
   >
   fetchDonePage({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -4007,7 +3916,6 @@ SELECT
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final idRows = await _watchDoneIds(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -4046,7 +3954,6 @@ SELECT
   /// monotonic with the Dart `Thread.activityAt` getter.
   static Stream<List<({ThreadId id, String activityAt})>> _watchDoneIds({
     PriorityId? priorityId,
-    Path? priorityPath,
     bool? archived = false,
     bool draft = false,
     String? search,
@@ -4078,7 +3985,6 @@ SELECT
 
     final parts = _buildFeedFilter(
       priorityId: priorityId,
-      priorityPath: priorityPath,
       archived: archived,
       draft: draft,
       search: search,
@@ -4582,7 +4488,7 @@ SELECT
       // NOT seeded here: the two-step target picker drives the thread's
       // roster, superseding per-focus default sharing.
       topic: priority.priorityConfig.topic ??
-          (priority.path.isRoot ? null : priority.id.toString()),
+          (priority.root ? null : priority.id.toString()),
       // Team scope for the draft (null = Personal until Phase 5 sets it from
       // the target picker). Round-trips through sync via `team_id`.
       teamId: teamId,

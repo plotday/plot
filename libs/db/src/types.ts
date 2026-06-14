@@ -1268,13 +1268,18 @@ export type Database = {
           created_by: string
           default_thread_icon: string | null
           description: string | null
+          early_notifications_enabled: boolean | null
           facet_filters: Json | null
           icon: string | null
           id: string
           inherit_members: boolean
+          is_inbox: boolean
           key: string | null
           notification_cleared_at: string | null
+          notify_window: Json | null
           path: unknown
+          role_id: string | null
+          see_within: Json | null
           seq: unknown
           sync_depth: number | null
           title: string
@@ -1290,13 +1295,18 @@ export type Database = {
           created_by: string
           default_thread_icon?: string | null
           description?: string | null
+          early_notifications_enabled?: boolean | null
           facet_filters?: Json | null
           icon?: string | null
           id?: string
           inherit_members?: boolean
+          is_inbox?: boolean
           key?: string | null
           notification_cleared_at?: string | null
+          notify_window?: Json | null
           path: unknown
+          role_id?: string | null
+          see_within?: Json | null
           seq?: unknown
           sync_depth?: number | null
           title: string
@@ -1312,13 +1322,18 @@ export type Database = {
           created_by?: string
           default_thread_icon?: string | null
           description?: string | null
+          early_notifications_enabled?: boolean | null
           facet_filters?: Json | null
           icon?: string | null
           id?: string
           inherit_members?: boolean
+          is_inbox?: boolean
           key?: string | null
           notification_cleared_at?: string | null
+          notify_window?: Json | null
           path?: unknown
+          role_id?: string | null
+          see_within?: Json | null
           seq?: unknown
           sync_depth?: number | null
           title?: string
@@ -1331,6 +1346,12 @@ export type Database = {
             foreignKeyName: "priority_created_by_fkey"
             columns: ["created_by"]
             referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_role_id_fkey"
+            columns: ["role_id"]
+            referencedRelation: "role"
             referencedColumns: ["id"]
           },
           {
@@ -1501,6 +1522,67 @@ export type Database = {
           {
             foreignKeyName: "publisher_created_by_fkey"
             columns: ["created_by"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      role: {
+        Row: {
+          archived_at: string | null
+          color: number
+          created_at: string
+          created_by: string
+          early_notifications_enabled: boolean | null
+          id: string
+          name: string
+          notify_window: Json | null
+          order: number | null
+          see_within: Json | null
+          seq: unknown
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          archived_at?: string | null
+          color?: number
+          created_at?: string
+          created_by: string
+          early_notifications_enabled?: boolean | null
+          id?: string
+          name: string
+          notify_window?: Json | null
+          order?: number | null
+          see_within?: Json | null
+          seq?: unknown
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          archived_at?: string | null
+          color?: number
+          created_at?: string
+          created_by?: string
+          early_notifications_enabled?: boolean | null
+          id?: string
+          name?: string
+          notify_window?: Json | null
+          order?: number | null
+          see_within?: Json | null
+          seq?: unknown
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "role_user_id_fkey"
+            columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
           },
@@ -5680,6 +5762,7 @@ export type Database = {
           icon: string | null
           id: string | null
           inherit_members: boolean | null
+          is_inbox: boolean | null
           key: string | null
           notification_cleared_at: string | null
           notify_window: Json | null
@@ -5694,6 +5777,7 @@ export type Database = {
           respond_within: Json | null
           respond_within_set: boolean | null
           role: string | null
+          role_id: string | null
           root: boolean | null
           see_within: Json | null
           see_within_set: boolean | null
@@ -5717,6 +5801,12 @@ export type Database = {
             columns: ["created_by"]
             referencedRelation: "topic"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "priority_role_id_fkey"
+            columns: ["role_id"]
+            referencedRelation: "role"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "priority_user_id_fkey"
@@ -5870,6 +5960,79 @@ export type Database = {
           },
           {
             foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      role: {
+        Row: {
+          archived_at: string | null
+          color: number | null
+          created_at: string | null
+          created_by: string | null
+          early_notifications_enabled: boolean | null
+          id: string | null
+          name: string | null
+          notify_window: Json | null
+          order: number | null
+          see_within: Json | null
+          seq: unknown
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          color?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          early_notifications_enabled?: boolean | null
+          id?: string | null
+          name?: string | null
+          notify_window?: Json | null
+          order?: number | null
+          see_within?: Json | null
+          seq?: unknown
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          color?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          early_notifications_enabled?: boolean | null
+          id?: string | null
+          name?: string | null
+          notify_window?: Json | null
+          order?: number | null
+          see_within?: Json | null
+          seq?: unknown
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "role_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "role_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "role_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "topic"
             referencedColumns: ["user_id"]
@@ -6444,6 +6607,7 @@ export type Database = {
         Args: { p_priority_id: string; p_user_id: string }
         Returns: string
       }
+      fallback_inbox_id: { Args: { p_user_id: string }; Returns: string }
       find_mute_candidates: {
         Args: { p_seed_thread_id: string; p_user_id: string }
         Returns: string[]
@@ -6630,6 +6794,7 @@ export type Database = {
           icon: string | null
           id: string | null
           inherit_members: boolean | null
+          is_inbox: boolean | null
           key: string | null
           notification_cleared_at: string | null
           notify_window: Json | null
@@ -6644,6 +6809,7 @@ export type Database = {
           respond_within: Json | null
           respond_within_set: boolean | null
           role: string | null
+          role_id: string | null
           root: boolean | null
           see_within: Json | null
           see_within_set: boolean | null
@@ -6698,6 +6864,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      upsert_role: { Args: { p_role: Json; user_id: string }; Returns: string }
       upsert_schedule: {
         Args: { p_defaults?: Json; p_schedule: Json; user_id: string }
         Returns: Database["public"]["Tables"]["schedule"]["Row"]

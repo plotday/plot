@@ -14,6 +14,7 @@
 
 ### Focuses
 
+- New to Plot? Setup now asks where you want to use Plot first — Work, Personal, Volunteering, School, or Other — and names your first role from your answer (tell it where you work, and that becomes the role's name). You can add more roles later.
 - Merging one focus into another is now instant and reliable. The merge happens in one step on the server — previously each thread moved one by one, which could leave a half-merged focus if interrupted and made Plot rethink the sorting of everything in your workspace, slowing things down for a while after a merge.
 - When you add a focus, Plot now suggests common focuses (like Customers, Reading, or Social) you can create with one tap — pick one to open the create form already filled in, or choose **Create a custom focus** to start from scratch. Once you've made a focus from a suggestion it drops off the list, on every device you use.
 - Threads now land in the right focus based on which account they arrived through — a receipt to your work email goes to your work focus, while the same kind of receipt to your personal email goes to your personal one. Plot learns this automatically from how you file threads.

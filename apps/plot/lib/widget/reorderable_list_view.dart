@@ -15,6 +15,7 @@ class ReorderableListView<T> extends StatefulWidget {
     required this.onReorder,
     this.keyExtractor,
     this.shrinkWrap = false,
+    this.handleOnly = false,
     super.key,
   });
 
@@ -22,6 +23,23 @@ class ReorderableListView<T> extends StatefulWidget {
   final ListItemWidgetBuilder<T> itemBuilder;
   final ReorderCallback onReorder;
   final bool shrinkWrap;
+
+  /// When false (default), the whole item is the drag target: the list wraps
+  /// each row in a [ReorderableDragStartListener] (desktop, pointer-down) or a
+  /// [ReorderableDelayedDragStartListener] (mobile, long-press), and the
+  /// builder receives `null` for `reorderableIndex`. This is right for a list
+  /// of single-row items (focus rows, threads, notes).
+  ///
+  /// When true, the list does NOT auto-wrap the item; instead it passes the
+  /// real index to [itemBuilder] (a non-null `reorderableIndex`) and the item
+  /// is responsible for wrapping only its own drag handle with a
+  /// [ReorderableDragStartListener] / [ReorderableDelayedDragStartListener]
+  /// (see `DragHandle` / `ListTile.reorderableIndex`). Use this when an item is
+  /// itself a composite that contains other interactive (or nested-draggable)
+  /// regions — e.g. a role section whose header is the handle but whose body is
+  /// an inner reorderable focus list. Without this, the outer drag target would
+  /// blanket the inner list and steal its drag gestures.
+  final bool handleOnly;
 
   /// Override how a stable Key is derived from a list element. Defaults
   /// to `ValueKey(item)`. Override this for element types whose `==`
@@ -119,6 +137,17 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
       itemBuilder: (context, index) {
         final item = list[index];
         final key = _keyOf(item);
+        if (widget.handleOnly) {
+          // Handle-only: the list does NOT wrap the item. The item gets the
+          // real index and self-wraps just its drag handle (header), so the
+          // rest of the item — including any nested reorderable — keeps its own
+          // gestures. `material.ReorderableListView.builder` still requires a
+          // keyed child at the top level, so attach the key here.
+          return KeyedSubtree(
+            key: key,
+            child: widget.itemBuilder(context, item, index),
+          );
+        }
         if (hasPhysicalKeyboard()) {
           // Desktop: full item is drag target, starts immediately on
           // pointer-down.

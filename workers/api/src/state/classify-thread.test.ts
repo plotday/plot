@@ -89,7 +89,9 @@ function defaultRespond(overrides?: (sql: string) => { rows: unknown[] } | null)
       };
     }
     if (sql.includes("classification_decision")) return { rows: [] };
-    if (sql.includes('from "priority"')) return { rows: [{ id: "root-1" }] };
+    // rootPriorityId now resolves the oldest-role Inbox: SELECT … FROM "role"
+    // INNER JOIN "priority" …  (was a single-root FROM "priority" lookup).
+    if (sql.includes('from "role"')) return { rows: [{ id: "root-1" }] };
     throw new Error(`unexpected SQL in test: ${sql}`);
   };
 }

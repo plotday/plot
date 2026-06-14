@@ -9,13 +9,18 @@ export type UserLinkedContact = {
 export type PriorityHierarchy = {
   id: string;
   title: string;
+  /**
+   * Display path for prompts. In the flat focus model there is no nesting, so
+   * this is just the focus title (kept for prompt-rendering call sites that
+   * still read it; no longer ltree-derived).
+   */
   path: string;
+  /** Same as path in the flat model — the focus title. */
   breadcrumb: string;
   description: string | null;
   /**
-   * Depth-2 ancestor (the user-visible top-level bucket; depth-1 is the
-   * synthetic root). Falls back to the priority itself when it's already
-   * at depth ≤ 2.
+   * The focus's role (the grouping layer the classifier treats as the
+   * "hierarchy"). Falls back to the focus itself when it has no role.
    */
   hierarchyId: string;
   hierarchyTitle: string;
@@ -42,37 +47,17 @@ export async function fetchUserLinkedContacts(
 export async function fetchPriorityHierarchies(
   ctx: ClassifierContext
 ): Promise<Map<string, PriorityHierarchy>> {
+  // The "hierarchy" is now the focus's role (a flat grouping layer), not the
+  // depth-2 ltree ancestor. In the flat model focuses have no nesting, so the
+  // display path/breadcrumb is just the focus title.
   const res = await ctx.rawQuery(
     `SELECT p.id,
             p.title,
-            p.path::text AS path,
             p.description,
-            ARRAY(
-              SELECT pa.title
-                FROM public.priority pa
-               WHERE pa.user_id = p.user_id
-                 AND pa.path @> p.path
-               ORDER BY nlevel(pa.path) ASC
-            ) AS breadcrumb_titles,
-            (
-              SELECT pa.id
-                FROM public.priority pa
-               WHERE pa.user_id = p.user_id
-                 AND pa.path @> p.path
-                 AND nlevel(pa.path) = LEAST(nlevel(p.path), 2)
-               ORDER BY nlevel(pa.path) ASC
-               LIMIT 1
-            ) AS hierarchy_id,
-            (
-              SELECT pa.title
-                FROM public.priority pa
-               WHERE pa.user_id = p.user_id
-                 AND pa.path @> p.path
-                 AND nlevel(pa.path) = LEAST(nlevel(p.path), 2)
-               ORDER BY nlevel(pa.path) ASC
-               LIMIT 1
-            ) AS hierarchy_title
+            p.role_id AS hierarchy_id,
+            r.name    AS hierarchy_title
        FROM public.priority p
+       LEFT JOIN public.role r ON r.id = p.role_id
       WHERE p.user_id = $1::uuid
         AND p.archived_at IS NULL`,
     [ctx.userId]
@@ -81,19 +66,16 @@ export async function fetchPriorityHierarchies(
   for (const r of res.rows as {
     id: string;
     title: string;
-    path: string;
     description: string | null;
-    breadcrumb_titles: string[];
     hierarchy_id: string | null;
     hierarchy_title: string | null;
   }[]) {
-    const breadcrumb = r.breadcrumb_titles.slice(1).join(" > ") || r.title;
     out.set(r.id, {
       id: r.id,
       title: r.title,
-      path: r.path,
+      path: r.title,
       description: r.description,
-      breadcrumb,
+      breadcrumb: r.title,
       hierarchyId: r.hierarchy_id ?? r.id,
       hierarchyTitle: r.hierarchy_title ?? r.title,
     });
@@ -103,36 +85,33 @@ export async function fetchPriorityHierarchies(
 
 /**
  * For each user-linked contact, count the user's training threads that
- * were authored by that contact, grouped by the depth-2 ancestor
- * priority of where they were filed. This is the "this account
- * historically lands in this hierarchy" distribution.
+ * were authored by (or received as) that contact, grouped by the role of
+ * where they were filed. This is the "this account historically lands in
+ * this role" distribution.
  */
 export async function fetchAccountHierarchyAffinity(
   ctx: ClassifierContext,
   linkedContactIds: string[]
 ): Promise<AccountHierarchyAffinity> {
   if (linkedContactIds.length === 0) return new Map();
-  // Count training threads per (user-linked contact, hierarchy) where the
+  // Count training threads per (user-linked contact, role) where the
   // contact is EITHER the author (user-composed threads) OR appears in
   // thread.contacts (received threads — Plot's connectors put the
   // receiving user-linked contact into thread.contacts).
   const res = await ctx.rawQuery(
     `SELECT linked.cid          AS user_contact_id,
-            ancestor.id         AS hierarchy_id,
+            p.role_id           AS hierarchy_id,
             COUNT(DISTINCT t.id)::int AS n
        FROM public.thread_priority tp
        JOIN public.thread t   ON t.id = tp.thread_id
        JOIN public.priority p ON p.id = tp.priority_id
-       JOIN public.priority ancestor
-         ON ancestor.user_id = tp.user_id
-        AND ancestor.path @> p.path
-        AND nlevel(ancestor.path) = LEAST(nlevel(p.path), 2)
        CROSS JOIN UNNEST($2::uuid[]) AS linked(cid)
       WHERE tp.user_id = $1::uuid
         AND tp.user_moved = TRUE
         AND t.archived_at IS NULL
+        AND p.role_id IS NOT NULL
         AND (linked.cid = t.created_by OR linked.cid = ANY(t.contacts))
-      GROUP BY linked.cid, ancestor.id`,
+      GROUP BY linked.cid, p.role_id`,
     [ctx.userId, linkedContactIds]
   );
   const m: AccountHierarchyAffinity = new Map();

@@ -296,7 +296,7 @@ class PriorityState extends Equatable {
       if (scope != null) {
         return scope.root
             ? t.priority.root
-            : t.priority.path.value == scope.path.value;
+            : t.priority.id == scope.id;
       }
       return true;
     }

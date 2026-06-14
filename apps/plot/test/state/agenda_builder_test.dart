@@ -23,6 +23,7 @@ Priority _testPriority({
     root: false,
     unread: false,
     role: 'member',
+    isInbox: false,
     attentionWindowSet: false,
     seeWithinSet: false,
     earlyNotificationsEnabledSet: false,
@@ -70,14 +71,14 @@ void main() {
     final tomorrowThread = Thread(priority: priority, title: 'tomorrow');
 
     final todayBlock = ui.PriorityBlock(
-      id: 'p_today_${priority.path.value}_0',
+      id: 'p_today_${priority.id}_0',
       priority: priority,
       threads: [todayThreadA, todayThreadB],
       windowStart: DateTime(2026, 5, 2),
       windowEnd: DateTime(2026, 5, 3),
     );
     final tomorrowBlock = ui.PriorityBlock(
-      id: 'p_tomorrow_${priority.path.value}_0',
+      id: 'p_tomorrow_${priority.id}_0',
       priority: priority,
       threads: [tomorrowThread],
       windowStart: DateTime(2026, 5, 3),

@@ -21,6 +21,7 @@ PriorityRow _row({String? icon}) => PriorityRow(
       root: false,
       unread: false,
       role: 'member',
+      isInbox: false,
       icon: icon,
       attentionWindowSet: false,
       seeWithinSet: false,

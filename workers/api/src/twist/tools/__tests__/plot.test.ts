@@ -97,6 +97,13 @@ function createDbMock() {
       if (table === "priority") {
         return createSelectQuery({ id: "priority-1", path: "priority_1" });
       }
+      if (table === "role") {
+        // classify-thread's fallback (rootPriorityId) resolves the user's
+        // role Inbox when no specific focus matches. Every real user has one
+        // (backfill / activate_invited_user); surface it so classification
+        // falls back to a focus instead of throwing in these unit tests.
+        return createSelectQuery({ id: "priority-1" });
+      }
       return createSelectQuery(null);
     }),
     insertInto: vi.fn(() => createInsertQuery(null)),

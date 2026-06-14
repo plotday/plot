@@ -369,7 +369,7 @@ class Actor extends ActorRow {
 
     final scoped = await _scanThreadsForSharing(
       selfIds: selfIds,
-      priorityPath: priority?.path,
+      priorityId: priority?.id,
       limit: threadWindow,
     );
 
@@ -380,7 +380,7 @@ class Actor extends ActorRow {
         ? scoped
         : await _scanThreadsForSharing(
             selfIds: selfIds,
-            priorityPath: null,
+            priorityId: null,
             limit: threadWindow,
           );
 
@@ -517,14 +517,14 @@ class Actor extends ActorRow {
     final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
     final scoped = await _scanThreadsForSharing(
       selfIds: selfIds,
-      priorityPath: priority?.path,
+      priorityId: priority?.id,
       limit: threadWindow,
     );
     final global = priority == null
         ? scoped
         : await _scanThreadsForSharing(
             selfIds: selfIds,
-            priorityPath: null,
+            priorityId: null,
             limit: threadWindow,
           );
     return ShareScans(scoped: scoped, global: global);
@@ -755,7 +755,7 @@ class Actor extends ActorRow {
 
   static Future<ThreadScanResult> _scanThreadsForSharing({
     required Set<Uuid> selfIds,
-    required Path? priorityPath,
+    required PriorityId? priorityId,
     required int limit,
   }) async {
     // Two independent thread sources:
@@ -770,7 +770,7 @@ class Actor extends ActorRow {
     // how much inbound noise (newsletters, mailing lists) sits above them in the
     // feed.
     final recent = await Thread.get(
-      priorityPath: priorityPath,
+      priorityId: priorityId,
       draft: false,
       archived: false,
       order: ThreadOrder.reverse,
@@ -778,7 +778,7 @@ class Actor extends ActorRow {
     );
     final authored = await authoredThreadsForSharing(
       selfIds: selfIds,
-      priorityPath: priorityPath,
+      priorityId: priorityId,
       limit: limit,
     );
     return buildShareScan(
@@ -882,7 +882,7 @@ class Actor extends ActorRow {
 
   /// Fetches the most-recent [limit] threads in scope that contain at least
   /// one note authored by one of [selfIds], newest first. Scoped to the
-  /// priority subtree (priority + descendants) when [priorityPath] is set.
+  /// filed priority (path-independent) when [priorityId] is set.
   ///
   /// This is the authored-band source. Unlike the recent activity feed, it is
   /// not crowded out by inbound mail, so the people the user actually writes to
@@ -893,7 +893,7 @@ class Actor extends ActorRow {
   @visibleForTesting
   static Future<List<ShareScanThread>> authoredThreadsForSharing({
     required Set<Uuid> selfIds,
-    required Path? priorityPath,
+    required PriorityId? priorityId,
     required int limit,
   }) async {
     if (selfIds.isEmpty) return const [];
@@ -901,20 +901,15 @@ class Actor extends ActorRow {
     final n = Store.get.alias(Store.get.notes, 'authored_note');
     final selfBytes = selfIds.map((id) => id.toBytes()).toList();
 
-    final joins = <Join<HasResultSet, dynamic>>[];
-    if (priorityPath != null) {
-      final p = Store.get.alias(Store.get.priorities, 'authored_priority');
-      joins.add(
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-        ),
-      );
-    }
-
-    final query = Store.get.select(a).join(joins)
+    // Scope by the filed priority id (path-independent). Keep the joined-
+    // statement form (empty join) so `where` takes an Expression and rows
+    // expose `readTable`.
+    final query = Store.get.select(a).join(const [])
       ..where(
-        a.archivedAt.isNull() &
+        (priorityId == null
+                ? const Constant(true)
+                : a.priorityId.equalsValue(priorityId)) &
+            a.archivedAt.isNull() &
             a.draft.equals(false) &
             existsQuery(
               Store.get.selectOnly(n)

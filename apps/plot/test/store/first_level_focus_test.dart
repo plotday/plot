@@ -80,7 +80,12 @@ void main() {
     expect(updated.notificationClearedAt, isNotNull);
   });
 
-  test('resolves active focus even when an archived focus exists with same path', () async {
+  test('stamps the watermark on the focus itself, not other same-path rows',
+      () async {
+    // Flat/role model: focuses are leaves; the first-level focus for a
+    // priority is the priority itself (path-independent), so the watermark is
+    // stamped directly on the resolved focus and no other (archived) row is
+    // touched.
     final rootId = Uuid.generate();
     await insertPriority(id: rootId, path: 'inbox', root: true);
 
@@ -97,12 +102,8 @@ void main() {
     final activeFocusId = Uuid.generate();
     await insertPriority(id: activeFocusId, path: 'inbox.focus1', root: false);
 
-    // Insert a subpriority under the focus
-    final subpriorityId = Uuid.generate();
-    await insertPriority(id: subpriorityId, path: 'inbox.focus1.sub', root: false);
-
-    // Resolve watermark for subpriority, which should update the active focus, not archived
-    await store.updateNotificationWatermark(subpriorityId);
+    // Resolve watermark for the active focus directly.
+    await store.updateNotificationWatermark(activeFocusId);
 
     final activeFocus = await (store.select(store.priorities)
           ..where((p) => p.id.equals(activeFocusId.toBytes())))

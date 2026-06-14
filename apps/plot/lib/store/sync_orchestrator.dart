@@ -88,10 +88,21 @@ class SyncOrchestrator {
     pullFn: UserSettingsEntity.pull,
   );
 
-  /// Priority entity (depends on actor for createdBy)
+  /// Role entity (depends on actor for createdBy). Roles group focuses and
+  /// carry colour/notification templates; they must be pulled before
+  /// priorities so a focus's role exists when the sidebar groups by it.
+  static final role = SyncEntity(
+    debugName: 'role',
+    dependsOn: [actor],
+    pushFn: Role.push,
+    pullFn: Role.pull,
+  );
+
+  /// Priority entity (depends on actor for createdBy, and on role so the
+  /// focus's role is present before priorities render)
   static final priority = SyncEntity(
     debugName: 'priority',
-    dependsOn: [actor],
+    dependsOn: [actor, role],
     pushFn: Priority.push,
     pullFn: Priority.pull,
   );
@@ -176,6 +187,7 @@ class SyncOrchestrator {
     topic,
     teamUser,
     userSettings,
+    role,
     priority,
     priorityBlock,
     twistInstance,
@@ -206,8 +218,8 @@ class SyncOrchestrator {
     pushFn: () async => true,
     pullFn: () async {
       await Future.wait([
-        Thread.pullAgenda(null, null),
-        Thread.pullActivityFeed(null, null),
+        Thread.pullAgenda(null),
+        Thread.pullActivityFeed(null),
       ]);
     },
   );
@@ -248,6 +260,7 @@ class SyncOrchestrator {
   static final _criticalEntities = [
     actor,
     userSettings,
+    role,
     priority,
     priorityBlock,
     _threadCritical,
@@ -270,6 +283,7 @@ class SyncOrchestrator {
       'user_topic' || 'topic' => topic,
       'user_team_user' || 'team_user' => teamUser,
       'user_settings' => userSettings,
+      'user_role' || 'role' => role,
       'user_priority' || 'priority' => priority,
       'user_priority_block' || 'priority_block' || 'priority_blocks' => priorityBlock,
       'user_twist' || 'twist_instance' => twistInstance,

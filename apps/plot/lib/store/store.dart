@@ -66,6 +66,7 @@ part 'sync.dart';
 part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
+part 'role.dart';
 part 'priority_block.dart';
 part 'twist_instance.dart';
 part 'twist_connection.dart';
@@ -506,6 +507,7 @@ abstract class BaseTable {
     SyncStates,
     Actors,
     Priorities,
+    Roles,
     PriorityBlocks,
     TwistInstances,
     TwistConnections,
@@ -2528,7 +2530,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 367;
+  int get schemaVersion => 369;
 
   @override
   MigrationStrategy get migration {
@@ -2593,7 +2595,7 @@ class Store extends _$Store {
         // twist_instances (v302/v307), groups (v308), or threads.topic
         // (v308) triggers a rebuild alongside priorities drift.
         const probes = [
-          'SELECT id, archived_at, root, created_at, icon FROM priorities LIMIT 0',
+          'SELECT id, archived_at, root, created_at, icon, role_id, is_inbox FROM priorities LIMIT 0',
           'SELECT id, updated_at, multiple_instances, is_builtin FROM twist_instances LIMIT 0',
           'SELECT id, updated_at FROM groups LIMIT 0',
           'SELECT id, topic, groups FROM threads LIMIT 0',
@@ -2702,26 +2704,13 @@ class Store extends _$Store {
     }
   }
 
-  /// Resolve the first-level focus (direct child of root) that contains the
-  /// given priority. Returns the priority itself when it is already a focus,
-  /// or `null` when it is the root (or above) and has no enclosing focus.
+  /// Resolve the first-level focus that contains the given priority
+  /// (path-independent). Flat/role model: focuses are direct children of the
+  /// root and threads are filed directly in a focus, so the first-level focus
+  /// is the priority itself — unless it is the root (Inbox), which has no
+  /// enclosing focus.
   Future<PriorityRow?> _firstLevelFocusFor(PriorityRow priority) async {
-    final root = await (select(priorities)
-          ..where((p) => p.root.equals(true) & p.archivedAt.isNull()))
-        .getSingleOrNull();
-    if (root == null) return null;
-
-    final rootSegments = root.path.value.split('.');
-    final pathSegments = priority.path.value.split('.');
-    if (pathSegments.length <= rootSegments.length) return null;
-
-    final firstLevelPath =
-        pathSegments.sublist(0, rootSegments.length + 1).join('.');
-    if (firstLevelPath == priority.path.value) return priority;
-
-    return (select(priorities)
-          ..where((p) => p.path.equalsValue(Path(firstLevelPath)) & p.archivedAt.isNull()))
-        .getSingleOrNull();
+    return priority.root ? null : priority;
   }
 
   /// Performs a full re-sync from the server without losing local data.
@@ -2778,8 +2767,8 @@ class Store extends _$Store {
 
       // 4b. Pull first page of activity feed and agenda (global, no priority filter)
       // This ensures recent/relevant threads survive orphan deletion.
-      await Thread.pullActivityFeed(null, null);
-      await Thread.pullAgenda(null, null);
+      await Thread.pullActivityFeed(null);
+      await Thread.pullAgenda(null);
 
       // 5. Delete orphaned rows (still have sentinel, no pending changes)
       //    Delete children before parents to respect foreign key order
@@ -3924,9 +3913,22 @@ class Store extends _$Store {
       // after this step shipped, so it doesn't exist in pre-347 databases.
       // Without this, the rebuild's INSERT...SELECT would copy a nonexistent
       // `icon` and throw, forcing a full reset. Listing it here excludes it
-      // from the copy (it gets its NULL default instead).
+      // from the copy (it gets its NULL default instead). The same applies to
+      // every priority column added to the Dart schema after this step:
+      // `role_id` / `is_inbox` (v368, focus roles) and `notification_cleared_at`
+      // (v366) likewise don't exist in a pre-347 table, so they must be listed
+      // as new columns here too or the rebuild copies a nonexistent column and
+      // forces a full reset.
       await m.alterTable(
-        TableMigration(priorities, newColumns: [priorities.icon]),
+        TableMigration(
+          priorities,
+          newColumns: [
+            priorities.icon,
+            priorities.notificationClearedAt,
+            priorities.roleId,
+            priorities.isInbox,
+          ],
+        ),
       );
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
@@ -4119,6 +4121,32 @@ class Store extends _$Store {
       // NULL` (no index supported that predicate) — ~200ms–1s per scan,
       // twice per switch, on populated workspaces. No data migration.
       await _createPerfIndexes(m.database);
+    }
+
+    if (from < 368) {
+      // Focus roles: the new `roles` table (synced from /sync/roles) plus
+      // `priority.role_id` / `priority.is_inbox`. Purely additive — the server
+      // backfills role_id/is_inbox on the next sync; no local data migration.
+      await m.createTable(roles);
+      await _safeAddColumn(m, priorities, priorities.roleId);
+      await _safeAddColumn(m, priorities, priorities.isInbox);
+    }
+
+    if (from < 369) {
+      // Client path-independence: `priorities.path` is now nullable so a future
+      // API that stops sending `path` to apiVersion >= 5 clients can't crash
+      // row deserialization. TableMigration rebuilds the table from the current
+      // Drift schema (path now NULLABLE), preserving existing path data.
+      await m.alterTable(TableMigration(priorities));
+
+      // Focus-scoped sync cursor anchors moved from path-keyed
+      // (`activity-feed:<path>` / `agenda:<path>`) to id-keyed
+      // (`activity-feed:<uuid>` / `agenda:<uuid>`). Existing path-keyed rows
+      // would never match again — drop them so the one-time re-pull is clean
+      // (the new id-keyed states are created on demand on next sync).
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'activity-feed:%' OR entity LIKE 'agenda:%'",
+      );
     }
   }
 

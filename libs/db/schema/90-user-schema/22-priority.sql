@@ -29,9 +29,6 @@ direct_settings AS (
         (MAX(CASE WHEN key = 'respond_schedule_enabled' THEN 1 END) IS NOT NULL) AS respond_schedule_enabled_set,
         (MAX(CASE WHEN key = 'respond_window' THEN 1 END) IS NOT NULL) AS respond_window_set,
         (MAX(CASE WHEN key = 'respond_within' THEN 1 END) IS NOT NULL) AS respond_within_set,
-        (MAX(CASE WHEN key = 'early_notifications_enabled' THEN 1 END) IS NOT NULL) AS early_notifications_enabled_set,
-        (MAX(CASE WHEN key = 'notify_window' THEN 1 END) IS NOT NULL) AS notify_window_set,
-        (MAX(CASE WHEN key = 'see_within' THEN 1 END) IS NOT NULL) AS see_within_set,
         MAX(updated_at) AS updated_at
     FROM priority_setting
     GROUP BY user_id, priority_id
@@ -82,25 +79,31 @@ SELECT
     COALESCE(direct.color, p.color) AS color,
     p.key,
     COALESCE(upu.unread, FALSE) AS unread,
-    'member'::text AS role,
+    'member'::text AS role,  -- access level ('member'); unrelated to role_id (the grouping FK)
     inh.respond_schedule_enabled,
     inh.respond_window,
     inh.respond_within,
-    inh.early_notifications_enabled,
-    inh.notify_window,
-    inh.see_within,
+    -- Notifications are now concrete columns on priority, propagated from the
+    -- focus's role (see 95-triggers/30-role-propagation.sql). NULL = app default.
+    p.early_notifications_enabled,
+    p.notify_window,
+    p.see_within,
     COALESCE(direct.respond_schedule_enabled_set, FALSE) AS respond_schedule_enabled_set,
     COALESCE(direct.respond_window_set, FALSE) AS respond_window_set,
     COALESCE(direct.respond_within_set, FALSE) AS respond_within_set,
-    COALESCE(direct.early_notifications_enabled_set, FALSE) AS early_notifications_enabled_set,
-    COALESCE(direct.notify_window_set, FALSE) AS notify_window_set,
-    COALESCE(direct.see_within_set, FALSE) AS see_within_set,
+    -- With concrete columns there is no inherit: a value-present focus is "set".
+    -- Kept for API 4 clients; Plan 6 removes these projections.
+    (p.early_notifications_enabled IS NOT NULL) AS early_notifications_enabled_set,
+    (p.notify_window IS NOT NULL) AS notify_window_set,
+    (p.see_within IS NOT NULL) AS see_within_set,
     p.inherit_members,
     p.config,
     -- New columns appended at the END so CREATE OR REPLACE VIEW works without
     -- dropping dependents. Order is irrelevant: clients map by column name.
     p.icon,
-    p.notification_cleared_at
+    p.notification_cleared_at,
+    p.role_id,
+    p.is_inbox
 FROM priority p
     LEFT JOIN user_root ur ON ur.user_id = p.user_id
     LEFT JOIN direct_settings direct ON direct.user_id = p.user_id AND direct.priority_id = p.id

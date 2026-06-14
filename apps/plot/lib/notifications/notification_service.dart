@@ -790,14 +790,6 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     final allPriorities = await store.select(store.priorities).get();
     final priorityById = {for (final p in allPriorities) p.id.value.toString(): p};
 
-    // Find the root priority
-    final rootPriority = allPriorities
-        .where((p) => p.root)
-        .firstOrNull;
-    if (rootPriority == null) return [];
-
-    final rootPath = rootPriority.path.value;
-
     // Group unread threads by first-level priority
     final Map<String, NotificationBatch> batchMap = {};
 
@@ -811,10 +803,8 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       final priority = priorityById[priorityIdStr];
       if (priority == null) continue;
 
-      // Find the first-level priority (direct child of root)
-      final firstLevel = _findFirstLevelPriority(
-        priority.path.value, rootPath, allPriorities,
-      );
+      // Find the first-level priority (a focus — a non-root priority).
+      final firstLevel = _firstLevelFocusFor(priority);
       if (firstLevel == null) continue;
 
       // Filter out stale threads already cleared at the focus level. The
@@ -860,25 +850,15 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     return batchMap.values.toList();
   }
 
-  /// Find the first-level priority (direct child of root) for a given path.
-  PriorityRow? _findFirstLevelPriority(
-    String threadPriorityPath,
-    String rootPath,
-    List<PriorityRow> allPriorities,
-  ) {
-    // First-level priority path has exactly one more segment than root
-    // e.g., root = "abc", first-level = "abc.work"
-    final rootSegments = rootPath.split('.');
-    final pathSegments = threadPriorityPath.split('.');
-
-    if (pathSegments.length <= rootSegments.length) return null;
-
-    // Build the first-level path
-    final firstLevelPath = pathSegments.sublist(0, rootSegments.length + 1).join('.');
-
-    return allPriorities
-        .where((p) => p.path.value == firstLevelPath)
-        .firstOrNull;
+  /// Find the first-level focus that owns [priority] (path-independent).
+  ///
+  /// In the flat/role model focuses are direct children of the root and
+  /// threads are filed directly in a focus, so the first-level focus for a
+  /// thread is simply its filed priority — unless that priority is the root
+  /// (Inbox), which has no enclosing focus (returns null, matching the old
+  /// `threadDepth <= rootDepth` skip).
+  PriorityRow? _firstLevelFocusFor(PriorityRow priority) {
+    return priority.root ? null : priority;
   }
 
   /// Fetch AI-generated summaries from the API.

@@ -114,7 +114,7 @@ void main() {
 
     final result = await Actor.authoredThreadsForSharing(
       selfIds: {self},
-      priorityPath: null,
+      priorityId: null,
       limit: 200,
     );
 
@@ -122,7 +122,7 @@ void main() {
     expect(result.single.contacts, containsAll([self, beth]));
   });
 
-  test('authoredThreadsForSharing scopes to the priority subtree', () async {
+  test('authoredThreadsForSharing scopes to the filed priority', () async {
     final self = Uuid.generate();
     final beth = Uuid.generate();
 
@@ -141,13 +141,15 @@ void main() {
     await insertNote(inChild, author: self);
     await insertNote(inOutside, author: self);
 
+    // Flat model: a focus shows only what's filed directly in it (exact
+    // filed-priority id). The thread filed in `child` is included; the one
+    // filed in another priority is excluded.
     final result = await Actor.authoredThreadsForSharing(
       selfIds: {self},
-      priorityPath: Path('root'),
+      priorityId: child,
       limit: 200,
     );
 
-    // The descendant thread is included; the out-of-subtree one is excluded.
     expect(result.map((t) => t.id), [inChild]);
   });
 

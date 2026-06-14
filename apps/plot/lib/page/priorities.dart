@@ -151,6 +151,12 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                     if (root == null) {
                       return const SizedBox.shrink();
                     }
+                    // The accordion expands the selected focus's role; the
+                    // Everything feed expands none. Computed here (page wires
+                    // Bloc state) and handed to PrioritiesList.
+                    final expandedRoleId = everything
+                        ? null
+                        : selected?.roleId;
                     return Column(
                       mainAxisSize: layoutState.multiPanel
                           ? MainAxisSize.min
@@ -168,8 +174,10 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                               : PrioritiesList(
                                   root: root,
                                   priorities: state.priorities,
+                                  roles: state.sortedRoles,
                                   selected: selected,
                                   everything: everything,
+                                  expandedRoleId: expandedRoleId,
                                 ),
                         ),
                       ],
@@ -246,7 +254,14 @@ class _GlobalViewSidebar extends StatelessWidget {
     for (final t in remoteExtras) {
       addThread(t);
     }
-    matchPriorities.sort((a, b) => a.path.value.compareTo(b.path.value));
+    matchPriorities.sort((a, b) {
+      // Stable focus ordering by the sidebar `order` column; id as a final
+      // tiebreaker so ties are deterministic (path-independent).
+      final byOrder = a.order.value.compareTo(b.order.value);
+      return byOrder != 0
+          ? byOrder
+          : a.id.toString().compareTo(b.id.toString());
+    });
 
     // Fixed Everything/Inbox tiles share the focus tiles' resting weight.
     final fixedTileStyle = itemStyle.copyWith(fontWeight: FontWeight.w400);

@@ -364,19 +364,18 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
 }
 
 class LinksBase extends BaseTable {
-  LinksBase({this.priorityId, this.priorityPath})
+  LinksBase({this.priorityId})
     : super(
         table: 'user_link',
         syncEndpoint: 'links',
         name: 'links',
-        filterName: priorityPath,
+        filterName: priorityId?.toString(),
         order: 'updated_at',
         ascending: false,
         supportsArchiving: false,
       );
 
   final PriorityId? priorityId;
-  final String? priorityPath;
 
   @override
   Map<String, String> buildParams({

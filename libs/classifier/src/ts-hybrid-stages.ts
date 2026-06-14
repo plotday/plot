@@ -206,24 +206,61 @@ export async function priorityTitleOverride(
   };
 }
 
-export async function rootFallback(
-  ctx: ClassifierContext
+/**
+ * No-match fallback: land the thread in a role's Inbox rather than a single
+ * root. Picks the role most associated with the candidate's user-linked
+ * accounts (their historical user_moved filing distribution); on a tie or no
+ * signal, the user's oldest role wins. Returns that role's Inbox focus.
+ */
+export async function roleInboxFallback(
+  ctx: ClassifierContext,
+  candidate: Candidate
 ): Promise<StageResult> {
-  const res = await ctx.rawQuery(
-    `SELECT id
-       FROM public.priority
-      WHERE user_id = $1::uuid
-        AND nlevel(path) = 1
-        AND archived_at IS NULL
-      ORDER BY created_at ASC
-      LIMIT 1`,
-    [ctx.userId]
+  const accounts = [candidate.author, ...candidate.contacts].filter(
+    (x): x is string => typeof x === "string"
   );
-  const row = res.rows[0] as { id: string } | undefined;
+  const res = await ctx.rawQuery(
+    `WITH cand AS (
+        SELECT uc.contact_id AS cid
+          FROM public.user_contact uc
+         WHERE uc.user_id = $1::uuid
+           AND uc.linked = TRUE
+           AND uc.archived_at IS NULL
+           AND uc.contact_id = ANY($2::uuid[])
+     ),
+     affinity AS (
+        SELECT p.role_id, COUNT(DISTINCT t.id) AS n
+          FROM public.thread_priority tp
+          JOIN public.thread t   ON t.id = tp.thread_id
+          JOIN public.priority p ON p.id = tp.priority_id
+         WHERE tp.user_id = $1::uuid
+           AND tp.user_moved = TRUE
+           AND t.archived_at IS NULL
+           AND p.role_id IS NOT NULL
+           AND (t.created_by IN (SELECT cid FROM cand)
+                OR t.contacts && ARRAY(SELECT cid FROM cand))
+         GROUP BY p.role_id
+     )
+     SELECT inbox.id AS priority_id, r.id AS role_id, COALESCE(a.n, 0) AS n
+       FROM public.role r
+       JOIN public.priority inbox
+         ON inbox.role_id = r.id
+        AND inbox.is_inbox
+        AND inbox.archived_at IS NULL
+       LEFT JOIN affinity a ON a.role_id = r.id
+      WHERE r.user_id = $1::uuid
+        AND r.archived_at IS NULL
+      ORDER BY COALESCE(a.n, 0) DESC, r.created_at ASC
+      LIMIT 1`,
+    [ctx.userId, accounts]
+  );
+  const row = res.rows[0] as
+    | { priority_id: string; role_id: string; n: number }
+    | undefined;
   if (!row) return null;
   return {
-    priorityId: row.id,
-    stage: "root_fallback",
-    scores: {},
+    priorityId: row.priority_id,
+    stage: "role_inbox_fallback",
+    scores: { role_id: row.role_id, affinity: row.n },
   };
 }

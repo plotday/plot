@@ -85,6 +85,14 @@ Threads land in the focuses they belong to — your projects, roles, and areas �
 - Unread indicators per focus, drag to reorder, and a "More" affordance that collapses a long list down to the active ones.
 - Merge one focus into another in a single step, or archive a focus to tuck it away without touching its threads — un-archive any time.
 
+### Roles
+
+- Group your focuses under roles — Work, Personal, Volunteering, and so on — each with its own color and notification settings. Setup asks where you'll use Plot first and names your starting role from the answer.
+- Focuses follow their role's color and notifications; override either on a focus and it simply stops following — there's no "inherit" switch to manage. Change a focus's role from its edit form and its look updates to match.
+- Every role has its own Inbox — the catch-all for that role. Plot files each thread into the right focus, or that role's Inbox when nothing fits.
+- One role keeps the sidebar a simple flat list. With more, focuses nest under collapsible role headers, and only the role you're working in is expanded; a collapsed role still shows bold or an unread dot when a focus inside it would.
+- Drag to reorder both roles and the focuses within them. Manage a role's name, color, and notifications from its "…" menu; add a role inline while assigning a focus.
+
 ### AI sorting that learns from you
 
 - Describe what a focus is for and Plot matches threads to it — by meaning, not just keywords.

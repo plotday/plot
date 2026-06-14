@@ -524,6 +524,7 @@ Future<Priority?> createPriorityInline(
 /// roster and team scope (via thread.team_id), so no team or per-focus default
 /// sharing is collected here.
 Priority _priorityFromValues(Map<String, dynamic> values, Priority root) {
+  final role = values['role'] as Role?;
   return Priority(
     title: values['title'] as String,
     parent: root,
@@ -532,7 +533,72 @@ Priority _priorityFromValues(Map<String, dynamic> values, Priority root) {
   ).copyWith(
     icon: Value(values['icon'] as String?),
     description: Value(values['description'] as String?),
+    // Set the focus's role so the push sends `role_id`; the server's
+    // `apply_role_change_to_focus` trigger applies follow-if-matching. Falls
+    // back to the parent's role (set by the constructor) when no role field
+    // was present (e.g. forms that predate the role picker).
+    roleId: role != null ? Value(role.id) : const Value.absent(),
   );
+}
+
+/// Resolves the role to pre-select in a focus form. Uses [defaultRoleId] when
+/// given (e.g. the sidebar's expanded role), otherwise the user's first role.
+/// Returns null when the user has no roles yet (the field is then optional).
+Future<Role?> _resolveInitialRole(RoleId? defaultRoleId) async {
+  if (defaultRoleId != null) {
+    final role = await Role.getOne(defaultRoleId);
+    if (role != null) return role;
+  }
+  final roles = await Role.all();
+  return roles.firstOrNull;
+}
+
+/// Builds the focus form's "Role" [FormSelect]. Selecting a role previews the
+/// server's follow-if-matching behaviour: if the [colorField] still shows the
+/// previously selected role's colour (i.e. the focus was following its role),
+/// the colour updates to the newly selected role's colour. If the user picked a
+/// custom colour (an override), it's left untouched. The server's
+/// `apply_role_change_to_focus` trigger is the source of truth on save; this is
+/// just a live preview. [onAdd] opens the inline Add role modal.
+FormSelect<Role> _roleSelect({
+  required Role? initialRole,
+  required FormSelect<ThemeColor> colorField,
+}) {
+  // The role the colour is currently following, tracked across changes so we
+  // only auto-update the colour when it hasn't been manually overridden.
+  Role? followedRole = initialRole;
+  late final FormSelect<Role> field;
+  field = FormSelect<Role>(
+    key: 'role',
+    label: 'Role',
+    required: true,
+    initialValue: initialRole,
+    hasInitialValue: initialRole != null,
+    items: (search) async => (await Role.all())
+        .where(
+          (r) =>
+              search == null ||
+              r.name.toLowerCase().contains(search.toLowerCase()),
+        )
+        .toList(),
+    titleBuilder: (r) => r.name,
+    leadingBuilder: (r) => ColorDot(color: r.displayColor),
+    onAdd: (ctx) => createRoleInline(ctx),
+    onChanged: () {
+      final role = field.getValue();
+      if (role == null) return;
+      // Only follow the role's colour if the focus was still following the
+      // previous role (its colour matches). A manual override is preserved.
+      final followingColor =
+          followedRole != null &&
+          colorField.getValue() == followedRole!.displayColor;
+      if (followingColor || followedRole == null) {
+        colorField.setValue(role.displayColor);
+      }
+      followedRole = role;
+    },
+  );
+  return field;
 }
 
 /// Icon picker over the curated focus icon set ([PlotIcon.focusIcons]).
@@ -571,7 +637,7 @@ FormSelect<String> _focusIconSelect({String initial = 'bullseyePointer'}) {
 /// (no thread-matching step). [prefill] opens step 1 with its fields populated;
 /// the [AddFocus] picker uses this to seed the form from a curated suggestion.
 class NewFocus extends Command {
-  NewFocus({this.skipMatching = false, this.prefill})
+  NewFocus({this.skipMatching = false, this.prefill, this.defaultRoleId})
     : super(
         title: 'Add a focus',
         icon: PlotIcon.add,
@@ -581,6 +647,10 @@ class NewFocus extends Command {
 
   final bool skipMatching;
   final FocusPrefill? prefill;
+
+  /// The role to pre-select in the new focus's Role field (e.g. the sidebar's
+  /// expanded role). Defaults to the user's first role when null.
+  final RoleId? defaultRoleId;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -602,6 +672,7 @@ class NewFocus extends Command {
         root: root,
         skipMatching: skipMatching,
         prefill: prefill,
+        defaultRoleId: defaultRoleId,
       ),
     ).run(context);
   }
@@ -613,13 +684,18 @@ class NewFocus extends Command {
 /// suggestion prefills the same two-step [NewFocus] form; creating from it
 /// records the dismissal (see [DismissedFocusSuggestions]).
 class AddFocus extends Command {
-  AddFocus()
+  AddFocus({this.defaultRoleId})
     : super(
         title: 'Add a focus',
         icon: PlotIcon.add,
         eventObject: EventObject.priority,
         eventAction: EventAction.added,
       );
+
+  /// The role to default the new focus to (e.g. the sidebar's expanded role).
+  /// Threaded into the create form's Role field; defaults to the user's first
+  /// role when null.
+  final RoleId? defaultRoleId;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -630,7 +706,7 @@ class AddFocus extends Command {
     // Nothing left to suggest — the picker would show only "Create a custom
     // focus", so skip straight to the create form.
     if (suggestions.isEmpty) {
-      return NewFocus().run(context);
+      return NewFocus(defaultRoleId: defaultRoleId).run(context);
     }
 
     return ShowCommands(
@@ -638,11 +714,14 @@ class AddFocus extends Command {
       icon: PlotIcon.add,
       commands: Commands(
         groups: [
-          StaticCommandGroup(commands: [_CreateCustomFocus()]),
+          StaticCommandGroup(
+            commands: [_CreateCustomFocus(defaultRoleId: defaultRoleId)],
+          ),
           StaticCommandGroup(
             title: 'Suggestions',
             commands: [
-              for (final s in suggestions) _CreateSuggestedFocus(s),
+              for (final s in suggestions)
+                _CreateSuggestedFocus(s, defaultRoleId: defaultRoleId),
             ],
           ),
         ],
@@ -653,7 +732,7 @@ class AddFocus extends Command {
 
 /// "Create a custom focus" row — opens the empty two-step create form.
 class _CreateCustomFocus extends Command {
-  _CreateCustomFocus()
+  _CreateCustomFocus({this.defaultRoleId})
     : super(
         title: 'Create a custom focus',
         icon: PlotIcon.add,
@@ -661,13 +740,16 @@ class _CreateCustomFocus extends Command {
         eventAction: EventAction.added,
       );
 
+  final RoleId? defaultRoleId;
+
   @override
-  Future<CommandReturn> run(BuildContext context) => NewFocus().run(context);
+  Future<CommandReturn> run(BuildContext context) =>
+      NewFocus(defaultRoleId: defaultRoleId).run(context);
 }
 
 /// A curated-suggestion row — opens the two-step create form prefilled.
 class _CreateSuggestedFocus extends Command {
-  _CreateSuggestedFocus(this.suggestion)
+  _CreateSuggestedFocus(this.suggestion, {this.defaultRoleId})
     : super(
         title: suggestion.title,
         subtitle: suggestion.description,
@@ -677,10 +759,11 @@ class _CreateSuggestedFocus extends Command {
       );
 
   final FocusPrefill suggestion;
+  final RoleId? defaultRoleId;
 
   @override
   Future<CommandReturn> run(BuildContext context) =>
-      NewFocus(prefill: suggestion).run(context);
+      NewFocus(prefill: suggestion, defaultRoleId: defaultRoleId).run(context);
 }
 
 /// Step 1 form for [NewFocus]. The description feeds the matching step; it is
@@ -697,8 +780,27 @@ Future<FormData> _buildFocusDetailsForm(
   required Priority root,
   required bool skipMatching,
   FocusPrefill? prefill,
+  RoleId? defaultRoleId,
 }) async {
   final suggestionKey = prefill?.suggestionKey;
+  final initialRole = await _resolveInitialRole(defaultRoleId);
+  final colorField = FormSelect<ThemeColor>(
+    key: 'color',
+    label: 'Color',
+    initialValue:
+        prefill?.color ?? initialRole?.displayColor ?? const ThemeColor(0),
+    hasInitialValue: true,
+    items: (search) async => ThemeColor.options
+        .where(
+          (c) =>
+              search == null ||
+              c.label.toLowerCase().startsWith(search.toLowerCase()),
+        )
+        .toList(),
+    titleBuilder: (c) => c.label,
+    leadingBuilder: (c) => ColorDot(color: c),
+  );
+  final roleField = _roleSelect(initialRole: initialRole, colorField: colorField);
   return FormData(
     title: 'Add a focus',
     groups: [
@@ -720,22 +822,9 @@ Future<FormData> _buildFocusDetailsForm(
             placeholder: 'What belongs in this focus?',
             initialValue: prefill?.description,
           ),
+          roleField,
           _focusIconSelect(initial: prefill?.iconKey ?? 'bullseyePointer'),
-          FormSelect<ThemeColor>(
-            key: 'color',
-            label: 'Color',
-            initialValue: prefill?.color ?? const ThemeColor.defaultColor(),
-            hasInitialValue: true,
-            items: (search) async => ThemeColor.options
-                .where(
-                  (c) =>
-                      search == null ||
-                      c.label.toLowerCase().startsWith(search.toLowerCase()),
-                )
-                .toList(),
-            titleBuilder: (c) => c.label,
-            leadingBuilder: (c) => ColorDot(color: c),
-          ),
+          colorField,
           if (skipMatching)
             FormButton(
               key: 'create',
@@ -1225,6 +1314,28 @@ class EditPriorityCommand extends ShowForm {
         form: (context) async {
           // Re-fetch priority to get latest data (e.g. after a previous save)
           final p = await Priority.getOne(priority.id);
+          final initialRole = await _resolveInitialRole(p.roleId);
+
+          final colorField = FormSelect<ThemeColor>(
+            key: 'color',
+            label: 'Color',
+            initialValue:
+                p.color ?? initialRole?.displayColor ?? const ThemeColor(0),
+            hasInitialValue: true,
+            items: (search) async => ThemeColor.options
+                .where(
+                  (c) =>
+                      search == null ||
+                      c.label.toLowerCase().startsWith(search.toLowerCase()),
+                )
+                .toList(),
+            titleBuilder: (c) => c.label,
+            leadingBuilder: (c) => ColorDot(color: c),
+          );
+          final roleField = _roleSelect(
+            initialRole: initialRole,
+            colorField: colorField,
+          );
 
           return FormData(
             title: 'Edit focus',
@@ -1237,24 +1348,9 @@ class EditPriorityCommand extends ShowForm {
                     initialValue: p.title,
                     required: true,
                   ),
+                  roleField,
                   _focusIconSelect(initial: p.icon ?? 'bullseyePointer'),
-                  FormSelect<ThemeColor>(
-                    key: 'color',
-                    label: 'Color',
-                    initialValue: p.color ?? const ThemeColor.defaultColor(),
-                    hasInitialValue: true,
-                    items: (search) async => ThemeColor.options
-                        .where(
-                          (c) =>
-                              search == null ||
-                              c.label.toLowerCase().startsWith(
-                                search.toLowerCase(),
-                              ),
-                        )
-                        .toList(),
-                    titleBuilder: (c) => c.label,
-                    leadingBuilder: (c) => ColorDot(color: c),
-                  ),
+                  colorField,
                   FormButton(
                     key: 'save',
                     isPrimary: true,
@@ -1262,15 +1358,21 @@ class EditPriorityCommand extends ShowForm {
                       final title = values['title'] as String;
                       final color = values['color'] as ThemeColor?;
                       final icon = values['icon'] as String?;
+                      final role = values['role'] as Role?;
                       // Focuses are team-agnostic: no team field. Per-focus
                       // default sharing is gone — the two-step target picker
                       // drives a thread's roster and team scope instead.
+                      // Setting role_id fires the server's
+                      // `apply_role_change_to_focus` trigger (follow-if-matching).
                       return EditPriority(
                         Future.value(
                           p.copyWith(
                             title: title,
                             color: Value(color),
                             icon: Value(icon),
+                            roleId: role != null
+                                ? Value(role.id)
+                                : const Value.absent(),
                           ),
                         ),
                       );
@@ -1424,11 +1526,15 @@ class ShowPriorityCommands extends ShowCommands {
 }
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
-  // The Inbox (root) is a fixed tile — no name/icon/colour to edit.
-  if (!priority.root) EditPriorityCommand(priority),
+  // The Inbox is auto-managed and not editable/removable: the legacy global
+  // Inbox (root) and every role's Inbox (isInbox) have their name locked to
+  // "Inbox" and their colour/notifications following the role, so they offer
+  // no Edit (the Role field there could try to re-home an Inbox, which the
+  // server's `unique (role_id) where is_inbox` rejects) and no Archive/Merge.
+  if (!priority.root && !priority.isInbox) EditPriorityCommand(priority),
   ShowEarlyNotificationsSettings(priority),
   ShowTimeLog(priority),
-  if (!priority.root) ...archiveOrMergeCommands(priority),
+  if (!priority.root && !priority.isInbox) ...archiveOrMergeCommands(priority),
 ];
 
 /// The destructive slot on a focus menu. An archived focus offers Un-archive.

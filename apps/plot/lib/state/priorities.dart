@@ -73,12 +73,23 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
             }
           },
         );
+    // The sidebar groups focuses under their roles. Roles are not affected by
+    // the archived/search filters that scope the focus watch, so always watch
+    // the live (non-archived) roles independently of the priorities query.
+    _rolesSubscription = Role.watch().listen(
+      (roles) => emit(state.copyWith(roles: roles)),
+      onError: (Object error, StackTrace? stackTrace) {
+        log.severe('Error watching roles', error, stackTrace);
+      },
+    );
     return completer.future;
   }
 
   void stop() {
     _subscription?.cancel();
+    _rolesSubscription?.cancel();
   }
 
   StreamSubscription<List<Priority>>? _subscription;
+  StreamSubscription<List<Role>>? _rolesSubscription;
 }

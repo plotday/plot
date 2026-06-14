@@ -392,11 +392,11 @@ sealed class AgendaItem extends Equatable {
     header: (h) => h.date != null
         ? 'header_date_${h.date}'
         : h.dateTimeRange != null
-        ? 'header_event_${h.dateTimeRange}_${h.parentBlockId ?? h.blockPriority?.path.value ?? ""}'
+        ? 'header_event_${h.dateTimeRange}_${h.parentBlockId ?? h.blockPriority?.id ?? ""}'
         : h.parentBlockId != null
         ? 'header_block_${h.parentBlockId}'
         : h.blockPriority != null
-        ? 'header_priority_${h.blockPriority!.path.value}'
+        ? 'header_priority_${h.blockPriority!.id}'
         : 'header_other',
     activity: (a) =>
         'activity_${a.thread.id}${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}${a.thread.isLinkScheduleInstance ? '_link' : ''}${a.isAssociated ? '_assoc${a.associationParentId != null ? '_${a.associationParentId}' : ''}' : ''}',

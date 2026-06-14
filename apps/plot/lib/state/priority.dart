@@ -930,15 +930,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscribeAllTabHead();
   }
 
-  /// Resolve the `(priorityId, priorityPath)` scope for the activity-feed
-  /// queries. Flat-focus rules:
-  ///   • Everything → both null: every thread, unscoped.
-  ///   • Root (Inbox) → exact `priorityId` so only unfiled threads show; the
-  ///     synthetic Everything view is the way to see all of them at once.
-  ///     Searching from the root still goes global (both null).
-  ///   • A focus → unchanged behaviour: roll up by path while searching,
-  ///     rolling up sub-priorities, or showing an event agenda; exact
-  ///     otherwise. Focuses are leaves, so path == exact in the flat model.
   /// True when any header filter chip (tag, reaction, or thread type) is
   /// armed. Filters query globally — like search — so an armed filter both
   /// unscopes the feed ([_feedScope]) and renders it as one flat list.
@@ -948,38 +939,37 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.iconFilter.isNotEmpty ||
       state.assigneeFilter.isNotEmpty;
 
-  ({PriorityId? priorityId, Path? priorityPath}) _feedScope() {
-    // A global view (an active search or any active filter) always QUERIES
-    // across every focus, regardless of [context] — so results are global no
-    // matter which focus was selected when the view opened. Narrowing to a
-    // focus is a display-only concern driven by [globalViewScope] (see
-    // [PriorityState.activityFeedViewItems]); the underlying query stays
-    // global so the focus-as-filter sidebar can keep listing every focus with
-    // a match and the user can switch the narrow without re-querying.
+  /// Resolve the `priorityId` scope for the activity-feed queries. The scope
+  /// is path-independent: the server filters by `priority_id` and the local
+  /// Drift filter scopes on the thread's filed `priority_id`. Flat-focus
+  /// rules:
+  ///   • Everything → null: every thread, unscoped.
+  ///   • Root (Inbox) → exact `priorityId` so only unfiled threads show; the
+  ///     synthetic Everything view is the way to see all of them at once.
+  ///     Searching from the root still goes global (null).
+  ///   • A focus → exact `priorityId`. Focuses are leaves in the flat model,
+  ///     so the former path scope (`showSubPriorities` / event agenda) was an
+  ///     exact filed-priority match too — id is the same scope.
+  ///   • A global view (active search or any active filter) → null, so results
+  ///     are global no matter which focus was selected. Narrowing to a focus
+  ///     is a display-only concern driven by [globalViewScope] (see
+  ///     [PriorityState.activityFeedViewItems]); the underlying query stays
+  ///     global so the focus-as-filter sidebar can keep listing every focus
+  ///     with a match and the user can switch the narrow without re-querying.
+  PriorityId? _feedScope() {
     if (state.search.isNotEmpty || _hasActiveFilter) {
-      return (priorityId: null, priorityPath: null);
+      return null;
     }
     // The dedicated (non-search) Everything feed is also global.
     if (state.everything) {
-      return (priorityId: null, priorityPath: null);
+      return null;
     }
-    final p = state.context;
-    if (p.root) {
-      return (priorityId: p.id, priorityPath: null);
-    }
-    final scopeByPath = state.showSubPriorities ||
-        eventAgendaEventFor(_currentEventForFeed, p.id) != null;
-    return (
-      priorityId: scopeByPath ? null : p.id,
-      priorityPath: scopeByPath ? p.path : null,
-    );
+    return state.context.id;
   }
 
   void _subscribeAllTabHead() {
     final isSearching = state.search.isNotEmpty;
-    final scope = _feedScope();
-    final priorityId = scope.priorityId;
-    final priorityPath = scope.priorityPath;
+    final priorityId = _feedScope();
     final archived = state.showArchived;
     final filter = state.filter.isNotEmpty ? state.filter : null;
     final reactionFilter =
@@ -1005,7 +995,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (flatMode) {
       _activeTabSubscription = Thread.watchAllTabHead(
         priorityId: priorityId,
-        priorityPath: priorityPath,
         archived: archived,
         filter: filter,
         reactionFilter: reactionFilter,
@@ -1064,7 +1053,6 @@ class PriorityBloc extends Cubit<PriorityState> {
         })>(
       Thread.watchUnreadHead(
         priorityId: priorityId,
-        priorityPath: priorityPath,
         archived: archived,
         reactionFilter: reactionFilter,
         limit: _boundedSectionLimit,
@@ -1073,14 +1061,12 @@ class PriorityBloc extends Cubit<PriorityState> {
         action: 'active',
         sectionScope: 'active',
         priorityId: priorityId,
-        priorityPath: priorityPath,
         archived: archived,
         reactionFilter: reactionFilter,
         limit: _boundedSectionLimit,
       ),
       Thread.watchDoneHead(
         priorityId: priorityId,
-        priorityPath: priorityPath,
         archived: archived,
         reactionFilter: reactionFilter,
         limit: _activityFeedLimit,
@@ -1480,7 +1466,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
 
       final gen = _activeTabAppendGeneration;
-      final scope = _feedScope();
+      final scopeId = _feedScope();
 
       final completer = Completer<void>();
       _activeTabAppendInFlight = completer.future;
@@ -1492,8 +1478,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       page;
       try {
         page = await Thread.fetchDonePage(
-          priorityId: scope.priorityId,
-          priorityPath: scope.priorityPath,
+          priorityId: scopeId,
           archived: state.showArchived,
           reactionFilter:
               state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
@@ -1562,7 +1547,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
 
       final gen = _activeTabAppendGeneration;
-      final scope = _feedScope();
+      final scopeId = _feedScope();
 
       final completer = Completer<void>();
       _activeTabAppendInFlight = completer.future;
@@ -1574,8 +1559,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       page;
       try {
         page = await Thread.fetchAllTabPage(
-          priorityId: scope.priorityId,
-          priorityPath: scope.priorityPath,
+          priorityId: scopeId,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
           reactionFilter:
@@ -3509,7 +3493,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Lazily subscribe the global filter-data streams (tags, reactions, icon
   /// counts) that populate the header filter dropdown. These are global
-  /// (`priorityPath=null`) and feed only the filter UI, so their results are
+  /// (`priorityId=null`) and feed only the filter UI, so their results are
   /// identical for every focus. They're loaded once — on first search-open —
   /// instead of being recomputed on every focus switch, where the three
   /// global threads scans were the largest switch-burst cost.
@@ -3624,7 +3608,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _rebuildAgendaModel();
     });
 
-    // Tags / reactions / icon-count filter data is GLOBAL (priorityPath=null)
+    // Tags / reactions / icon-count filter data is GLOBAL (priorityId=null)
     // and feeds only the header filter dropdown, so it is byte-identical
     // across focuses. It is loaded lazily and exactly once via
     // [ensureFilterData] when the user first opens search — NOT here, where it
@@ -3964,10 +3948,10 @@ class PriorityBloc extends Cubit<PriorityState> {
                                 '${t.id}:${t.updatedAt.microsecondsSinceEpoch}'
                                 ':${t.occurrence ?? ''}'
                                 ':${t.isLinkScheduleInstance ? 1 : 0}'
-                                ':${t.priority.path.value}'
+                                ':${t.priority.id}'
                                 // Include the priority's display colour so a
                                 // focus colour edit (which doesn't bump the
-                                // thread row's `updatedAt` or change its path)
+                                // thread row's `updatedAt` or change its id)
                                 // produces a distinct signature and isn't
                                 // dropped by [.distinct] below — otherwise the
                                 // agenda's event blocks keep their stale colour.
@@ -4189,16 +4173,17 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> _triggerAgendaSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;
-    final path = priorityToLoad.path.value;
+    // The sync cursor anchor keys on the priority id string (path-independent),
+    // matching [ThreadsBase.filterName].
+    final scopeKey = priorityToLoad.id.toString();
     final suffix = archived ? '_archived' : '';
-    final entityName = 'agenda:$path$suffix';
+    final entityName = 'agenda:$scopeKey$suffix';
 
     // Fetch-more loop: pull pages until we have enough local items AND the
     // sync boundary covers the last visible item's date, or server has no more.
     for (var i = 0; i < 10; i++) {
       await Thread.pullAgenda(
         priorityToLoad.id,
-        priorityToLoad.path,
         archived: archived,
       );
 
@@ -4290,9 +4275,11 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;
-    final path = priorityToLoad.path.value;
+    // The sync cursor anchor keys on the priority id string (path-independent),
+    // matching [ThreadsBase.filterName].
+    final scopeKey = priorityToLoad.id.toString();
     final suffix = archived ? '_archived' : '';
-    final entityName = 'activity-feed:$path$suffix';
+    final entityName = 'activity-feed:$scopeKey$suffix';
 
     // True when the loop exits because the sync boundary now covers the
     // last locally-visible item — i.e. we've pulled everything the feed
@@ -4305,7 +4292,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     for (var i = 0; i < 10; i++) {
       await Thread.pullActivityFeed(
         priorityToLoad.id,
-        priorityToLoad.path,
         archived: archived,
       );
 
@@ -4318,7 +4304,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
       // Check local activity feed to decide if we need more pages.
       final localThreads = await Thread.get(
-        priorityPath: priorityToLoad.path,
+        priorityId: priorityToLoad.id,
         archived: archived,
         order: ThreadOrder.reverse,
         limit: _activityFeedLimit,

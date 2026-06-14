@@ -26,7 +26,7 @@ class ScheduledDay extends Equatable {
       // the unscheduled rows were fetched just to be filtered out.
       Thread.watch(
         range: today.toDateRange(),
-        priorityPath: context?.path,
+        priorityId: context?.id,
         archived: archived,
         filter: filter,
         search: search,
@@ -71,14 +71,10 @@ class ScheduledDay extends Equatable {
         List<Thread> dayThreads = [];
         for (final thread in allThreads) {
           if (thread.agendaAt.toDate() == today) {
-            if (context == null) {
+            // Flat/role model: focuses are leaves, so scoping to a context is
+            // an exact filed-priority id match (path-independent).
+            if (context == null || thread.priority.id == context.id) {
               dayThreads.add(thread);
-            } else {
-              final threadPath = thread.priority.path;
-              if (threadPath == context.path ||
-                  threadPath.isChild(context.path)) {
-                dayThreads.add(thread);
-              }
             }
           }
         }

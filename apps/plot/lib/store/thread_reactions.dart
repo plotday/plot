@@ -13,18 +13,17 @@ class ThreadReactions extends Table with SyncableTable, UuidTable {
 }
 
 class ThreadReactionsBase extends BaseTable {
-  ThreadReactionsBase({this.priorityId, this.priorityPath})
+  ThreadReactionsBase({this.priorityId})
     : super(
         table: 'user_thread_reactions',
         syncEndpoint: 'thread-reactions',
         name: "thread_reactions",
-        filterName: priorityPath,
+        filterName: priorityId?.toString(),
         order: 'updated_at',
         ascending: false,
       );
 
   final PriorityId? priorityId;
-  final String? priorityPath;
 
   @override
   Map<String, String> buildParams({

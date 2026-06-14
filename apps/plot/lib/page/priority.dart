@@ -1235,7 +1235,7 @@ class _PriorityPageState extends State<PriorityPage>
           : state.remoteSearchExtras.where(
               (t) => scope.root
                   ? t.priority.root
-                  : t.priority.path.value == scope.path.value,
+                  : t.priority.id == scope.id,
             );
       final merged = <AgendaItem>[...items];
       for (final t in extras) {

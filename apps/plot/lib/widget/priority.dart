@@ -671,12 +671,11 @@ class _PriorityWeeklyTotalState extends State<_PriorityWeeklyTotal> {
   void didUpdateWidget(_PriorityWeeklyTotal oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Recreate only when the inputs that drive the query change. The
-    // descendants stream keys off `priority.path.value`; the totals stream
-    // keys off `priority` (via the ids set). Other priority fields (title,
-    // color, unread, …) don't affect the duration so they shouldn't force
-    // a resubscribe.
-    if (oldWidget.priority.id != widget.priority.id ||
-        oldWidget.priority.path != widget.priority.path) {
+    // self/descendants stream keys off the priority id (and `root`), and the
+    // totals stream keys off `priority` (via the ids set). Other priority
+    // fields (title, color, unread, …) don't affect the duration so they
+    // shouldn't force a resubscribe.
+    if (oldWidget.priority.id != widget.priority.id) {
       _stream = _buildStream();
     }
   }

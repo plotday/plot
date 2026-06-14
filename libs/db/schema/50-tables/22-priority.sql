@@ -33,6 +33,16 @@ CREATE TABLE "public"."priority" (
     "config" jsonb,
     "facet_filters" jsonb,
     "description" text,
+    -- Role grouping (Plan: focus-roles). Nullable here; backfilled and set
+    -- NOT NULL in the contract migration once it has soaked.
+    "role_id" uuid REFERENCES public.role,
+    -- Marks the role's single auto-managed Inbox focus. Partial-unique below.
+    "is_inbox" boolean NOT NULL DEFAULT FALSE,
+    -- Concrete notification settings the focus follows from its role
+    -- (see 95-triggers/30-role-propagation.sql). NULL = app default.
+    "early_notifications_enabled" boolean,
+    "notify_window" jsonb,
+    "see_within" jsonb,
     "notification_cleared_at" timestamp with time zone,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
@@ -48,6 +58,14 @@ CREATE UNIQUE INDEX idx_priority_user_path_unique ON "public"."priority" ("user_
 CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
 
 CREATE INDEX idx_priority_seq ON "public"."priority" ("seq");
+
+-- At most one live Inbox focus per role.
+CREATE UNIQUE INDEX idx_priority_role_inbox ON "public"."priority" ("role_id")
+WHERE
+    "is_inbox" AND "archived_at" IS NULL;
+
+-- Role membership lookups.
+CREATE INDEX idx_priority_role_id ON "public"."priority" ("role_id");
 
 -- Ensure keys are unique within each priority root tree
 CREATE UNIQUE INDEX idx_priority_key_per_root ON "public"."priority" ((subltree ("path", 0, 1)), "key")

@@ -2201,16 +2201,15 @@ Future<void> _applyPriorityMove(
   Priority priority,
 ) async {
   final contextPriority = priorityBloc?.state.context;
-  // Moving the thread outside what this feed displays removes it (open the
-  // next thread, rule 2); a move within the subtree (or in a flat feed)
-  // keeps it visible in place. The root context is the Inbox, which shows
-  // only unfiled threads — ANY move to a focus leaves it.
+  // Moving the thread to a different focus removes it from this sectioned
+  // feed (open the next thread, rule 2); a move within a flat feed keeps it
+  // visible in place. Flat/role model: focuses are leaves, so any move to a
+  // different priority id leaves the context (path-independent).
   final sectioned = !(priorityBloc?.activeFeedIsFlat ?? true);
   final leavesContext =
       sectioned &&
       contextPriority != null &&
-      priority.id != contextPriority.id &&
-      (contextPriority.root || !priority.path.isChild(contextPriority.path));
+      priority.id != contextPriority.id;
   final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
   final nav = (isCurrentThread && leavesContext)
       ? priorityBloc?.threadAfterStateChange(thread.id)
@@ -2398,7 +2397,7 @@ class MergeThreadInto extends ShowCommands {
 
   static Future<Commands> _getMergeTargets(Thread thread) async {
     final threads = await Thread.get(
-      priorityPath: thread.priority.path,
+      priorityId: thread.priority.id,
       archived: false,
       draft: false,
       order: ThreadOrder.reverse,

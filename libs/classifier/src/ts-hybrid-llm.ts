@@ -18,7 +18,7 @@ import {
   keyedPriority,
   priorityPrefix,
   priorityTitleOverride,
-  rootFallback,
+  roleInboxFallback,
   topicTrainingSummary,
 } from "./ts-hybrid-stages";
 import {
@@ -368,11 +368,11 @@ export function makeHybridLlmClassifier(
         }
       }
 
-      const rf = await rootFallback(ctx);
+      const rf = await roleInboxFallback(ctx, candidate);
       if (rf)
         return finish({
           priorityId: rf.priorityId,
-          stage: "root_fallback",
+          stage: "role_inbox_fallback",
           scores: rf.scores,
         });
       return finish({ priorityId: null, stage: "none", scores: {} });

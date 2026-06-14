@@ -10,6 +10,73 @@ import 'package:plot/store/attention.dart';
 import 'base.dart';
 import 'logging.dart';
 
+/// "See within" preset options, shared by the per-focus
+/// ([ShowEarlyNotificationsSettings]) and per-role
+/// ([ShowRoleNotificationsSettings]) notification editors.
+const seeWithinOptions = <({String label, SeeWithinTime seeWithin})>[
+  (
+    label: 'Immediately',
+    seeWithin: SeeWithinTime(value: 0, unit: SeeWithinUnit.minutes),
+  ),
+  (
+    label: '15 minutes',
+    seeWithin: SeeWithinTime(value: 15, unit: SeeWithinUnit.minutes),
+  ),
+  (
+    label: '30 minutes',
+    seeWithin: SeeWithinTime(value: 30, unit: SeeWithinUnit.minutes),
+  ),
+  (
+    label: '1 hour',
+    seeWithin: SeeWithinTime(value: 1, unit: SeeWithinUnit.hours),
+  ),
+  (
+    label: '2 hours',
+    seeWithin: SeeWithinTime(value: 2, unit: SeeWithinUnit.hours),
+  ),
+  (
+    label: '4 hours',
+    seeWithin: SeeWithinTime(value: 4, unit: SeeWithinUnit.hours),
+  ),
+  (
+    label: 'Same day',
+    seeWithin: SeeWithinTime(value: 0, unit: SeeWithinUnit.days),
+  ),
+  (label: '1 day', seeWithin: SeeWithinTime(value: 1, unit: SeeWithinUnit.days)),
+];
+
+/// Label for a "see within" time, matching it against [seeWithinOptions] and
+/// falling back to its generic display label.
+String seeWithinLabel(SeeWithinTime t) {
+  for (final option in seeWithinOptions) {
+    if (option.seeWithin.value == t.value && option.seeWithin.unit == t.unit) {
+      return option.label;
+    }
+  }
+  return t.displayLabel;
+}
+
+/// Snaps a "see within" time to the canonical option instance when one matches
+/// (so [FormSelect] equality lines up), otherwise returns it unchanged.
+SeeWithinTime matchSeeWithinOption(SeeWithinTime t) {
+  for (final option in seeWithinOptions) {
+    if (option.seeWithin.value == t.value && option.seeWithin.unit == t.unit) {
+      return option.seeWithin;
+    }
+  }
+  return t;
+}
+
+/// "HH:MM" strings every 30 minutes from 00:00 to 23:30, for time selects.
+List<String> notifyTimeOptions() {
+  final times = <String>[];
+  for (int h = 0; h < 24; h++) {
+    times.add('${h.toString().padLeft(2, '0')}:00');
+    times.add('${h.toString().padLeft(2, '0')}:30');
+  }
+  return times;
+}
+
 /// Modal for the per-priority notification settings: a master toggle +
 /// active hours + see-within deadline. Inheritance UX: when a sub-priority's
 /// value equals the inherited value on save, the override is cleared instead
@@ -28,62 +95,6 @@ class ShowEarlyNotificationsSettings extends ShowForm {
   /// as "Inbox" regardless of its stored title.
   static String _focusName(Priority priority) => priority.displayTitle;
 
-  /// "See within" preset options.
-  static const _seeWithinOptions = [
-    (
-      label: 'Immediately',
-      seeWithin: SeeWithinTime(value: 0, unit: SeeWithinUnit.minutes),
-    ),
-    (
-      label: '15 minutes',
-      seeWithin: SeeWithinTime(value: 15, unit: SeeWithinUnit.minutes),
-    ),
-    (
-      label: '30 minutes',
-      seeWithin: SeeWithinTime(value: 30, unit: SeeWithinUnit.minutes),
-    ),
-    (
-      label: '1 hour',
-      seeWithin: SeeWithinTime(value: 1, unit: SeeWithinUnit.hours),
-    ),
-    (
-      label: '2 hours',
-      seeWithin: SeeWithinTime(value: 2, unit: SeeWithinUnit.hours),
-    ),
-    (
-      label: '4 hours',
-      seeWithin: SeeWithinTime(value: 4, unit: SeeWithinUnit.hours),
-    ),
-    (
-      label: 'Same day',
-      seeWithin: SeeWithinTime(value: 0, unit: SeeWithinUnit.days),
-    ),
-    (
-      label: '1 day',
-      seeWithin: SeeWithinTime(value: 1, unit: SeeWithinUnit.days),
-    ),
-  ];
-
-  static String _seeWithinLabel(SeeWithinTime t) {
-    for (final option in _seeWithinOptions) {
-      if (option.seeWithin.value == t.value &&
-          option.seeWithin.unit == t.unit) {
-        return option.label;
-      }
-    }
-    return t.displayLabel;
-  }
-
-  static SeeWithinTime _matchOption(SeeWithinTime t) {
-    for (final option in _seeWithinOptions) {
-      if (option.seeWithin.value == t.value &&
-          option.seeWithin.unit == t.unit) {
-        return option.seeWithin;
-      }
-    }
-    return t;
-  }
-
   static const _defaultSeeWithin = SeeWithinTime(
     value: 30,
     unit: SeeWithinUnit.minutes,
@@ -91,16 +102,6 @@ class ShowEarlyNotificationsSettings extends ShowForm {
   static List<AttentionWindow> get _defaultNotifyWindow => const [
     AttentionWindow(days: [1, 2, 3, 4, 5, 6, 7], start: '08:00', end: '20:00'),
   ];
-
-  /// Generate "HH:MM" strings every 30 minutes from 00:00 to 23:30.
-  static List<String> _timeOptions() {
-    final times = <String>[];
-    for (int h = 0; h < 24; h++) {
-      times.add('${h.toString().padLeft(2, '0')}:00');
-      times.add('${h.toString().padLeft(2, '0')}:30');
-    }
-    return times;
-  }
 
   /// Show the sub-modal for editing a single attention window.
   /// Returns the edited window, or null if removed/cancelled.
@@ -129,7 +130,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
       label: 'From',
       initialValue: window.start,
       hasInitialValue: true,
-      items: (search) async => _timeOptions(),
+      items: (search) async => notifyTimeOptions(),
       titleBuilder: AttentionWindow.formatTime,
     );
 
@@ -138,7 +139,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
       label: 'To',
       initialValue: window.end,
       hasInitialValue: true,
-      items: (search) async => _timeOptions(),
+      items: (search) async => notifyTimeOptions(),
       titleBuilder: AttentionWindow.formatTime,
     );
 
@@ -204,7 +205,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
           priority.earlyNotificationsEnabled ??
           inherited.earlyNotificationsEnabled,
       notifyWindow: priority.notifyWindows ?? inherited.notifyWindow,
-      seeWithin: _matchOption(priority.seeWithinTime ?? inherited.seeWithin),
+      seeWithin: matchSeeWithinOption(priority.seeWithinTime ?? inherited.seeWithin),
     );
 
     final notifyEnabledToggle = FormToggle(
@@ -262,7 +263,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
       label: 'See within',
       initialValue: initial.seeWithin,
       hasInitialValue: true,
-      items: (search) async => _seeWithinOptions
+      items: (search) async => seeWithinOptions
           .where(
             (o) =>
                 search == null ||
@@ -270,7 +271,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
           )
           .map((o) => o.seeWithin)
           .toList(),
-      titleBuilder: _seeWithinLabel,
+      titleBuilder: seeWithinLabel,
     );
 
     return FormData(
@@ -319,7 +320,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
       return _EarlyNotificationsValues(
         earlyNotificationsEnabled: priority.earlyNotificationsEnabled ?? true,
         notifyWindow: priority.notifyWindows ?? _defaultNotifyWindow,
-        seeWithin: _matchOption(priority.seeWithinTime ?? _defaultSeeWithin),
+        seeWithin: matchSeeWithinOption(priority.seeWithinTime ?? _defaultSeeWithin),
       );
     }
 
@@ -339,7 +340,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
     return _EarlyNotificationsValues(
       earlyNotificationsEnabled: parent.earlyNotificationsEnabled ?? true,
       notifyWindow: parent.notifyWindows ?? _defaultNotifyWindow,
-      seeWithin: _matchOption(parent.seeWithinTime ?? _defaultSeeWithin),
+      seeWithin: matchSeeWithinOption(parent.seeWithinTime ?? _defaultSeeWithin),
     );
   }
 }

@@ -13,19 +13,18 @@ class ThreadTags extends Table with SyncableTable, UuidTable {
 }
 
 class ThreadTagsBase extends BaseTable {
-  ThreadTagsBase({this.priorityId, this.priorityPath})
+  ThreadTagsBase({this.priorityId})
     : super(
         table: 'user_thread_tags',
         syncEndpoint: 'thread-tags',
         name: "thread_tags",
-        filterName: priorityPath,
+        filterName: priorityId?.toString(),
         order: 'updated_at',
         ascending:
             false, // Get latest items first for reverse chronological sync
       );
 
   final PriorityId? priorityId;
-  final String? priorityPath;
 
   @override
   Map<String, String> buildParams({

@@ -15,6 +15,7 @@ Priority _testPriority() {
     root: false,
     unread: false,
     role: 'member',
+    isInbox: false,
     attentionWindowSet: false,
     seeWithinSet: false,
     earlyNotificationsEnabledSet: false,

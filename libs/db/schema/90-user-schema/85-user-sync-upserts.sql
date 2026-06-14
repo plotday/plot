@@ -562,14 +562,36 @@ BEGIN
         priority
     WHERE
         id = _input.id;
+    -- For a NEW focus, default the role + colour so it starts out following a
+    -- role. Existing focuses keep their stored role (role change is modal-only
+    -- and guarded by present-key semantics in the ON CONFLICT branch below).
+    IF NOT _priority_exists THEN
+        -- Role: explicit from input (API >= 5), else the user's first role
+        -- (their Personal role). Every user has >= 1 role after backfill /
+        -- activation, so this is non-null for live focuses.
+        IF _input.role_id IS NULL THEN
+            SELECT id INTO _input.role_id
+            FROM public.role
+            WHERE user_id = upsert_priority.user_id AND archived_at IS NULL
+            ORDER BY created_at ASC
+            LIMIT 1;
+        END IF;
+        -- Colour: the creator's chosen colour, else the role's colour, so a
+        -- new focus starts out following its role.
+        IF _input.color IS NULL THEN
+            SELECT color INTO _input.color
+            FROM public.role
+            WHERE id = _input.role_id;
+        END IF;
+    END IF;
     -- Update priority table
     IF NOT _is_move THEN
-        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by, description, notification_cleared_at)
+        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, role_id, created_by, updated_by, description, notification_cleared_at)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _input.icon, _input.path, _input.created_by, _input.updated_by, p_priority ->> 'description', _input.notification_cleared_at)
+                END, _input.icon, _input.path, _input.role_id, _input.created_by, _input.updated_by, p_priority ->> 'description', _input.notification_cleared_at)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -588,6 +610,13 @@ BEGIN
                 -- is owned by the server-side derivation, never set here.
                 description = CASE WHEN p_priority ? 'description'
                     THEN p_priority ->> 'description' ELSE priority.description END,
+                -- Role change is modal-only (API >= 5): only move the focus when
+                -- the caller explicitly sent role_id, so old clients (which don't
+                -- send it) never reassign the focus. A non-null sent role_id fires
+                -- apply_role_change_to_focus (BEFORE UPDATE OF role_id) for
+                -- follow-if-matching colour/notification adoption.
+                role_id = CASE WHEN (p_priority ? 'role_id') AND _input.role_id IS NOT NULL
+                    THEN _input.role_id ELSE priority.role_id END,
                 notification_cleared_at = GREATEST(priority.notification_cleared_at, _input.notification_cleared_at)
             RETURNING
                 id INTO _priority_id;
@@ -1125,8 +1154,11 @@ $function$;
 
 -- Upsert the per-priority early-notification settings. Each accepts an
 -- explicit set flag so a partial payload only writes the keys the client
--- intended to change; passing NULL with the flag set clears the override
--- (the inherited value from an ancestor takes over again).
+-- intended to change. The function writes the concrete `priority`
+-- notification columns directly (there is no inherit anymore). Passing NULL
+-- with the flag set resolves to the focus's role's current value — so the
+-- focus keeps following its role — or NULL (app default) when the focus has
+-- no role.
 CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
     p_user_id uuid,
     p_priority_id uuid,
@@ -1140,45 +1172,32 @@ CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
 BEGIN
     PERFORM "user".assert_priority_access(p_user_id, p_priority_id);
 
-    IF p_set_early_notifications_enabled THEN
-        IF p_early_notifications_enabled IS NOT NULL THEN
-            INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'early_notifications_enabled', to_jsonb(p_early_notifications_enabled))
-            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-        ELSE
-            DELETE FROM priority_setting
-            WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'early_notifications_enabled';
-        END IF;
-    END IF;
+    -- Notifications are concrete columns on priority now (follow-if-matching;
+    -- see 95-triggers/30-role-propagation.sql). Old clients send "set + null =
+    -- inherit"; there is no inherit anymore, so a null value means "follow the
+    -- role" — resolve it to the focus's role's current value via scalar
+    -- subqueries (which yield NULL when the focus has no role yet, pre-backfill;
+    -- NULL = app default).
+    UPDATE public.priority p
+    SET early_notifications_enabled = CASE
+            WHEN p_set_early_notifications_enabled THEN
+                COALESCE(p_early_notifications_enabled,
+                    (SELECT r.early_notifications_enabled FROM public.role r WHERE r.id = p.role_id))
+            ELSE p.early_notifications_enabled END,
+        notify_window = CASE
+            WHEN p_set_notify_window THEN
+                COALESCE(p_notify_window,
+                    (SELECT r.notify_window FROM public.role r WHERE r.id = p.role_id))
+            ELSE p.notify_window END,
+        see_within = CASE
+            WHEN p_set_see_within THEN
+                COALESCE(p_see_within,
+                    (SELECT r.see_within FROM public.role r WHERE r.id = p.role_id))
+            ELSE p.see_within END
+    WHERE p.id = p_priority_id AND p.user_id = p_user_id;
 
-    IF p_set_notify_window THEN
-        IF p_notify_window IS NOT NULL THEN
-            INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'notify_window', p_notify_window)
-            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-        ELSE
-            DELETE FROM priority_setting
-            WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'notify_window';
-        END IF;
-    END IF;
-
-    IF p_set_see_within THEN
-        IF p_see_within IS NOT NULL THEN
-            INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'see_within', p_see_within)
-            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-        ELSE
-            DELETE FROM priority_setting
-            WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'see_within';
-        END IF;
-    END IF;
-
-    -- Bump the priority's seq so the user view re-emits with the new
-    -- inherited values (the seq protocol is driven off priority.updated_at).
-    UPDATE priority SET updated_at = now() WHERE id = p_priority_id;
+    -- The UPDATE above fires set_priority_updated_at, bumping priority.seq so
+    -- the user view re-emits with the new values.
 END; $function$;
 
 -- Upsert a priority_block row, keyed on (priority_id, effective_at).

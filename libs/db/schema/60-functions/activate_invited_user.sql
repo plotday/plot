@@ -11,6 +11,7 @@ DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001'::uuid;
     c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f'::uuid;
     v_root_priority_id uuid;
+    v_default_role_id uuid;
     v_new_path ltree;
     v_plot_team_group_id uuid;
     v_plot_twist_id bigint;
@@ -38,6 +39,18 @@ BEGIN
         VALUES (p_user_id, p_user_id, 'Everything', v_new_path, 0)
     RETURNING
         id INTO v_root_priority_id;
+    -- Every user gets a default "Personal" role (theme 0); the root becomes its
+    -- Inbox. Mirrors the focus-roles backfill so new users match existing ones,
+    -- guaranteeing every user has >=1 role and no role-less focus.
+    -- default_role_user_id fills "order"; the root's colour is already 0 and
+    -- notifications NULL, so the Inbox trivially follows the role.
+    INSERT INTO public.role (created_by, user_id, name, color)
+        VALUES (p_user_id, p_user_id, 'Personal', 0)
+    RETURNING
+        id INTO v_default_role_id;
+    UPDATE public.priority
+        SET role_id = v_default_role_id, is_inbox = TRUE
+        WHERE id = v_root_priority_id;
     -- Resolve the Plot Team group once — used for the welcome thread's
     -- groups array (so the user's first message reaches the Plot team).
     -- Prefer the full "Plot" team's auto-maintained group (everyone on the

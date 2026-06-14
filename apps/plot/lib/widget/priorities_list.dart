@@ -9,36 +9,75 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/widget.dart';
 
-/// The flat-focus sidebar: drag-reorderable focuses inside a scroll region,
-/// then sticky "Add a focus" / Inbox / Everything tiles outside the scroll.
-/// Inbox is the root (unfiled threads); Everything is the unscoped feed
-/// across the Inbox and every focus.
+/// The focus sidebar. Focuses are grouped under their [Role]; the layout
+/// depends on how many roles the user has:
 ///
-/// Focuses are flat in the new model — no nesting, no top-pinning, no
-/// expansion. Reordering writes the existing `order` column via
-/// [Order.between]. The full list is always rendered; when it overflows the
-/// available height it scrolls behind a top/bottom fade.
+/// - **0–1 roles:** a flat, drag-reorderable list of focuses (the role's
+///   Inbox last), exactly as before roles existed — no role header.
+/// - **2+ roles:** an accordion. An outer drag-reorderable list of collapsible
+///   [RoleHeader]s; the role whose focus is currently selected
+///   ([expandedRoleId]) discloses an inner drag-reorderable list of its
+///   focuses (animated open/closed). It's a pure accordion — exactly one role
+///   is expanded (the selected focus's role), derived client-side, never
+///   persisted.
+///
+/// Below the (flat or accordion) list come the "Add a focus" tail and finally
+/// the "Everything" feed — both scroll with the list. There is no longer a
+/// fixed global Inbox tile; each role owns its own Inbox focus.
+///
+/// Reordering writes the existing `order` column via [Order.between]: roles in
+/// the outer list, focuses within their role's inner list. Cross-role focus
+/// drag is out of scope.
 class PrioritiesList extends StatelessWidget {
   final List<Priority> focuses;
   final Priority root;
   final Priority? selected;
 
-  /// True when the synthetic "Everything" feed is the active view. Both Inbox
-  /// and Everything are rooted on [root], so the highlight is driven by this
-  /// flag (from `NowBloc.everything`) rather than by [selected] alone.
+  /// The user's live roles, already sorted for the sidebar (see
+  /// [PrioritiesState.sortedRoles]). With <= 1 role the list renders flat.
+  final List<Role> roles;
+
+  /// The role currently disclosed in the accordion — the selected focus's
+  /// role, or null when the "Everything" feed is active. Passed in by the page
+  /// (computed from `NowBloc`), never read from a Bloc here.
+  final RoleId? expandedRoleId;
+
+  /// True when the synthetic "Everything" feed is the active view. Both the
+  /// per-role Inboxes and Everything are rooted on [root], so the Everything
+  /// highlight is driven by this flag (from `NowBloc.everything`).
   final bool everything;
 
   PrioritiesList({
     super.key,
     required this.root,
     required List<Priority> priorities,
+    this.roles = const [],
     this.selected,
     this.everything = false,
-  }) : focuses = (priorities.where((p) => !p.root).toList()..sort(_byOrder));
+    this.expandedRoleId,
+    // Keep the backfilled root focus when it is the Personal role's Inbox
+    // (`root == true && isInbox == true`). The old global Inbox tile is gone,
+    // so the Personal Inbox renders only through this list now; excluding all
+    // roots would make it vanish for backfilled users. The non-inbox root (if
+    // any survives pre-backfill) is still dropped — the Everything tile covers
+    // it.
+  }) : focuses = (priorities.where((p) => !p.root || p.isInbox).toList()
+         ..sort(_byOrder));
 
+  /// Sidebar focus ordering: the (per-role) Inbox last, then by [Order], then
+  /// creation time. Shared by the flat list and each role's inner list so both
+  /// keep the Inbox at the bottom.
   static int _byOrder(Priority a, Priority b) {
+    if (a.isInbox != b.isInbox) return a.isInbox ? 1 : -1; // Inbox last
     final c = a.order.value.compareTo(b.order.value);
     return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
+  }
+
+  /// Non-archived focuses filed under [roleId], sorted by [_byOrder] (Inbox
+  /// last). Mirrors [PrioritiesState.focusesForRole], but scoped to the
+  /// [focuses] this widget was handed (already non-root, already sorted).
+  List<Priority> _focusesForRole(RoleId roleId) {
+    return focuses.where((p) => p.roleId == roleId).toList();
   }
 
   @override
@@ -47,9 +86,9 @@ class PrioritiesList extends StatelessWidget {
       builder: (context, layoutState) {
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
-        // Every sidebar tile (focuses, Add a focus, Inbox, Everything) shares
-        // one default weight — regular. Focus tiles and the Inbox go bold
-        // when they have active threads; see PriorityWidget / FixedFocusTile.
+        // Every sidebar tile (focuses, role headers, Add a focus, Everything)
+        // shares one default weight — regular. Focus tiles and (collapsed)
+        // role headers go bold when they have active threads.
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm
@@ -58,8 +97,7 @@ class PrioritiesList extends StatelessWidget {
         // In the left panel the list floats on the tinted frame with
         // horizontal insets — round the hover/selection highlights so they
         // read as discrete pills. Single-panel mode goes edge-to-edge, so
-        // keep it rectangular. Tiles outside the squircles render monochrome
-        // at rest and reintroduce focus colour on hover/selection.
+        // keep it rectangular.
         final BorderRadius? itemBorderRadius = isLeftPanel
             ? BorderRadius.circular(6)
             : null;
@@ -74,12 +112,124 @@ class PrioritiesList extends StatelessWidget {
                 ),
         );
 
-        // Scrollable focuses, followed by "Add a focus" (the focus-list
-        // tail) and the empty-state hint when there are no focuses yet. The
-        // fade communicates that this region scrolls independently of the
-        // sticky tiles below. Alpha-mask mode so the edges fade into the
-        // tinted frame gradient instead of painting a darker card-shaped
-        // fill over it.
+        // The roles that drive the accordion. <= 1 role keeps the flat layout.
+        final accordion = roles.length > 1;
+
+        // Builds the drag-reorderable list of a single role's focuses (also
+        // reused for the whole flat list). Each row keys on its id so it
+        // survives unread/active churn without remounting.
+        Widget focusList(List<Priority> list, {required bool indent}) {
+          return ReorderableListView<Priority>(
+            list: list,
+            shrinkWrap: true,
+            keyExtractor: (p) => ValueKey(p.id),
+            itemBuilder: (context, priority, reorderableIndex) => PriorityWidget(
+              key: ValueKey('focus-${priority.id}'),
+              priority: priority,
+              monochrome: monochrome,
+              selected: !everything && selected?.id == priority.id,
+              selectedBorder: true,
+              borderRadius: itemBorderRadius,
+              textStyle: focusStyle(priority),
+              unread: priority.unread ? true : null,
+              indentLevel: indent ? 1 : 0,
+              reorderableIndex: reorderableIndex,
+            ),
+            onReorder: (oldIndex, newIndex) =>
+                _onReorderFocus(list, oldIndex, newIndex),
+          );
+        }
+
+        // "Add a focus" closes off the list — it scrolls with the focuses, not
+        // pinned below. In the accordion it defaults new focuses to the
+        // expanded role.
+        final addFocusTile = ListTile(
+          command: CommandWrapper(
+            AddFocus(defaultRoleId: expandedRoleId),
+            icon: Value(null),
+            title: 'Add a focus',
+          ),
+          icon: PlotIcon.add,
+          iconOnly: true,
+          muted: true,
+          highlightColor: monochrome ? const Color(0x00000000) : null,
+          borderRadius: monochrome ? null : itemBorderRadius,
+        );
+
+        // The "Everything" feed — the unscoped view across every role and
+        // focus. The last row in the scroll (after "Add a focus").
+        final everythingTile = FixedFocusTile(
+          title: 'Everything',
+          icon: PlotIcon.inboxes,
+          isSelected: everything,
+          command: ChangeCurrentPriority(root, everything: true),
+          menuCommand: null,
+          // Everything never carries its own unread indicator and never bolds.
+          hasUnread: false,
+          active: false,
+          borderRadius: itemBorderRadius,
+          textStyle: itemStyle,
+          monochrome: monochrome,
+        );
+
+        // The list body: an outer reorderable of role sections (accordion) or
+        // a single flat focus list.
+        final Widget listBody;
+        if (accordion) {
+          listBody = ReorderableListView<Role>(
+            list: roles,
+            shrinkWrap: true,
+            keyExtractor: (r) => ValueKey(r.id),
+            // Scope the role drag to the header. Without this, the outer list
+            // would wrap the whole _RoleSection (header + the expanded role's
+            // inner focus list) as one drag target, which on desktop steals
+            // pointer-down from the inner focus rows. In handle-only mode the
+            // header (RoleHeader) self-wraps the drag via its reorderableIndex,
+            // and the inner focus ReorderableListView keeps its own gestures.
+            handleOnly: true,
+            itemBuilder: (context, role, reorderableIndex) {
+              final childFocuses = _focusesForRole(role.id);
+              final expanded = role.id == expandedRoleId;
+              return _RoleSection(
+                key: ValueKey('role-${role.id}'),
+                expanded: expanded,
+                header: RoleHeader(
+                  role: role,
+                  expanded: expanded,
+                  childFocuses: childFocuses,
+                  monochrome: monochrome,
+                  borderRadius: itemBorderRadius,
+                  textStyle: itemStyle,
+                  reorderableIndex: reorderableIndex,
+                  onTap: () {
+                    // Tapping a header selects the role's first focus, which
+                    // makes it the expanded role (and animates it open). Roles
+                    // always have at least their Inbox, so the list is
+                    // non-empty in practice; guard anyway.
+                    if (childFocuses.isNotEmpty) {
+                      context.run(ChangeCurrentPriority(childFocuses.first));
+                    }
+                  },
+                ),
+                // Lazily built so only the expanded (or currently-animating-
+                // closed) role ever constructs its inner reorderable focus
+                // list — collapsed roles pay nothing, and no nested reorderable
+                // exists to compete for gestures. _RoleSection keeps the child
+                // mounted through the close animation, then drops it.
+                childBuilder: () => focusList(childFocuses, indent: true),
+              );
+            },
+            onReorder: (oldIndex, newIndex) =>
+                _onReorderRole(roles, oldIndex, newIndex),
+          );
+        } else {
+          // 0–1 roles: a flat list over every focus (Inbox last) — exactly the
+          // pre-roles layout, with no role header. Rendering all [focuses]
+          // (rather than only the lone role's) guarantees no focus is ever
+          // hidden if its roleId hasn't backfilled yet.
+          listBody = focusList(focuses, indent: false);
+        }
+
         final scrollable = ScrollEdgeFade(
           transparent: true,
           child: SingleChildScrollView(
@@ -89,28 +239,8 @@ class PrioritiesList extends StatelessWidget {
               children: [
                 // md top padding sets the panel apart from the agenda above it.
                 SizedBox(height: context.theme.spacing.md),
-                ReorderableListView<Priority>(
-                  list: focuses,
-                  shrinkWrap: true,
-                  // Key on `id` (not the instance) so a row survives
-                  // unread/active churn without remounting.
-                  keyExtractor: (p) => ValueKey(p.id),
-                  itemBuilder: (context, priority, reorderableIndex) =>
-                      PriorityWidget(
-                        key: ValueKey('focus-${priority.id}'),
-                        priority: priority,
-                        monochrome: monochrome,
-                        selected: !everything && selected?.id == priority.id,
-                        selectedBorder: true,
-                        borderRadius: itemBorderRadius,
-                        textStyle: focusStyle(priority),
-                        unread: priority.unread ? true : null,
-                        reorderableIndex: reorderableIndex,
-                      ),
-                  onReorder: (oldIndex, newIndex) =>
-                      _onReorderFocus(focuses, oldIndex, newIndex),
-                ),
-                if (focuses.isEmpty)
+                listBody,
+                if (!accordion && focuses.isEmpty)
                   Text(
                     'Add a focus to gather work related to a role, project, or activity.',
                     style: TextStyle(
@@ -118,22 +248,8 @@ class PrioritiesList extends StatelessWidget {
                       fontSize: context.theme.typography.sm.fontSize,
                     ),
                   ),
-                // "Add a focus" closes off the focus list — it scrolls with
-                // the focuses, not pinned with Inbox/Everything below.
-                ListTile(
-                  command: CommandWrapper(
-                    AddFocus(),
-                    icon: Value(null),
-                    title: 'Add a focus',
-                  ),
-                  icon: PlotIcon.add,
-                  iconOnly: true,
-                  muted: true,
-                  // Same hover treatment as the header icon buttons: no
-                  // rounded background pill, just the icon/text shift.
-                  highlightColor: monochrome ? const Color(0x00000000) : null,
-                  borderRadius: monochrome ? null : itemBorderRadius,
-                ),
+                addFocusTile,
+                everythingTile,
                 SizedBox(height: context.theme.spacing.md),
               ],
             ),
@@ -147,57 +263,15 @@ class PrioritiesList extends StatelessWidget {
               : MainAxisSize.max,
           children: [
             // Flexible (not Expanded) so the scroll region shrinks to its
-            // natural height when there's room and only takes the remaining
-            // space — leaving the sticky tiles at the bottom — when focuses
-            // would otherwise overflow.
+            // natural height when there's room.
             Flexible(child: scrollable),
-
-            // Inbox + Everything stay pinned below the scrollable focuses
-            // so they remain reachable no matter how long the focus list
-            // grows. "Add a focus" lives inside the scroll, as the tail of
-            // the focus list.
-
-            // Fixed Inbox tile — the root focus, holding unfiled threads.
-            // Not reorderable, not archivable. Always labelled "Inbox": it
-            // is a fixed, semantic tile (the server projects the root as
-            // "Inbox" at apiVersion >= 4, but older synced roots may still
-            // carry the legacy "Everything" title).
-            FixedFocusTile(
-              title: 'Inbox',
-              icon: PlotIcon.inbox,
-              isSelected: !everything && selected?.id == root.id,
-              command: ChangeCurrentPriority(root),
-              menuCommand: ShowPriorityCommands(root),
-              hasUnread: root.unread,
-              // Bold when the Inbox has active threads, like a focus tile.
-              active: root.active,
-              borderRadius: itemBorderRadius,
-              textStyle: itemStyle,
-              monochrome: monochrome,
-            ),
-
-            // Fixed Everything tile — the unscoped feed across the Inbox and
-            // every focus. Rooted on the root with Everything mode on.
-            FixedFocusTile(
-              title: 'Everything',
-              icon: PlotIcon.inboxes,
-              isSelected: everything,
-              command: ChangeCurrentPriority(root, everything: true),
-              menuCommand: null,
-              // Everything is the unscoped feed — it never carries its own
-              // unread indicator and never goes bold.
-              hasUnread: false,
-              active: false,
-              borderRadius: itemBorderRadius,
-              textStyle: itemStyle,
-              monochrome: monochrome,
-            ),
           ],
         );
       },
     );
   }
 
+  /// Persist a focus reorder within its (flat or per-role) list.
   Future<void> _onReorderFocus(
     List<Priority> peers,
     int oldIndex,
@@ -219,17 +293,144 @@ class PrioritiesList extends StatelessWidget {
         )
         .save();
   }
+
+  /// Persist a role reorder in the outer accordion list. Mirrors
+  /// [_onReorderFocus] but writes [Role.order].
+  Future<void> _onReorderRole(
+    List<Role> peers,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+    final nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+
+    final current = peers[oldIndex];
+    Role? previous;
+    if (previousIndex >= 0) previous = peers[previousIndex];
+    Role? next;
+    if (nextIndex < peers.length) next = peers[nextIndex];
+
+    await current
+        .copyWith(
+          order: Value(Order.between(previous?.order, next?.order)),
+          pending: const Value(2),
+        )
+        .save();
+  }
 }
 
-/// A fixed (non-reorderable) sidebar tile for the Inbox and Everything views.
-/// Mirrors [PriorityWidget]'s left-panel treatment — monochrome at rest,
-/// colour on hover/selection — but without the reorder handle, weekly-total
-/// chip, or expansion affordances. Both tiles render in the fixed Resolution
-/// brand colour rather than the root's own colour.
+/// One role's section in the accordion: a [RoleHeader] above an animated
+/// disclosure of its focuses.
+///
+/// The disclosure slides (height) and fades open/closed as [expanded] flips,
+/// driven by an [AnimationController] (the `SizeTransition` + `FadeTransition`
+/// pattern from `animated_removal.dart`). Using a controller — rather than an
+/// `AnimatedSize` around a synchronously-swapped child — is what makes the
+/// **collapse** animate: the previous approach swapped the child to
+/// `SizedBox.shrink()` the instant [expanded] went false, so `AnimatedSize`
+/// measured zero and the close snapped. Here the inner focus list stays mounted
+/// while the controller reverses, then is dropped only once fully closed.
+///
+/// The child is built lazily via [childBuilder] and only while the section is
+/// open or still animating closed, so collapsed roles never construct their
+/// inner reorderable focus list (no nesting/gesture cost, no perf hit).
+class _RoleSection extends StatefulWidget {
+  const _RoleSection({
+    required this.header,
+    required this.childBuilder,
+    required this.expanded,
+    super.key,
+  });
+
+  final Widget header;
+
+  /// Builds the disclosed inner focus list. Called only when the section is
+  /// open or animating closed — never for a fully-collapsed role.
+  final Widget Function() childBuilder;
+  final bool expanded;
+
+  @override
+  State<_RoleSection> createState() => _RoleSectionState();
+}
+
+class _RoleSectionState extends State<_RoleSection>
+    with SingleTickerProviderStateMixin {
+  // Match the removal/disclosure feel used elsewhere (animated_removal.dart).
+  static const _duration = Duration(milliseconds: 150);
+
+  late final AnimationController _controller;
+  late final Animation<double> _curve;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: _duration,
+      vsync: this,
+      // Start fully open/closed to match the initial [expanded] — no opening
+      // animation on first build (e.g. the role that owns the selected focus).
+      value: widget.expanded ? 1 : 0,
+    );
+    _curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+  }
+
+  @override
+  void didUpdateWidget(_RoleSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.expanded == oldWidget.expanded) return;
+    if (widget.expanded) {
+      _controller.forward();
+    } else {
+      // Reverse to animate closed; setState when it lands so the now-hidden
+      // inner list is dropped from the tree (keeps collapsed roles cheap).
+      _controller.reverse().whenComplete(() {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Keep the inner list mounted while open OR still animating closed; drop it
+    // only once fully collapsed (controller at rest at 0).
+    final showChild = widget.expanded || _controller.value > 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        widget.header,
+        if (showChild)
+          SizeTransition(
+            sizeFactor: _curve,
+            // Anchor the reveal to the top edge so the focus list grows down
+            // from the header (not centred). `axisAlignment` is deprecated post
+            // v3.41; `alignment: topCenter` is the replacement.
+            alignment: Alignment.topCenter,
+            child: FadeTransition(
+              opacity: _curve,
+              child: widget.childBuilder(),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A fixed (non-reorderable) sidebar tile for the Everything view (and reused
+/// by the global-search sidebar's "All matches" / "Inbox" tiles). Mirrors
+/// [PriorityWidget]'s left-panel treatment — monochrome at rest, colour on
+/// hover/selection — but without the reorder handle, weekly-total chip, or
+/// expansion affordances. Renders in the fixed Resolution brand colour rather
+/// than any focus's own colour.
 class FixedFocusTile extends StatefulWidget {
   final String title;
 
-  /// The leading icon (an inbox glyph for Inbox, inboxes for Everything).
+  /// The leading icon (an inboxes glyph for Everything).
   final IconData icon;
   final bool isSelected;
 
@@ -271,20 +472,18 @@ class FixedFocusTileState extends State<FixedFocusTile> {
   @override
   Widget build(BuildContext context) {
     final isActive = widget.isSelected || _isHovered;
-    // Inbox and Everything are fixed, semantic tiles — both render in the
-    // Resolution brand colour (index 7) regardless of the root's own colour.
+    // Fixed, semantic tiles render in the Resolution brand colour (index 7)
+    // regardless of any focus's own colour.
     const tileColor = ThemeColor.defaultColor();
     final restingColor = context.colour.muted;
     // Muted at rest, like the focus tiles; the Resolution colour shows when
-    // the tile is bold (active threads — Inbox only) or on hover/selection.
+    // the tile is bold (active threads) or on hover/selection.
     final labelColor = widget.monochrome && !isActive && !widget.active
         ? restingColor
         : context.colour.colours.fromTheme(tileColor);
     final accentBg = widget.monochrome
         ? context.colour.colours.backgroundFromTheme(tileColor)
         : null;
-    // Matching selection ring for the fixed tiles, in the Resolution/brand
-    // colour they already render in.
     final ringColor = widget.monochrome
         ? context.colour.colours.borderFromTheme(tileColor)
         : null;
@@ -308,9 +507,6 @@ class FixedFocusTileState extends State<FixedFocusTile> {
       },
       leadingBuilder: (isHovered, hasFocus) {
         final iconSize = context.theme.iconSizes.base;
-        // Shared sidebar leading slot (md inset on either side of the icon —
-        // see sidebarLeading / PriorityWidget). Icon shares the title's colour
-        // so the two always match.
         return sidebarLeading(
           context,
           Icon(widget.icon, size: iconSize, color: labelColor),
@@ -318,7 +514,7 @@ class FixedFocusTileState extends State<FixedFocusTile> {
       },
       // Title in the accent colour, with the unread dot trailing it (kept
       // outside the Flexible so it survives title truncation). Bold when the
-      // tile has active threads (Inbox only — Everything never bolds).
+      // tile has active threads.
       body: Row(
         children: [
           Flexible(
@@ -326,9 +522,6 @@ class FixedFocusTileState extends State<FixedFocusTile> {
               widget.title,
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
-              // No explicit line height: natural font metrics centre the cap
-              // in the line box so the label co-centres with the leading icon.
-              // A tight `height: 1` leaves the text top-aligned against it.
               style: widget.textStyle.copyWith(
                 color: labelColor,
                 fontWeight: widget.active ? FontWeight.w600 : FontWeight.w400,
@@ -342,8 +535,7 @@ class FixedFocusTileState extends State<FixedFocusTile> {
             ),
         ],
       ),
-      // Always reserve the menu-button slot height so the Everything tile
-      // (which has no menu) matches the Inbox row height — and both match
+      // Always reserve the menu-button slot height so the row height matches
       // the focus tiles. Mirrors PriorityWidget's buttonSlotHeight.
       trailingBuilder: (isHovered, hasFocus) {
         final buttonSlotHeight = context.theme.iconSizes.base * 2;

@@ -237,6 +237,29 @@ export async function loadWorld(
     );
   }
 
+  // 2b. Role layer (focus-roles model). The classifier now treats a focus's
+  //     role as the "hierarchy" and falls back to a role's Inbox (not the bare
+  //     root) on no-match. Corpora predate roles, so synthesize one role per
+  //     world and wire every priority to it, marking the depth-1 root as the
+  //     role's Inbox. This makes role_inbox_fallback resolve to the root —
+  //     preserving the old root_fallback target while exercising the new path.
+  if (sortedPriorities.length > 0) {
+    const roleId = deterministicUuid(`role:${world.user.id}`);
+    await rawQuery(
+      `INSERT INTO public.role (id, user_id, created_by, name, color)
+       VALUES ($1, $2, $2, 'Eval', 0)`,
+      [roleId, world.user.id]
+    );
+    const rootPriority = sortedPriorities[0]!; // depth-1 (sorted shallowest-first)
+    await rawQuery(
+      `UPDATE public.priority
+          SET role_id = $1,
+              is_inbox = CASE WHEN id = $2 THEN TRUE ELSE is_inbox END
+        WHERE user_id = $3`,
+      [roleId, rootPriority.id, world.user.id]
+    );
+  }
+
   // 3. Contacts. user_contact rows mark which contacts are "linked" to the
   //    user, which expand_contacts() uses for alias-aware Jaccard.
   //    v2 worlds also insert contact.name; v1 worlds MUST NOT — the LLM

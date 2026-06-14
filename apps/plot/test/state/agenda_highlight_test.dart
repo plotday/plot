@@ -16,6 +16,7 @@ Priority _priority({String path = 'test'}) {
     root: false,
     unread: false,
     role: 'member',
+    isInbox: false,
     attentionWindowSet: false,
     seeWithinSet: false,
     earlyNotificationsEnabledSet: false,

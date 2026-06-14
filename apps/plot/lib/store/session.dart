@@ -266,41 +266,24 @@ class Session extends SessionRow {
     );
   }
 
-  /// Stream the set of priority ids covered by [priority] and every one
-  /// of its descendants. Resolved by `path` prefix against the priorities
-  /// table — the canonical source — because [Priority.descendants] walks
-  /// the in-memory `children` tree, which isn't fully hydrated on every
-  /// instance (the PrioritiesBloc only links direct children for the
-  /// rows it's currently rendering, while the unified header's context
-  /// priority carries the full tree). Routing through `path` keeps every
-  /// time-tracking surface in agreement.
+  /// Stream the set of priority ids covered by [priority] for time-tracking
+  /// totals. Path-independent (flat/role model): focuses are leaves, so the
+  /// only priority that aggregates others is the root (Inbox) — its total
+  /// spans every non-archived focus. A non-root focus covers only itself.
   ///
-  /// The stream emits a fresh set whenever the priority tree changes
-  /// (add / archive / move). Combine with [watch] in a `Rx.combineLatest2`
-  /// to keep totals reactive.
+  /// The root case watches the priorities table so the set stays reactive as
+  /// focuses are added / archived; the leaf case is a constant set.
   ///
-  /// Filtering happens in Dart: drift's [Column.equals] / [Column.like]
-  /// against a typed [Path] column have inconsistent type behavior with
-  /// a raw [String], and producing the right SQL via `equalsValue` +
-  /// `likeExp` is fiddly to keep right. The priorities table is small
-  /// (dozens of rows for a real user), so walking all non-archived rows
-  /// in Dart is cheap and unambiguous.
+  /// The priorities table is small (dozens of rows for a real user), so
+  /// computing the set in Dart is cheap.
   static Stream<Set<PriorityId>> watchSelfAndDescendantIds(Priority priority) {
-    final basePath = priority.path.value;
-    final basePathPrefix = '$basePath.';
+    if (!priority.root) {
+      return Stream.value({priority.id});
+    }
     return (Store.get.select(Store.get.priorities)
           ..where((t) => t.archivedAt.isNull()))
         .watch()
-        .map((rows) {
-      final result = <PriorityId>{};
-      for (final r in rows) {
-        final p = r.path.value;
-        if (p == basePath || p.startsWith(basePathPrefix)) {
-          result.add(r.id);
-        }
-      }
-      return result;
-    });
+        .map((rows) => rows.map((r) => r.id).toSet());
   }
 
   /// Resume or create a session for [priority].

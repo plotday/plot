@@ -327,25 +327,27 @@ async function rootPriorityId(
   db: Kysely<DB>,
   userId: string
 ): Promise<string> {
-  // Use the typed query builder rather than `sql\`...\`.execute(db)` so the
-  // call site works with the dbMock helpers in
-  // workers/api/src/twist/tools/__tests__/plot.test.ts. Mirrors the shape
-  // of Plot.getRootPriorityId so a single mock setup covers both call
-  // sites. nlevel(path)=1 is the schema invariant for a root priority;
-  // ORDER BY nlevel + created_at also matches Plot.getRootPriorityId so
-  // both helpers resolve to the same row on multi-root edge cases.
+  // No-specific-focus fallback: the Inbox focus of the user's oldest
+  // non-archived role (mirrors user.fallback_inbox_id). Replaces the old
+  // single-root nlevel(path)=1 lookup now that the flat model groups focuses
+  // under roles, each with its own Inbox.
   const row = await db
-    .selectFrom("priority")
-    .select("id")
-    .where("user_id", "=", userId)
-    .where("archived_at", "is", null)
-    .orderBy(sql`nlevel(path)`, "asc")
-    .orderBy("created_at", "asc")
+    .selectFrom("role")
+    .innerJoin("priority", (j) =>
+      j
+        .onRef("priority.role_id", "=", "role.id")
+        .on("priority.is_inbox", "=", true)
+        .on("priority.archived_at", "is", null)
+    )
+    .select("priority.id as id")
+    .where("role.user_id", "=", userId)
+    .where("role.archived_at", "is", null)
+    .orderBy("role.created_at", "asc")
     .limit(1)
     .executeTakeFirst();
   if (!row?.id) {
     throw new Error(
-      `classify-thread: user ${userId} has no root priority — refusing to fabricate one. Run activate_invited_user first.`
+      `classify-thread: user ${userId} has no role inbox — refusing to fabricate one. Run activate_invited_user first.`
     );
   }
   return row.id;

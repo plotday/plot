@@ -53,11 +53,11 @@ class AgendaBuilder {
     final today = effectiveNow.toDate();
     final todayMidnight = today.toDateTime();
 
-    // A thread is "outside" the current view when its priority is neither
-    // the context nor a descendant of it. Outside events render dimmed.
-    bool isOutside(Thread t) =>
-        t.priority.path != context.path &&
-        !context.path.isParent(t.priority.path);
+    // A thread is "outside" the current view when its filed priority is not
+    // the context. Flat/role model: focuses are leaves (no descendants), so
+    // an exact id mismatch is the path-independent "outside" test. Outside
+    // events render dimmed.
+    bool isOutside(Thread t) => t.priority.id != context.id;
 
     // Lookups for association rendering and focus-block previews. Focus
     // blocks resolve their [Priority] from [priorityById] (thread-

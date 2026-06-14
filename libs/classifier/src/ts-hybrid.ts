@@ -10,7 +10,7 @@ import {
   keyedPriority,
   priorityPrefix,
   priorityTitleOverride,
-  rootFallback,
+  roleInboxFallback,
   topicShortCircuit,
 } from "./ts-hybrid-stages";
 import { assertValidWeights, type HybridParams } from "./ts-hybrid.defaults";
@@ -64,12 +64,12 @@ export function makeHybridClassifier(
         );
       }
 
-      const rf = await rootFallback(ctx);
+      const rf = await roleInboxFallback(ctx, candidate);
       if (rf) {
         return done(
           {
             priorityId: rf.priorityId,
-            stage: "root_fallback",
+            stage: "role_inbox_fallback",
             scores: rf.scores,
           },
           start

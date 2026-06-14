@@ -14,7 +14,10 @@ describe.runIf(!!process.env.DATABASE_URL)("ts:hybrid classifier", () => {
     });
     const byCase = new Map(results.map((r) => [r.caseId, r]));
     expect(byCase.get("001-priority-prefix")?.stage).toBe("priority_prefix");
-    expect(byCase.get("002-root-fallback")?.stage).toBe("root_fallback");
+    // No-match now lands in the matched role's Inbox (the corpus root focus,
+    // wired as the synthetic "Eval" role's Inbox by loadWorld) — the
+    // role_inbox_fallback stage replaces the old root_fallback.
+    expect(byCase.get("002-root-fallback")?.stage).toBe("role_inbox_fallback");
     expect(byCase.get("003-topic-shortcircuit")?.stage).toBe(
       "topic_shortcircuit"
     );
@@ -30,10 +33,16 @@ describe.runIf(!!process.env.DATABASE_URL)("ts:hybrid classifier", () => {
     });
     const byCase = new Map(results.map((r) => [r.caseId, r]));
     expect(byCase.get("001-priority-prefix")?.stage).toBe("priority_prefix");
-    expect(byCase.get("002-root-fallback")?.stage).toBe("root_fallback");
-    expect(byCase.get("003-topic-shortcircuit")?.stage).toBe("root_fallback");
-    expect(byCase.get("004-scoring-contacts")?.stage).toBe("root_fallback");
-    expect(byCase.get("005-scoring-no-match")?.stage).toBe("root_fallback");
+    expect(byCase.get("002-root-fallback")?.stage).toBe("role_inbox_fallback");
+    expect(byCase.get("003-topic-shortcircuit")?.stage).toBe(
+      "role_inbox_fallback"
+    );
+    expect(byCase.get("004-scoring-contacts")?.stage).toBe(
+      "role_inbox_fallback"
+    );
+    expect(byCase.get("005-scoring-no-match")?.stage).toBe(
+      "role_inbox_fallback"
+    );
   }, 60_000);
 
   it("emits per-priority neighborScore and titleMatch in scoring explain", async () => {

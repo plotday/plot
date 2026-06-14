@@ -1,28 +1,12 @@
-import 'dart:math';
 import 'package:drift/drift.dart';
 
+/// Legacy ltree-style priority path. The client is path-independent: routing,
+/// focus scoping, and display all key on the priority id. This type now only
+/// backs the nullable `priorities.path` storage column (via [PathConverter])
+/// and the few residual descendant-walking reads that still inspect the path
+/// tree while the server keeps emitting it. The held server follow-up removes
+/// `path` entirely.
 extension type Path(String value) {
-  factory Path.generate({Path? parent}) {
-    const characters =
-        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    Random random = Random();
-    String prefix = "";
-    if (parent != null) {
-      prefix = "${parent.value}.";
-    }
-    return Path(
-      prefix +
-          String.fromCharCodes(
-            Iterable.generate(
-              4,
-              (_) => characters.codeUnitAt(random.nextInt(characters.length)),
-            ),
-          ),
-    );
-  }
-
-  int get depth => value.split('.').length;
-
   bool get isRoot => !value.contains('.');
 
   Path? get parent {
@@ -31,29 +15,9 @@ extension type Path(String value) {
     return Path(segments.take(segments.length - 1).join('.'));
   }
 
-  Path get root => Path(value.split('.').first);
-
   bool isParent(Path other) => other.value.startsWith("$value.");
   bool isChild(Path? other) =>
       other == null || value.startsWith("${other.value}.");
-
-  /// Replace the prefix of this path with a new prefix.
-  /// Used when moving a priority and all its descendants to a new parent.
-  Path replacePrefix(Path oldPrefix, Path newPrefix) {
-    if (!value.startsWith("${oldPrefix.value}.") && value != oldPrefix.value) {
-      // This path doesn't start with the old prefix
-      return this;
-    }
-
-    if (value == oldPrefix.value) {
-      // This is the exact path being replaced
-      return newPrefix;
-    }
-
-    // Replace the prefix
-    final suffix = value.substring(oldPrefix.value.length);
-    return Path('${newPrefix.value}$suffix');
-  }
 }
 
 class PathConverter extends TypeConverter<Path, String>

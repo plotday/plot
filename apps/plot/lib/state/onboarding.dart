@@ -23,10 +23,13 @@ class OnboardingBloc extends Cubit<OnboardingState> {
     }
 
     // Second-device short-circuit: critical sync has already pulled the
-    // user's priorities by the time we get here, so any non-root priority
-    // is positive evidence the user has used Plot before. Persist the flag
-    // so future launches skip immediately without re-running this check.
-    if (await Priority.hasNonRoot()) {
+    // user's priorities and roles by the time we get here, so a non-root
+    // focus OR a configured role (renamed/added beyond the seeded default)
+    // is positive evidence the user has used Plot before. This backstops the
+    // synced `onboarding_completed` flag for the rare case where it hasn't
+    // landed yet (device 1 finished onboarding offline). Persist the flag so
+    // future launches skip immediately without re-running this check.
+    if (await Priority.hasNonRoot() || await Role.hasConfigured()) {
       await UserSettingsEntity.save(
         UserSettingsCompanion(
           onboardingCompleted: const drift.Value(true),

@@ -1,7 +1,8 @@
 import 'package:flutter/widgets.dart';
 
-import 'package:plot/store/store.dart' show ThreadId;
+import 'package:plot/store/store.dart' show Role, ThreadId;
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/widget/onboarding/onboarding_role.dart';
 import 'package:plot/widget/onboarding/onboarding_tools.dart';
 
 /// A single step in the onboarding flow.
@@ -147,63 +148,99 @@ class OnboardingSteps {
   // mirrors its narrative shape: open and close on Catalyst (teal brand),
   // with the in-between beats picking up Call to Adventure, Rising Action,
   // Momentum, Turning Point, Breakthrough, and Climax along the way.
-  static List<OnboardingStep> get all => [
-    const FullScreenStep(
-      title: "Your best work\nevery day",
-      body:
-          "Plot is your collaboration hub. Make real progress without the churn.",
-      background: ThemeColor(0),
-    ),
-    FullScreenStep(
-      title: 'Connect your tools',
-      body: "All your work in one place, organized and prioritized.",
-      background: const ThemeColor(1),
-      contentMaxWidth: 640,
-      contentBuilder: (context) => const OnboardingTools(),
-    ),
-    const HighlightStep(
-      title: 'Built for action',
-      body:
-          "Updates land at the top of Active. Read them and they'll move to Done.\n"
-          'Mark threads "To do" to keep them in Active until done.\n'
-          "Prioritize threads by dragging them, or schedule them to do later.",
-      target: PanelTarget.feed,
-      overlay: ThemeColor(3),
-    ),
-    const HighlightStep(
-      title: 'Make something happen',
-      body:
-          'Start with the people you want to reach, then pick how to send your message.\n'
-          'Or create a post or app item using a channel.\n'
-          'Plot threads also hold private notes and tasks alongside the rest of your work.',
-      target: PanelTarget.newThread,
-      overlay: ThemeColor(2),
-      // The cutout is the right panel (the new-thread compose page); pull the
-      // text block toward it so the copy reads as belonging to it.
-      multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
-    ),
-    const HighlightStep(
-      title: 'Focus on what matters',
-      body:
-          "Everything in one place can be a bit much. Create a focus to gather everything related to a role, activity, or project.\n"
-          "Creating focuses for low-urgency work is a great way to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
-      target: PanelTarget.priorities,
-      overlay: ThemeColor(4),
-      // In multi-panel the left panel stacks agenda on top of the focuses, so
-      // anchor this step's text to the bottom — visually next to the focuses
-      // list it describes.
-      multiPanelAlignment: MultiPanelContentAlignment.top,
-      // Sample-focus chips let the user spin up their first focuses right
-      // here, beside the highlighted focuses panel they'll appear in.
-    ),
-    FullScreenStep(
-      title: "You're all set",
-      body:
-          "We're eager to see what you'll do! Share your hopes, wins, and feedback with us any time.",
-      background: const ThemeColor(0),
-      contentBuilder: _buildClosingQuote,
-    ),
-  ];
+  static List<OnboardingStep> get all {
+    // One holder per onboarding session, shared between the role step's
+    // contentBuilder (which writes the user's selection) and its onBeforeNext
+    // (which reads it to name the default role). Safe because this getter is
+    // built once in OnboardingBloc.start() for the life of the flow.
+    final roleSelection = OnboardingRoleSelection();
+    return [
+      const FullScreenStep(
+        title: "Your best work\nevery day",
+        body:
+            "Plot is your collaboration hub. Make real progress without the churn.",
+        background: ThemeColor(0),
+      ),
+      FullScreenStep(
+        title: 'Where do you want to use Plot first?',
+        body:
+            'Plot organizes your work by role. Pick the one to start with — you '
+            'can add more later.',
+        background: const ThemeColor(2),
+        contentBuilder: (context) =>
+            OnboardingRoleContent(selection: roleSelection),
+        onBeforeNext: (context) => _commitRole(roleSelection),
+      ),
+      FullScreenStep(
+        title: 'Connect your tools',
+        body: "All your work in one place, organized and prioritized.",
+        background: const ThemeColor(1),
+        contentMaxWidth: 640,
+        contentBuilder: (context) => const OnboardingTools(),
+      ),
+      const HighlightStep(
+        title: 'Built for action',
+        body:
+            "Updates land at the top of Active. Read them and they'll move to Done.\n"
+            'Mark threads "To do" to keep them in Active until done.\n'
+            "Prioritize threads by dragging them, or schedule them to do later.",
+        target: PanelTarget.feed,
+        overlay: ThemeColor(3),
+      ),
+      const HighlightStep(
+        title: 'Make something happen',
+        body:
+            'Start with the people you want to reach, then pick how to send your message.\n'
+            'Or create a post or app item using a channel.\n'
+            'Plot threads also hold private notes and tasks alongside the rest of your work.',
+        target: PanelTarget.newThread,
+        overlay: ThemeColor(2),
+        // The cutout is the right panel (the new-thread compose page); pull the
+        // text block toward it so the copy reads as belonging to it.
+        multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
+      ),
+      const HighlightStep(
+        title: 'Focus on what matters',
+        body:
+            "Everything in one place can be a bit much. Create a focus to gather everything related to a role, activity, or project.\n"
+            "Creating focuses for low-urgency work is a great way to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
+        target: PanelTarget.priorities,
+        overlay: ThemeColor(4),
+        // In multi-panel the left panel stacks agenda on top of the focuses, so
+        // anchor this step's text to the bottom — visually next to the focuses
+        // list it describes.
+        multiPanelAlignment: MultiPanelContentAlignment.top,
+        // Sample-focus chips let the user spin up their first focuses right
+        // here, beside the highlighted focuses panel they'll appear in.
+      ),
+      FullScreenStep(
+        title: "You're all set",
+        body:
+            "We're eager to see what you'll do! Share your hopes, wins, and feedback with us any time.",
+        background: const ThemeColor(0),
+        contentBuilder: _buildClosingQuote,
+      ),
+    ];
+  }
+
+  /// Names the user's existing default role from the onboarding answer. Runs as
+  /// the role step's `onBeforeNext`, so throwing surfaces the generic onboarding
+  /// error toast and blocks advancing (acceptable for a transient failure).
+  ///
+  /// Activation seeds every user a default 'Personal' role (theme 0) whose Inbox
+  /// is the root, so the common path renames that role and keeps theme 0 — no
+  /// second role is created, so the user stays single-role (flat sidebar). The
+  /// `roles.isEmpty` branch is a backstop for older activations / sync lag where
+  /// no role has synced yet; the server auto-creates the role's Inbox on insert.
+  static Future<void> _commitRole(OnboardingRoleSelection sel) async {
+    final name = sel.option.roleName(sel.text);
+    final roles = await Role.all();
+    if (roles.isNotEmpty) {
+      await roles.first.copyWith(name: name).save();
+    } else {
+      await Role.create(name: name, color: const ThemeColor(0)).save();
+    }
+  }
 }
 
 Widget _buildClosingQuote(BuildContext context) => const Padding(

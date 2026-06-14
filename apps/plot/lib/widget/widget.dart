@@ -49,6 +49,7 @@ export 'pro_badge.dart';
 export 'pulsing_color_button.dart';
 export 'reorderable_list_view.dart';
 export 'reschedule_event_modal.dart';
+export 'role_header.dart';
 export 'scaffold.dart';
 export 'scroll_context.dart';
 export 'scroll_edge_fade.dart';

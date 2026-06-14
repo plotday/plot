@@ -135,6 +135,21 @@ export interface Channel {
   updated_at: Generated<Timestamp>;
 }
 
+export interface ClassificationDecision {
+  budget_exhausted: Generated<boolean>;
+  cache_hits: Generated<number>;
+  classifier: string;
+  created_at: Generated<Timestamp>;
+  duration_ms: number | null;
+  id: Generated<Int8>;
+  llm_calls: Generated<number>;
+  priority_id: string | null;
+  scores: Generated<Json>;
+  stage: string;
+  thread_id: string;
+  user_id: string;
+}
+
 export interface Contact {
   archived_at: Timestamp | null;
   avatar_url: string | null;
@@ -571,13 +586,18 @@ export interface Priority {
   created_by: string;
   default_thread_icon: string | null;
   description: string | null;
+  early_notifications_enabled: boolean | null;
   facet_filters: Json | null;
   icon: string | null;
   id: Generated<string>;
   inherit_members: Generated<boolean>;
+  is_inbox: Generated<boolean>;
   key: string | null;
   notification_cleared_at: Timestamp | null;
+  notify_window: Json | null;
   path: string;
+  role_id: string | null;
+  see_within: Json | null;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string;
@@ -633,6 +653,22 @@ export interface Publisher {
   name: string;
   updated_at: Generated<Timestamp>;
   url: string | null;
+}
+
+export interface Role {
+  archived_at: Timestamp | null;
+  color: Generated<number>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  early_notifications_enabled: boolean | null;
+  id: Generated<string>;
+  name: string;
+  notify_window: Json | null;
+  order: number | null;
+  see_within: Json | null;
+  seq: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
 }
 
 export interface Schedule {
@@ -1620,6 +1656,7 @@ export interface UserPriority {
   icon: string | null;
   id: string | null;
   inherit_members: boolean | null;
+  is_inbox: boolean | null;
   key: string | null;
   notification_cleared_at: Timestamp | null;
   notify_window: Json | null;
@@ -1634,6 +1671,7 @@ export interface UserPriority {
   respond_within: Json | null;
   respond_within_set: boolean | null;
   role: string | null;
+  role_id: string | null;
   root: boolean | null;
   see_within: Json | null;
   see_within_set: boolean | null;
@@ -1673,6 +1711,22 @@ export interface UserPriorityExpanded {
 export interface UserPriorityUnread {
   priority_id: string | null;
   unread: boolean | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
+export interface UserRole {
+  archived_at: Timestamp | null;
+  color: number | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  early_notifications_enabled: boolean | null;
+  id: string | null;
+  name: string | null;
+  notify_window: Json | null;
+  order: number | null;
+  see_within: Json | null;
+  seq: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
 }
@@ -1939,6 +1993,7 @@ export interface DB {
   ai_preference: AiPreference;
   "atlas_schema_revisions.atlas_schema_revisions": AtlasSchemaRevisionsAtlasSchemaRevisions;
   channel: Channel;
+  classification_decision: ClassificationDecision;
   contact: Contact;
   contact_external_account: ContactExternalAccount;
   contact_invitation: ContactInvitation;
@@ -1969,6 +2024,7 @@ export interface DB {
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
   publisher: Publisher;
+  role: Role;
   schedule: Schedule;
   schedule_contact: ScheduleContact;
   secure_option: SecureOption;
@@ -2033,6 +2089,7 @@ export interface DB {
   "user.priority_block": UserPriorityBlock;
   "user.priority_expanded": UserPriorityExpanded;
   "user.priority_unread": UserPriorityUnread;
+  "user.role": UserRole;
   "user.schedule": UserSchedule;
   "user.team_user": UserTeamUser;
   "user.thread": UserThread;
