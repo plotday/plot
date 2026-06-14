@@ -39,43 +39,52 @@ Others offer these approaches which we reject:
 
 - Ward off the busyness. Work is the bad guy, so set boundaries and seek balance.
 - Hustle harder. Use the right tools and you'll get on top of it all.
+- Go it alone. People slow you down, so do it on your own with AI instead.
 
-We believe work can be good, meaningful, and fulfilling. We know not all work is created equal. We
-elevate work that creates new value, innovates, and drives real human impact. We actively resist
-work that is low-value and performative knowing it steals energy from better work.
+We believe work can be good, meaningful, and fulfilling. Not all work is created equal. We elevate
+work that creates new value, innovates, and drives real human impact. We actively resist work that
+is low-value and performative knowing it steals energy from better work.
 
-Underneath all of it is a single move: the reader chooses where their time and attention go. A day
-holds a fixed amount of time — spend it here and you've taken it from there. That isn't a trap to
-manage around; it's the reader's leverage. The work isn't to do more or to do less, but to decide
-_on purpose_ what gets today — to invest their time, rather than have it spent for them by whatever
-shouts loudest. Everything Plot does serves that one choice.
+And the best work is rarely solitary. People aren't the bottleneck, and they aren't resources to
+optimize — they bring the creativity, wisdom, challenge, and inspiration that carry a group further
+than anyone goes alone. We're people-first: Plot helps the reader do great work _with_ others, not
+route around them. We don't assume everyone has a team — many readers are solo — but everyone is
+connected to people who matter to their work.
+
+Our core challenge to readers (mostly implied rather than stated) is to move from passive to active,
+from reacting and responding to choosing and initiating. Their time and attention is theirs to
+invest. Each day holds a fixed amount of time — spend it here and you've taken it from there. Invest
+first in what is most important, and budget the remainder for everything else.
 
 ## Principles
 
-1. **Intention over reaction.** The reader chooses where their time and attention go; Plot never
-   chooses for them. Write to someone with both hands on the wheel, not someone bracing for the next
-   thing to hit. Features are levers the reader aims, not a system that runs them. _Avoid:_ "Plot
-   handles it so you don't have to think about it." _Instead:_ "you decide what deserves your
-   attention; Plot keeps the rest from interrupting."
+1. **Intention over reaction.** The reader chooses where their time and attention go and Plot
+   supports their intention. Plot never chooses for them. _Avoid:_ "Plot handles it so you don't
+   have to think about it." _Instead:_ "you decide what deserves your attention; Plot keeps the rest
+   from interrupting."
 
 2. **Believe in the reader — show it, never say it.** Write to a capable person doing work that
    matters. Convey faith through your assumptions about them, not through compliments or pep talks.
    _Avoid:_ "You've got this!" _Instead:_ "the work only you can do."
 
-3. **Empowering, not soothing.** Point to the way up and out. Reassurance is fine when it's
+3. **With people, not around them.** Great work happens with people — they bring creativity, wisdom,
+   challenge, and inspiration, not just extra hands. People aren't the bottleneck and aren't a
+   resource to optimize; they're how a group reaches further than anyone could alone. Write as if
+   the reader's collaborators make the work better, never as something to route around. But don't
+   assume a team — many readers are solo, connected to people outside any org; prefer "the people
+   you work with" over "your team." _Avoid:_ "your team's command center." _Instead:_ "bring the
+   right people in."
+
+4. **Empowering, not soothing.** Point to the way up and out. Reassurance is fine when it's
    forward-looking — _"you can trust that everything gets done at the best time"_ — but never settle
    for "relax, don't worry."
 
-4. **Give permission to ignore.** Plot's whole promise is that not everything deserves the reader's
-   attention. Say so plainly, without guilt. From onboarding: _"Creating focuses for low-urgency
-   work is a great way to keep it from interrupting your day, so you can tackle it efficiently when
-   you have time."_
-
-5. **Grace over grind.** Protect the reader's whole health. No hustle language, no
-   productivity-guilt, no "crush your day." It's okay to let things wait, to catch up later, to not
-   finish everything. Rest is part of the plan, not a failure. Success is investing attention well —
-   not an empty list. As onboarding puts it: _"Rather than chasing Inbox Zero, we believe in
-   investing your time and attention based on your priorities."_
+5. **Permission and grace.** Not everything deserves the reader's attention — say so plainly,
+   without guilt. It's fine to let low-urgency work wait, to catch up later, to not finish
+   everything; rest is part of the plan, not a failure. Protect the reader's whole health: no hustle
+   language, no productivity-guilt, no "crush your day." Success is investing attention well, not an
+   empty list. _"Rather than chasing Inbox Zero, we believe in investing your time and attention
+   based on your priorities."_
 
 6. **Teach the why, then get out of the way.** Like the onboarding threads, explain the reasoning
    behind a workflow so the reader owns it — then trust them. Don't narrate the obvious or
@@ -139,6 +148,17 @@ Plot hands the reader the controls; it never implies the day — or Plot — is 
   that removes the choice removes the point. Say what Plot clears away _so the reader can choose_,
   never what it decides for them.
 
+### Don't make people the problem
+
+Plot is people-positive. Collaborators aren't friction to engineer away, and we never assume
+everyone has a team.
+
+- _Avoid:_ "cut out the back-and-forth." · "less time dealing with people." · "your team's command
+  center" (assumes a team).
+- _Why:_ people bring the creativity and challenge that make work better; copy that frames them as
+  overhead contradicts the stance. Name "the people you work with," not "your team" — many readers
+  are solo.
+
 ### Don't state the belief
 
 > "You've got this." · "We believe in you." · "Be your best self." · "Unlock your potential."
@@ -154,6 +174,8 @@ Show it instead (Principle 2).
 - **Real progress:** "make progress on what matters," "the work only you can do," "get traction,"
   "keep going."
 - **On the reader's side:** "your call," "you choose," "you decide how much and how often."
+- **People & collaboration:** "the people you work with," "bring the right people in," "share it
+  with whoever needs it," "move it forward together."
 - **Honest verbs:** reply, share, move, mute, schedule, gather, surface — say exactly what happens.
 
 ### Terminology
@@ -203,8 +225,10 @@ Run any draft past these:
 3. Did I _show_ belief in the reader rather than state it? (No "you've got this.")
 4. Is it empowering and forward-looking, not just soothing?
 5. Where it fits, did I give permission to ignore or let things wait — with grace, not pressure?
-6. Did I cut every slogan, hype word, and corporate phrase? (Scan the lists above.)
-7. One idea per sentence, contractions, second person, concrete words?
+6. Do people read as collaborators who make the work better — never an obstacle or a resource — and
+   did I avoid assuming a team?
+7. Plain and human — one idea per sentence, contractions, concrete words — with every slogan, hype
+   word, and corporate phrase cut? (Scan the lists above.)
 8. Right register for the surface — spacious on the site, terse in the UI?
 9. Current, correct terminology (per features.md)?
 

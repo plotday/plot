@@ -8,14 +8,25 @@ import featuresMd from "./internal-docs/features.md?raw";
 import updatesMd from "./internal-docs/updates.md?raw";
 import voiceMd from "./internal-docs/voice.md?raw";
 
-export function renderFeatures(): string {
-  return marked.parse(featuresMd, { async: false }) as string;
+export type InternalDocContent = {
+  // Rendered HTML for display.
+  html: string;
+  // The raw markdown source, returned so the page can offer "Copy as Markdown".
+  markdown: string;
+};
+
+function render(markdown: string): InternalDocContent {
+  return { html: marked.parse(markdown, { async: false }) as string, markdown };
 }
 
-export function renderUpdates(): string {
-  return marked.parse(updatesMd, { async: false }) as string;
+export function renderFeatures(): InternalDocContent {
+  return render(featuresMd);
 }
 
-export function renderVoice(): string {
-  return marked.parse(voiceMd, { async: false }) as string;
+export function renderUpdates(): InternalDocContent {
+  return render(updatesMd);
+}
+
+export function renderVoice(): InternalDocContent {
+  return render(voiceMd);
 }

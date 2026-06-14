@@ -1,6 +1,5 @@
-import { Container, TypographyStylesProvider } from "@mantine/core";
-
 import type { Route } from "./+types/internal.features";
+import InternalDoc from "../components/internal-doc";
 import { requireTeamMember } from "../lib/internal-auth.server";
 import { renderFeatures } from "../lib/internal-docs.server";
 
@@ -13,15 +12,9 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader(args: Route.LoaderArgs) {
   await requireTeamMember(args);
-  return { html: renderFeatures() };
+  return renderFeatures();
 }
 
 export default function InternalFeatures({ loaderData }: Route.ComponentProps) {
-  return (
-    <Container mt="lg" size="md">
-      <TypographyStylesProvider>
-        <div className="internal-doc" dangerouslySetInnerHTML={{ __html: loaderData.html }} />
-      </TypographyStylesProvider>
-    </Container>
-  );
+  return <InternalDoc html={loaderData.html} markdown={loaderData.markdown} />;
 }
