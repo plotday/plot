@@ -748,6 +748,10 @@ class TwistIntegrations {
   /// Current option values for no-provider connectors (secure values masked).
   final Map<String, dynamic>? optionsConfig;
 
+  /// Plain-language "what you're granting" bullets for credential (no-provider)
+  /// connectors. Null for OAuth connectors (those carry it per-provider).
+  final List<String>? access;
+
   /// When true, this connector has a single implicit channel.
   /// The UI shows channel config inline instead of a channel list.
   final bool singleChannel;
@@ -785,6 +789,7 @@ class TwistIntegrations {
     required this.channels,
     this.optionsSchema,
     this.optionsConfig,
+    this.access,
     this.singleChannel = false,
     this.channelNoun = ChannelNoun.fallback,
     this.shared = false,
@@ -808,6 +813,7 @@ class TwistIntegrations {
           .toList(),
       optionsSchema: json['optionsSchema'] as Map<String, dynamic>?,
       optionsConfig: json['optionsConfig'] as Map<String, dynamic>?,
+      access: (json['access'] as List<dynamic>?)?.cast<String>(),
       singleChannel: json['singleChannel'] as bool? ?? false,
       channelNoun: ChannelNoun.fromJson(
         json['channelNoun'] as Map<String, dynamic>?,
@@ -843,14 +849,14 @@ class TwistProvider extends Equatable {
   final AuthProvider provider;
   final List<String> scopes;
 
-  /// Friendly bullets describing the always-on (required) permissions.
-  final List<String> description;
+  /// Plain-language bullets describing what connecting this service grants.
+  final List<String> access;
   final List<OptionalScopeGroup>? optionalScopes;
 
   const TwistProvider({
     required this.provider,
     required this.scopes,
-    this.description = const [],
+    this.access = const [],
     this.optionalScopes,
   });
 
@@ -861,8 +867,11 @@ class TwistProvider extends Equatable {
         orElse: () => AuthProvider.other,
       ),
       scopes: (json['scopes'] as List<dynamic>).cast<String>(),
-      description:
-          (json['description'] as List<dynamic>?)?.cast<String>() ?? const [],
+      // Back-compat: older servers send `description`.
+      access:
+          (json['access'] as List<dynamic>?)?.cast<String>() ??
+          (json['description'] as List<dynamic>?)?.cast<String>() ??
+          const [],
       optionalScopes: (json['optionalScopes'] as List<dynamic>?)
           ?.map((g) => OptionalScopeGroup.fromJson(g as Map<String, dynamic>))
           .toList(),
@@ -870,7 +879,7 @@ class TwistProvider extends Equatable {
   }
 
   @override
-  List<Object?> get props => [provider, scopes, description, optionalScopes];
+  List<Object?> get props => [provider, scopes, access, optionalScopes];
 }
 
 /// A connected account for a twist integration

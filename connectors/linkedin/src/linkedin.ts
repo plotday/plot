@@ -96,6 +96,10 @@ export class LinkedIn extends Connector<LinkedIn> {
 
   readonly provider = LINKEDIN_PROVIDER;
   readonly scopes = LinkedIn.SCOPES;
+  readonly access = [
+    "Reads your LinkedIn messages and conversations",
+    "Sends messages and replies you write in Plot",
+  ];
   readonly singleChannel = true;
   readonly reactionCapabilities: ReactionCapabilities = {
     mode: "fixed",

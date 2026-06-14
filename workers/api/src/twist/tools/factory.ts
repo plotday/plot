@@ -329,8 +329,8 @@ export function collectToolPermissions(
 export type ProviderDeclaration = {
   provider: string;
   scopes: string[];
-  /** Friendly bullets describing the always-on (required) access. */
-  description?: string[];
+  /** Plain-language bullets describing what connecting grants (Connector.access). */
+  access?: string[];
   /** Optional scope groups the user can toggle before OAuth. */
   optionalScopes?: OptionalScopeGroup[];
 };
@@ -355,7 +355,7 @@ export function mergeProviderDeclarations(
 ): ProviderDeclaration[] {
   const byProvider = new Map<string, {
     scopes: Set<string>;
-    description?: string[];
+    access?: string[];
     optionalScopes?: OptionalScopeGroup[];
   }>();
 
@@ -368,8 +368,8 @@ export function mergeProviderDeclarations(
       entry.scopes.add(scope);
     }
     // First declaration with these wins (connector-level).
-    if (decl.description && !entry.description) {
-      entry.description = decl.description;
+    if (decl.access && !entry.access) {
+      entry.access = decl.access;
     }
     if (decl.optionalScopes && !entry.optionalScopes) {
       entry.optionalScopes = decl.optionalScopes;
@@ -381,7 +381,7 @@ export function mergeProviderDeclarations(
     .map(([provider, entry]) => ({
       provider,
       scopes: Array.from(entry.scopes).sort(),
-      ...(entry.description ? { description: entry.description } : {}),
+      ...(entry.access ? { access: entry.access } : {}),
       ...(entry.optionalScopes ? { optionalScopes: entry.optionalScopes } : {}),
     }));
 }

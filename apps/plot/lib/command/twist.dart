@@ -2043,8 +2043,10 @@ class AddSourceDetail extends ShowForm {
                 );
               }),
               if (optionItems != null &&
-                  (refreshed.providers.isNotEmpty || refreshed.isEmpty))
+                  (refreshed.providers.isNotEmpty || refreshed.isEmpty)) ...[
+                ?_accessBulletsItem(refreshed.access),
                 ...optionItems.items,
+              ],
               if (refreshed.providers.isEmpty &&
                   optionItems != null &&
                   refreshed.isEmpty)
@@ -2246,8 +2248,11 @@ class AddSourceDetail extends ShowForm {
                 );
               }),
               if (optionItems != null &&
-                  (integrations.providers.isNotEmpty || integrations.isEmpty))
+                  (integrations.providers.isNotEmpty ||
+                      integrations.isEmpty)) ...[
+                ?_accessBulletsItem(integrations.access),
                 ...optionItems.items,
+              ],
               if (integrations.providers.isEmpty &&
                   optionItems != null &&
                   integrations.isEmpty)
@@ -3662,6 +3667,58 @@ class ShowAddIntegrationAccount extends ShowForm {
   }
 }
 
+/// Renders a list of "what you're granting" access bullets (• + muted text).
+/// Shared by the OAuth connect widget and the credential-connector form row so
+/// the bullet styling stays in sync.
+Widget _accessBulletList(BuildContext context, List<String> access) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (final line in access)
+        Padding(
+          padding: EdgeInsets.only(bottom: context.theme.spacing.xs),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '•  ',
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.colors.mutedForeground,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  line,
+                  style: context.theme.typography.sm.copyWith(
+                    color: context.theme.colors.mutedForeground,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ],
+  );
+}
+
+/// Builds the "what you're granting" bullet list shown above credential
+/// (no-provider) connect fields. Returns null when there's nothing to show.
+FormItem? _accessBulletsItem(List<String>? access) {
+  if (access == null || access.isEmpty) return null;
+  return FormInfo(
+    key: 'access',
+    divider: false,
+    builder: (formContext) => Padding(
+      padding: EdgeInsets.only(
+        left: formContext.theme.spacing.xl,
+        right: formContext.theme.spacing.xl,
+        bottom: formContext.theme.spacing.sm,
+      ),
+      child: _accessBulletList(formContext, access),
+    ),
+  );
+}
+
 /// Combines optional scope toggles with the auth button for a provider.
 class _AuthWithScopeToggles extends StatefulWidget {
   const _AuthWithScopeToggles({
@@ -3703,35 +3760,13 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
   @override
   Widget build(BuildContext context) {
     final optionalScopes = widget.provider.optionalScopes;
-    final description = widget.provider.description;
+    final access = widget.provider.access;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (description.isNotEmpty) ...[
-          for (final line in description)
-            Padding(
-              padding: EdgeInsets.only(bottom: context.theme.spacing.xs),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '•  ',
-                    style: context.theme.typography.sm.copyWith(
-                      color: context.theme.colors.mutedForeground,
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      line,
-                      style: context.theme.typography.sm.copyWith(
-                        color: context.theme.colors.mutedForeground,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        if (access.isNotEmpty) ...[
+          _accessBulletList(context, access),
           SizedBox(height: context.theme.spacing.sm),
         ],
         if (optionalScopes != null && optionalScopes.isNotEmpty) ...[

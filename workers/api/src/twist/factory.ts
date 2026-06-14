@@ -100,6 +100,7 @@ export function twistFactory({
       shared?: boolean;
       keyOption?: string;
       autoEnableNewChannelsByDefault?: boolean;
+      access?: string[];
     } | null = null;
 
     // Load twist_instance config for Options resolution at runtime
@@ -493,13 +494,11 @@ export function twistFactory({
         const rawScopes: any = sourceProvider.scopes;
         let requiredScopes: string[];
         let optionalScopes: any[] | undefined;
-        let scopeDescription: string[] | undefined;
         if (Array.isArray(rawScopes)) {
           requiredScopes = rawScopes;
         } else if (rawScopes?.required) {
           requiredScopes = rawScopes.required;
           optionalScopes = rawScopes.optional;
-          scopeDescription = rawScopes.description;
         } else {
           requiredScopes = [];
         }
@@ -507,7 +506,7 @@ export function twistFactory({
           provider: sourceProvider.provider,
           scopes: requiredScopes,
           ...(optionalScopes ? { optionalScopes } : {}),
-          ...(scopeDescription ? { description: scopeDescription } : {}),
+          ...(sourceProvider.access ? { access: sourceProvider.access } : {}),
         });
         // Normalize scopes to string[] so downstream consumers see a flat array
         sourceProvider = { ...sourceProvider, scopes: requiredScopes };

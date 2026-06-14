@@ -62,6 +62,10 @@ export class Instagram extends Connector<Instagram> {
 
   readonly provider = INSTAGRAM_PROVIDER;
   readonly scopes = Instagram.SCOPES;
+  readonly access = [
+    "Reads your Instagram direct messages",
+    "Sends replies you write in Plot",
+  ];
   readonly singleChannel = true;
   readonly reactionCapabilities: ReactionCapabilities = {
     mode: "open-unicode",

@@ -124,6 +124,7 @@ async function loadTwistConfig(
   optionsSchema: OptionsSchema | null;
   singleChannel: boolean;
   channelNoun: { singular: string; plural: string } | null;
+  access: string[] | null;
   connectorLinkTypes?: any[];
 } | null> {
   const config = await env.TWIST_CONFIG.get(`${twistPackageId}:${version}`);
@@ -137,6 +138,7 @@ async function loadTwistConfig(
     optionsSchema: parsed.optionsSchema ?? null,
     singleChannel: parsed.sourceProvider?.singleChannel === true,
     channelNoun: parsed.sourceProvider?.channelNoun ?? null,
+    access: parsed.sourceProvider?.access ?? null,
     connectorLinkTypes: parsed.sourceProvider?.linkTypes ?? undefined,
   };
 }
@@ -172,13 +174,13 @@ function createReadOnlyIntegrations(
   environment: string
 ): Integrations {
   // Create stub provider configs (no lifecycle callbacks needed for read-only).
-  // Carry optionalScopes + description so getIntegrationData can surface them
+  // Carry optionalScopes + access so getIntegrationData can surface them
   // to the connect modal (toggles + permission bullets).
   const providerConfigs = providers.map((p) => ({
     provider: p.provider as any,
     scopes: p.scopes,
     ...(p.optionalScopes ? { optionalScopes: p.optionalScopes } : {}),
-    ...(p.description ? { description: p.description } : {}),
+    ...(p.access ? { access: p.access } : {}),
     getChannels: async () => [],
     onChannelEnabled: async () => {},
     onChannelDisabled: async () => {},
@@ -264,6 +266,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       }
       return c.json({
         providers: [], accounts: [], syncables: [], optionsSchema,
+        access: config.access ?? null,
         shared: twistInfo.shared, keyOption: twistInfo.keyOption,
         premium: twistInfo.premium,
         accountLabel: twistInfo.accountLabel ?? null,
@@ -368,6 +371,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
 
     return c.json({
       providers: [], accounts, syncables, optionsSchema, optionsConfig,
+      access: config.access ?? null,
       singleChannel: config.singleChannel,
       channelNoun: config.channelNoun,
       shared: twistInfo.shared,

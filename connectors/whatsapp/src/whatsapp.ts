@@ -42,6 +42,10 @@ export class WhatsApp extends Connector<WhatsApp> {
 
   readonly provider = WHATSAPP_PROVIDER;
   readonly scopes = WhatsApp.SCOPES;
+  readonly access = [
+    "Reads your WhatsApp messages",
+    "Sends replies you write in Plot",
+  ];
   readonly singleChannel = true;
   readonly reactionCapabilities: ReactionCapabilities = {
     mode: "open-unicode",

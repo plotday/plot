@@ -79,6 +79,8 @@ type IntegrationProviderConfig = {
     scopes: string[];
     default: boolean;
   }>;
+  /** Plain-language bullets describing what connecting grants (Connector.access). */
+  access?: string[];
   /** Friendly bullets describing the always-on (required) access. */
   description?: string[];
   linkTypes?: LinkTypeConfig[];
@@ -3754,7 +3756,7 @@ export class Integrations extends Tool implements IAuth {
    * Returns accounts, providers, and channels.
    */
   async getIntegrationData(currentActorId?: ActorId): Promise<{
-    providers: Array<{ provider: AuthProvider; scopes: string[]; optionalScopes?: any[]; description?: string[] }>;
+    providers: Array<{ provider: AuthProvider; scopes: string[]; optionalScopes?: any[]; access?: string[]; description?: string[] }>;
     accounts: Array<{
       provider: AuthProvider;
       actorId: ActorId;
@@ -3791,7 +3793,10 @@ export class Integrations extends Tool implements IAuth {
       provider: p.provider,
       scopes: p.scopes,
       ...(p.optionalScopes ? { optionalScopes: p.optionalScopes } : {}),
-      ...(p.description ? { description: p.description } : {}),
+      // `description` mirrors `access` for backwards-compat with pre-access
+      // Flutter clients that still read the old `description` field; it can be
+      // dropped once those clients are gone.
+      ...(p.access ? { access: p.access, description: p.access } : {}),
     }));
 
     // Resolve all contact IDs belonging to the current user so we can
