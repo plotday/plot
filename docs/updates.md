@@ -287,3 +287,4 @@
 - Fixed missing notifications and unread indicators for threads shared to a team — feedback and other team-wide threads now correctly trigger push and email notifications, and show the unread dot on the priority they land in
 - Archiving a thread from the activity feed now feels instant — the thread disappears immediately instead of after a noticeable delay
 - Priorities with nothing on the agenda now open straight to the activity feed — and opening a thread that isn't on the agenda also switches to the feed, so you always land on a list that has your thread in it
+- On an email thread with several people, you can now choose **Reply to [sender]** to write back to just the original sender. Tapping that tab used to jump the selection straight back to **Reply all**, so there was no way to keep it — the tab now stays selected like it should.

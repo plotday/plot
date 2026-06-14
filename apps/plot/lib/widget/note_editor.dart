@@ -26,6 +26,36 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'logging.dart';
 
+/// Resolves the active reply pill for a message-sharing (e.g. Gmail) thread
+/// from the draft's per-note recipient subset. Returns `'replyOriginal'` when
+/// the draft has been narrowed to exactly the current user plus the distinct
+/// original author — the recipient set `_activateReplyToOriginal` writes — so
+/// the "Reply to [original]" pill stays highlighted after it's tapped.
+/// Returns `'reply'` for any broader audience (including the
+/// thread-default `null` subset, where the reply reaches everyone).
+///
+/// [originalAuthorId] is null when there's no distinct original author (the
+/// "Reply to original" pill isn't shown), in which case the answer is always
+/// `'reply'`. Pure so the highlight logic can be unit-tested without the Actor
+/// cache or a mounted editor.
+@visibleForTesting
+String messageReplyPillId({
+  required List<ActorId>? draftAccessContacts,
+  required List<ActorId>? draftAccessGroups,
+  required ActorId selfId,
+  required ActorId? originalAuthorId,
+}) {
+  if (originalAuthorId == null) return 'reply';
+  if (draftAccessGroups != null && draftAccessGroups.isNotEmpty) return 'reply';
+  final contacts = draftAccessContacts;
+  if (contacts == null) return 'reply';
+  final got = contacts.toSet();
+  final target = {selfId, originalAuthorId};
+  final isReplyToOriginal =
+      got.length == target.length && got.containsAll(target);
+  return isReplyToOriginal ? 'replyOriginal' : 'reply';
+}
+
 class NoteEditor extends StatefulWidget {
   const NoteEditor({
     required this.draft,
@@ -866,7 +896,13 @@ class NoteEditorState extends State<NoteEditor> {
     if (isPlotThread) return hasSharing ? 'reply' : 'note';
     switch (cfg.sharingModel) {
       case SharingModel.message:
-        return 'reply';
+        final orig = _originalAuthorIfDistinct(s);
+        return messageReplyPillId(
+          draftAccessContacts: draft.accessContacts,
+          draftAccessGroups: draft.accessGroups,
+          selfId: Base.actorId,
+          originalAuthorId: orig == null ? null : ActorId.fromUuid(orig),
+        );
       case SharingModel.channel:
       case SharingModel.thread:
       case SharingModel.none:
