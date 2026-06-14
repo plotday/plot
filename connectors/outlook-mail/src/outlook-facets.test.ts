@@ -13,29 +13,29 @@ const m = (over: Partial<GraphMessage>): GraphMessage => ({
 
 describe("outlookFacets", () => {
   it("newsletter with List-Id → automated/list", () => {
-    const f = outlookFacets(
+    const { facets } = outlookFacets(
       [{ name: "List-Id", value: "<news.example.com>" }],
       m({}),
       "x".repeat(2000)
     );
-    expect(f.automation).toBe("automated");
-    expect(f.reach).toBe("list");
-    expect(f.format).toBe("reading");
+    expect(facets.automation).toBe("automated");
+    expect(facets.reach).toBe("list");
+    expect(facets.format).toBe("reading");
   });
 
   it("plain human reply → human/direct/message", () => {
-    const f = outlookFacets(
+    const { facets } = outlookFacets(
       [{ name: "In-Reply-To", value: "<a@b>" }],
       m({ subject: "Re: Hi" }),
       "short"
     );
-    expect(f.automation).toBe("human");
-    expect(f.reach).toBe("direct");
-    expect(f.format).toBe("message");
+    expect(facets.automation).toBe("human");
+    expect(facets.reach).toBe("direct");
+    expect(facets.format).toBe("message");
   });
 
   it("short Other-inbox automated mail → notification (no headers available)", () => {
-    const f = outlookFacets(
+    const { facets } = outlookFacets(
       null,
       m({
         inferenceClassification: "other",
@@ -43,13 +43,13 @@ describe("outlookFacets", () => {
       }),
       "tiny"
     );
-    expect(f.automation).toBe("automated");
-    expect(f.format).toBe("notification");
+    expect(facets.automation).toBe("automated");
+    expect(facets.format).toBe("notification");
   });
 
   it("null headers degrade gracefully", () => {
-    const f = outlookFacets(null, m({}), "hello there");
-    expect(f.automation).toBe("human");
-    expect(f.reach).toBe("direct");
+    const { facets } = outlookFacets(null, m({}), "hello there");
+    expect(facets.automation).toBe("human");
+    expect(facets.reach).toBe("direct");
   });
 });
