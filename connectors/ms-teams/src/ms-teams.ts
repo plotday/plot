@@ -4,7 +4,7 @@ import {
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { NewActor, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
+import type { Actor, NewActor, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -69,14 +69,13 @@ export class MsTeams extends Connector<MsTeams> {
     "Sends messages and replies you write in Plot, and can start new chats",
     "Reads your team and user profiles to show who's who",
   ];
-  // Teams Graph API accepts both legacy enum reaction types (like,
-  // heart, laugh, surprised, sad, angry) and Unicode emoji directly.
-  // Teams allows only one reaction per user per message; bidirectional
-  // write-back is wired through inbound today. For outbound, implement
-  // `onNoteReactionChanged` — it dispatches per (note, actor, emoji)
-  // on the reacting user's own connector instance, so the new
-  // GraphApi.setChannelReaction / setChatReaction / unset* helpers
-  // can be called under the right user's token.
+  // Teams accepts any Unicode emoji as a reaction (and the six legacy enum
+  // types — like/heart/laugh/surprised/sad/angry — on the way in, which
+  // extractTeamsMessageReactions normalizes to Unicode). Reactions sync
+  // both ways: inbound through the message transforms, outbound through
+  // onNoteReactionChanged, which dispatches per (note, actor, emoji) on the
+  // reacting user's own connector instance and calls the GraphApi
+  // set/unset reaction helpers under that user's token.
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
     customEmoji: "none" as const,
@@ -1003,13 +1002,8 @@ export class MsTeams extends Connector<MsTeams> {
   ): Promise<NoteWriteBackResult | void> {
     if (!note.key) return;
 
-    // Reaction write-back: deferred to a follow-up. Teams allows only
-    // one reaction per user per message via Graph, so a diff-and-apply
-    // pass needs each reaction dispatched on the acting user's own
-    // connector instance to attribute it correctly. Wire the new
-    // GraphApi.setChannelReaction / setChatReaction / unset* helpers
-    // once note-reaction dispatch is routed per-actor (parallel to
-    // the schedule_contact → twist_instance_for_actor pattern).
+    // Reactions are written back separately via onNoteReactionChanged so
+    // each emoji change is attributed to the user who made it.
 
     const meta = thread.meta ?? {};
     const syncableId = meta.syncableId as string;
@@ -1055,6 +1049,91 @@ export class MsTeams extends Connector<MsTeams> {
       } catch (error) {
         console.error("Failed to update Teams channel message:", error);
       }
+    }
+  }
+
+  /**
+   * Pushes a single emoji add/remove the user made in Plot back to Teams.
+   *
+   * The runtime dispatches this on the reacting user's own connector
+   * instance (routed via `twist_instance_for_actor` on the reaction's
+   * actor), so the token from `getApi` is already that user's — the Graph
+   * `setReaction`/`unsetReaction` call is attributed correctly with no
+   * `actAs` step. Teams accepts the Unicode emoji directly, and the
+   * required scopes (`ChannelMessage.Send` for channels, `Chat.ReadWrite`/
+   * `ChatMessage.Send` for chats) are already granted.
+   *
+   * `note.key` is the reacted message's id. Channel replies are addressed
+   * through their parent's `replies` collection, so the channel path passes
+   * `meta.messageId` (the thread's parent message) as the parent — the
+   * GraphApi helper switches to the reply endpoint when it differs.
+   */
+  async onNoteReactionChanged(
+    note: Note,
+    thread: Thread,
+    _actor: Actor,
+    emoji: string,
+    added: boolean
+  ): Promise<void> {
+    const messageId = note.key;
+    if (!messageId || !emoji) return;
+
+    const meta = thread.meta ?? {};
+    const syncableId = meta.syncableId as string;
+
+    if (syncableId === DM_CHANNEL_ID) {
+      const chatId = meta.chatId as string;
+      if (!chatId) {
+        console.error("No chatId in meta for Teams DM reaction");
+        return;
+      }
+      const api = await this.getApi(DM_CHANNEL_ID);
+      try {
+        if (added) {
+          await api.setChatReaction(chatId, messageId, emoji);
+        } else {
+          await api.unsetChatReaction(chatId, messageId, emoji);
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to ${added ? "set" : "unset"} Teams DM reaction:`,
+          error
+        );
+      }
+      return;
+    }
+
+    const channelId = meta.channelId as string;
+    const teamId = meta.teamId as string;
+    if (!channelId || !teamId) {
+      console.error("Missing meta for Teams channel reaction");
+      return;
+    }
+    const parentMessageId = meta.messageId as string | undefined;
+    const api = await this.getApi(channelId);
+    try {
+      if (added) {
+        await api.setChannelReaction(
+          teamId,
+          channelId,
+          messageId,
+          emoji,
+          parentMessageId
+        );
+      } else {
+        await api.unsetChannelReaction(
+          teamId,
+          channelId,
+          messageId,
+          emoji,
+          parentMessageId
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `Failed to ${added ? "set" : "unset"} Teams channel reaction:`,
+        error
+      );
     }
   }
 }

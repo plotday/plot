@@ -261,21 +261,48 @@ export class GraphApi {
   }
 
   /**
-   * Set a reaction on a Teams channel message. `reactionType` is either
-   * a Unicode emoji ("💯") or a legacy enum value ("like", "heart",
-   * "laugh", "surprised", "sad", "angry"). Graph allows one reaction per
-   * user per message; calling setReaction with a different type replaces
-   * the user's prior reaction.
+   * Builds the Graph path for a channel-message reaction. A channel reply
+   * is addressed through its parent message's `replies` collection, not at
+   * the top `messages` level, so when `parentMessageId` is supplied and
+   * differs from `messageId` the reply-scoped endpoint is used.
+   */
+  private channelReactionPath(
+    teamId: string,
+    channelId: string,
+    messageId: string,
+    action: "setReaction" | "unsetReaction",
+    parentMessageId?: string
+  ): string {
+    const base = `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages`;
+    if (parentMessageId && parentMessageId !== messageId) {
+      return `${base}/${parentMessageId}/replies/${messageId}/${action}`;
+    }
+    return `${base}/${messageId}/${action}`;
+  }
+
+  /**
+   * Set a reaction on a Teams channel message or reply. `reactionType` is
+   * supplied as Unicode ("💯"); Graph also accepts the six legacy enum
+   * values ("like", "heart", "laugh", "surprised", "sad", "angry"). Pass
+   * `parentMessageId` when reacting on a reply so the reply-scoped endpoint
+   * is used.
    */
   async setChannelReaction(
     teamId: string,
     channelId: string,
     messageId: string,
-    reactionType: string
+    reactionType: string,
+    parentMessageId?: string
   ): Promise<void> {
     await this.call(
       "POST",
-      `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages/${messageId}/setReaction`,
+      this.channelReactionPath(
+        teamId,
+        channelId,
+        messageId,
+        "setReaction",
+        parentMessageId
+      ),
       { reactionType }
     );
   }
@@ -284,11 +311,18 @@ export class GraphApi {
     teamId: string,
     channelId: string,
     messageId: string,
-    reactionType: string
+    reactionType: string,
+    parentMessageId?: string
   ): Promise<void> {
     await this.call(
       "POST",
-      `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages/${messageId}/unsetReaction`,
+      this.channelReactionPath(
+        teamId,
+        channelId,
+        messageId,
+        "unsetReaction",
+        parentMessageId
+      ),
       { reactionType }
     );
   }
