@@ -98,5 +98,7 @@ CREATE VIEW "user"."note_redacted" (
      JOIN public.thread a ON a.id = n.thread_id
      JOIN public.thread_priority tp ON tp.thread_id = a.id AND tp.revoked_at IS NULL AND (tp.priority_id IS NOT NULL OR tp.classify_at < (now() - public.classify_visibility_window()))
   WHERE (n.draft = false OR n.created_by = tp.user_id) AND (a.draft = false OR a.created_by = tp.user_id) AND (a.contacts && "user".user_contact_ids(tp.user_id) OR a.groups && "user".user_group_ids(tp.user_id) OR a.topic_id IS NOT NULL AND (a.topic_id = ANY ("user".user_topic_ids(tp.user_id)))) AND n.created_by <> tp.user_id AND (n.access_contacts IS NOT NULL OR n.access_groups IS NOT NULL) AND NOT (n.access_contacts IS NOT NULL AND n.access_contacts && "user".user_contact_ids(tp.user_id) OR n.access_groups IS NOT NULL AND n.access_groups && "user".user_group_ids(tp.user_id)) AND NOT (a.dropped_contacts IS NOT NULL AND cardinality(a.dropped_contacts) > 0 AND a.dropped_contacts && "user".user_contact_ids(tp.user_id));
--- Bump note rows so clients re-pull and receive the new cta column.
-UPDATE note SET updated_at = now() WHERE archived_at IS NULL;
+-- NOTE: No row bump here. `cta` is NULL on every pre-existing note, so re-pulling
+-- delivers no data, and a full-table `UPDATE note SET updated_at = now()` exceeds
+-- the production statement timeout (it caused the deploy migrate step to fail and
+-- roll back). New notes get `cta` populated by the runtime and sync normally.
