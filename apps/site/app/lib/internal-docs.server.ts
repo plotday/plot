@@ -6,6 +6,7 @@ import { marked } from "marked";
 // user-supplied content without adding sanitization first.
 import featuresMd from "./internal-docs/features.md?raw";
 import updatesMd from "./internal-docs/updates.md?raw";
+import voiceMd from "./internal-docs/voice.md?raw";
 
 export function renderFeatures(): string {
   return marked.parse(featuresMd, { async: false }) as string;
@@ -13,4 +14,8 @@ export function renderFeatures(): string {
 
 export function renderUpdates(): string {
   return marked.parse(updatesMd, { async: false }) as string;
+}
+
+export function renderVoice(): string {
+  return marked.parse(voiceMd, { async: false }) as string;
 }

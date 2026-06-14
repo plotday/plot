@@ -22,7 +22,7 @@ BEGIN
 
     -- welcome
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'welcome' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'welcome' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -124,7 +124,7 @@ Focuses aren''t just for the high priority stuff. By creating focuses for low-ur
 
     -- getting-around
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'getting-around' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'getting-around' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -214,122 +214,122 @@ Focuses aren''t just for the high priority stuff. By creating focuses for low-ur
 
     UPDATE public.thread
         SET archived_at = now()
-        WHERE key = 'clean-up' AND created_by = c_system_instance_id AND archived_at IS NULL;
+        WHERE key = 'clean-up' AND twist_id = v_plot_twist_id AND archived_at IS NULL;
 
     UPDATE public.thread
         SET archived_at = now()
-        WHERE key = 'connections' AND created_by = c_system_instance_id AND archived_at IS NULL;
+        WHERE key = 'connections' AND twist_id = v_plot_twist_id AND archived_at IS NULL;
 
     UPDATE public.thread
         SET archived_at = now()
-        WHERE key = 'notifications' AND created_by = c_system_instance_id AND archived_at IS NULL;
+        WHERE key = 'notifications' AND twist_id = v_plot_twist_id AND archived_at IS NULL;
 
     UPDATE public.thread
         SET archived_at = now()
-        WHERE key = 'priorities' AND created_by = c_system_instance_id AND archived_at IS NULL;
+        WHERE key = 'priorities' AND twist_id = v_plot_twist_id AND archived_at IS NULL;
 
     UPDATE public.thread
         SET archived_at = now()
-        WHERE key = 'twists' AND created_by = c_system_instance_id AND archived_at IS NULL;
+        WHERE key = 'twists' AND twist_id = v_plot_twist_id AND archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'clean-up' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'clean-up' AND t.twist_id = v_plot_twist_id
           AND n.key = 'archive' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'clean-up' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'clean-up' AND t.twist_id = v_plot_twist_id
           AND n.key = 'show-archived' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'connections' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'connections' AND t.twist_id = v_plot_twist_id
           AND n.key = 'channels' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'connections' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'connections' AND t.twist_id = v_plot_twist_id
           AND n.key = 'intro' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'connections' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'connections' AND t.twist_id = v_plot_twist_id
           AND n.key = 'todo' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.twist_id = v_plot_twist_id
           AND n.key = 'intro' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.twist_id = v_plot_twist_id
           AND n.key = 'quiet-hours' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.twist_id = v_plot_twist_id
           AND n.key = 'timing' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'notifications' AND t.twist_id = v_plot_twist_id
           AND n.key = 'todo' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.twist_id = v_plot_twist_id
           AND n.key = 'create-and-match' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.twist_id = v_plot_twist_id
           AND n.key = 'inbox-everything' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.twist_id = v_plot_twist_id
           AND n.key = 'intro' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'priorities' AND t.twist_id = v_plot_twist_id
           AND n.key = 'todo' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.twist_id = v_plot_twist_id
           AND n.key = 'custom' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.twist_id = v_plot_twist_id
           AND n.key = 'intro' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.twist_id = v_plot_twist_id
           AND n.key = 'mention-plot' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'twists' AND t.twist_id = v_plot_twist_id
           AND n.key = 'todo' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'welcome' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'welcome' AND t.twist_id = v_plot_twist_id
           AND n.key = 'attention' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'welcome' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'welcome' AND t.twist_id = v_plot_twist_id
           AND n.key = 'feed-sections' AND n.archived_at IS NULL;
 
     UPDATE public.note n SET archived_at = now()
         FROM public.thread t
-        WHERE t.id = n.thread_id AND t.key = 'welcome' AND t.created_by = c_system_instance_id
+        WHERE t.id = n.thread_id AND t.key = 'welcome' AND t.twist_id = v_plot_twist_id
           AND n.key = 'links' AND n.archived_at IS NULL;
 END $$;
 

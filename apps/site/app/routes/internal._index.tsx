@@ -25,6 +25,9 @@ export default function InternalIndex({ loaderData }: Route.ComponentProps) {
         <Anchor component={Link} to="/internal/features">
           Product features (marketing source catalog)
         </Anchor>
+        <Anchor component={Link} to="/internal/voice">
+          Voice &amp; tone (how Plot sounds)
+        </Anchor>
         <Anchor component={Link} to="/internal/updates">
           Updates / changelog by release
         </Anchor>

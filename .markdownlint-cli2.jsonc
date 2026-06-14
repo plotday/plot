@@ -1,0 +1,47 @@
+{
+  // Shared Markdown lint config — the single source of truth for both:
+  //   • your nvim (LazyVim `lang.markdown` extra runs markdownlint-cli2, which
+  //     auto-discovers this file by walking up from the edited file), and
+  //   • `pnpm lint:md` / any CLI run on generated docs.
+  //
+  // Keep in sync with the `*.md` override in .prettierrc.json
+  // (proseWrap: "always", printWidth: 100). Prettier does the wrapping;
+  // markdownlint verifies it. The two must agree on the width.
+  "config": {
+    "default": true,
+    // Wrap prose at 100 to match Prettier. Don't flag lines Prettier can't
+    // reflow: code fences, tables, and headings stay on one line by design.
+    "MD013": {
+      "line_length": 100,
+      "code_blocks": false,
+      "tables": false,
+      "headings": false
+    },
+    // Changelog-style docs (updates.md) legitimately repeat headings like
+    // "### Fixes" under each release. Only flag duplicates with the same parent.
+    "MD024": { "siblings_only": true },
+    // Several docs embed inline HTML (<details>, <br>, <sub>, …) on purpose.
+    "MD033": false,
+    // House style uses **Bold** lines as lightweight subheadings; allow it.
+    "MD036": false,
+    // Changelog-style docs (updates.md) intentionally open with "## Next release"
+    // rather than an H1; the release-stamp script owns that first line.
+    "MD041": false
+  },
+  // NOTE: no top-level `globs` here on purpose. markdownlint-cli2 ADDS config
+  // globs to any files passed on the command line, so a `globs` entry would make
+  // nvim lint the whole tree every time you open one file. The bulk target lives
+  // in the `lint:md` / `format:md` scripts in package.json instead. `ignores`
+  // still applies to whatever globs those scripts pass.
+  "ignores": [
+    "**/node_modules/**",
+    "public/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.next/**",
+    "**/.nx/**",
+    "**/CHANGELOG.md",
+    "**/.changeset/**",
+    "docs/superpowers/**"
+  ]
+}

@@ -10,9 +10,16 @@ function q(s: string): string {
   return s.replace(/'/g, "''");
 }
 
-// Identity/attribution constants — these match how the live global onboarding
-// threads are created (system Plot twist instance, routed via the @plot.updates
-// auto-maintained announce topic, no groups, contacts = [system instance]).
+// Identity/attribution constants. c_system_instance_id is the CURRENT Plot
+// system twist_instance and is used as the created_by/author_id/contacts VALUE
+// for rows this reconcile creates. It must NOT be used to *match* existing
+// onboarding threads: the live prod threads were authored by an earlier
+// twist_instance that has since been replaced, so their created_by differs.
+// The real cross-user identity of an onboarding thread is (twist_id, key) —
+// exactly the scope of the `thread_twist_key_unique` partial index — so the
+// existence guards below match on `twist_id = v_plot_twist_id AND key = …`.
+// Matching on created_by instead caused a duplicate-key violation on that
+// index when the INSERT branch ran against a thread the guard had missed.
 const SYSTEM_INSTANCE_ID = "0199b6f4-ae64-7718-0000-000000000001";
 const TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
 const UPDATES_TOPIC_KEY = "@plot.updates";
@@ -43,7 +50,7 @@ export function emitGlobalReconcile(model: OnboardingModel, archive: ArchiveSets
     out.push("");
     out.push(`    -- ${t.key}`);
     out.push(`    SELECT id INTO v_thread_id FROM public.thread`);
-    out.push(`        WHERE key = '${q(t.key)}' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;`);
+    out.push(`        WHERE key = '${q(t.key)}' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;`);
     out.push("    IF v_thread_id IS NULL THEN");
     out.push("        -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members");
     out.push("        -- keys on — without it new users never get the thread filed / never see it.");
@@ -78,14 +85,14 @@ export function emitGlobalReconcile(model: OnboardingModel, archive: ArchiveSets
     out.push("");
     out.push(`    UPDATE public.thread`);
     out.push(`        SET archived_at = now()`);
-    out.push(`        WHERE key = '${q(key)}' AND created_by = c_system_instance_id AND archived_at IS NULL;`);
+    out.push(`        WHERE key = '${q(key)}' AND twist_id = v_plot_twist_id AND archived_at IS NULL;`);
   }
   for (const compound of archive.archivedNoteKeys) {
     const [threadKey, noteKey] = compound.split("/");
     out.push("");
     out.push(`    UPDATE public.note n SET archived_at = now()`);
     out.push(`        FROM public.thread t`);
-    out.push(`        WHERE t.id = n.thread_id AND t.key = '${q(threadKey)}' AND t.created_by = c_system_instance_id`);
+    out.push(`        WHERE t.id = n.thread_id AND t.key = '${q(threadKey)}' AND t.twist_id = v_plot_twist_id`);
     out.push(`          AND n.key = '${q(noteKey)}' AND n.archived_at IS NULL;`);
   }
 

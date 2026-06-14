@@ -1,0 +1,4 @@
+# Generated design-spec / report archive — append-only, not hand-edited.
+# Keep Prettier and markdownlint (.markdownlint-cli2.jsonc `ignores`) in agreement
+# so `pnpm format` / `pnpm format:md` don't reflow these files.
+docs/superpowers/

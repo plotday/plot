@@ -2,7 +2,8 @@
 
 ## Overview
 
-Plot uses two distinct ID spaces that serve different purposes. Understanding the difference is critical for correct implementation.
+Plot uses two distinct ID spaces that serve different purposes. Understanding the difference is
+critical for correct implementation.
 
 ## The Two ID Spaces
 
@@ -22,7 +23,7 @@ Plot uses two distinct ID spaces that serve different purposes. Understanding th
 
 ## The Relationship
 
-```
+```text
 ┌──────────────┐         ┌─────────────┐
 │ public.user  │         │   contact   │
 │              │         │             │
@@ -75,9 +76,12 @@ Automated integrations/plugins:
 Authentication uses Clerk:
 
 1. **JWT Verification**: Clerk JWTs are verified using `verifyToken()` from `@clerk/backend`
-2. **User Lookup**: The API looks up the user in `public."user"` by `external_id` (fast path) or `clerk_id` (fallback)
-3. **No RLS**: Row-Level Security is disabled on all tables. Authorization is enforced at the API layer.
-4. **No `auth.uid()`**: User identity comes from the API's JWT verification, not from a database-resident auth schema.
+2. **User Lookup**: The API looks up the user in `public."user"` by `external_id` (fast path) or
+   `clerk_id` (fallback)
+3. **No RLS**: Row-Level Security is disabled on all tables. Authorization is enforced at the API
+   layer.
+4. **No `auth.uid()`**: User identity comes from the API's JWT verification, not from a
+   database-resident auth schema.
 
 ```typescript
 // Authentication flow (workers/api/src/utils/auth.ts)
@@ -86,9 +90,7 @@ const clerkId = claims.sub;
 const userId = claims.external_id; // UUID from public."user".id
 
 // Look up user in public."user" table
-const user = await db.selectFrom("user")
-  .where("id", "=", userId)
-  .executeTakeFirst();
+const user = await db.selectFrom("user").where("id", "=", userId).executeTakeFirst();
 ```
 
 ## Type System
@@ -126,7 +128,8 @@ userIdToContactIdUnsafe(userId: UserId): ContactId
 
 ### Dart (Flutter App)
 
-Currently uses generic `Uuid` type for all IDs except ActorId, which uses Dart 3.0+ extension types for type safety:
+Currently uses generic `Uuid` type for all IDs except ActorId, which uses Dart 3.0+ extension types
+for type safety:
 
 ```dart
 extension type ActorId(Uuid value) {}
@@ -195,7 +198,8 @@ CREATE FUNCTION "user".user_contact_id(p_user_id uuid) RETURNS uuid AS $$
 $$ LANGUAGE sql STABLE;
 ```
 
-**Note**: This function takes an explicit `p_user_id` parameter. The user ID is passed from the API layer (resolved from the Clerk JWT), not from a database session variable.
+**Note**: This function takes an explicit `p_user_id` parameter. The user ID is passed from the API
+layer (resolved from the Clerk JWT), not from a database session variable.
 
 #### `update_activity_tags()` & `update_note_tags()`
 
@@ -244,8 +248,10 @@ await insert({ actor_id: contactId });
 
 1. **Removed Supabase Auth**: Replaced `auth.users` with `public."user"` table
 2. **Removed RLS**: Authorization moved entirely to the API layer
-3. **Removed `auth.uid()`/`auth.jwt()`**: User identity now comes from Clerk JWT verification at the API layer
-4. **Updated `user_contact_id()`**: Changed from reading JWT claims to taking an explicit `p_user_id` parameter
+3. **Removed `auth.uid()`/`auth.jwt()`**: User identity now comes from Clerk JWT verification at the
+   API layer
+4. **Updated `user_contact_id()`**: Changed from reading JWT claims to taking an explicit
+   `p_user_id` parameter
 5. **Foreign keys**: All references to `auth.users(id)` changed to `public."user"(id)`
 
 ### ID System Fixes (December 2024)
@@ -258,7 +264,8 @@ await insert({ actor_id: contactId });
 
 ### In SQL
 
-1. User identity is always passed as a parameter from the API layer — there is no session-level user context in the database.
+1. User identity is always passed as a parameter from the API layer — there is no session-level user
+   context in the database.
 
 2. Use `user_contact_id(p_user_id)` to resolve a user's Contact/Actor ID when needed.
 
@@ -268,32 +275,32 @@ await insert({ actor_id: contactId });
 
 1. Import types from Twister SDK:
 
-```typescript
-import {
-  type ActorId,
-  type ContactId,
-  type UserId,
-  toActorId,
-} from "@plotday/twister/common/id";
-```
+   ```typescript
+   import {
+     type ActorId,
+     type ContactId,
+     type UserId,
+     toActorId,
+   } from "@plotday/twister/common/id";
+   ```
 
 2. Use conversion functions instead of raw casts:
 
-```typescript
-// ❌ Avoid
-const actorId = dbValue as ActorId;
+   ```typescript
+   // ❌ Avoid
+   const actorId = dbValue as ActorId;
 
-// ✅ Better (validates UUID format)
-const actorId = toActorId(dbValue);
-```
+   // ✅ Better (validates UUID format)
+   const actorId = toActorId(dbValue);
+   ```
 
 3. Keep UserId and ActorId separate:
 
-```typescript
-function processActivity(authorId: ActorId, userId: UserId) {
-  // Types prevent accidental mixing
-}
-```
+   ```typescript
+   function processActivity(authorId: ActorId, userId: UserId) {
+     // Types prevent accidental mixing
+   }
+   ```
 
 ### In Dart
 
@@ -306,19 +313,21 @@ Currently no type-level distinction. Rely on:
 
 ## Quick Reference
 
-| Context                 | Use                  | Access                                         |
-| ----------------------- | -------------------- | ---------------------------------------------- |
-| Authentication          | `UserId`             | Clerk JWT → `public."user".id`                 |
-| Activity author         | `ActorId`            | `user_contact_id(user_id)` or direct lookup    |
-| Activity assignee       | `ActorId`            | `user_contact_id(user_id)` or direct lookup    |
-| Tag actor               | `ActorId`            | `user_contact_id(user_id)` or direct lookup    |
-| Mentions                | `ActorId`            | `user_contact_id(user_id)` or direct lookup    |
-| Access checks           | `UserId`             | API layer (no RLS)                             |
-| Twist identity          | `ActorId` (TwistId)  | `priority_twist.id`                            |
-| Contact without account | `ActorId` (ContactId)| `contact.id` (user_id = NULL)                  |
+| Context                 | Use                   | Access                                      |
+| ----------------------- | --------------------- | ------------------------------------------- |
+| Authentication          | `UserId`              | Clerk JWT → `public."user".id`              |
+| Activity author         | `ActorId`             | `user_contact_id(user_id)` or direct lookup |
+| Activity assignee       | `ActorId`             | `user_contact_id(user_id)` or direct lookup |
+| Tag actor               | `ActorId`             | `user_contact_id(user_id)` or direct lookup |
+| Mentions                | `ActorId`             | `user_contact_id(user_id)` or direct lookup |
+| Access checks           | `UserId`              | API layer (no RLS)                          |
+| Twist identity          | `ActorId` (TwistId)   | `priority_twist.id`                         |
+| Contact without account | `ActorId` (ContactId) | `contact.id` (user_id = NULL)               |
 
 ## Summary
 
-**Golden Rule**: If it represents an entity in Plot's domain (person, twist), use **ActorId**. If it's for authentication/authorization, use **UserId**.
+**Golden Rule**: If it represents an entity in Plot's domain (person, twist), use **ActorId**. If
+it's for authentication/authorization, use **UserId**.
 
-Most Plot entities should use ActorId. UserId is primarily an internal implementation detail of the auth system.
+Most Plot entities should use ActorId. UserId is primarily an internal implementation detail of the
+auth system.

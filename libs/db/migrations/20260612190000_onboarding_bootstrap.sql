@@ -22,7 +22,7 @@ BEGIN
 
     -- welcome
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'welcome' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'welcome' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -106,7 +106,7 @@ From an update at the top of Doing, mark it **To do** to keep working on it, or 
 
     -- priorities
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'priorities' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'priorities' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -160,7 +160,7 @@ From an update at the top of Doing, mark it **To do** to keep working on it, or 
 
     -- connections
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'connections' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'connections' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -205,7 +205,7 @@ From an update at the top of Doing, mark it **To do** to keep working on it, or 
 
     -- getting-around
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'getting-around' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'getting-around' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -295,7 +295,7 @@ From an update at the top of Doing, mark it **To do** to keep working on it, or 
 
     -- twists
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'twists' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'twists' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -349,7 +349,7 @@ From an update at the top of Doing, mark it **To do** to keep working on it, or 
 
     -- notifications
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'notifications' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'notifications' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
@@ -418,7 +418,7 @@ To adjust, open a focus''s command menu and choose **Notifications**, or tap the
 
     -- clean-up
     SELECT id INTO v_thread_id FROM public.thread
-        WHERE key = 'clean-up' AND created_by = c_system_instance_id AND archived_at IS NULL LIMIT 1;
+        WHERE key = 'clean-up' AND twist_id = v_plot_twist_id AND archived_at IS NULL LIMIT 1;
     IF v_thread_id IS NULL THEN
         -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members
         -- keys on — without it new users never get the thread filed / never see it.
