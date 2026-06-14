@@ -25,6 +25,7 @@ SELECT
     n.access_groups,
     n.content,
     n.actions,
+    n.cta,
     n.mentions,
     n.re_note_id,
     n.merged_from_thread_id
@@ -81,6 +82,7 @@ SELECT
     CAST(NULL AS uuid[]) AS access_groups,
     NULL::text AS content,
     NULL::jsonb AS actions,
+    NULL::jsonb AS cta,
     CAST(NULL AS uuid[]) AS mentions,
     n.re_note_id,
     n.merged_from_thread_id

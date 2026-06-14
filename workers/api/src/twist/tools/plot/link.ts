@@ -642,6 +642,7 @@ export async function getLinks(
       accessContacts: (n.access_contacts as ActorId[]) ?? null,
       archived: n.archived_at !== null,
       actions: n.actions as any,
+      cta: null,
     }));
 
     results.push({ link, notes });

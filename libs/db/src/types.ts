@@ -961,6 +961,7 @@ export type Database = {
           content: string | null
           created_at: string
           created_by: string
+          cta: Json | null
           draft: boolean
           embedding: unknown
           external_content_hash: string | null
@@ -987,6 +988,7 @@ export type Database = {
           content?: string | null
           created_at?: string
           created_by: string
+          cta?: Json | null
           draft?: boolean
           embedding?: unknown
           external_content_hash?: string | null
@@ -1013,6 +1015,7 @@ export type Database = {
           content?: string | null
           created_at?: string
           created_by?: string
+          cta?: Json | null
           draft?: boolean
           embedding?: unknown
           external_content_hash?: string | null
@@ -5489,6 +5492,7 @@ export type Database = {
           content: string | null
           created_at: string | null
           created_by: string | null
+          cta: Json | null
           draft: boolean | null
           id: string | null
           mentions: string[] | null
@@ -5624,6 +5628,7 @@ export type Database = {
           content: string | null
           created_at: string | null
           created_by: string | null
+          cta: Json | null
           draft: boolean | null
           id: string | null
           mentions: string[] | null

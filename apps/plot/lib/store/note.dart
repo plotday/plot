@@ -2,6 +2,53 @@ part of 'store.dart';
 
 typedef NoteId = Uuid;
 
+enum CtaKind { otp, confirm }
+
+class Cta extends Equatable {
+  const Cta({required this.kind, required this.service, this.code, this.url});
+
+  final CtaKind kind;
+  final String service;
+  final String? code;
+  final String? url;
+
+  factory Cta.fromJson(Map<String, dynamic> json) => Cta(
+        kind: json['kind'] == 'confirm' ? CtaKind.confirm : CtaKind.otp,
+        service: json['service'] as String? ?? '',
+        code: json['code'] as String?,
+        url: json['url'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'kind': kind == CtaKind.confirm ? 'confirm' : 'otp',
+        'service': service,
+        'code': code,
+        'url': url,
+      };
+
+  @override
+  List<Object?> get props => [kind, service, code, url];
+}
+
+class CtaConverter extends TypeConverter<Cta?, String?>
+    with JsonTypeConverter2<Cta?, String?, Map<String, dynamic>?> {
+  const CtaConverter();
+
+  @override
+  Cta? fromSql(String? fromDb) =>
+      fromDb == null ? null : Cta.fromJson(jsonDecode(fromDb) as Map<String, dynamic>);
+
+  @override
+  String? toSql(Cta? value) => value == null ? null : jsonEncode(value.toJson());
+
+  @override
+  Cta? fromJson(Map<String, dynamic>? json) =>
+      json == null ? null : Cta.fromJson(json);
+
+  @override
+  Map<String, dynamic>? toJson(Cta? value) => value?.toJson();
+}
+
 @DataClassName('NoteRow')
 class Notes extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
@@ -14,6 +61,7 @@ class Notes extends Table
   DateTimeColumn get sourceCreatedAt =>
       dateTime().map(const LocalDateTimeConverter())();
   TextColumn get actions => text().nullable().map(const UserActionsConverter())();
+  TextColumn get cta => text().nullable().map(const CtaConverter())();
   TextColumn get mentions =>
       text().nullable().map(const ActorIdListConverter())();
   BlobColumn get reNoteId => blob().nullable().map(const UuidConverter())();
@@ -106,6 +154,7 @@ class Note extends Equatable implements Comparable<Note> {
     List<ActorId>? accessGroups,
     String? content,
     List<UserAction>? actions,
+    Cta? cta,
     List<ActorId>? mentions,
     NoteId? reNoteId,
     required DateTime createdAt,
@@ -130,6 +179,7 @@ class Note extends Equatable implements Comparable<Note> {
       content: content,
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
+      cta: cta,
       mentions: effectiveMentions,
       reNoteId: reNoteId,
       createdAt: createdAt,
@@ -149,6 +199,7 @@ class Note extends Equatable implements Comparable<Note> {
       authorId = Base.actorId,
       content = null,
       actions = null,
+      cta = null,
       mentions = null,
       reNoteId = null,
       createdAt = DateTime.now(),
@@ -168,6 +219,7 @@ class Note extends Equatable implements Comparable<Note> {
     this.accessGroups,
     this.content,
     this.actions,
+    this.cta,
     this.mentions,
     this.reNoteId,
     required this.createdAt,
@@ -198,6 +250,7 @@ class Note extends Equatable implements Comparable<Note> {
       content: noteRow.content,
       sourceCreatedAt: noteRow.sourceCreatedAt,
       actions: noteRow.actions,
+      cta: noteRow.cta,
       mentions: effectiveMentions,
       reNoteId: noteRow.reNoteId,
       createdAt: noteRow.createdAt,
@@ -240,6 +293,7 @@ class Note extends Equatable implements Comparable<Note> {
 
   final String? content;
   final List<UserAction>? actions;
+  final Cta? cta;
   final List<ActorId>? mentions;
   final NoteId? reNoteId;
   final DateTime createdAt;
@@ -745,6 +799,7 @@ class Note extends Equatable implements Comparable<Note> {
       content: content,
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
+      cta: cta,
       mentions: mentions,
       reNoteId: reNoteId,
       createdAt: createdAt,
@@ -1196,6 +1251,7 @@ class Note extends Equatable implements Comparable<Note> {
     Value<List<ActorId>?> accessGroups = const Value.absent(),
     String? content,
     List<UserAction>? actions,
+    Value<Cta?> cta = const Value.absent(),
     List<ActorId>? mentions,
     List<ActorId>? addMentions,
     NoteId? reNoteId,
@@ -1272,6 +1328,7 @@ class Note extends Equatable implements Comparable<Note> {
         content: content ?? this.content,
         sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
         actions: actions ?? this.actions,
+        cta: cta.present ? cta.value : this.cta,
         mentions: effectiveMentions,
         reNoteId: clearReNoteId ? null : (reNoteId ?? this.reNoteId),
         createdAt: isPublishing ? now : createdAt,
@@ -1293,6 +1350,7 @@ class Note extends Equatable implements Comparable<Note> {
     accessGroups,
     content,
     actions,
+    cta,
     mentions,
     reNoteId,
     createdAt,

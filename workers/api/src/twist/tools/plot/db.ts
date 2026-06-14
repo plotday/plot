@@ -133,5 +133,6 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     accessContacts: (noteRecord.access_contacts as ActorId[]) ?? null,
     archived: noteRecord.archived_at !== null,
     actions: noteRecord.actions as Array<Action> | null,
+    cta: null,
   };
 }

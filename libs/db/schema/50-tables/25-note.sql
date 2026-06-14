@@ -15,6 +15,7 @@ CREATE TABLE "public"."note" (
     "content" text, -- markdown
     "external_content_hash" text, -- SHA-256 of (contentType + "\n" + content) as last seen by the connector; baseline for sync-in preservation
     "actions" jsonb,
+    "cta" jsonb, -- time-sensitive call-to-action {kind, service, code, url}; client shows ephemeral prompt
     "key" text,
     "mentions" uuid[],
     "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,
@@ -52,6 +53,8 @@ COMMENT ON COLUMN "public"."note"."link_id" IS 'The connector-created link this 
 COMMENT ON COLUMN "public"."note"."external_content_hash" IS 'SHA-256 hash of the content the connector last saw in the external system, computed over (contentType + "\n" + content). Used by connector sync-in to distinguish "external unchanged" (preserve Plot''s content, which may be formatted markdown) from "external edited" (overwrite with incoming). NULL means no baseline yet. Only set by the twist runtime — clients must not write to this column.';
 
 COMMENT ON COLUMN "public"."note"."canonical_source" IS 'The link.source of the link this note was first written through (copied at note write time by createNote). Drives cross-connection dedup: when two users'' connections of the same external resource each write a note with the same key, the partial unique index on (thread_id, canonical_source, key) collapses them to one row. NULL when no link or the link has no source.';
+
+COMMENT ON COLUMN "public"."note"."cta" IS 'Time-sensitive call-to-action extracted at ingest (OTP code or confirm link): {kind:"otp"|"confirm", service, code, url}. NULL when none. Set by the twist runtime from connector extraction; drives the client''s ephemeral OTP/confirm toast and push.';
 
 -- Ensure one keyed note per (thread, link). Partial: notes with no key
 -- (user-authored markdown) are unconstrained. NULL link_id rows coexist

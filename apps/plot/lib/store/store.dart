@@ -2530,7 +2530,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 369;
+  int get schemaVersion => 370;
 
   @override
   MigrationStrategy get migration {
@@ -4147,6 +4147,10 @@ class Store extends _$Store {
       await m.database.customStatement(
         "DELETE FROM sync_states WHERE entity LIKE 'activity-feed:%' OR entity LIKE 'agenda:%'",
       );
+    }
+
+    if (from < 370) {
+      await m.addColumn(notes, notes.cta);
     }
   }
 

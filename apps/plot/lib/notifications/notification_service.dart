@@ -671,6 +671,23 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   /// Handle incoming FCM data messages (silent push from server).
   Future<void> _handleDataMessage(RemoteMessage message) async {
     final type = message.data['type'];
+
+    // OTP/confirm push: time-sensitive CTA note just arrived. Trigger a sync
+    // so the note (with its cta) lands in the local DB. The existing
+    // OtpPromptController watch then surfaces the in-app toast automatically.
+    // Do NOT show an OS notification in the foreground — the in-app toast is
+    // the correct surface when the user is already in the app.
+    if (type == 'otp') {
+      log.info('Received otp push notification — triggering sync');
+      try {
+        await SyncOrchestrator.instance.syncAll();
+      } catch (e, st) {
+        log.warning('Error handling otp notification sync', e);
+        Tracker.captureException(e, st);
+      }
+      return;
+    }
+
     if (type != 'sync_wake') return;
 
     log.info('Received sync_wake push notification');

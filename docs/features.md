@@ -141,6 +141,11 @@ Plot isn't a read-only digest. Reply to an email, comment on a Linear issue, ans
 - AI task detection (via twists) creates to-dos automatically when someone asks you to do something in Gmail, Slack, or Google Chat.
 - Starring a message in Gmail still adds it to your to-dos; unstarring clears it.
 
+### One-time codes and confirmations
+
+- When a verification code or a "confirm your account" email arrives, Plot surfaces it as a time-limited prompt — copy the code in one tap, or confirm your account with a button — for five minutes after it was sent, in the app or as a push notification, with the newest replacing any older one.
+- Detection is conservative and security-aware: confirm links are only surfaced for DMARC-authenticated senders and never for "wasn't me"/password-reset links, and codes are read from your own synced data rather than sent through push services.
+
 ### Many at once
 
 - Multi-select your threads the standard way — Cmd/Ctrl-click to pick individual threads, Shift-click for a range — and the header becomes a bulk action bar: to do, done, do later, mark read, move, mute, or assign every selected thread in one tap.

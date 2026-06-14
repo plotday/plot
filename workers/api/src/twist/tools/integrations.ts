@@ -1934,6 +1934,7 @@ export class Integrations extends Tool implements IAuth {
       accessContacts: (item.access_contacts as any) ?? null,
       archived: item.archived_at !== null,
       actions: item.actions,
+      cta: null,
     };
 
     const meta: ThreadMeta = { ...(link?.meta as any ?? {}) };
@@ -2087,6 +2088,7 @@ export class Integrations extends Tool implements IAuth {
         accessContacts: (item.access_contacts as any) ?? null,
         archived: item.archived_at !== null,
         actions: item.actions,
+        cta: null,
       };
 
       // Build thread with meta populated from link metadata

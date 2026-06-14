@@ -19,6 +19,11 @@ const _lastSignedOutNotifyKey = 'last_signed_out_notify_ms';
 const _signedOutNotificationId = 999900;
 const _signedOutNotifyCooldown = Duration(hours: 24);
 
+/// Stable local notification ID reserved for OTP/confirm pushes.
+/// Distinct from the priority-hash range (0–99999) and the signed-out ID
+/// (999900). A newer OTP/confirm replaces any prior one via replace-by-id.
+const _otpNotificationId = 999901;
+
 /// Top-level background message handler registered with Firebase Messaging.
 ///
 /// Runs in a separate isolate when the app is backgrounded or terminated.
@@ -28,7 +33,17 @@ const _signedOutNotifyCooldown = Duration(hours: 24);
 Future<void> handleBackgroundMessage(RemoteMessage message) async {
   // ignore: avoid_print
   print('[BG_HANDLER] message received type=${message.data['type']}');
-  if (message.data['type'] != 'sync_wake') return;
+
+  final type = message.data['type'] as String?;
+
+  // OTP/confirm push: time-sensitive — show an OS notification immediately,
+  // bypassing the notify-window defer entirely.
+  if (type == 'otp') {
+    await _handleOtpBackgroundMessage(message);
+    return;
+  }
+
+  if (type != 'sync_wake') return;
 
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -88,6 +103,133 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
       previousThreadIds: previousThreadIds,
     );
     await _persistThreadIds(prefs, shown);
+  }
+}
+
+/// Handle a background `type:"otp"` push.
+///
+/// Shows a local OS notification IMMEDIATELY — bypasses the notify-window
+/// defer because OTP codes and confirm links are time-sensitive (a code
+/// expires in minutes). Uses a single stable ID ([_otpNotificationId]) so
+/// a newer push replaces any prior one.
+///
+/// CTA content is fetched from the server using the noteId carried in the
+/// push data. If the fetch fails or returns no cta, falls back to a generic
+/// "Verification message" notification that deep-links to the thread.
+Future<void> _handleOtpBackgroundMessage(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final noteId = message.data['noteId'] as String?;
+  final threadId = message.data['threadId'] as String?;
+  final kind = message.data['kind'] as String?;
+
+  final prefs = await SharedPreferences.getInstance();
+  final apiRoot = prefs.getString('api_root');
+  final publishableKey = prefs.getString('clerk_publishable_key');
+
+  // ignore: avoid_print
+  print('[BG_HANDLER] otp: noteId=$noteId threadId=$threadId kind=$kind');
+
+  await NotificationDisplay.instance.initialize();
+
+  // The deep-link payload: route tap to the thread (or just open the app if
+  // threadId is missing). Uses the same NotificationTapTarget encoding as
+  // other notifications so the router handles it correctly.
+  final tapPayload = threadId != null && threadId.isNotEmpty
+      ? NotificationTapTarget(
+          priorityId: threadId,
+          threadIds: [threadId],
+        ).encode()
+      : '';
+
+  // Try to fetch the cta for rich notification content.
+  _OtpContent? otp;
+  if (noteId != null && apiRoot != null && publishableKey != null) {
+    final token = await _getSessionToken(publishableKey);
+    if (token != null) {
+      otp = await _fetchOtpContent(apiRoot, token, noteId);
+    }
+  }
+
+  if (otp != null) {
+    final isOtpKind =
+        (otp.kind == 'otp' || kind == 'otp') &&
+        otp.code != null &&
+        otp.code!.isNotEmpty;
+    final service = otp.service.isNotEmpty ? otp.service : 'Verification';
+    final title = isOtpKind ? service : 'Confirm your $service account';
+    final body = isOtpKind ? 'Code: ${otp.code}' : 'Tap to confirm your account';
+    // ignore: avoid_print
+    print('[BG_HANDLER] otp: showing rich notification isOtp=$isOtpKind service=$service');
+    await NotificationDisplay.instance.showBatchNotification(
+      id: _otpNotificationId,
+      title: title,
+      body: body,
+      targetPriorityId: tapPayload,
+      urgent: true,
+    );
+  } else {
+    // Fallback: generic notification so the user knows to check the app.
+    // ignore: avoid_print
+    print('[BG_HANDLER] otp: cta unavailable, showing fallback notification');
+    await NotificationDisplay.instance.showBatchNotification(
+      id: _otpNotificationId,
+      title: 'Verification message',
+      body: 'You have a new verification message',
+      targetPriorityId: tapPayload,
+      urgent: true,
+    );
+  }
+}
+
+/// Parsed CTA content returned by [_fetchOtpContent].
+class _OtpContent {
+  _OtpContent({
+    required this.kind,
+    required this.service,
+    this.code,
+    this.url,
+  });
+
+  final String kind;
+  final String service;
+  final String? code;
+  final String? url;
+}
+
+/// Fetch the CTA for [noteId] from GET /notification-otp-content.
+///
+/// Returns null on any error or when the server returns no cta (e.g. the
+/// note hasn't synced yet, the user lacks access, or the note has no cta).
+Future<_OtpContent?> _fetchOtpContent(
+  String apiRoot,
+  String token,
+  String noteId,
+) async {
+  try {
+    final uri = Uri.parse('$apiRoot/notification-otp-content')
+        .replace(queryParameters: {'noteId': noteId});
+    final response = await http
+        .get(uri, headers: {'Authorization': 'Bearer $token'})
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != 200) {
+      // ignore: avoid_print
+      print('[BG_HANDLER] notification-otp-content HTTP ${response.statusCode}');
+      return null;
+    }
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final cta = body['cta'];
+    if (cta == null || cta is! Map<String, dynamic>) return null;
+    return _OtpContent(
+      kind: (cta['kind'] as String?) ?? 'otp',
+      service: (cta['service'] as String?) ?? '',
+      code: cta['code'] as String?,
+      url: cta['url'] as String?,
+    );
+  } catch (e) {
+    // ignore: avoid_print
+    print('[BG_HANDLER] _fetchOtpContent error: $e');
+    return null;
   }
 }
 

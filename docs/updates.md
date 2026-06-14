@@ -1,5 +1,9 @@
 ## Next release
 
+### Codes & confirmations
+
+- When a one-time verification code or a "confirm your account" email arrives, Plot now pops up a quick prompt for five minutes after it was sent — tap to copy the code, or tap a button to confirm your account — so you don't have to dig the message out before it expires. If you're not looking at Plot, you'll get a notification instead, and a newer code replaces an older one. Plot is careful here: it only surfaces confirm links from verified senders, and never "this wasn't me" or password-reset links.
+
 ### Navigation & layout
 
 - On medium-width windows and tablets — wide enough for two panels but not three — your focuses and agenda are reachable again. The top-left button now shows a menu icon that slides them in as a panel over your threads; pick a focus, tap away, or press Esc and it slides back. Previously that button did nothing at this size, leaving no way to switch focuses without resizing the window. Wider windows still keep the sidebar docked as always.

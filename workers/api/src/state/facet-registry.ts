@@ -14,6 +14,8 @@ export const FACET_REGISTRY = {
       receipt: "A purchase, order, or payment confirmation.",
       invoice: "A bill, payment request, or statement.",
       promotion: "A marketing or promotional blast (sales, offers, deals).",
+      otp: "A one-time password or verification code.",
+      confirm: "An email verification or account-confirmation message.",
     } satisfies Record<Format, string>,
   },
   automation: {

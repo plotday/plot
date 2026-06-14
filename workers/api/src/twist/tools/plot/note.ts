@@ -31,6 +31,7 @@ import {
   processNewActor,
   processNewActorArray,
 } from "./thread-helpers";
+import { maybeSendCtaPush } from "../../../notifications/otp-push";
 
 /**
  * Ensures notes have strictly increasing sourceCreatedAt timestamps.
@@ -543,6 +544,7 @@ export async function createNote(
       content: contentToStore,
       external_content_hash: externalContentHash,
       actions: note.actions ? JSON.stringify(note.actions) : null,
+      cta: note.cta ? JSON.stringify(note.cta) : null,
       mentions: mentionIds,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
@@ -742,6 +744,7 @@ export async function createNote(
       END` as any,
       external_content_hash: sql<string | null>`COALESCE(excluded.external_content_hash, note.external_content_hash)` as any,
       actions: eb.ref("excluded.actions"),
+      cta: eb.ref("excluded.cta"),
       mentions: eb.ref("excluded.mentions"),
       updated_by: eb.ref("excluded.updated_by"),
       sync_depth: eb.ref("excluded.sync_depth"),
@@ -769,6 +772,7 @@ export async function createNote(
         eb("note.re_note_id", "is distinct from", eb.ref("excluded.re_note_id")),
         eb("note.mentions", "is distinct from", eb.ref("excluded.mentions")),
         eb("note.actions", "is distinct from", eb.ref("excluded.actions")),
+        eb("note.cta", "is distinct from", eb.ref("excluded.cta")),
         eb("note.draft", "is distinct from", eb.ref("excluded.draft")),
         eb("note.access_contacts", "is distinct from", eb.ref("excluded.access_contacts")),
       ]);
@@ -816,6 +820,28 @@ export async function createNote(
         q = q.where("link_id", "is", null);
       }
       dbResult = await q.executeTakeFirstOrThrow();
+    }
+
+    // Fire an immediate, gate-bypassing push for freshly-ingested CTA notes
+    // (OTP codes, confirm links). Deliberately bypasses push-notify.ts gates.
+    // Best-effort: a push-delivery failure must never abort note creation.
+    if (dbNote.cta) {
+      try {
+        await maybeSendCtaPush(plot.env, plot.db, {
+          id: dbResult.id,
+          threadId: activityId,
+          sourceCreatedAt: new Date(dbResult.source_created_at),
+          cta: note.cta as { kind: string },
+        });
+      } catch (error) {
+        createLogger({ twist_instance_id: plot.twistInstanceId }).warn(
+          "Failed to send CTA push",
+          {
+            note_id: dbResult.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
     }
 
     // Generate embedding (best-effort, don't fail the create)
@@ -1546,6 +1572,7 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
         tags:
           (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) || {},
         reactions: {},
+        cta: null,
       };
     });
   } catch (err) {

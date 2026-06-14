@@ -941,6 +941,7 @@ export class Plot extends Tool implements IPlot {
       accessContacts: (item.access_contacts as ActorId[]) ?? null,
       archived: item.archived_at !== null,
       actions: item.actions as any,
+      cta: null,
     };
   }
 
@@ -1023,6 +1024,7 @@ export class Plot extends Tool implements IPlot {
         accessContacts: (row.access_contacts as ActorId[]) ?? null,
         archived: row.archived_at !== null,
         actions: row.actions as any,
+        cta: null,
       }));
     } catch {
       return [];
