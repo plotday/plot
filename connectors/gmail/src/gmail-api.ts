@@ -411,6 +411,19 @@ export function getHeader(message: GmailMessage, name: string): string | null {
   return header?.value || null;
 }
 
+/** All values for a header name (case-insensitive), in message order. */
+export function getHeaders(message: GmailMessage, name: string): string[] {
+  const lower = name.toLowerCase();
+  return (message.payload.headers ?? [])
+    .filter((h) => h.name.toLowerCase() === lower)
+    .map((h) => h.value);
+}
+
+/** Decoded HTML body for a message (empty string if none). For link extraction. */
+export function getMessageHtml(message: GmailMessage): string {
+  return findPartContent(message.payload, "text/html") ?? "";
+}
+
 /**
  * True when a mailing list (Google Groups, etc.) rewrote the `From` *address*
  * for DMARC alignment, so the From display name no longer belongs to the From

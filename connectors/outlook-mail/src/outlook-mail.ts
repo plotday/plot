@@ -39,6 +39,7 @@ import {
   type GraphMessage,
   type WellKnownFolders,
 } from "./graph-mail-api";
+import type { Cta } from "@plotday/twister/facets";
 import { outlookFacets } from "./outlook-facets";
 
 /**
@@ -1345,11 +1346,15 @@ export class OutlookMail extends Connector<OutlookMail> {
             (facetNote as { content?: string } | undefined)?.content ??
             plotThread.preview ??
             "";
-          plotThread.facets = outlookFacets(
+          const { facets, cta } = outlookFacets(
             item.parentHeaders,
             facetParent,
             facetBody
           );
+          plotThread.facets = cta ? { ...facets, format: cta.kind } : facets;
+          if (cta && facetNote) {
+            (facetNote as { cta?: Cta | null }).cta = cta;
+          }
         }
 
         const isFlagged = isConversationFlagged(item.messages);

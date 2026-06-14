@@ -35,6 +35,7 @@ import {
   syncGmailMailboxIncremental,
   transformGmailThread,
 } from "./gmail-api";
+import type { Cta } from "@plotday/twister/facets";
 import { gmailFacets } from "./gmail-facets";
 
 /**
@@ -1377,7 +1378,11 @@ export class Gmail extends Connector<Gmail> {
             (n) => "key" in n && (n as { key: string }).key === facetParent.id
           );
           const facetBody = facetNote?.content ?? plotThread.preview ?? "";
-          plotThread.facets = gmailFacets(facetParent, facetBody);
+          const { facets, cta } = gmailFacets(facetParent, facetBody);
+          plotThread.facets = cta ? { ...facets, format: cta.kind } : facets;
+          if (cta && facetNote) {
+            (facetNote as { cta?: Cta | null }).cta = cta;
+          }
         }
 
         // Star ↔ todo sync: detect star changes and sync to Plot todo status.

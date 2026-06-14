@@ -1,5 +1,5 @@
-import { classifyEmail, type EmailSignals } from "@plotday/email-classifier";
-import type { ThreadFacets } from "@plotday/twister/facets";
+import { classifyEmail, extractCta, extractLinkCandidates, type EmailSignals } from "@plotday/email-classifier";
+import type { Cta, ThreadFacets } from "@plotday/twister/facets";
 import type { GraphHeader, GraphMessage } from "./graph-mail-api";
 
 function header(headers: GraphHeader[] | null, name: string): string | null {
@@ -7,8 +7,20 @@ function header(headers: GraphHeader[] | null, name: string): string | null {
   return h?.value || null;
 }
 
+/** Pick the Authentication-Results added by Microsoft EOP (authserv-id contains protection.outlook.com). */
+function trustedAuthResults(headers: GraphHeader[] | null): string | null {
+  for (const h of headers ?? []) {
+    if (h.name.toLowerCase() !== "authentication-results") continue;
+    const authservId = h.value.split(";", 1)[0].trim().toLowerCase();
+    if (authservId === "protection.outlook.com" || authservId.endsWith(".protection.outlook.com")) return h.value;
+  }
+  return null;
+}
+
+export type OutlookClassification = { facets: ThreadFacets; cta: Cta | null };
+
 /**
- * Compute facets for an Outlook conversation's parent message. `headers` is
+ * Compute facets and extract CTA for an Outlook conversation's parent message. `headers` is
  * the parent's internetMessageHeaders (separate single-message fetch; null
  * when that fetch failed — header-driven signals just stay null).
  * `inferenceClassification === "other"` (Focused Inbox's bulk bucket) maps to
@@ -19,7 +31,8 @@ export function outlookFacets(
   headers: GraphHeader[] | null,
   message: GraphMessage,
   bodyText: string
-): ThreadFacets {
+): OutlookClassification {
+  const html = message.body?.contentType === "html" ? (message.body.content ?? "") : "";
   const signals: EmailSignals = {
     listId: header(headers, "List-Id"),
     listUnsubscribe: header(headers, "List-Unsubscribe"),
@@ -31,6 +44,7 @@ export function outlookFacets(
       header(headers, "Importance") ??
       header(headers, "X-Priority"),
     fromAddress: message.from?.emailAddress?.address?.toLowerCase() ?? null,
+    fromName: message.from?.emailAddress?.name ?? null,
     recipientCount:
       (message.toRecipients?.length ?? 0) + (message.ccRecipients?.length ?? 0),
     isReply:
@@ -38,9 +52,12 @@ export function outlookFacets(
       header(headers, "References") !== null ||
       /^re:/i.test(message.subject ?? ""),
     subject: message.subject ?? null,
+    bodyText,
     bodyLength: bodyText.length,
+    links: extractLinkCandidates(html),
+    authResults: trustedAuthResults(headers),
     gmailCategories:
       message.inferenceClassification === "other" ? ["CATEGORY_UPDATES"] : [],
   };
-  return classifyEmail(signals);
+  return { facets: classifyEmail(signals), cta: extractCta(signals) };
 }
