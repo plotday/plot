@@ -1,4 +1,4 @@
-import type { ThreadFacets } from "./facets";
+import type { Cta, ThreadFacets } from "./facets";
 import type { NewSchedule, NewScheduleOccurrence, Schedule } from "./schedule";
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
@@ -696,6 +696,12 @@ export type Note = ThreadCommon & {
   accessContacts: ActorId[] | null;
   /** Focus twist IDs (twists/connectors) mentioned for dispatch routing. Does not include user contacts. */
   mentions: ActorId[];
+  /**
+   * A time-sensitive call-to-action extracted from this note's message
+   * (OTP code or confirm link). Null when none detected. Set by the runtime
+   * from the connector's extraction; clients read it to show an ephemeral prompt.
+   */
+  cta: Cta | null;
 };
 
 /**
