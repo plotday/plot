@@ -23,7 +23,7 @@ function msg(opts: {
 
 describe("gmailFacets", () => {
   it("classifies a newsletter as reading/automated/list", () => {
-    const f = gmailFacets(
+    const { facets } = gmailFacets(
       msg({
         headers: [
           ["From", "news@substack.com"],
@@ -35,26 +35,26 @@ describe("gmailFacets", () => {
       }),
       "a".repeat(4000)
     );
-    expect(f).toEqual({ format: "reading", automation: "automated", reach: "list" });
+    expect(facets).toEqual({ format: "reading", automation: "automated", reach: "list" });
   });
 
   it("classifies a personal 1:1 email as message/human/direct", () => {
-    const f = gmailFacets(
+    const { facets } = gmailFacets(
       msg({ headers: [["From", "jane@friends.com"], ["To", "me@x.com"], ["Subject", "Lunch?"]] }),
       "a".repeat(500)
     );
-    expect(f).toEqual({ format: "message", automation: "human", reach: "direct" });
+    expect(facets).toEqual({ format: "message", automation: "human", reach: "direct" });
   });
 
   it("classifies a GitHub notification", () => {
-    const f = gmailFacets(
+    const { facets } = gmailFacets(
       msg({
         headers: [["From", "notifications@github.com"], ["To", "me@x.com"], ["Subject", "[repo] PR merged"]],
         labelIds: ["CATEGORY_UPDATES"],
       }),
       "short"
     );
-    expect(f.format).toBe("notification");
-    expect(f.automation).toBe("automated");
+    expect(facets.format).toBe("notification");
+    expect(facets.automation).toBe("automated");
   });
 });
