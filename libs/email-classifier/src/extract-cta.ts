@@ -1,6 +1,30 @@
 import type { Cta } from "@plotday/twister/facets";
 import type { EmailSignals } from "./classify-email";
 
+// ---- domains ---------------------------------------------------------------
+// Minimal multi-label public suffixes for registrable-domain comparison.
+// Not a full PSL — conservative: unknown suffixes fall back to last 2 labels.
+const MULTI_SUFFIX = new Set([
+  "co.uk", "org.uk", "gov.uk", "ac.uk", "co.jp", "com.au", "net.au", "org.au",
+  "co.nz", "com.br", "co.in", "co.za",
+]);
+
+function registrableDomain(host: string | null): string | null {
+  if (!host) return null;
+  let h = host.toLowerCase().trim().replace(/^www\./, "").replace(/:\d+$/, "");
+  const parts = h.split(".").filter(Boolean);
+  if (parts.length < 2) return null;
+  const last2 = parts.slice(-2).join(".");
+  if (parts.length >= 3 && MULTI_SUFFIX.has(last2)) return parts.slice(-3).join(".");
+  return last2;
+}
+
+function domainOfAddress(address: string | null): string | null {
+  if (!address) return null;
+  const at = address.indexOf("@");
+  return at === -1 ? null : address.slice(at + 1);
+}
+
 // ---- service name ----------------------------------------------------------
 const SERVICE_NOISE =
   /\b(no-?reply|do-?not-?reply|notifications?|notify|team|support|security|account|alerts?|mail(er)?|info|hello|accounts?)\b/gi;
@@ -9,21 +33,12 @@ function titleCase(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function registrableName(address: string | null): string | null {
-  if (!address) return null;
-  const at = address.indexOf("@");
-  if (at === -1) return null;
-  const domain = address.slice(at + 1).toLowerCase();
-  const parts = domain.split(".").filter(Boolean);
-  if (parts.length < 2) return null;
-  const label = parts[parts.length - 2];
-  return label ? titleCase(label) : null;
-}
-
 function serviceName(s: EmailSignals): string {
   const name = (s.fromName ?? "").replace(SERVICE_NOISE, " ").replace(/\s+/g, " ").trim();
   if (name) return name;
-  return registrableName(s.fromAddress) ?? "this service";
+  const reg = registrableDomain(domainOfAddress(s.fromAddress));
+  if (reg) return titleCase(reg.split(".")[0]);
+  return "this service";
 }
 
 // ---- OTP code --------------------------------------------------------------
@@ -52,9 +67,31 @@ function extractOtp(s: EmailSignals): string | null {
 }
 
 // ---- DMARC + confirm link --------------------------------------------------
-function dmarcPasses(authResults: string | null): boolean {
-  if (!authResults) return false;
-  return /\bdmarc\s*=\s*pass\b/i.test(authResults);
+// The DMARC-verified registrable domain from the RECEIVING provider's trusted
+// Authentication-Results. Returns null unless there is a `dmarc=pass` WITH a
+// `header.from` domain.
+//
+// SECURITY CONTRACT: the connector MUST pass only its provider MTA's
+// Authentication-Results header value (selected by authserv-id), NEVER a
+// sender-inserted one — otherwise `dmarc=pass` can be forged. See the Gmail /
+// Outlook connector tasks for trusted-header selection.
+function dmarcVerifiedDomain(authResults: string | null): string | null {
+  if (!authResults) return null;
+  const m = authResults.match(
+    /dmarc\s*=\s*pass\b[^;]*?header\.from\s*=\s*"?([a-z0-9.-]+)"?/i
+  );
+  return m ? registrableDomain(m[1]) : null;
+}
+
+function httpHost(href: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(href);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  return u.hostname;
 }
 
 const CONFIRM_VERB =
@@ -63,10 +100,19 @@ const NEGATIVE_LINK =
   /\b(wasn'?t (you|me)|was not (you|me)|did ?n'?t (request|sign)|not (you|me)|reset|change (your )?password|unsubscribe|report|cancel|decline|manage|view (in|on) (browser|web)|privacy|terms|help|update preferences)\b/i;
 
 function extractConfirmUrl(s: EmailSignals): string | null {
-  if (!dmarcPasses(s.authResults)) return null;
-  const matches = s.links.filter(
-    (l) => CONFIRM_VERB.test(l.text) && !NEGATIVE_LINK.test(l.text)
-  );
+  const verified = dmarcVerifiedDomain(s.authResults);
+  if (!verified) return null;
+  // The DMARC-verified domain must match the sender's own domain (reject a
+  // dmarc=pass issued for some other header.from).
+  const sender = registrableDomain(domainOfAddress(s.fromAddress));
+  if (!sender || sender !== verified) return null;
+  // The link must use http(s) AND sit on the verified registrable domain
+  // (subdomains allowed). This is what makes a DMARC pass meaningful for links.
+  const matches = s.links.filter((l) => {
+    if (!CONFIRM_VERB.test(l.text) || NEGATIVE_LINK.test(l.text)) return false;
+    const host = httpHost(l.href);
+    return host !== null && registrableDomain(host) === verified;
+  });
   if (matches.length === 0) return null;
   const distinct = Array.from(new Set(matches.map((m) => m.href)));
   if (distinct.length !== 1) return null;
@@ -76,18 +122,16 @@ function extractConfirmUrl(s: EmailSignals): string | null {
 // ---- public API ------------------------------------------------------------
 /**
  * Extract a time-sensitive CTA from an email's signals. OTP wins over confirm
- * when both are present. Confirm links require DMARC pass. Returns null unless
- * a high-confidence detection is made (bias to false-negative).
+ * when both are present. Confirm links require: a DMARC pass aligned to the
+ * sender's domain, an http(s) scheme, and the link host on the verified
+ * registrable domain. Returns null unless a high-confidence detection is made
+ * (bias to false-negative).
  */
 export function extractCta(s: EmailSignals): Cta | null {
-  const code = extractOtp(s);
   const service = serviceName(s);
-  if (code) {
-    return { kind: "otp", service, code, url: extractConfirmUrl(s) };
-  }
+  const code = extractOtp(s);
+  if (code) return { kind: "otp", service, code, url: extractConfirmUrl(s) };
   const url = extractConfirmUrl(s);
-  if (url) {
-    return { kind: "confirm", service, code: null, url };
-  }
+  if (url) return { kind: "confirm", service, code: null, url };
   return null;
 }

@@ -34,13 +34,13 @@ describe("extractCta — OTP", () => {
   it("does NOT treat an order total / price as a code", () => {
     expect(extractCta(signals({
       fromAddress: "orders@shop.com",
-      subject: "Your order #100423",
-      bodyText: "Order #100423 total $129.99 ships soon.",
+      subject: "Order confirmation",
+      bodyText: "Your order confirmation code total is $129456.",
     }))).toBeNull();
   });
   it("does NOT treat a bare 4-digit year as a code", () => {
     expect(extractCta(signals({
-      bodyText: "Copyright 2026 Acme Inc. All rights reserved.",
+      bodyText: "Your verification code expires in 2026.",
     }))).toBeNull();
   });
 });
@@ -94,6 +94,39 @@ describe("extractCta — confirm link", () => {
     }));
     expect(cta?.kind).toBe("otp");
     expect(cta?.code).toBe("224466");
+  });
+
+  it("SKIPS a confirm link whose host is NOT the DMARC-verified sender domain", () => {
+    expect(extractCta(signals({
+      fromAddress: "hello@acme.com", subject: "Confirm your email",
+      authResults: dmarcPass, // dmarc=pass header.from=acme.com
+      links: [{ text: "Confirm email", href: "https://evil.example/confirm" }],
+    }))).toBeNull();
+  });
+
+  it("SKIPS when dmarc=pass is for a different header.from than the sender", () => {
+    expect(extractCta(signals({
+      fromAddress: "hello@acme.com", subject: "Confirm your email",
+      authResults: "spf=pass; dkim=pass; dmarc=pass header.from=evil.com",
+      links: [{ text: "Confirm email", href: "https://evil.com/confirm" }],
+    }))).toBeNull();
+  });
+
+  it("SKIPS a non-http(s) scheme link even with valid confirm text", () => {
+    expect(extractCta(signals({
+      fromAddress: "hello@acme.com", subject: "Confirm your email",
+      authResults: dmarcPass,
+      links: [{ text: "Confirm email", href: "javascript:alert(1)" }],
+    }))).toBeNull();
+  });
+
+  it("ALLOWS a confirm link on a subdomain of the verified sender domain", () => {
+    const cta = extractCta(signals({
+      fromAddress: "hello@acme.com", fromName: "Acme", subject: "Confirm your email",
+      authResults: dmarcPass,
+      links: [{ text: "Confirm email", href: "https://login.acme.com/confirm?t=1" }],
+    }));
+    expect(cta).toEqual({ kind: "confirm", service: "Acme", code: null, url: "https://login.acme.com/confirm?t=1" });
   });
 });
 
