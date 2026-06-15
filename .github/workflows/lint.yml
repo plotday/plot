@@ -5,8 +5,189 @@ on:
     branches:
       - main
 
+# A fresh push to a PR supersedes the previous lint run, so cancel the older
+# one instead of letting both finish — avoids paying for a run whose result no
+# one will look at when a branch is updated several times in a row.
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint:
+  # Cheap, install-free path gate that decides which heavy lint jobs to spin
+  # up. Fine-grained project selection still happens via `nx affected` inside
+  # lint-ts. The heavy jobs are gated with job-level `if` (NOT a workflow-level
+  # `paths:` filter) so their check contexts always report — a job skipped via
+  # `if` reports as "skipped", which branch protection treats as success, so a
+  # Flutter-only or docs-only PR is never blocked by a check that simply had
+  # nothing to do.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      flutter: ${{ steps.changes.outputs.flutter }}
+      ts: ${{ steps.changes.outputs.ts }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF" >/dev/null 2>&1 || true
+          BASE=$(git merge-base "origin/$BASE_REF" HEAD)
+          FILES=$(git diff --name-only "$BASE" HEAD)
+          echo "Changed files vs $BASE:"; echo "$FILES"
+          match() { echo "$FILES" | grep -qE "$1"; }
+          # Global inputs invalidate every project's cache (nx treats the
+          # lockfile, workspace/tsconfig roots, etc. as inputs to all targets),
+          # so any change to one runs both heavy jobs.
+          GLOBAL='^(pnpm-lock\.yaml|package\.json|pnpm-workspace\.yaml|nx\.json|tsconfig.*\.json|\.fvmrc|\.github/workflows/lint\.yml)$'
+          flutter=false
+          ts=false
+          if match "$GLOBAL"; then flutter=true; ts=true; fi
+          if match '^apps/plot/'; then flutter=true; fi
+          if match '^(libs/|workers/|connectors/|twists/|apps/site/|public/)'; then ts=true; fi
+          echo "flutter=$flutter" >> "$GITHUB_OUTPUT"
+          echo "ts=$ts" >> "$GITHUB_OUTPUT"
+          echo "Decision: flutter=$flutter ts=$ts"
+
+  # TypeScript / SQL lint. `nx affected` lints only the projects this PR
+  # changed (plus their `^lint` dependencies), and each project's lint result
+  # is restored from the nx cache when its inputs are unchanged — so a branch
+  # update that only moved the base re-lints almost nothing. Postgres + Atlas
+  # are started only when the affected lint task graph actually pulls in
+  # @plotday/db:lint (a change to workers/api, libs/db, libs/eval, or anything
+  # that depends on them); connector-only or site-only PRs skip the database.
+  lint-ts:
+    needs: detect
+    if: needs.detect.outputs.ts == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Cache nx computation
+        uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          # nx's cache is content-addressed, so restoring an older cache is
+          # always safe — unchanged projects hit, changed ones recompute.
+          key: nx-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            nx-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            nx-${{ runner.os }}-
+
+      - name: Build Twister and tools
+        run: |
+          cd public
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Determine affected projects
+        id: affected
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF" >/dev/null 2>&1 || true
+          BASE=$(git merge-base "origin/$BASE_REF" HEAD)
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          PROJECTS=$(pnpm exec nx show projects --affected --base="$BASE" --head=HEAD --exclude=plot --exclude=@plotday/plot)
+          echo "Affected (excluding repo root + Flutter app):"; echo "$PROJECTS"
+          if [ -z "$PROJECTS" ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "needdb=false" >> "$GITHUB_OUTPUT"
+            echo "No affected TypeScript/SQL projects; nothing to lint."
+            exit 0
+          fi
+          echo "empty=false" >> "$GITHUB_OUTPUT"
+          # Spin up the database only if the affected lint task graph actually
+          # contains the @plotday/db type-check (gen-types --check needs a live
+          # schema). Read it off the task graph instead of hardcoding which
+          # projects depend on the db, so this stays correct as deps change.
+          pnpm exec nx affected -t lint --base="$BASE" --head=HEAD \
+            --exclude=plot --exclude=@plotday/plot --graph=/tmp/task-graph.json >/dev/null
+          if grep -q '"@plotday/db:lint"' /tmp/task-graph.json; then
+            echo "needdb=true" >> "$GITHUB_OUTPUT"
+            echo "Affected lint graph includes @plotday/db:lint -> starting database."
+          else
+            echo "needdb=false" >> "$GITHUB_OUTPUT"
+            echo "Affected lint graph does not touch the database -> skipping it."
+          fi
+
+      - name: Install Perl
+        if: steps.affected.outputs.needdb == 'true'
+        uses: shogo82148/actions-setup-perl@v1
+
+      - name: Install pg_format
+        if: steps.affected.outputs.needdb == 'true'
+        run: |
+          curl -L -o pg_format.zip https://github.com/darold/pgFormatter/archive/refs/tags/v5.5.zip
+          unzip pg_format.zip -d $HOME/pg_format
+          mv $HOME/pg_format/pgFormatter*/* $HOME/pg_format/
+          chmod +x $HOME/pg_format/pg_format
+          echo "$HOME/pg_format" >> "$GITHUB_PATH"
+
+      - name: Start DB
+        if: steps.affected.outputs.needdb == 'true'
+        run: cd libs/db && pnpm run start
+
+      - name: Install Atlas
+        if: steps.affected.outputs.needdb == 'true'
+        uses: ariga/setup-atlas@v0
+
+      - name: Apply migrations and run plpgsql_check
+        if: steps.affected.outputs.needdb == 'true'
+        run: cd libs/db && pnpm run apply-migrations
+
+      - name: Lint affected projects
+        if: steps.affected.outputs.empty != 'true'
+        run: |
+          pnpm exec nx affected -t lint \
+            --base="${{ steps.affected.outputs.base }}" --head=HEAD \
+            --exclude=plot --exclude=@plotday/plot
+
+  # Flutter static analysis. Runs only when the Flutter app (apps/plot) — or a
+  # global input — changed. Nothing in the workspace depends on @plotday/plot,
+  # so this never needs to run as a dependency of a TypeScript lint and can live
+  # in its own job with only the (heavy) Flutter/Rust toolchain it actually
+  # needs — no Node, pnpm, Twister build, or database.
+  lint-flutter:
+    needs: detect
+    if: needs.detect.outputs.flutter == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -30,29 +211,6 @@ jobs:
         with:
           submodules: true
 
-      - uses: pnpm/action-setup@v6
-        name: Install pnpm
-        with:
-          run_install: false
-
-      - name: Install Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: "pnpm"
-
-      - name: Build Twister and tools
-        run: |
-          cd public
-          pnpm install --frozen-lockfile
-          pnpm build
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Perl
-        uses: shogo82148/actions-setup-perl@v1
-
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -69,25 +227,8 @@ jobs:
       - name: Generate Flutter code
         run: cd apps/plot && flutter pub run build_runner build
 
-      - name: Install pg_format
-        run: |
-          curl -L -o pg_format.zip https://github.com/darold/pgFormatter/archive/refs/tags/v5.5.zip
-          unzip pg_format.zip -d $HOME/pg_format
-          mv $HOME/pg_format/pgFormatter*/* $HOME/pg_format/
-          chmod +x $HOME/pg_format/pg_format
-          echo "$HOME/pg_format" >> "$GITHUB_PATH"
-
-      - name: Start DB
-        run: cd libs/db && pnpm run start
-
-      - name: Install Atlas
-        uses: ariga/setup-atlas@v0
-
-      - name: Apply migrations and run plpgsql_check
-        run: cd libs/db && pnpm run apply-migrations
-
-      - name: Lint
-        run: pnpm run lint
+      - name: Analyze
+        run: cd apps/plot && flutter analyze --no-fatal-infos
 
   # Enforce expand/contract migration safety (see
   # docs/superpowers/specs/2026-06-02-zero-downtime-deploy-design.md and
