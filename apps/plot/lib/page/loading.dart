@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:auto_route/auto_route.dart';
+
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/widget/widget.dart';
@@ -12,16 +14,26 @@ class StuckLoadingPageException implements Exception {
   StuckLoadingPageException({
     required this.message,
     required this.userStatus,
+    required this.route,
   });
 
   final String? message;
   final String? userStatus;
+
+  /// The full nested router path (e.g. `/p/:pid/new`) the LoadingPage was
+  /// showing under when it got stuck. PostHog groups these reports by stack
+  /// frame, so every occurrence shares one issue and the bare message alone
+  /// can't say *which* of the ~dozen LoadingPage sites / routes hung. The
+  /// route disambiguates a stuck sign-in from a stuck AutoRouter placeholder
+  /// (empty inner stack) so the underlying bug is actually diagnosable.
+  final String? route;
 
   @override
   String toString() {
     final parts = <String>[];
     if (message != null) parts.add('message="$message"');
     if (userStatus != null) parts.add('userStatus="$userStatus"');
+    if (route != null) parts.add('route="$route"');
     final detail = parts.isEmpty ? '' : ' (${parts.join(', ')})';
     return 'StuckLoadingPageException: LoadingPage still visible after 60s$detail';
   }
@@ -148,9 +160,24 @@ class _LoadingPageState extends State<LoadingPage>
       StuckLoadingPageException(
         message: widget.message,
         userStatus: UserBloc.statusNotifier.value,
+        route: _currentRoute(),
       ),
       StackTrace.current,
     );
+  }
+
+  /// The full nested router path this LoadingPage is mounted under, or null
+  /// if it isn't inside a router (e.g. shown during account deletion) or the
+  /// lookup throws. `root.currentPath` walks the whole nested-router tree, so
+  /// it reveals a stuck AutoRouter placeholder's location, not just the
+  /// nearest router's segment.
+  String? _currentRoute() {
+    if (!mounted) return null;
+    try {
+      return context.router.root.currentPath;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
