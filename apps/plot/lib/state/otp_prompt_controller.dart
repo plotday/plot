@@ -14,24 +14,27 @@ class OtpPrompt {
 }
 
 class OtpPromptController {
-  OtpPromptController._();
+  /// Creates a controller with no Drift subscription. Call [attach] once a
+  /// [Store] is available, and [detach] on sign-out. [AppShell] drives this
+  /// from [UserBloc] auth state rather than reading `Store.get` at mount: it is
+  /// the persistent root shell and mounts before sign-in (hosting SignInRoute),
+  /// when no Store is registered — touching `Store.get` then throws
+  /// `The type "Store" is not defined!`.
+  OtpPromptController();
 
   /// Test constructor — no Drift subscription; drive via [onNotes].
-  factory OtpPromptController.forTest() => OtpPromptController._();
-
-  /// Production constructor — watches notes with a non-null cta.
-  factory OtpPromptController(Store store) {
-    final c = OtpPromptController._();
-    c._subscribe(store);
-    return c;
-  }
+  factory OtpPromptController.forTest() => OtpPromptController();
 
   final ValueNotifier<OtpPrompt?> current = ValueNotifier(null);
   final Set<String> _dismissed = {};
   StreamSubscription<void>? _sub;
   Timer? _expiry;
 
-  void _subscribe(Store store) {
+  /// Subscribe to [store]'s recent cta-bearing notes. Idempotent: cancels any
+  /// existing subscription first, so it is safe to call again after a
+  /// re-sign-in (the store instance changes on each [Store.start]).
+  void attach(Store store) {
+    _sub?.cancel();
     final n = store.notes;
     // Watch recent non-archived notes with a non-null cta, newest first,
     // bounded to 10.
@@ -41,6 +44,17 @@ class OtpPromptController {
           ..limit(10))
         .watch()
         .listen((rows) => onNotes(rows.map(_noteFromRow).toList()));
+  }
+
+  /// Drop the store subscription and hide any visible prompt. Called on
+  /// sign-out, before the Store is torn down, so the Drift stream doesn't
+  /// outlive its database.
+  void detach() {
+    _sub?.cancel();
+    _sub = null;
+    _expiry?.cancel();
+    _expiry = null;
+    current.value = null;
   }
 
   static Note _noteFromRow(NoteRow r) => Note(
@@ -100,8 +114,7 @@ class OtpPromptController {
   }
 
   void dispose() {
-    _sub?.cancel();
-    _expiry?.cancel();
+    detach();
     current.dispose();
   }
 }

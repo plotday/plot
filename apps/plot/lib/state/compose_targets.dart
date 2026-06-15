@@ -305,6 +305,12 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// changing, and after recording a created thread (see [recordTarget],
   /// which also fast-paths a prepend so the next open reflects it instantly).
   Future<void> refresh() async {
+    // The base list is materialized from the store, which isn't registered in
+    // the injector until a user is signed in and the DB is open (and is torn
+    // down on sign-out). Touching it then throws `The type "Store" is not
+    // defined!` from the injector. Mirrors the guard in [_scheduleRefresh] and
+    // covers the boot path ([warm] runs at shell mount, before sign-in).
+    if (isClosed || !Store.isAvailable) return;
     // The cached search context is derived from the same stores this rebuilds,
     // so drop it first and let [_materializeBaseList] repopulate it from fresh
     // data; subsequent per-keystroke searches then reuse that fresh context.
@@ -878,6 +884,18 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     int perSection = 8,
     bool linkMode = false,
   }) async {
+    // See [refresh]: before sign-in / after sign-out the store is unavailable,
+    // so there is nothing to build. [warm] (called from the shell at boot)
+    // reaches here when the app paints signed-out — without this guard the
+    // store access below throws `The type "Store" is not defined!`.
+    if (!Store.isAvailable) {
+      return const ComposeSections(
+        people: [],
+        twists: [],
+        channels: [],
+        focuses: [],
+      );
+    }
     final ctx = await _searchContextFor();
     final scan = ctx.scan;
 

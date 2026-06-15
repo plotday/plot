@@ -8,6 +8,7 @@ import 'package:plot/page/loading.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/note_viewer.dart';
 import 'package:plot/state/otp_prompt_controller.dart';
+import 'package:plot/state/user.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/onboarding/onboarding_overlay.dart';
 import 'package:plot/widget/otp_toast.dart';
@@ -24,13 +25,18 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   final GlobalKey _contextKey = GlobalKey();
-  late final OtpPromptController _otpController;
+  final OtpPromptController _otpController = OtpPromptController();
 
   @override
   void initState() {
     super.initState();
     AppContext.register(_contextKey);
-    _otpController = OtpPromptController(Store.get);
+    // The OTP/confirm toast watches the user's notes, which needs an open
+    // Store. AppShell is the persistent root shell and mounts before sign-in
+    // (it hosts SignInRoute), so attach only when a Store already exists (a
+    // returning user whose Store.start ran before this mount). The UserBloc
+    // listener in [build] (re)attaches on sign-in and detaches on sign-out.
+    if (Store.isAvailable) _otpController.attach(Store.get);
   }
 
   @override
@@ -42,8 +48,20 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    return FToaster(
-      child: ModalProvider(
+    return BlocListener<UserBloc, UserState>(
+      // Bind the OTP note-watch to the Store's lifetime: attach when the user
+      // becomes ready (Store.start has run by then) and detach on sign-out
+      // before the Store is stopped. Keeps AppShell from reading Store.get
+      // while signed out.
+      listener: (context, state) {
+        if (state is UserReady && Store.isAvailable) {
+          _otpController.attach(Store.get);
+        } else if (state is UserSignedOut) {
+          _otpController.detach();
+        }
+      },
+      child: FToaster(
+        child: ModalProvider(
         child: Container(
           key: _contextKey,
           child: GlobalShortcuts(
@@ -82,6 +100,7 @@ class _AppShellState extends State<AppShell> {
               ),
             ),
           ),
+        ),
         ),
       ),
     );
