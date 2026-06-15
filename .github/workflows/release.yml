@@ -20,10 +20,25 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     steps:
+      # Author the release PR as the GitHub App (plot-app-builder) rather than the
+      # default github-actions[bot]. PRs from the default token are treated as a
+      # "first-time contributor" by the repo's fork-PR approval policy, so their
+      # workflows sit in "action_required" awaiting manual approval. An app-token
+      # PR is authored by a trusted installed app and runs checks automatically.
+      # Requires GH_APP_ID (variable) + GH_APP_PRIVATE_KEY (secret) on this repo,
+      # and plot-app-builder installed with contents + pull-requests write.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -52,7 +67,7 @@ jobs:
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Create GitHub Releases
         if: steps.changesets.outputs.published == 'true'
