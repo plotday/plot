@@ -32,6 +32,17 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# The flutter_inappwebview_windows plugin still includes <experimental/coroutine>.
+# Newer MSVC toolchains promote that deprecation to a hard error (STL1011 /
+# C2338), and even on VS2022 the plugin's /WX turns the deprecation warning into
+# an error. Define Microsoft's documented opt-out for every target (matching the
+# add_definitions mechanism above, which is inherited by the plugin subdirectories
+# added later via flutter/generated_plugins.cmake). This is applied here in the
+# project's own CMake rather than via the CL environment variable, because a set
+# CL var breaks CMake's compiler-identification probe ("The CXX compiler
+# identification is unknown" / "No CMAKE_CXX_COMPILER could be found").
+add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

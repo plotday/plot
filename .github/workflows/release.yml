@@ -895,25 +895,16 @@ jobs:
   release-windows:
     needs: [prepare-release, refresh-secrets]
     if: inputs.windows
-    # Pinned to windows-2022 (Visual Studio 2022). GitHub floated
-    # `windows-latest` onto the `windows-2025-vs2026` image, whose Visual
-    # Studio 2026 (VS18) toolchain breaks the Flutter 3.44.0 Windows build at
-    # CMake configure time ("The CXX compiler identification is unknown" ->
-    # "No CMAKE_CXX_COMPILER could be found" at the Runner's project() call).
-    # windows-2022 is the last-known-good image and won't receive VS2026.
-    # Revisit when the pinned Flutter version supports VS2026.
+    # Pinned to windows-2022 (Visual Studio 2022) for a deterministic, known-good
+    # toolchain for the Flutter 3.44.0 release build. `windows-latest` has been
+    # drifting (it floated onto the VS2026 image), and we'd rather not have the
+    # release pipeline ride a moving image. The coroutine deprecation that the
+    # flutter_inappwebview_windows plugin trips on is handled in
+    # apps/plot/windows/CMakeLists.txt (see _SILENCE_EXPERIMENTAL_COROUTINE_*).
     runs-on: windows-2022
     env:
       SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
       WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
-      # cl.exe reads the CL env var and prepends these options to every
-      # compilation. The flutter_inappwebview_windows plugin still includes
-      # <experimental/coroutine>; under /WX the deprecation is treated as an
-      # error (a hard STL1011 / C2338 on newer MSVC, a warning-as-error on
-      # VS2022) unless this macro is defined. This is Microsoft's documented
-      # suppression and reaches the plugin build nested inside Shorebird ->
-      # Flutter -> CMake without patching pub-cache source.
-      CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
       R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
       R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
