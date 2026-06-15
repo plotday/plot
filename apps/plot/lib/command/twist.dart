@@ -2497,7 +2497,7 @@ class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
     : super(
         title: 'Twists',
-        description: 'Add workflows and automations to your priorities.',
+        description: 'Add workflows and automations to your focuses.',
         icon: PlotIcon.twist,
         commandsBuilder: (context) => _getTwistCommands(priority),
       );
@@ -4239,7 +4239,7 @@ class RemoveTwist extends Command {
   RemoveTwist(this.twist)
     : super(
         title: 'Remove twist',
-        subtitle: 'Remove ${twist.name} from this priority',
+        subtitle: 'Remove ${twist.name} from this focus',
         eventObject: EventObject.twist,
         eventAction: EventAction.archived,
         icon: FontAwesomeIcons.trash,

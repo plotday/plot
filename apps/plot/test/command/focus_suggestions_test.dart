@@ -38,4 +38,11 @@ void main() {
     final existing = const ['project'];
     expect(identical(mergeDismissed(existing, 'project'), existing), isTrue);
   });
+
+  test('role/FYI-redundant templates are no longer offered', () {
+    final keys = kFocusSuggestions.map((s) => s.suggestionKey).toSet();
+    expect(keys, isNot(contains('volunteering')));
+    expect(keys, isNot(contains('personal_admin')));
+    expect(keys, isNot(contains('promotions')));
+  });
 }

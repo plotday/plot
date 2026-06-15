@@ -574,6 +574,7 @@ FormSelect<Role> _roleSelect({
     required: true,
     initialValue: initialRole,
     hasInitialValue: initialRole != null,
+    addLabel: 'Add role',
     items: (search) async => (await Role.all())
         .where(
           (r) =>
@@ -678,11 +679,10 @@ class NewFocus extends Command {
   }
 }
 
-/// Entry point for "Add a focus". Loads the user's dismissed-suggestion set,
-/// then either opens a picker (custom focus + remaining curated suggestions) or,
-/// when no suggestions remain, opens the create form directly. Picking a
-/// suggestion prefills the same two-step [NewFocus] form; creating from it
-/// records the dismissal (see [DismissedFocusSuggestions]).
+/// Entry point for "Add a focus". Opens the role chooser first ("Choose a role
+/// to add a focus") — the user picks an existing role or adds a new one — then
+/// shows the focus templates for that role. Picking a template (or "Other")
+/// opens the prefilled two-step [NewFocus] form with the role pre-selected.
 class AddFocus extends Command {
   AddFocus({this.defaultRoleId})
     : super(
@@ -692,49 +692,102 @@ class AddFocus extends Command {
         eventAction: EventAction.added,
       );
 
-  /// The role to default the new focus to (e.g. the sidebar's expanded role).
-  /// Threaded into the create form's Role field; defaults to the user's first
-  /// role when null.
+  /// Pre-highlighted in the role chooser (e.g. the sidebar's currently-selected
+  /// focus's role); the user can still pick another. Null highlights the user's
+  /// first role.
   final RoleId? defaultRoleId;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final dismissed = await DismissedFocusSuggestions.get();
-    final suggestions = visibleFocusSuggestions(dismissed);
+    final initialRole = await _resolveInitialRole(defaultRoleId);
     if (!context.mounted) return const CommandSkipped();
 
-    // Nothing left to suggest — the picker would show only "Create a custom
-    // focus", so skip straight to the create form.
-    if (suggestions.isEmpty) {
-      return NewFocus(defaultRoleId: defaultRoleId).run(context);
-    }
-
-    return ShowCommands(
-      title: 'Add a focus',
-      icon: PlotIcon.add,
-      commands: Commands(
-        groups: [
-          StaticCommandGroup(
-            commands: [_CreateCustomFocus(defaultRoleId: defaultRoleId)],
+    // Step 1 — choose (or add) a role. Selecting an existing role pops with it;
+    // the "Add role" row creates one (name + colour) and pops with the new role.
+    final chosen = await SelectModal.open<Role>(
+      context,
+      title: 'Choose a role to add a focus',
+      selectedValue: initialRole,
+      items: (search) async {
+        final roles = await Role.all();
+        final filtered = search == null
+            ? roles
+            : roles
+                  .where(
+                    (r) =>
+                        r.name.toLowerCase().contains(search.toLowerCase()),
+                  )
+                  .toList();
+        return [
+          SelectGroup<Role>(items: filtered),
+          SelectGroup<Role>(
+            items: <Role>[],
+            infoBuilder: (ctx) => addItemRow(ctx, label: 'Add role'),
+            onActivate: (ctx) async {
+              final role = await createRoleInline(ctx);
+              if (role != null && ctx.mounted) {
+                Modal.pop<Role>(ctx, Value(role));
+              }
+            },
           ),
-          StaticCommandGroup(
-            title: 'Suggestions',
-            commands: [
-              for (final s in suggestions)
-                _CreateSuggestedFocus(s, defaultRoleId: defaultRoleId),
+        ];
+      },
+      itemBuilder: (role, _) => Builder(
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: ctx.theme.spacing.lg,
+            vertical: ctx.theme.spacing.md,
+          ),
+          child: Row(
+            children: [
+              ColorDot(color: role.displayColor),
+              SizedBox(width: ctx.theme.spacing.md),
+              Expanded(
+                child: Text(role.name, overflow: TextOverflow.ellipsis),
+              ),
             ],
           ),
-        ],
+        ),
       ),
-    ).run(context);
+    );
+    if (!chosen.present || !context.mounted) return const CommandSkipped();
+
+    // Step 2 — choose a focus template (or "Other") for the chosen role.
+    return _showFocusTemplates(chosen.value).run(context);
   }
 }
 
-/// "Create a custom focus" row — opens the empty two-step create form.
-class _CreateCustomFocus extends Command {
-  _CreateCustomFocus({this.defaultRoleId})
+/// Step-2 picker: the curated focus templates for [role], with "Other" last and
+/// no group heading. If every suggestion has been dismissed, only "Other" shows.
+Command _showFocusTemplates(Role role) {
+  return ShowCommands(
+    title: 'Add a focus',
+    icon: PlotIcon.add,
+    commandsBuilder: (context) async {
+      final dismissed = await DismissedFocusSuggestions.get();
+      final suggestions = visibleFocusSuggestions(dismissed);
+      return Commands(
+        groups: [
+          StaticCommandGroup(
+            commands: [
+              for (final s in suggestions)
+                _CreateSuggestedFocus(s, defaultRoleId: role.id),
+              _CreateOtherFocus(defaultRoleId: role.id),
+            ],
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// "Other" row — opens the empty two-step create form. Sits last in the
+/// templates list as the catch-all.
+class _CreateOtherFocus extends Command {
+  _CreateOtherFocus({this.defaultRoleId})
     : super(
-        title: 'Create a custom focus',
+        title: 'Other',
+        subtitle: "Describe anything you'd like to focus on",
         icon: PlotIcon.add,
         eventObject: EventObject.priority,
         eventAction: EventAction.added,
@@ -806,6 +859,8 @@ Future<FormData> _buildFocusDetailsForm(
     groups: [
       StaticFormGroup(
         items: [
+          // Role first: a focus is created within a role, so it's the lead-in.
+          roleField,
           FormTextInput(
             key: 'title',
             label: 'Focus name',
@@ -822,7 +877,6 @@ Future<FormData> _buildFocusDetailsForm(
             placeholder: 'What belongs in this focus?',
             initialValue: prefill?.description,
           ),
-          roleField,
           _focusIconSelect(initial: prefill?.iconKey ?? 'bullseyePointer'),
           colorField,
           if (skipMatching)
@@ -1342,13 +1396,13 @@ class EditPriorityCommand extends ShowForm {
             groups: [
               StaticFormGroup(
                 items: [
+                  roleField,
                   FormTextInput(
                     key: 'title',
                     label: 'Focus name',
                     initialValue: p.title,
                     required: true,
                   ),
-                  roleField,
                   _focusIconSelect(initial: p.icon ?? 'bullseyePointer'),
                   colorField,
                   FormButton(

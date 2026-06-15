@@ -992,7 +992,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         : Text(switch (_mode) {
                             _AuthMode.signUp => 'Continue',
                             _AuthMode.resetRequest => 'Send reset code',
-                            _ => 'Sign In',
+                            _ => 'Sign in',
                           }),
                   ),
                 ),

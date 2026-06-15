@@ -96,32 +96,11 @@ const List<FocusPrefill> kFocusSuggestions = [
     color: ThemeColor(3),
   ),
   FocusPrefill(
-    suggestionKey: 'volunteering',
-    title: 'Volunteering',
-    description: 'Everything related to a volunteer role',
-    iconKey: 'handHoldingHeart',
-    color: ThemeColor(4),
-  ),
-  FocusPrefill(
-    suggestionKey: 'personal_admin',
-    title: 'Personal admin',
-    description: 'Errands, appointments, and personal to-dos',
-    iconKey: 'house',
-    color: ThemeColor(3),
-  ),
-  FocusPrefill(
     suggestionKey: 'social',
     title: 'Social',
     description: 'Friends and events',
     iconKey: 'balloons',
     color: ThemeColor(3),
-  ),
-  FocusPrefill(
-    suggestionKey: 'promotions',
-    title: 'Promotions',
-    description: 'Offers and updates from brands you follow',
-    iconKey: 'billboard',
-    color: ThemeColor(6),
   ),
 ];
 

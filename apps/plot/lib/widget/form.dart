@@ -273,6 +273,7 @@ class FormSelect<T> extends FormItem {
     T? initialValue,
     this.onChanged,
     this.onAdd,
+    this.addLabel,
     this.gridColumns,
     this.gridCellSize = 36,
     this.gridCellSpacing = 4,
@@ -319,6 +320,12 @@ class FormSelect<T> extends FormItem {
   /// Optional callback to create a new item inline.
   /// When provided, a "+" button is shown in the selection modal.
   final Future<T?> Function(BuildContext context)? onAdd;
+
+  /// When set together with [onAdd], the selection modal renders a labeled
+  /// "[addLabel]" row at the bottom of the list (keyboard-navigable) instead of
+  /// the "+" search-field button. Activating it runs [onAdd] and, on a non-null
+  /// result, selects it. Leave null to keep the legacy "+" button.
+  final String? addLabel;
 
   /// When non-null, the selection modal renders items in a grid with this many
   /// columns (like the emoji reaction picker) instead of the default list.
@@ -392,11 +399,25 @@ class FormSelect<T> extends FormItem {
       return;
     }
     if (!enabled) return;
+    final useAddRow = addLabel != null && onAdd != null;
     final result = await SelectModal.open<T>(
       context,
       items: (search) async {
         final itemsList = await items(search);
-        return [SelectGroup(title: null, items: itemsList)];
+        return [
+          SelectGroup<T>(title: null, items: itemsList),
+          if (useAddRow)
+            SelectGroup<T>(
+              items: <T>[],
+              infoBuilder: (ctx) => addItemRow(ctx, label: addLabel!),
+              onActivate: (ctx) async {
+                final created = await onAdd!(ctx);
+                if (created != null && ctx.mounted) {
+                  Modal.pop<T>(ctx, Value(created));
+                }
+              },
+            ),
+        ];
       },
       itemBuilder: gridColumns != null
           ? (item, _) => _buildGridCell(context, item)
@@ -472,7 +493,7 @@ class FormSelect<T> extends FormItem {
             },
       selectedValue: _value,
       prompt: label ?? key,
-      onAdd: onAdd,
+      onAdd: useAddRow ? null : onAdd,
       gridColumns: gridColumns,
       gridCellSize: gridCellSize,
       gridCellSpacing: gridCellSpacing,

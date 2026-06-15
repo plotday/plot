@@ -68,10 +68,12 @@
   server — previously each thread moved one by one, which could leave a half-merged focus if
   interrupted and made Plot rethink the sorting of everything in your workspace, slowing things down
   for a while after a merge.
-- When you add a focus, Plot now suggests common focuses (like Customers, Reading, or Social) you
-  can create with one tap — pick one to open the create form already filled in, or choose **Create a
-  custom focus** to start from scratch. Once you've made a focus from a suggestion it drops off the
-  list, on every device you use.
+- Creating a focus now starts by choosing which role it belongs to — pick one of your roles or add a
+  new one on the spot. Then Plot suggests common focuses (like Customers, Reading, or Social) you
+  can create with one tap — pick one to open the create form already filled in, or choose **Other**
+  to start from scratch. Once you've made a focus from a suggestion it drops off the list, on every
+  device you use. Role is now the first field when you create or edit a focus, and the same quick
+  **Add role** option appears anywhere you pick a role.
 - Threads now land in the right focus based on which account they arrived through — a receipt to
   your work email goes to your work focus, while the same kind of receipt to your personal email
   goes to your personal one. Plot learns this automatically from how you file threads.

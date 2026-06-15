@@ -138,6 +138,21 @@ Plot isn't paperwork, and the reader isn't a clerk. Skip the queue-clearing, fil
 
 We invest attention where it matters; we don't shuffle paper.
 
+### Don't foreground the AI
+
+When AI is just the mechanism behind a routine feature, describe the result, not the machinery.
+The reader cares that the work gets done, not which technology did it.
+
+- _Avoid:_ "AI generates a title for you." · "Our AI sorts your threads." · "Let AI summarize this."
+- _Instead:_ "A title is generated for you." · "Threads are sorted for you." · "Here's a summary."
+- _Why:_ naming the AI draws attention to the tool instead of the benefit, and dates quickly. Say
+  what happens; the reader doesn't need to know it's a model doing it.
+
+This isn't a ban on the word. When chatting with a model _is_ the feature, name it plainly — e.g.
+"Chat with Claude, ChatGPT, or Gemini right where your work lives." The test: is the AI the thing
+the reader chose to do, or just how a background task gets done? Name it for the former, drop it for
+the latter.
+
 ### Don't make the reader passive
 
 Plot hands the reader the controls; it never implies the day — or Plot — is in charge of them.
@@ -184,6 +199,10 @@ Use the current product terms from [features.md](./features.md) — _thread, not
 Everything, connection, twist, topic, group, agenda._ Older terms ("priority," "activity,"
 "connector" in user-facing copy) no longer appear in the product. Never call a thread an "activity."
 
+Say **works offline** or **offline and synced** for Plot's ability to run without a connection — not
+_local-first_. That's engineering jargon: users don't think in those terms, and for a messaging app
+it reads as a technical claim rather than a benefit they'd want.
+
 ## Per-surface register
 
 The voice is one person; the register tightens or relaxes with the surface.
@@ -227,9 +246,11 @@ Run any draft past these:
 5. Where it fits, did I give permission to ignore or let things wait — with grace, not pressure?
 6. Do people read as collaborators who make the work better — never an obstacle or a resource — and
    did I avoid assuming a team?
-7. Plain and human — one idea per sentence, contractions, concrete words — with every slogan, hype
-   word, and corporate phrase cut? (Scan the lists above.)
-8. Right register for the surface — spacious on the site, terse in the UI?
-9. Current, correct terminology (per features.md)?
+7. If I mentioned AI, is it the feature the reader chose — not just the mechanism behind a routine
+   task? (If it's the mechanism, describe the result instead.)
+8. Plain and human — one idea per sentence, contractions, second person, concrete words — with every
+   slogan, hype word, and corporate phrase cut? (Scan the lists above.)
+9. Right register for the surface — spacious on the site, terse in the UI?
+10. Current, correct terminology (per features.md)?
 
-If a line passes all nine, it sounds like Plot.
+If a line passes all ten, it sounds like Plot.

@@ -156,7 +156,7 @@ class OnboardingSteps {
     final roleSelection = OnboardingRoleSelection();
     return [
       const FullScreenStep(
-        title: "Your best work\nevery day",
+        title: "All your work,\nready for action",
         body:
             "Plot is your collaboration hub. Make real progress without the churn.",
         background: ThemeColor(0),
@@ -203,7 +203,7 @@ class OnboardingSteps {
         title: 'Focus on what matters',
         body:
             "Everything in one place can be a bit much. Create a focus to gather everything related to a role, activity, or project.\n"
-            "Creating focuses for low-urgency work is a great way to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
+            "Low-urgency messages — newsletters, promotions, receipts — collect in your FYI focus, so your Inbox stays focused on what needs your attention. Skim FYI when you have time; moving threads in and out teaches Plot where to put similar threads.",
         target: PanelTarget.priorities,
         overlay: ThemeColor(4),
         // In multi-panel the left panel stacks agenda on top of the focuses, so

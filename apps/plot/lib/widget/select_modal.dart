@@ -48,6 +48,34 @@ class SelectGroup<T> {
   final void Function(BuildContext)? onActivate;
 }
 
+/// A keyboard-navigable "add a new item" row for a [SelectModal] info-only
+/// group. Renders a "+" icon and [label] in the muted action style. Pair it
+/// with a [SelectGroup] whose `infoBuilder` returns this and whose `onActivate`
+/// creates the item, then pops the modal (or advances the flow). Shared so the
+/// inline-create affordance looks identical wherever a picker offers it.
+Widget addItemRow(BuildContext context, {required String label}) {
+  return Padding(
+    padding: EdgeInsets.symmetric(
+      horizontal: context.theme.spacing.lg,
+      vertical: context.theme.spacing.md,
+    ),
+    child: Row(
+      children: [
+        Icon(
+          PlotIcon.add,
+          size: context.theme.iconSizes.sm,
+          color: context.theme.colors.mutedForeground,
+        ),
+        SizedBox(width: context.theme.spacing.md),
+        Text(
+          label,
+          style: TextStyle(color: context.theme.colors.mutedForeground),
+        ),
+      ],
+    ),
+  );
+}
+
 /// A generic selection modal for selecting items from a list.
 ///
 /// Similar to CommandModal but for item selection instead of action execution.
@@ -1194,9 +1222,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         }
       } catch (e, t) {
         log.warning('onSelect threw', e, t);
+        Tracker.captureException(e, t);
         if (mounted) {
           setState(() => _loadingIndex = null);
-          context.showToast(message: 'Something went wrong.', isError: true);
+          context.showToast(
+            message: 'Something went wrong. Please try again.',
+            isError: true,
+          );
         }
         return;
       }
