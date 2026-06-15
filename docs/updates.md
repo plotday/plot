@@ -1,4 +1,4 @@
-## Next release
+## 1.4.0+354 — 2026-06-15
 
 ### Reactions
 
