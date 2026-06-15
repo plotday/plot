@@ -43,6 +43,15 @@ add_definitions(-DUNICODE -D_UNICODE)
 # identification is unknown" / "No CMAKE_CXX_COMPILER could be found").
 add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
 
+# Compile each project's translation units in parallel (one cl.exe per core
+# instead of compiling files serially). Set at directory scope so it is
+# inherited by every target, including the plugin subdirectories added later via
+# flutter/generated_plugins.cmake. This is the single biggest CI speedup for the
+# Windows release: the flutter_inappwebview_windows plugin alone has ~40 source
+# files that were otherwise compiled one at a time. /MP is a build-phase cl flag,
+# so it does not interfere with CMake's compiler-identification probe.
+add_compile_options(/MP)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

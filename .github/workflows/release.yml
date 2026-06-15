@@ -1039,6 +1039,13 @@ jobs:
         run: |
           cd apps/plot
           FLUTTER_VERSION=$(jq -r .flutter ../../.fvmrc)
+          # Build CMake projects in parallel across the runner's cores. Flutter's
+          # `cmake --build` honors CMAKE_BUILD_PARALLEL_LEVEL and forwards it to
+          # MSBuild as /m, overlapping the plugin projects. Combined with /MP in
+          # windows/CMakeLists.txt (parallel within each project), this keeps all
+          # cores busy. Build-phase only, so it can't affect compiler detection.
+          export CMAKE_BUILD_PARALLEL_LEVEL="${NUMBER_OF_PROCESSORS:-4}"
+          echo "Using CMAKE_BUILD_PARALLEL_LEVEL=$CMAKE_BUILD_PARALLEL_LEVEL"
           shorebird release windows --flutter-version="$FLUTTER_VERSION" --verbose
 
       - name: Build MSIX files
