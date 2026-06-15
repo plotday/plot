@@ -106,6 +106,10 @@ export class PushNotify extends DurableObject<Bindings> {
             AND focus.path = subpath(p.path, 0, LEAST(2, nlevel(p.path)))
           WHERE ts.user_id = ${userId}::uuid AND ts.read_at IS NULL
             AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
+            -- Skip muted threads (seed + every thread matched to the rule).
+            -- A new reply re-marks a muted thread unread, so read-state
+            -- suppression alone would let it wake the client.
+            AND tp.mute_by_thread_id IS NULL
             AND (
               focus.notification_cleared_at IS NULL
               OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
@@ -250,6 +254,10 @@ export class PushNotify extends DurableObject<Bindings> {
           WHERE ts.user_id = ${this.userId!}::uuid
             AND ts.read_at IS NULL
             AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
+            -- Skip muted threads (seed + every thread matched to the rule).
+            -- A new reply re-marks a muted thread unread, so read-state
+            -- suppression alone would let it wake the client.
+            AND tp.mute_by_thread_id IS NULL
             AND (
               focus.notification_cleared_at IS NULL
               OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at

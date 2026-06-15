@@ -332,6 +332,8 @@
   so they don't push you to act. The broom icon stays visible on muted threads like a tag — click it
   on any muted row to un-mute and let new ones like it surface in Doing again. A "Show muted only"
   filter (in the priority overflow menu) lists everything you've muted so you can find them later.
+  Muted threads — and ones that match a thread you muted — now stay quiet: they won't send you push
+  notifications or show up in your email digest, even when a new reply arrives.
 - Renamed the activity feed headers: "Doing" is now "Active" and "Activity" is now "Done". Same
   behavior — the wording is just clearer about what each section holds.
 - Activity section now respects the bumps from reading and finishing threads. Marking a thread done,

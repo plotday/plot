@@ -81,6 +81,10 @@ notificationContent.get("/notification-content", async (c) => {
       WHERE tu.user_id = ${userId}::uuid
         AND tu.read_at IS NULL
         AND (tu.importance >= 50 OR tu.urgent = TRUE)
+        -- Skip muted threads: the seed the user muted directly AND every
+        -- thread matched to that mute rule. Read-state suppression alone
+        -- isn't enough — a new reply re-marks a muted thread unread.
+        AND tp.mute_by_thread_id IS NULL
         AND (
           focus.notification_cleared_at IS NULL
           OR date_trunc('milliseconds', tu.updated_at) > focus.notification_cleared_at

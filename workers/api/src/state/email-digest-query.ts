@@ -64,6 +64,10 @@ export async function selectDigestThreads(
     WHERE tu.user_id = ${userId}::uuid
       AND tu.read_at IS NULL
       AND (tu.importance >= 50 OR tu.urgent = TRUE)
+      -- Skip muted threads: the seed the user muted directly AND every
+      -- thread matched to that mute rule. A new reply re-marks a muted
+      -- thread unread, so read-state suppression alone isn't enough.
+      AND tp.mute_by_thread_id IS NULL
       AND t.archived_at IS NULL
       AND (t.draft = false OR t.created_by = ${userId}::uuid)
       AND (

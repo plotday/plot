@@ -44,6 +44,10 @@ export async function maybeSendCtaPush(
     .select("user_id")
     .where("thread_id", "=", note.threadId)
     .where("revoked_at", "is", null)
+    // Respect mute: a thread the user muted directly, or one matched to a
+    // mute rule, should never wake the client — even for a time-sensitive
+    // cta. (Login codes rarely match a mute rule's title/embedding anyway.)
+    .where("mute_by_thread_id", "is", null)
     .execute();
 
   const seen = new Set<string>();
