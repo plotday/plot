@@ -3,14 +3,12 @@ import {
   ActionType,
   type Link,
   type Note,
-  type NoteWriteBackResult,
   type Thread,
-  ThreadMeta,
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
-import { Connector } from "@plotday/twister/connector";
+import { Connector, type CreateLinkDraft, type NoteWriteBackResult } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
   AuthProvider,
@@ -23,19 +21,27 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+import { Files } from "@plotday/twister/tools/files";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 
 import {
   listProjects,
   listTasks,
+  listSections,
+  listComments,
   getTask,
+  createTask,
+  updateTask,
   closeTask,
   reopenTask,
   createComment,
   updateComment,
+  uploadFile,
   listCollaborators,
   verifyWebhookSignature,
   type TodoistTask,
+  type TodoistSection,
+  type TodoistComment,
   type TodoistCollaborator,
 } from "./api";
 
@@ -45,6 +51,24 @@ type SyncState = {
   initialSync: boolean;
   syncHistoryMin?: string;
 };
+
+/**
+ * Map a Todoist task to a Plot status id.
+ *
+ * - A completed task is `"done"` regardless of its section (the terminal).
+ * - An open task in a section uses the section id as its status (matching the
+ *   per-channel statuses emitted in {@link Todoist.getChannels}).
+ * - An open task with no section falls back to `"open"`.
+ *
+ * Pure function — exported for unit testing.
+ */
+export function mapTaskStatus(
+  task: Pick<TodoistTask, "is_completed" | "section_id">
+): string {
+  if (task.is_completed) return "done";
+  if (task.section_id) return task.section_id;
+  return "open";
+}
 
 /**
  * Todoist connector
@@ -71,6 +95,11 @@ export class Todoist extends Connector<Todoist> {
       label: "Task",
       noteLabel: "Comment",
       sharingModel: "thread" as const,
+      composePlaceholder: "Create a Todoist task",
+      composeVerb: "Create",
+      replyPlaceholder: "Add a comment",
+      replyVerb: "Comment",
+      supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/todoist-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/todoist.svg",
       statuses: [
@@ -78,6 +107,7 @@ export class Todoist extends Connector<Todoist> {
         { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: true,
+      compose: { status: "open" },
     },
   ];
 
@@ -86,6 +116,7 @@ export class Todoist extends Connector<Todoist> {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.todoist.com/*"] }),
       tasks: build(Tasks),
+      files: build(Files),
     };
   }
 
@@ -101,14 +132,65 @@ export class Todoist extends Connector<Todoist> {
   }
 
   /**
-   * Returns available Todoist projects as channels.
+   * Returns available Todoist projects as channels, each with per-project
+   * sections surfaced as dynamic statuses (mirroring Linear's per-team
+   * workflow states). The status set per project is:
+   * `[open, ...sections (status = section.id), done]`, with `compose.status`
+   * defaulting to `open`. Section-less projects keep just `open`/`done`.
    */
   async getChannels(
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
     const projects = await listProjects(token.token);
-    return projects.map((p) => ({ id: p.id, title: p.name }));
+    return Promise.all(
+      projects.map(async (p) => {
+        let sections: TodoistSection[] = [];
+        try {
+          sections = await listSections(token.token, p.id);
+        } catch {
+          // Section-less projects or no access — fall back to open/done.
+        }
+        sections.sort((a, b) => a.order - b.order);
+
+        const statuses = [
+          { status: "open", label: "Open", icon: "todo" as StatusIcon },
+          ...sections.map((s) => ({
+            status: s.id,
+            label: s.name,
+            icon: "todo" as StatusIcon,
+          })),
+          { status: "done", label: "Done", done: true as const, icon: "done" as StatusIcon },
+        ];
+
+        return {
+          id: p.id,
+          title: p.name,
+          linkTypes: [
+            {
+              type: "task",
+              label: "Task",
+              noteLabel: "Comment",
+              // Channel-level configs fully shadow the twist-level linkTypes
+              // in getTypeConfig(), so the sharing model and capability flags
+              // must be repeated here — otherwise tasks resolve to defaults
+              // and lose assignee/file/compose behavior.
+              sharingModel: "thread" as const,
+              composePlaceholder: "Create a Todoist task",
+              composeVerb: "Create",
+              replyPlaceholder: "Add a comment",
+              replyVerb: "Comment",
+              supportsFileAttachments: true,
+              logo: "https://api.iconify.design/logos/todoist-icon.svg",
+              logoMono: "https://api.iconify.design/simple-icons/todoist.svg",
+              statuses,
+              supportsAssignee: true,
+              compose: { status: "open" },
+            },
+          ],
+        };
+      })
+    );
   }
 
   /**
@@ -245,6 +327,9 @@ export class Todoist extends Connector<Todoist> {
         subtasks,
         collaborators
       );
+      // Backfill existing comments as notes on initial sync (webhooks only
+      // deliver go-forward comments). Best-effort per task.
+      await this.backfillComments(token, task.id, projectId, link, state.initialSync);
       await this.tools.integrations.saveLink(link);
     }
 
@@ -259,6 +344,7 @@ export class Todoist extends Connector<Todoist> {
             [],
             collaborators
           );
+          await this.backfillComments(token, subtask.id, projectId, link, state.initialSync);
           await this.tools.integrations.saveLink(link);
         }
       }
@@ -266,6 +352,42 @@ export class Todoist extends Connector<Todoist> {
 
     // Sync complete
     await this.clear(`sync_state_${projectId}`);
+    await this.tools.integrations.channelSyncCompleted(projectId);
+  }
+
+  /**
+   * Fetch a task's existing comments and append them to the link's notes as
+   * `comment-<id>` notes so history backfills on initial sync. Inbound file
+   * attachments on comments are emitted as `fileRef` actions.
+   *
+   * Best-effort: comment listing can fail for shared/limited projects; we log
+   * and continue without comment history rather than failing the whole sync.
+   */
+  private async backfillComments(
+    token: string,
+    taskId: string,
+    projectId: string,
+    link: NewLinkWithNotes,
+    initialSync: boolean
+  ): Promise<void> {
+    // History backfill is only needed on the initial sync; go-forward
+    // comments arrive via the note:added/note:updated webhook.
+    if (!initialSync) return;
+
+    let comments: TodoistComment[] = [];
+    try {
+      comments = await listComments(token, taskId);
+    } catch (error) {
+      console.warn("Failed to backfill Todoist comments:", error);
+      return;
+    }
+
+    const notes = (link.notes ?? []) as any[];
+    for (const comment of comments) {
+      const note = await this.buildCommentNote(comment, projectId);
+      notes.push(note);
+    }
+    link.notes = notes;
   }
 
   /**
@@ -332,11 +454,13 @@ export class Todoist extends Connector<Todoist> {
           collaborators
         );
 
-        // Handle completion status from webhook
+        // Handle completion status from webhook. item:completed/uncompleted
+        // events override the section-derived status (the fetched task may
+        // momentarily lag the webhook's terminal transition).
         if (eventName === "item:completed") {
           link.status = "done";
         } else if (eventName === "item:uncompleted") {
-          link.status = "open";
+          link.status = mapTaskStatus({ ...task, is_completed: false });
         }
 
         await this.tools.integrations.saveLink(link);
@@ -348,13 +472,25 @@ export class Todoist extends Connector<Todoist> {
       await this.tools.integrations.archiveLinks({
         meta: { taskId: eventData.id },
       });
-    } else if (eventName === "note:added") {
-      // Comment added to a task
+    } else if (eventName === "note:added" || eventName === "note:updated") {
+      // Comment added to / edited on a task. Both upsert the same
+      // `comment-<id>` note keyed by the comment id, so an edit replaces the
+      // existing note's content rather than appending a new one.
       try {
         const taskId = eventData.item_id || eventData.task_id;
         if (!taskId) return;
 
         const source = `todoist:task:${taskId}`;
+        const note = await this.buildCommentNote(
+          {
+            id: eventData.id,
+            task_id: taskId,
+            content: eventData.content || "",
+            posted_at: eventData.posted_at,
+            attachment: eventData.file_attachment ?? eventData.attachment ?? null,
+          },
+          projectId
+        );
 
         const link: NewLinkWithNotes = {
           source,
@@ -367,16 +503,7 @@ export class Todoist extends Connector<Todoist> {
             syncProvider: "todoist",
             channelId: projectId,
           },
-          notes: [
-            {
-              key: `comment-${eventData.id}`,
-              content: eventData.content || "",
-              contentType: "text" as const,
-              created: eventData.posted_at
-                ? new Date(eventData.posted_at)
-                : undefined,
-            } as any,
-          ],
+          notes: [note],
         };
 
         await this.tools.integrations.saveLink(link);
@@ -384,6 +511,51 @@ export class Todoist extends Connector<Todoist> {
         console.warn("Failed to process Todoist comment webhook:", error);
       }
     }
+  }
+
+  /**
+   * Build a Plot note for a Todoist comment. Shared by the initial-sync
+   * backfill and the `note:added`/`note:updated` webhook paths so both emit
+   * an identical note shape (content verbatim as plain text, matching the
+   * `externalContent` baseline returned from `onNoteCreated`/`onNoteUpdated`).
+   *
+   * A file attachment on the comment is emitted as a `fileRef` action and its
+   * URL cached under `todoist:att-url:<ref>` so `downloadAttachment` can
+   * redirect to it.
+   */
+  private async buildCommentNote(
+    comment: TodoistComment,
+    projectId: string
+  ): Promise<any> {
+    const note: any = {
+      key: `comment-${comment.id}`,
+      // Verbatim plain text — matches the write-back baseline (Todoist echoes
+      // the stored content, which is plain text).
+      content: comment.content || "",
+      contentType: "text" as const,
+      created: comment.posted_at ? new Date(comment.posted_at) : undefined,
+    };
+
+    const attachment = comment.attachment;
+    if (attachment?.file_url) {
+      // Build an opaque fileRef (`<projectId>:<commentId>`); cache the URL so
+      // downloadAttachment can redirect to it.
+      const ref = `${projectId}:${comment.id}`;
+      // Intentionally persisted: downloadAttachment reads this URL later (no
+      // request context to refetch it), so this cache is retained across calls.
+      await this.set(`todoist:att-url:${ref}`, attachment.file_url);
+      note.actions = [
+        {
+          type: ActionType.fileRef,
+          ref,
+          fileName: attachment.file_name ?? "attachment",
+          fileSize: null,
+          mimeType: attachment.file_type ?? "application/octet-stream",
+        },
+      ];
+    }
+
+    return note;
   }
 
   /**
@@ -433,14 +605,18 @@ export class Todoist extends Connector<Todoist> {
     // Build notes
     const notes: any[] = [];
 
-    // Description note
-    if (task.description && task.description.trim().length > 0) {
-      notes.push({
-        key: "description",
-        content: task.description,
-        contentType: "text" as const,
-      });
-    }
+    // Description note. Always emit the "description"-keyed note (content null
+    // when empty) so description edits from Plot have a note to round-trip
+    // through onNoteUpdated, mirroring Linear. Content is verbatim plain text
+    // to match the externalContent baseline written back on edit.
+    const hasDescription =
+      !!task.description && task.description.trim().length > 0;
+    notes.push({
+      key: "description",
+      content: hasDescription ? task.description : null,
+      contentType: "text" as const,
+      author: authorContact,
+    });
 
     // Subtask notes with Todo tag and assignee
     for (const subtask of subtasks) {
@@ -488,7 +664,7 @@ export class Todoist extends Connector<Todoist> {
       sourceUrl: task.url,
       author: authorContact,
       assignee: assigneeContact ?? null,
-      status: task.is_completed ? "done" : "open",
+      status: mapTaskStatus(task),
       notes,
       preview: task.description?.slice(0, 200) || null,
       ...(task.due
@@ -507,44 +683,220 @@ export class Todoist extends Connector<Todoist> {
   }
 
   /**
-   * Write back link status changes to Todoist.
+   * Build an in-memory email→collaborator-id index for a project by fetching
+   * its collaborator list once. NOT persisted across calls: a stale store
+   * cache (e.g. after a disable/re-enable or re-auth to a different account)
+   * could otherwise resolve an email to a collaborator id from the old
+   * account. Collaborator lists are small, so a fresh fetch per write-back is
+   * cheap. Returns an empty map if the list can't be fetched.
+   */
+  private async buildCollaboratorIndex(
+    token: string,
+    projectId: string
+  ): Promise<Map<string, string>> {
+    let collaborators: TodoistCollaborator[] = [];
+    try {
+      collaborators = await listCollaborators(token, projectId);
+    } catch {
+      return new Map();
+    }
+    const index = new Map<string, string>();
+    for (const c of collaborators) {
+      index.set(c.email, c.id);
+    }
+    return index;
+  }
+
+  /**
+   * Create a new Todoist task from a Plot thread.
+   *
+   * `draft.channelId` is the project id; `draft.status` is either a section id
+   * (from the dynamic per-channel statuses) or one of the `open`/`done`
+   * fallbacks. A new task is always created open (Todoist has no "create
+   * completed" path), so `done` is treated as no section; a section id is set
+   * via `section_id`.
+   */
+  async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== "task") return null;
+
+    const projectId = draft.channelId;
+    const token = await this.getToken(projectId);
+
+    // A status that isn't the open/done fallback is a section id.
+    const sectionId =
+      draft.status && draft.status !== "open" && draft.status !== "done"
+        ? draft.status
+        : undefined;
+
+    const description = draft.noteContent
+      ? markdownToPlainText(draft.noteContent)
+      : undefined;
+
+    const task = await createTask(token, draft.title, {
+      project_id: projectId,
+      ...(description !== undefined ? { description } : {}),
+      ...(sectionId !== undefined ? { section_id: sectionId } : {}),
+    });
+
+    const actions: Action[] = [
+      {
+        type: ActionType.external,
+        title: "Open in Todoist",
+        url: task.url,
+      },
+    ];
+
+    return {
+      source: `todoist:task:${task.id}`,
+      type: "task",
+      title: task.content,
+      status: draft.status ?? "open",
+      created: task.created_at ? new Date(task.created_at) : undefined,
+      channelId: projectId,
+      meta: {
+        taskId: task.id,
+        projectId,
+        syncProvider: "todoist",
+        channelId: projectId,
+      },
+      actions,
+      sourceUrl: task.url,
+      // Bind the opening note to the task description (the same "description"
+      // key sync-in emits) so edits round-trip via onNoteUpdated. The baseline
+      // is the description Todoist stored, verbatim, matching transformTask.
+      originatingNote: {
+        key: "description",
+        externalContent: task.description ? task.description : undefined,
+      },
+    };
+  }
+
+  /**
+   * Write back link changes (title, assignee, section, completion) to Todoist.
+   *
+   * Best-effort: a failed external write is reconciled on the next sync-in
+   * (Todoist is the source of truth).
    */
   async onLinkUpdated(link: Link): Promise<void> {
     const taskId = link.meta?.taskId as string | undefined;
     const projectId = link.meta?.projectId as string | undefined;
     if (!taskId || !projectId) return;
 
-    const token = await this.getToken(projectId);
-    const isDone = link.status === "done";
+    try {
+      const token = await this.getToken(projectId);
+      const isDone = link.status === "done";
 
-    if (isDone) {
-      await closeTask(token, taskId);
-    } else {
-      await reopenTask(token, taskId);
+      // Write title / assignee / section via task update. `done` is a terminal
+      // handled by close/reopen below, not a section, so omit section_id then.
+      const fields: Parameters<typeof updateTask>[2] = {};
+      if (link.title) fields.content = link.title;
+
+      if (!link.assignee) {
+        fields.assignee_id = null;
+      } else if (link.assignee.email) {
+        // Fetch the collaborator list fresh for this write-back (small list,
+        // not persisted) and resolve the email to a current collaborator id.
+        const collaboratorIndex = await this.buildCollaboratorIndex(
+          token,
+          projectId
+        );
+        const assigneeId = collaboratorIndex.get(link.assignee.email);
+        // Only send when we resolved a collaborator; otherwise leave unchanged
+        // (Todoist rejects unknown assignee ids).
+        if (assigneeId) fields.assignee_id = assigneeId;
+      }
+
+      if (link.status && link.status !== "open" && link.status !== "done") {
+        fields.section_id = link.status;
+      } else if (link.status === "open") {
+        // Clearing back to the no-section "open" status removes the section.
+        fields.section_id = null;
+      }
+
+      if (Object.keys(fields).length > 0) {
+        await updateTask(token, taskId, fields);
+      }
+
+      // Completion is a separate close/reopen call (REST v2 has no
+      // is_completed field on the update endpoint). Only act on a real status:
+      // `done` closes; any other non-null status reopens (idempotent). A null
+      // status (title/assignee/section-only edit) leaves completion untouched.
+      if (isDone) {
+        await closeTask(token, taskId);
+      } else if (link.status != null) {
+        await reopenTask(token, taskId);
+      }
+    } catch (error) {
+      console.error(
+        "[todoist] onLinkUpdated write-back failed:",
+        error instanceof Error ? error.message : String(error)
+      );
     }
   }
 
   /**
-   * Write back new notes as Todoist comments.
+   * Write back new notes as Todoist comments, uploading any file attachments.
    *
    * Returns a {@link NoteWriteBackResult} so the runtime assigns the note's
    * key to `comment-<todoistCommentId>` (matching what sync-in uses) and
    * records the external sync baseline. Todoist stores comment content as
-   * plain text; hashing the returned `content` as `"text"` lines up with the
-   * sync-in path (webhook `note:added`) so the next incremental sync
+   * plain text; the returned `content` (echoed verbatim by Todoist) lines up
+   * with the sync-in path (`buildCommentNote`) so the next incremental sync
    * preserves Plot's (possibly markdown) note instead of overwriting it.
+   *
+   * File actions are uploaded via Todoist's `/uploads/add` endpoint and
+   * attached to the comment. Todoist allows a single `attachment` per comment,
+   * so each file is posted as its own comment (the first carries the body).
    */
   async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const taskId = thread.meta?.taskId as string | undefined;
     const projectId = thread.meta?.projectId as string | undefined;
-    if (!taskId || !projectId || !note.content) return;
+    if (!taskId || !projectId) return;
+
+    const fileActions = (note.actions ?? []).filter(
+      (a): a is Extract<Action, { type: typeof ActionType.file }> =>
+        a.type === ActionType.file
+    );
+
+    // Nothing to post (empty note with no files).
+    if (!note.content && fileActions.length === 0) return;
+
+    const token = await this.getToken(projectId);
 
     // Todoist stores comments as plain text, so render Plot markdown to
     // readable plain text (renumbered lists, mentions as @Name, etc.).
-    // Baseline round-trips through Todoist's echoed `content`.
-    const body = markdownToPlainText(note.content);
-    const token = await this.getToken(projectId);
-    const comment = await createComment(token, taskId, body);
+    const body = note.content ? markdownToPlainText(note.content) : "";
+
+    // Upload files first; each becomes a comment attachment. Todoist permits
+    // one attachment per comment, so the first comment carries the text body
+    // plus the first file, and subsequent files go in follow-up comments.
+    const uploaded: Array<{ file_name: string; file_type: string; file_url: string }> = [];
+    for (const action of fileActions) {
+      try {
+        const file = await this.tools.files.read(action.fileId);
+        const att = await uploadFile(token, file.data, file.fileName, file.mimeType);
+        uploaded.push({
+          file_name: att.file_name ?? file.fileName,
+          file_type: att.file_type ?? file.mimeType,
+          file_url: att.file_url,
+        });
+      } catch (e) {
+        console.error("Todoist file upload failed", action.fileId, e);
+      }
+    }
+
+    const firstAttachment = uploaded[0];
+    const comment = await createComment(token, taskId, body, firstAttachment);
+
+    // Post any remaining files as additional attachment-only comments.
+    for (const att of uploaded.slice(1)) {
+      try {
+        await createComment(token, taskId, "", att);
+      } catch (e) {
+        console.error("Todoist follow-up attachment comment failed", e);
+      }
+    }
+
     if (!comment?.id) return;
 
     return {
@@ -554,7 +906,13 @@ export class Todoist extends Connector<Todoist> {
   }
 
   /**
-   * Write back edits to existing Todoist comments.
+   * Write back edits from Plot. Handles two note kinds:
+   * - `description` → edits the task content (the `description` field).
+   * - `comment-<id>` → edits the existing Todoist comment.
+   *
+   * In both cases `externalContent` is the value Todoist echoes back (verbatim
+   * plain text), matching what sync-in emits for that note so the baseline
+   * hash lines up and the next sync-in preserves Plot's content.
    */
   async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const taskId = thread.meta?.taskId as string | undefined;
@@ -562,17 +920,47 @@ export class Todoist extends Connector<Todoist> {
     if (!taskId || !projectId) return;
     if (!note.key) return;
 
+    const token = await this.getToken(projectId);
+
+    // Description edit → update the task's description field.
+    if (note.key === "description") {
+      const body = note.content ? markdownToPlainText(note.content) : "";
+      const updated = await updateTask(token, taskId, { description: body });
+      return {
+        externalContent: updated.description ? updated.description : undefined,
+      };
+    }
+
     const match = note.key.match(/^comment-(.+)$/);
     if (!match) return;
     const commentId = match[1];
 
     const body = markdownToPlainText(note.content ?? "");
-    const token = await this.getToken(projectId);
     const comment = await updateComment(token, commentId, body);
 
     return {
       externalContent: comment?.content ?? body,
     };
+  }
+
+  /**
+   * Resolve a Todoist comment-attachment `fileRef` to a download URL.
+   *
+   * The ref (`<projectId>:<commentId>`) is emitted as an `ActionType.fileRef`
+   * action during inbound sync in `buildCommentNote`, which also caches the
+   * file URL under `todoist:att-url:<ref>`. Todoist attachment URLs are
+   * long-lived CDN URLs, so a redirect is safe.
+   */
+  override async downloadAttachment(ref: string): Promise<{ redirectUrl: string }> {
+    const url = await this.get<string>(`todoist:att-url:${ref}`);
+    if (!url) {
+      throw new Error(
+        `Unknown Todoist attachment: ${ref}. ` +
+          `The attachment may have been synced before file support was enabled. ` +
+          `Try re-syncing the Todoist connection.`
+      );
+    }
+    return { redirectUrl: url };
   }
 }
 
