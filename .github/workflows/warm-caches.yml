@@ -1,0 +1,74 @@
+name: Warm Caches
+
+# Populate the shared pnpm cache on `main` so PR workflows (Lint, Test API)
+# RESTORE it instead of each saving their own ~567 MB copy.
+#
+# Why this exists: GitHub only lets a PR run restore caches from its own ref
+# plus the base/default branch. Lint and Test API run only on `pull_request`,
+# so `main`'s cache scope never held a `node-cache-*` entry -> every PR
+# cold-missed and saved a duplicate. ~9 duplicates (~5 GB) pushed the repo over
+# the 10 GB cache limit, and GitHub then LRU-evicted the Flutter and
+# build_runner caches between releases (slow cold builds).
+#
+# This job runs the same pnpm/setup-node setup as lint.yml, so setup-node
+# computes the IDENTICAL cache key (node-cache-<os>-<arch>-pnpm-<lock-hash>) and
+# its post-step saves a warm copy to `main`. PRs sharing the lockfile then hit
+# that copy and skip saving. Scoped to lockfile/workflow changes so it only runs
+# when a new key is actually needed; constant PR reads keep the entry LRU-fresh.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "pnpm-lock.yaml"
+      - ".github/workflows/warm-caches.yml"
+
+# Only the latest main commit needs a warm cache; drop superseded runs.
+concurrency:
+  group: warm-caches
+  cancel-in-progress: true
+
+jobs:
+  warm-pnpm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            font_awesome_flutter
+
+      - name: Configure git for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      # Populate the pnpm content-addressable store (both workspaces share it) so
+      # setup-node's post-step saves a non-empty cache under the shared key. This
+      # mirrors lint.yml's install sequence to maximize store parity with what
+      # the PR workflows expect.
+      - name: Install dependencies (public/twister + root)
+        run: |
+          cd public && pnpm install --frozen-lockfile && cd ..
+          pnpm install --frozen-lockfile
