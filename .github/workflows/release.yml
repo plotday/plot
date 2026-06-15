@@ -19,6 +19,10 @@ on:
         description: 'Release Windows'
         type: boolean
         default: true
+      submit_for_review:
+        description: 'Submit uploaded store builds for review/certification (currently Windows only; off = upload as draft)'
+        type: boolean
+        default: false
 
 concurrency:
   group: native-release
@@ -1234,6 +1238,56 @@ jobs:
             "$MSIX_FILE" \
             "$ZIP_FILE"
 
+      - name: Check Microsoft Store credentials
+        id: ms-store
+        shell: bash
+        env:
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+        run: |
+          # Secrets cannot be referenced in step `if:` expressions, so gate the
+          # Store steps on a plain output derived from a non-empty client ID.
+          # Until the Partner Center secrets are added, this no-ops cleanly so a
+          # Windows release is never blocked by missing Store credentials.
+          if [ -n "$AZURE_AD_APPLICATION_CLIENT_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Microsoft Store credentials not configured — skipping Store publish."
+          fi
+
+      - name: Set up Microsoft Store Developer CLI
+        if: steps.ms-store.outputs.enabled == 'true'
+        uses: microsoft/setup-msstore-cli@v1.2
+
+      - name: Publish MSIX to Microsoft Store
+        if: steps.ms-store.outputs.enabled == 'true'
+        shell: bash
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+          MSIX_FILE="Plot-${{ needs.prepare-release.outputs.release_version }}.msix"
+
+          # Authenticate msstore with the Partner Center Entra app credentials.
+          msstore reconfigure \
+            --tenantId "$AZURE_AD_TENANT_ID" \
+            --sellerId "$SELLER_ID" \
+            --clientId "$AZURE_AD_APPLICATION_CLIENT_ID" \
+            --clientSecret "$AZURE_AD_APPLICATION_SECRET"
+
+          # Product 9PKTCSN8SNZF = Plot in Partner Center (same ID linked in the
+          # build summary below). Default leaves the submission as a draft;
+          # submit_for_review=true commits it to certification.
+          if [ "$SUBMIT_FOR_REVIEW" = "true" ]; then
+            msstore publish "$MSIX_FILE" -id 9PKTCSN8SNZF
+          else
+            msstore publish "$MSIX_FILE" -id 9PKTCSN8SNZF --noCommit
+          fi
+
       - name: Tag store submission
         shell: bash
         run: |
@@ -1252,6 +1306,15 @@ jobs:
             echo "- MSIX: https://download.plot.day/windows"
             echo "- Portable ZIP: https://download.plot.day/windows-portable"
             echo "- Manifest: https://download.plot.day/latest-windows.json"
+            echo ""
+            echo "### Microsoft Store"
+            if [ "${{ steps.ms-store.outputs.enabled }}" != "true" ]; then
+              echo "- ⏭️ Skipped (Store credentials not configured)"
+            elif [ "${{ inputs.submit_for_review }}" = "true" ]; then
+              echo "- ✅ Uploaded and submitted for certification"
+            else
+              echo "- 📝 Uploaded as draft — submit it in Partner Center"
+            fi
             echo ""
             echo "### Admin"
             echo "- [Microsoft Partner Center](https://partner.microsoft.com/en-us/dashboard/products/9PKTCSN8SNZF/)"
