@@ -409,6 +409,26 @@ jobs:
       SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
 
     steps:
+      # The Shorebird Android release (Flutter engine download + Gradle caches +
+      # NDK + AAB outputs) overflows the runner's root filesystem, failing with
+      # "No space left on device" during mergeReleaseNativeLibs/ExtractJniTransform.
+      # Reclaim space by removing pre-installed toolchains this job never uses.
+      # Runs first so nothing it deletes is recreated by later setup steps; it
+      # deliberately leaves the Android SDK/NDK, Java, Flutter, and Rust intact.
+      - name: Free up disk space
+        run: |
+          echo "Disk space before cleanup:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc /usr/local/.ghcup
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium /usr/local/share/chrome_driver
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          echo "Disk space after cleanup:"
+          df -h /
+
       - name: Generate GitHub App Token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -869,6 +889,14 @@ jobs:
     env:
       SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
       WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+      # cl.exe reads the CL env var and prepends these options to every
+      # compilation. The flutter_inappwebview_windows plugin still includes
+      # <experimental/coroutine>, which the MSVC toolchain on windows-latest
+      # (VS18 / 14.51) now rejects with a hard error (STL1011 / C2338) unless
+      # this macro is defined. This is Microsoft's documented suppression and
+      # reaches the plugin build nested inside Shorebird -> Flutter -> CMake
+      # without patching pub-cache source.
+      CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
       R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
       R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
