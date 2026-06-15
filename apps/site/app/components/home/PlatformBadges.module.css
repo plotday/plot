@@ -1,0 +1,19 @@
+.item {
+  white-space: nowrap;
+}
+
+.label {
+  font-size: rem(13px);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+/* Muted, low-contrast on light hero — present but non-distracting. */
+.muted {
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));
+}
+
+/* Readable on the brand-colored closing CTA. */
+.onDark {
+  color: rgba(255, 255, 255, 0.85);
+}

@@ -1,28 +1,30 @@
-<b>Stop running notification to notification. Start making real progress.</b>
+Your most important work isn't the newest email or the loudest notification. It's scattered across a dozen apps, waiting on you. Plot brings it together so you can see what needs you and make real progress on it.
 
-Plot is the prioritized workspace that ambitious people and teams use to move work forward. Unified views of tasks, documents, messages, and meetings deliver clarity on what to do next with the context to get it done.
+Plot pulls every conversation that needs a human reply — email, team chat, and the comment threads inside the tools you already use — into one place, organized around the roles and goals you care about. Reply, react, assign, and finish work right where it lands, without opening five apps full of distractions.
 
-<b>PRIORITIZED FOR PROGRESS</b>
+Each day holds the same number of hours. Plot helps you invest them in the work that matters, and keeps everything else from spending them for you.
 
-- <b>Shared Priorities</b>: Invite teammates to collaborate on tasks, meetings, and decisions. Everyone sees what's important and what comes next.
-- <b>Personalized Focus</b>: Each person gets a tailored view highlighting their next action—no digging through noise to find what you should work on.
-- <b>Unified Timeline</b>: All your activity and upcoming actions in one place. Meetings, tasks, notes, and discussions flow together naturally.
-- <b>Context When You Need It</b>: Zoom into a specific priority to see every detail, or step back to view the big picture. Notes and discussions live right alongside the work.
+<b>WHAT YOU CAN DO</b>
+• Bring email, team chat, meeting notes, and app comments into one organized list
+• Reply, react, comment, and change status from Plot — it posts back through the original tool
+• Mark anything To do, schedule it for later, or finish it — so nothing gets dropped
+• Group your work under roles and focuses, so the right things get your best attention
+• Let low-signal mail — newsletters, receipts, promotions — wait in a muted FYI focus instead of pinging you
+• Set when interruptions are allowed; genuinely urgent threads still break through
+• See your whole day — calendar events and scheduled work — on one agenda
+• Search across everything, wherever it came from
+• Chat with Claude, ChatGPT, or Gemini right alongside your work — or turn AI off entirely
 
-<b>DESIGNED FOR CLARITY AND MOMENTUM</b>
+<b>WORKS WITH YOUR TOOLS</b>
+Connect Gmail, Google Calendar, Google Chat, Outlook Calendar, Microsoft Teams, Slack, Linear, Notion, PostHog, and Apple Calendar. WhatsApp, Instagram, and LinkedIn messaging are available too. Read and reply in one place; jump to the source whenever you need it.
 
-- <b>Flexible Timeboxing</b>: Plan your day without rigid scheduling. Block focus time for specific priorities and easily reprioritize as things change.
-- <b>Focused Meetings</b>: See scheduled meetings with all related notes and actions. Turn conversations into progress automatically.
-- <b>Smart Rescheduling</b>: Push actions to when you'll actually handle them, keeping your focus on what matters today.
-- <b>Better Than Busy</b>: When there is far more to do than time to do it, Plot helps you focus on what's most important while ensuring the details don't slip through the cracks.
+<b>WORKS OFFLINE, ON EVERY DEVICE</b>
+Read, write, organize, and finish work with no connection — everything syncs the moment you're back online. Plot runs on Android, iPhone, iPad, Mac, Windows, and the web, with a consistent experience and platform-native touches. Share into Plot from other apps through the Android share sheet.
 
-<b>WORKS WITH EVERYTHING YOU ALREADY USE</b>
+<b>WITH PEOPLE, NOT AROUND THEM</b>
+Great work happens with people. Share a Plot thread with anyone for free, bring the right people in, and move work forward together — no per-seat fees, no history limits.
 
-- <b>No Migration Required</b>: Connect your existing chat, calendar, tasks, and notes apps. Plot brings them together without forcing your team to switch.
-- <b>Plot Twists</b>: Integrate Slack, Google Calendar, Asana, Notion, and more. Create custom automations and workflows.
-- <b>Cross-Platform</b>: Access your workspace on Mac, Windows, iOS, Android, and web.
-- <b>Work Offline</b>: Your information is always available, even without internet. Work anywhere, sync everywhere.
+<b>YOUR CALL</b>
+Choose your AI model — Claude, ChatGPT, or Gemini — or turn it off entirely. Bring your own key. Your data stays yours: connections use standard OAuth, data is encrypted in transit, and access is enforced at the database level.
 
-<b>LESS TALK, MORE ROCK</b>
-
-Teams use Plot to replace endless chat and meetings with focused collaboration that drives real outcomes. When communication lives alongside priorities and action, you spend less time talking and more time doing.
+Plot is free to start. Get back to the work only you can do.

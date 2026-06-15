@@ -25,11 +25,45 @@
   max-width: 600px;
 }
 
+.searchInput {
+  border-color: light-dark(
+    var(--mantine-color-gray-3),
+    var(--mantine-color-dark-4)
+  );
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--mantine-color-brand-5);
+  box-shadow: light-dark(
+    0 0 0 3px rgba(var(--mantine-color-brand-5-rgb), 0.15),
+    0 0 0 3px rgba(var(--mantine-color-brand-5-rgb), 0.25)
+  );
+}
+
 .categoryChips {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--mantine-spacing-xs);
+  gap: var(--mantine-spacing-sm);
+}
+
+.chip {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.chip:not(.chipActive):hover {
+  background-color: light-dark(
+    var(--mantine-color-gray-2),
+    var(--mantine-color-dark-4)
+  );
 }
 
 .connectionGrid {
@@ -65,53 +99,78 @@
     var(--mantine-color-dark-7)
   );
   text-align: center;
-  transition:
-    border-color 150ms ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
+}
 
-  &:hover {
-    border-color: light-dark(
-      var(--mantine-color-gray-4),
-      var(--mantine-color-dark-3)
-    );
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-  }
+.connectionLogoTile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: light-dark(
+    var(--mantine-color-gray-0),
+    rgba(255, 255, 255, 0.04)
+  );
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-2), rgba(255, 255, 255, 0.08));
+  box-shadow: light-dark(
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.35)
+  );
 }
 
 .connectionLogo {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
 }
 
 .availableBadge {
-  font-size: rem(10px);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--mantine-color-green-6);
-  background-color: light-dark(
-    var(--mantine-color-green-0),
-    rgba(var(--mantine-color-green-9-rgb), 0.2)
-  );
-  padding: 2px 8px;
-  border-radius: var(--mantine-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: rem(12px);
+  font-weight: 600;
+  color: light-dark(var(--mantine-color-green-7), var(--mantine-color-green-4));
+}
+
+.availableBadge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--mantine-color-green-6);
+  box-shadow: 0 0 0 3px
+    light-dark(
+      var(--mantine-color-green-1),
+      rgba(var(--mantine-color-green-9-rgb), 0.3)
+    );
 }
 
 .premiumBadge {
-  font-size: rem(10px);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--mantine-color-brand-7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: rem(12px);
+  font-weight: 600;
+  color: light-dark(var(--mantine-color-brand-7), var(--mantine-color-brand-3));
+}
+
+.premiumBadge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background-color: light-dark(
-    var(--mantine-color-brand-0),
-    rgba(var(--mantine-color-brand-9-rgb), 0.2)
+    var(--mantine-color-brand-6),
+    var(--mantine-color-brand-4)
   );
-  padding: 2px 8px;
-  border-radius: var(--mantine-radius-sm);
+  box-shadow: 0 0 0 3px
+    light-dark(
+      var(--mantine-color-brand-0),
+      rgba(var(--mantine-color-brand-9-rgb), 0.25)
+    );
 }
 
 .badgeRow {

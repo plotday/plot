@@ -1,7 +1,7 @@
 .section {
   background-color: light-dark(
-    var(--mantine-color-white),
-    var(--mantine-color-dark-7)
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
   );
 }
 
@@ -10,12 +10,13 @@
   margin: 0 auto;
   padding: calc(var(--mantine-spacing-xl) * 2);
   background: light-dark(
-    var(--mantine-color-gray-0),
-    var(--mantine-color-dark-6)
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
   );
   border: 1px solid
     light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
   border-radius: var(--mantine-radius-lg);
+  box-shadow: var(--shadow-md);
 }
 
 .sectionTitle {
@@ -28,12 +29,4 @@
 .sectionBody {
   color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
   line-height: 1.7;
-}
-
-.link {
-  color: light-dark(
-    var(--mantine-color-brand-6),
-    var(--mantine-color-brand-4)
-  );
-  font-weight: 500;
 }

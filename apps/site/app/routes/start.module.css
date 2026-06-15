@@ -50,8 +50,7 @@
   );
   text-decoration: none;
   color: inherit;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease,
-    transform 0.2s ease;
+  transition: background-color 0.2s ease;
   cursor: pointer;
 }
 
@@ -64,8 +63,6 @@
       var(--mantine-color-dark-6)
     )
   );
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 
 .primaryCard {
@@ -90,11 +87,6 @@
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
-}
-
-.platformCardDisabled:hover {
-  transform: none;
-  box-shadow: none;
 }
 
 .platformIcon {

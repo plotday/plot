@@ -5,6 +5,7 @@ import { marked } from "marked";
 // unsanitized HTML output is safe here. Do NOT point these ?raw imports at any
 // user-supplied content without adding sanitization first.
 import featuresMd from "./internal-docs/features.md?raw";
+import storeListingsMd from "./internal-docs/store-listings.md?raw";
 import updatesMd from "./internal-docs/updates.md?raw";
 import voiceMd from "./internal-docs/voice.md?raw";
 
@@ -29,4 +30,8 @@ export function renderUpdates(): InternalDocContent {
 
 export function renderVoice(): InternalDocContent {
   return render(voiceMd);
+}
+
+export function renderStoreListings(): InternalDocContent {
+  return render(storeListingsMd);
 }

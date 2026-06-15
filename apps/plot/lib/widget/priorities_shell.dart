@@ -14,6 +14,7 @@ import 'package:plot/router.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/page/search.dart' show SearchPage;
 import 'package:plot/store/store.dart';
+import 'package:plot/util/priority_nav.dart' show highlightTabForActivityPage;
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/widget/icon.dart';
@@ -200,8 +201,21 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
       case _kTabMore:
         return slots.indexOf(NavSlot.more);
       default:
-        // Activity tab — no highlight unless on /new (handled above).
-        return -1;
+        // Activity tab (a /p/:id priority page or its thread list) has no
+        // bottom-nav slot of its own. Keep the tab the user drilled in from
+        // highlighted — the same tab the back gesture returns to — so the
+        // thread list doesn't drop the Focus/Agenda highlight. A deep-link
+        // arrival has no recorded origin and stays unhighlighted.
+        switch (highlightTabForActivityPage(
+          sourceTab: PrioritiesShell.sourceTab,
+        )) {
+          case _kTabPriorities:
+            return slots.indexOf(NavSlot.focuses);
+          case _kTabAgenda:
+            return slots.indexOf(NavSlot.agenda);
+          default:
+            return -1;
+        }
     }
   }
 

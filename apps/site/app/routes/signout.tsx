@@ -2,6 +2,15 @@ import { useClerk } from "@clerk/react-router";
 import { useEffect } from "react";
 import { useSearchParams } from "react-router";
 
+import type { Route } from "./+types/signout";
+
+export function meta(_: Route.MetaArgs) {
+  return [
+    { title: "Signing out | Plot" },
+    { name: "robots", content: "noindex" },
+  ];
+}
+
 /**
  * Validates that a returnTo URL is safe to redirect to.
  * Only allows redirects to plot.day subdomains and relative paths.

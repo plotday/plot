@@ -80,6 +80,40 @@ void main() {
     });
   });
 
+  group('highlightTabForActivityPage', () {
+    test('keeps Focus highlighted when drilled in from Priorities', () {
+      // /priorities → tap focus → thread list on the Activity tab. The
+      // Activity tab has no bottom-nav slot, so the highlight stays on
+      // the originating Focus tab.
+      expect(
+        highlightTabForActivityPage(sourceTab: PriorityTabs.priorities),
+        PriorityTabs.priorities,
+      );
+    });
+
+    test('keeps Agenda highlighted when drilled in from Agenda', () {
+      expect(
+        highlightTabForActivityPage(sourceTab: PriorityTabs.agenda),
+        PriorityTabs.agenda,
+      );
+    });
+
+    test('no highlight for a deep-link arrival (null source)', () {
+      // Arriving directly at /p/X with no recorded origin: no tab can
+      // honestly claim the highlight.
+      expect(highlightTabForActivityPage(sourceTab: null), isNull);
+    });
+
+    test('no highlight when the source is the Activity tab itself', () {
+      // Defensive: the source tracker never records Activity, but if it
+      // did there is no Activity slot to highlight.
+      expect(
+        highlightTabForActivityPage(sourceTab: PriorityTabs.activity),
+        isNull,
+      );
+    });
+  });
+
   group('PriorityTabs', () {
     test('tab indices match the AutoTabsRouter declaration order in '
         'PrioritiesShell', () {

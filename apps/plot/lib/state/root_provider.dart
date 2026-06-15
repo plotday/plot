@@ -24,6 +24,7 @@ import 'package:plot/widget/root_menu_bar.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/main.dart' show navigatorKey, setNavigatorKey;
 import 'package:plot/util/splash.dart';
+import 'package:plot/util/window_title.dart';
 import 'package:plot/widget_bridge/widget_bridge.dart';
 import 'logging.dart';
 
@@ -76,6 +77,7 @@ class RootProviderState extends State<RootProvider> {
 
   @override
   void dispose() {
+    Role.cache.removeListener(_applyWindowTitle);
     _nowBlocListener?.call();
     _contextPriorityListener?.cancel();
     _reAuthSubscription?.cancel();
@@ -86,9 +88,15 @@ class RootProviderState extends State<RootProvider> {
 
   void _setupNowBlocListener(ThemeBloc themeBloc) {
     _nowBlocListener?.call();
+    // Refresh the window/tab title once the role cache warms (so the
+    // `[Role] ›` prefix appears even when roles finish syncing after the
+    // first navigation) and whenever roles are added/renamed/removed.
+    Role.cache.removeListener(_applyWindowTitle);
+    Role.cache.addListener(_applyWindowTitle);
     _nowBlocListener = nowBloc.stream.listen((state) {
       if (state is NowLoaded && state.context != null) {
         themeBloc.setPriorityColor(state.context!.displayColor);
+        setWindowTitle(windowTitleForFocus(state.context));
 
         // Set up Priority watcher to detect color changes
         _contextPriorityListener?.cancel();
@@ -96,16 +104,30 @@ class RootProviderState extends State<RootProvider> {
           priority,
         ) {
           themeBloc.setPriorityColor(priority.displayColor);
+          // Reflect focus renames (and re-filings into another role) in the
+          // title as they happen.
+          setWindowTitle(windowTitleForFocus(priority));
         });
       } else {
         // No context, cancel Priority listener
         _contextPriorityListener?.cancel();
         _contextPriorityListener = null;
+        setWindowTitle(windowTitleForFocus(null));
       }
     }).cancel;
   }
 
+  /// Recomputes the window/tab title from the current focus. Used as the
+  /// [Role.cache] listener so the title gains its `[Role] ›` prefix the moment
+  /// roles become available.
+  void _applyWindowTitle() {
+    final state = nowBloc.state;
+    final context = state is NowLoaded ? state.context : null;
+    setWindowTitle(windowTitleForFocus(context));
+  }
+
   void _teardownNowBlocListener() {
+    Role.cache.removeListener(_applyWindowTitle);
     _nowBlocListener?.call();
     _nowBlocListener = null;
     _contextPriorityListener?.cancel();
@@ -227,6 +249,9 @@ class RootProviderState extends State<RootProvider> {
               Actor.clearCache();
               Link.clearCache();
               Priority.clearCache();
+              Role.clearCache();
+              // Reset the window/tab title to the bare app name.
+              setWindowTitle(windowTitleForFocus(null));
               // Set theme to Catalyst when signed out
               themeBloc.setPriorityColor(ThemeColor(0));
               await router.replaceAll([SignInRoute()]);

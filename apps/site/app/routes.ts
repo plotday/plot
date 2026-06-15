@@ -37,5 +37,9 @@ export default [
     route("internal/features", "routes/internal.features.tsx"),
     route("internal/updates", "routes/internal.updates.tsx"),
     route("internal/voice", "routes/internal.voice.tsx"),
+    route(
+      "internal/store-listings",
+      "routes/internal.store-listings.tsx",
+    ),
   ]),
 ] satisfies RouteConfig;

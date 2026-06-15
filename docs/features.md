@@ -8,9 +8,9 @@ product.
 ## Positioning
 
 Plot is where your work comes together so you can make real progress on it. It pulls every
-conversation that needs a human reply — email, team chat, and the comment threads inside the tools
-you already use (Linear, Notion, and more) — into one place, organized by the roles and goals you
-care about.
+conversation that needs a human reply — team chat, email, and the threads inside the tools you
+already use (Linear, Notion, and more) — into one place, organized by the roles and goals you care
+about.
 
 Each day holds the same number of hours. Plot's job is to help you invest them on real progress —
 and keep everything else from spending them for you. You see what genuinely needs you and act on it

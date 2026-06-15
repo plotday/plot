@@ -1,5 +1,20 @@
 import { Container, Title, TypographyStylesProvider } from "@mantine/core";
 
+import { mergeMeta } from "~/lib/meta";
+
+import type { Route } from "./+types/security";
+
+export function meta(_: Route.MetaArgs) {
+  return mergeMeta([
+    { title: "Data & Security | Plot" },
+    {
+      name: "description",
+      content:
+        "How Plot protects your data — where it lives, who can access it, how it's encrypted, and the security practices behind it.",
+    },
+  ]);
+}
+
 export default function Security() {
   return (
     <Container mt="lg">

@@ -70,6 +70,17 @@
   }
 }
 
+/*
+  The title uses Mantine's gradient text (background-clip: text +
+  transparent fill), so a normal selection highlight hides the glyphs.
+  Restore a solid fill while selected so the text stays visible.
+*/
+.heroTitle ::selection,
+.heroTitle::selection {
+  -webkit-text-fill-color: var(--mantine-color-text);
+  color: var(--mantine-color-text);
+}
+
 .heroSubtext {
   font-size: rem(17px);
   line-height: 1.6;
@@ -106,7 +117,7 @@
   inset: -20px;
   background: radial-gradient(
     ellipse at center bottom,
-    light-dark(rgba(1, 132, 94, 0.06), rgba(1, 132, 94, 0.1)) 0%,
+    light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.1)) 0%,
     transparent 60%
   );
   pointer-events: none;
@@ -114,7 +125,10 @@
 
 .heroScreenshot {
   width: 100%;
-  aspect-ratio: 16 / 10;
+  /* Matches the intrinsic size of screenshot[-d].{webp,png} (2268×1230) so the
+     box is reserved at the right height before the image loads — no layout
+     shift — and the image fills it without distortion. */
+  aspect-ratio: 2268 / 1230;
   border-radius: var(--mantine-radius-lg);
   border: 1px solid light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
   box-shadow: var(--shadow-lg);
@@ -140,6 +154,30 @@
   z-index: 1;
 }
 
+/*
+  Phones (≤xs): the wide 16:10 product shot scales down too small, so the
+  hero swaps to an upright app screenshot (see <picture> in home.tsx).
+  Match that breakpoint here and reshape the frame to portrait so the tall
+  image isn't squashed into the 16:10 box.
+*/
+@media (max-width: $mantine-breakpoint-xs) {
+  .heroScreenshot {
+    aspect-ratio: 1206 / 2622;
+    width: 100%;
+    /* ~content width of the widest mainstream phone (430px − container
+       padding), so common phones fill the width; only larger viewports
+       up to the xs breakpoint get a ceiling (the image is ~2.17:1 tall,
+       so width drives height). */
+    max-width: 400px;
+    margin-inline: auto;
+    transform: none;
+  }
+
+  .heroScreenshotWrap::after {
+    display: none;
+  }
+}
+
 /* ── Shared ──────────────────────────────────────── */
 
 .graySection {
@@ -159,6 +197,31 @@
 .sectionBody {
   color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
   line-height: 1.7;
+}
+
+/* ── Security call-out ───────────────────────────── */
+
+.securitySection {
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+  border-top: 1px solid
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+}
+
+.securityBody {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-4));
+  line-height: 1.6;
+  max-width: 540px;
+}
+
+.inlineLink {
+  color: light-dark(
+    var(--mantine-color-brand-6),
+    var(--mantine-color-brand-4)
+  );
+  font-weight: 500;
 }
 
 /* ── CTA Section ─────────────────────────────────── */
@@ -184,9 +247,4 @@
   line-height: 1.2;
   letter-spacing: -0.5px;
   color: var(--mantine-color-white);
-}
-
-.trustItem {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: rem(14px);
 }

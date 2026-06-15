@@ -1500,7 +1500,13 @@ class ManageLinkedEmails extends ShowCommands {
                             ),
                           ),
                         ),
-                        Text(primaryEmail, style: context.theme.typography.md),
+                        Flexible(
+                          child: Text(
+                            primaryEmail,
+                            style: context.theme.typography.md,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                         Text(
                           'Primary',
                           style: context.theme.typography.md.copyWith(

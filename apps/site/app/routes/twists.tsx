@@ -28,12 +28,20 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Plot Twists are automations and AI agents that work alongside you on the conversations flowing through your connections — routing, organizing, surfacing context, and helping you reply.",
+        "Twists are optional extensions for Plot — automations, AI agents, and custom workflows that run securely inside your workspace, with per-permission consent. Install one, or build your own.",
     },
     { property: "og:title", content: "Plot Twists" },
-    { property: "og:description", content: "Automations and AI agents that work with you, your team, and the conversations flowing through your connections." },
+    {
+      property: "og:description",
+      content:
+        "Optional extensions for Plot — automations, AI agents, and custom workflows that run securely inside your workspace.",
+    },
     { name: "twitter:title", content: "Plot Twists" },
-    { name: "twitter:description", content: "Automations and AI agents that work with you, your team, and the conversations flowing through your connections." },
+    {
+      name: "twitter:description",
+      content:
+        "Optional extensions for Plot — automations, AI agents, and custom workflows that run securely inside your workspace.",
+    },
   ]);
 }
 
@@ -46,16 +54,16 @@ export default function Twists() {
           <Stack align="center" gap="lg" ta="center">
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Automations and agents
+                Extend Plot to fit
                 <br />
-                that work with you
+                how you work
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Twists are the automations and AI agents that work alongside you,
-              your team, and the conversations flowing through your connections.
-              They implement workflows, surface what needs your attention, and
-              help you keep things moving.
+              Twists are optional extensions — automations, AI agents, and custom
+              workflows — that run securely inside Plot, with per-permission
+              consent you grant. Install one built by someone else, or build your
+              own. You decide what they can do.
             </Text>
             <Button variant="gradient" size="lg" component={Link} to="/start">
               Get started free
@@ -74,8 +82,8 @@ export default function Twists() {
               </Title>
               <Text className={classes.sectionBody}>
                 Twists work with everything you've connected to Plot — email,
-                chat, calendars, and the tools where your projects live. They
-                act on the conversations flowing in, so you don't have to.
+                chat, calendars, and the tools where your projects live. They act
+                on the conversations you choose, within the permissions you grant.
               </Text>
             </Stack>
             <Button
@@ -109,9 +117,10 @@ export default function Twists() {
                   Workflows & processes
                 </Title>
                 <Text className={classes.sectionBody} fz="sm">
-                  Twists implement the workflows and processes your team relies
-                  on. From triaging incoming emails to routing tasks, they
-                  handle the repetitive work so you can focus on what matters.
+                  Twists implement the workflows your team relies on — turning
+                  incoming emails into tasks, routing threads to the right place,
+                  keeping projects in sync. The repetitive parts run themselves,
+                  so your time goes to the work only you can do.
                 </Text>
               </Stack>
               <Stack className={classes.card} gap="md">
@@ -119,12 +128,12 @@ export default function Twists() {
                   <IconFilter size={32} />
                 </Flex>
                 <Title order={3} size="h4">
-                  Filter, organize, prioritize
+                  Organize and surface
                 </Title>
                 <Text className={classes.sectionBody} fz="sm">
-                  Not every message needs your attention. Twists surface what's
-                  important, organize it where it belongs, and keep newsletters
-                  and noise out of your way.
+                  Not everything deserves your attention. Twists surface what
+                  needs you, file the rest where it belongs, and keep newsletters
+                  and noise from interrupting your day.
                 </Text>
               </Stack>
               <Stack className={classes.card} gap="md">
@@ -135,9 +144,9 @@ export default function Twists() {
                   AI chat & agents
                 </Title>
                 <Text className={classes.sectionBody} fz="sm">
-                  Bring AI directly into your work. Twists power chat and agents
-                  that understand your priorities, your connections, and your
-                  context.
+                  Twists can bring AI right alongside your work — chat and agents
+                  that draw on your threads, focuses, and connections for context.
+                  Use Claude, ChatGPT, or Gemini, or turn AI off entirely.
                 </Text>
               </Stack>
             </SimpleGrid>
@@ -158,12 +167,13 @@ export default function Twists() {
               <IconCode size={40} />
             </Flex>
             <Title order={2} size="h3" className={classes.sectionTitle}>
-              Build your own Twists
+              Build your own
             </Title>
             <Text className={classes.sectionBody}>
-              Create custom automations that work exactly how your team needs.
-              Add twists built by others, or use the Twist Creator SDK to build
-              your own.
+              The Twist Creator is a fully typed TypeScript SDK with CLI tooling
+              and real-time logs — build a twist or connector and publish it to
+              the open marketplace. Prefer no code? The visual builder on Pro and
+              Team plans lets you assemble a workflow without writing any.
             </Text>
             <Button
               variant="outline"
@@ -183,11 +193,10 @@ export default function Twists() {
         <Container size="sm">
           <Stack gap="lg" align="center" ta="center">
             <Title order={2} size="h2" className={classes.ctaTitle}>
-              Your team, your tools, your momentum.
+              Shape Plot around how you work.
             </Title>
             <Text c="rgba(255,255,255,0.85)" fz="lg">
-              Twists bring automation and AI to every conversation flowing
-              through Plot.
+              Add a twist, or build your own — and decide exactly what it can do.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
               <Button variant="white" size="xl" component={Link} to="/start">

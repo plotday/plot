@@ -34,18 +34,6 @@ export default function FAQs() {
         </div>
 
         <Accordion variant="separated">
-          <Accordion.Item value="what-is-plot">
-            <Accordion.Control>What is Plot?</Accordion.Control>
-            <Accordion.Panel>
-              Plot is a unified workspace for collaboration. It pulls together
-              every conversation that needs a thoughtful reply — email, team
-              chat, and threads inside the tools you use, like Linear and Docs —
-              and organizes them by the projects, relationships, and areas they
-              belong to. You stay on top of the people you work with without
-              losing the rest of your day to your inbox.
-            </Accordion.Panel>
-          </Accordion.Item>
-
           <Accordion.Item value="platforms">
             <Accordion.Control>
               What platforms does Plot support?
@@ -59,9 +47,9 @@ export default function FAQs() {
                   Web browsers: <a href="https://plot.day">plot.day</a>
                 </li>
               </ul>
-              All platforms sync seamlessly, so you can switch between devices
-              without losing your place. We recommend the desktop and mobile
-              apps when possible for the best experience.
+              Everything syncs across platforms, so you can switch between
+              devices without losing your place. We recommend the desktop and
+              mobile apps when possible for the best experience.
             </Accordion.Panel>
           </Accordion.Item>
 
@@ -93,8 +81,8 @@ export default function FAQs() {
             <Accordion.Panel>
               They're still here. Plot includes scheduled events and tasks
               alongside the conversations they relate to — agenda, focuses, and
-              Pomodoro timer included. They just take a back seat to
-              keeping up with the people you work with.
+              Pomodoro timer included. They just take a back seat to keeping up
+              with the people you work with.
             </Accordion.Panel>
           </Accordion.Item>
 
@@ -106,8 +94,8 @@ export default function FAQs() {
               Both. Plot is built for teams from the ground up, with no per-seat
               fees. It works just as well if you only connect your own accounts
               — you'll still see every conversation that needs you, organized
-              and prioritized. Either way, nothing slips, and you keep moving on
-              the work only you can do.
+              and prioritized. Either way, nothing gets dropped, and your time
+              goes to the work only you can do.
             </Accordion.Panel>
           </Accordion.Item>
 

@@ -1,1 +1,1 @@
-productivity,tasks,focus,organizer,notes,calendar,events,project management,priorities,GTD,time management
+tasks,inbox,calendar,to-do,todo,agenda,notes,reminders,meetings,productivity,focus,collaboration

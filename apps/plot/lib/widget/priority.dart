@@ -314,6 +314,9 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       color: labelColor,
       fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
       showIcon: false,
+      // The sidebar already groups focuses under their role, so the row never
+      // repeats the role as a prefix.
+      showRole: false,
     );
 
     // The unread dot trails the title now that the focus icon owns the
@@ -427,6 +430,7 @@ class FocusLabel extends StatelessWidget {
     this.muted = false,
     this.color,
     this.showIcon = true,
+    this.showRole = true,
     this.boldLeaf = false,
     this.fontWeight,
     this.onLeafTap,
@@ -468,6 +472,16 @@ class FocusLabel extends StatelessWidget {
   /// already show the icon separately (e.g. a list row with its own leading).
   final bool showIcon;
 
+  /// Whether to prepend a `[Role] ›` crumb (in the role's colour) before the
+  /// focus icon + title when the user has more than one role. On by default so
+  /// every surface that shows a focus also names its role — the one exception
+  /// is the sidebar, where focuses are already grouped under their role
+  /// ([PriorityWidget] passes `showRole: false`). The prefix is also skipped
+  /// for the branded root Inbox, for fixed semantic views (those pass
+  /// [titleOverride], e.g. the "Everything" feed), and for focuses with no
+  /// role.
+  final bool showRole;
+
   /// When true, render the title at semibold.
   final bool boldLeaf;
 
@@ -483,6 +497,32 @@ class FocusLabel extends StatelessWidget {
     final p = priority;
     if (p == null) return const SizedBox.shrink();
 
+    final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
+
+    // Whether this label may carry a `[Role] ›` prefix. Skipped for the
+    // branded root Inbox and for fixed semantic views (those pass
+    // [titleOverride], e.g. the "Everything" feed), and for focuses with no
+    // role. The multi-role gate (the prefix only shows with > 1 role) is
+    // applied reactively below.
+    final canShowRole =
+        showRole && titleOverride == null && !p.root && p.roleId != null;
+
+    if (!canShowRole) return _row(context, resolvedFontSize, null);
+
+    // Resolve the role from the warm cache, rebuilding if roles change. Only
+    // prepend it when the user has more than one role.
+    return ValueListenableBuilder<List<Role>>(
+      valueListenable: Role.cache,
+      builder: (context, roles, _) {
+        final role = roles.length >= 2 ? Role.fromCache(p.roleId) : null;
+        return _row(context, resolvedFontSize, role);
+      },
+    );
+  }
+
+  Widget _row(BuildContext context, double? resolvedFontSize, Role? role) {
+    final p = priority!;
+
     // The per-user root focus is stored as "Everything" but is always
     // presented to users as the branded "Inbox": the inbox glyph in the
     // Resolution brand colour rather than the root focus's own icon and
@@ -491,12 +531,74 @@ class FocusLabel extends StatelessWidget {
     // still win (e.g. the unified header's synthetic "Everything" view).
     final isInbox = p.root;
 
-    final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
     final accent =
         color ??
         (isInbox
             ? context.colour.colours.fromTheme(const ThemeColor.defaultColor())
             : context.colour.colours.fromTheme(p.displayColor, muted: muted));
+
+    final glyph =
+        iconOverride ?? (isInbox ? PlotIcon.inbox : PlotIcon.focusIcon(p.icon));
+
+    // With a role prefix, render the whole crumb as a single line so it
+    // truncates conventionally: the role name and ` › ` separator stay intact
+    // and only the focus name ellipsizes at the end — instead of the role and
+    // focus each truncating independently. The icon rides inline as a
+    // [WidgetSpan]. (The no-role path below keeps the original Row geometry,
+    // including the [iconColumnWidth] gutter, untouched.)
+    if (role != null) {
+      final text = Text.rich(
+        TextSpan(
+          style: TextStyle(
+            fontSize: resolvedFontSize,
+            height: height,
+            fontWeight: fontWeight,
+          ),
+          children: [
+            TextSpan(
+              text: role.name,
+              style: TextStyle(
+                color: context.colour.colours.fromTheme(
+                  role.displayColor,
+                  muted: muted,
+                ),
+              ),
+            ),
+            TextSpan(
+              text: Priority.separator,
+              style: TextStyle(color: context.colour.muted),
+            ),
+            if (showIcon) ...[
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Icon(
+                  glyph,
+                  size: iconSize ?? resolvedFontSize,
+                  color: accent,
+                ),
+              ),
+              WidgetSpan(child: SizedBox(width: iconGap ?? 6)),
+            ],
+            TextSpan(
+              text: titleOverride ?? p.displayTitle,
+              style: TextStyle(
+                color: accent,
+                fontWeight: fontWeight ?? (boldLeaf ? FontWeight.w600 : null),
+              ),
+            ),
+          ],
+        ),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      );
+
+      if (onLeafTap == null) return text;
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onLeafTap,
+        child: text,
+      );
+    }
 
     final title = Text(
       titleOverride ?? p.displayTitle,
@@ -511,10 +613,11 @@ class FocusLabel extends StatelessWidget {
     );
 
     final iconWidget = Icon(
-      iconOverride ?? (isInbox ? PlotIcon.inbox : PlotIcon.focusIcon(p.icon)),
+      glyph,
       size: iconSize ?? resolvedFontSize,
       color: accent,
     );
+
     final children = <Widget>[
       if (showIcon) ...[
         iconColumnWidth != null

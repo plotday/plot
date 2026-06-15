@@ -119,12 +119,14 @@ function ConnectionCard({
     isDark && connection.logoDark ? connection.logoDark : connection.logo;
   return (
     <Box className={classes.connectionCard}>
-      <img
-        src={logoSrc}
-        alt={connection.name}
-        className={classes.connectionLogo}
-        loading="lazy"
-      />
+      <div className={classes.connectionLogoTile}>
+        <img
+          src={logoSrc}
+          alt={connection.name}
+          className={classes.connectionLogo}
+          loading="lazy"
+        />
+      </div>
       <Text fw={600} fz="sm">
         {connection.name}
       </Text>
@@ -134,9 +136,10 @@ function ConnectionCard({
       <Text className={classes.description}>{connection.description}</Text>
       {connection.available ? (
         <span className={classes.badgeRow}>
-          <span className={classes.availableBadge}>Available</span>
-          {connection.premium && (
+          {connection.premium ? (
             <span className={classes.premiumBadge}>Pro</span>
+          ) : (
+            <span className={classes.availableBadge}>Available</span>
           )}
         </span>
       ) : (
@@ -236,9 +239,9 @@ export default function Connections({ loaderData }: Route.ComponentProps) {
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Plot connects to the tools where your conversations already live.
-              <br />
-              Browse what's supported and vote for the ones you want next.
+              Each connection brings a tool into Plot with two-way sync — read,
+              reply, react, mark to-do, assign, and change status, all from one
+              place. Browse what's supported and vote for what you want next.
             </Text>
           </Stack>
         </Container>
@@ -249,19 +252,27 @@ export default function Connections({ loaderData }: Route.ComponentProps) {
         <Container size="lg">
           <Stack gap="xl">
             {/* Filters */}
-            <Stack gap="md" align="center">
+            <Stack gap="lg" align="center">
               <TextInput
                 placeholder="Search connections..."
                 leftSection={<IconSearch size={16} />}
                 value={search}
                 onChange={(e) => setSearch(e.currentTarget.value)}
-                w={{ base: "100%", sm: 360 }}
+                radius="xl"
+                size="md"
+                w={{ base: "100%", sm: 420 }}
+                classNames={{ input: classes.searchInput }}
               />
               <Box className={classes.categoryChips}>
                 <Badge
+                  size="md"
                   variant={category === null ? "filled" : "light"}
                   color={category === null ? "brand" : "gray"}
-                  style={{ cursor: "pointer" }}
+                  className={
+                    category === null
+                      ? `${classes.chip} ${classes.chipActive}`
+                      : classes.chip
+                  }
                   onClick={() => setCategory(null)}
                 >
                   All
@@ -269,9 +280,14 @@ export default function Connections({ loaderData }: Route.ComponentProps) {
                 {CATEGORIES.map((cat) => (
                   <Badge
                     key={cat}
+                    size="md"
                     variant={category === cat ? "filled" : "light"}
                     color={category === cat ? "brand" : "gray"}
-                    style={{ cursor: "pointer" }}
+                    className={
+                      category === cat
+                        ? `${classes.chip} ${classes.chipActive}`
+                        : classes.chip
+                    }
                     onClick={() => setCategory(cat)}
                   >
                     {cat}

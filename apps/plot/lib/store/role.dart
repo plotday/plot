@@ -120,6 +120,67 @@ class Role extends RoleRow {
 
   static Role _wrap(RoleRow row) => Role._(row);
 
+  // ---------------------------------------------------------------------------
+  // Synchronous, reactive cache
+  //
+  // Lets stateless widgets (e.g. [FocusLabel]) render a focus's `[Role] ›`
+  // prefix synchronously — and rebuild when roles change — without a per-row
+  // async query. Mirrors [Priority]'s snapshot+watch cache and [Actor]'s
+  // lookup cache. The list is the user's non-archived roles, sorted as the
+  // sidebar shows them.
+  // ---------------------------------------------------------------------------
+
+  static final ValueNotifier<List<Role>> _cacheNotifier =
+      ValueNotifier<List<Role>>(const []);
+  static final Map<RoleId, Role> _cacheById = {};
+  static StreamSubscription<List<Role>>? _cacheWatch;
+
+  /// Reactive list of the user's non-archived roles, kept current by a single
+  /// watch started lazily on first access. Empty until the first emission.
+  /// Listenable so stateless widgets can rebuild when roles are added, renamed,
+  /// recoloured, or removed.
+  static ValueListenable<List<Role>> get cache {
+    _ensureCacheWatch();
+    return _cacheNotifier;
+  }
+
+  /// Number of non-archived roles currently known. Used to gate the focus
+  /// role prefix: it is only shown when the user has more than one role.
+  static int get cachedCount {
+    _ensureCacheWatch();
+    return _cacheNotifier.value.length;
+  }
+
+  /// Synchronous role lookup from the warm [cache]. Returns null when [id] is
+  /// null or the role hasn't been cached yet.
+  static Role? fromCache(RoleId? id) {
+    if (id == null) return null;
+    _ensureCacheWatch();
+    return _cacheById[id];
+  }
+
+  static void _ensureCacheWatch() {
+    if (_cacheWatch != null) return;
+    // The watch reads the local store; skip until it exists (e.g. before
+    // sign-in). A later access retries once the store is up.
+    if (!Injector.appInstance.exists<Store>()) return;
+    _cacheWatch = watch().listen((roles) {
+      _cacheById
+        ..clear()
+        ..addEntries(roles.map((r) => MapEntry(r.id, r)));
+      _cacheNotifier.value = roles;
+    });
+  }
+
+  /// Clears the role cache and stops its watch. Call on sign-out / store reset
+  /// (mirrors [Actor.clearCache] / [Priority.clearCache]).
+  static void clearCache() {
+    _cacheWatch?.cancel();
+    _cacheWatch = null;
+    _cacheById.clear();
+    _cacheNotifier.value = const [];
+  }
+
   /// The role's colour, defaulting to the theme default when unset.
   ThemeColor get displayColor => color ?? const ThemeColor.defaultColor();
 

@@ -1,1 +1,8 @@
-Initial release!
+What's new in this version:
+
+• Roles: group your focuses under Work, Personal, and more — each with its own colors and notifications, so work and life stay on separate tracks.
+• A new FYI focus gathers low-signal mail — newsletters, receipts, promotions — in one muted place to skim on your own schedule, and keeps it out of your Inbox.
+
+Fixes and small improvements:
+• Opening a thread no longer bumps it to the top of your Done list.
+• Faster focus switching and a calmer agenda when you move between focuses.

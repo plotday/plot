@@ -1,3 +1,15 @@
+## Next release
+
+### Roles & focuses
+
+- When you have more than one role, your focuses now show the role they belong to everywhere they
+  appear outside the sidebar — in the header, on threads, and in pickers — written as **Role ›
+  Focus**, with the role shown in its own colour. That makes it easy to tell, say, a Work focus from
+  a Personal one at a glance. The sidebar stays as-is since it already groups focuses under each
+  role, and if you only have one role nothing changes.
+- Your browser tab and desktop window title now include the focus you're viewing (and its role when
+  you have more than one), so Plot is easy to pick out among your open tabs and windows.
+
 ## 1.4.0+354 — 2026-06-15
 
 ### Reactions
@@ -36,6 +48,9 @@
 - On mobile, the system back gesture from a priority's activity feed now returns you to whichever
   bottom-nav tab you came from (Priorities or Agenda) instead of closing the app. Tapping the
   Priorities or Agenda nav itself stays a clean replacement — back from there exits as you'd expect.
+- On mobile, opening a focus's thread list now keeps its bottom-nav tab highlighted — Focus or
+  Agenda, whichever you came from — so it's always clear where you are, instead of the bar showing
+  nothing selected.
 - Browser back and the Cmd+[ shortcut now walk only the meaningful navigation steps. Switching
   between priorities on the same feed no longer accumulates one history entry per priority you pass
   through, so a single back lands on the page you actually came from instead of stepping through

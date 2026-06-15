@@ -106,7 +106,7 @@ export const PLANS: Plan[] = [
   {
     key: "team",
     name: "Team",
-    bestFor: "For ambitious teams who move fast together",
+    bestFor: "For teams doing their best work together",
     price: (billing) => `$${PRICES.team[billing]}`,
     priceNote: null,
     period: "/mo",

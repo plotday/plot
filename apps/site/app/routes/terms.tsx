@@ -1,5 +1,20 @@
 import { Container, Title, TypographyStylesProvider } from "@mantine/core";
 
+import { mergeMeta } from "~/lib/meta";
+
+import type { Route } from "./+types/terms";
+
+export function meta(_: Route.MetaArgs) {
+  return mergeMeta([
+    { title: "Terms of Use | Plot" },
+    {
+      name: "description",
+      content:
+        "The terms and conditions governing your access to and use of Plot's website, apps, and services.",
+    },
+  ]);
+}
+
 export default function Terms() {
   return (
     <Container mt="lg">

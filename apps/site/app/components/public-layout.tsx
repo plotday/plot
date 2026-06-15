@@ -48,22 +48,20 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
         </Group>
         <Group>
           <Group visibleFrom="sm" gap="xl">
-            <Anchor
-              component={Link}
-              to="/#benefits"
-              className={classes.navLink}
-            >
-              Product
-            </Anchor>
-            <Anchor component={Link} to="/pricing" className={classes.navLink}>
-              Pricing
-            </Anchor>
+            {location.pathname !== "/" && (
+              <Anchor component={Link} to="/" className={classes.navLink}>
+                Product
+              </Anchor>
+            )}
             <Anchor
               component={Link}
               to="/connections"
               className={classes.navLink}
             >
               Connections
+            </Anchor>
+            <Anchor component={Link} to="/pricing" className={classes.navLink}>
+              Pricing
             </Anchor>
           </Group>
           {!hideGetStartedPaths.some((path) =>
@@ -96,15 +94,6 @@ function AppFooter() {
           </Anchor>
         </Group>
         <Group gap="lg" className={classes.footerLinks}>
-          <Anchor component={Link} to="/connections">
-            Connections
-          </Anchor>
-          <Anchor component={Link} to="/twists">
-            Twists
-          </Anchor>
-          <Anchor component={Link} to="/pricing">
-            Pricing
-          </Anchor>
           <Anchor component={Link} to="/terms">
             Terms of Service
           </Anchor>

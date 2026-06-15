@@ -6,6 +6,7 @@ import 'dart:convert';
 // Prefixed: store.dart's own [Priority] class (in priority.dart) shadows
 // the scheduler one without it.
 import 'package:flutter/scheduler.dart' as flutter_scheduler;
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/widgets.dart'
     show
         AppLifecycleState,

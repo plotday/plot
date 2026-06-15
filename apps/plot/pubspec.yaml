@@ -270,7 +270,7 @@ flutter_launcher_icons:
     generate: true
 
 msix_config:
-  display_name: "Plot: Prioritized Productivity"
+  display_name: "Plot: All your work, organized"
   publisher_display_name: Plot Technologies Inc.
   identity_name: PlotTechnologiesInc.Plot-TractiononPriorities
   msix_version: 1.4.0+354

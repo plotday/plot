@@ -78,14 +78,6 @@
   grid-row: span 7;
   grid-template-rows: subgrid;
   row-gap: var(--mantine-spacing-md);
-  transition:
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
-}
-
-.pricingCard:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 
 .pricingCardHighlight {

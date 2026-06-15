@@ -1,7 +1,7 @@
 .strip {
   background-color: light-dark(
-    var(--mantine-color-gray-0),
-    var(--mantine-color-dark-6)
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
   );
 }
 
@@ -10,6 +10,11 @@
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: -0.3px;
+}
+
+.intro {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  line-height: 1.6;
 }
 
 .grid {
@@ -27,24 +32,21 @@
 }
 
 .card {
+  display: block;
   padding: var(--mantine-spacing-lg);
   border-radius: 12px;
   border: 1px solid
-    light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
+    light-dark(var(--mantine-color-gray-2), rgba(255, 255, 255, 0.06));
   background: light-dark(
-    rgba(255, 255, 255, 0.6),
+    var(--mantine-color-gray-0),
     rgba(255, 255, 255, 0.02)
   );
-  transition:
-    border-color 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  color: inherit;
+  transition: border-color 0.2s ease;
 }
 
 .card:hover {
   border-color: light-dark(rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.12));
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
 }
 
 .iconWrap {

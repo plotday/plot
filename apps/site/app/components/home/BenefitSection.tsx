@@ -11,6 +11,14 @@ interface BenefitSectionProps {
   image: string;
   imageDark: string;
   imageAlt: string;
+  /** Optional WebP source for light mode (preferred when supported). */
+  imageWebp?: string;
+  /** Optional WebP source for dark mode (preferred when supported). */
+  imageDarkWebp?: string;
+  /** Intrinsic image width/height — set both to reserve space and avoid layout shift. */
+  imageWidth?: number;
+  imageHeight?: number;
+  cta?: string;
   fade?: boolean;
   reverse?: boolean;
   background?: "white" | "gray";
@@ -23,6 +31,11 @@ export function BenefitSection({
   image,
   imageDark,
   imageAlt,
+  imageWebp,
+  imageDarkWebp,
+  imageWidth,
+  imageHeight,
+  cta = "Try Plot →",
   fade = false,
   reverse = false,
   background = "white",
@@ -53,18 +66,30 @@ export function BenefitSection({
               component={Link}
               to="/start"
             >
-              Try Plot →
+              {cta}
             </Button>
           </Stack>
           <div className={`${classes.imageWrap} ${fade ? classes.fade : ""}`}>
             <picture>
+              {imageDarkWebp && (
+                <source
+                  srcSet={imageDarkWebp}
+                  type="image/webp"
+                  media="(prefers-color-scheme: dark)"
+                />
+              )}
               <source
                 srcSet={imageDark}
                 media="(prefers-color-scheme: dark)"
               />
+              {imageWebp && (
+                <source srcSet={imageWebp} type="image/webp" />
+              )}
               <img
                 src={image}
                 alt={imageAlt}
+                width={imageWidth}
+                height={imageHeight}
                 className={classes.screenshot}
                 loading="lazy"
               />

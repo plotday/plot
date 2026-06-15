@@ -350,18 +350,13 @@ class PrioritiesList extends StatelessWidget {
 /// One role's section in the accordion: a [RoleHeader] above an animated
 /// disclosure of its focuses.
 ///
-/// The disclosure slides (height) and fades open/closed as [expanded] flips,
-/// driven by an [AnimationController] (the `SizeTransition` + `FadeTransition`
-/// pattern from `animated_removal.dart`). Using a controller — rather than an
-/// `AnimatedSize` around a synchronously-swapped child — is what makes the
-/// **collapse** animate: the previous approach swapped the child to
-/// `SizedBox.shrink()` the instant [expanded] went false, so `AnimatedSize`
-/// measured zero and the close snapped. Here the inner focus list stays mounted
-/// while the controller reverses, then is dropped only once fully closed.
-///
-/// The child is built lazily via [childBuilder] and only while the section is
-/// open or still animating closed, so collapsed roles never construct their
-/// inner reorderable focus list (no nesting/gesture cost, no perf hit).
+/// The disclosure slides (height) open/closed as [expanded] flips, driven by an
+/// [AnimationController] feeding a [SizeTransition]. The inner focus list — a
+/// nested [ReorderableListView] so focuses stay drag-reorderable within their
+/// role — stays mounted whether the section is expanded or collapsed; only the
+/// disclosure height animates. This mirrors the proven nested-priorities
+/// `_AnimatedPriorityChildren` pattern and is what keeps the nested scrollable
+/// crash-free; see [_RoleSectionState.build] for the full rationale.
 class _RoleSection extends StatefulWidget {
   const _RoleSection({
     required this.header,
@@ -372,8 +367,9 @@ class _RoleSection extends StatefulWidget {
 
   final Widget header;
 
-  /// Builds the disclosed inner focus list. Called only when the section is
-  /// open or animating closed — never for a fully-collapsed role.
+  /// Builds the disclosed inner focus list (a nested [ReorderableListView] so
+  /// focuses can be drag-reordered within their role). Built for every role —
+  /// expanded or collapsed — and kept mounted; see [_RoleSectionState.build].
   final Widget Function() childBuilder;
   final bool expanded;
 
@@ -406,14 +402,13 @@ class _RoleSectionState extends State<_RoleSection>
   void didUpdateWidget(_RoleSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.expanded == oldWidget.expanded) return;
+    // The inner list stays mounted either way (see [build]); just drive the
+    // disclosure height. No teardown-on-complete — keeping the nested
+    // reorderable mounted is what avoids the layout crash.
     if (widget.expanded) {
       _controller.forward();
     } else {
-      // Reverse to animate closed; setState when it lands so the now-hidden
-      // inner list is dropped from the tree (keeps collapsed roles cheap).
-      _controller.reverse().whenComplete(() {
-        if (mounted) setState(() {});
-      });
+      _controller.reverse();
     }
   }
 
@@ -425,25 +420,32 @@ class _RoleSectionState extends State<_RoleSection>
 
   @override
   Widget build(BuildContext context) {
-    // Keep the inner list mounted while open OR still animating closed; drop it
-    // only once fully collapsed (controller at rest at 0).
-    final showChild = widget.expanded || _controller.value > 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         widget.header,
-        if (showChild)
-          SizeTransition(
-            sizeFactor: _curve,
-            // Anchor the reveal to the top edge so the focus list grows down
-            // from the header (not centred). `axisAlignment` is deprecated post
-            // v3.41; `alignment: topCenter` is the replacement.
-            alignment: Alignment.topCenter,
-            child: FadeTransition(
-              opacity: _curve,
-              child: widget.childBuilder(),
-            ),
-          ),
+        // The inner focus list stays mounted whether the role is expanded or
+        // collapsed; the controller only animates the disclosure height. This
+        // mirrors the proven nested-priorities `_AnimatedPriorityChildren`
+        // pattern (SizeTransition → ClipRect → child) and is what keeps the
+        // nested focus `ReorderableListView` from crashing: SizeTransition lays
+        // its child out at full natural size every frame and animates only the
+        // clip + parent height, so the shrink-wrapping inner reorderable sees
+        // stable constraints and never re-measures mid-animation. The earlier
+        // lazy mount/unmount (`if (showChild)`) + `FadeTransition` variant
+        // churned that nested scrollable's layout during the animation, leaving
+        // a sliver with null `geometry` → the production layout-crash cascade
+        // (PostHog 019ec304). Collapsed roles still build their inner list (laid
+        // out, then clipped to zero height) — a small cost for a crash-free
+        // disclosure that keeps focuses drag-reorderable.
+        SizeTransition(
+          sizeFactor: _curve,
+          // Anchor the reveal to the top edge so the focus list grows down from
+          // the header (not centred). `axisAlignment` is deprecated post v3.41;
+          // `alignment: topCenter` is the replacement.
+          alignment: Alignment.topCenter,
+          child: ClipRect(child: widget.childBuilder()),
+        ),
       ],
     );
   }

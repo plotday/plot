@@ -16,6 +16,9 @@ export default function InternalLayout() {
             <Anchor component={Link} to="/internal/updates">
               Updates
             </Anchor>
+            <Anchor component={Link} to="/internal/store-listings">
+              Store listings
+            </Anchor>
           </Group>
           <Anchor component={Link} to="/signout">
             Sign out

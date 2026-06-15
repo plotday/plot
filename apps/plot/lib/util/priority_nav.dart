@@ -57,6 +57,22 @@ int? computeSourceTabAfterPriorityTap({
   );
 }
 
+/// The bottom-nav tab that should stay highlighted while the user is on
+/// the Activity tab — a `/p/:id` priority page or its thread list, which
+/// has no bottom-nav slot of its own. Returns the recorded drill-in
+/// origin, so the highlight matches the tab the back gesture returns to
+/// (see [computeBackTabFromPriority]) and the thread list keeps the
+/// Focus/Agenda highlight the user came from.
+///
+/// Only Focus (Priorities) and Agenda drill into a priority page this
+/// way; Search/More don't, and a null origin (deep-link arrival) has no
+/// tab to claim — all of these return null so no item is highlighted.
+int? highlightTabForActivityPage({required int? sourceTab}) {
+  if (sourceTab == PriorityTabs.priorities) return PriorityTabs.priorities;
+  if (sourceTab == PriorityTabs.agenda) return PriorityTabs.agenda;
+  return null;
+}
+
 /// Whether the user is currently on the Activity tab (i.e. on a `/p/:id`
 /// page already). Used to decide between push and replace for URL
 /// history — cross-tab arrivals (Priorities/Agenda → Activity) push so

@@ -1,6 +1,21 @@
 import { Container, Title, TypographyStylesProvider } from "@mantine/core";
 
-export default function Terms() {
+import { mergeMeta } from "~/lib/meta";
+
+import type { Route } from "./+types/privacy";
+
+export function meta(_: Route.MetaArgs) {
+  return mergeMeta([
+    { title: "Privacy Policy | Plot" },
+    {
+      name: "description",
+      content:
+        "How Plot collects, uses, and protects the personal information of people and teams who use our website and products.",
+    },
+  ]);
+}
+
+export default function Privacy() {
   return (
     <Container mt="lg">
       <Title order={1} mb="lg">

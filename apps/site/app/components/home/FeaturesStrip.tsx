@@ -1,46 +1,55 @@
-import { Box, Container, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Box, Container, Stack, Text, Title } from "@mantine/core";
 
 import {
   IconCloudOff,
   IconDevices,
   IconKeyboard,
+  IconPuzzle,
   IconSparkles,
-  IconUsers,
 } from "@tabler/icons-react";
-
+import { Link } from "react-router";
 import { useScrollReveal } from "~/hooks/useScrollReveal";
+
 import classes from "./FeaturesStrip.module.css";
 
-const FEATURES = [
+interface Feature {
+  icon: typeof IconDevices;
+  label: string;
+  description: string;
+  to?: string;
+}
+
+const FEATURES: Feature[] = [
   {
     icon: IconDevices,
     label: "Everywhere you work",
     description:
-      "Mac, Windows, iOS, Android, and web. Wherever the next reply needs to happen.",
+      "Mac, Windows, iOS, Android, and web — one experience, with native touches on each.",
   },
   {
     icon: IconCloudOff,
-    label: "Even when you're offline",
+    label: "Offline and synced",
     description:
-      "Read, reply, or jot a note without coverage. Full sync when you're back online.",
-  },
-  {
-    icon: IconUsers,
-    label: "Built for teams moving fast together",
-    description:
-      "No per-seat fees. Bring everyone in without thinking twice — Plot works alongside the chat you already use.",
+      "Read, write, and organize without a connection. Everything syncs the moment you're back online.",
   },
   {
     icon: IconKeyboard,
-    label: "Fast keyboard navigation",
+    label: "Fast and keyboard-driven",
     description:
-      "Cmd-K, keyboard shortcuts, and full keyboard navigation. Fly through your work and get where you need to be.",
+      "A command modal, keyboard shortcuts, and drag-and-drop everywhere. Move through your work without lifting your hands.",
   },
   {
     icon: IconSparkles,
-    label: "AI that minds its business",
+    label: "AI your way",
     description:
-      "Chat with Claude, ChatGPT, and Gemini right where your work lives — with full context. BYOK, set a budget, or turn AI off entirely. It's your call.",
+      "Use AI as much or as little as you want. You can bring your own key, point it at your own model, or turn it off entirely.",
+  },
+  {
+    icon: IconPuzzle,
+    label: "Customize and extend",
+    description:
+      "Extend Plot with twists — automations and AI agents that run securely, with permission-based access to your data.",
+    to: "/twists",
   },
 ];
 
@@ -50,22 +59,17 @@ export function FeaturesStrip() {
   return (
     <Box className={`${classes.strip} reveal`} pt={80} pb={80} ref={revealRef}>
       <Container size="lg">
-        <Title
-          order={2}
-          size="h2"
-          className={classes.headline}
-          ta="center"
-          mb="xl"
-        >
-          Also true
-        </Title>
+        <Stack gap="xs" align="center" ta="center" mb="xl">
+          <Title order={2} size="h2" className={classes.headline}>
+            Work your way
+          </Title>
+          <Text className={classes.intro} maw={540}>
+            Plot fits around how you actually work.
+          </Text>
+        </Stack>
         <div className={classes.grid}>
-          {FEATURES.map((feature, i) => (
-            <div
-              key={feature.label}
-              className={classes.card}
-              style={{ transitionDelay: `${i * 50}ms` }}
-            >
+          {FEATURES.map((feature, i) => {
+            const inner = (
               <Stack gap="xs">
                 <div className={classes.iconWrap}>
                   <feature.icon size={20} className={classes.icon} />
@@ -75,8 +79,29 @@ export function FeaturesStrip() {
                   {feature.description}
                 </Text>
               </Stack>
-            </div>
-          ))}
+            );
+
+            return feature.to ? (
+              <Anchor
+                key={feature.label}
+                component={Link}
+                to={feature.to}
+                underline="never"
+                className={classes.card}
+                style={{ transitionDelay: `${i * 50}ms` }}
+              >
+                {inner}
+              </Anchor>
+            ) : (
+              <div
+                key={feature.label}
+                className={classes.card}
+                style={{ transitionDelay: `${i * 50}ms` }}
+              >
+                {inner}
+              </div>
+            );
+          })}
         </div>
       </Container>
     </Box>
