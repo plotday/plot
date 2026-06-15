@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.60.0
+
+### Added
+
+- `otp` and `confirm` Format values and a `Cta` type ({ kind, service, code, url }) on Note/NewNote for time-sensitive OTP / confirm-link prompts. ([#197](https://github.com/plotday/plot/pull/197) [`2a6ced1`](https://github.com/plotday/plot/commit/2a6ced13ca6ac58a195dbd3ca123f132f3e44494))
+
+### Changed
+
+- Replaced the OAuth-only `ScopeConfig.description` with a connector-level `Connector.access` — plain-language bullets describing what access connecting a service grants, shown on every connect screen regardless of auth mechanism. `ScopeConfig.description` is removed; declare `Connector.access` on the connector instead. ([#199](https://github.com/plotday/plot/pull/199) [`10a2754`](https://github.com/plotday/plot/commit/10a2754397835bd8bb34d2b2d9b8d05c85521183))
+
 ## 0.59.0
 
 ### Added
