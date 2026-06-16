@@ -234,7 +234,7 @@ above.
 
 | Slot | Catalog | Mode | Caption | Framing |
 | --- | --- | --- | --- | --- |
-| 1–2 | **S1** | Light | **All your work, ready for action** · *Email, chat, and app comments in one place* | Angled device spanning slots 1→2 (panorama hero) |
+| 1–2 | **S1** | Light | **All your work, ready for action** · *Team chat, email, and app threads in one place* | Angled device spanning slots 1→2 (panorama hero) |
 | 3 | **S2** | Light | **Reply to anything without opening another app** | typing a reply |
 | 4 | **S3** | Dark | **Your day in context** | |
 | 5 | **S5** | Light | **Start anything from one place** | typing "Po" |
@@ -337,7 +337,7 @@ the **share-sheet** shot — sharing into Plot is a real platform-native value h
 
 | Slot | Catalog | Mode | Caption | Framing |
 | --- | --- | --- | --- | --- |
-| 1–2 | **S1** | Light | **All your work, ready for action** · *Email, chat, and app comments in one place* | Angled device spanning slots 1→2 (panorama hero) |
+| 1–2 | **S1** | Light | **All your work, ready for action** · *Team chat, email, and app threads in one place* | Angled device spanning slots 1→2 (panorama hero) |
 | 3 | **S2** | Light | **Reply to anything without opening another app** | typing a reply |
 | 4 | **S3** | Dark | **Your day in context** | |
 | 5 | **S5** | Light | **Start anything from one place** | typing "Po" |

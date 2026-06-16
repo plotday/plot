@@ -24,7 +24,7 @@ export const PLANS: PlatformPlan[] = [
     slots: [
       { slots: [1, 2], scene: 'S1', mode: 'light', framing: 'phone-hero-span',
         headline: 'All your work, ready for action',
-        subhead: 'Email, chat, and app comments in one place' },
+        subhead: 'Team chat, email, and app threads in one place' },
       { slots: [3], scene: 'S2', mode: 'light', framing: 'phone',
         headline: 'Reply to anything without opening another app' },
       { slots: [4], scene: 'S3', mode: 'dark', framing: 'phone',
@@ -77,7 +77,7 @@ export const PLANS: PlatformPlan[] = [
     slots: [
       { slots: [1, 2], scene: 'S1', mode: 'light', framing: 'phone-hero-span',
         headline: 'All your work, ready for action',
-        subhead: 'Email, chat, and app comments in one place' },
+        subhead: 'Team chat, email, and app threads in one place' },
       { slots: [3], scene: 'S2', mode: 'light', framing: 'phone',
         headline: 'Reply to anything without opening another app' },
       { slots: [4], scene: 'S3', mode: 'dark', framing: 'phone',
