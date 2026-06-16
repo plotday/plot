@@ -2556,6 +2556,7 @@ export type Database = {
           at: unknown
           bumped_at: string | null
           importance: number
+          last_note_source_created_at: string | null
           on: unknown
           order: number | null
           read_at: string | null
@@ -2570,6 +2571,7 @@ export type Database = {
           at?: unknown
           bumped_at?: string | null
           importance?: number
+          last_note_source_created_at?: string | null
           on?: unknown
           order?: number | null
           read_at?: string | null
@@ -2584,6 +2586,7 @@ export type Database = {
           at?: unknown
           bumped_at?: string | null
           importance?: number
+          last_note_source_created_at?: string | null
           on?: unknown
           order?: number | null
           read_at?: string | null

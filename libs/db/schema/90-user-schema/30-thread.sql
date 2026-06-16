@@ -63,7 +63,14 @@ SELECT
     a.embedding IS NOT NULL AS has_embedding,
     tp.mute_by_thread_id,
     a.last_note_created_at,
-    a.last_note_source_created_at,
+    -- Displayed source time of the latest note. Scoped notes never bump the
+    -- shared a.last_note_source_created_at (no leak), so their source time is
+    -- carried per-user on thread_state and merged in here. NOTE: deliberately
+    -- NOT folded into activity_at below — feed ORDERING re-sorts scoped replies
+    -- on arrival via ts.bumped_at, while this DISPLAY value shows the note's
+    -- original source time. Do not add ts.last_note_source_created_at to
+    -- activity_at; that would reorder the feed by source time.
+    GREATEST(a.last_note_source_created_at, ts.last_note_source_created_at) AS last_note_source_created_at,
     ts.bumped_at,
     -- Unread: TRUE when thread_state row exists and read_at is NULL
     COALESCE(ts.read_at IS NULL AND ts.user_id IS NOT NULL, FALSE) AS unread,

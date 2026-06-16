@@ -189,7 +189,7 @@ BEGIN
             -- twist_instance_id while author_id is the user's own linked
             -- contact — so a created_by-only check would mark the author unread
             -- and notify them about their own reply.
-            INSERT INTO thread_state (user_id, thread_id, read_at, bumped_at)
+            INSERT INTO thread_state (user_id, thread_id, read_at, bumped_at, last_note_source_created_at)
             SELECT v.user_id,
                    NEW.thread_id,
                    CASE
@@ -198,7 +198,8 @@ BEGIN
                        THEN now()
                        ELSE NULL
                    END,
-                   now()
+                   now(),
+                   NEW.source_created_at
             FROM (
                 SELECT tp.user_id
                 FROM thread_priority tp
@@ -214,6 +215,8 @@ BEGIN
             ) v
             ON CONFLICT (user_id, thread_id) DO UPDATE
             SET bumped_at = now(),
+                last_note_source_created_at =
+                    GREATEST(thread_state.last_note_source_created_at, NEW.source_created_at),
                 -- A non-author visible user must see the thread as unread
                 -- again; never clobber the author's own read state. The author
                 -- is matched by NEW.author_id (its owning user) as well as by

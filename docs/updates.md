@@ -47,6 +47,10 @@
   its focuses so you can choose one, instead of jumping straight into its first focus — which had
   left no way to pick a different one.
 
+### Fixes
+
+- Thread times now reflect the message's original time (e.g. when an email was sent) instead of when Plot received it.
+
 ## 1.4.0+354 — 2026-06-15
 
 ### Reactions

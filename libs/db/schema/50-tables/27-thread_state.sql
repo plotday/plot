@@ -30,6 +30,7 @@ CREATE TABLE "public"."thread_state" (
     "importance" smallint NOT NULL DEFAULT 50 CHECK (importance >= 0 AND importance <= 100),
     "read_at" timestamptz,          -- NULL = unread; set when user reads
     "bumped_at" timestamptz,        -- for manual bumps
+    "last_note_source_created_at" timestamptz, -- per-user MAX(source_created_at) over SCOPED visible notes; projected via GREATEST in user.thread (see 25-note.sql scoped branch). NULL for users with no scoped note (shared thread column carries it).
     "order" double precision,       -- drag-to-reorder within Doing / Scheduled
     "on" daterange,                 -- per-user "do on this date"
     "at" tstzrange,                 -- per-user "do at this time"

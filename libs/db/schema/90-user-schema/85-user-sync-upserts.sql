@@ -1129,7 +1129,10 @@ BEGIN
             read_at = CASE
                 WHEN thread_state.read_at IS NULL
                     AND p_read_at >= date_trunc('milliseconds', (
-                        SELECT COALESCE(t.last_note_source_created_at, t.created_at)
+                        SELECT COALESCE(
+                                   GREATEST(t.last_note_source_created_at,
+                                            thread_state.last_note_source_created_at),
+                                   t.created_at)
                         FROM thread t
                         WHERE t.id = p_thread_id
                     ))
@@ -1142,7 +1145,10 @@ BEGIN
             p_bumped_at IS NOT NULL
             OR (thread_state.read_at IS NULL
                 AND p_read_at >= date_trunc('milliseconds', (
-                    SELECT COALESCE(t.last_note_source_created_at, t.created_at)
+                    SELECT COALESCE(
+                               GREATEST(t.last_note_source_created_at,
+                                        thread_state.last_note_source_created_at),
+                               t.created_at)
                     FROM thread t
                     WHERE t.id = p_thread_id
                 )));
