@@ -6,10 +6,10 @@ Generate SQL seed data from YAML definitions for screenshots and testing.
 
 ```bash
 # Generate SQL to stdout
-pnpm gen-seed libs/db/seeds/carmy.yaml
+pnpm gen-seed libs/db/seeds/margot.yaml
 
 # Generate and apply to local database
-pnpm gen-seed --apply libs/db/seeds/carmy.yaml
+pnpm gen-seed --apply libs/db/seeds/margot.yaml
 ```
 
 ## Production Demo Accounts
@@ -230,10 +230,8 @@ libs/db/seeds/
 ├── spec.md                # Complete YAML format specification
 ├── generate-seed.ts       # Main generator script
 ├── types.ts               # TypeScript type definitions
-├── carmy.yaml             # The Bear scenario
-├── jackson.yaml           # Slow Horses scenario
-├── kate.yaml              # Diplomat scenario
-└── rebecca.yaml           # Ted Lasso scenario
+├── margot.yaml            # AFC Marlow scenario (the maintained persona)
+└── margot.md              # Persona notes for margot.yaml
 ```
 
 ### Adding New Features

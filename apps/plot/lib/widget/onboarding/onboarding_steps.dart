@@ -7,10 +7,28 @@ import 'package:plot/widget/onboarding/onboarding_tools.dart';
 
 /// A single step in the onboarding flow.
 sealed class OnboardingStep {
-  const OnboardingStep({required this.title, required this.body});
+  const OnboardingStep({
+    required this.title,
+    required this.body,
+    this.shouldSkip,
+    this.dismissible = true,
+  });
 
   final String title;
   final String body;
+
+  /// When provided and it returns true, the flow passes over this step in both
+  /// directions — `OnboardingBloc.next()`/`previous()` walk past it. Used by the
+  /// role follow-up step, which only applies to options that need a typed name
+  /// (Work/Project/Other) and is skipped for Personal/School. Null = never skip.
+  final bool Function()? shouldSkip;
+
+  /// Whether the user may close onboarding (the × button) while on this step.
+  /// The welcome and role-selection steps are non-dismissible so a brand-new
+  /// user can't skip onboarding before choosing a role; from "Connect your
+  /// tools" onward (a role has been committed) the × returns so the user can
+  /// bail out of the remaining tour. Default true.
+  final bool dismissible;
 }
 
 /// Full-screen page with a solid colored background.
@@ -23,7 +41,28 @@ class FullScreenStep extends OnboardingStep {
     this.contentBuilder,
     this.contentMaxWidth = 400,
     this.onBeforeNext,
+    this.titleBuilder,
+    this.canAdvance,
+    this.advanceListenable,
+    super.shouldSkip,
+    super.dismissible,
   });
+
+  /// When provided, overrides [title] at render time so a step can compute its
+  /// heading from live state. The role follow-up step uses this to show the
+  /// selected option's prompt ("What is the project?", "Where do you work?").
+  /// Falls back to [title] when null.
+  final String Function()? titleBuilder;
+
+  /// When provided and it returns false, the step's Next button is disabled and
+  /// the flow refuses to advance. The role follow-up step uses this to require a
+  /// non-empty name. Null = always allowed to advance.
+  final bool Function()? canAdvance;
+
+  /// When provided, the pager rebuilds whenever this fires so [canAdvance] is
+  /// re-evaluated live (e.g. as the user types into the follow-up field). Paired
+  /// with [canAdvance]; ignored when that is null.
+  final Listenable? advanceListenable;
 
   /// Story-arc theme color used as the solid hero backdrop. Resolved to a
   /// concrete RGB color at render time via the active [ColourSchemeData] so
@@ -158,18 +197,46 @@ class OnboardingSteps {
       const FullScreenStep(
         title: "All your work,\nready for action",
         body:
-            "Plot is your collaboration hub. Make real progress without the churn.",
+            "Your team chat, email, meeting notes, and app threads, organized and prioritized.",
         background: ThemeColor(0),
+        // No × until a role is chosen — keep the user in the flow.
+        dismissible: false,
       ),
       FullScreenStep(
         title: 'Where do you want to use Plot first?',
         body:
-            'Plot organizes your work by role. Pick the one to start with — you '
+            'Plot organizes your work by role. Pick one to start with. You '
             'can add more later.',
         background: const ThemeColor(2),
         contentBuilder: (context) =>
             OnboardingRoleContent(selection: roleSelection),
+        // Personal/School need no name, so commit here — their follow-up step
+        // is skipped. Prompted options (Work/Project/Other) defer the commit to
+        // the follow-up step below, where the user types the name.
+        onBeforeNext: (context) => _commitRoleIfUnprompted(roleSelection),
+        // The role choice is mandatory: no × on the picker.
+        dismissible: false,
+      ),
+      // Follow-up step: collects the typed name for options that need one
+      // (Work/Project/Other). Its heading is the selected option's question
+      // and the field is autofocused. Skipped — in both directions — for
+      // Personal/School via [shouldSkip], so the pager's back chevron returns
+      // straight to the picker.
+      FullScreenStep(
+        title: 'Name your role',
+        titleBuilder: () => roleSelection.option.prompt ?? 'Name your role',
+        body: '',
+        background: const ThemeColor(2),
+        contentBuilder: (context) =>
+            OnboardingRolePromptContent(selection: roleSelection),
         onBeforeNext: (context) => _commitRole(roleSelection),
+        shouldSkip: () => roleSelection.option.prompt == null,
+        // The name is required: Next stays disabled until the field has
+        // non-whitespace content, and the pager re-checks as the user types.
+        canAdvance: () => roleSelection.text.trim().isNotEmpty,
+        advanceListenable: roleSelection.textListenable,
+        // Still naming the role — no × until it's committed.
+        dismissible: false,
       ),
       FullScreenStep(
         title: 'Connect your tools',
@@ -228,17 +295,47 @@ class OnboardingSteps {
   /// error toast and blocks advancing (acceptable for a transient failure).
   ///
   /// Activation seeds every user a default 'Personal' role (theme 0) whose Inbox
-  /// is the root, so the common path renames that role and keeps theme 0 — no
-  /// second role is created, so the user stays single-role (flat sidebar). The
-  /// `roles.isEmpty` branch is a backstop for older activations / sync lag where
-  /// no role has synced yet; the server auto-creates the role's Inbox on insert.
+  /// is the root. Onboarding must **rename that seed** to the user's choice —
+  /// never create a second role beside it, which would leave the user with both
+  /// 'Personal' and their selection. Renaming keeps theme 0 and the single-role
+  /// (flat sidebar) shape; if the user picked Personal the rename is a no-op.
+  ///
+  /// The seed is normally synced by critical sync before onboarding starts, but
+  /// if `Role.all()` is empty (cold sync lag) we pull once so we still rename
+  /// the seed rather than duplicate it. Only when no role exists even after a
+  /// pull do we create one — with the chosen name, never 'Personal'.
   static Future<void> _commitRole(OnboardingRoleSelection sel) async {
     final name = sel.option.roleName(sel.text);
-    final roles = await Role.all();
+    var roles = await Role.all();
+    if (roles.isEmpty) {
+      try {
+        await Role.pull();
+        roles = await Role.all();
+      } catch (_) {
+        // Offline / transient sync failure — fall through to creating the role
+        // locally. It pushes when connectivity returns; never blocks onboarding.
+      }
+    }
     if (roles.isNotEmpty) {
-      await roles.first.copyWith(name: name).save();
+      final seed = roles.first;
+      // Skip a redundant write when the seed already carries the chosen name
+      // (e.g. the user picked Personal, or navigated back and forth).
+      if (seed.name != name) await seed.copyWith(name: name).save();
     } else {
       await Role.create(name: name, color: const ThemeColor(0)).save();
+    }
+  }
+
+  /// Commits the role from the picker step only for options that need no
+  /// follow-up (Personal/School). Prompted options (Work/Project/Other) defer
+  /// to the follow-up step's `onBeforeNext` so the name the user types there is
+  /// included. `_commitRole` is an idempotent rename, so the single commit on
+  /// whichever step is last in the role sub-flow is the one that sticks.
+  static Future<void> _commitRoleIfUnprompted(
+    OnboardingRoleSelection sel,
+  ) async {
+    if (sel.option.prompt == null) {
+      await _commitRole(sel);
     }
   }
 }

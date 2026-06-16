@@ -24,10 +24,13 @@ test("emits guarded DO block resolving system twist + updates topic", () => {
   assert.match(sql, /IF v_plot_twist_id IS NULL OR v_updates_topic_id IS NULL THEN RETURN; END IF;/);
 });
 
-test("threads are system-instance authored, twist-iconed, topic-routed, no groups", () => {
+test("threads are system-instance authored, Plot-logo-iconed, topic-routed, no groups", () => {
   const sql = emitGlobalReconcile(model([thread({})]), { archivedThreadKeys: [], archivedNoteKeys: [] });
   assert.match(sql, /created_by, twist_id, icon, title, preview, key, topic_id, topic, contacts/);
-  assert.match(sql, /'twist:' \|\| v_plot_twist_id::text/);
+  // icon is the stable Plot logo URL, not a per-user twist instance reference
+  // (which falls back to the generic twist icon when the instance is archived).
+  assert.match(sql, /'https:\/\/plot\.day\/assets\/plot-icon\.svg'/);
+  assert.doesNotMatch(sql, /'twist:' \|\| v_plot_twist_id::text/);
   // topic_id (the FK that files topic members) AND the topic text are both set.
   assert.match(sql, /v_updates_topic_id, 'topic:' \|\| v_updates_topic_id::text/);
   assert.match(sql, /ARRAY\[c_system_instance_id\]/);
@@ -43,9 +46,12 @@ test("escapes single quotes in content and title", () => {
   assert.match(sql, /a '' b/);
 });
 
-test("upserts thread by key (scoped to system author) and note by (thread_id, key)", () => {
+test("upserts thread by (twist_id, key) and note by (thread_id, key)", () => {
   const sql = emitGlobalReconcile(model([thread({})]), { archivedThreadKeys: [], archivedNoteKeys: [] });
-  assert.match(sql, /WHERE key = 'welcome' AND created_by = c_system_instance_id/);
+  // Matched on (twist_id, key) — the scope of thread_twist_key_unique — not on
+  // created_by: prod threads were authored by an earlier system instance, so a
+  // created_by guard misses them and the INSERT branch hits a duplicate key.
+  assert.match(sql, /WHERE key = 'welcome' AND twist_id = v_plot_twist_id/);
   // notes upsert manually by (thread_id, key) with link_id IS NULL (NULLS-distinct
   // unique index can't be used as an ON CONFLICT arbiter for NULL link_id).
   assert.match(sql, /WHERE thread_id = v_thread_id AND key = 'intro' AND link_id IS NULL/);
@@ -57,7 +63,7 @@ test("archives removed keys with archived_at, never DELETE", () => {
     archivedThreadKeys: ["clean-up"],
     archivedNoteKeys: ["welcome/old-note"],
   });
-  assert.match(sql, /UPDATE public\.thread\s+SET archived_at = now\(\)\s+WHERE key = 'clean-up' AND created_by = c_system_instance_id/);
+  assert.match(sql, /UPDATE public\.thread\s+SET archived_at = now\(\)\s+WHERE key = 'clean-up' AND twist_id = v_plot_twist_id/);
   assert.match(sql, /UPDATE public\.note n SET archived_at = now\(\)/);
   assert.doesNotMatch(sql, /DELETE FROM/i);
 });

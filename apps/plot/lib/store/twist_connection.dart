@@ -74,6 +74,21 @@ class TwistConnection {
     return Store.get.select(table).watch();
   }
 
+  /// Filters [connections] to those that still have at least one enabled
+  /// channel (their `twistInstanceId` is in [enabledInstanceIds]).
+  ///
+  /// A connection whose channels are all disabled is dormant: the
+  /// manage-connections modal hides it (`enabledCount == 0`) and the server
+  /// excludes it from quota counts (`getPersonalConnectionCount` /
+  /// `getTeamConnectionCount`). So such a connection must not drive the
+  /// "Reconnect" / "Syncing" prompts — otherwise a disabled connection that
+  /// still carries `needs_reauth_at` nags forever with no row to act on.
+  static Iterable<TwistConnectionRow> active(
+    Iterable<TwistConnectionRow> connections,
+    Set<TwistInstanceId> enabledInstanceIds,
+  ) =>
+      connections.where((c) => enabledInstanceIds.contains(c.twistInstanceId));
+
   static Stream<List<TwistConnectionRow>> watchForInstance(
     TwistInstanceId twistInstanceId,
   ) {

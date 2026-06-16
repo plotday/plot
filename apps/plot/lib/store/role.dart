@@ -116,6 +116,11 @@ class Role extends RoleRow {
     );
   }
 
+  /// Wraps a raw [RoleRow] as a [Role] without touching the store. Test-only —
+  /// production builds roles via [Role.create] or the store watch ([_wrap]).
+  @visibleForTesting
+  factory Role.fromRow(RoleRow row) => Role._(row);
+
   static $RolesTable get table => Store.get.roles;
 
   static Role _wrap(RoleRow row) => Role._(row);

@@ -29,7 +29,7 @@ import 'package:plot/widget/widget.dart';
 /// Reordering writes the existing `order` column via [Order.between]: roles in
 /// the outer list, focuses within their role's inner list. Cross-role focus
 /// drag is out of scope.
-class PrioritiesList extends StatelessWidget {
+class PrioritiesList extends StatefulWidget {
   final List<Priority> focuses;
   final Priority root;
   final Priority? selected;
@@ -84,11 +84,40 @@ class PrioritiesList extends StatelessWidget {
     return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
   }
 
-  /// Non-archived focuses filed under [roleId], sorted by [_byOrder] (Inbox
-  /// last). Mirrors [PrioritiesState.focusesForRole], but scoped to the
-  /// [focuses] this widget was handed (already non-root, already sorted).
+  @override
+  State<PrioritiesList> createState() => _PrioritiesListState();
+}
+
+class _PrioritiesListState extends State<PrioritiesList> {
+  /// Single-panel only: the role the user has manually disclosed by tapping its
+  /// header, when that differs from the selection-derived [widget.expandedRoleId].
+  ///
+  /// In single-panel mode the focus sidebar IS the screen, so navigating into a
+  /// focus replaces it — there'd be no chance to choose a different focus. So a
+  /// role tap there must *only* disclose the role's focuses, never select one or
+  /// navigate. That disclosure has no backing in the selection-derived
+  /// [widget.expandedRoleId] (which only moves when a focus is actually
+  /// selected), so we hold it here. Cleared the moment a real navigation lands
+  /// (see [didUpdateWidget]) so the freshly-selected focus's role takes over.
+  /// Always null in the left panel, where a role tap selects the first focus.
+  RoleId? _manualExpandedRoleId;
+
+  @override
+  void didUpdateWidget(PrioritiesList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A real navigation recomputes the selection-derived [expandedRoleId]
+    // upstream. When that changes, drop any manual single-panel override so the
+    // newly-selected focus's role drives the disclosure instead of a stale tap.
+    if (widget.expandedRoleId != oldWidget.expandedRoleId) {
+      _manualExpandedRoleId = null;
+    }
+  }
+
+  /// Non-archived focuses filed under [roleId], sorted by [PrioritiesList._byOrder]
+  /// (Inbox last). Mirrors [PrioritiesState.focusesForRole], but scoped to the
+  /// [PrioritiesList.focuses] this widget was handed (already non-root, sorted).
   List<Priority> _focusesForRole(RoleId roleId) {
-    return focuses.where((p) => p.roleId == roleId).toList();
+    return widget.focuses.where((p) => p.roleId == roleId).toList();
   }
 
   @override
@@ -97,6 +126,13 @@ class PrioritiesList extends StatelessWidget {
       builder: (context, layoutState) {
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
+        // Single panel: a role tap only discloses its focuses (no navigation),
+        // tracked locally in [_manualExpandedRoleId]. Left panel: a role tap
+        // selects its first focus, so expansion stays purely selection-derived.
+        final singlePanel = !layoutState.multiPanel;
+        final RoleId? effectiveExpandedRoleId = singlePanel
+            ? (_manualExpandedRoleId ?? widget.expandedRoleId)
+            : widget.expandedRoleId;
         // Every sidebar tile (focuses, role headers, Add a focus, Everything)
         // shares one default weight — regular. Focus tiles and (collapsed)
         // role headers go bold when they have active threads.
@@ -124,12 +160,14 @@ class PrioritiesList extends StatelessWidget {
         );
 
         // The roles that drive the accordion. <= 1 role keeps the flat layout.
-        final accordion = roles.length > 1;
+        final accordion = widget.roles.length > 1;
 
         // Builds the drag-reorderable list of a single role's focuses (also
         // reused for the whole flat list). Each row keys on its id so it
-        // survives unread/active churn without remounting.
-        Widget focusList(List<Priority> list, {required bool indent}) {
+        // survives unread/active churn without remounting. Focuses are never
+        // indented — under their role header they stay flush-left with the FYI
+        // and Everything tiles, all sharing one left edge.
+        Widget focusList(List<Priority> list) {
           return ReorderableListView<Priority>(
             list: list,
             shrinkWrap: true,
@@ -138,12 +176,11 @@ class PrioritiesList extends StatelessWidget {
               key: ValueKey('focus-${priority.id}'),
               priority: priority,
               monochrome: monochrome,
-              selected: !everything && selected?.id == priority.id,
+              selected: !widget.everything && widget.selected?.id == priority.id,
               selectedBorder: true,
               borderRadius: itemBorderRadius,
               textStyle: focusStyle(priority),
               unread: priority.unread ? true : null,
-              indentLevel: indent ? 1 : 0,
               reorderableIndex: reorderableIndex,
             ),
             onReorder: (oldIndex, newIndex) =>
@@ -153,10 +190,10 @@ class PrioritiesList extends StatelessWidget {
 
         // "Add a focus" closes off the list — it scrolls with the focuses, not
         // pinned below. In the accordion it defaults new focuses to the
-        // expanded role.
+        // currently disclosed role (the manual single-panel one, if any).
         final addFocusTile = ListTile(
           command: CommandWrapper(
-            AddFocus(defaultRoleId: expandedRoleId),
+            AddFocus(defaultRoleId: effectiveExpandedRoleId),
             icon: Value(null),
             title: 'Add a focus',
           ),
@@ -172,8 +209,8 @@ class PrioritiesList extends StatelessWidget {
         final everythingTile = FixedFocusTile(
           title: 'Everything',
           icon: PlotIcon.inboxes,
-          isSelected: everything,
-          command: ChangeCurrentPriority(root, everything: true),
+          isSelected: widget.everything,
+          command: ChangeCurrentPriority(widget.root, everything: true),
           menuCommand: null,
           // Everything never carries its own unread indicator and never bolds.
           hasUnread: false,
@@ -188,7 +225,7 @@ class PrioritiesList extends StatelessWidget {
         final Widget listBody;
         if (accordion) {
           listBody = ReorderableListView<Role>(
-            list: roles,
+            list: widget.roles,
             shrinkWrap: true,
             keyExtractor: (r) => ValueKey(r.id),
             // Scope the role drag to the header. Without this, the outer list
@@ -200,7 +237,7 @@ class PrioritiesList extends StatelessWidget {
             handleOnly: true,
             itemBuilder: (context, role, reorderableIndex) {
               final childFocuses = _focusesForRole(role.id);
-              final expanded = role.id == expandedRoleId;
+              final expanded = role.id == effectiveExpandedRoleId;
               return _RoleSection(
                 key: ValueKey('role-${role.id}'),
                 expanded: expanded,
@@ -213,10 +250,20 @@ class PrioritiesList extends StatelessWidget {
                   textStyle: itemStyle,
                   reorderableIndex: reorderableIndex,
                   onTap: () {
-                    // Tapping a header selects the role's first focus, which
-                    // makes it the expanded role (and animates it open). Roles
-                    // always have at least their Inbox, so the list is
-                    // non-empty in practice; guard anyway.
+                    if (singlePanel) {
+                      // Single panel: the sidebar is the whole screen, so a role
+                      // tap must ONLY disclose the role's focuses — never select
+                      // one or navigate (that would jump straight into the first
+                      // focus, leaving no way to pick another). RoleHeader passes
+                      // null onTap once expanded, so this only fires for a
+                      // collapsed role: always an expand.
+                      setState(() => _manualExpandedRoleId = role.id);
+                      return;
+                    }
+                    // Left panel: selecting the role's first focus expands it and
+                    // shows its feed alongside the still-visible sidebar. Roles
+                    // always have at least their Inbox, so the list is non-empty
+                    // in practice; guard anyway.
                     if (childFocuses.isNotEmpty) {
                       context.run(ChangeCurrentPriority(childFocuses.first));
                     }
@@ -227,18 +274,18 @@ class PrioritiesList extends StatelessWidget {
                 // list — collapsed roles pay nothing, and no nested reorderable
                 // exists to compete for gestures. _RoleSection keeps the child
                 // mounted through the close animation, then drops it.
-                childBuilder: () => focusList(childFocuses, indent: true),
+                childBuilder: () => focusList(childFocuses),
               );
             },
             onReorder: (oldIndex, newIndex) =>
-                _onReorderRole(roles, oldIndex, newIndex),
+                _onReorderRole(widget.roles, oldIndex, newIndex),
           );
         } else {
           // 0–1 roles: a flat list over every focus (Inbox last) — exactly the
           // pre-roles layout, with no role header. Rendering all [focuses]
           // (rather than only the lone role's) guarantees no focus is ever
           // hidden if its roleId hasn't backfilled yet.
-          listBody = focusList(focuses, indent: false);
+          listBody = focusList(widget.focuses);
         }
 
         final scrollable = ScrollEdgeFade(
@@ -251,7 +298,7 @@ class PrioritiesList extends StatelessWidget {
                 // md top padding sets the panel apart from the agenda above it.
                 SizedBox(height: context.theme.spacing.md),
                 listBody,
-                if (!accordion && focuses.isEmpty)
+                if (!accordion && widget.focuses.isEmpty)
                   Text(
                     'Add a focus to gather work related to a role, project, or activity.',
                     style: TextStyle(
@@ -264,14 +311,16 @@ class PrioritiesList extends StatelessWidget {
                 // "Everything", outside the accordion/reorderable list. Carries
                 // a subtle unread dot but never bolds (active: false), and the
                 // app badge / global unread indicator excludes it (Task 5.2).
-                if (fyi != null)
+                if (widget.fyi != null)
                   FixedFocusTile(
                     title: 'FYI',
                     icon: PlotIcon.bullhorn,
-                    isSelected: !everything && selected?.id == fyi!.id,
-                    command: ChangeCurrentPriority(fyi!),
+                    isSelected:
+                        !widget.everything &&
+                        widget.selected?.id == widget.fyi!.id,
+                    command: ChangeCurrentPriority(widget.fyi!),
                     menuCommand: null,
-                    hasUnread: fyi!.unread,
+                    hasUnread: widget.fyi!.unread,
                     active: false,
                     borderRadius: itemBorderRadius,
                     textStyle: itemStyle,

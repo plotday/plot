@@ -203,11 +203,15 @@ export interface SeedLink {
 
 export interface Note {
   ref?: string; // Optional unique reference
-  author_ref?: string; // Default: "user"
+  author_ref?: string; // Default: "user". Contact ref, "user", or a twist ref (e.g. the Plot AI twist authoring a reply — its note is also created_by that twist instance)
   created: string; // Date offset (e.g., "-2d", "+1w 14:30") - REQUIRED
+  // Markdown content. At-mentions use `[Display](#@<ref>)` markup where <ref>
+  // is a contact or twist ref; the generator rewrites it to the resolved actor
+  // UUID and adds that id to `mentions` (matching the real editor's storage
+  // format and the app's mention auto-extraction).
   content?: string; // Markdown content (preferred)
   note?: string; // Markdown content (alias for backward compatibility)
-  mentions?: string[]; // Array of contact refs
+  mentions?: string[]; // Extra contact/twist refs to mention (merged with refs parsed from content markup)
   actions?: Array<Record<string, unknown>>; // Actions (file attachments, etc.)
   tags?: Tags;
   draft?: boolean; // Default: false

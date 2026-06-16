@@ -1174,6 +1174,7 @@ function validateThread(
         thread.notes[i],
         `${path}.notes[${i}]`,
         contactRefs,
+        twistRefs,
         addError
       );
     }
@@ -1198,6 +1199,7 @@ function validateNote(
   note: Note,
   path: string,
   contactRefs: Set<string>,
+  twistRefs: Set<string>,
   addError: (path: string, message: string) => void
 ) {
   if (!note.created) {
@@ -1207,18 +1209,38 @@ function validateNote(
     );
   }
 
-  if (
-    note.author_ref &&
-    note.author_ref !== "user" &&
-    !contactRefs.has(note.author_ref)
-  ) {
+  // author_ref / mentions may reference a contact, "user", or a twist (e.g.
+  // the Plot AI twist authoring or being mentioned in a note).
+  const isKnownActorRef = (ref: string) =>
+    ref === "user" || contactRefs.has(ref) || twistRefs.has(ref);
+
+  if (note.author_ref && !isKnownActorRef(note.author_ref)) {
     addError(`${path}.author_ref`, `Unknown author_ref: ${note.author_ref}`);
   }
 
   if (note.mentions) {
     for (const mention of note.mentions) {
-      if (mention !== "user" && !contactRefs.has(mention)) {
+      if (!isKnownActorRef(mention)) {
         addError(`${path}.mentions`, `Unknown mention: ${mention}`);
+      }
+    }
+  }
+
+  // Validate at-mention refs embedded in content markup: `[Display](#@ref)`.
+  // The ref must resolve to a known actor, unless it is already a literal UUID.
+  const content = note.content ?? note.note;
+  if (content) {
+    const uuidPattern =
+      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const mentionMarkup = /\]\(#@([A-Za-z0-9_-]+)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = mentionMarkup.exec(content)) !== null) {
+      const ref = m[1];
+      if (!isKnownActorRef(ref) && !uuidPattern.test(ref)) {
+        addError(
+          `${path}.content`,
+          `Unknown mention ref in content markup [...](#@${ref})`
+        );
       }
     }
   }
@@ -1596,6 +1618,10 @@ function generateSQL(
     // every seeded focus groups under a role and satisfies the
     // priority_role_or_fyi CHECK (role_id IS NOT NULL OR is_fyi). Seeded users
     // are pre-existing and activated, so default_role_id() is non-null.
+    // NOTE: the cleanup DELETE above also wiped the two special focuses that
+    // activate_invited_user creates — the is_inbox flag on the root and the
+    // role-less FYI focus — and none of the seed-layout rows below restore
+    // them. The block after this INSERT re-creates both (see there).
     lines.push(
       "INSERT INTO priority (id, created_by, title, icon, path, archived_at, role_id, created_at, updated_at)"
     );
@@ -1611,6 +1637,37 @@ function generateSQL(
         )}, public.default_role_id(${sqlString(p.created_by)}::uuid), NOW(), NOW())${comma}`
       );
     }
+    lines.push("");
+
+    // Restore the activate_invited_user artifacts the cleanup DELETE removed:
+    //   1. The user's primary root focus (nlevel(path) = 1) becomes their
+    //      default-role Inbox. fallback_inbox_id() requires a live is_inbox
+    //      priority — without it, pending/unclassified threads and threads
+    //      released from archived focuses resolve to NULL and disappear from
+    //      every focus.
+    //   2. The role-less global FYI focus (is_fyi satisfies priority_role_or_fyi
+    //      without a role_id; muted by default) where the classifier files
+    //      low-signal mail.
+    // Both are scoped to ONE root so the per-role/per-user unique indexes
+    // (idx_priority_role_inbox, idx_priority_user_fyi) hold even if a layout
+    // declares multiple top-level priorities. The seed assigns every focus to
+    // default_role_id (the single oldest role), so exactly one Inbox is correct.
+    // The primary root is chosen deterministically by path (matches the
+    // sidebar's ltree ordering).
+    const rootSubquery =
+      `(SELECT id FROM priority WHERE created_by = ${sqlString(userId)} ` +
+      `AND nlevel(path) = 1 ORDER BY path LIMIT 1)`;
+    lines.push(
+      "-- Restore activation focuses (root Inbox flag + FYI) removed by the cleanup DELETE"
+    );
+    lines.push(`UPDATE priority SET is_inbox = TRUE WHERE id = ${rootSubquery};`);
+    lines.push(
+      "INSERT INTO priority (created_by, user_id, title, path, color, key, role_id, is_fyi, early_notifications_enabled, created_at, updated_at)"
+    );
+    lines.push(
+      `SELECT root.created_by, ${sqlString(userId)}, 'FYI', public.generate_path(root.path), 0, 'fyi', NULL, TRUE, FALSE, NOW(), NOW()`
+    );
+    lines.push(`FROM priority root WHERE root.id = ${rootSubquery};`);
     lines.push("");
   }
 
@@ -2404,6 +2461,7 @@ function processThread(
         userId,
         baseDate,
         contactIdMap,
+        twistIdMap,
         outNotes,
         outNoteTags
       );
@@ -2473,28 +2531,69 @@ function processNote(
   userId: string,
   baseDate: string,
   contactIdMap: RefMap<string>,
+  twistIdMap: RefMap<string>,
   outNotes: GeneratedNote[],
   outNoteTags: GeneratedNoteTag[]
 ) {
   const id = generateUUID();
 
-  const authorId = note.author_ref
-    ? contactIdMap[note.author_ref]
-    : contactIdMap["user"];
+  // The author may be a contact ("user" or a contact ref) or a twist ref —
+  // e.g. the Plot AI twist authoring its reply. A twist-authored note is also
+  // created_by the twist instance, matching the real createNote path
+  // (author_id = created_by = twistInstanceId). Beyond accuracy, this keeps
+  // the sync_twist_for_note trigger from re-dispatching the reply back to the
+  // twist: that trigger only routes a mentioned note when created_by differs
+  // from the twist instance id.
+  const authorRef = note.author_ref ?? "user";
+  const twistAuthorId = note.author_ref ? twistIdMap[note.author_ref] : undefined;
+  const authorId = twistAuthorId ?? contactIdMap[authorRef];
+  const createdBy = twistAuthorId ?? userId;
 
   const createdAt = parseDateOffset(baseDate, note.created).toISOString();
 
-  const mentions = note.mentions
-    ? `{${note.mentions.map((ref) => contactIdMap[ref]).join(",")}}`
-    : null;
+  // Resolve at-mentions embedded in the content. Notes store mentions as
+  // `[Display](#@<actorId>)` links (the exact format the Flutter editor
+  // serializes). In seed YAML the actorId slot holds a ref; rewrite each known
+  // contact/twist ref to its resolved UUID so the stored content matches a
+  // real note, and collect the resolved ids so the mentions array is derived
+  // from the content (mirroring the app's auto-extraction). Refs that are
+  // already a UUID or otherwise unknown are left untouched.
+  const contentMentionIds: string[] = [];
+  let content = note.content ?? note.note ?? null;
+  if (content) {
+    content = content.replace(
+      /\]\(#@([A-Za-z0-9_-]+)\)/g,
+      (match: string, ref: string) => {
+        const resolved = contactIdMap[ref] ?? twistIdMap[ref];
+        if (!resolved) return match;
+        contentMentionIds.push(resolved);
+        return `](#@${resolved})`;
+      }
+    );
+  }
+
+  // The mentions array drives twist dispatch routing. Combine ids parsed from
+  // the content markup with any explicit `mentions` refs, then ensure a
+  // twist-authored note mentions itself — createNote auto-mentions the calling
+  // twist so the thread stays routed to it for follow-up notes.
+  const mentionSet = new Set<string>(contentMentionIds);
+  if (note.mentions) {
+    for (const ref of note.mentions) {
+      const resolved = contactIdMap[ref] ?? twistIdMap[ref];
+      if (resolved) mentionSet.add(resolved);
+    }
+  }
+  if (twistAuthorId) mentionSet.add(twistAuthorId);
+  const mentions =
+    mentionSet.size > 0 ? `{${Array.from(mentionSet).join(",")}}` : null;
 
   outNotes.push({
     id,
     thread_id: threadId,
     author_id: authorId,
-    created_by: userId,
+    created_by: createdBy,
     draft: note.draft ?? false,
-    content: note.content ?? note.note ?? null,
+    content,
     actions: note.actions ? JSON.stringify(note.actions) : null,
     mentions,
     source_created_at: createdAt,
@@ -2658,7 +2757,8 @@ function derivePreview(content: string | null): string | null {
     .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
     .replace(/\*([^*]+)\*/g, "$1") // italic
     .replace(/`([^`]+)`/g, "$1") // code
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links → text
+    .replace(/\[([^\]]+)\]\(#@[^)]*\)/g, "@$1") // mentions → @name (matches markdownToPlainText)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // other links → text
     .replace(/\s+/g, " ")
     .trim();
   if (!plain) return null;

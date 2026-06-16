@@ -9,6 +9,43 @@
   role, and if you only have one role nothing changes.
 - Your browser tab and desktop window title now include the focus you're viewing (and its role when
   you have more than one), so Plot is easy to pick out among your open tabs and windows.
+- Choosing where to start during setup is clearer. Each choice — Work, Project, Personal, School,
+  Other — now has an icon, and picking one moves you straight on: when your choice needs a name (your
+  workplace or project) Plot asks for it on its own step with the box ready to type, instead of a
+  field tucked below the list that was easy to miss. Naming it is required, and you can press Enter to
+  continue or use Back to pick a different one.
+
+### Fixes
+
+- Reading a thread on one device now reliably marks it read on your other devices. Previously, when
+  you opened a thread that was in your Doing list, the unread dot cleared on the device you read it on
+  but stayed on your other devices.
+- Changes you make to a thread — marking it done, reordering it, scheduling it, or reading it — now
+  reliably reach your other devices even if your connection drops or hiccups right as you make them.
+  Previously a brief network glitch could silently drop the change, leaving that device out of sync.
+- New accounts now reliably start in the welcome and setup flow, and stay there until you've chosen
+  where to start — previously some new accounts skipped setup entirely and landed in the app with a
+  default space they never picked.
+- Text boxes you aren't currently typing in — like the email and password fields on the sign-in
+  screen — no longer look greyed-out as if they were disabled. They now match the box you're typing
+  in.
+- The welcome and getting-started messages now reliably show the Plot logo. Some accounts were
+  seeing a generic placeholder icon on these messages instead.
+- A "Reconnect" prompt no longer lingers for a connection you've already switched off. Previously,
+  if a connection's sign-in expired and you turned all of its syncing off instead of reconnecting,
+  the prompt kept nagging with nothing to act on. It now only appears for connections that are still
+  active.
+- When someone accepts a meeting invitation, the "Accepted" email no longer shows up needing your
+  attention — it's treated as a low-signal notification. Declines and tentative replies still come
+  through normally, since those may need you to follow up.
+- Emoji reactions on a message now line up vertically with the task circle and other icons next to
+  them, instead of sitting slightly too high.
+- Starting a new thread again shows the "Private notes" section, so you can file a private note
+  straight into one of your focuses. The section had gone missing for some accounts when the picker
+  loaded before your focuses had finished syncing.
+- On a narrow or single-column layout, tapping a role in the Focus list now just opens it to reveal
+  its focuses so you can choose one, instead of jumping straight into its first focus — which had
+  left no way to pick a different one.
 
 ## 1.4.0+354 — 2026-06-15
 

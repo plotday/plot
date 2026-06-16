@@ -138,45 +138,64 @@ class ManageConnections extends Command {
     }
   }
 
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+  /// Reactively reports whether any *active* connection needs re-auth. A
+  /// connection counts only when it still has at least one enabled channel —
+  /// a connection whose channels are all disabled is dormant and excluded from
+  /// the active list below (`enabledCount == 0`) and from quota counts, so it
+  /// must not light up the reconnect affordances. See [TwistConnection.active].
+  Widget _activeReauthBuilder(Widget Function(bool needsReauth) build) {
     return StreamBuilder<List<TwistConnectionRow>>(
       stream: TwistConnection.watchAll(),
       initialData: const [],
-      builder: (context, snap) {
-        final needsReauth = (snap.data ?? const []).any((c) => c.needsReauth);
-        return FaIcon(
-          needsReauth ? PlotIcon.plugCircleExclamation : PlotIcon.connection,
-          size: context.theme.iconSizes.base,
-          color: needsReauth ? context.theme.colors.destructive : null,
+      builder: (context, connSnap) {
+        return StreamBuilder<List<Channel>>(
+          stream: Channel.watchAllEnabled(),
+          initialData: const [],
+          builder: (context, chanSnap) {
+            final enabledIds = {
+              for (final c in chanSnap.data ?? const <Channel>[])
+                c.twistInstanceId,
+            };
+            final needsReauth = TwistConnection.active(
+              connSnap.data ?? const [],
+              enabledIds,
+            ).any((c) => c.needsReauth);
+            return build(needsReauth);
+          },
         );
       },
     );
   }
 
   @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    return _activeReauthBuilder(
+      (needsReauth) => FaIcon(
+        needsReauth ? PlotIcon.plugCircleExclamation : PlotIcon.connection,
+        size: context.theme.iconSizes.base,
+        color: needsReauth ? context.theme.colors.destructive : null,
+      ),
+    );
+  }
+
+  @override
   Widget? buildDescription(BuildContext context) {
-    return StreamBuilder<List<TwistConnectionRow>>(
-      stream: TwistConnection.watchAll(),
-      initialData: const [],
-      builder: (context, snap) {
-        final needsReauth = (snap.data ?? const []).any((c) => c.needsReauth);
-        if (!needsReauth) {
-          return Text(
-            description!,
-            style: context.theme.typography.sm.copyWith(
-              color: context.theme.plotColors.muted,
-            ),
-          );
-        }
+    return _activeReauthBuilder((needsReauth) {
+      if (!needsReauth) {
         return Text(
-          'Action required to reconnect.',
+          description!,
           style: context.theme.typography.sm.copyWith(
-            color: context.theme.colors.destructive,
+            color: context.theme.plotColors.muted,
           ),
         );
-      },
-    );
+      }
+      return Text(
+        'Action required to reconnect.',
+        style: context.theme.typography.sm.copyWith(
+          color: context.theme.colors.destructive,
+        ),
+      );
+    });
   }
 
   /// Cached upcoming connections data, fetched once per ManageConnections session.

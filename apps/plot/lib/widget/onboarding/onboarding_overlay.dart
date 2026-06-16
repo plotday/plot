@@ -18,6 +18,7 @@ import 'onboarding_full_screen.dart';
 import 'onboarding_highlight.dart';
 import 'onboarding_hoverable.dart';
 import 'onboarding_progress.dart';
+import 'onboarding_step_scope.dart';
 
 /// Wraps the app's router output and conditionally shows the onboarding
 /// overlay on top.
@@ -476,6 +477,11 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
 
   Future<void> _handleNext() async {
     if (_committing) return;
+    // Guard required-field steps (the role follow-up): refuse to advance while
+    // invalid, even if reached via Enter. The pager's Next is also disabled in
+    // this state, so this is defense in depth.
+    final canAdvance = widget.step.canAdvance;
+    if (canAdvance != null && !canAdvance()) return;
     final hook = widget.step.onBeforeNext;
     if (hook == null) {
       widget.onNext();
@@ -508,6 +514,28 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
     } finally {
       if (mounted) setState(() => _committing = false);
     }
+  }
+
+  /// Builds the pager, disabling Next when the step says it can't advance yet
+  /// (a required field is empty). When the step exposes an [advanceListenable],
+  /// the pager rebuilds as it fires so Next enables/disables live while typing.
+  Widget _buildPager() {
+    Widget pager() {
+      final enabled = widget.step.canAdvance?.call() ?? true;
+      return OnboardingProgress(
+        currentStep: widget.currentStep,
+        totalSteps: widget.totalSteps,
+        onNext: enabled ? _handleNext : null,
+        onBack: widget.onBack,
+      );
+    }
+
+    final listenable = widget.step.advanceListenable;
+    if (listenable == null) return pager();
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (context, _) => pager(),
+    );
   }
 
   @override
@@ -562,9 +590,14 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
                               1.0,
                               curve: Curves.easeOut,
                             ),
-                            child: OnboardingFullScreen(
+                            // Scope exposes `_handleNext` to the step content so
+                            // interactive content (the role picker) can advance
+                            // on selection. Keyed by step so the switcher still
+                            // cross-fades between steps.
+                            child: OnboardingStepScope(
                               key: ValueKey(widget.currentStep),
-                              step: widget.step,
+                              advance: _handleNext,
+                              child: OnboardingFullScreen(step: widget.step),
                             ),
                           ),
                         ),
@@ -574,51 +607,52 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
                     // Persistent pager — single instance across all
                     // full-screen steps. Label flip ("Next" →
                     // "Finish") is acceptable as a one-frame change.
-                    OnboardingProgress(
-                      currentStep: widget.currentStep,
-                      totalSteps: widget.totalSteps,
-                      onNext: _handleNext,
-                      onBack: widget.onBack,
-                    ),
+                    // Rebuilds on the step's advanceListenable (if any) so a
+                    // required-field step can disable Next live as the user
+                    // types; non-null onNext means enabled.
+                    _buildPager(),
                     const SizedBox(height: 24),
                   ],
                 ),
               );
             },
           ),
-          // Persistent X dismiss — stays in place while the page
-          // scrolls and across step swaps.
-          Positioned(
-            top: 16,
-            right: 16,
-            child: OnboardingHoverable(
-              onTap: widget.onDismiss,
-              builder: (context, hovered) => AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: hovered
-                      ? const Color(0x26FFFFFF)
-                      : const Color(0x00FFFFFF),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    '×',
-                    style: TextStyle(
-                      color: hovered
-                          ? const Color(0xFFFFFFFF)
-                          : const Color(0xB3FFFFFF),
-                      fontSize: 28,
-                      fontWeight: FontWeight.w300,
-                      decoration: TextDecoration.none,
+          // Persistent × dismiss — stays in place while the page scrolls and
+          // across step swaps. Hidden on non-dismissible steps (welcome + role
+          // selection) so a new user can't close onboarding before choosing a
+          // role.
+          if (widget.step.dismissible)
+            Positioned(
+              top: 16,
+              right: 16,
+              child: OnboardingHoverable(
+                onTap: widget.onDismiss,
+                builder: (context, hovered) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: hovered
+                        ? const Color(0x26FFFFFF)
+                        : const Color(0x00FFFFFF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '×',
+                      style: TextStyle(
+                        color: hovered
+                            ? const Color(0xFFFFFFFF)
+                            : const Color(0xB3FFFFFF),
+                        fontSize: 28,
+                        fontWeight: FontWeight.w300,
+                        decoration: TextDecoration.none,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

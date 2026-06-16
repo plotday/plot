@@ -2531,7 +2531,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 371;
+  int get schemaVersion => 372;
 
   @override
   MigrationStrategy get migration {
@@ -4157,6 +4157,13 @@ class Store extends _$Store {
 
     if (from < 371) {
       await _safeAddColumn(m, priorities, priorities.isFyi);
+    }
+
+    if (from < 372) {
+      // Client-only durability marker for the /sync/thread-state push.
+      // Default false: anything truly unpushed pre-upgrade was already lost
+      // by the old fire-and-forget push, so existing rows start clean.
+      await _safeAddColumn(m, threads, threads.statePending);
     }
   }
 

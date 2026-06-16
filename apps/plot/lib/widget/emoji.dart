@@ -144,9 +144,21 @@ class EmojiCommandIcon extends StatelessWidget {
 
   final Reaction emoji;
 
+  /// Downward nudge, as a fraction of the icon size, applied to Unicode
+  /// color-emoji glyphs. Noto Color Emoji draws its glyph high within the
+  /// `height: 1.0` line box, so a raw emoji renders visibly above a
+  /// neighboring FontAwesome icon (e.g. a reaction pill next to a task
+  /// circle). Shifting the glyph down by this amount optically centers it
+  /// like an icon. Calibrated against a full-em face glyph centered inside a
+  /// reference ring. Custom-emoji *images* are square and already centered,
+  /// so they're exempt.
+  static const double _emojiGlyphNudge = 0.125;
+
   @override
   Widget build(BuildContext context) {
     final iconSize = context.theme.iconSizes.base;
+    final glyphNudge =
+        isCustomEmojiRef(emoji) ? 0.0 : iconSize * _emojiGlyphNudge;
     return SizedBox(
       width: iconSize,
       height: iconSize,
@@ -155,7 +167,10 @@ class EmojiCommandIcon extends StatelessWidget {
           maxWidth: double.infinity,
           maxHeight: double.infinity,
           alignment: Alignment.center,
-          child: EmojiText(emoji, size: iconSize),
+          child: Transform.translate(
+            offset: Offset(0, glyphNudge),
+            child: EmojiText(emoji, size: iconSize),
+          ),
         ),
       ),
     );

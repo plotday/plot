@@ -1510,14 +1510,18 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                               return Padding(
                                 // Reserve room on the right for the floating
                                 // close button when this modal is top-level.
-                                padding: context.theme.spacing.paddingSm
-                                    .copyWith(
-                                      right: nested
-                                          ? context.theme.spacing.paddingSm.right
-                                          : context.theme.spacing.paddingSm
-                                                  .right +
-                                              modalCloseButtonReservedWidth,
-                                    ),
+                                // Use the full `padding` (not `paddingSm`) so
+                                // the title's vertical centre matches the
+                                // floating close button — the same metrics the
+                                // search-field header path uses. `paddingSm`'s
+                                // tighter vertical inset left the title centred
+                                // above the X.
+                                padding: context.theme.spacing.padding.copyWith(
+                                  right: nested
+                                      ? context.theme.spacing.padding.right
+                                      : context.theme.spacing.padding.right +
+                                            modalCloseButtonReservedWidth,
+                                ),
                                 child: Row(
                                   children: [
                                     if (nested)

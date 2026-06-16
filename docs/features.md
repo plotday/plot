@@ -7,20 +7,8 @@ product.
 
 ## Positioning
 
-Plot is where your work comes together so you can make real progress on it. It pulls every
-conversation that needs a human reply — team chat, email, and the threads inside the tools you
-already use (Linear, Notion, and more) — into one place, organized by the roles and goals you care
-about.
-
-Each day holds the same number of hours. Plot's job is to help you invest them on real progress —
-and keep everything else from spending them for you. You see what genuinely needs you and act on it
-in one place, collaborate without the drag, choose where your attention goes, and shape Plot around
-the way you work best.
-
-Most of what you see in Plot are **connection threads** — conversations synced from the tools you
-already use, all in one place. Plot also has its own native **Plot threads** for private notes and
-tasks or for collaborating with other Plot users. Think of Plot threads as an optional, free,
-built-in team chat platform.
+Plot brings your work together from team chat, email, meeting notes, and the tools you use (Linear,
+Notion, and more) and organizes it so you can pick a focus and make real progress.
 
 ### Messaging
 
@@ -286,13 +274,13 @@ yours.
 
 ### Plot AI
 
-- A built-in AI assistant that keeps your chats alongside your work: chat with it like ChatGPT or
-  Claude, @mention Plot on any thread, or start a Plot AI chat.
+- A built-in AI assistant that keeps your chats alongside your work: chat with it like any AI
+  assistant, @mention Plot on any thread, or start a Plot AI chat.
 - It searches the web with cited sources, reads and reasons over your own workspace (threads, notes,
   focuses) to answer questions, and can propose organization plans — moves, renames, archives — for
   your approval.
-- Choose your model — Claude (Anthropic), ChatGPT (OpenAI), or Gemini (Google) — with
-  bring-your-own-key support and custom OpenAI-compatible endpoints for local models or proxies.
+- Use AI your way: bring your own key, or point Plot at your own OpenAI-compatible endpoint for
+  local models or proxies.
 - Prefer no AI? There's an option to turn it off.
 
 ### Twists

@@ -9,12 +9,10 @@ CREATE OR REPLACE FUNCTION public.activate_invited_user (p_user_id uuid)
     AS $function$
 DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001'::uuid;
-    c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f'::uuid;
     v_root_priority_id uuid;
     v_default_role_id uuid;
     v_new_path ltree;
     v_plot_team_group_id uuid;
-    v_plot_twist_id bigint;
     v_user_contact_id uuid;
     v_welcome_thread_id uuid;
 BEGIN
@@ -103,14 +101,6 @@ LIMIT 1)) INTO v_plot_team_group_id;
     -- avoids noisy welcomes in ephemeral test databases that don't have
     -- the Plot publisher/team bootstrapped.
     IF v_plot_team_group_id IS NOT NULL THEN
-        SELECT
-            id INTO v_plot_twist_id
-        FROM
-            public.twist
-        WHERE
-            twist_package_id = c_twist_package_id
-            AND environment = 'public'
-        LIMIT 1;
         -- The API worker inserts the primary contact row a moment after
         -- this trigger runs, so user_contact may not exist yet. Seed it
         -- ourselves via upsert_user_contact (idempotent via ON CONFLICT
@@ -149,7 +139,10 @@ LIMIT 1)) INTO v_plot_team_group_id;
         -- twist_id is intentionally NULL: welcome-user is a per-user thread
         -- and must not participate in cross-user (twist_id, key) dedup. The
         -- twist_instance_id in created_by is what makes this "twist-authored"
-        -- for peer-filing purposes; icon preserves the visual attribution.
+        -- for peer-filing purposes. icon is the stable Plot logo URL (NOT
+        -- 'twist:<id>', which resolves client-side via the per-user Plot
+        -- twist_instance and would fall back to the generic twist icon when
+        -- that instance is archived / not yet synced).
         -- contacts: the synthetic "Plot Team" sender (so the row header
         -- attributes the thread to Plot Team, same as the shared onboarding
         -- threads) PLUS the user's own contact (load-bearing for the user's
@@ -157,7 +150,7 @@ LIMIT 1)) INTO v_plot_team_group_id;
         -- shows). groups carries the Plot Team group so replies reach the team.
         -- ONBOARDING:BEGIN welcome-user
         INSERT INTO public.thread (created_by, icon, title, preview, key, topic, contacts, groups)
-            VALUES (c_system_instance_id, CASE WHEN v_plot_twist_id IS NOT NULL THEN 'twist:' || v_plot_twist_id::text END,
+            VALUES (c_system_instance_id, 'https://plot.day/assets/plot-icon.svg',
                 'Welcome to Plot!', 'We''re so glad something brought you here.', 'welcome-user', 'onboarding',
                 ARRAY[c_system_instance_id] || (CASE WHEN v_user_contact_id IS NOT NULL THEN ARRAY[v_user_contact_id] ELSE ARRAY[]::uuid[] END),
                 ARRAY[v_plot_team_group_id])

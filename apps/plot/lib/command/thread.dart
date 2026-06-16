@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/command/open_thread_link.dart';
+import 'package:plot/command/page_link.dart';
 import 'package:plot/command/thread_merge.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/analytics/tracker.dart';
@@ -4286,6 +4287,7 @@ List<Command> threadCommands(
   if (thread.isReadOnly) {
     return [
       if (open) ChangeCurrentThread(thread),
+      CopyThreadLink(thread),
       if (!skipInfrequent) MoveThreadToPriority(thread, bloc: priorityBloc),
       if (!skipInfrequent) MuteSimilarThreads(thread, bloc: priorityBloc),
     ];
@@ -4331,6 +4333,11 @@ List<Command> threadCommands(
     // none mode has no sharing UI. In all three the thread-level share roster
     // isn't editable, so the menu entry is dropped.
     if (sharingModel == SharingModel.thread) PickThreadShared(thread),
+    // Copy the thread's canonical `/t/:id` URL. Always available (every thread
+    // has a globally shareable link) and the only place it lives now that the
+    // global "copy page link" command was removed — page/priority URLs aren't
+    // shareable, and this is how you grab a link on single-panel mobile.
+    CopyThreadLink(thread),
     // Leaving a thread lives in the more-commands menu (not on hover and not
     // in the share modal, which no longer lists self). Only meaningful when
     // the thread is actually shared with someone else under thread-level

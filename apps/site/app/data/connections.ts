@@ -74,7 +74,7 @@ export const CONNECTIONS: Connection[] = [
   {
     name: "WhatsApp",
     description: "Reply to WhatsApp messages and start new chats without leaving Plot.",
-    logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
+    logo: "/assets/logo-whatsapp.svg",
     category: "Communication",
     entities: ["Messages", "Groups"],
     available: true,

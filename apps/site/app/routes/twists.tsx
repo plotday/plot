@@ -146,7 +146,8 @@ export default function Twists() {
                 <Text className={classes.sectionBody} fz="sm">
                   Twists can bring AI right alongside your work — chat and agents
                   that draw on your threads, focuses, and connections for context.
-                  Use Claude, ChatGPT, or Gemini, or turn AI off entirely.
+                  Use AI as much or as little as you want — bring your own key,
+                  point it at your own model, or turn it off entirely.
                 </Text>
               </Stack>
             </SimpleGrid>

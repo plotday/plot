@@ -327,6 +327,12 @@ class _DurationInputState extends State<DurationInput> {
                   vertical: 8,
                 ),
               ),
+              // Borderless inline field: opt out of the global filled
+              // appearance (bordered fields fill with editableBackground in
+              // every state) so the surrounding surface shows through.
+              color: FVariantsValueDelta.delta([
+                FVariantValueDeltaOperation.all(const Color(0x00000000)),
+              ]),
               border: FVariantsValueDelta.delta([
                 FVariantValueDeltaOperation.all(
                   const OutlineInputBorder(

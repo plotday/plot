@@ -4,6 +4,12 @@ function q(s: string): string {
   return s.replace(/'/g, "''");
 }
 
+// Stable Plot logo URL stored directly in thread.icon — see the note in
+// emit-global.ts. An http icon renders regardless of whether the user's Plot
+// twist_instance is active/synced, so the welcome thread shows the Plot logo
+// even when the Plot-twist install was rolled back.
+const PLOT_LOGO_URL = "https://plot.day/assets/plot-icon.svg";
+
 /** Body between the schedules markers: the CASE table + the key guard. */
 export function emitSchedulesRegion(global: ThreadDef[]): string {
   // No onboarding threads define schedule state — nothing to file for any
@@ -47,7 +53,7 @@ export function emitWelcomeUserRegion(thread: ThreadDef): string {
   const importance = thread.state.importance ?? 100;
   const lines: string[] = [];
   lines.push("        INSERT INTO public.thread (created_by, icon, title, preview, key, topic, contacts, groups)");
-  lines.push("            VALUES (c_system_instance_id, CASE WHEN v_plot_twist_id IS NOT NULL THEN 'twist:' || v_plot_twist_id::text END,");
+  lines.push(`            VALUES (c_system_instance_id, '${PLOT_LOGO_URL}',`);
   lines.push(`                '${q(thread.title)}', '${q(thread.preview)}', '${q(thread.key)}', 'onboarding',`);
   lines.push("                ARRAY[c_system_instance_id] || (CASE WHEN v_user_contact_id IS NOT NULL THEN ARRAY[v_user_contact_id] ELSE ARRAY[]::uuid[] END),");
   lines.push("                ARRAY[v_plot_team_group_id])");

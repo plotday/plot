@@ -18,11 +18,13 @@ FTextFieldStyleDelta buildTextFieldStyleDelta(
     // header) and modal search rows. Drop the floor — sizing is driven
     // by content + contentPadding, as it was pre-0.22.
     constraints: const BoxConstraints(),
+    // Fill bordered fields with `editableBackground` in every state. An
+    // unfocused field that fell back to the transparent page background read
+    // as disabled (greyed-out) next to the white focused field. Borderless
+    // fields used in special contexts (ghost/compose/header prompts) override
+    // this back to transparent so the parent surface shows through.
     color: FVariantsValueDelta.delta([
-      FVariantValueDeltaOperation.all(const Color(0x00000000)),
-      FVariantValueDeltaOperation.exact({
-        FTextFieldVariantConstraint.focused,
-      }, colourScheme.editableBackground),
+      FVariantValueDeltaOperation.all(colourScheme.editableBackground),
     ]),
     border: FVariantsValueDelta.delta([
       FVariantValueDeltaOperation.all(

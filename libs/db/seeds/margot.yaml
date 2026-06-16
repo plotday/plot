@@ -259,12 +259,10 @@ threads:
           Board presentation in May; decision by June; launch announcement if approved.
       - created: "-1d 08:30"
         content: |
-          **@plot, what are the common challenges football clubs face when launching women's teams?**
-        ai_query: true
-      - created: "-1d 08:30"
+          [Plot](#@plot_ai) what are the common challenges football clubs face when launching women's teams?
+      - author_ref: plot_ai
+        created: "-1d 08:31"
         content: |
-          **Plot AI:**
-
           The challenges that most often derail a new women's team:
 
           1. **Underfunding** — treated as a cost centre with no multi-year plan
@@ -514,12 +512,10 @@ threads:
     notes:
       - created: "-1d 08:20"
         content: |
-          **@plot, stress-test the revenue assumptions for a women's team launching in the FA Women's Championship. Year 1 startup ~£2.5M, projected revenue £800K. I have benchmarking from three comparable clubs. Which assumptions matter most?**
-        ai_query: true
-      - created: "-1d 08:20"
+          [Plot](#@plot_ai) stress-test the revenue assumptions for a women's team launching in the FA Women's Championship. Year 1 startup ~£2.5M, projected revenue £800K. I have benchmarking from three comparable clubs. Which assumptions matter most?
+      - author_ref: plot_ai
+        created: "-1d 08:21"
         content: |
-          **Plot AI:**
-
           The assumptions most likely to make or break a Year 1 model:
 
           **Attendance (highest variance):** first-season crossover from the men's fanbase runs 8–15%; full brand integration outperforms standalone by ~40%. Conservative 800–1,200 per match, optimistic 1,500–2,000.
@@ -537,12 +533,10 @@ threads:
     notes:
       - created: "-1d 08:40"
         content: |
-          **@plot, help me frame a board presentation for launching the women's team. The board will worry about timing — the men's team is in a slump. I want this to read as strategic long-term investment, not a feel-good project.**
-        ai_query: true
-      - created: "-1d 08:40"
+          [Plot](#@plot_ai) help me frame a board presentation for launching the women's team. The board will worry about timing — the men's team is in a slump. I want this to read as strategic long-term investment, not a feel-good project.
+      - author_ref: plot_ai
+        created: "-1d 08:41"
         content: |
-          **Plot AI:**
-
           The frame that lands with a skeptical board: **"This is what stable clubs do."** Don't defend the timing — own it: "The men's run is precisely why now shows the board's long-term conviction." Lead with the benchmarking data, not the vision. Acknowledge the risks before anyone raises them. Close with values, never open with them — and don't lead with Hank; earn the emotional close by winning the analytical argument first.
 
   - priority_ref: womens_team

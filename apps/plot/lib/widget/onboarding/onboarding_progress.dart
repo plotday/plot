@@ -19,7 +19,10 @@ class OnboardingProgress extends StatelessWidget {
 
   final int currentStep;
   final int totalSteps;
-  final VoidCallback onNext;
+
+  /// Tapping Next. When null, the Next button is shown disabled (greyed and
+  /// non-interactive) — used by required-field steps until the field is valid.
+  final VoidCallback? onNext;
 
   /// Provided when there's a previous step to return to. When null, the
   /// back chevron is hidden — used on the first step.
@@ -87,34 +90,44 @@ class OnboardingProgress extends StatelessWidget {
           }),
         ),
         const SizedBox(width: 16),
-        // Next button
-        OnboardingHoverable(
-          onTap: onNext,
-          builder: (context, hovered) => AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: hovered
-                  ? const Color(0xFFE8E5FF)
-                  : const Color(0xFFFFFFFF),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: hovered
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x33000000),
-                        blurRadius: 12,
-                        offset: Offset(0, 2),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Text(
-              currentStep == totalSteps - 1 ? 'Finish' : 'Next',
-              style: const TextStyle(
-                color: Color(0xFF1E1B4B),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.none,
+        // Next button. Disabled (greyed, non-interactive) when [onNext] is null
+        // — a required-field step that isn't valid yet.
+        Opacity(
+          opacity: onNext == null ? 0.4 : 1.0,
+          child: IgnorePointer(
+            ignoring: onNext == null,
+            child: OnboardingHoverable(
+              onTap: onNext ?? () {},
+              builder: (context, hovered) => AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: hovered
+                      ? const Color(0xFFE8E5FF)
+                      : const Color(0xFFFFFFFF),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: hovered
+                      ? const [
+                          BoxShadow(
+                            color: Color(0x33000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  currentStep == totalSteps - 1 ? 'Finish' : 'Next',
+                  style: const TextStyle(
+                    color: Color(0xFF1E1B4B),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
               ),
             ),
           ),

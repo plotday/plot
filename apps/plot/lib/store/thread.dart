@@ -160,6 +160,15 @@ class Threads extends Table
   /// only as a transient state during the sync pass — a row that's still
   /// `revoked = true` in the local DB means hard-delete didn't run.
   BoolColumn get revoked => boolean().withDefault(const Constant(false))();
+
+  /// Client-only durability marker for the per-user thread_state push
+  /// (POST /sync/thread-state). Set true whenever a per-user state change is
+  /// persisted locally; cleared only after the server accepts the push. Never
+  /// sent to the server (stripped in [ThreadsBase.toBase]) and never set from a
+  /// server pull (defaulted in [ThreadsBase.fromBase]). Distinct from `pending`
+  /// (the full-thread /sync/threads marker) and from `read_at` (a dual-purpose
+  /// durable "finished" marker that must survive a successful state push).
+  BoolColumn get statePending => boolean().withDefault(const Constant(false))();
 }
 
 @DataClassName('ScheduleRow')
@@ -432,6 +441,11 @@ class ThreadsBase extends BaseTable {
       json['team_id'] = BigInt.parse(rawTeamId);
     }
 
+    // The server view has no `state_pending` (client-only). Default it so the
+    // non-null column deserializes; a racing-pull merge restores the local
+    // value when a push is still pending (see processPulledRows).
+    json['state_pending'] ??= false;
+
     return ThreadRow.fromJson(json);
   }
 
@@ -470,6 +484,27 @@ class ThreadsBase extends BaseTable {
         store.threads,
       )..where((t) => t.id.equals(activityRow.id.toBytes()))).getSingleOrNull();
       var merged = activityRow;
+
+      // An unpushed per-user state edit (state_pending) is the local source of
+      // truth until the durable /sync/thread-state push clears the marker — the
+      // pull would otherwise clobber it (and the drain reads the DB row, so it
+      // would then push the stale server value). Preserve all per-user state
+      // fields; server-authoritative content fields still update from `merged`.
+      if (local != null && local.statePending) {
+        merged = merged.copyWith(
+          active: local.active,
+          urgent: Value(local.urgent),
+          importance: local.importance,
+          stateOrder: Value(local.stateOrder),
+          stateOn: Value(local.stateOn),
+          stateAt: Value(local.stateAt),
+          readAt: Value(local.readAt),
+          bumpedAt: Value(local.bumpedAt),
+          statePending: true,
+        );
+        result.add(merged);
+        continue;
+      }
 
       // Conflict resolution: local has a pending read (readAt != null).
       if (local != null && local.readAt != null) {
@@ -569,6 +604,8 @@ class ThreadsBase extends BaseTable {
     json.remove('state_on');
     json.remove('state_at');
     json.remove('read_at');
+    // Client-only durability marker — never send it to the server.
+    json.remove('state_pending');
 
     // Remove last_note_created_at and last_note_source_created_at - they are calculated fields from notes
     json.remove('last_note_created_at');
@@ -1021,6 +1058,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     ]);
     final success = results.every((r) => r);
 
+    // Durable per-user thread_state push (replaces the old fire-and-forget
+    // _pushThreadState). Runs every cycle, independent of read receipts; a
+    // transient failure rethrows so the orchestrator retries next tick.
+    await pushPendingThreadState();
+
     // Push pending read changes (readAt != null means user read locally).
     // Threads with any state flag (active / task / toRead) sync read_at via
     // the per-user state endpoint (/sync/thread-state) and rely on local
@@ -1100,6 +1142,112 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     return success;
+  }
+
+  /// Builds the POST /sync/thread-state body for one row. Mirrors the shape
+  /// the legacy fire-and-forget `_pushThreadState` sent (keep the body the
+  /// endpoint expects), sourced from the persisted row so rapid edits coalesce
+  /// to the row's current state.
+  static Map<String, dynamic> _threadStateBody(ThreadRow row) =>
+      <String, dynamic>{
+        'thread_id': row.id.toString(),
+        'active': row.active,
+        if (row.urgent != null) 'urgent': row.urgent,
+        'importance': row.importance,
+        if (row.stateOrder != null) 'order': row.stateOrder!.value,
+        if (row.stateOn != null) 'on': '[${row.stateOn},)',
+        if (row.stateAt != null)
+          'at': '["${row.stateAt!.toIso8601String()}",)',
+        if (row.readAt != null) 'read_at': row.readAt!.toIso8601String(),
+        if (row.bumpedAt != null)
+          'bumped_at': row.bumpedAt!.toIso8601String(),
+      };
+
+  /// Durable replacement for the old fire-and-forget `_pushThreadState`.
+  /// Drains every `state_pending` row through POST /sync/thread-state, then:
+  ///   * success / partial → clear the marker for rows whose `updated_at` is
+  ///     unchanged since selection (last-writer guard; an edit during the
+  ///     in-flight POST bumps `updated_at`, so the marker survives and the
+  ///     newer state re-pushes). `read_at` is never touched.
+  ///   * per-row `failed[]` (permanent pg rejection) → clear + report.
+  ///   * permanent ApiException (4xx) → clear all + report (no rethrow).
+  ///   * transient (offline / timeout / 5xx) → keep markers, rethrow so the
+  ///     sync orchestrator retries next cycle; not reported (expected).
+  /// [post] / [report] are test seams defaulting to `api.post` / PostHog.
+  @visibleForTesting
+  static Future<void> pushPendingThreadState({
+    Future<dynamic> Function(String url, {Object body})? post,
+    void Function(Object error, StackTrace stack, int count)? report,
+  }) async {
+    if (!Store.isAvailable) return;
+    final store = Store.get;
+
+    final pending = await (store.select(
+      store.threads,
+    )..where((t) => t.statePending.equals(true))).get();
+    if (pending.isEmpty) return;
+
+    final poster = post ??
+        (String url, {Object body = const <String, dynamic>{}}) =>
+            api.post<dynamic>(url, body: body);
+    final reporter = report ??
+        (Object error, StackTrace stack, int count) => Store._reportSyncFailure(
+              'Permanent sync push rejected',
+              table: 'thread_state',
+              endpoint: 'thread-state',
+              outcome: 'cleared',
+              error: error,
+              stackTrace: stack,
+              extraProperties: {'record_count': count},
+            );
+
+    // Snapshot (id, updated_at) for the guarded clear; build the batched body
+    // from the CURRENT row so rapid edits coalesce.
+    final snapshots = pending
+        .map((row) => (id: row.id, updatedAt: row.updatedAt))
+        .toList();
+    final records = pending.map(_threadStateBody).toList();
+
+    Future<void> clearUnchanged() async {
+      for (final s in snapshots) {
+        await (store.update(store.threads)
+              ..where((t) =>
+                  t.id.equalsValue(s.id) &
+                  t.updatedAt.equalsValue(s.updatedAt)))
+            .write(const ThreadsCompanion(statePending: Value(false)));
+      }
+    }
+
+    try {
+      final response = await poster('/sync/thread-state', body: records);
+      if (response is Map && response['failed'] is List) {
+        final failed = (response['failed'] as List).cast<String>();
+        if (failed.isNotEmpty) {
+          log.warning(
+            'Server rejected ${failed.length} thread-state records: $failed',
+          );
+          reporter(
+            StateError('thread-state records rejected'),
+            StackTrace.current,
+            failed.length,
+          );
+        }
+      }
+      await clearUnchanged();
+    } catch (e, stackTrace) {
+      if (e is ApiException && Store._isPermanentError(e)) {
+        log.warning(
+          'Permanent error pushing thread-state, '
+          'clearing ${pending.length} records: $e',
+        );
+        reporter(e, stackTrace, pending.length);
+        await clearUnchanged();
+      } else {
+        // Transient — keep the markers, retry on the next push cycle.
+        log.warning('Failed to push thread-state changes: $e');
+        rethrow;
+      }
+    }
   }
 
   /// Splits [search] on whitespace, strips FTS5 special chars, and keeps
@@ -4478,6 +4626,7 @@ SELECT
       readAt: readAt,
       hasEmbedding: false,
       revoked: false,
+      statePending: false,
       // Seed the topic routing key onto the draft thread so it inherits the
       // filter before the user types. When no explicit config.topic is set,
       // fall back to the priority id itself for non-root priorities, so
@@ -4576,6 +4725,18 @@ SELECT
   /// Whether the per-user thread-state fields changed and need to be
   /// pushed via POST /sync/thread-state.
   final bool _stateDirty;
+
+  /// Whether this copy carries per-user thread-state changes that [save]
+  /// pushes via POST /sync/thread-state. Exposed for tests that verify the
+  /// read-receipt of an active (Doing) thread takes the thread-state push
+  /// path rather than the active-excluding /sync/thread-read path.
+  @visibleForTesting
+  bool get stateDirty => _stateDirty;
+
+  /// The persisted per-user-state dirty marker (`threads.state_pending`).
+  /// Drives the durable /sync/thread-state push in [pushPendingThreadState].
+  @visibleForTesting
+  bool get statePending => _thread.statePending;
 
   /// Whether this instance represents a link schedule (event from a linked item).
   /// Link schedule instances appear at their event time and are not reorderable.
@@ -6191,6 +6352,24 @@ SELECT
       );
     }
 
+    // An active (Doing) thread being marked read must push its read receipt
+    // via /sync/thread-state. The /sync/thread-read push (Thread.push)
+    // deliberately excludes active threads (`active.equals(false)`) — routing
+    // them there would clear the local read_at "finished" marker that keeps
+    // them in Doing. Without flagging the state dirty here, opening a Doing
+    // thread marks it read locally but never reaches the server, so every
+    // other device keeps showing it unread (the cross-device unread sync
+    // bug). Gated on the unread→read transition so re-opening a read thread
+    // doesn't emit a spurious push. Inactive reads still ride
+    // /sync/thread-read unchanged.
+    if (!stateDirty &&
+        _thread.active &&
+        _thread.unread &&
+        readAt.present &&
+        readAt.value != null) {
+      stateDirty = true;
+    }
+
     // Fold any thread-state field overrides into the activity row. Mark
     // the activity dirty so save() persists the change; the state push
     // path (POST /sync/thread-state) is selected via stateDirty rather
@@ -6203,6 +6382,7 @@ SELECT
         stateOn: tsStateOn,
         stateAt: tsStateAt,
         readAt: tsReadAt,
+        statePending: true,
         updatedAt: now,
       );
       activityDirty = true;
@@ -6550,10 +6730,12 @@ SELECT
     )..where((a) => a.id.equalsValue(id))).write(
       ThreadsCompanion(
         stateOrder: Value(_thread.stateOrder),
+        statePending: const Value(true),
         updatedAt: Value(_thread.updatedAt),
       ),
     );
-    _pushThreadState();
+    // Durable drain runs on the next push cycle; schedule it now.
+    _deferIdle(Thread.push, debugLabel: 'thread push');
   }
 
   /// Insert this thread's row into the local DB if it doesn't already
@@ -6566,31 +6748,6 @@ SELECT
     await Store.get
         .into(Store.get.threads)
         .insert(_thread.toCompanion(false), mode: InsertMode.insertOrIgnore);
-  }
-
-  /// POST the per-user state fields to /sync/thread-state. Fire-and-forget;
-  /// we don't await the response. Errors are logged.
-  void _pushThreadState() {
-    final body = <String, dynamic>{
-      'thread_id': id.toString(),
-      'active': _thread.active,
-      if (_thread.urgent != null) 'urgent': _thread.urgent,
-      'importance': _thread.importance,
-      if (_thread.stateOrder != null) 'order': _thread.stateOrder!.value,
-      if (_thread.stateOn != null) 'on': '[${_thread.stateOn},)',
-      if (_thread.stateAt != null)
-        'at': '["${_thread.stateAt!.toIso8601String()}",)',
-      if (_thread.readAt != null) 'read_at': _thread.readAt!.toIso8601String(),
-      if (_thread.bumpedAt != null)
-        'bumped_at': _thread.bumpedAt!.toIso8601String(),
-    };
-    () async {
-      try {
-        await api.post<Map<String, dynamic>>('/sync/thread-state', body: body);
-      } catch (e, t) {
-        log.warning('Failed to push thread state for $id: $e\n$t');
-      }
-    }();
   }
 
   Future<void> save() async {
@@ -6623,6 +6780,12 @@ SELECT
             stateAt: Value(_thread.stateAt),
             readAt: Value(_thread.readAt),
             bumpedAt: Value(_thread.bumpedAt),
+            // Mark dirty when this save carries a state change; never write
+            // `false` here — only the durable drain clears the marker, so a
+            // stale in-memory copy can't resurrect or erase a pending push.
+            statePending: _thread.statePending
+                ? const Value(true)
+                : const Value.absent(),
             updatedAt: Value(_thread.updatedAt),
           ),
         );
@@ -6677,10 +6840,9 @@ SELECT
       );
     }
 
-    // Push per-user state changes via /sync/thread-state.
-    if (_stateDirty) {
-      _pushThreadState();
-    }
+    // Per-user state changes ride the durable /sync/thread-state drain in
+    // Thread.push() via the persisted `state_pending` marker (set above);
+    // the deferred Thread.push below schedules that drain.
 
     // Trigger full push including activity_read changes. Deferred to idle
     // so it doesn't compete for CPU with navigation transitions running

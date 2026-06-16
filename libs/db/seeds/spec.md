@@ -390,14 +390,46 @@ Notes are content associated with a thread, stored as separate entities.
 
 - `ref` (optional): Unique reference string (only needed if referenced elsewhere)
 - `created` (required): Date offset when this note was created (e.g., "-2d 14:30", "+1w 09:00")
-- `author_ref` (optional, default: "user"): Reference to contact or "user"
+- `author_ref` (optional, default: "user"): Reference to a contact, "user", or a **twist** ref. A twist-authored note (e.g. the Plot AI twist's reply) is also `created_by` that twist instance, exactly like the real `createNote` path — its content is the raw answer with no name/heading prefix.
 - `content` (optional): Markdown content (preferred field name)
 - `note` (optional): Markdown content (alias for backward compatibility)
-- `mentions` (optional): Array of contact refs mentioned
+- `mentions` (optional): Extra contact/twist refs to mention. Merged with any refs parsed from `[Display](#@ref)` markup in the content (see At-mentions below)
 - `actions` (optional): Array of action objects (file attachments, etc.)
 - `tags` (optional): Object mapping tag names to actor arrays
 - `draft` (optional, default: false): Whether this is a draft
 - `private` (optional, default: false): Whether this is private
+
+#### At-mentions
+
+Notes store at-mentions as `[Display](#@<actorId>)` markdown links — the exact
+format the Flutter editor serializes. In seed YAML, put a contact or twist
+**ref** in the `#@…` slot; the generator rewrites it to the resolved actor UUID
+and adds that id to the note's `mentions` array (which drives twist dispatch
+routing). This mirrors how the app auto-extracts mentions from content, so you
+only write the mention once.
+
+To reproduce a real Plot AI exchange, mention the Plot twist in a user note,
+then have the twist author the reply:
+
+```yaml
+twists:
+  - ref: plot_ai
+    name: Plot
+    priority_ref: everything
+
+threads:
+  - title: "Revenue model assumptions"
+    priority_ref: business_case
+    twist_ref: plot_ai # thread icon = Plot logo
+    notes:
+      - created: "-1d 08:20"
+        content: |
+          [Plot](#@plot_ai) which revenue assumptions matter most for Year 1?
+      - author_ref: plot_ai # reply authored by the Plot twist instance
+        created: "-1d 08:21"
+        content: |
+          The assumptions most likely to make or break a Year 1 model: …
+```
 
 ```yaml
 threads:

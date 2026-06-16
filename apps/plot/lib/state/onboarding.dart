@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart' as drift;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
@@ -6,6 +7,21 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/onboarding/onboarding_steps.dart';
 
 part 'onboarding_state.dart';
+
+/// Index of the next visible (non-skipped) step from [current] moving by [dir]
+/// (+1 forward, -1 back). Returns null when there is no such step — off the end
+/// going forward (the flow completes) or off the start going back (a no-op).
+/// Skip predicates are read live, so a step's visibility reflects the latest
+/// state (e.g. the role follow-up step depends on the option just selected).
+@visibleForTesting
+int? nextVisibleStep(List<OnboardingStep> steps, int current, int dir) {
+  var idx = current + dir;
+  while (idx >= 0 && idx < steps.length) {
+    if (!(steps[idx].shouldSkip?.call() ?? false)) return idx;
+    idx += dir;
+  }
+  return null;
+}
 
 /// Manages the onboarding flow lifecycle.
 ///
@@ -45,30 +61,29 @@ class OnboardingBloc extends Cubit<OnboardingState> {
     ));
   }
 
-  /// Advance to the next step, or complete if at the end.
+  /// Advance to the next visible step, or complete if none remain. Skipped
+  /// steps (`shouldSkip` true) are walked over, so a conditional step the
+  /// current selection doesn't need is passed automatically.
   void next() {
     final current = state;
     if (current is! OnboardingActive) return;
 
-    if (current.isLastStep) {
+    final idx = nextVisibleStep(current.steps, current.currentStep, 1);
+    if (idx == null) {
       _complete();
     } else {
-      emit(OnboardingActive(
-        currentStep: current.currentStep + 1,
-        steps: current.steps,
-      ));
+      emit(OnboardingActive(currentStep: idx, steps: current.steps));
     }
   }
 
-  /// Move back one step. No-op when already on the first step.
+  /// Move back to the previous visible step, walking over any skipped steps.
+  /// No-op when already on the first visible step.
   void previous() {
     final current = state;
     if (current is! OnboardingActive) return;
-    if (current.currentStep == 0) return;
-    emit(OnboardingActive(
-      currentStep: current.currentStep - 1,
-      steps: current.steps,
-    ));
+    final idx = nextVisibleStep(current.steps, current.currentStep, -1);
+    if (idx == null) return;
+    emit(OnboardingActive(currentStep: idx, steps: current.steps));
   }
 
   /// Dismiss the entire onboarding flow.

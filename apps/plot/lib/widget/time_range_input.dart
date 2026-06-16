@@ -206,6 +206,16 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                                       vertical: theme.spacing.md,
                                     ),
                                   ),
+                                  // Borderless inline field: opt out of the
+                                  // global filled appearance (bordered fields
+                                  // fill with editableBackground in every
+                                  // state) so the surrounding surface shows
+                                  // through.
+                                  color: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      const Color(0x00000000),
+                                    ),
+                                  ]),
                                   border: FVariantsValueDelta.delta([
                                     FVariantValueDeltaOperation.all(
                                       OutlineInputBorder(
@@ -241,6 +251,16 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                                       vertical: theme.spacing.md,
                                     ),
                                   ),
+                                  // Borderless inline field: opt out of the
+                                  // global filled appearance (bordered fields
+                                  // fill with editableBackground in every
+                                  // state) so the surrounding surface shows
+                                  // through.
+                                  color: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      const Color(0x00000000),
+                                    ),
+                                  ]),
                                   border: FVariantsValueDelta.delta([
                                     FVariantValueDeltaOperation.all(
                                       OutlineInputBorder(
@@ -288,6 +308,16 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                                       vertical: theme.spacing.md,
                                     ),
                                   ),
+                                  // Borderless inline field: opt out of the
+                                  // global filled appearance (bordered fields
+                                  // fill with editableBackground in every
+                                  // state) so the surrounding surface shows
+                                  // through.
+                                  color: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      const Color(0x00000000),
+                                    ),
+                                  ]),
                                   border: FVariantsValueDelta.delta([
                                     FVariantValueDeltaOperation.all(
                                       OutlineInputBorder(
@@ -323,6 +353,16 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                                       vertical: theme.spacing.md,
                                     ),
                                   ),
+                                  // Borderless inline field: opt out of the
+                                  // global filled appearance (bordered fields
+                                  // fill with editableBackground in every
+                                  // state) so the surrounding surface shows
+                                  // through.
+                                  color: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      const Color(0x00000000),
+                                    ),
+                                  ]),
                                   border: FVariantsValueDelta.delta([
                                     FVariantValueDeltaOperation.all(
                                       OutlineInputBorder(

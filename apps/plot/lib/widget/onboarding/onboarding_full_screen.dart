@@ -26,7 +26,10 @@ class OnboardingFullScreen extends StatelessWidget {
               const SizedBox(height: 24),
             ],
             Text(
-              step.title,
+              // titleBuilder lets a step compute its heading from live state
+              // (the role follow-up step shows the selected option's question);
+              // plain `title` is the fallback.
+              step.titleBuilder?.call() ?? step.title,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Color(0xFFFFFFFF),
@@ -36,21 +39,25 @@ class OnboardingFullScreen extends StatelessWidget {
                 height: 1.3,
               ),
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: Text(
-                step.body,
-                textAlign: TextAlign.start,
-                style: const TextStyle(
-                  color: Color(0xD9FFFFFF),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                  decoration: TextDecoration.none,
-                  height: 1.5,
+            // Body is optional — a step (e.g. the role follow-up) can pass an
+            // empty body to show just its heading above the content.
+            if (step.body.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: Text(
+                  step.body,
+                  textAlign: TextAlign.start,
+                  style: const TextStyle(
+                    color: Color(0xD9FFFFFF),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    decoration: TextDecoration.none,
+                    height: 1.5,
+                  ),
                 ),
               ),
-            ),
+            ],
             if (step.contentBuilder != null) ...[
               const SizedBox(height: 24),
               step.contentBuilder!(context),

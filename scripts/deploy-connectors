@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Deploy every connector — both the private ones in this repo (connectors/*)
+# and the public ones in the public/ submodule (public/connectors/*) — to a
+# given Plot environment by running `pnpm run deploy -e <env>` in each folder.
+#
+# Each connector's `deploy` script runs `plot deploy`, and the `-e <env>` flag
+# is forwarded to it. Defaults to the "public" environment for development.
+#
+# Usage: deploy-connectors [environment]
+#   environment: personal | private | review | public (default: public)
+
+if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+  cat <<EOF
+Usage: deploy-connectors [environment]
+
+Runs \`pnpm run deploy -e <environment>\` in every connector folder under
+connectors/ (private) and public/connectors/ (public submodule).
+
+  environment: personal | private | review | public (default: public)
+
+Example:
+  pnpm connectors:deploy            # deploy all connectors to "public"
+  pnpm connectors:deploy review     # deploy all connectors to "review"
+EOF
+  exit 0
+fi
+
+ENV="${1:-public}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+deployed=()
+skipped=()
+failed=()
+
+for dir in connectors/*/ public/connectors/*/; do
+  [ -f "$dir/package.json" ] || continue
+
+  name="$(node -p "require('./$dir/package.json').name || '$dir'" 2>/dev/null || echo "$dir")"
+  has_deploy="$(node -p "Boolean((require('./$dir/package.json').scripts||{}).deploy)" 2>/dev/null || echo false)"
+
+  if [ "$has_deploy" != "true" ]; then
+    echo "⏭  Skipping $name ($dir) — no deploy script"
+    skipped+=("$name")
+    continue
+  fi
+
+  echo "🚀 Deploying $name ($dir) to '$ENV'..."
+  if (cd "$dir" && pnpm run deploy -e "$ENV"); then
+    deployed+=("$name")
+  else
+    echo "❌ Failed to deploy $name ($dir)"
+    failed+=("$name")
+  fi
+done
+
+echo
+echo "Deploy summary (environment: $ENV):"
+echo "  ✅ deployed: ${#deployed[@]}"
+echo "  ⏭  skipped:  ${#skipped[@]}"
+echo "  ❌ failed:   ${#failed[@]}"
+
+if [ "${#failed[@]}" -gt 0 ]; then
+  printf '     - %s\n' "${failed[@]}"
+  exit 1
+fi

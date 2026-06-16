@@ -9,14 +9,22 @@ import 'package:plot/env.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/util/shortcut.dart';
 import 'command.dart';
 import 'logging.dart';
 
-class CopyPageLink extends Command {
-  CopyPageLink()
+/// Copies the thread's canonical, globally shareable `/t/:threadId` URL to the
+/// clipboard.
+///
+/// Lives on the thread menu (not the global settings menu) because only thread
+/// URLs are shareable — a priority/page URL resolves differently per user. The
+/// thread is passed in directly so the link is correct on every platform,
+/// including single-panel mobile where there's no on-screen address bar.
+class CopyThreadLink extends Command {
+  CopyThreadLink(this.thread)
     : super(
-        title: 'Copy page link',
+        title: 'Copy link',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: FontAwesomeIcons.link,
@@ -26,41 +34,19 @@ class CopyPageLink extends Command {
         ),
       );
 
+  final Thread thread;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    log.info('CopyPageLink command executed');
     try {
-      // Prefer the canonical `/t/:threadId` form when a thread is open so the
-      // copied link is shareable between users regardless of how each files
-      // the thread. Walk the router's segment tree (rather than reading
-      // `router.current`) because this command runs from a high context where
-      // `current` reports the outer stack, not the nested ThreadRoute.
-      final path =
-          _sharePathForActiveRoute(context.router.root) ??
-          context.router.currentPath;
-      final fullUrl = '${Env.appBaseUrl}$path';
-
+      final fullUrl = '${Env.appBaseUrl}/t/${thread.id.toShortString()}';
       await Clipboard.setData(ClipboardData(text: fullUrl));
-      return CommandMessage('Page link copied to clipboard');
+      return CommandMessage('Link copied to clipboard');
     } catch (e, t) {
-      log.warning("Copy page link failed", e, t);
-      return CommandMessage('Failed to copy page link', isError: true);
+      log.warning("Copy thread link failed", e, t);
+      return CommandMessage('Failed to copy link', isError: true);
     }
   }
-}
-
-/// Returns `/t/:threadId` if a [ThreadRoute] is the deepest segment of the
-/// router's URL state, otherwise null.
-String? _sharePathForActiveRoute(StackRouter root) {
-  final segments = root.navigationHistory.urlState.segments;
-  if (segments.isEmpty) return null;
-  RouteMatch<dynamic> leaf = segments.last;
-  while (leaf.hasChildren) {
-    leaf = leaf.children!.last;
-  }
-  if (leaf.name != ThreadRoute.name) return null;
-  final threadId = leaf.params.getString('threadId');
-  return '/t/$threadId';
 }
 
 /// Parsed result of a Plot internal URL.

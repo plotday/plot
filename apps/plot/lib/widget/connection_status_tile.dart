@@ -41,11 +41,21 @@ class ConnectionStatusTile extends StatelessWidget {
               stream: TwistInstance.watch(),
               initialData: const [],
               builder: (context, instSnap) {
-                return _buildTile(
-                  context,
-                  online: online,
-                  connections: connSnap.data ?? const [],
-                  instances: instSnap.data ?? const [],
+                return StreamBuilder<List<Channel>>(
+                  stream: Channel.watchAllEnabled(),
+                  initialData: const [],
+                  builder: (context, chanSnap) {
+                    return _buildTile(
+                      context,
+                      online: online,
+                      connections: connSnap.data ?? const [],
+                      instances: instSnap.data ?? const [],
+                      enabledInstanceIds: {
+                        for (final c in chanSnap.data ?? const <Channel>[])
+                          c.twistInstanceId,
+                      },
+                    );
+                  },
                 );
               },
             );
@@ -60,6 +70,7 @@ class ConnectionStatusTile extends StatelessWidget {
     required bool online,
     required List<TwistConnectionRow> connections,
     required List<TwistInstance> instances,
+    required Set<TwistInstanceId> enabledInstanceIds,
   }) {
     // Match the resting priority tiles' weight so the priority frame reads
     // as a single typographic family (sm / w500 / plotColors.muted).
@@ -77,8 +88,14 @@ class ConnectionStatusTile extends StatelessWidget {
       );
     }
 
+    // Only connections with at least one enabled channel drive the prompts —
+    // a connection whose channels are all disabled is dormant. See
+    // [TwistConnection.active].
+    final active =
+        TwistConnection.active(connections, enabledInstanceIds).toList();
+
     final reauthNeeded = _names(
-      connections.where((c) => c.needsReauth),
+      active.where((c) => c.needsReauth),
       instances,
     );
     if (reauthNeeded.isNotEmpty) {
@@ -102,7 +119,7 @@ class ConnectionStatusTile extends StatelessWidget {
     }
 
     final syncing = _names(
-      connections.where((c) => c.initialSyncing),
+      active.where((c) => c.initialSyncing),
       instances,
     );
     if (syncing.isNotEmpty) {

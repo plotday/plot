@@ -23,6 +23,13 @@ function q(s: string): string {
 const SYSTEM_INSTANCE_ID = "0199b6f4-ae64-7718-0000-000000000001";
 const TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
 const UPDATES_TOPIC_KEY = "@plot.updates";
+// Stable Plot logo URL stored directly in thread.icon. We deliberately do NOT
+// use a `twist:<id>` icon here: that resolves client-side via the per-user Plot
+// twist_instance, so a user whose instance is archived/not-yet-synced (e.g. a
+// failed Plot-twist install) sees the generic twist icon. An http icon renders
+// from the URL regardless of instance state. Matches twist.logo_url in
+// schema/99-data/20-plot-system.sql.
+const PLOT_LOGO_URL = "https://plot.day/assets/plot-icon.svg";
 
 export function emitGlobalReconcile(model: OnboardingModel, archive: ArchiveSets): string {
   const out: string[] = [];
@@ -55,15 +62,15 @@ export function emitGlobalReconcile(model: OnboardingModel, archive: ArchiveSets
     out.push("        -- topic_id (not just the topic text) is what file_thread_priority_for_topic_members");
     out.push("        -- keys on — without it new users never get the thread filed / never see it.");
     out.push("        INSERT INTO public.thread (created_by, twist_id, icon, title, preview, key, topic_id, topic, contacts)");
-    out.push(`            VALUES (c_system_instance_id, v_plot_twist_id, 'twist:' || v_plot_twist_id::text,`);
+    out.push(`            VALUES (c_system_instance_id, v_plot_twist_id, '${PLOT_LOGO_URL}',`);
     out.push(`                '${q(t.title)}', '${q(t.preview)}', '${q(t.key)}', v_updates_topic_id, 'topic:' || v_updates_topic_id::text,`);
     out.push("                ARRAY[c_system_instance_id])");
     out.push("        RETURNING id INTO v_thread_id;");
     out.push("    ELSE");
     out.push(`        UPDATE public.thread SET title = '${q(t.title)}', preview = '${q(t.preview)}',`);
-    out.push("                topic_id = v_updates_topic_id, topic = 'topic:' || v_updates_topic_id::text");
+    out.push(`                topic_id = v_updates_topic_id, topic = 'topic:' || v_updates_topic_id::text, icon = '${PLOT_LOGO_URL}'`);
     out.push("            WHERE id = v_thread_id");
-    out.push(`              AND (title, preview, topic_id) IS DISTINCT FROM ('${q(t.title)}', '${q(t.preview)}', v_updates_topic_id);`);
+    out.push(`              AND (title, preview, topic_id, icon) IS DISTINCT FROM ('${q(t.title)}', '${q(t.preview)}', v_updates_topic_id, '${PLOT_LOGO_URL}');`);
     out.push("    END IF;");
     t.notes.forEach((n, i) => {
       // Manual upsert by (thread_id, key): these notes have link_id IS NULL, and

@@ -509,12 +509,23 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return (await _default().getSingleOrNull()) != null;
   }
 
-  /// True when the user has any non-archived focus beyond the root that
-  /// `activate_invited_user` auto-seeds at signup. Used as a second-device
-  /// signal that the user has already used Plot, so onboarding can be skipped.
+  /// True when the user has any non-archived focus beyond the two that
+  /// `activate_invited_user` auto-seeds at signup — the root ("Everything")
+  /// and the global role-less "FYI" focus. Used as a second-device signal
+  /// that the user has already used Plot, so onboarding can be skipped.
+  ///
+  /// The FYI focus is a *non-root* priority (`is_fyi = true`), so it MUST be
+  /// excluded here: counting it makes this fire for every brand-new user and
+  /// silently suppresses onboarding (the user keeps the seeded 'Personal'
+  /// role they never chose). See `apps/plot/lib/state/onboarding.dart`.
   static Future<bool> hasNonRoot() async {
     final query = Store.get.select(table)
-      ..where((t) => t.archivedAt.isNull() & t.root.equals(false))
+      ..where(
+        (t) =>
+            t.archivedAt.isNull() &
+            t.root.equals(false) &
+            t.isFyi.equals(false),
+      )
       ..limit(1);
     return (await query.getSingleOrNull()) != null;
   }

@@ -620,6 +620,23 @@ account.post("/activate", async (c) => {
           priority_id: priority.id,
           user_id: user.id,
         });
+        // A failed Plot-twist install rolls back and archives the instance,
+        // leaving the new user with no Plot assistant. We intentionally don't
+        // fail signup over it — but it must not be silent: without this it's
+        // invisible except as a generic onboarding-thread icon (the instance
+        // is gone from the client cache). Surface it to PostHog so a broken
+        // install (e.g. missing TWIST_CONFIG after a deploy) is actionable.
+        c.var.tracker.captureException(
+          error instanceof Error ? error : new Error(String(error)),
+          {
+            ...context7,
+            priority_id: priority.id,
+            user_id: user.id,
+            path: c.req.path,
+            method: c.req.method,
+            url: c.req.url,
+          }
+        );
       }
     }
   }

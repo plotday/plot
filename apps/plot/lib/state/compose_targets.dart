@@ -251,14 +251,24 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   final LocalPreferencesBloc _prefs;
 
   /// Reactive refresh: the base list is materialized from the connection /
-  /// channel stores, so it must rebuild when those change. Without this, a
-  /// connection added mid-session only appeared after an app restart (the
-  /// page-init [refresh] was the sole trigger). We watch both enabled channels
-  /// (channel connectors, DMs) and twist instances (chat-with-a-twist targets,
-  /// connection rename/uninstall) and refresh — debounced so a sync batch that
-  /// writes many rows coalesces into one rebuild.
+  /// channel / priority stores, so it must rebuild when those change. Without
+  /// this, a connection added mid-session only appeared after an app restart
+  /// (the page-init [refresh] was the sole trigger). We watch enabled channels
+  /// (channel connectors, DMs), twist instances (chat-with-a-twist targets,
+  /// connection rename/uninstall), and priorities (the "Private notes" focuses
+  /// section + per-connection colour tally) and refresh — debounced so a sync
+  /// batch that writes many rows coalesces into one rebuild.
+  ///
+  /// The priority watch is essential: the shell calls [warm] at mount, which
+  /// caches the search context (focuses included) before the priority/role
+  /// sync has necessarily landed — and on the path-independent role model
+  /// priorities pull *after* roles. Without reacting to priority changes the
+  /// cached context never picks up focuses that synced in later, so the
+  /// "Private notes" section stays empty until some unrelated channel/twist
+  /// change happens to trigger a rebuild.
   StreamSubscription<List<Channel>>? _channelSub;
   StreamSubscription<List<TwistInstance>>? _twistSub;
+  StreamSubscription<List<Priority>>? _prioritySub;
   Timer? _refreshDebounce;
 
   void _watchConnections() {
@@ -267,6 +277,12 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       onError: (Object e, StackTrace s) => Tracker.captureException(e, s),
     );
     _twistSub = TwistInstance.watch().listen(
+      (_) => _scheduleRefresh(),
+      onError: (Object e, StackTrace s) => Tracker.captureException(e, s),
+    );
+    // watchRaw skips the active/unread enrichment (and its threads-table
+    // scans) — we only need to know the priority *set* changed.
+    _prioritySub = Priority.watchRaw().listen(
       (_) => _scheduleRefresh(),
       onError: (Object e, StackTrace s) => Tracker.captureException(e, s),
     );
@@ -287,6 +303,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     _refreshDebounce?.cancel();
     _channelSub?.cancel();
     _twistSub?.cancel();
+    _prioritySub?.cancel();
     return super.close();
   }
 

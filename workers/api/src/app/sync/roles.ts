@@ -95,7 +95,12 @@ roles.post("/sync/roles", async (c) => {
           : undefined;
     if (roleId) notifySync(c, roleId);
 
-    return c.json(result as any);
+    // Return an object, not the bare id string. The Flutter client pushes
+    // roles via `api.post<Map<String, dynamic>>('/sync/roles', …)` and casts
+    // the decoded body to a Map; a JSON string decodes to a Dart String and
+    // the cast throws, stranding the row in sync. Mirror POST /sync/groups,
+    // which returns `{ id }`.
+    return c.json({ id: roleId } as any);
   } catch (e) {
     // Expected RAISEs from upsert_role (role_not_empty, role_last) → 4xx;
     // anything else propagates to the global handler.

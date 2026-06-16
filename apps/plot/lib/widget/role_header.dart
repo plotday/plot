@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart' as material;
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
@@ -9,9 +8,11 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
 /// A collapsible role header row in the accordion sidebar. Renders the role's
-/// name (in its colour, muted at rest like a focus tile), a leading caret
-/// (chevron down when expanded, right when collapsed), and a hover-revealed
-/// "…" menu ([ShowRoleCommands]). When the role is **collapsed**, its status is
+/// name (in its colour, muted at rest like a focus tile) as a flush-left
+/// section label — no leading caret — and a hover-revealed "…" menu
+/// ([ShowRoleCommands]). Tapping a **collapsed** header runs [onTap] (the left
+/// panel selects the role's first focus; single-panel just discloses them); the
+/// **expanded** header is inert. When the role is **collapsed**, its status is
 /// reverse-inherited from its child focuses:
 ///
 /// - **bold** when any child focus is active, and
@@ -50,8 +51,10 @@ class RoleHeader extends StatefulWidget {
   /// status (bold / unread dot). The header itself does not render them.
   final List<Priority> childFocuses;
 
-  /// Run when the header row (not the "…" menu) is tapped — selects the role's
-  /// first focus, which makes this the expanded role.
+  /// Run when a **collapsed** header row (not the "…" menu) is tapped. In the
+  /// left panel this selects the role's first focus (which expands it); in
+  /// single-panel mode it only discloses the role's focuses, never navigating.
+  /// Ignored once the role is [expanded] — the expanded header is inert.
   final VoidCallback onTap;
 
   /// When true, render muted at rest and reintroduce the role colour on hover
@@ -96,12 +99,19 @@ class _RoleHeaderState extends State<RoleHeader> {
         ? restingColor
         : accent;
 
-    final caretColor = widget.monochrome && !isActive
-        ? restingColor
-        : (widget.textStyle?.color ?? context.colour.muted);
+    // The hover/selection pill background, in the role's own colour — exactly
+    // the tint focus tiles use (null outside the monochrome left panel, where
+    // the neutral [plotColors.highlight] fallback applies instead). Only a
+    // *collapsed* role paints it; the expanded role stays flat (see below).
+    final accentBg = widget.monochrome
+        ? context.colour.colours.backgroundFromTheme(role.displayColor)
+        : null;
 
     final listTile = ListTile(
-      onTap: widget.onTap,
+      // A collapsed role is a tap target (selects its first focus, expanding
+      // it). The expanded role is the current section header — tapping it does
+      // nothing.
+      onTap: widget.expanded ? null : widget.onTap,
       // Menu opens via long-left swipe on touch (see wrapper below); long-
       // press is reserved for the reorder drag on the row.
       longPressCommand: null,
@@ -113,35 +123,22 @@ class _RoleHeaderState extends State<RoleHeader> {
       // focus drag. (Mobile uses the delayed wrapper below.)
       reorderableIndex: widget.reorderableIndex,
       borderRadius: widget.borderRadius,
-      // The header never paints a selected/hover pill of its own — it's a
-      // grouping label, not a navigation target. Keep it flat like the
-      // "Add a focus" tail.
-      noHoverHighlight: true,
+      // Collapsed roles get the same hover pill as the focus tiles (in the
+      // role's own colour). The expanded role is a flat section header — it's
+      // not a tap target, so it never highlights.
+      noHoverHighlight: widget.expanded,
+      highlightColor: accentBg,
       onHover: (hovered) {
         if (mounted && _isHovered != hovered) {
           setState(() => _isHovered = hovered);
         }
       },
-      // Leading caret. A single chevron that rotates with the disclosure
-      // (down when expanded, right when collapsed) so it animates in step with
-      // the section's slide/fade rather than swapping glyphs discretely. Sits
-      // in the shared sidebar leading slot so the role name lines up with the
-      // focus icons below it.
-      leadingBuilder: (isHovered, hasFocus) => sidebarLeading(
-        context,
-        AnimatedRotation(
-          // 0 turns = pointing down (expanded); -0.25 turns = pointing right
-          // (collapsed). 150ms easeOut matches the section disclosure.
-          turns: widget.expanded ? 0.0 : -0.25,
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOut,
-          child: Icon(
-            FontAwesomeIcons.chevronDown,
-            size: 10,
-            color: caretColor,
-          ),
-        ),
-      ),
+      // No leading icon — the role reads as a flush-left section label. A bare
+      // left spacer (the shared sidebar left inset) pulls the role name to the
+      // same left edge as the FYI / Everything tiles and the focus icons below
+      // it, so the whole sidebar shares one left margin.
+      leadingBuilder: (isHovered, hasFocus) =>
+          SizedBox(width: context.theme.spacing.lg),
       // Role name + (collapsed) unread dot. The dot sits outside the Flexible
       // so it survives title truncation.
       body: Row(

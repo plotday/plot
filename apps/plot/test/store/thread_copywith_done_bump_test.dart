@@ -165,4 +165,113 @@ void main() {
       );
     });
   });
+
+  group('Thread.copyWith read-receipt push path (stateDirty)', () {
+    // Reads on active (Doing) threads must push via /sync/thread-state, not
+    // /sync/thread-read (Thread.push deliberately excludes active threads —
+    // see store/thread.dart). Without stateDirty, opening a Doing thread
+    // marks it read locally but never reaches the server, so every other
+    // device keeps showing it unread. Regression guard for the cross-device
+    // unread sync bug.
+    test('reading an unread ACTIVE thread is state-dirty (thread-state push)',
+        () {
+      final unreadTask = Thread(
+        priority: _priority(),
+        active: true,
+        unread: true,
+        stateOn: Date(2026, 1, 1),
+        stateOrder: Order.first(),
+      );
+
+      final read = unreadTask.copyWith(
+        unread: false,
+        readAt: Value(unreadTask.contentTimestamp),
+      );
+
+      expect(
+        read.stateDirty,
+        isTrue,
+        reason: 'an active-thread read must ride /sync/thread-state so the '
+            'read receipt reaches the server and other devices',
+      );
+    });
+
+    test('reading an unread INACTIVE thread is NOT state-dirty (thread-read)',
+        () {
+      final unreadMail = Thread(
+        priority: _priority(),
+        active: false,
+        unread: true,
+      );
+
+      final read = unreadMail.copyWith(
+        unread: false,
+        readAt: Value(unreadMail.contentTimestamp),
+      );
+
+      expect(
+        read.stateDirty,
+        isFalse,
+        reason: 'inactive reads still ride /sync/thread-read unchanged',
+      );
+    });
+
+    test('re-reading an already-read ACTIVE thread is NOT state-dirty', () {
+      // Already read (unread false): opening it again must not generate a
+      // spurious thread-state push. The trigger is the unread→read
+      // transition, not every readAt write.
+      final readTask = Thread(
+        priority: _priority(),
+        active: true,
+        unread: false,
+        stateOn: Date(2026, 1, 1),
+        stateOrder: Order.first(),
+      );
+
+      final reopened = readTask.copyWith(
+        unread: false,
+        readAt: Value(readTask.contentTimestamp),
+      );
+
+      expect(
+        reopened.stateDirty,
+        isFalse,
+        reason: 'no read transition occurred, so no extra push is needed',
+      );
+    });
+
+    test('a state-dirty copyWith stamps the persisted statePending marker', () {
+      final unreadTask = Thread(
+        priority: _priority(),
+        active: true,
+        unread: true,
+        stateOn: Date(2026, 1, 1),
+        stateOrder: Order.first(),
+      );
+      expect(unreadTask.statePending, isFalse, reason: 'precondition: clean');
+
+      final read = unreadTask.copyWith(
+        unread: false,
+        readAt: Value(unreadTask.contentTimestamp),
+      );
+
+      expect(read.stateDirty, isTrue);
+      expect(
+        read.statePending,
+        isTrue,
+        reason: 'the persisted marker is what drives the durable push',
+      );
+    });
+
+    test('a non-state copyWith leaves statePending false', () {
+      final inDone = Thread(priority: _priority(), active: false);
+      final reopened = inDone.copyWith(
+        unread: false,
+        readAt: Value(inDone.contentTimestamp),
+      );
+
+      expect(reopened.stateDirty, isFalse);
+      expect(reopened.statePending, isFalse);
+    });
+  });
 }

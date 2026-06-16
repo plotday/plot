@@ -47,14 +47,16 @@ is low-value and performative knowing it steals energy from better work.
 
 And the best work is rarely solitary. People aren't the bottleneck, and they aren't resources to
 optimize — they bring the creativity, wisdom, challenge, and inspiration that carry a group further
-than anyone goes alone. We're people-first: Plot helps the reader do great work _with_ others, not
-route around them. We don't assume everyone has a team — many readers are solo — but everyone is
-connected to people who matter to their work.
+than anyone goes alone. We're people-first: Plot helps the reader do great work _with_ others. We
+don't assume everyone has a team — many readers are solo — but everyone is connected to people who
+matter to their work.
 
 Our core challenge to readers (mostly implied rather than stated) is to move from passive to active,
 from reacting and responding to choosing and initiating. Their time and attention is theirs to
 invest. Each day holds a fixed amount of time — spend it here and you've taken it from there. Invest
-first in what is most important, and budget the remainder for everything else.
+first in what is most important, and budget the remainder for everything else. This time-budget
+framing is our reasoning, not a line to hand the reader: stated as a maxim it turns into a lecture.
+Show it through what Plot does, never by reciting it (see "Don't preach the philosophy").
 
 ## Principles
 
@@ -108,8 +110,8 @@ current site copy.
 - _Avoid:_ "Your best work every day." · "Nothing slips." · "AI that minds its business." · "Keep
   moving on the real work." · "End the day on something that mattered."
 - _Why:_ a slogan asks to be admired; a sentence does a job. Say the real thing instead — e.g. "AI
-  that minds its business" → "Chat with Claude, ChatGPT, or Gemini right where your work lives — or
-  turn it off entirely. It's your call."
+  that minds its business" → "Use AI as much or as little as you want — bring your own key, point it
+  at your own model, or turn it off entirely. It's your call."
 
 ### Drop the hype words
 
@@ -140,18 +142,17 @@ We invest attention where it matters; we don't shuffle paper.
 
 ### Don't foreground the AI
 
-When AI is just the mechanism behind a routine feature, describe the result, not the machinery.
-The reader cares that the work gets done, not which technology did it.
+When AI is just the mechanism behind a routine feature, describe the result, not the machinery. The
+reader cares that the work gets done, not which technology did it.
 
 - _Avoid:_ "AI generates a title for you." · "Our AI sorts your threads." · "Let AI summarize this."
 - _Instead:_ "A title is generated for you." · "Threads are sorted for you." · "Here's a summary."
 - _Why:_ naming the AI draws attention to the tool instead of the benefit, and dates quickly. Say
   what happens; the reader doesn't need to know it's a model doing it.
 
-This isn't a ban on the word. When chatting with a model _is_ the feature, name it plainly — e.g.
-"Chat with Claude, ChatGPT, or Gemini right where your work lives." The test: is the AI the thing
-the reader chose to do, or just how a background task gets done? Name it for the former, drop it for
-the latter.
+This isn't a ban on the word. When using AI _is_ the feature, name it plainly — e.g. "Use AI right
+alongside your work, or turn it off entirely." The test: is the AI the thing the reader chose to do,
+or just how a background task gets done? Name it for the former, drop it for the latter.
 
 ### Don't make the reader passive
 
@@ -179,6 +180,21 @@ everyone has a team.
 > "You've got this." · "We believe in you." · "Be your best self." · "Unlock your potential."
 
 Show it instead (Principle 2).
+
+### Don't preach the philosophy
+
+The stance above — that each day's time is finite and the reader's to invest — is how _we_ think, not
+a sermon to recite. As a standalone maxim it lectures the reader and reads like a motivational
+poster; show it through what Plot does instead.
+
+- _Avoid:_ "Each day holds the same number of hours. Plot helps you invest them in the work that
+  matters, and keeps everything else from spending them for you." · "Your time is your most valuable
+  resource." · "Make every minute count."
+- _Why:_ a truism the reader already knows ("each day holds the same number of hours") earns nothing
+  and sounds preachy, and the clever personification ("spending them for you") is a slogan in
+  disguise. Say what Plot actually does — _"Low-signal mail waits quietly instead of pinging you, and
+  you decide when notifications are allowed"_ — and the worldview comes through in the behavior, not
+  the lecture.
 
 ### Words and moves we reach for
 
@@ -242,15 +258,17 @@ Run any draft past these:
    managed or rescued?
 2. Could a coach who believes in this person say it — without sounding like an ad?
 3. Did I _show_ belief in the reader rather than state it? (No "you've got this.")
-4. Is it empowering and forward-looking, not just soothing?
-5. Where it fits, did I give permission to ignore or let things wait — with grace, not pressure?
-6. Do people read as collaborators who make the work better — never an obstacle or a resource — and
+4. Did I show the stance through what Plot does, rather than preaching the philosophy as a maxim? (No
+   time truisms, no "make every minute count.")
+5. Is it empowering and forward-looking, not just soothing?
+6. Where it fits, did I give permission to ignore or let things wait — with grace, not pressure?
+7. Do people read as collaborators who make the work better — never an obstacle or a resource — and
    did I avoid assuming a team?
-7. If I mentioned AI, is it the feature the reader chose — not just the mechanism behind a routine
+8. If I mentioned AI, is it the feature the reader chose — not just the mechanism behind a routine
    task? (If it's the mechanism, describe the result instead.)
-8. Plain and human — one idea per sentence, contractions, second person, concrete words — with every
+9. Plain and human — one idea per sentence, contractions, second person, concrete words — with every
    slogan, hype word, and corporate phrase cut? (Scan the lists above.)
-9. Right register for the surface — spacious on the site, terse in the UI?
-10. Current, correct terminology (per features.md)?
+10. Right register for the surface — spacious on the site, terse in the UI?
+11. Current, correct terminology (per features.md)?
 
-If a line passes all ten, it sounds like Plot.
+If a line passes all eleven, it sounds like Plot.

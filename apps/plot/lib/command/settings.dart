@@ -12,7 +12,6 @@ import 'package:forui/forui.dart';
 
 import 'package:collection/collection.dart';
 import 'package:plot/notifications/notification_service.dart';
-import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
@@ -73,7 +72,6 @@ List<StaticCommandGroup> settingsCommandsFromState(
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
-  bool isMultiPanel = true,
 }) {
   final rootPriority = prioritiesState?.root;
 
@@ -84,7 +82,6 @@ List<StaticCommandGroup> settingsCommandsFromState(
     adminOrgs: adminOrgs,
     subscription: subscription,
     showAllPriorities: showAllPriorities,
-    isMultiPanel: isMultiPanel,
   );
 }
 
@@ -95,7 +92,6 @@ List<StaticCommandGroup> settingsCommands({
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
   bool showAllPriorities = false,
-  bool isMultiPanel = true,
 }) => [
   StaticCommandGroup(
     title: 'Settings',
@@ -148,11 +144,6 @@ List<StaticCommandGroup> settingsCommands({
         ShowUpgradeOptions(),
       if (UpgradeUi.isAppStoreBuild) RestorePurchasesCommand(),
       if (rootPriority != null) HelpAndFeedback(rootPriority),
-      // In single-panel mode the settings list lives on its own "More" tab
-      // page, so "Copy page link" would only copy a link to that settings
-      // page rather than the content being viewed — hide it there. In
-      // multi-panel mode settings is a modal over real content, so it stays.
-      if (isMultiPanel) CopyPageLink(),
       OpenCopiedPageLink(),
       FullResync(),
       DeleteAccount(),
@@ -222,7 +213,6 @@ Future<List<StaticCommandGroup>> buildSettingsGroups(
         adminOrgs: adminOrgs,
         subscription: subscription,
         showAllPriorities: showAllPriorities,
-        isMultiPanel: context.mounted && context.isMultiPanel,
       ),
   ];
   final debugCmds = buildDebugCommands();

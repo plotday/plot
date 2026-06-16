@@ -56,6 +56,16 @@ test("welcome-user region contains key, both note keys, importance", () => {
   assert.match(region, /100/);
 });
 
+test("welcome-user region icons the thread with the stable Plot logo URL", () => {
+  const region = emitWelcomeUserRegion(
+    t("welcome-user", 1, false, 100, null, false),
+  );
+  // Not 'twist:<id>' — that resolves via the per-user Plot twist_instance and
+  // would show the generic twist icon when the instance is archived/unsynced.
+  assert.match(region, /'https:\/\/plot\.day\/assets\/plot-icon\.svg'/);
+  assert.doesNotMatch(region, /'twist:'/);
+});
+
 test("welcome-user region emits each note", () => {
   const region = emitWelcomeUserRegion({
     key: "welcome-user", order: 1, title: "Welcome to Plot!", preview: "Glad.",
