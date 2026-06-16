@@ -30,19 +30,24 @@ The app is already live in the Store. To enable API uploads:
    **Client secret** value, and your **Seller ID** (Partner Center →
    Account settings → Identifiers / "Seller ID").
 
-## GitHub repository secrets
+## Secrets (managed in 1Password)
 
-Add these under **Settings → Secrets and variables → Actions** (names match
-Microsoft's documentation):
+Like all CI credentials, these live in 1Password and sync to GitHub Actions
+secrets via `scripts/sync-github-secrets` (run by the `refresh-secrets` job at
+the start of every deploy). Do **not** add them by hand in the GitHub UI.
 
-| Secret | Value |
-| --- | --- |
-| `AZURE_AD_TENANT_ID` | Entra tenant ID |
-| `AZURE_AD_APPLICATION_CLIENT_ID` | App registration Application (client) ID |
-| `AZURE_AD_APPLICATION_SECRET` | App registration client secret value |
-| `SELLER_ID` | Partner Center Seller ID |
+Store them in the **Production** vault, item **"Windows Store"**, with these
+fields:
 
-Once all four exist, the next Windows release uploads to the Store automatically.
+| 1Password field (item "Windows Store") | → GitHub secret | Source |
+| --- | --- | --- |
+| `Tenant ID` | `AZURE_AD_TENANT_ID` | Entra Directory (tenant) ID |
+| `App client ID` | `AZURE_AD_APPLICATION_CLIENT_ID` | App registration Application (client) ID |
+| `password` | `AZURE_AD_APPLICATION_SECRET` | App registration client secret **Value** (not the Secret ID) |
+| `Seller ID` | `SELLER_ID` | Partner Center Seller ID |
+
+Once the item exists, the next deploy's `refresh-secrets` job pushes all four
+to GitHub, and the next Windows release uploads to the Store automatically.
 
 ## Caveats
 
