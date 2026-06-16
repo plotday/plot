@@ -91,14 +91,32 @@ platform :mac do
     UI.success("Beta build uploaded to TestFlight!")
   end
 
-  desc "Upload metadata to Mac App Store Connect"
+  desc "Upload metadata and screenshots to Mac App Store Connect"
   lane :metadata do
-    upload_to_app_store(
+    options = {
       skip_binary_upload: true,
       skip_screenshots: false,
+      # The committed store assets are the source of truth; replace whatever is
+      # on the listing rather than appending.
+      overwrite_screenshots: true,
+      # We never submit for review here, so skip the metadata precheck.
+      run_precheck_before_submit: false,
       force: true,
-      platform: "osx"
-    )
+      platform: "osx",
+    }
+
+    # In CI, authenticate with the App Store Connect API key (ASC_API_* secrets
+    # plus the .p8 decoded into ~/.appstoreconnect/private_keys). Locally, fall
+    # back to the Appfile's apple_id session auth.
+    if ENV["ASC_API_KEY_ID"] && ENV["ASC_API_ISSUER_ID"]
+      options[:api_key] = app_store_connect_api_key(
+        key_id: ENV["ASC_API_KEY_ID"],
+        issuer_id: ENV["ASC_API_ISSUER_ID"],
+        key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{ENV['ASC_API_KEY_ID']}.p8")
+      )
+    end
+
+    upload_to_app_store(options)
 
     UI.success("Metadata uploaded to Mac App Store Connect!")
   end

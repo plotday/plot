@@ -105,7 +105,7 @@ note, or doc comment. Prioritize what needs to happen today and schedule the res
 dropped. Reply to email, Slack, and app comments in one place. Easily jump to the source in its
 original app when you need to.
 
-### Replies and reactions post back
+### Reply and react in one place
 
 - Reply to any connected thread and it goes out through the source — email recipients, Slack
   channels and threads, Linear comments, Teams chats.

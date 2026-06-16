@@ -234,13 +234,13 @@ above.
 
 | Slot | Catalog | Mode | Caption | Framing |
 | --- | --- | --- | --- | --- |
-| 1–2 | **S1** | Light | **All your work, ready for action** · *Team chat, email, and app threads in one place* | Angled device spanning slots 1→2 (panorama hero) |
-| 3 | **S2** | Light | **Reply right where it lands** · *In Slack, Gmail, or Linear* | typing a reply |
-| 4 | **S3** | Dark | **Your whole day, on one agenda** | |
+| 1–2 | **S1** | Light | **All your work, ready for action** · *Email, chat, and app comments in one place* | Angled device spanning slots 1→2 (panorama hero) |
+| 3 | **S2** | Light | **Reply to anything without opening another app** | typing a reply |
+| 4 | **S3** | Dark | **Your day in context** | |
 | 5 | **S5** | Light | **Start anything from one place** | typing "Po" |
 | 6 | **S7** | Dark | **AI right alongside your work** · *Use it your way, or turn it off* | |
-| 7 | **S6** | Light | **Search across every connection** | typing "Chelsea" |
-| 8 | **S4** | Light | **Focuses that fit how you work** | |
+| 7 | **S6** | Light | **Find anything, wherever it lives** | typing "Chelsea" |
+| 8 | **S4** | Light | **Organized by focus** | |
 
 ### Screenshots — iPad
 
@@ -250,7 +250,7 @@ Provide the **13" iPad** set (2048×2732 portrait or 2732×2048 landscape); up t
 | Slot | Catalog | Mode | Caption |
 | --- | --- | --- | --- |
 | 1 | **S1** (sidebar + women's-team list + scarf-design thread open) | Light | **All your work, ready for action** |
-| 2 | **S2** (composer active in the right panel) | Light | **Reply right where it lands, in Slack, Gmail, or Linear** |
+| 2 | **S2** (composer active in the right panel) | Light | **Reply to anything without opening another app** |
 | 3 | **S7** | Dark | **AI alongside your work — or off entirely** |
 | 4 | **S5** (picker over the multi-panel, typing) | Light | **Start anything from one place** |
 | 5 | **S8** | Light | **Works with the tools you already use** |
@@ -285,8 +285,8 @@ title bar — and spend one slot on the Mac-specific command bar.
 | Slot | Catalog | Mode | Caption |
 | --- | --- | --- | --- |
 | 1 | **S1** (sidebar + list + scarf-design thread open) | Light | **All your work, ready for action** |
-| 2 | **S2** (composer active) | Light | **Reply right where it lands, in Slack, Gmail, or Linear** |
-| 3 | **S11** (⌘K command bar open) | Light | **Drive it all from the keyboard** |
+| 2 | **S2** (composer active) | Light | **Reply to anything without opening another app** |
+| 3 | **S11** (⌘K command bar open) | Light | **Drive it from the keyboard** |
 | 4 | **S7** | Dark | **AI alongside your work — or off entirely** |
 | 5 | **S8** | Light | **Works with the tools you already use** |
 
@@ -337,12 +337,12 @@ the **share-sheet** shot — sharing into Plot is a real platform-native value h
 
 | Slot | Catalog | Mode | Caption | Framing |
 | --- | --- | --- | --- | --- |
-| 1–2 | **S1** | Light | **All your work, ready for action** · *Team chat, email, and app threads in one place* | Angled device spanning slots 1→2 (panorama hero) |
-| 3 | **S2** | Light | **Reply right where it lands** · *In Slack, Gmail, or Linear* | typing a reply |
-| 4 | **S3** | Dark | **Your whole day, on one agenda** | |
+| 1–2 | **S1** | Light | **All your work, ready for action** · *Email, chat, and app comments in one place* | Angled device spanning slots 1→2 (panorama hero) |
+| 3 | **S2** | Light | **Reply to anything without opening another app** | typing a reply |
+| 4 | **S3** | Dark | **Your day in context** | |
 | 5 | **S5** | Light | **Start anything from one place** | typing "Po" |
 | 6 | **S12** | Light | **Share into Plot from any app** | Android share sheet → New Thread |
-| 7 | **S6** | Light | **Search across every connection** | typing "Chelsea" |
+| 7 | **S6** | Light | **Find anything, wherever it lives** | typing "Chelsea" |
 
 ### Screenshots — tablet (7" and 10", recommended)
 
@@ -352,7 +352,7 @@ signals and the tablet listing. Reuse the iPad framing and captions.
 | Slot | Catalog | Mode | Caption |
 | --- | --- | --- | --- |
 | 1 | **S1** (sidebar + list + scarf-design thread open) | Light | **All your work, ready for action** |
-| 2 | **S2** (composer active) | Light | **Reply right where it lands, in Slack, Gmail, or Linear** |
+| 2 | **S2** (composer active) | Light | **Reply to anything without opening another app** |
 | 3 | **S7** | Dark | **AI alongside your work — or off entirely** |
 | 4 | **S8** | Light | **Works with the tools you already use** |
 
@@ -385,7 +385,7 @@ fits here verbatim with no trim.
 ```
 Your most important work isn't the newest email or the loudest notification. It's scattered across a dozen apps, mixed in with everything else competing for your attention. Plot brings it together, organized around the roles and goals you care about, so you can choose a focus and make real progress.
 
-Reply, react, assign, and finish work right where it lands — across team chat, email, meeting notes, and the comment threads inside the tools you already use — without opening five apps full of distractions.
+Reply, react, assign, and finish work in one place — across team chat, email, meeting notes, and the comment threads inside the tools you already use — without opening five apps full of distractions.
 
 Plot also protects your attention. Low-signal mail — newsletters, receipts, promotions — waits in a muted FYI focus instead of pinging you, and you decide when notifications are allowed. Genuinely urgent threads still break through; the rest of your day stays yours.
 
@@ -450,8 +450,8 @@ At least 1, up to 10; **≥ 1366×768**, PNG, landscape. Capture the real
 | Slot | Catalog | Mode | Caption |
 | --- | --- | --- | --- |
 | 1 | **S1** (sidebar + list + scarf-design thread open) | Light | **All your work, ready for action** |
-| 2 | **S2** (composer active) | Light | **Reply right where it lands, in Slack, Gmail, or Linear** |
-| 3 | **S11** (Ctrl+K command bar open) | Light | **Keyboard-driven command bar** |
+| 2 | **S2** (composer active) | Light | **Reply to anything without opening another app** |
+| 3 | **S11** (Ctrl+K command bar open) | Light | **Drive it from the keyboard** |
 | 4 | **S7** | Dark | **AI alongside your work — or off entirely** |
 | 5 | **S8** | Light | **Works with the tools you already use** |
 

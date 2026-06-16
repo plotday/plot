@@ -32,6 +32,7 @@ class CliArgs {
   static String? _profile;
   static bool _noProfile = false;
   static bool _enableDriverExtension = false;
+  static String? _scene;
 
   /// Initializes the CLI argument parser.
   ///
@@ -88,8 +89,39 @@ class CliArgs {
       } else if (arg == '--enable-driver-extension') {
         _enableDriverExtension = true;
         _log.info('--enable-driver-extension: flutter_driver extension enabled');
+      } else if (arg.startsWith('--scene=')) {
+        _scene = arg.substring('--scene='.length);
+        _log.info('Screenshot scene: $_scene');
       }
     }
+
+    // Mobile (iOS/Android) does not forward --dart-entrypoint-args to
+    // main(args), so screenshot launches pass config via --dart-define instead.
+    // Fill any value not already set from the build-time environment.
+    const dUser = String.fromEnvironment('SS_USER');
+    const dPassword = String.fromEnvironment('SS_PASSWORD');
+    const dFrozen = String.fromEnvironment('SS_FROZEN_TIME');
+    const dMode = String.fromEnvironment('SS_MODE');
+    const dProfile = String.fromEnvironment('SS_PROFILE');
+    const dScene = String.fromEnvironment('SS_SCENE');
+    if (_user == null && dUser.isNotEmpty) _user = dUser;
+    if (_password == null && dPassword.isNotEmpty) _password = dPassword;
+    if (_frozenTime == null && dFrozen.isNotEmpty) {
+      try {
+        _frozenTime = DateTime.parse(dFrozen);
+      } catch (e) {
+        _log.warning('Invalid SS_FROZEN_TIME "$dFrozen": $e');
+      }
+    }
+    if (!_darkMode && !_lightMode) {
+      if (dMode == 'dark') {
+        _darkMode = true;
+      } else if (dMode == 'light') {
+        _lightMode = true;
+      }
+    }
+    if (_profile == null && dProfile.isNotEmpty) _profile = dProfile;
+    if (_scene == null && dScene.isNotEmpty) _scene = dScene;
 
     // Validate conflicting arguments
     if (_darkMode && _lightMode) {
@@ -139,4 +171,15 @@ class CliArgs {
 
   /// Returns true if --enable-driver-extension was specified.
   static bool get enableDriverExtension => _enableDriverExtension;
+
+  /// Returns the screenshot scene id if --scene was provided.
+  static String? get scene => _scene;
+
+  @visibleForTesting
+  static void resetForTest() {
+    _initialized = false;
+    _user = _password = _url = _profile = _scene = null;
+    _darkMode = _lightMode = _noProfile = _enableDriverExtension = false;
+    _frozenTime = null;
+  }
 }

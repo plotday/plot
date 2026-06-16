@@ -1164,3 +1164,120 @@ Run `/finalize` (lint changed packages, docs). Add a `docs/updates.md` entry onl
 - **Deferred (per design, intentionally not in this plan):** S3–S12, iPad/Android, Windows, store upload, motion, real photographic device-frame PNG (CSS frame used for the slice).
 - **Known follow-ups surfaced during the slice** (handle in a later plan): swap the CSS device frame for a photoreal PNG; source the dark-mode shots for the broader set; CI guard for scene drift.
 </content>
+
+---
+
+## Execution learnings (vertical slice — done)
+
+The S1+S2 / iPhone+Mac slice is implemented and verified live. Things that
+differed from the original plan and matter for scaling to S3–S12 / Android /
+iPad / Windows:
+
+- **iOS can't use `--dart-entrypoint-args`.** They don't reach Dart `main(args)`
+  on iOS/Android. `CliArgs` now also reads `--dart-define` (`SS_USER`,
+  `SS_PASSWORD`, `SS_FROZEN_TIME`, `SS_MODE`, `SS_PROFILE`, `SS_SCENE`) via
+  `String.fromEnvironment`; `ios.sh` translates the config to `--dart-define`.
+  Trade-off: a `--dart-define` change forces a rebuild, so mobile re-captures
+  are slower than desktop (which stays on entrypoint args).
+- **Suppress the OS notification prompt.** It overlays the captured UI. We skip
+  Firebase init in scene mode (`main.dart`) and early-return from
+  `NotificationService.start` when a scene is active. A prompt left unanswered
+  becomes a *SpringBoard* alert that survives app uninstall — clear it with
+  `xcrun simctl erase <udid>` if one gets stuck.
+- **Fresh install per iOS capture.** Reinstalling over an existing container
+  leaves stale Clerk auth state that intermittently breaks sign-in on the next
+  scene. `ios.sh` now uninstalls before each run.
+- **macOS capture must use the window ID** (`screencapture -l`), not a region —
+  region capture grabs terminal/other-display bleed on multi-display setups,
+  and there may be a developer's own Plot instance running. We select the
+  1440×900 window the scene pins.
+- **Multi-panel must be resolved deterministically**, not by reading the live
+  `LayoutBloc.multiPanel` once (it lags the launch window resize). Phones =
+  single, desktop = multi, waiting for the layout to settle.
+- **tsx transforms the `.ts` entrypoints as CJS** → no top-level await; entry
+  blocks use an async IIFE.
+
+### Known polish items (deferred)
+- **macOS captured at 1×** (1440×900) because the window opened on a non-Retina
+  external display. 1440×900 is an accepted App Store size, but for 2880×1800
+  pin the window onto the Retina display before capture.
+- **Device frame is CSS-drawn**, not a photoreal PNG — fine for the slice;
+  swap in a real iPhone Pro frame asset for production polish.
+- **S2 shows the iOS keyboard** (a natural result of the focused composer). Keep
+  for "active reply" energy, or dismiss the keyboard before capture if a cleaner
+  thread view is preferred.
+
+---
+
+## Scale-out learnings (Apple + Google Play complete)
+
+Beyond the vertical slice, the set was scaled to all scenes (S1–S12) and four
+device types. Status: **iPhone (8), iPad (5), macOS (5), Android phone (7),
+Android tablet (4) = 29 store assets, committed.**
+
+Key additions/fixes:
+
+- **Captions live in `manifest.ts`** (transcribed from `store-listings.md`) and
+  are applied at compose time over already-captured raws. Re-running
+  `compose.ts <platform>` after a copy change is ~seconds and needs **no
+  re-capture**. Seed-data fixes DO need re-capture of the affected scenes.
+- **Thread-open is via inner-router push** (`PrioritiesShell.openThread`), not a
+  `PriorityRoute` child: navigating to an already-current focus drops the child,
+  and the multi-panel inner stack seeds `PriorityOnlyRoute` (transient) then
+  `NewThreadRoute` (final). `_pushThreadWhenInnerReady` waits for the PLATFORM's
+  *settled* default (`NewThreadRoute` multi / `PriorityOnlyRoute` single) before
+  pushing, or the push is clobbered ~2ms later (root-caused via the route log).
+- **Modal scenes (S8 Connections, S11 ⌘K) need a context UNDER `ModalProvider`** —
+  resolve from `FocusManager.instance.primaryFocus?.context`, not the root
+  navigator. `SelectModal.open` additionally **pre-fetches its items and bails
+  if that context unmounts during the await**, so S8 must `ManageConnections.prewarm()`
+  first and open with `keepCache: true`.
+- **Notification prompt suppression:** skip Firebase init in scene mode
+  (`main.dart`) and early-return `NotificationService.start` when a scene is
+  active. A prompt left unanswered becomes a SpringBoard alert surviving
+  uninstall — clear with `xcrun simctl erase`.
+- **Multi-panel resolution** uses the real width-driven `LayoutBloc.multiPanel`
+  (phone single / iPad+desktop multi), polling on desktop for the post-resize
+  settle.
+- **Larger layouts** per feedback: phone device 0.86 width bleeding off the
+  bottom; multipanel-flat is fit-to-area (handles 16:10 macOS and 4:3 iPad) with
+  a slim caption band.
+- **iOS sim orientation is non-deterministic via `simctl`** (no rotate; Cmd+Right
+  via osascript ACCUMULATES across runs). `ipad.sh` erases the sim first
+  (portrait baseline) → Cmd+Right → `sips -r 90` (simctl captures the
+  portrait-native framebuffer). **Android rotates cleanly via `adb`
+  user_rotation** (screencap follows it) — except the Galaxy Tab's natural
+  orientation differs (see deferred).
+- **Android:** `android.sh` (boot emulator, demo-mode 8:32 status bar,
+  `--dart-define` config, `adb screencap`, fresh install per scene). First-view
+  note sync is slow → 8s post-ready wait. Native (Rust `super_native_extensions`)
+  builds are slow; a killed build forces a multi-ABI recompile. `android-share.sh`
+  captures S12 (OS share sheet listing Plot) — an OS-level `am start -a SEND`
+  flow, not an in-app scene.
+- **Emulator ANRs under host load:** "Process system isn't responding" recurs
+  when the host is overloaded (long sessions, concurrent sims). Mitigate by
+  shutting down unused sims and cold-restarting the emulator.
+
+### Android tablet (Galaxy Tab S8 Ultra) — done
+Captured S1/S2/S7/S8 in landscape (2560×1600) on a fresh host. Both deferred
+issues are resolved in `android.sh`:
+1. **Landscape (the quirk):** the Tab's `user_rotation`→orientation mapping is
+   the same as a phone (rot 1 = landscape), but the **Flutter app reverts to the
+   emulator's portrait sensor default on cold start** despite a pre-launch
+   rotation, so a hardcoded pre-launch index isn't enough. Fix: a new
+   `ensure_orientation land|port` helper runs *after* `SCENE_READY` — it rotates
+   the live activity (which has `configChanges=orientation`, so it reflows
+   without recreation) and **verifies the real `screencap` aspect**, trying
+   rotation candidates `1 3 0 2` (land) / `0 2 1 3` (port) until the framebuffer
+   actually matches. Device-agnostic (works for phone + tablet); the captured
+   PNG aspect is sanity-printed at the end.
+2. **ANR:** `settings put global hide_error_dialogs 1` suppresses the
+   "isn't responding" dialog so it can never overlay a capture. Combined with a
+   clean cold boot (`-no-snapshot`) and a single running emulator, no ANR
+   recurred.
+Capture with: `SS_AVD=Galaxy_Tab_S8_Ultra SS_PORT=5556 SS_LANDSCAPE=1 android.sh <scene> …`.
+(`orchestrate.ts` still drives only iPhone/macOS; Android is run manually per
+the line above, then `compose.ts android-tablet`.)
+
+### Out of scope still
+Microsoft Store / Windows (needs a VM); the optional motion previews.

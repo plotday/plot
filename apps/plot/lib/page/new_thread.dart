@@ -15,6 +15,7 @@ import 'package:plot/widget/compose/compose_sections_view.dart';
 import 'package:plot/widget/compose/compose_pill.dart'
     show ComposePillData, ContactPillData, GroupPillData, AdHocGroupPillData;
 import 'package:plot/widget/compose/connection_picker_view.dart';
+import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
@@ -461,6 +462,15 @@ class NewThreadPageState extends State<NewThreadPage> {
       NewThreadPageState._activateOnOpen = false;
       _engaged = true;
       _recomputeActive();
+    }
+    // Scene S5: pre-seed the people-picker search field so the picker filters
+    // to the desired contact on first render.
+    final scenePickerQuery = Scenes.pickerQuery;
+    if (Scenes.active && scenePickerQuery != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _pickerSearchController.text = scenePickerQuery;
+      });
     }
   }
 

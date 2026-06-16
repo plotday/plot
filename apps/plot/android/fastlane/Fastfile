@@ -60,14 +60,20 @@ platform :android do
     UI.success("Beta version uploaded to Google Play Internal Testing!")
   end
 
-  desc "Upload metadata to Google Play Console"
+  desc "Upload metadata and screenshots to Google Play Console"
   lane :metadata do
+    # Push the store listing (title, descriptions, feature graphic) and the
+    # staged screenshots. Auth is via the Appfile's json_key_file
+    # (play-deployer-service-key.json). Release notes are not managed here, so
+    # skip changelogs — there is no metadata/android/en-US/changelogs dir and we
+    # never want a release gated on one.
     upload_to_play_store(
       skip_upload_apk: true,
       skip_upload_aab: true,
       skip_upload_metadata: false,
       skip_upload_images: false,
-      skip_upload_screenshots: false
+      skip_upload_screenshots: false,
+      skip_upload_changelogs: true
     )
 
     UI.success("Metadata uploaded to Google Play Console!")

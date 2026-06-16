@@ -136,8 +136,12 @@ Future<void> run(List<String> args) async {
     HttpOverrides.global = _WindowsHttpOverrides();
   }
 
-  // Initialize Firebase on mobile platforms (required for push notifications)
-  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+  // Initialize Firebase on mobile platforms (required for push notifications).
+  // Skipped in screenshot mode so no notification machinery (and thus no OS
+  // permission prompt) can overlay the captured UI.
+  if (!kIsWeb &&
+      (Platform.isIOS || Platform.isAndroid) &&
+      CliArgs.scene == null) {
     try {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,

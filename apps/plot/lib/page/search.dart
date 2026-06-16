@@ -9,6 +9,7 @@ import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
@@ -103,6 +104,17 @@ class _SearchViewState extends State<_SearchView> {
     _focusFieldIfEmpty();
     SearchPage.focusRequest.addListener(_focusFieldIfEmpty);
     _searchController.addListener(_onSearchChanged);
+    // Scene S6: pre-seed the search field so cross-source results render
+    // immediately for the screenshot capture.
+    final sceneQuery = Scenes.searchQuery;
+    if (Scenes.active && sceneQuery != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _searchController.text = sceneQuery;
+        _lastSearchText = sceneQuery;
+        context.read<PriorityBloc>().updateSearch(sceneQuery);
+      });
+    }
   }
 
   /// Request focus on the search field, but only when the query is empty — a

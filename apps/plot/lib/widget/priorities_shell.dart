@@ -74,6 +74,26 @@ class PrioritiesShell extends StatefulWidget {
     String rootPriorityIdString,
   ) => _PrioritiesShellState._openFeedbackThread(context, rootPriorityIdString);
 
+  /// Opens a fresh new-thread compose under [priorityIdString], driving the
+  /// Activity-tab inner stack directly so it works in single- AND multi-panel.
+  /// Used by screenshot scene S5 (which can't reach the private instance flow).
+  static void openNewThread(
+    BuildContext context,
+    String priorityIdString,
+  ) => _PrioritiesShellState._openNewThreadStatic(context, priorityIdString);
+
+  /// Opens [threadIdString] (filed under [priorityIdString]) by pushing
+  /// ThreadRoute onto the Activity-tab inner stack — the same path a thread tap
+  /// uses — so it lands on the thread in single- AND multi-panel even when its
+  /// focus is already the current route (a plain `navigate`/`replaceAll` to an
+  /// already-mounted PriorityRoute drops the inner child). Used by S2/S7.
+  static void openThread(
+    BuildContext context,
+    String priorityIdString,
+    String threadIdString,
+  ) => _PrioritiesShellState._openThreadStatic(
+        context, priorityIdString, threadIdString);
+
   @override
   State<PrioritiesShell> createState() => _PrioritiesShellState();
 }
@@ -442,6 +462,99 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     });
     ctx.router.navigate(PriorityRoute(priorityIdString: rootPriorityIdString));
     _pushNewThreadWhenInnerReady(ctx, attempt: 0, feedback: true);
+  }
+
+  /// Static new-thread navigation for screenshot scene S5. Mirrors
+  /// [_openFeedbackThread] but composes a normal (non-feedback) thread under
+  /// [priorityIdString], driving the Activity-tab inner stack so it lands on
+  /// the compose page in single- AND multi-panel.
+  static void _openNewThreadStatic(
+    BuildContext context,
+    String priorityIdString,
+  ) {
+    final ctx = navigatorKey?.currentContext ?? context;
+    if (!ctx.mounted) return;
+    NewThreadPageState.requestReset();
+    final tabsRouter = _findTabsRouter(ctx.router.root);
+    final innerRouter = _findPriorityInnerRouter(ctx.router.root);
+    if (tabsRouter != null && innerRouter != null) {
+      if (tabsRouter.activeIndex != _kTabActivity) {
+        tabsRouter.setActiveIndex(_kTabActivity);
+      }
+      if (innerRouter.current.name != NewThreadRoute.name) {
+        innerRouter.push(NewThreadRoute());
+      }
+      return;
+    }
+    ThreadHeaderNotifier.pendingNewThreadIntent.value = true;
+    Future.delayed(const Duration(seconds: 3), () {
+      ThreadHeaderNotifier.pendingNewThreadIntent.value = false;
+    });
+    ctx.router.navigate(PriorityRoute(priorityIdString: priorityIdString));
+    _pushNewThreadWhenInnerReady(ctx, attempt: 0);
+  }
+
+  /// Static thread-open navigation for screenshot scenes S2/S7. Switches to the
+  /// Activity tab, seeds the thread's focus, then pushes ThreadRoute onto the
+  /// inner stack once it materializes — the same mechanism as a thread tap.
+  static void _openThreadStatic(
+    BuildContext context,
+    String priorityIdString,
+    String threadIdString,
+  ) {
+    final ctx = navigatorKey?.currentContext ?? context;
+    if (!ctx.mounted) return;
+    final tabsRouter = _findTabsRouter(ctx.router.root);
+    if (tabsRouter != null && tabsRouter.activeIndex != _kTabActivity) {
+      tabsRouter.setActiveIndex(_kTabActivity);
+    }
+    // Cold-start only: the focus's inner router isn't mounted yet — seed it.
+    // When it IS mounted (warm), do NOT re-navigate the focus: that re-seeds
+    // the inner default and clobbers the thread. In both cases the thread is
+    // pushed by _pushThreadWhenInnerReady, which waits for the inner stack to
+    // settle on its default child (PriorityOnlyRoute single / NewThreadRoute
+    // multi) before pushing ON TOP — so it survives the seeding. ThreadRoute
+    // resolves by id regardless of which focus is showing.
+    if (_findPriorityInnerRouter(ctx.router.root) == null) {
+      ctx.router.navigate(PriorityRoute(priorityIdString: priorityIdString));
+    }
+    _pushThreadWhenInnerReady(ctx, threadIdString, attempt: 0);
+  }
+
+  static void _pushThreadWhenInnerReady(
+    BuildContext context,
+    String threadIdString, {
+    required int attempt,
+  }) {
+    if (!context.mounted) return;
+    final innerRouter = _findPriorityInnerRouter(context.router.root);
+    if (innerRouter != null) {
+      final current = innerRouter.current.name;
+      if (current == ThreadRoute.name) return; // already there
+      // Wait until the inner stack has settled on its FINAL default child
+      // before pushing, so the thread lands ON TOP and isn't clobbered by the
+      // default-child seeding. Multi-panel (iPad/desktop) seeds PriorityOnlyRoute
+      // transiently and then NewThreadRoute — pushing on the transient
+      // PriorityOnlyRoute gets stomped 2ms later by the NewThreadRoute seed, so
+      // wait for the platform's settled default: NewThreadRoute multi-panel,
+      // PriorityOnlyRoute single-panel.
+      final multi = LayoutBloc.instance?.state.multiPanel ?? false;
+      final settledDefault =
+          multi ? NewThreadRoute.name : PriorityOnlyRoute.name;
+      if (current == settledDefault) {
+        innerRouter.push(ThreadRoute(threadIdString: threadIdString));
+        return;
+      }
+    }
+    if (attempt >= 120) {
+      if (innerRouter != null) {
+        innerRouter.push(ThreadRoute(threadIdString: threadIdString));
+      }
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pushThreadWhenInnerReady(context, threadIdString, attempt: attempt + 1);
+    });
   }
 
   /// Walks the controller tree to find the [StackRouter] hosted by the

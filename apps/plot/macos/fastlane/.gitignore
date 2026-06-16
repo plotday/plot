@@ -1,0 +1,3 @@
+# Transient screenshot staging for `fastlane metadata` / snapshot output.
+# The committed source of truth is apps/plot/screenshots/store/.
+screenshots/

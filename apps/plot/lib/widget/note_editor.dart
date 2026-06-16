@@ -13,6 +13,7 @@ import 'package:plot/widget/note_editor_top_bar.dart';
 import 'package:plot/widget/recipient_picker_modal.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/image_utils.dart';
 import 'package:plot/util/link_type_copy.dart';
@@ -234,6 +235,13 @@ class NoteEditorState extends State<NoteEditor> {
     super.initState();
     _lastSavedContent = widget.draft.content ?? '';
     _lastDraftNoteId = widget.draft.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // In scene mode, focus the composer so the caret renders in screenshots.
+      if (Scenes.active && (widget.draft.content?.isNotEmpty ?? false)) {
+        focus();
+      }
+    });
   }
 
   @override

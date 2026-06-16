@@ -371,6 +371,43 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
+      # Best-effort: stage the committed App Store assets and push the listing
+      # metadata + screenshots. Marked continue-on-error so a listing whose
+      # metadata is temporarily locked (a version In Review / Pending Developer
+      # Release) can't fail an otherwise-successful binary release.
+      - name: Upload metadata and screenshots to App Store Connect
+        id: metadata
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          # deliver classifies each screenshot by its pixel dimensions, so iPhone
+          # (portrait) and iPad (landscape) shots can share the one en-US folder.
+          # The device-name prefix only keeps filenames unique and ordering
+          # stable; the ipad-* glob picks up iPad assets automatically once they
+          # are generated and committed.
+          SRC="apps/plot/screenshots/store/app-store"
+          DEST="apps/plot/ios/fastlane/screenshots/en-US"
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          shopt -s nullglob
+          count=0
+          for devdir in "$SRC"/iphone-* "$SRC"/ipad-*; do
+            [ -d "$devdir" ] || continue
+            dev="$(basename "$devdir")"
+            for png in "$devdir"/*.png; do
+              cp "$png" "$DEST/${dev}-$(basename "$png")"
+              count=$((count + 1))
+            done
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "ERROR: no iPhone/iPad App Store screenshots found under $SRC" >&2
+            exit 1
+          fi
+          echo "Staged $count iOS screenshot(s) into $DEST"
+
+          cd apps/plot/ios
+          fastlane metadata
+
       - name: Tag store submission
         run: |
           git tag "ios/${{ needs.prepare-release.outputs.release_version }}"
@@ -398,6 +435,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect (TestFlight)"
+            echo "**Metadata + screenshots:** ${{ steps.metadata.outcome == 'success' && 'uploaded to App Store listing' || 'upload skipped/failed — see the metadata step logs (listing may be locked while a version is in review)' }}"
             echo ""
             echo "### Admin"
             echo "- [TestFlight (iOS)](https://appstoreconnect.apple.com/teams/0a55108e-af39-475a-a7f1-aada0c1decae/apps/6756905242/testflight/ios)"
@@ -592,6 +630,50 @@ jobs:
           cd apps/plot/android
           fastlane beta aab:$GITHUB_WORKSPACE/apps/plot/build/app/outputs/bundle/release/app-release.aab
 
+      # Best-effort: stage the committed Play Store assets and push the listing
+      # metadata + screenshots. Marked continue-on-error so a listing whose
+      # metadata is temporarily locked (changes pending review, a halted
+      # rollout) can't fail an otherwise-successful binary release.
+      - name: Upload metadata and screenshots to Google Play
+        id: metadata
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          # The committed store assets are the source of truth. Supply uploads
+          # whatever sits in metadata/android/en-US/images/<type>Screenshots, so
+          # stage each device set there, replacing prior shots (rm -rf first) so
+          # we never append stale ones. featureGraphic/ is committed source and
+          # is left untouched.
+          SRC="apps/plot/screenshots/store/play"
+          IMAGES="apps/plot/android/fastlane/metadata/android/en-US/images"
+          shopt -s nullglob
+
+          stage() {
+            local src_dir="$SRC/$1" dest_dir="$IMAGES/$2"
+            rm -rf "$dest_dir"
+            local pngs=("$src_dir"/*.png)
+            if [ "${#pngs[@]}" -eq 0 ]; then
+              echo "  (no screenshots in $src_dir — skipping $2)" >&2
+              return 0
+            fi
+            mkdir -p "$dest_dir"
+            cp "${pngs[@]}" "$dest_dir/"
+            echo "Staged ${#pngs[@]} screenshot(s) into $dest_dir"
+          }
+
+          # Galaxy Tab S8 Ultra is a large tablet -> tenInchScreenshots.
+          stage android-phone phoneScreenshots
+          stage android-tablet tenInchScreenshots
+
+          phone=("$IMAGES/phoneScreenshots"/*.png)
+          if [ "${#phone[@]}" -eq 0 ]; then
+            echo "ERROR: no Android phone screenshots found under $SRC/android-phone" >&2
+            exit 1
+          fi
+
+          cd apps/plot/android
+          fastlane metadata
+
       - name: Tag store submission
         run: |
           git tag "android/${{ needs.prepare-release.outputs.release_version }}"
@@ -611,6 +693,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** Google Play (internal testing)"
+            echo "**Metadata + screenshots:** ${{ steps.metadata.outcome == 'success' && 'uploaded to Google Play listing' || 'upload skipped/failed — see the metadata step logs (listing may be locked while changes are pending review)' }}"
             echo ""
             echo "### Admin"
             echo "- [Google Play Console (Open Testing)](https://play.google.com/console/u/0/developers/6311596685182865378/app/4972513621080206656/tracks/open-testing)"
@@ -864,6 +947,34 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
+      # Best-effort: stage the committed Mac App Store assets and push the
+      # listing metadata + screenshots. Marked continue-on-error so a listing
+      # whose metadata is temporarily locked (a version In Review / Pending
+      # Developer Release) can't fail an otherwise-successful binary release.
+      - name: Upload metadata and screenshots to App Store Connect
+        id: metadata
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          SRC="apps/plot/screenshots/store/app-store/macos"
+          DEST="apps/plot/macos/fastlane/screenshots/en-US"
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          shopt -s nullglob
+          count=0
+          for png in "$SRC"/*.png; do
+            cp "$png" "$DEST/$(basename "$png")"
+            count=$((count + 1))
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "ERROR: no macOS App Store screenshots found under $SRC" >&2
+            exit 1
+          fi
+          echo "Staged $count macOS screenshot(s) into $DEST"
+
+          cd apps/plot/macos
+          fastlane metadata
+
       - name: Tag store submission
         run: |
           git tag "macos/${{ needs.prepare-release.outputs.release_version }}"
@@ -891,6 +1002,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect"
+            echo "**Metadata + screenshots:** ${{ steps.metadata.outcome == 'success' && 'uploaded to Mac App Store listing' || 'upload skipped/failed — see the metadata step logs (listing may be locked while a version is in review)' }}"
             echo ""
             echo "### Admin"
             echo "- [TestFlight (macOS)](https://appstoreconnect.apple.com/teams/0a55108e-af39-475a-a7f1-aada0c1decae/apps/6756905242/testflight/macos)"

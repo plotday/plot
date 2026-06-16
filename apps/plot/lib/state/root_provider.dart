@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/cli_args.dart';
 import 'package:plot/command/command.dart';
@@ -179,6 +181,9 @@ class RootProviderState extends State<RootProvider> {
                   TwistInstance.start(),
                   nowBloc.start(),
                 ]);
+                if (kDebugMode && CliArgs.scene != null) {
+                  unawaited(Scenes.run(CliArgs.scene!));
+                }
                 _setupNowBlocListener(themeBloc);
                 unawaited(onboardingBloc.start());
                 unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));

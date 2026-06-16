@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/logging.dart';
@@ -122,6 +123,11 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   /// completions. Call after sign-in.
   Future<void> start({required String userId, String? userName}) async {
     if (!isSupported) return;
+
+    // Screenshot scenes must not trigger the OS notification-permission prompt
+    // (it overlays the captured UI) or register for push — skip notification
+    // setup entirely while a scene is active.
+    if (Scenes.active) return;
 
     _started = true;
     _userName = userName;

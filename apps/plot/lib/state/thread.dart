@@ -11,6 +11,7 @@ import 'package:plot/page/loading.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/screenshot/scenes.dart';
 import 'logging.dart';
 
 part 'thread_state.dart';
@@ -423,6 +424,13 @@ class ThreadBloc extends Cubit<ThreadState> {
 
   /// Loads draft note from database for the current thread
   Future<void> _loadDraftNote() async {
+    final sceneDraft = Scenes.draftContentFor(state.thread.title ?? '');
+    if (sceneDraft != null) {
+      emit(state.copyWith(
+        draft: state.draft.copyWith(content: sceneDraft),
+      ));
+      return;
+    }
     final existingDraft = await Note.getDraftByActivity(state.thread.id);
     if (existingDraft != null) {
       emit(state.copyWith(draft: existingDraft));
