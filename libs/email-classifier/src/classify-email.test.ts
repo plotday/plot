@@ -90,3 +90,68 @@ describe("classifyEmail — format", () => {
     ).toBeNull();
   });
 });
+
+describe("classifyEmail — calendar invitation responses", () => {
+  // Google/Outlook send automated "Accepted:/Declined:/Tentative:" emails when
+  // an invitee responds to a meeting invite. An acceptance is a passive
+  // confirmation — route it to a notification so it lands in the muted FYI focus
+  // ("skip active"). A decline or tentative may need follow-up (reschedule, find
+  // a new time), so it must stay active.
+  const RESPONSE_SUBJECT_TAIL = "Beth <> Kris Collab @ Wed Jun 10, 2026 10:30am (EDT)";
+
+  it("classifies an acceptance as a notification regardless of body length", () => {
+    expect(
+      classifyEmail(
+        signals({
+          subject: `Accepted: ${RESPONSE_SUBJECT_TAIL}`,
+          fromAddress: "beth@example.com",
+          autoSubmitted: "auto-generated",
+          bodyLength: 1200,
+        })
+      ).format
+    ).toBe("notification");
+  });
+
+  it("keeps a decline active even when short and automated", () => {
+    // Without the calendar-response guard, a short automated email would fall
+    // through to the generic short-automated → notification branch and get
+    // swept into FYI. Declines must stay active.
+    expect(
+      classifyEmail(
+        signals({
+          subject: `Declined: ${RESPONSE_SUBJECT_TAIL}`,
+          fromAddress: "beth@example.com",
+          autoSubmitted: "auto-generated",
+          bodyLength: 200,
+        })
+      ).format
+    ).toBeNull();
+  });
+
+  it("keeps a tentative response active", () => {
+    expect(
+      classifyEmail(
+        signals({
+          subject: `Tentative: ${RESPONSE_SUBJECT_TAIL}`,
+          fromAddress: "beth@example.com",
+          autoSubmitted: "auto-generated",
+          bodyLength: 200,
+        })
+      ).format
+    ).toBeNull();
+  });
+
+  it("does not treat a human 'Accepted:' email as a calendar notification", () => {
+    // A real person writing "Accepted: ..." is not a calendar response; only
+    // automated invitation replies skip active.
+    expect(
+      classifyEmail(
+        signals({
+          subject: "Accepted: your proposal",
+          fromAddress: "jane@example.com",
+          bodyLength: 800,
+        })
+      ).format
+    ).toBe("message");
+  });
+});
