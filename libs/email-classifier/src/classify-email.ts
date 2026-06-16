@@ -54,6 +54,25 @@ const NOTIFICATION_MAX_BODY = 700;
 const NOREPLY_LOCALPART =
   /^(no-?reply|do-?not-?reply|donotreply|notifications?|notify|mailer-daemon|bounce|postmaster|automated|auto|alerts?|updates?)\b/;
 
+// Calendar invitation-response notification emails (Google/Outlook). The
+// subject is prefixed with the responder's verdict, e.g. "Accepted: <event>".
+const CAL_RESPONSE_RE = /^\s*(accepted|declined|tentative(?:ly accepted)?):\s/i;
+
+function calendarResponseVerdict(
+  subject: string,
+  automation: Automation
+): "accepted" | "declined" | "tentative" | null {
+  // Only automated invitation replies count — a human writing "Accepted: ..."
+  // is ordinary correspondence, not a calendar response.
+  if (automation !== "automated") return null;
+  const m = CAL_RESPONSE_RE.exec(subject);
+  if (!m) return null;
+  const verb = m[1].toLowerCase();
+  if (verb === "accepted") return "accepted";
+  if (verb === "declined") return "declined";
+  return "tentative";
+}
+
 const INVOICE_RE = /\b(invoice|amount due|payment due|past due|statement|bill)\b/i;
 const RECEIPT_RE =
   /\b(receipt|order (confirmation|#|number)|your order|payment (received|confirmation)|thanks for your (order|purchase)|purchase confirmation)\b/i;
@@ -89,6 +108,14 @@ function computeReach(s: EmailSignals): Reach {
 
 function computeFormat(s: EmailSignals, automation: Automation, reach: Reach): Format | null {
   const subject = s.subject ?? "";
+  // Calendar invitation responses: an acceptance is a passive confirmation, so
+  // mark it a notification (routes to the muted FYI focus — "skip active"). A
+  // decline or tentative may need follow-up, so return null to keep it active
+  // AND to stop it falling through to the generic short-automated → notification
+  // branch below, which would otherwise sweep it into FYI.
+  const verdict = calendarResponseVerdict(subject, automation);
+  if (verdict === "accepted") return "notification";
+  if (verdict !== null) return null;
   if (INVOICE_RE.test(subject)) return "invoice";
   if (RECEIPT_RE.test(subject)) return "receipt";
   if (s.gmailCategories.includes("CATEGORY_PROMOTIONS")) return "promotion";
