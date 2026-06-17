@@ -7,6 +7,10 @@ import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
+import {
+  selectUnsuppressedThreadIds,
+  stampThreadsNotified,
+} from "../state/notify-candidates";
 
 const notificationSummary = new Hono<{ Bindings: Bindings }>();
 
@@ -71,12 +75,35 @@ notificationSummary.post("/notification-summary", async (c) => {
     }
 
     const { batches, user_name } = parseResult.data;
+    const userId = c.var.user.id;
+    const db = c.var.db;
+
+    // Per-thread re-notify suppression (mirrors /notification-content). The
+    // foreground builds these batches from local data and gates only on the
+    // per-focus watermark, which does not follow a thread across a focus move —
+    // so a thread the user already saw and re-filed can reappear here. Drop any
+    // thread already notified at its current content version before summarizing.
+    const allThreadIds = [
+      ...new Set(batches.flatMap((b) => b.threads.map((t) => t.id))),
+    ];
+    const eligible = await selectUnsuppressedThreadIds(db, userId, allThreadIds);
+
+    const filteredBatches = batches
+      .map((batch) => ({
+        ...batch,
+        threads: batch.threads.filter((t) => eligible.has(t.id)),
+      }))
+      .filter((batch) => batch.threads.length > 0);
+
+    if (filteredBatches.length === 0) {
+      return c.json({ summaries: [] });
+    }
 
     // Check free-tier AI limit
     const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
 
     const summaries = await Promise.all(
-      batches.map(async (batch) => {
+      filteredBatches.map(async (batch) => {
         const displayPriorityTitle = batch.priority_title === "Everything" ? "Inbox" : batch.priority_title;
         const body = aiAllowed.allowed
           ? await generateSummary(c.env, batch.threads, user_name, displayPriorityTitle, c.var.user.id)
@@ -94,6 +121,15 @@ notificationSummary.post("/notification-summary", async (c) => {
     if (aiAllowed.allowed) {
       recordAiUsage(c.env, c.var.user.id, "note_processing");
     }
+
+    // Record the per-thread high-water mark for the threads we're about to show
+    // so they aren't re-announced later (including after a move to another
+    // focus). Shared with /notification-content via thread_notify_state.
+    await stampThreadsNotified(
+      db,
+      userId,
+      filteredBatches.flatMap((b) => b.threads.map((t) => t.id))
+    );
 
     return c.json({ summaries });
   } catch (error) {

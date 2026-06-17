@@ -78,6 +78,11 @@ notificationContent.get("/notification-content", async (c) => {
       -- there — not from the leaf, which is never stamped.
       JOIN priority focus ON focus.user_id = p.user_id
         AND focus.path = subpath(p.path, 0, LEAST(2, nlevel(p.path)))
+      -- Per-thread notification high-water mark (server-only bookkeeping).
+      -- Unlike the per-focus watermark, it follows the thread across focus
+      -- moves — see the suppression clause below.
+      LEFT JOIN public.thread_notify_state tns
+        ON tns.user_id = tu.user_id AND tns.thread_id = t.id
       WHERE tu.user_id = ${userId}::uuid
         AND tu.read_at IS NULL
         AND (tu.importance >= 50 OR tu.urgent = TRUE)
@@ -88,6 +93,19 @@ notificationContent.get("/notification-content", async (c) => {
         AND (
           focus.notification_cleared_at IS NULL
           OR date_trunc('milliseconds', tu.updated_at) > focus.notification_cleared_at
+        )
+        -- Per-thread re-notify suppression. The per-focus watermark above does
+        -- NOT follow a thread when the user moves it to another focus, so an
+        -- already-notified, still-unread thread re-filed under an uncleared
+        -- focus would be re-announced (the same email twice, in the new focus).
+        -- This mark is keyed on the thread. A real reply bumps
+        -- thread_state.updated_at past the mark and re-notifies; a pure move
+        -- touches only thread_priority (not thread_state), so it stays
+        -- suppressed. Truncate the DB value to millisecond precision to match
+        -- the JS-rounded value stamped below.
+        AND (
+          tns.notified_at IS NULL
+          OR date_trunc('milliseconds', tu.updated_at) > tns.notified_at
         )
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
@@ -149,6 +167,11 @@ notificationContent.get("/notification-content", async (c) => {
     // Group threads by first-level priority
     const batchMap = new Map<string, BatchData>();
 
+    // Per-thread notification stamps to persist below. Mirrors the per-focus
+    // watermark's coverage (every batched candidate, not just the 10 shown in a
+    // summary) so unshown candidates aren't re-announced on the next wake.
+    const notifiedStamps: { threadId: string; updatedAt: Date }[] = [];
+
     for (const row of threadsResult.rows) {
       const segments = row.priority_path.split(".");
       const firstLevelPath = segments.slice(0, Math.min(2, segments.length)).join(".");
@@ -177,6 +200,7 @@ notificationContent.get("/notification-content", async (c) => {
         original_author_name: row.original_author_name,
         unread_author_names: row.unread_author_names,
       });
+      notifiedStamps.push({ threadId: row.thread_id, updatedAt: row.ts_updated_at });
 
       if (row.urgent) batch.urgent = true;
     }
@@ -221,6 +245,25 @@ notificationContent.get("/notification-content", async (c) => {
         SET notification_cleared_at = GREATEST(notification_cleared_at, ${batch.maxUpdatedAt.toISOString()})
         WHERE id = ${batch.firstLevelPriorityId}::uuid
           AND user_id = ${userId}::uuid
+      `.execute(db);
+    }
+
+    // Advance the per-thread high-water mark too, so a thread the user later
+    // moves to another (uncleared) focus is not re-announced. Keyed on the
+    // thread, this survives focus moves that the per-focus watermark above
+    // does not. GREATEST guards against an older value racing in.
+    if (notifiedStamps.length > 0) {
+      const values = sql.join(
+        notifiedStamps.map(
+          (s) =>
+            sql`(${userId}::uuid, ${s.threadId}::uuid, ${s.updatedAt.toISOString()}::timestamptz)`
+        )
+      );
+      await sql`
+        INSERT INTO thread_notify_state (user_id, thread_id, notified_at)
+        VALUES ${values}
+        ON CONFLICT (user_id, thread_id) DO UPDATE
+          SET notified_at = GREATEST(thread_notify_state.notified_at, EXCLUDED.notified_at)
       `.execute(db);
     }
 

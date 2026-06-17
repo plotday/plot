@@ -1,5 +1,4 @@
 import { DurableObject } from "cloudflare:workers";
-import { sql } from "kysely";
 import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
@@ -7,6 +6,7 @@ import { createLogger } from "@plotday/worker-util";
 import { withDb } from "../db";
 import type { Bindings } from "../env";
 import { sendDataNotificationToUser } from "../notifications/send";
+import { selectNotifyCandidates } from "./notify-candidates";
 
 // The server no longer schedules notification timing. Once a notify-eligible
 // unread thread exists, the DO sends a `sync_wake` so the client can sync
@@ -28,9 +28,6 @@ const MIN_PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
  * long, the push fires. Urgent items bypass this gate.
  */
 const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
-
-/** Importance below this value never triggers a push or scheduling on its own. */
-const IMPORTANCE_NOTIFY_THRESHOLD = 50;
 
 export class PushNotify extends DurableObject<Bindings> {
   private userId: string | null = null;
@@ -91,42 +88,9 @@ export class PushNotify extends DurableObject<Bindings> {
     let hadCandidates = false;
     try {
       const result = await withDb(this.env, async (db) => {
-        const stateResult = await sql<{
-          // BOOL_OR over an empty result set is NULL, which we use below to
-          // distinguish "no candidates" from "candidates but none urgent".
-          any_urgent: boolean | null;
-        }>`
-          SELECT
-            BOOL_OR(ts.urgent) AS any_urgent
-          FROM thread_state ts
-          JOIN thread t ON t.id = ts.thread_id
-          JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
-          JOIN priority p ON p.id = tp.priority_id
-          JOIN priority focus ON focus.user_id = p.user_id
-            AND focus.path = subpath(p.path, 0, LEAST(2, nlevel(p.path)))
-          WHERE ts.user_id = ${userId}::uuid AND ts.read_at IS NULL
-            AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
-            -- Skip muted threads (seed + every thread matched to the rule).
-            -- A new reply re-marks a muted thread unread, so read-state
-            -- suppression alone would let it wake the client.
-            AND tp.mute_by_thread_id IS NULL
-            AND (
-              focus.notification_cleared_at IS NULL
-              OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
-            )
-            -- FYI is a muted, low-signal focus — never wake the client for it.
-            AND focus.is_fyi = FALSE
-            AND t.archived_at IS NULL
-            AND (t.draft = false OR t.created_by = ${userId}::uuid)
-            AND (
-              t.contacts && "user".user_contact_ids(${userId}::uuid)
-              OR t.groups && "user".user_group_ids(${userId}::uuid)
-            )
-        `.execute(db);
-
-        const row = stateResult.rows[0];
-        if (!row || row.any_urgent === null) return null;
-        return { urgent: row.any_urgent };
+        const candidates = await selectNotifyCandidates(db, userId);
+        if (candidates.length === 0) return null;
+        return { urgent: candidates.some((c) => c.urgent) };
       });
 
       if (result) {
@@ -239,40 +203,12 @@ export class PushNotify extends DurableObject<Bindings> {
       }
 
       // Re-check that we still have a notify-worthy unread (importance >= 50
-      // OR urgent). The user may have read everything since the alarm was
-      // scheduled.
+      // OR urgent). The user may have read everything — or moved/cleared it —
+      // since the alarm was scheduled.
       let hasCandidates = false;
       await withDb(this.env, async (db) => {
-        const result = await sql<{ has_candidates: boolean }>`
-          SELECT true AS has_candidates
-          FROM thread_state ts
-          JOIN thread t ON t.id = ts.thread_id
-          JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
-          JOIN priority p ON p.id = tp.priority_id
-          JOIN priority focus ON focus.user_id = p.user_id
-            AND focus.path = subpath(p.path, 0, LEAST(2, nlevel(p.path)))
-          WHERE ts.user_id = ${this.userId!}::uuid
-            AND ts.read_at IS NULL
-            AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
-            -- Skip muted threads (seed + every thread matched to the rule).
-            -- A new reply re-marks a muted thread unread, so read-state
-            -- suppression alone would let it wake the client.
-            AND tp.mute_by_thread_id IS NULL
-            AND (
-              focus.notification_cleared_at IS NULL
-              OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
-            )
-            -- FYI is a muted, low-signal focus — never wake the client for it.
-            AND focus.is_fyi = FALSE
-            AND t.archived_at IS NULL
-            AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
-            AND (
-              t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
-              OR t.groups && "user".user_group_ids(${this.userId!}::uuid)
-            )
-          LIMIT 1
-        `.execute(db);
-        hasCandidates = result.rows.length > 0;
+        const candidates = await selectNotifyCandidates(db, this.userId!);
+        hasCandidates = candidates.length > 0;
 
         if (hasCandidates) {
           // Send data-only FCM wake signal

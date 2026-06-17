@@ -2297,6 +2297,43 @@ export type Database = {
           },
         ]
       }
+      thread_notify_state: {
+        Row: {
+          notified_at: string
+          thread_id: string
+          user_id: string
+        }
+        Insert: {
+          notified_at: string
+          thread_id: string
+          user_id: string
+        }
+        Update: {
+          notified_at?: string
+          thread_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thread_notify_state_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_notify_state_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_notify_state_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       thread_priority: {
         Row: {
           applied_default_channel_id: number | null

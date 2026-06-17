@@ -17,6 +17,9 @@
 
 ### Fixes
 
+- Moving a notified message to another focus no longer sends you a second notification for it. The
+  "already told you about this" memory now follows the message itself, so re-filing it stays quiet
+  unless there's an actual new reply.
 - Reading a thread on one device now reliably marks it read on your other devices. Previously, when
   you opened a thread that was in your Doing list, the unread dot cleared on the device you read it on
   but stayed on your other devices.
