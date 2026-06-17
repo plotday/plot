@@ -583,14 +583,8 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   }
 
   async stopSync(folderId: string): Promise<void> {
-    // Cancel scheduled renewal task
-    const renewalTask = await this.get<string>(
-      `watch_renewal_task_${folderId}`
-    );
-    if (renewalTask) {
-      await this.cancelTask(renewalTask);
-      await this.clear(`watch_renewal_task_${folderId}`);
-    }
+    // Cancel the scheduled renewal task for this folder.
+    await this.cancelScheduledTask(`watch-renewal:${folderId}`);
 
     // Stop watch via Google API
     await this.stopDriveWatch(folderId);
@@ -693,6 +687,14 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   // --- Webhooks ---
 
   private async setupDriveWatch(folderId: string): Promise<void> {
+    // Idempotent: stop any watch already registered for this folder before
+    // creating a new one. Without this, a redundant call (onChannelEnabled
+    // re-dispatch, re-init) orphans the previous Google watch, which keeps
+    // delivering change webhooks until it expires on Google's side. No-op when
+    // nothing is stored (first-time setup). The pending renewal task is
+    // replaced by scheduleWatchRenewal's keyed scheduleTask below.
+    await this.stopDriveWatch(folderId);
+
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onDriveWebhook,
@@ -798,26 +800,19 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       return;
     }
 
-    // Always schedule as a task to avoid recursive loops
+    // Singleton scheduled task: re-scheduling under this key atomically
+    // replaces any pending renewal, so renewal chains can never accumulate —
+    // even if setupDriveWatch runs again (onChannelEnabled re-dispatch, re-init).
     const renewalCallback = await this.callback(this.renewDriveWatch, folderId);
-
-    const taskToken = await this.runTask(renewalCallback, {
+    await this.scheduleTask(`watch-renewal:${folderId}`, renewalCallback, {
       runAt: renewalTime,
     });
-
-    if (taskToken) {
-      await this.set(`watch_renewal_task_${folderId}`, taskToken);
-    }
   }
 
   private async renewDriveWatch(folderId: string): Promise<void> {
     try {
-      try {
-        await this.stopDriveWatch(folderId);
-      } catch {
-        // Expected if old watch already expired
-      }
-
+      // setupDriveWatch is idempotent — it stops the existing watch and
+      // re-schedules the (keyed) renewal — so no separate teardown is needed.
       await this.setupDriveWatch(folderId);
     } catch (error) {
       console.error(`Failed to renew watch for folder ${folderId}:`, error);

@@ -259,18 +259,8 @@ export class MsTeams extends Connector<MsTeams> {
       return;
     }
 
-    // Cancel subscription renewal task
-    const taskToken = await this.get<string>(
-      `renewal_task_${channel.id}`
-    );
-    if (taskToken) {
-      try {
-        await this.cancelTask(taskToken);
-      } catch {
-        // Task may already have executed
-      }
-      await this.clear(`renewal_task_${channel.id}`);
-    }
+    // Cancel subscription renewal task (singleton keyed on the channel).
+    await this.cancelScheduledTask(`subscription-renewal:${channel.id}`);
 
     // Delete Graph subscription
     const subData = await this.get<{
@@ -498,16 +488,18 @@ export class MsTeams extends Connector<MsTeams> {
       return;
     }
 
+    // Singleton scheduled task: re-scheduling under this key atomically
+    // replaces any pending renewal, so renewal chains can never accumulate —
+    // even if setupChannelWebhook runs again (onChannelEnabled re-dispatch).
     const renewalCallback = await this.callback(
       this.renewSubscription,
       channelId
     );
-    const taskToken = await this.runTask(renewalCallback, {
-      runAt: renewalTime,
-    });
-    if (taskToken) {
-      await this.set(`renewal_task_${channelId}`, taskToken);
-    }
+    await this.scheduleTask(
+      `subscription-renewal:${channelId}`,
+      renewalCallback,
+      { runAt: renewalTime }
+    );
   }
 
   async renewSubscription(channelId: string): Promise<void> {
@@ -830,7 +822,10 @@ export class MsTeams extends Connector<MsTeams> {
    *
    * Gated to run at most once per 24 hours to avoid hammering /users on
    * every onChannelEnabled call. Uses Graph pagination via @odata.nextLink.
-   * Rate-limit (HTTP 429 / Retry-After) reschedules via runTask in finally.
+   * The daily run reschedules itself via a singleton keyed scheduleTask, so
+   * repeated onChannelEnabled dispatches never leak parallel daily chains.
+   * A Graph rate-limit (HTTP 429 / Retry-After) instead does a one-shot
+   * runTask retry and skips the daily reschedule for that run.
    */
   async syncMembers(channelId: string): Promise<void> {
     const now = Date.now();
@@ -911,7 +906,14 @@ export class MsTeams extends Connector<MsTeams> {
       throw error;
     } finally {
       if (scheduleDaily) {
-        await this.runTask(dailyCallback, { runAt: nextRunAt });
+        // Singleton daily digest keyed per channel: re-scheduling atomically
+        // replaces any pending run, so repeated onChannelEnabled dispatches
+        // never leak parallel self-perpetuating daily chains.
+        await this.scheduleTask(
+          `members-sync:${channelId}`,
+          dailyCallback,
+          { runAt: nextRunAt }
+        );
       }
     }
   }

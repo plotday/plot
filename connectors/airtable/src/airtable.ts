@@ -268,8 +268,19 @@ export class Airtable extends Connector<Airtable> {
     // Set the flag so the reconcileComments migration shim doesn't also
     // bootstrap a duplicate poll chain after upgrade.
     await this.set(`poll_initialized_${baseId}`, true);
+    await this.schedulePoll(baseId);
+  }
+
+  /**
+   * Schedule (or reschedule) the recurring safety poll for a base. Keyed
+   * singleton: re-scheduling under `poll:<baseId>` atomically replaces any
+   * pending poll, so a redundant entry into the setup path (onChannelEnabled
+   * re-dispatch, the reconcileComments bootstrap shim) can never stack a
+   * second parallel poll chain.
+   */
+  private async schedulePoll(baseId: string): Promise<void> {
     const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
-    await this.runTask(pollCb, {
+    await this.scheduleTask(`poll:${baseId}`, pollCb, {
       runAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
   }
@@ -280,6 +291,12 @@ export class Airtable extends Connector<Airtable> {
   }
 
   private async stopSync(baseId: string): Promise<void> {
+    // Cancel the recurring safety poll and the webhook-renewal chain so they
+    // don't keep running after the channel is disabled (keyed singletons —
+    // no stored token to chase).
+    await this.cancelScheduledTask(`poll:${baseId}`);
+    await this.cancelScheduledTask(`webhook-renewal:${baseId}`);
+
     const webhookId = await this.get<string>(`webhook_id_${baseId}`);
     if (webhookId) {
       try {
@@ -783,7 +800,11 @@ export class Airtable extends Connector<Airtable> {
     const renewalMs = expiresMs - 24 * 60 * 60 * 1000;
     const runAt = new Date(Math.max(renewalMs, Date.now() + 60_000));
     const cb = await this.callback(this.renewWebhook, baseId);
-    await this.runTask(cb, { runAt });
+    // Keyed singleton: re-scheduling under `webhook-renewal:<baseId>` atomically
+    // replaces any pending renewal (proactive renewal or 1h transient retry),
+    // so the self-renewing chain can never fork into parallel chains even if a
+    // redundant setupWebhook runs.
+    await this.scheduleTask(`webhook-renewal:${baseId}`, cb, { runAt });
   }
 
   /**
@@ -845,7 +866,9 @@ export class Airtable extends Connector<Airtable> {
         error
       );
       const cb = await this.callback(this.renewWebhook, baseId);
-      await this.runTask(cb, {
+      // Same key as scheduleNextRenewal: the 1h retry IS the next link in the
+      // self-renewing chain, so keep one pending renewal per base.
+      await this.scheduleTask(`webhook-renewal:${baseId}`, cb, {
         runAt: new Date(Date.now() + 60 * 60 * 1000),
       });
     }
@@ -1080,10 +1103,9 @@ export class Airtable extends Connector<Airtable> {
       await this.recoverWebhook(baseId, recoverReason);
     }
 
-    const cb = await this.callback(this.pollWebhookPayloads, baseId);
-    await this.runTask(cb, {
-      runAt: new Date(Date.now() + POLL_INTERVAL_MS),
-    });
+    // Self-reschedule the next poll via the keyed singleton, so this loop and
+    // any concurrent scheduling site converge on one chain.
+    await this.schedulePoll(baseId);
   }
 
   /**
@@ -1147,11 +1169,12 @@ export class Airtable extends Connector<Airtable> {
     // Phase 4 backfill: bootstrap the safety-poll chain. The flag is
     // also set in onChannelEnabled, so newly enabled channels skip this
     // and we never end up with two parallel poll chains for one base.
+    // schedulePoll keys the task (`poll:<baseId>`), so even if this shim
+    // races onChannelEnabled the two converge on a single poll chain.
     const polled = await this.get<boolean>(`poll_initialized_${baseId}`);
     if (!polled) {
       await this.set(`poll_initialized_${baseId}`, true);
-      const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
-      await this.runTask(pollCb);
+      await this.schedulePoll(baseId);
     }
   }
 

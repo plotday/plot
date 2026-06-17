@@ -445,13 +445,12 @@ export class Jira extends Connector<Jira> {
       projectId
     );
 
-    const taskToken = await this.runTask(renewalCallback, {
+    // Singleton scheduled task: re-scheduling under this key atomically
+    // replaces any pending renewal, so renewal chains can never accumulate —
+    // even if setupJiraWebhook runs again (onChannelEnabled re-dispatch, re-init).
+    await this.scheduleTask(`webhook-renewal:${projectId}`, renewalCallback, {
       runAt: renewalTime,
     });
-
-    if (taskToken) {
-      await this.set(`webhook_renewal_task_${projectId}`, taskToken);
-    }
   }
 
   /**
@@ -1386,18 +1385,8 @@ export class Jira extends Connector<Jira> {
    * Stop syncing a Jira project
    */
   async stopSync(projectId: string): Promise<void> {
-    // Cancel pending webhook renewal task
-    const renewalTaskToken = await this.get<string>(
-      `webhook_renewal_task_${projectId}`
-    );
-    if (renewalTaskToken) {
-      try {
-        await this.cancelTask(renewalTaskToken);
-      } catch (error) {
-        console.warn("Failed to cancel webhook renewal task:", error);
-      }
-      await this.clear(`webhook_renewal_task_${projectId}`);
-    }
+    // Cancel pending webhook renewal task (singleton keyed by project)
+    await this.cancelScheduledTask(`webhook-renewal:${projectId}`);
 
     // Delete webhook from Jira
     const webhookId = await this.get<number>(`webhook_id_${projectId}`);

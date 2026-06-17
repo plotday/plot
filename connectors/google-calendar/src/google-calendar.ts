@@ -584,14 +584,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   }
 
   async stopSync(calendarId: string): Promise<void> {
-    // 1. Cancel scheduled renewal task
-    const renewalTask = await this.get<string>(
-      `watch_renewal_task_${calendarId}`
-    );
-    if (renewalTask) {
-      await this.cancelTask(renewalTask);
-      await this.clear(`watch_renewal_task_${calendarId}`);
-    }
+    // 1. Cancel the scheduled renewal task for this calendar.
+    await this.cancelScheduledTask(`watch-renewal:${calendarId}`);
 
     // 2. Stop watch via Google API (best effort)
     try {
@@ -695,15 +689,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       calendarId
     );
 
-    // Schedule renewal task
-    const taskToken = await this.runTask(renewalCallback, {
+    // Singleton scheduled task: re-scheduling under this key atomically
+    // replaces any pending renewal, so renewal chains can never accumulate —
+    // even if setupCalendarWatch runs again (re-dispatch, re-init).
+    await this.scheduleTask(`watch-renewal:${calendarId}`, renewalCallback, {
       runAt: renewalTime,
     });
-
-    // Store task token for cleanup
-    if (taskToken) {
-      await this.set(`watch_renewal_task_${calendarId}`, taskToken);
-    }
   }
 
   /**
@@ -724,14 +715,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         return;
       }
 
-      // Stop the old watch (best effort - don't fail if this errors)
-      try {
-        await this.stopCalendarWatch(calendarId);
-      } catch (error) {
-        console.warn(`Failed to stop old watch for ${calendarId}:`, error);
-      }
-
-      // Create new watch
+      // setupCalendarWatch is idempotent — it stops the existing watch and
+      // re-schedules the (keyed) renewal — so no separate teardown is needed.
       await this.setupCalendarWatch(calendarId);
     } catch (error) {
       console.error(`Failed to renew watch for calendar ${calendarId}:`, error);
@@ -739,6 +724,16 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   }
 
   private async setupCalendarWatch(calendarId: string): Promise<void> {
+    // Idempotent: stop any watch already registered for this calendar before
+    // creating a new one, so a redundant call (re-dispatch, re-init) doesn't
+    // orphan the previous Google watch (which keeps firing webhooks until it
+    // expires). Best effort; no-op when nothing is stored.
+    try {
+      await this.stopCalendarWatch(calendarId);
+    } catch (error) {
+      console.warn(`Failed to stop old watch for ${calendarId}:`, error);
+    }
+
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onCalendarWebhook,

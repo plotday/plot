@@ -980,17 +980,17 @@ export class Asana extends Connector<Asana> {
   }
 
   /**
-   * Schedule (or reschedule) the recurring change poll for a project. Idempotent
-   * — overwrites the stored task token so re-dispatch never stacks loops.
+   * Schedule (or reschedule) the recurring change poll for a project.
+   *
+   * Singleton scheduled task: re-scheduling under this key atomically replaces
+   * any pending poll, so the self-rescheduling loop can never stack — even if
+   * onChannelEnabled is re-dispatched (auto-enable / recovery).
    */
   private async schedulePoll(projectId: string): Promise<void> {
     const callback = await this.callback(this.pollChanges, projectId);
-    const taskToken = await this.tools.tasks.runTask(callback, {
+    await this.scheduleTask(`change-poll:${projectId}`, callback, {
       runAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
-    if (taskToken) {
-      await this.set(`poll_task_${projectId}`, taskToken);
-    }
   }
 
   /**
@@ -1175,16 +1175,8 @@ export class Asana extends Connector<Asana> {
    * per-channel state.
    */
   async stopSync(projectId: string): Promise<void> {
-    // Cancel the recurring change poll.
-    const pollToken = await this.get<string>(`poll_task_${projectId}`);
-    if (pollToken) {
-      try {
-        await this.tools.tasks.cancelTask(pollToken);
-      } catch (error) {
-        console.warn("Failed to cancel Asana poll task:", error);
-      }
-      await this.clear(`poll_task_${projectId}`);
-    }
+    // Cancel the recurring change poll (singleton keyed task).
+    await this.cancelScheduledTask(`change-poll:${projectId}`);
 
     // Cleanup poll + sync state.
     await this.clear(`events_sync_${projectId}`);

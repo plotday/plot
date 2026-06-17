@@ -149,6 +149,10 @@ export class GoogleTasks extends Connector<GoogleTasks> {
    * Stops periodic sync and removes state.
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
+    // Cancel the recurring poll so it stops once the channel is disabled
+    // (keyed singleton — no stored token to chase).
+    await this.tools.tasks.cancelScheduledTask(`poll:${channel.id}`);
+
     await this.clear(`sync_enabled_${channel.id}`);
     await this.clear(`sync_state_${channel.id}`);
     await this.clear(`periodic_sync_state_${channel.id}`);
@@ -175,9 +179,16 @@ export class GoogleTasks extends Connector<GoogleTasks> {
     await this.tools.tasks.runTask(batchCallback);
   }
 
+  /**
+   * Schedule (or reschedule) the recurring poll for a task list. Keyed
+   * singleton: re-scheduling under `poll:<listId>` atomically replaces any
+   * pending poll, so a redundant entry into the setup path (onChannelEnabled
+   * re-dispatch on auto-enable / recovery) can never stack a second parallel
+   * poll chain. Each list keeps its own independent loop.
+   */
   private async schedulePeriodicSync(listId: string): Promise<void> {
     const syncCallback = await this.callback(this.periodicSync, listId);
-    await this.tools.tasks.runTask(syncCallback, {
+    await this.tools.tasks.scheduleTask(`poll:${listId}`, syncCallback, {
       runAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
   }
