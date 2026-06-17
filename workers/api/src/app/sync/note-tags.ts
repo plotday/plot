@@ -182,7 +182,7 @@ noteTags.post("/sync/note-tags/update", async (c) => {
 // idx_note_tag_seq, then re-aggregate only matched notes. MATERIALIZED CTE
 // ensures the planner treats the changed set as a hard bound rather than
 // computing it after a full thread/note visibility scan.
-async function fetchNoteTagsBySeq(
+export async function fetchNoteTagsBySeq(
   trx: Kysely<DB>,
   params: {
     userId: string;

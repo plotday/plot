@@ -17,6 +17,9 @@
 
 ### Fixes
 
+- Opening an older thread you hadn't looked at before now loads its messages faster. Plot fetches the
+  thread's messages, tags, and reactions together in a single request instead of three separate ones,
+  which cuts the wait — most noticeable on threads with a lot of history.
 - Moving a notified message to another focus no longer sends you a second notification for it. The
   "already told you about this" memory now follows the message itself, so re-filing it stays quiet
   unless there's an actual new reply.

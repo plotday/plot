@@ -331,6 +331,7 @@ abstract class BaseTable {
     String? pageId,
     bool initial = false,
     bool archived = false,
+    Map<String, dynamic>? prefetched,
   }) async {
     final useSeqCursor = lastHorizon != null;
     final params = buildParams(
@@ -377,8 +378,28 @@ abstract class BaseTable {
     late final List<Map<String, dynamic>> rows;
     String? nextHorizon;
     ({String seq, String id})? nextPage;
+    // Fast path: a combined fetch (e.g. GET /sync/thread-detail) can supply this
+    // entity's first seq-cursor page, sparing a per-entity HTTP round trip. Only
+    // valid for the first page (no page cursor) of a seq pull; later pages and
+    // legacy pulls fall through to HTTP. Everything after this block (cursor,
+    // horizon and stamp handling) is identical either way.
+    final usePrefetched = prefetched != null &&
+        useSeqCursor &&
+        pageSeq == null &&
+        pageId == null;
     try {
-      if (useSeqCursor) {
+      if (usePrefetched) {
+        rows = (prefetched['rows'] as List<dynamic>? ?? const <dynamic>[])
+            .cast<Map<String, dynamic>>();
+        nextHorizon = prefetched['next_horizon']?.toString();
+        final np = prefetched['next_page'];
+        if (np is Map) {
+          nextPage = (
+            seq: np['seq'].toString(),
+            id: np['id'].toString(),
+          );
+        }
+      } else if (useSeqCursor) {
         final envelope = await api.get<Map<String, dynamic>>(
           '/sync/$syncEndpoint${queryString.isNotEmpty ? '?$queryString' : ''}',
         );
@@ -1417,6 +1438,13 @@ class Store extends _$Store {
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
     bool initial = false,
+    // First seq-cursor page supplied by a combined fetch (e.g. the
+    // /sync/thread-detail envelope for this entity). When non-null its rows seed
+    // the first page instead of a per-entity HTTP request; any later pages
+    // (rare) and all later pulls fetch over HTTP. Null restores the original
+    // behaviour exactly — the automatic fallback when the combined endpoint is
+    // unavailable. See [Note.pullForActivity].
+    Map<String, dynamic>? prefetched,
   }) async {
     final entity = baseTable.fullName;
     final sw = Stopwatch()..start();
@@ -1477,6 +1505,9 @@ class Store extends _$Store {
         pageSeq: pageSeq,
         pageId: pageId,
         initial: initial,
+        // Only the first page can come from the prefetched envelope; any
+        // subsequent pages (pageSeq set) fetch over HTTP.
+        prefetched: pages == 1 ? prefetched : null,
       );
       httpMs += httpSw.elapsedMilliseconds;
       more = batchMore;

@@ -121,7 +121,7 @@ noteReactions.post("/sync/note-reactions/update", async (c) => {
 // the LATERAL aggregate. Pre-filter at note_reaction via idx_note_reaction_seq,
 // then re-aggregate only matched notes. MATERIALIZED CTE ensures the
 // planner treats the changed set as a hard bound.
-async function fetchNoteReactionsBySeq(
+export async function fetchNoteReactionsBySeq(
   trx: Kysely<DB>,
   params: {
     userId: string;

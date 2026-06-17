@@ -308,23 +308,51 @@ class Note extends Equatable implements Comparable<Note> {
   /// view). Tracked in SyncStates as "notes:{threadId}",
   /// "note_tags:{threadId}", "note_reactions:{threadId}".
   static Future<void> pullForActivity(ThreadId threadId) async {
-    // Thread-scoped pull: NotesBase/NoteTagsBase/NoteReactionsBase each add
-    // `thread_id`, so the server returns only this thread's rows — fast and
-    // bounded. The server endpoints now honour `thread_id` (previously
-    // note-tags/note-reactions had no thread filter, so a per-thread
-    // `initial: true` pull re-downloaded the user's ENTIRE tag/reaction
-    // history from seq 0 — the reason they were dropped here). With the
-    // filter in place, pulling tags/reactions per-thread is cheap and lets a
-    // historical thread opened on demand show its full tag/reaction state
-    // even though the bounded initial sync (Note.pullInitial) only covered
-    // unread/active threads.
+    // A single combined request (GET /sync/thread-detail) fetches this thread's
+    // notes, tags and reactions inside ONE server transaction — i.e. one DB
+    // connection. On a cold connection the planner pays a large one-time cost
+    // building the relcache for the heavily-indexed note/thread tables (~0.5–4s
+    // measured on prod); folding the three pulls into one transaction pays that
+    // once instead of up to three times across separate (possibly cold)
+    // backends. This is the dominant cause of slow first-opens of a never-opened
+    // thread. See docs/perf/thread-open-cold-planning.md.
+    //
+    // Each entity's envelope is then handed to its normal Store.pull as a
+    // prefetched first page, so all the existing cursor/horizon/stamp/pagination
+    // machinery (and the "notes:{threadId}" sync-state keys that gate re-pulls)
+    // is reused unchanged.
+    //
+    // Fallback: if the combined endpoint is unavailable (older server) or
+    // errors, the envelopes stay null and each Store.pull fetches its entity
+    // over HTTP exactly as before — identical to the pre-fold behaviour. The
+    // standalone /sync/notes, /sync/note-tags and /sync/note-reactions endpoints
+    // remain for this fallback and for the global (non-thread) sync paths.
+    Map<String, dynamic>? notesEnv;
+    Map<String, dynamic>? tagsEnv;
+    Map<String, dynamic>? reactionsEnv;
+    try {
+      final combined = await api.get<Map<String, dynamic>>(
+        '/sync/thread-detail?thread_id=${Uri.encodeQueryComponent(threadId.toString())}&initial=true',
+      );
+      notesEnv = combined['notes'] as Map<String, dynamic>?;
+      tagsEnv = combined['note_tags'] as Map<String, dynamic>?;
+      reactionsEnv = combined['note_reactions'] as Map<String, dynamic>?;
+    } catch (e) {
+      // Older server without /sync/thread-detail, or a transient error — fall
+      // back to the per-entity pulls below (prefetched stays null).
+      log.fine('thread-detail combined pull unavailable; falling back', e);
+    }
+
     await Future.wait([
-      Store.get.pull(Store.get.notes, NotesBase(threadId: threadId), initial: true),
-      Store.get.pull(Store.get.noteTags, NoteTagsBase(threadId: threadId), initial: true),
+      Store.get.pull(Store.get.notes, NotesBase(threadId: threadId),
+          initial: true, prefetched: notesEnv),
+      Store.get.pull(Store.get.noteTags, NoteTagsBase(threadId: threadId),
+          initial: true, prefetched: tagsEnv),
       Store.get.pull(
         Store.get.noteReactions,
         NoteReactionsBase(threadId: threadId),
         initial: true,
+        prefetched: reactionsEnv,
       ),
     ]);
   }
