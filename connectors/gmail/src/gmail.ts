@@ -37,6 +37,10 @@ import {
 } from "./gmail-api";
 import type { Cta } from "@plotday/twister/facets";
 import { gmailFacets } from "./gmail-facets";
+import {
+  classifySendError,
+  type ClassifiedSendError,
+} from "./gmail-send-errors";
 
 /**
  * Persisted mailbox-wide watch state. Gmail allows one watch per (mailbox,
@@ -483,6 +487,68 @@ export class Gmail extends Connector<Gmail> {
       throw new Error("No Google authentication token available");
     }
     return new GmailApi(token.token);
+  }
+
+  /**
+   * Send with bounded in-process retry for transient failures. Neither send
+   * path (onNoteCreated reply / onCreateLink compose) rides a retrying queue,
+   * so transient blips (429 / 5xx / network) must be retried here. Up to 3
+   * attempts with short backoff (well under the worker budget); permanent and
+   * auth failures short-circuit immediately. Returns a discriminated result so
+   * the caller can surface a `deliveryError` to the user instead of throwing.
+   *
+   * Truly unexpected errors (classified `unknown`) are rethrown so they still
+   * reach error tracking.
+   */
+  private async sendWithRetry(
+    send: () => Promise<{ id: string; threadId: string }>,
+    label: "reply" | "compose"
+  ): Promise<
+    | { ok: true; result: { id: string; threadId: string } }
+    | { ok: false; error: ClassifiedSendError }
+  > {
+    const maxAttempts = 3;
+    const backoffMs = [400, 1200];
+    let lastTransient: ClassifiedSendError | null = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const result = await send();
+        return { ok: true, result };
+      } catch (error) {
+        const classified = classifySendError(error);
+        if (classified.class === "unknown") {
+          // Genuinely unexpected — let it propagate to error tracking.
+          throw error;
+        }
+        if (classified.class !== "transient") {
+          // Permanent or auth: retrying won't help.
+          console.warn(
+            `[gmail] sendWithRetry(${label}): ${classified.class} failure`,
+            { code: classified.code }
+          );
+          return { ok: false, error: classified };
+        }
+        lastTransient = classified;
+        const delay = backoffMs[attempt];
+        if (delay !== undefined) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    console.warn(
+      `[gmail] sendWithRetry(${label}): transient failure persisted after ${maxAttempts} attempts`,
+      { code: lastTransient?.code }
+    );
+    return {
+      ok: false,
+      error: lastTransient ?? {
+        class: "transient",
+        code: "unknown",
+        message: "Couldn't send after several attempts",
+      },
+    };
   }
 
   async listLabels(channelId: string): Promise<MessageChannel[]> {
@@ -1585,7 +1651,18 @@ export class Gmail extends Connector<Gmail> {
       attachments: attachments.length > 0 ? attachments : undefined,
     });
 
-    const result = await api.sendMessage(raw, threadId);
+    const sent = await this.sendWithRetry(
+      () => api.sendMessage(raw, threadId),
+      "reply"
+    );
+    if (!sent.ok) {
+      // Surface the failure to the user (thread goes unread + "Failed to send"
+      // affordance). Do NOT set the idempotency guard, so an explicit retry
+      // re-attempts the send. Clearing `deliveryError` happens automatically
+      // on the next successful write-back.
+      return { deliveryError: { code: sent.error.code, message: sent.error.message } };
+    }
+    const result = sent.result;
 
     // Record the idempotency guard so a retried dispatch of this note does
     // not send a second copy (see the guard check above).
@@ -1601,7 +1678,9 @@ export class Gmail extends Connector<Gmail> {
     // compute a baseline is expensive. The first incremental sync-in of the
     // sent message will establish the baseline naturally (runtime records
     // the stored content as the baseline on first external ingest).
-    return { key: result.id };
+    // `deliveryError: null` clears any prior "Failed to send" marker from a
+    // previous attempt that has now succeeded on retry.
+    return { key: result.id, deliveryError: null };
   }
 
   async onThreadRead(
@@ -1791,7 +1870,19 @@ export class Gmail extends Connector<Gmail> {
       body,
     });
 
-    const result = await api.sendNewMessage(raw);
+    const sent = await this.sendWithRetry(() => api.sendNewMessage(raw), "compose");
+    if (!sent.ok) {
+      // Compose send failed: don't create a link (there's no Gmail thread to
+      // bind). Return a delivery-error marker so the runtime marks the thread's
+      // opening note "Failed to send" and the thread goes unread. The user's
+      // composed content is preserved in Plot; an explicit retry re-composes.
+      return {
+        originatingNote: {
+          deliveryError: { code: sent.error.code, message: sent.error.message },
+        },
+      };
+    }
+    const result = sent.result;
     const gmailThreadId = result.threadId;
     const gmailMessageId = result.id;
 
@@ -1808,8 +1899,12 @@ export class Gmail extends Connector<Gmail> {
     // key onNoteCreated returns for a reply and sync-in uses. No
     // externalContent: Gmail's send doesn't return the stored body (same
     // tradeoff as onNoteCreated), and the sent message is echo-suppressed
-    // above, so no baseline round-trip is needed.
-    return { ...linkFor(gmailThreadId), originatingNote: { key: gmailMessageId } };
+    // above, so no baseline round-trip is needed. `deliveryError: null` clears
+    // any prior "Failed to send" marker now that the compose has succeeded.
+    return {
+      ...linkFor(gmailThreadId),
+      originatingNote: { key: gmailMessageId, deliveryError: null },
+    };
   }
 
   /**

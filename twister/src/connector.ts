@@ -1,4 +1,4 @@
-import { type Actor, type ActorId, type Contact, type Link, type NewLinkWithNotes, type Note, type Thread, type Uuid } from "./plot";
+import { type Actor, type ActorId, type Contact, type DeliveryError, type Link, type NewLinkWithNotes, type Note, type Thread, type Uuid } from "./plot";
 import type { ScheduleContactStatus } from "./schedule";
 import {
   type AuthProvider,
@@ -82,6 +82,28 @@ export type NoteWriteBackResult = {
    * `NewNote.content` for this note on re-ingest.
    */
   externalContent?: string;
+  /**
+   * Reports that the outbound send / write-back for this note FAILED and
+   * could not be recovered (after the connector's own retries). The runtime
+   * records it on the note — surfacing a "Failed to send" affordance (Retry /
+   * Discard) to the user — and marks the thread unread.
+   *
+   * - object → record the failure.
+   * - `null` → clear a previously-recorded failure (e.g. a successful retry).
+   * - omitted (`undefined`) → leave any existing delivery state untouched.
+   *
+   * A successful write-back (any result without a `deliveryError`) also clears
+   * a previously-recorded failure, so connectors usually only need to SET this
+   * on failure.
+   *
+   * Prefer RETURNING this over throwing for expected, user-visible failures
+   * (rejected recipient, message too large, quota exhausted): a thrown error
+   * pages error tracking, whereas a returned `deliveryError` does not. Reserve
+   * throwing for genuinely unexpected errors. Connectors that simply throw on a
+   * failed write-back still get a generic "Failed to send" surfaced by the
+   * runtime, just without a specific reason.
+   */
+  deliveryError?: DeliveryError | null;
 };
 
 /**
