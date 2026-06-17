@@ -94,6 +94,16 @@ class PrioritiesShell extends StatefulWidget {
   ) => _PrioritiesShellState._openThreadStatic(
         context, priorityIdString, threadIdString);
 
+  /// Public entry for the widget bridge: open a focus (priority) page without
+  /// requiring a [BuildContext] from the caller. Resolves context via
+  /// [navigatorKey], activates the Activity tab, then navigates to
+  /// [PriorityRoute]. Mirrors the [openThread] / [openNewThread] pattern.
+  static void openFocus(String priorityIdString) {
+    final ctx = navigatorKey?.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    _PrioritiesShellState._openFocusStatic(ctx, priorityIdString);
+  }
+
   @override
   State<PrioritiesShell> createState() => _PrioritiesShellState();
 }
@@ -492,6 +502,22 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     });
     ctx.router.navigate(PriorityRoute(priorityIdString: priorityIdString));
     _pushNewThreadWhenInnerReady(ctx, attempt: 0);
+  }
+
+  /// Static focus-open navigation for the widget bridge. Activates the Activity
+  /// tab and navigates to [PriorityRoute] for [priorityIdString]. Called via the
+  /// context-free [PrioritiesShell.openFocus] entry point.
+  static void _openFocusStatic(
+    BuildContext context,
+    String priorityIdString,
+  ) {
+    final ctx = navigatorKey?.currentContext ?? context;
+    if (!ctx.mounted) return;
+    final tabsRouter = _findTabsRouter(ctx.router.root);
+    if (tabsRouter != null && tabsRouter.activeIndex != _kTabActivity) {
+      tabsRouter.setActiveIndex(_kTabActivity);
+    }
+    ctx.router.navigate(PriorityRoute(priorityIdString: priorityIdString));
   }
 
   /// Static thread-open navigation for screenshot scenes S2/S7. Switches to the

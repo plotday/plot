@@ -34,6 +34,8 @@
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		940C91AF2388E225508A664E /* PlotWidgetSharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F95F07E4DB96CC12BB7592 /* PlotWidgetSharedStorage.swift */; };
 		9FA0DD3DAF348FCAF6618C23 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCE38688A3E0DFCBF95D0D5F /* MenuBarController.swift */; };
+		3D7A9F2B1E4C8056A7D3F091 /* MenuBarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F2A4B8D1C9E3056F4B2A7D3 /* MenuBarModel.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F2A3 /* MenuBarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* MenuBarContentView.swift */; };
 		A358D8587084D7DFEA69B39F /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 78CF2FD4FFE2497580AEEDED /* Pods_Runner.framework */; };
 		D240F70BC06BD99F1E6E3C2D /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B548BBC367A48C49BD4BA6B /* Cocoa.framework */; };
 		E33FC8803FB21BDE91123FE9 /* WidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8528C0F1010BC909839B9D35 /* WidgetBridgePlugin.swift */; };
@@ -106,6 +108,8 @@
 		CEE07B3FD6E7C62AFC99C71D /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		EF529F85F501DDD031BB90B4 /* PlotWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PlotWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		FCE38688A3E0DFCBF95D0D5F /* MenuBarController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
+		7F2A4B8D1C9E3056F4B2A7D3 /* MenuBarModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MenuBarModel.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* MenuBarContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MenuBarContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -264,6 +268,8 @@
 			isa = PBXGroup;
 			children = (
 				FCE38688A3E0DFCBF95D0D5F /* MenuBarController.swift */,
+				7F2A4B8D1C9E3056F4B2A7D3 /* MenuBarModel.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* MenuBarContentView.swift */,
 			);
 			name = MenuBar;
 			path = Runner/MenuBar;
@@ -584,6 +590,8 @@
 				E33FC8803FB21BDE91123FE9 /* WidgetBridgePlugin.swift in Sources */,
 				940C91AF2388E225508A664E /* PlotWidgetSharedStorage.swift in Sources */,
 				9FA0DD3DAF348FCAF6618C23 /* MenuBarController.swift in Sources */,
+				3D7A9F2B1E4C8056A7D3F091 /* MenuBarModel.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F2A3 /* MenuBarContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

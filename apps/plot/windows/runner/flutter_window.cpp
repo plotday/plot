@@ -28,6 +28,15 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // Windows system-tray widget is disabled for now. The menu-bar surface was
+  // redesigned (NSPopover on macOS); the matching Windows popup hasn't been
+  // built yet (see docs/superpowers/plans/2026-06-17-menubar-redesign-3-windows-popup.md).
+  // Rather than ship the legacy pomodoro tray menu alongside the new macOS UI,
+  // we don't create the tray icon at all. The Dart widget bridge's channel
+  // calls simply no-op on Windows (MissingPluginException is caught), and the
+  // WM_COMMAND/WM_TIMER/tray-message routing below is already null-guarded.
+  // To restore: define PLOT_ENABLE_WINDOWS_TRAY (and finish the popup plan).
+#ifdef PLOT_ENABLE_WINDOWS_TRAY
   tray_icon_ =
       std::make_unique<plot::system_tray::TrayIcon>(GetHandle());
   widget_bridge_ = std::make_unique<plot::widget_bridge::WidgetBridgePlugin>(
@@ -38,6 +47,7 @@ bool FlutterWindow::OnCreate() {
       [bridge = widget_bridge_.get()](const std::string& name) {
         bridge->SendAction(name);
       });
+#endif
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();

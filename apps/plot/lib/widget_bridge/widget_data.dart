@@ -1,5 +1,59 @@
 import 'package:equatable/equatable.dart';
 
+class WidgetTodo extends Equatable {
+  const WidgetTodo({required this.threadId, required this.title});
+  final String threadId;
+  final String title;
+  Map<String, Object?> toJson() => {'threadId': threadId, 'title': title};
+  @override
+  List<Object?> get props => [threadId, title];
+}
+
+class WidgetFocus extends Equatable {
+  const WidgetFocus({
+    required this.focusId,
+    required this.roleName,
+    required this.focusName,
+    required this.colorHex,
+  });
+  final String focusId;
+  final String? roleName;
+  final String focusName;
+  final String? colorHex;
+  Map<String, Object?> toJson() => {
+        'focusId': focusId,
+        'roleName': roleName,
+        'focusName': focusName,
+        'colorHex': colorHex,
+      };
+  @override
+  List<Object?> get props => [focusId, roleName, focusName, colorHex];
+}
+
+class WidgetEvent extends Equatable {
+  const WidgetEvent({
+    required this.threadId,
+    required this.title,
+    required this.startIso,
+    required this.endIso,
+    required this.hasCall,
+  });
+  final String threadId;
+  final String title;
+  final String startIso;
+  final String? endIso;
+  final bool hasCall;
+  Map<String, Object?> toJson() => {
+        'threadId': threadId,
+        'title': title,
+        'startIso': startIso,
+        'endIso': endIso,
+        'hasCall': hasCall,
+      };
+  @override
+  List<Object?> get props => [threadId, title, startIso, endIso, hasCall];
+}
+
 /// Snapshot of the data exposed to native widgets and menubar/tray
 /// surfaces. Written to platform shared storage so widget extensions
 /// can read it during their own refresh cycles without invoking
@@ -25,6 +79,14 @@ class WidgetState extends Equatable {
     this.canStop = false,
     this.canAddTime = false,
     this.canRemoveTime = false,
+    this.title,
+    this.titleIsTimer = false,
+    this.timerTitlePrefix,
+    this.currentFocus,
+    this.currentEvent2,
+    this.nextEvent2,
+    this.todos = const [],
+    this.focuses = const [],
   });
 
   factory WidgetState.signedOut() => const WidgetState(isSignedIn: false);
@@ -68,6 +130,23 @@ class WidgetState extends Equatable {
   final bool canAddTime;
   final bool canRemoveTime;
 
+  /// Fully-composed menu-bar/tray title string for the non-timer states.
+  /// Null when signed out / nothing to show. See widget_title.dart.
+  final String? title;
+
+  /// When true, the title is the running-timer state: native renders
+  /// "$timerTitlePrefix · {ticking remaining}" instead of [title].
+  final bool titleIsTimer;
+
+  /// Focus label shown before the ticking countdown when [titleIsTimer].
+  final String? timerTitlePrefix;
+
+  final WidgetFocus? currentFocus;
+  final WidgetEvent? currentEvent2;
+  final WidgetEvent? nextEvent2;
+  final List<WidgetTodo> todos;
+  final List<WidgetFocus> focuses;
+
   Map<String, Object?> toJson() => {
     'isSignedIn': isSignedIn,
     'userId': userId,
@@ -84,6 +163,14 @@ class WidgetState extends Equatable {
     'canStop': canStop,
     'canAddTime': canAddTime,
     'canRemoveTime': canRemoveTime,
+    'title': title,
+    'titleIsTimer': titleIsTimer,
+    'timerTitlePrefix': timerTitlePrefix,
+    'currentFocus': currentFocus?.toJson(),
+    'currentEvent2': currentEvent2?.toJson(),
+    'nextEvent2': nextEvent2?.toJson(),
+    'todos': todos.map((t) => t.toJson()).toList(),
+    'focuses': focuses.map((f) => f.toJson()).toList(),
   };
 
   @override
@@ -103,5 +190,13 @@ class WidgetState extends Equatable {
     canStop,
     canAddTime,
     canRemoveTime,
+    title,
+    titleIsTimer,
+    timerTitlePrefix,
+    currentFocus,
+    currentEvent2,
+    nextEvent2,
+    todos,
+    focuses,
   ];
 }

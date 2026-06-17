@@ -27,8 +27,8 @@ final class WidgetBridgePlugin: NSObject {
     self.channel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
     }
-    statusItemController?.actionDispatcher = { [weak self] name in
-      self?.sendAction(name)
+    statusItemController?.actionDispatcher = { [weak self] name, args in
+      self?.sendAction(name, args: args)
     }
   }
 

@@ -31,6 +31,15 @@ const String widgetActionStopTimer = 'stopTimer';
 const String widgetActionAddTime = 'addTime';
 const String widgetActionRemoveTime = 'removeTime';
 
+/// Navigation + capture actions sent from the redesigned menu-bar/tray
+/// popover. Handled in `WidgetBridge._handleAction`.
+const String widgetActionNavigateThread = 'navigateThread';
+const String widgetActionNavigateFocus = 'navigateFocus';
+const String widgetActionSetCurrentFocus = 'setCurrentFocus';
+const String widgetActionJoinCall = 'joinCall';
+const String widgetActionCapture = 'capture';
+const String widgetActionOpenApp = 'openApp';
+
 /// Signature for handlers attached via [WidgetBridgeChannel.onAction].
 typedef WidgetActionHandler =
     Future<Object?> Function(String name, Map<String, Object?> args);
