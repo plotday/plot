@@ -98,10 +98,11 @@ CREATE INDEX idx_thread_priority_user_priority
 CREATE INDEX idx_thread_priority_priority_id
     ON "public"."thread_priority" ("priority_id");
 
--- Support incremental sync queries filtering on updated_at.
-CREATE INDEX idx_thread_priority_updated_at
-    ON "public"."thread_priority" ("updated_at");
-
+-- NOTE: no index on updated_at. Incremental sync drives off `seq` (the xid8
+-- cursor), not updated_at, so this 3.6MB index saw only 12 planner uses in 4
+-- months of prod while being maintained on every one of ~573k/yr updates to
+-- this table. Dropped during index cleanup; idx_thread_priority_seq below
+-- carries the sync cursor.
 CREATE INDEX idx_thread_priority_seq
     ON "public"."thread_priority" ("seq");
 

@@ -55,9 +55,11 @@ CREATE INDEX idx_thread_state_user_unread ON "public"."thread_state" ("user_id",
 -- For view joins on thread_id
 CREATE INDEX idx_thread_state_thread_id ON "public"."thread_state" ("thread_id");
 
--- For agenda queries that filter by per-user on/at ranges
-CREATE INDEX idx_thread_state_on ON "public"."thread_state" USING gist ("on") WHERE "on" IS NOT NULL;
-CREATE INDEX idx_thread_state_at ON "public"."thread_state" USING gist ("at") WHERE "at" IS NOT NULL;
+-- NOTE: no GiST indexes on the per-user on/at ranges. Agenda is derived in the
+-- user.thread view via scalar lower()/upper() of these columns per row, not by
+-- range-overlap probes against thread_state, so both GiST indexes had 0 planner
+-- uses in 4 months of prod while incurring GiST maintenance on every write.
+-- Dropped during index cleanup. (schedule.at keeps its GiST — that one IS used.)
 
 -- Partial index for the Doing reorder section query.
 CREATE INDEX idx_thread_state_active  ON "public"."thread_state" ("user_id", "order") WHERE active;

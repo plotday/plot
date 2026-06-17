@@ -14,7 +14,10 @@ CREATE TRIGGER set_thread_read_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_seq_and_updated_at ();
 
-CREATE INDEX idx_thread_read_seq ON "public"."thread_read" ("seq");
+-- NOTE: no index on `seq` for this legacy table. It had 0 planner uses in 4
+-- months of prod (nothing seq-cursor-pulls thread_read; thread_state carries
+-- per-user read state now), while being maintained on every write. Dropped
+-- during index cleanup.
 
 -- Enhanced composite index supporting read_at comparisons in unread queries
 CREATE INDEX idx_thread_read_user_read ON "public"."thread_read" ("user_id", "thread_id", "read_at");

@@ -92,7 +92,12 @@ CREATE INDEX idx_schedule_link_id ON "public"."schedule" ("link_id");
 
 CREATE INDEX idx_schedule_at ON "public"."schedule" USING gist ("at");
 
-CREATE INDEX idx_schedule_on ON "public"."schedule" USING gist ("on");
+-- NOTE: no GiST index on the all-day `on` daterange. Agenda lookups join
+-- schedule by thread_id/link_id and read lower()/upper() of `on` per row; the
+-- range-overlap query that this GiST would serve saw only 2 planner uses in 4
+-- months of prod, versus GiST maintenance on every one of ~82k/yr writes to
+-- this table (42% of which would otherwise be HOT). Dropped during index
+-- cleanup. idx_schedule_at keeps the heavily-used `at` (tstzrange) GiST.
 
 CREATE INDEX idx_schedule_updated_at ON "public"."schedule" ("updated_at");
 

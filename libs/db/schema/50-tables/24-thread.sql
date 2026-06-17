@@ -148,9 +148,12 @@ CREATE INDEX idx_thread_contacts ON "public"."thread" USING gin ("contacts");
 
 CREATE INDEX idx_thread_groups ON "public"."thread" USING gin ("groups");
 
-CREATE INDEX idx_thread_team_id ON "public"."thread" ("team_id") WHERE team_id IS NOT NULL;
-
-CREATE INDEX idx_thread_external_contacts ON "public"."thread" USING gin ("external_contacts");
+-- NOTE: no index on team_id or a GIN on external_contacts. Both the team
+-- firewall checks (a.team_id IS NULL / a.external_contacts && user_contact_ids)
+-- run as per-row OR branches inside the user.thread join filter, never as an
+-- index probe — both indexes had 0 planner uses in 4 months of prod. Dropped to
+-- save write cost on this high-churn table; re-add if a query filters threads by
+-- team_id or finds them by external_contacts across the whole table.
 
 CREATE INDEX idx_thread_topic ON "public"."thread" ("topic")
 WHERE
@@ -163,10 +166,14 @@ WHERE
 CREATE INDEX idx_thread_embedding ON "public"."thread" USING hnsw ("embedding" halfvec_cosine_ops);
 
 -- Drives the periodic embedding-reconciliation sweep (scheduled/reconcile-embeddings.ts).
--- Partial on `embedding IS NULL` so it indexes only the backlog and shrinks to
--- (near) empty once embeddings are filled in, keeping the recurring sweep cheap.
+-- The partial WHERE mirrors the sweep's full predicate (not just `embedding IS
+-- NULL`) so the index holds ONLY genuinely-pending rows. With only `embedding IS
+-- NULL` it also indexed ~36k permanently-ineligible rows (no title / archived),
+-- and the planner ignored it entirely in favour of idx_thread_created_at,
+-- scanning thousands of dead rows each tick; matched to the query it stays
+-- (near) empty, the planner uses it, and the sweep is instant.
 CREATE INDEX idx_thread_embedding_pending ON "public"."thread" ("created_at" DESC)
-WHERE embedding IS NULL;
+WHERE embedding IS NULL AND title IS NOT NULL AND archived_at IS NULL;
 
 -- Reverse-lookup: list all sources merged into a given target.
 CREATE INDEX idx_thread_merged_into ON "public"."thread" ("merged_into_thread_id")

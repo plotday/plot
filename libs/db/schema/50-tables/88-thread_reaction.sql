@@ -18,9 +18,10 @@ CREATE TABLE "public"."thread_reaction" (
 
 COMMENT ON COLUMN "public"."thread_reaction"."occurrence" IS 'Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM';
 
-CREATE INDEX idx_thread_reaction_thread_id ON "public"."thread_reaction" (thread_id, emoji)
-WHERE
-    archived_at IS NULL;
+-- NOTE: no (thread_id, emoji) partial index. Per-thread reaction reads are
+-- served by idx_thread_reaction_thread_id_all below (thread_id); the composite
+-- partial had 0 planner uses in 4 months of prod (the emoji prefix wasn't
+-- selective enough to be picked). Dropped during index cleanup as redundant.
 
 CREATE INDEX idx_thread_reaction_thread_id_all ON "public"."thread_reaction" (thread_id);
 

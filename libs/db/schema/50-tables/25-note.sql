@@ -42,9 +42,12 @@ WHERE
 
 COMMENT ON COLUMN "public"."note"."access_groups" IS 'Restricts note visibility within thread viewers via group membership, parallel to access_contacts. NULL = thread-default groups can see, array of group_ids = author + members of listed groups (subset of thread.groups). Combines with access_contacts via OR: a non-author user sees the note iff their contact ids overlap access_contacts (when non-null) OR their group ids overlap access_groups (when non-null). When both are NULL, all thread viewers see it.';
 
-CREATE INDEX idx_note_access_groups ON "public"."note" USING gin ("access_groups")
-WHERE
-    access_groups IS NOT NULL;
+-- NOTE: no GIN index on access_groups. The access_groups && check only ever
+-- runs inside the user.note view, which is always scoped to one thread's notes
+-- (per-thread fetch) or a small seq window (sync) — a post-filter over a few
+-- rows, never a global scan. A GIN index here had 0 planner uses in prod, so it
+-- was dropped (write cost on note without benefit). Re-add only if a query
+-- needs to find notes by group across the whole table.
 
 COMMENT ON COLUMN "public"."note"."key" IS 'External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).';
 
@@ -74,10 +77,11 @@ CREATE UNIQUE INDEX note_thread_canonical_key_unique
     ON "public"."note" ("thread_id", "canonical_source", "key")
     WHERE canonical_source IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL;
 
--- Index for efficient key lookups
-CREATE INDEX idx_note_key ON "public"."note" ("key")
-WHERE
-    key IS NOT NULL;
+-- NOTE: no standalone index on `key`. Keyed-note upserts dedup via the two
+-- partial UNIQUE indexes above ((thread_id, link_id, key) and
+-- (thread_id, canonical_source, key)); a bare key lookup is rare (6 planner
+-- uses in 4 months of prod) and not worth the per-write maintenance on this
+-- high-churn table. Dropped during index cleanup.
 
 -- Index for FK lookups by link (used during cascading and migration backfill)
 CREATE INDEX idx_note_link_id ON "public"."note" ("link_id")
@@ -119,13 +123,23 @@ CREATE INDEX idx_note_mentions ON "public"."note" USING gin ("mentions")
 WHERE
     mentions IS NOT NULL AND archived_at IS NULL;
 
-CREATE INDEX ON note USING hnsw (embedding halfvec_cosine_ops);
+-- NOTE: no hnsw index on note.embedding. The only similarity query over notes
+-- (public.search_notes_and_links) first scopes to one user+priority via joins,
+-- leaving a tiny set to brute-force, so the planner never used the hnsw index
+-- (0 scans in 4 months of prod). It was pure overhead: 77MB plus expensive hnsw
+-- maintenance on every insert/update of this high-churn table. The embedding
+-- column is still populated and used by the scoped threshold search above; only
+-- the unused ANN index is gone. (thread.embedding keeps its hnsw index — it IS
+-- used by the classifier's global KNN in reclassify/mark_reclassify.)
 
 -- Drives the periodic embedding-reconciliation sweep (scheduled/reconcile-embeddings.ts).
--- Partial on `embedding IS NULL` so it indexes only the backlog and shrinks to
--- (near) empty once embeddings are filled in, keeping the recurring sweep cheap.
+-- The partial WHERE mirrors the sweep's full predicate (not just `embedding IS
+-- NULL`) so the index holds ONLY genuinely-pending rows. Without the extra
+-- conjuncts it also indexed tens of thousands of permanently-ineligible rows
+-- (no content / drafts / archived), forcing the sweep to scan ~16k dead entries
+-- every tick; matched to the query it stays (near) empty and the sweep is instant.
 CREATE INDEX idx_note_embedding_pending ON "public"."note" ("created_at" DESC)
-WHERE embedding IS NULL;
+WHERE embedding IS NULL AND content IS NOT NULL AND draft = FALSE AND archived_at IS NULL;
 
 -- Trigram index for ILIKE substring search in /sync/threads/search.
 -- Partial: search only scans non-archived, non-draft notes, so we can
