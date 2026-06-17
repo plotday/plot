@@ -49,6 +49,12 @@ CREATE TRIGGER set_thread_state_updated_at
 
 CREATE INDEX idx_thread_state_seq ON "public"."thread_state" ("seq");
 
+-- Drives the GET /sync/threads phase-1 candidate pre-filter
+-- (selectChangedThreadIds in workers/api/src/app/sync/helpers.ts): an index
+-- range scan of one user's per-thread state that changed since their sync
+-- cursor (user_id = $1 AND seq >= $since).
+CREATE INDEX idx_thread_state_user_seq ON "public"."thread_state" ("user_id", "seq");
+
 -- For unread queries (read_at IS NULL)
 CREATE INDEX idx_thread_state_user_unread ON "public"."thread_state" ("user_id", "thread_id", "read_at");
 

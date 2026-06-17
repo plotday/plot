@@ -106,6 +106,14 @@ CREATE INDEX idx_thread_priority_priority_id
 CREATE INDEX idx_thread_priority_seq
     ON "public"."thread_priority" ("seq");
 
+-- Drives the GET /sync/threads phase-1 candidate pre-filter
+-- (selectChangedThreadIds in workers/api/src/app/sync/helpers.ts): an index
+-- range scan of one user's filings that changed since their sync cursor
+-- (user_id = $1 AND seq >= $since). Without it the phase-1 query scans every
+-- one of the user's threads to compute and filter the GREATEST() view-seq.
+CREATE INDEX idx_thread_priority_user_seq
+    ON "public"."thread_priority" ("user_id", "seq");
+
 -- Fast lookup of the set of explicitly-moved threads per user — the training
 -- set consumed by classify_thread_for_user on every classification call.
 CREATE INDEX idx_thread_priority_user_moved

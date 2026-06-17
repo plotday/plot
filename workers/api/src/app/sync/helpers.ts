@@ -52,6 +52,71 @@ export async function readSafeHorizon(trx: { execute: (q: any) => any } | any): 
 }
 
 /**
+ * Candidate pre-filter for the phase-1 GET /sync/threads seq pull.
+ *
+ * `user.thread.seq` is `GREATEST(thread.seq, thread.last_note_seq,
+ * thread_priority.seq, thread_state.seq)` — a computed expression, so the
+ * cursor predicate (`seq >= since`) cannot use an index and the planner scans
+ * EVERY one of the user's threads on every poll (a full thread seq-scan plus
+ * per-row STABLE visibility functions), even when nothing changed. For the
+ * heaviest production user a 0-row incremental poll cost ~26s.
+ *
+ * This returns the small set of thread ids whose view-seq COULD be >= `since`,
+ * via three index range scans (all bounded to the user's own threads):
+ *   - thread_priority.seq >= since   (this user's filing changed)
+ *   - thread_state.seq    >= since   (this user's per-thread state changed)
+ *   - thread.seq          >= since  ∩  the user has a thread_priority row
+ *                                      (shared content/note change)
+ *
+ * Indexes: idx_thread_priority_user_seq (user_id, seq),
+ * idx_thread_state_user_seq (user_id, seq), and the existing idx_thread_seq
+ * (seq) for the third branch's driving scan.
+ *
+ * The `last_note_seq` view-seq source is intentionally absent: it is bumped
+ * ONLY inside the UNSCOPED branch of update_thread_on_note_change, which always
+ * `UPDATE thread …` in the same transaction → the BEFORE update_seq_and_updated_at
+ * trigger sets thread.seq = pg_current_xact_id(), so `last_note_seq <= thread.seq`
+ * always holds (scoped notes bump thread_state.seq instead, covered by branch 2).
+ * The thread.seq branch therefore subsumes last_note_seq. See
+ * threads-changed-candidates.test.ts (invariant pinned) and the user.thread
+ * leading comment.
+ *
+ * CONTRACT: the returned ids are a SUPERSET of the threads phase-1 would emit —
+ * the caller MUST re-filter them through `user.thread` with the identical seq
+ * window (`seq >= since AND seq < pg_snapshot_xmin(...)`), ORDER BY, and LIMIT.
+ * Over-inclusion is dropped by that re-filter (and by assembleSeqPage's vanished-
+ * row handling); never narrow the union, or a client update is stranded.
+ *
+ * Not for the initial pull (`since = 0`), where every thread is a candidate and
+ * the pre-filter only adds overhead — callers gate on that.
+ */
+export async function selectChangedThreadIds(
+  trx: { execute: (q: any) => any } | any,
+  userId: string,
+  seqSince: string,
+): Promise<string[]> {
+  const result = await sql<{ id: string }>`
+    SELECT tp.thread_id AS id
+      FROM public.thread_priority tp
+     WHERE tp.user_id = ${userId}::uuid
+       AND tp.seq >= ${seqSince}::xid8
+    UNION
+    SELECT ts.thread_id AS id
+      FROM public.thread_state ts
+     WHERE ts.user_id = ${userId}::uuid
+       AND ts.seq >= ${seqSince}::xid8
+    UNION
+    SELECT t.id
+      FROM public.thread t
+      JOIN public.thread_priority tp2
+        ON tp2.thread_id = t.id
+       AND tp2.user_id = ${userId}::uuid
+     WHERE t.seq >= ${seqSince}::xid8
+  `.execute(trx);
+  return result.rows.map((r) => r.id);
+}
+
+/**
  * Build a WHERE clause for cursor-based pagination on updated_at.
  *
  * Uses date_trunc('milliseconds', ...) because JavaScript Date (used by the

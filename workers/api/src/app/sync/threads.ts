@@ -17,6 +17,7 @@ import {
   assembleSeqPage,
   parseReadParams,
   readSafeHorizon,
+  selectChangedThreadIds,
   seqEnvelope,
   seqSinceCursor,
   updatedSinceCursor,
@@ -239,10 +240,38 @@ threads.get("/sync/threads", async (c) => {
     // phase 2 projects the full row shape for at most `limit` ids.
     if (useSeqCursor) {
       const horizonValue = await readSafeHorizon(trx);
-      const keys = (await buildQuery("user.thread")
-        .clearSelect()
-        .select(["id", "seq"])
-        .execute()) as { id: string; seq: string }[];
+      // Phase 1: (id, seq) keys. On an INCREMENTAL pull, pre-filter to the
+      // small set of threads whose view-seq could have advanced past the
+      // cursor (selectChangedThreadIds — three index range scans), then
+      // constrain the keys query to `id = ANY(...)`. This stops the planner
+      // from scanning every one of the user's threads to compute and filter
+      // the GREATEST() view-seq, which cost ~26s for the heaviest user even on
+      // a 0-row poll. The candidate set is a SUPERSET; buildQuery still applies
+      // the identical seq window / cursor / limit, so the resulting keys are
+      // unchanged (see threads-changed-candidates.test.ts). On the INITIAL pull
+      // (seq=0) every thread is a candidate, so the pre-filter only adds
+      // overhead — keep the original full scan there.
+      let keys: { id: string; seq: string }[];
+      if (isInitialSync) {
+        keys = (await buildQuery("user.thread")
+          .clearSelect()
+          .select(["id", "seq"])
+          .execute()) as { id: string; seq: string }[];
+      } else {
+        const candidateIds = await selectChangedThreadIds(
+          trx,
+          userId,
+          seqSince as string,
+        );
+        keys =
+          candidateIds.length === 0
+            ? []
+            : ((await buildQuery("user.thread")
+                .clearSelect()
+                .select(["id", "seq"])
+                .where(sql<boolean>`id = ANY(${candidateIds}::uuid[])`)
+                .execute()) as { id: string; seq: string }[]);
+      }
       const full =
         keys.length === 0
           ? []
