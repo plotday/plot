@@ -189,6 +189,21 @@ export class CallbacksState extends DurableObject<Bindings> {
         CREATE INDEX IF NOT EXISTS idx_callbacks_key
         ON callbacks(key) WHERE key IS NOT NULL
       `);
+
+    // Add task_key for singleton scheduled tasks (Tasks.scheduleTask). Distinct
+    // from `key` above (which groups many callbacks for webhook routing):
+    // task_key identifies AT MOST ONE live scheduled task per
+    // (twist_instance, task_key), enforced by replace-on-create in create()
+    // (migration-safe).
+    try {
+      this.sql.exec("ALTER TABLE callbacks ADD COLUMN task_key TEXT");
+    } catch (e) {
+      // Column already exists
+    }
+    this.sql.exec(`
+        CREATE INDEX IF NOT EXISTS idx_callbacks_task_key
+        ON callbacks(twist_instance_id, task_key) WHERE task_key IS NOT NULL
+      `);
   }
 
   async create({
@@ -202,6 +217,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     expires,
     key,
     meta,
+    taskKey,
   }: {
     twistInstanceId: string;
     path: string[]; // tool hierarchy only
@@ -213,6 +229,10 @@ export class CallbacksState extends DurableObject<Bindings> {
     expires?: Date;
     key?: string;
     meta?: Record<string, any>;
+    // Singleton key: when set, any existing callback with the same
+    // (twist_instance_id, task_key) is atomically deleted before insert, so
+    // at most one live scheduled task exists per key. See Tasks.scheduleTask.
+    taskKey?: string;
   }): Promise<string> {
     // Validate extra args if provided
     // Note: SuperJSON handles undefined values, so no need to clean them
@@ -258,11 +278,23 @@ export class CallbacksState extends DurableObject<Bindings> {
     // Default callOnce to true if callAt is specified, false otherwise
     callOnce ??= callAt !== undefined;
 
+    // Singleton replace: drop any existing task with this key for this
+    // instance before inserting the new one. Atomic within the DO's
+    // single-threaded execution, so concurrent schedulers racing on the same
+    // key converge on one live task instead of leaking parallel ones.
+    if (taskKey) {
+      this.sql.exec(
+        "DELETE FROM callbacks WHERE twist_instance_id = ? AND task_key = ?",
+        twistInstanceId,
+        taskKey
+      );
+    }
+
     this.sql.exec(
       `
         INSERT INTO callbacks (
-          token, twist_instance_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          token, twist_instance_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta, task_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       token,
       twistInstanceId,
@@ -274,7 +306,8 @@ export class CallbacksState extends DurableObject<Bindings> {
       callOnce ? 1 : 0,
       expires ? expires.getTime() : null,
       key ?? null,
-      meta ? superjson.stringify(meta) : null
+      meta ? superjson.stringify(meta) : null,
+      taskKey ?? null
     );
 
     // Update alarm if this is a scheduled callback
@@ -739,6 +772,21 @@ export class CallbacksState extends DurableObject<Bindings> {
   delete(token: string): void {
     [, token] = token.split(":");
     this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
+  }
+
+  /**
+   * Delete the singleton scheduled task registered under `taskKey` for a
+   * twist_instance (if any). Backs Tasks.cancelScheduledTask. No-op when no
+   * matching task exists (already fired, never scheduled). Recomputes the
+   * alarm since the next-due callback may have been removed.
+   */
+  deleteByTaskKey(twistInstanceId: string, taskKey: string): void {
+    this.sql.exec(
+      "DELETE FROM callbacks WHERE twist_instance_id = ? AND task_key = ?",
+      twistInstanceId,
+      taskKey
+    );
+    this.updateAlarm();
   }
 
   deleteAll(

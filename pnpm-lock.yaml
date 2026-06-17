@@ -580,6 +580,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.0.3)(jsdom@24.1.3(bufferutil@4.0.8)(utf-8-validate@6.0.4))(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)
 
   public/connectors/google-tasks:
     dependencies:
@@ -20381,7 +20384,7 @@ snapshots:
   vite-node@3.2.4(@types/node@20.14.2)(jiti@2.7.0)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.1
+      debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
       vite: 7.3.5(@types/node@20.14.2)(jiti@2.7.0)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
@@ -20402,7 +20405,7 @@ snapshots:
   vite-node@3.2.4(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.1
+      debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
       vite: 7.3.5(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
@@ -20423,7 +20426,7 @@ snapshots:
   vite-node@3.2.4(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.1
+      debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
       vite: 7.3.5(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
@@ -20444,7 +20447,7 @@ snapshots:
   vite-node@3.2.4(@types/node@25.0.3)(jiti@2.7.0)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.1
+      debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
       vite: 7.3.5(@types/node@25.0.3)(jiti@2.7.0)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)

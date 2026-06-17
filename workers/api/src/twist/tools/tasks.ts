@@ -93,6 +93,28 @@ export class Tasks extends Tool implements IRun {
     });
   }
 
+  async scheduleTask(
+    key: string,
+    callback: Callback,
+    options: { runAt: Date }
+  ): Promise<string | void> {
+    // Same scheduled wrapper as runTask({ runAt }), but tagged with task_key
+    // so the DO atomically replaces any pending task under the same key —
+    // guaranteeing at most one live scheduled task per key (no leaked chains).
+    return await this.callbacks.create({
+      twistInstanceId: this.twistInstanceId,
+      path: this.selfPath,
+      functionName: "scheduledSend",
+      extraArgs: [callback],
+      callAt: options.runAt,
+      taskKey: key,
+    });
+  }
+
+  async cancelScheduledTask(key: string): Promise<void> {
+    await this.callbacks.deleteByTaskKey(this.twistInstanceId, key);
+  }
+
   private async send(token: string) {
     const message: RunMessage = {
       twistInstanceId: this.twistInstanceId,
