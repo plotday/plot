@@ -356,6 +356,12 @@ export class Slack extends Connector<Slack> {
     await this.clear(`sync_state_${channelId}`);
     await this.clear(`enabled_at_${channelId}`);
 
+    // Cancel the daily recurring chains for this channel so disabling it stops
+    // them. Singleton keyed tasks — cancelling by key is a no-op if none is
+    // pending or it already ran.
+    await this.cancelScheduledTask(`members-sync:${channelId}`);
+    await this.cancelScheduledTask(`custom-emoji-sync:${channelId}`);
+
     // Sweep per-thread state for this channel so a re-enable starts clean.
     const starredKeys = await this.tools.store.list(`starred:${channelId}:`);
     for (const key of starredKeys) await this.clear(key);
@@ -1288,7 +1294,11 @@ export class Slack extends Connector<Slack> {
         scheduleDaily = false;
         const runAt = new Date(Date.now() + error.retryAfterMs);
         const retry = await this.callback(this.syncMembers, channelId);
-        await this.rescheduleAt(retry, runAt, `syncMembers (${error.method})`);
+        // Same per-channel key as the daily reschedule: the rate-limit retry
+        // and the normal daily run are the one logical members-sync chain, so
+        // keying them together guarantees they can never run in parallel.
+        console.log(`Slack: rescheduling syncMembers (${error.method}) at ${runAt.toISOString()}`);
+        await this.scheduleTask(`members-sync:${channelId}`, retry, { runAt });
         return;
       }
       if (error instanceof SlackPermanentError) {
@@ -1309,7 +1319,13 @@ export class Slack extends Connector<Slack> {
       // limit and permanent-error paths set scheduleDaily = false and return
       // early above, so they are not double-scheduled here.
       if (scheduleDaily) {
-        await this.runTask(dailyCallback, { runAt: nextRunAt });
+        // Singleton keyed task: re-scheduling under this per-channel key
+        // atomically replaces any pending members sync, so the daily chain
+        // can never accumulate parallel copies even if syncMembers is entered
+        // again (onChannelEnabled re-dispatch, recovery).
+        await this.scheduleTask(`members-sync:${channelId}`, dailyCallback, {
+          runAt: nextRunAt,
+        });
       }
     }
   }
@@ -1351,11 +1367,12 @@ export class Slack extends Connector<Slack> {
     } catch (error) {
       if (error instanceof SlackRateLimitedError) {
         const retry = await this.callback(this.syncCustomEmoji, channelId);
-        await this.rescheduleAt(
-          retry,
-          new Date(now + error.retryAfterMs),
-          `syncCustomEmoji ${channelId}`
-        );
+        const runAt = new Date(now + error.retryAfterMs);
+        // Same per-channel key as the daily reschedule: the rate-limit retry
+        // and the normal daily run are the one logical custom-emoji-sync
+        // chain, so keying them together prevents parallel chains.
+        console.log(`Slack: rescheduling syncCustomEmoji ${channelId} at ${runAt.toISOString()}`);
+        await this.scheduleTask(`custom-emoji-sync:${channelId}`, retry, { runAt });
         return;
       }
       if (error instanceof SlackPermanentError) {
@@ -1391,14 +1408,14 @@ export class Slack extends Connector<Slack> {
     await this.set(`custom_emoji_${teamId}`, Object.keys(raw));
     await this.set("customEmojiSyncedAt", now);
 
-    // Schedule the next daily refresh.
+    // Schedule the next daily refresh. Singleton keyed task: re-scheduling
+    // under this per-channel key atomically replaces any pending refresh, so
+    // the daily chain can never accumulate parallel copies even if
+    // syncCustomEmoji is entered again (onChannelEnabled re-dispatch, recovery).
     const next = await this.callback(this.syncCustomEmoji, channelId);
-    const taskToken = await this.runTask(next, {
+    await this.scheduleTask(`custom-emoji-sync:${channelId}`, next, {
       runAt: new Date(now + ONE_DAY_MS),
     });
-    if (taskToken) {
-      await this.set(`syncCustomEmoji_task_${channelId}`, taskToken);
-    }
   }
 
   // ---- Write-back: reply from Plot ----

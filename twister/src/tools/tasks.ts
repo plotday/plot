@@ -132,4 +132,56 @@ export abstract class Tasks extends ITool {
    * @returns Promise that resolves when all cancellations are processed
    */
   abstract cancelAllTasks(): Promise<void>;
+
+  /**
+   * Schedules a **singleton** task identified by `key`: scheduling under a key
+   * that already has a pending task atomically cancels the existing one and
+   * replaces it. At most one scheduled task per `key` is ever live.
+   *
+   * Use this for any recurring/self-renewing job — webhook/watch renewals,
+   * periodic polling, deferred cleanup — instead of hand-managing tokens with
+   * `runTask()` + `cancelTask()`. The manual pattern (store the token, cancel
+   * it before re-scheduling) is easy to get wrong: a renewal callback that
+   * re-schedules itself, combined with any *extra* scheduling call (a
+   * re-dispatched `onChannelEnabled`, a re-init), leaks parallel self-
+   * perpetuating chains that accumulate forever and can trip the runtime's
+   * execution quota. Keying makes that leak impossible by construction.
+   *
+   * Replacement is atomic on the server, so concurrent executions racing to
+   * schedule the same key converge on a single task rather than leaking.
+   *
+   * @param key - Stable identifier for this logical task. Scope it to what it
+   *   renews, e.g. `` `watch-renewal:${folderId}` ``.
+   * @param callback - Callback created with `this.callback()`
+   * @param options.runAt - When to run. Required: keying only applies to
+   *   scheduled tasks (immediate tasks go straight to the queue).
+   * @returns Promise resolving to the cancellation token for the scheduled task
+   *
+   * @example
+   * ```typescript
+   * const cb = await this.callback(this.renewWatch, folderId);
+   * await this.scheduleTask(`watch-renewal:${folderId}`, cb, { runAt });
+   * // ...later, on disable:
+   * await this.cancelScheduledTask(`watch-renewal:${folderId}`);
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract scheduleTask(
+    key: string,
+    callback: Callback,
+    options: { runAt: Date }
+  ): Promise<string | void>;
+
+  /**
+   * Cancels the singleton task previously scheduled under `key` (if any).
+   *
+   * No error is thrown if no task exists for the key or it has already run.
+   * Pair this with {@link scheduleTask} in teardown paths (e.g.
+   * `onChannelDisabled`, `stopSync`).
+   *
+   * @param key - The same key passed to {@link scheduleTask}
+   * @returns Promise that resolves when the cancellation is processed
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract cancelScheduledTask(key: string): Promise<void>;
 }

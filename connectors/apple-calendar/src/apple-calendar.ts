@@ -228,11 +228,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
       // Cancel any scheduled poll so the post-recovery sync starts cleanly
       // (a stale poll firing concurrently would race against initChannel).
-      const pollTask = await this.get<string>(`poll_task_${channel.id}`);
-      if (pollTask) {
-        await this.cancelTask(pollTask);
-        await this.clear(`poll_task_${channel.id}`);
-      }
+      await this.cancelScheduledTask(`poll:${channel.id}`);
 
       // Clear any `pending_occ:` / `seen_master:` markers left behind
       // by the crashed pre-recovery sync. Stale markers from a half-done
@@ -353,12 +349,8 @@ export class AppleCalendar extends Connector<AppleCalendar> {
    * Called when a calendar channel is disabled.
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
-    // Cancel scheduled poll
-    const pollTask = await this.get<string>(`poll_task_${channel.id}`);
-    if (pollTask) {
-      await this.cancelTask(pollTask);
-      await this.clear(`poll_task_${channel.id}`);
-    }
+    // Cancel scheduled poll (singleton keyed task).
+    await this.cancelScheduledTask(`poll:${channel.id}`);
 
     // Clear all state for this channel
     await this.clear(`sync_enabled_${channel.id}`);
@@ -779,13 +771,14 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     const enabled = await this.get<boolean>(`sync_enabled_${calendarHref}`);
     if (!enabled) return;
 
+    // Singleton scheduled task: re-scheduling under this key atomically
+    // replaces any pending poll, so the self-rescheduling loop can never
+    // stack — even if onChannelEnabled is re-dispatched (auto-enable /
+    // recovery) or multiple sync paths each (re)schedule a poll.
     const pollCallback = await this.callback(this.pollForChanges, calendarHref);
-    const taskToken = await this.runTask(pollCallback, {
+    await this.scheduleTask(`poll:${calendarHref}`, pollCallback, {
       runAt: new Date(Date.now() + 15 * 60 * 1000),
     });
-    if (taskToken) {
-      await this.set(`poll_task_${calendarHref}`, taskToken);
-    }
   }
 
   /**

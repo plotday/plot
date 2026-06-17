@@ -216,21 +216,16 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
    */
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     if (context?.recovering) {
-      // Stop the existing MS Graph subscription and cancel any pending
-      // renewal task BEFORE initCalendar runs. setupOutlookWatch
-      // unconditionally creates a fresh subscription and overwrites
-      // `outlook_watch_${calendarId}`; without this cleanup the old
-      // subscription is orphaned on Microsoft's side (firing webhooks
-      // until expiry to a connector that no longer recognises them)
-      // and the old renewal-task token is overwritten in storage
-      // (the old task still fires when scheduled, wasting a slot).
-      const oldRenewalTask = await this.get<string>(
-        `outlook_watch_renewal_task_${channel.id}`
-      );
-      if (oldRenewalTask) {
-        await this.cancelTask(oldRenewalTask);
-        await this.clear(`outlook_watch_renewal_task_${channel.id}`);
-      }
+      // Stop the existing MS Graph subscription BEFORE initCalendar runs.
+      // setupOutlookWatch unconditionally creates a fresh subscription and
+      // overwrites `outlook_watch_${calendarId}`; without this cleanup the
+      // old subscription is orphaned on Microsoft's side (firing webhooks
+      // until expiry to a connector that no longer recognises them).
+      //
+      // The pending renewal task needs no explicit cancel here: the
+      // singleton `scheduleTask(\`watch-renewal:${calendarId}\`, …)` that
+      // setupOutlookWatch schedules atomically replaces any pending
+      // renewal for this calendar, so a stale chain can't accumulate.
       const oldWatchData = await this.get<WatchState>(
         `outlook_watch_${channel.id}`
       );
@@ -486,14 +481,8 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   }
 
   async stopSync(calendarId: string): Promise<void> {
-    // 1. Cancel scheduled renewal task
-    const renewalTask = await this.get<string>(
-      `outlook_watch_renewal_task_${calendarId}`
-    );
-    if (renewalTask) {
-      await this.cancelTask(renewalTask);
-      await this.clear(`outlook_watch_renewal_task_${calendarId}`);
-    }
+    // 1. Cancel the scheduled renewal task for this calendar.
+    await this.cancelScheduledTask(`watch-renewal:${calendarId}`);
 
     // 2. Stop webhook subscription (best effort)
     const watchData = await this.get<WatchState>(`outlook_watch_${calendarId}`);
@@ -580,15 +569,12 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       calendarId
     );
 
-    // Schedule renewal task
-    const taskToken = await this.runTask(renewalCallback, {
+    // Singleton scheduled task: re-scheduling under this key atomically
+    // replaces any pending renewal, so renewal chains can never accumulate —
+    // even if setupOutlookWatch runs again (re-dispatch, re-init).
+    await this.scheduleTask(`watch-renewal:${calendarId}`, renewalCallback, {
       runAt: renewalTime,
     });
-
-    // Store task token for cleanup
-    if (taskToken) {
-      await this.set(`outlook_watch_renewal_task_${calendarId}`, taskToken);
-    }
   }
 
   /**

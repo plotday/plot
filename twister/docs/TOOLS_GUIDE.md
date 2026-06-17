@@ -764,6 +764,30 @@ await this.cancelAllTasks();
 
 Immediate (non-scheduled) tasks cannot be cancelled.
 
+### Recurring / self-renewing tasks → `scheduleTask`
+
+The `runTask` + store-token + `cancelTask` pattern above is fine for a **one-off**
+scheduled task. For anything **recurring or self-renewing** (watch/webhook
+renewals, periodic polling, deferred cleanup), use `scheduleTask` instead — it
+manages a **singleton** task per key, atomically replacing any pending task when
+you re-schedule:
+
+```typescript
+const renewal = await this.callback(this.renewWatch, resourceId);
+// Re-scheduling under the same key cancels-and-replaces the pending task.
+await this.scheduleTask(`watch-renewal:${resourceId}`, renewal, { runAt });
+
+// Teardown:
+await this.cancelScheduledTask(`watch-renewal:${resourceId}`);
+```
+
+**Why it matters:** a renewal that re-schedules itself is a self-sustaining
+loop. Hand-managing the token (store it, cancel before re-scheduling) is
+error-prone — forget the cancel, or let two setups race, and you leak parallel
+chains that run forever and trip the runtime's execution quota. `scheduleTask`
+keys the task so only one chain per key is ever live, with the dedup done
+atomically on the server.
+
 ### Batch Processing Pattern
 
 Use tasks to break long operations into chunks that stay under the ~1000 request limit per execution:

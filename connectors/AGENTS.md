@@ -335,12 +335,32 @@ if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) return
 
 ### Watch renewal (Calendar/Drive)
 
+Schedule the renewal with **`this.scheduleTask(key, ...)`**, never bare
+`runTask({ runAt })`. A renewal callback that re-schedules itself is a
+self-sustaining loop; any *extra* entry into the setup path (an
+`onChannelEnabled` re-dispatch from auto-enable/recovery, a re-`init`) starts a
+**second** chain that runs forever in parallel. The leaked chains accumulate
+without bound and trip the runtime's execution quota (each renewal also
+re-registers the watch, which the provider answers with an immediate sync).
+`scheduleTask` keys the task, so re-scheduling atomically replaces the pending
+one — at most one renewal chain per resource, by construction.
+
 ```typescript
 const renewalTime = new Date(expiresAt.getTime() - 24 * 60 * 60 * 1000);
 const renewal = await this.callback(this.renewWatch, resourceId);
-const taskToken = await this.runTask(renewal, { runAt: renewalTime });
-if (taskToken) await this.set(`watch_renewal_task_${resourceId}`, taskToken);
+// Singleton: replaces any pending renewal for this resource.
+await this.scheduleTask(`watch-renewal:${resourceId}`, renewal, { runAt: renewalTime });
+
+// On teardown (onChannelDisabled / stopSync):
+await this.cancelScheduledTask(`watch-renewal:${resourceId}`);
 ```
+
+> ⚠️ The old pattern — `runTask({ runAt })` + storing the token in
+> `watch_renewal_task_*` + manually `cancelTask()`-ing before re-scheduling — is
+> error-prone: forgetting the cancel (or racing two setups) leaks parallel
+> chains. Use `scheduleTask`; it does the dedup atomically on the server. This
+> applies to **any** recurring/self-renewing task (polling, deferred cleanup),
+> not just watch renewals.
 
 ## Bidirectional sync
 
@@ -522,6 +542,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 - [ ] `initialSync` propagated through every entry point and batch; set `unread: false, archived: false` on initial, omit on incremental
 - [ ] Create `NewContact` for authors/assignees
 - [ ] Clean up callbacks, webhooks, stored state in `stopSync()` and `onChannelDisabled()`
+- [ ] Recurring/self-renewing tasks (watch renewals, polling) use `this.scheduleTask(key, …)` — NOT `runTask({ runAt })` + manual token bookkeeping — and `cancelScheduledTask(key)` on teardown
 - [ ] For Plot-initiated creation: add a `compose` block to the `LinkTypeConfig` AND implement `onCreateLink` — don't call `saveLink` from inside it
 - [ ] `pnpm build` succeeds
 
@@ -547,6 +568,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 18. Returning a bare `string` (key only) from `onNoteCreated` when the external stores content lossily (plain-text comments APIs, ADF, sanitised HTML) → next sync-in clobbers Plot's content with the round-tripped form (e.g. `1.` → `1\.`). Return a `NoteWriteBackResult` with `externalContent` matching sync-in's shape instead.
 19. Returning `externalContent` that doesn't match what sync-in emits for the same note (e.g. post-write raw HTML when sync-in extracts plain text; pre-translation mentions when sync-in translates them) → baseline hash always mismatches and every sync clobbers. Inspect the sync-in `build*Note` path and return exactly what it produces.
 20. Calling `integrations.saveLink()` inside `onNoteCreated` to set the note's `key` → legacy workaround, no longer needed. The runtime sets `key` automatically from the `NoteWriteBackResult` return.
+21. Scheduling a recurring/self-renewing task with `runTask({ runAt })` + manual `cancelTask()` bookkeeping → a renewal that re-schedules itself leaks a new parallel chain on every redundant setup call (`onChannelEnabled` re-dispatch, re-init); the chains accumulate and trip the execution quota. Use `this.scheduleTask(key, …)` — re-scheduling under the same key atomically replaces the pending task, so only one chain is ever live.
 
 ## Examples
 

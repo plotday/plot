@@ -767,18 +767,8 @@ export class GoogleChat extends Connector<GoogleChat> {
    * Tears down the Workspace Events subscription and Pub/Sub resources.
    */
   private async teardownRealtimeSync(channelId: string): Promise<void> {
-    // Cancel scheduled renewal
-    const taskToken = await this.get<string>(
-      `ws_renewal_task_${channelId}`
-    );
-    if (taskToken) {
-      try {
-        await this.cancelTask(taskToken);
-      } catch {
-        // Task may already have executed
-      }
-      await this.clear(`ws_renewal_task_${channelId}`);
-    }
+    // Cancel scheduled renewal (singleton task; no-op if none/already ran).
+    await this.cancelScheduledTask(`ws-renewal:${channelId}`);
 
     const subData = await this.get<{
       subscriptionName: string;
@@ -1069,16 +1059,16 @@ export class GoogleChat extends Connector<GoogleChat> {
       return;
     }
 
+    // Singleton scheduled task: re-scheduling under this key atomically
+    // replaces any pending renewal, so renewal chains can never accumulate —
+    // even if setupRealtimeSync runs again (onChannelEnabled re-dispatch, re-init).
     const renewalCallback = await this.callback(
       this.renewSubscription,
       channelId
     );
-    const taskToken = await this.runTask(renewalCallback, {
+    await this.scheduleTask(`ws-renewal:${channelId}`, renewalCallback, {
       runAt: renewalTime,
     });
-    if (taskToken) {
-      await this.set(`ws_renewal_task_${channelId}`, taskToken);
-    }
   }
 
   /**
@@ -1622,8 +1612,15 @@ export class GoogleChat extends Connector<GoogleChat> {
     } finally {
       // Permanent-error path sets scheduleDaily = false and returns early above,
       // so it is not double-scheduled here.
+      //
+      // Singleton scheduled task: re-scheduling under this key atomically
+      // replaces any pending daily pass, so the self-renewing daily chain can
+      // never accumulate — even if syncMembers is dispatched again (each
+      // enabled channel queues a syncMembers task in onChannelEnabled).
       if (scheduleDaily) {
-        await this.runTask(dailyCallback, { runAt: nextRunAt });
+        await this.scheduleTask(`daily-members-sync:${channelId}`, dailyCallback, {
+          runAt: nextRunAt,
+        });
       }
     }
   }
