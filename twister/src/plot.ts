@@ -655,6 +655,32 @@ export type ThreadUpdate =
  * Notes contain the detailed content (note text, actions) associated with a thread.
  * They are always ordered by creation time within their parent thread.
  */
+/**
+ * Reports that an outbound send / write-back for a note could not be
+ * delivered to the external system, so Plot can surface it to the user.
+ *
+ * Returned (not thrown) from a write-back hook — see
+ * `NoteWriteBackResult.deliveryError` and `NewLinkWithNotes.originatingNote` —
+ * after the connector has exhausted its own retries (or immediately for a
+ * permanent failure such as a rejected recipient). The runtime records it on
+ * the note (the app then shows a "Failed to send" affordance with Retry /
+ * Discard) and marks the thread unread so the user notices.
+ */
+export type DeliveryError = {
+  /**
+   * Short, stable machine code for the failure category, e.g. `"rejected"`,
+   * `"too_large"`, `"rate_limited"`, `"invalid_recipient"`, or the generic
+   * `"send_failed"`. Used for logging/diagnostics, not shown verbatim to users.
+   */
+  code: string;
+  /**
+   * Human-readable, user-safe explanation to show beside "Failed to send"
+   * (e.g. "Recipient address rejected"). Null/omitted when the connector has
+   * no safe message to surface — the app then shows just "Failed to send".
+   */
+  message?: string | null;
+};
+
 export type Note = ThreadCommon & {
   /** The author of this note */
   author: Actor;
@@ -1180,6 +1206,17 @@ export type NewLinkWithNotes = NewLink & {
      * `content` on re-ingest (same contract as `NoteWriteBackResult.externalContent`).
      */
     externalContent?: string;
+    /**
+     * Reports that sending the composed message FAILED (the `onCreateLink`
+     * send could not be delivered). The runtime records it on the opening
+     * note — surfacing a "Failed to send" affordance (Retry / Discard) — and
+     * marks the thread unread. Same contract as
+     * `NoteWriteBackResult.deliveryError`: object records, `null` clears,
+     * omitted leaves untouched. Return the link anyway (so the user's composed
+     * content is preserved in Plot) with this set, rather than returning
+     * `null`, when a compose send fails.
+     */
+    deliveryError?: DeliveryError | null;
   };
 };
 

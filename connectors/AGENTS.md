@@ -404,6 +404,26 @@ async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | v
 
 **`handleReplies`**: bidirectional connectors must set `static readonly handleReplies = true` to enable @-mentions on replies. Read-only connectors should NOT.
 
+### Surfacing send failures (`deliveryError`)
+
+When an outbound write-back can't be delivered, tell the user instead of failing silently. Return a `deliveryError` from `onNoteCreated` / `onNoteUpdated` (or, for `onCreateLink`, set it on `originatingNote`): the runtime marks the note **Failed to send** in the app — with Retry / Discard — and flips the thread unread.
+
+```typescript
+async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+  const result = await sendWithRetry(...); // your own bounded retry for transient blips
+  if (!result.ok) {
+    // Permanent / auth / retries-exhausted: RETURN the failure, don't throw.
+    return { deliveryError: { code: "rejected", message: "Recipient address rejected" } };
+  }
+  return { key: result.id, deliveryError: null }; // success also clears any prior failure
+}
+```
+
+- **Return, don't throw, for expected user-visible failures** (rejected recipient, message too large, quota): a thrown error pages error tracking, a returned `deliveryError` does not. Reserve throwing for genuinely unexpected errors.
+- A connector that just throws on a failed write-back still gets a generic "Failed to send" surfaced by the runtime — adopting `deliveryError` only adds a specific reason and avoids the page.
+- Retry transient errors **in-process** (short, bounded backoff): neither send path rides a retrying queue. See `gmail/src/gmail-send-errors.ts` + `sendWithRetry` in `gmail/src/gmail.ts` for the reference classifier + retry.
+- Leave the idempotency guard **unset** on failure so an explicit Retry re-sends.
+
 ### Sync baseline preservation (required for any note round-trip)
 
 When Plot pushes a note to an external system that stores content in a lossier format than Plot does (e.g. plain-text comments APIs, ADF, HTML that gets sanitised), the external's version re-ingested on the next sync would overwrite Plot's original content with the round-tripped form — `1.` → `1\.`, `[name]` → `\[name\]`, etc. To prevent this, the runtime tracks a per-note "external baseline" hash in `note.external_content_hash`:
