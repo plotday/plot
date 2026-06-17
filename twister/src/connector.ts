@@ -336,6 +336,29 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   readonly autoEnableNewChannelsByDefault?: boolean;
 
   /**
+   * Whether this connector supports the platform's sequential auto-threading —
+   * folding a conversation that arrives as a run of separate top-level messages
+   * into a single thread. Set `true` for conversational connectors (chat,
+   * messaging) that mark eligible links with {@link NewLink.autoThread}. The UI
+   * shows a per-connection "Group related messages into conversations" toggle
+   * only for connectors that declare this.
+   *
+   * Leave undefined/false for connectors whose items are not conversational
+   * (calendars, issue trackers, file storage) — marking a link does nothing
+   * unless the connection both declares support and the user opted in.
+   */
+  readonly autoThreading?: boolean;
+
+  /**
+   * Whether the per-connection auto-threading preference starts ON for newly
+   * added connections of this connector. Defaults to `false` (opt-in) — the
+   * least-surprise default, since a wrong fold is irreversible. Only meaningful
+   * when {@link autoThreading} is `true`. The user's explicit toggle always
+   * wins, and existing connections keep their stored preference.
+   */
+  readonly autoThreadingByDefault?: boolean;
+
+  /**
    * Registry of link types this connector creates (e.g., issue, event, message).
    * Used for display in the UI (icons, labels, statuses).
    */

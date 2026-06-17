@@ -1141,7 +1141,50 @@ export type NewLink = Partial<
      * an event vs a subscribed copy) so clients display it as the primary.
      */
     priority?: number;
+    /**
+     * Opt this message into the platform's sequential auto-threading. When a
+     * connection has auto-threading enabled, the runtime decides — once,
+     * globally, at ingest — whether this message starts a new thread or folds
+     * (as a note) into the thread of the conversation it continues. Set it on
+     * every message of a conversational surface (a chat channel, a DM); the
+     * runtime keys the sequential chain on {@link AutoThreadConfig.key}.
+     *
+     * Marking a link is a no-op unless the connection opted in, so connectors
+     * can set it unconditionally on eligible links. Leave undefined/null for
+     * non-conversational items (issues, events, files). See
+     * {@link Connector.autoThreading}.
+     */
+    autoThread?: AutoThreadConfig | null;
   };
+
+/**
+ * How the runtime groups a connector's messages into threads when
+ * auto-threading is enabled for the connection.
+ *
+ * - `"sequential"`: a chat **channel**. Each message either continues the
+ *   previous message's conversation (folds in as a note) or starts a new
+ *   thread, decided by a high-confidence continuation check. Use for
+ *   multi-participant channels where consecutive top-level messages often
+ *   form one conversation.
+ * - `"fold"`: a **DM** / one-to-one surface. Every message folds into a
+ *   single running thread for that {@link AutoThreadConfig.key} (no per-message
+ *   judgment). Use for direct messages, which read naturally as one continuous
+ *   conversation.
+ */
+export type AutoThreadMode = "sequential" | "fold";
+
+/** Per-link auto-threading directive. See {@link NewLink.autoThread}. */
+export type AutoThreadConfig = {
+  /**
+   * The conversation grouping the sequential chain runs within — typically the
+   * connector's channel id ({@link Link.channelId}). DMs and each channel form
+   * independent chains. Messages are only ever folded into another message
+   * that shares this key.
+   */
+  key: string;
+  /** Channel (`"sequential"`) vs DM (`"fold"`) grouping. */
+  mode: AutoThreadMode;
+};
 
 /**
  * A new link with notes to save via integrations.saveLink().

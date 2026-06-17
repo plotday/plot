@@ -112,6 +112,11 @@ export class Slack extends Connector<Slack> {
 
   readonly provider = AuthProvider.Slack;
   readonly autoEnableNewChannelsByDefault = true;
+  // Slack culture often carries one conversation as a run of separate
+  // top-level channel messages. Opt this connector into sequential
+  // auto-threading so opted-in connections can fold those into one thread
+  // (channels: LLM-judged continuation; DMs: one running thread).
+  readonly autoThreading = true;
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
     // Workspace custom emoji sync both ways: inbound reactions become
