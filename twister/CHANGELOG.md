@@ -1,5 +1,13 @@
 # @plotday/twister
 
+## 0.61.0
+
+### Added
+
+- `NewLink.autoThread` ({ key, mode }) and `Connector.autoThreading` / `autoThreadingByDefault` for opt-in sequential auto-threading — the runtime folds a conversation that arrives as separate top-level messages into one thread. ([#208](https://github.com/plotday/plot/pull/208) [`c0c7efd`](https://github.com/plotday/plot/commit/c0c7efd875aa2f5002fbf2832d47885770499393))
+- `scheduleTask(key, callback, { runAt })` and `cancelScheduledTask(key)` on the Tasks tool (and as `this.scheduleTask`/`this.cancelScheduledTask` helpers on Twist/Tool). These manage a singleton scheduled task per key — re-scheduling under the same key atomically cancels and replaces any pending task. Use them for recurring/self-renewing jobs (watch/webhook renewals, polling, deferred cleanup) instead of hand-managing tokens with `runTask({ runAt })` + `cancelTask()`, which is easy to get wrong and can leak parallel self-perpetuating task chains. ([#205](https://github.com/plotday/plot/pull/205) [`cf9d88a`](https://github.com/plotday/plot/commit/cf9d88af86bc9702c3ce773392675b4e6a089ee2))
+- `DeliveryError` type plus `deliveryError` on `NoteWriteBackResult` and `NewLinkWithNotes.originatingNote`, so connectors can report an unrecoverable outbound send/write-back failure. The runtime records it on the note (the app shows a "Failed to send" affordance with Retry / Discard) and marks the thread unread. Connectors should return a `deliveryError` for expected, user-visible failures (rejected recipient, message too large) instead of throwing; throwing still surfaces a generic "Failed to send". ([#207](https://github.com/plotday/plot/pull/207) [`44723d4`](https://github.com/plotday/plot/commit/44723d43992bca602c62f5a2f2ed107c5dbed6c5))
+
 ## 0.60.0
 
 ### Added
