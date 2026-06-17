@@ -56,9 +56,48 @@ async function archiveOrDeleteOrphanThread(plot: Plot, threadId: Uuid): Promise<
  * @param link - The link with notes to create
  * @returns The thread ID (links are accessed via their thread)
  */
+/**
+ * Canonical source array for a link: `sources` plus the legacy `source` /
+ * `relatedSource` fields, de-duplicated. The thread dedup key is the sorted
+ * minimum of this array (see `createLink`). Exported so the auto-threading
+ * chokepoint (`Integrations.saveLink`) derives the same `messageSource` the
+ * link will key its thread on.
+ */
+export function linkSources(link: NewLinkWithNotes): string[] {
+  return Array.from(
+    new Set(
+      [
+        ...(((link as any).sources as string[] | undefined) ?? []),
+        ...((link as any).source ? [(link as any).source as string] : []),
+        ...(link.relatedSource ? [link.relatedSource] : []),
+      ].filter((s): s is string => Boolean(s))
+    )
+  );
+}
+
+/** The link's primary (thread-key) source: sorted minimum of {@link linkSources}. */
+export function linkPrimarySource(link: NewLinkWithNotes): string | null {
+  const sources = linkSources(link);
+  return sources.length > 0 ? [...sources].sort()[0] : null;
+}
+
+export type CreateLinkOptions = {
+  /**
+   * Auto-threading fold target: the canonical source of the conversation's
+   * anchor thread, chosen once at ingest by the resolver (see
+   * ./auto-thread.ts). When set and an anchor thread keyed by it already
+   * exists, this link's notes attach to that thread — preserving its title —
+   * instead of creating a new thread. The link keeps its OWN source for note
+   * identity. Falls back to a normal new thread when no anchor thread exists
+   * yet (the conservative default; also the self-heal for out-of-order sync).
+   */
+  threadKey?: string;
+};
+
 export async function createLink(
   plot: Plot,
-  link: NewLinkWithNotes
+  link: NewLinkWithNotes,
+  opts?: CreateLinkOptions
 ): Promise<Uuid> {
   try {
     // Reconcile conferencing links that arrive in the location field (e.g. a
@@ -76,22 +115,11 @@ export async function createLink(
     // Normalize identifiers to a single canonical array. Connectors may supply
     // `sources` directly, or the legacy `source` + `relatedSource` pair; the
     // runtime treats them all as elements of `sources` for upsert/bundling.
-    const sourcesArray: string[] = Array.from(
-      new Set(
-        [
-          ...(((link as any).sources as string[] | undefined) ?? []),
-          ...((link as any).source ? [(link as any).source as string] : []),
-          ...(link.relatedSource ? [link.relatedSource] : []),
-        ].filter((s): s is string => Boolean(s))
-      )
-    );
+    const sourcesArray: string[] = linkSources(link);
     // Primary source for the legacy `source` column + thread.key dedup. Pick
     // the sorted minimum so concurrent connectors that agree on at least one
     // canonical alias compute the same key cross-user.
-    const primarySource: string | null =
-      sourcesArray.length > 0
-        ? [...sourcesArray].sort()[0]
-        : null;
+    const primarySource: string | null = linkPrimarySource(link);
 
     // Step 1: Create the thread (backward compat)
     // Convert link fields to thread fields for legacy thread creation
@@ -132,6 +160,34 @@ export async function createLink(
       // Pass twist_id to upsert_thread so it can dedupe cross-user on
       // (twist_id, key). Server-only field — users cannot set it.
       threadData.twist_id = ptRow.twist_id;
+    }
+
+    // Auto-threading fold: when the resolver chose an anchor (a different
+    // conversation root), attach this link's notes to that anchor thread —
+    // keyed globally by (twist_id, key=anchorSource) — instead of creating a
+    // new one. Omit the title so upsert_thread preserves the anchor thread's
+    // title (this message folds in as a note, not a rename). Only fold when
+    // the anchor thread actually exists; otherwise fall through to a normal
+    // new thread keyed by this message's own source (the conservative default,
+    // and the self-heal for out-of-order processing).
+    if (
+      opts?.threadKey &&
+      hasSource &&
+      opts.threadKey !== primarySource &&
+      threadData.twist_id != null &&
+      !threadData.id
+    ) {
+      const anchorThread = await plot.db
+        .selectFrom("thread")
+        .select("id")
+        .where("twist_id", "=", threadData.twist_id)
+        .where("key", "=", opts.threadKey)
+        .where("archived_at", "is", null)
+        .executeTakeFirst();
+      if (anchorThread) {
+        threadData.id = anchorThread.id;
+        delete threadData.title;
+      }
     }
 
     if (hasSource && !threadData.id) {

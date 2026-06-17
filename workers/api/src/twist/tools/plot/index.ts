@@ -1449,9 +1449,10 @@ export class Plot extends Tool implements IPlot {
 
   // Link operations
   async createLink(
-    link: NewLinkWithNotes
+    link: NewLinkWithNotes,
+    opts?: linkOps.CreateLinkOptions
   ): Promise<Uuid> {
-    return linkOps.createLink(this, link);
+    return linkOps.createLink(this, link, opts);
   }
 
   async createLinkOnly(

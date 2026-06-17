@@ -100,6 +100,8 @@ export function twistFactory({
       shared?: boolean;
       keyOption?: string;
       autoEnableNewChannelsByDefault?: boolean;
+      autoThreading?: boolean;
+      autoThreadingByDefault?: boolean;
       access?: string[];
     } | null = null;
 

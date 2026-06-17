@@ -183,6 +183,17 @@ export interface ContactInvitation {
   token: string;
 }
 
+export interface ConversationMessage {
+  anchor_source: string;
+  conversation_key: string;
+  created_at: Generated<Timestamp>;
+  excerpt: string | null;
+  id: Generated<Int8>;
+  message_source: string;
+  source_created_at: Timestamp;
+  twist_id: Int8;
+}
+
 export interface Cost {
   amount: Numeric | null;
   created_at: Generated<Timestamp>;
@@ -2017,6 +2028,7 @@ export interface DB {
   contact: Contact;
   contact_external_account: ContactExternalAccount;
   contact_invitation: ContactInvitation;
+  conversation_message: ConversationMessage;
   cost: Cost;
   custom_emoji: CustomEmoji;
   device: Device;

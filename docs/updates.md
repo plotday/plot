@@ -1,5 +1,14 @@
 ## Next release
 
+### Connections
+
+- Connections that carry a conversation as a run of separate messages — like Slack channels — can now
+  group those messages into a single thread instead of starting a new one each time. Turn it on per
+  connection with **Group related messages into conversations**: Plot folds a message into the ongoing
+  conversation when it's clearly a continuation and starts a fresh thread when the topic changes, so
+  one discussion stays in one place instead of scattering across your inbox. Direct messages stay as a
+  single running thread.
+
 ### Roles & focuses
 
 - When you have more than one role, your focuses now show the role they belong to everywhere they

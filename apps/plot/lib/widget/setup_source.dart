@@ -113,6 +113,10 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   /// the server `accounts[].autoEnableNewChannels` field.
   final Map<String, bool> _autoEnableLocalState = {};
 
+  /// Local state for the per-account auto-threading toggle. Same key shape;
+  /// seeded from the server `accounts[].autoThreadingEnabled` field.
+  final Map<String, bool> _autoThreadingLocalState = {};
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +156,10 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         key,
         () => account.autoEnableNewChannels,
       );
+      _autoThreadingLocalState.putIfAbsent(
+        key,
+        () => account.autoThreadingEnabled,
+      );
     }
 
     if (_initializedFromServer) return;
@@ -187,6 +195,31 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       setState(() => _autoEnableLocalState[key] = current);
       context.showToast(
         message: 'Failed to update sync setting. Please try again.',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _toggleAutoThreading(TwistAccount account) async {
+    final key = '${account.provider.name}:${account.actorId}';
+    final current = _autoThreadingLocalState[key] ?? false;
+    final next = !current;
+
+    setState(() => _autoThreadingLocalState[key] = next);
+
+    try {
+      await TwistApi.setAutoThreadingEnabled(
+        twistInstanceId: widget.twistInstanceId,
+        provider: account.provider.name,
+        actorId: account.actorId,
+        enabled: next,
+      );
+    } catch (e, t) {
+      log.warning('Failed to update auto-threading', e, t);
+      if (!mounted) return;
+      setState(() => _autoThreadingLocalState[key] = current);
+      context.showToast(
+        message: 'Failed to update setting. Please try again.',
         isError: true,
       );
     }
@@ -605,6 +638,17 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           onToggle: () => _toggleAutoEnable(account),
         ),
       );
+      // Auto-threading toggle, only for connectors that support it.
+      if (data.autoThreading) {
+        autoEnableRows.add(
+          _AutoThreadingRow(
+            showAccountLabel: data.accounts.length > 1,
+            accountLabel: account.displayName,
+            isOn: _autoThreadingLocalState[accountKey] ?? false,
+            onToggle: () => _toggleAutoThreading(account),
+          ),
+        );
+      }
     }
 
     return Column(
@@ -1010,6 +1054,111 @@ class ProviderIcon extends StatelessWidget {
       default:
         return null;
     }
+  }
+}
+
+/// Per-account toggle for sequential auto-threading ("Group related messages
+/// into conversations"). Mirrors {@link _AutoEnableNewChannelsRow}'s layout.
+class _AutoThreadingRow extends StatefulWidget {
+  const _AutoThreadingRow({
+    required this.isOn,
+    required this.onToggle,
+    required this.showAccountLabel,
+    required this.accountLabel,
+  });
+
+  final bool isOn;
+  final VoidCallback onToggle;
+  final bool showAccountLabel;
+  final String accountLabel;
+
+  @override
+  State<_AutoThreadingRow> createState() => _AutoThreadingRowState();
+}
+
+class _AutoThreadingRowState extends State<_AutoThreadingRow> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final title = widget.showAccountLabel
+        ? 'Group related messages · ${widget.accountLabel}'
+        : 'Group related messages';
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onToggle,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: _isHovered
+                ? theme.colors.foreground.withValues(alpha: 0.05)
+                : null,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 12.0 + theme.iconSizes.base + 12.0,
+              right: theme.spacing.sm,
+              top: theme.spacing.sm,
+              bottom: theme.spacing.sm,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(right: theme.spacing.sm),
+                  child: const SizedBox(width: 10),
+                ),
+                IgnorePointer(
+                  child: SizedBox(
+                    width: 32,
+                    height: 20,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: FSwitch(
+                        value: widget.isOn,
+                        onChange: (_) {},
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: theme.spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: theme.typography.sm.fontSize,
+                          color: theme.colors.foreground,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacing.xs),
+                      Text(
+                        'Fold a conversation that arrives as separate messages '
+                        'into one thread.',
+                        style: TextStyle(
+                          fontSize: theme.typography.xs.fontSize,
+                          color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

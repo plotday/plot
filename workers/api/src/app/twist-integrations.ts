@@ -124,6 +124,7 @@ async function loadTwistConfig(
   optionsSchema: OptionsSchema | null;
   singleChannel: boolean;
   channelNoun: { singular: string; plural: string } | null;
+  autoThreading: boolean;
   access: string[] | null;
   connectorLinkTypes?: any[];
 } | null> {
@@ -138,6 +139,7 @@ async function loadTwistConfig(
     optionsSchema: parsed.optionsSchema ?? null,
     singleChannel: parsed.sourceProvider?.singleChannel === true,
     channelNoun: parsed.sourceProvider?.channelNoun ?? null,
+    autoThreading: parsed.sourceProvider?.autoThreading === true,
     access: parsed.sourceProvider?.access ?? null,
     connectorLinkTypes: parsed.sourceProvider?.linkTypes ?? undefined,
   };
@@ -374,6 +376,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       access: config.access ?? null,
       singleChannel: config.singleChannel,
       channelNoun: config.channelNoun,
+    autoThreading: config.autoThreading,
       shared: twistInfo.shared,
       keyOption: twistInfo.keyOption,
       premium: twistInfo.premium,
@@ -519,6 +522,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     syncables: allChannels,
     singleChannel: config.singleChannel,
     channelNoun: config.channelNoun,
+    autoThreading: config.autoThreading,
     optionsSchema,
     optionsConfig,
     shared: twistInfo.shared,
@@ -1423,6 +1427,98 @@ twistIntegrations.post(
         error as Error,
         { provider, actor_id: actorId }
       );
+      return c.json(
+        {
+          message: `Failed to update setting: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+  }
+);
+
+// POST /twist/:id/syncables/:provider/auto-threading
+// Toggle the per-connection auto-threading preference (fold related messages
+// into one thread). Mirrors the auto-enable route above.
+twistIntegrations.post(
+  "/twist/:id/syncables/:provider/auto-threading",
+  async (c) => {
+    const twistInstanceId = c.req.param("id");
+    const provider = c.req.param("provider");
+    const body = await c.req.json<{ actorId?: string; enabled?: boolean }>();
+    const actorId = body.actorId;
+    const enabled = body.enabled === true;
+
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
+
+    if (!actorId) {
+      return c.json({ message: "actorId is required" }, 400);
+    }
+
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
+
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
+    if (!twistInfo) {
+      return c.json({ message: "Twist not found" }, 404);
+    }
+
+    const config = await loadTwistConfig(
+      c.env,
+      twistInfo.twistPackageId,
+      twistInfo.version
+    );
+    if (!config) {
+      return c.json({ message: "Twist config not found" }, 404);
+    }
+
+    const integrationsPathStr = config.integrationsMap[provider];
+    if (!integrationsPathStr) {
+      return c.json(
+        { message: `Provider ${provider} not configured` },
+        400
+      );
+    }
+
+    try {
+      const factory = twistFactory({
+        env: c.env,
+        ctx: c.executionCtx as ExecutionContext,
+        db: c.var.db,
+      });
+
+      const twistWrapper = await factory({
+        twistInstanceId,
+      });
+
+      const result = await twistWrapper.callCallback(
+        integrationsPathStr.split(":"),
+        "setAutoThreadingEnabled",
+        provider,
+        actorId,
+        enabled
+      );
+      disposeRpc(result);
+
+      logger.info("Auto-threading updated", {
+        provider,
+        actor_id: actorId,
+        enabled,
+      });
+
+      return c.json({ success: true });
+    } catch (error) {
+      logger.error("Error setting auto-threading", error as Error, {
+        provider,
+        actor_id: actorId,
+      });
       return c.json(
         {
           message: `Failed to update setting: ${

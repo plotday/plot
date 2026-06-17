@@ -371,6 +371,21 @@ class TwistApi {
     );
   }
 
+  /// Set the per-connection auto-threading flag. When true, this connection's
+  /// conversational messages are folded into a single thread per conversation
+  /// by the sequential auto-threading resolver.
+  static Future<void> setAutoThreadingEnabled({
+    required String twistInstanceId,
+    required String provider,
+    required String actorId,
+    required bool enabled,
+  }) async {
+    await api.post<Map<String, dynamic>>(
+      '/twist/$twistInstanceId/syncables/$provider/auto-threading',
+      body: {'actorId': actorId, 'enabled': enabled},
+    );
+  }
+
   /// Get available source channels for link observation
   static Future<List<LinkChannel>> getAvailableLinkChannels(
     String twistInstanceId,
@@ -761,6 +776,11 @@ class TwistIntegrations {
   /// "channel" / "channels".
   final ChannelNoun channelNoun;
 
+  /// Whether this connector supports sequential auto-threading. When true the
+  /// edit form shows a per-connection "Group related messages into
+  /// conversations" toggle.
+  final bool autoThreading;
+
   /// When true, this connector uses a shared credential for all users.
   final bool shared;
 
@@ -792,6 +812,7 @@ class TwistIntegrations {
     this.access,
     this.singleChannel = false,
     this.channelNoun = ChannelNoun.fallback,
+    this.autoThreading = false,
     this.shared = false,
     this.keyOption,
     this.teamDomains,
@@ -818,6 +839,7 @@ class TwistIntegrations {
       channelNoun: ChannelNoun.fromJson(
         json['channelNoun'] as Map<String, dynamic>?,
       ),
+      autoThreading: json['autoThreading'] as bool? ?? false,
       shared: json['shared'] as bool? ?? false,
       keyOption: json['keyOption'] as String?,
       teamDomains: _parseTeamDomains(
@@ -889,6 +911,7 @@ class TwistAccount extends Equatable {
   final String? email;
   final String? name;
   final bool autoEnableNewChannels;
+  final bool autoThreadingEnabled;
 
   /// External URL where the user manages app authorization for this provider
   /// (e.g. GitHub's per-app connection page where org access is granted).
@@ -901,6 +924,7 @@ class TwistAccount extends Equatable {
     this.email,
     this.name,
     this.autoEnableNewChannels = false,
+    this.autoThreadingEnabled = false,
     this.manageAccessUrl,
   });
 
@@ -914,6 +938,7 @@ class TwistAccount extends Equatable {
       email: json['email'] as String?,
       name: json['name'] as String?,
       autoEnableNewChannels: json['autoEnableNewChannels'] as bool? ?? false,
+      autoThreadingEnabled: json['autoThreadingEnabled'] as bool? ?? false,
       manageAccessUrl: json['manageAccessUrl'] as String?,
     );
   }
@@ -922,7 +947,15 @@ class TwistAccount extends Equatable {
 
   @override
   List<Object?> get props =>
-      [provider, actorId, email, name, autoEnableNewChannels, manageAccessUrl];
+      [
+        provider,
+        actorId,
+        email,
+        name,
+        autoEnableNewChannels,
+        autoThreadingEnabled,
+        manageAccessUrl,
+      ];
 }
 
 /// A channel resource for a twist integration

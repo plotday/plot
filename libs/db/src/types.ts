@@ -423,6 +423,39 @@ export type Database = {
           },
         ]
       }
+      conversation_message: {
+        Row: {
+          anchor_source: string
+          conversation_key: string
+          created_at: string
+          excerpt: string | null
+          id: number
+          message_source: string
+          source_created_at: string
+          twist_id: number
+        }
+        Insert: {
+          anchor_source: string
+          conversation_key: string
+          created_at?: string
+          excerpt?: string | null
+          id?: never
+          message_source: string
+          source_created_at: string
+          twist_id: number
+        }
+        Update: {
+          anchor_source?: string
+          conversation_key?: string
+          created_at?: string
+          excerpt?: string | null
+          id?: never
+          message_source?: string
+          source_created_at?: string
+          twist_id?: number
+        }
+        Relationships: []
+      }
       cost: {
         Row: {
           amount: number | null

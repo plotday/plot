@@ -64,6 +64,8 @@ import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
 import { disposeRpc } from "../../utils/rpc";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
+import { linkPrimarySource, type CreateLinkOptions } from "./plot/link";
+import { resolveAutoThreadAnchorWithAi } from "./plot/auto-thread";
 import { Store } from "./store";
 import { Tool } from "./tool";
 import { unarchiveDoneLinksOnThread } from "../../app/sync/link-tags";
@@ -263,7 +265,7 @@ export class Integrations extends Tool implements IAuth {
   private path: string[];
   private providerConfigs: IntegrationProviderConfig[];
   /** Source metadata passed from factory when the twist is a Source. */
-  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean; autoEnableNewChannelsByDefault?: boolean } | null = null;
+  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean; autoEnableNewChannelsByDefault?: boolean; autoThreading?: boolean; autoThreadingByDefault?: boolean } | null = null;
   /** Cached sync history min date (undefined = not computed yet, null = no limit). */
   private _syncHistoryMin: Date | null | undefined = undefined;
   /**
@@ -308,7 +310,7 @@ export class Integrations extends Tool implements IAuth {
     path: string[];
     integrationOptions?: IntegrationOptions;
     /** Source metadata (provider, scopes, linkTypes, auth model) from the Source class. Set by factory for sources. */
-    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean; autoEnableNewChannelsByDefault?: boolean } | null;
+    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean; autoEnableNewChannelsByDefault?: boolean; autoThreading?: boolean; autoThreadingByDefault?: boolean } | null;
   }) {
     super();
     this.store = options.store;
@@ -713,6 +715,70 @@ export class Integrations extends Tool implements IAuth {
     if (existing !== undefined && existing !== null) return;
     await this.store.set(
       `auto_enable_new_channels:${provider}:${actorId}`,
+      true
+    );
+  }
+
+  /**
+   * Per-connection preference: when true, this connection's conversational
+   * links (marked with `autoThread`) are folded into existing threads by the
+   * sequential auto-threading resolver. Default false (opt-in). Per-account
+   * so the connections list can show one toggle per account, mirroring
+   * `getAutoEnableNewChannels`.
+   */
+  async getAutoThreadingEnabled(
+    provider: AuthProvider,
+    actorId: ActorId
+  ): Promise<boolean> {
+    return (
+      (await this.store.get<boolean>(
+        `auto_threading_enabled:${provider}:${actorId}`
+      )) ?? false
+    );
+  }
+
+  async setAutoThreadingEnabled(
+    provider: AuthProvider,
+    actorId: ActorId,
+    enabled: boolean
+  ): Promise<void> {
+    await this.store.set(
+      `auto_threading_enabled:${provider}:${actorId}`,
+      enabled
+    );
+  }
+
+  /**
+   * Connection-level gate read by {@link saveLink}: true when auto-threading
+   * is enabled for ANY account on this connection. Avoids threading the
+   * per-account (provider, actorId) through the save path — a connection's
+   * DO holds only its own accounts' keys.
+   */
+  async isAutoThreadingEnabled(): Promise<boolean> {
+    const keys = await this.store.list("auto_threading_enabled:");
+    for (const key of keys) {
+      if ((await this.store.get<boolean>(key)) === true) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Seed the per-connection auto-threading preference from the connector's
+   * declared default ({@link Connector.autoThreadingByDefault}) when no
+   * explicit value is stored yet. Called at connection activation alongside
+   * {@link initAutoEnableDefault}. No-op unless the connector defaults it on.
+   */
+  async initAutoThreadingDefault(
+    provider: AuthProvider,
+    actorId: ActorId
+  ): Promise<void> {
+    if (this.sourceProvider?.autoThreadingByDefault !== true) return;
+    const existing = await this.store.get<boolean>(
+      `auto_threading_enabled:${provider}:${actorId}`
+    );
+    if (existing !== undefined && existing !== null) return;
+    await this.store.set(
+      `auto_threading_enabled:${provider}:${actorId}`,
       true
     );
   }
@@ -1123,9 +1189,25 @@ export class Integrations extends Tool implements IAuth {
     await this.injectAccountContact(link);
 
     const plot = this.getPlot();
+
+    // Auto-threading: when the connector marked this link (a conversational
+    // message) and the connection opted in, decide ONCE — globally, at ingest
+    // — whether it folds into the conversation's anchor thread or starts a new
+    // one. `autoThread` is a directive, not a link column, so consume it
+    // before createLink either way.
+    const autoThread = link.autoThread ?? null;
+    if (autoThread) {
+      delete (link as { autoThread?: unknown }).autoThread;
+    }
+    let createOpts: CreateLinkOptions | undefined;
+    if (autoThread && (await this.isAutoThreadingEnabled())) {
+      const threadKey = await this.resolveAutoThreadFold(plot, link, autoThread);
+      if (threadKey) createOpts = { threadKey };
+    }
+
     let threadId: Uuid;
     try {
-      threadId = await plot.createLink(link);
+      threadId = await plot.createLink(link, createOpts);
     } catch (error) {
       if (error instanceof ThreadFilingSkippedError) {
         // Team-connector firing for a user who has no priority in the team.
@@ -1166,6 +1248,52 @@ export class Integrations extends Tool implements IAuth {
     }
 
     return threadId;
+  }
+
+  /**
+   * Resolve the auto-threading fold target for a marked link. Returns the
+   * anchor thread's source (the value to use as the link's thread key) when
+   * this message folds into an existing conversation, or `undefined` to leave
+   * createLink on its normal new-thread path. Decided once globally and cached
+   * in `conversation_message` (see ./plot/auto-thread.ts).
+   */
+  private async resolveAutoThreadFold(
+    plot: Plot,
+    link: NewLinkWithNotes,
+    autoThread: { key: string; mode: "sequential" | "fold" }
+  ): Promise<string | undefined> {
+    const messageSource = linkPrimarySource(link);
+    if (!messageSource) return undefined; // no canonical source ⇒ can't key a chain
+    const twistId = await plot.getTwistId(this.twistInstanceId);
+    if (twistId == null) return undefined;
+
+    const created = link.created;
+    const sourceCreatedAt =
+      created instanceof Date
+        ? created.toISOString()
+        : typeof created === "string"
+          ? created
+          : new Date().toISOString();
+
+    // Short text snippet for the continuation check: the first note's content
+    // (the message body) or the link title, capped so the embedding/LLM stay
+    // cheap.
+    const text =
+      link.notes?.find((n) => n.content)?.content ?? link.title ?? null;
+    const excerpt = text && text.length > 500 ? text.slice(0, 500) : text;
+
+    const anchorSource = await resolveAutoThreadAnchorWithAi(plot, {
+      twistId,
+      conversationKey: autoThread.key,
+      messageSource,
+      sourceCreatedAt,
+      excerpt,
+      mode: autoThread.mode,
+    });
+    // anchorSource === messageSource means "new thread" — no fold needed.
+    return anchorSource && anchorSource !== messageSource
+      ? anchorSource
+      : undefined;
   }
 
   /**
@@ -3803,6 +3931,7 @@ export class Integrations extends Tool implements IAuth {
       email: string | null;
       name: string | null;
       autoEnableNewChannels: boolean;
+      autoThreadingEnabled: boolean;
       enabledScopeGroups?: string[];
       // External URL where the user manages app authorization for this
       // provider (e.g. GitHub's "manage organization access" page). Surfaced
@@ -3868,6 +3997,7 @@ export class Integrations extends Tool implements IAuth {
       email: string | null;
       name: string | null;
       autoEnableNewChannels: boolean;
+      autoThreadingEnabled: boolean;
       enabledScopeGroups?: string[];
       manageAccessUrl?: string | null;
     }> = [];
@@ -3918,6 +4048,7 @@ export class Integrations extends Tool implements IAuth {
           contactRow,
           enabledScopeGroups,
           autoEnableSetting,
+          autoThreadingSetting,
           actorChannels,
         ] = await Promise.all([
           this.store.get<StoredTokenData>(tokenKey),
@@ -3933,6 +4064,9 @@ export class Integrations extends Tool implements IAuth {
           ),
           this.store.get<boolean>(
             `auto_enable_new_channels:${provider}:${actorId}`
+          ),
+          this.store.get<boolean>(
+            `auto_threading_enabled:${provider}:${actorId}`
           ),
           this.getChannelAccess(provider, actorId as ActorId),
         ]);
@@ -3981,6 +4115,11 @@ export class Integrations extends Tool implements IAuth {
           autoEnableSetting ??
           this.sourceProvider?.autoEnableNewChannelsByDefault ??
           false;
+        // Same display-only fallback for the auto-threading toggle state.
+        const autoThreadingEnabled =
+          autoThreadingSetting ??
+          this.sourceProvider?.autoThreadingByDefault ??
+          false;
 
         accounts.push({
           provider,
@@ -3988,6 +4127,7 @@ export class Integrations extends Tool implements IAuth {
           email,
           name,
           autoEnableNewChannels,
+          autoThreadingEnabled,
           ...(enabledScopeGroups ? { enabledScopeGroups } : {}),
           ...(buildManageAccessUrl(provider, this.env)
             ? { manageAccessUrl: buildManageAccessUrl(provider, this.env) }

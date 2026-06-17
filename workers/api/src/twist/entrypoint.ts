@@ -473,6 +473,8 @@ export default class extends WorkerEntrypoint {
         ...(twist.singleChannel ? { singleChannel: true } : {}),
         ...(twist.channelNoun ? { channelNoun: twist.channelNoun } : {}),
         ...(twist.autoEnableNewChannelsByDefault ? { autoEnableNewChannelsByDefault: true } : {}),
+        ...(twist.autoThreading ? { autoThreading: true } : {}),
+        ...(twist.autoThreadingByDefault ? { autoThreadingByDefault: true } : {}),
         ...(twist.access ? { access: twist.access } : {}),
         ...(twist.shared ? { shared: true } : {}),
         ...(twist.keyOption ? { keyOption: twist.keyOption } : {}),

@@ -64,6 +64,10 @@ Plot gives you the context and clarity to make your next move.
   requests), LinkedIn (two-way messages and connection requests) — read, reply, react, and start new
   conversations.
 - Add private notes on any shared thread, visible only to you.
+- Auto-threading (opt-in per connection): for tools that carry a conversation as a run of separate
+  messages — like Slack channels — Plot can fold related messages into a single thread instead of
+  creating a new thread per message, deciding at sync time whether each message continues the prior
+  conversation or starts a new one. Direct messages collapse into one running thread.
 
 ### Plot threads
 

@@ -1184,6 +1184,22 @@ export async function activateDraft(
             error_message: error instanceof Error ? error.message : String(error),
           });
         }
+        try {
+          const result = await twistWrapper.callCallback(
+            integrationsPath.split(":"),
+            "initAutoThreadingDefault",
+            provider,
+            contact.id
+          );
+          if (result && typeof result === "object" && Symbol.dispose in result) {
+            (result as any)[Symbol.dispose]();
+          }
+        } catch (error) {
+          logger.warn("Failed to seed auto-threading default during activation", {
+            provider,
+            error_message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
   } else {
