@@ -65,7 +65,7 @@ class PriorityComposeField extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               ComposeLeadingIcon(
-                child: Icon(PlotIcon.sparkles, size: theme.iconSizes.base),
+                child: Icon(PlotIcon.sparkles, size: theme.iconSizes.leading),
               ),
               const SizedBox(width: composeIconGap),
               const Text('Auto-organize'),
@@ -76,8 +76,9 @@ class PriorityComposeField extends StatelessWidget {
             fontSize: fontSize,
             // Match the leading-icon geometry of every other compose row so
             // the focus icon centers in the same column and the label starts
-            // at the same x (see ComposeLeadingIcon / composeIconGap).
-            iconSize: theme.iconSizes.base,
+            // at the same x (see ComposeLeadingIcon / composeIconGap), at the
+            // cap-height leading size shared by those rows' glyphs.
+            iconSize: theme.iconSizes.leading,
             iconColumnWidth: composeLeadingWidth(context),
             iconGap: composeIconGap,
           );

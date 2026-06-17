@@ -2,17 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/priorities_list.dart';
 
-/// [PrioritiesList] does its filtering in the constructor: it splits the
-/// passed-in priorities into the flat/accordion [PrioritiesList.focuses] list
-/// and captures the single, role-less global "FYI" focus into
-/// [PrioritiesList.fyi]. These tests pin that split so the FYI focus is never
-/// shown in the accordion and always lands in its fixed row above "Everything".
+/// The per-role FYI is an ordinary focus: it renders through
+/// [PrioritiesList.focuses] (no separate fixed tile) and sorts purely by its
+/// `order`. Its name shows as "FYI" and it defaults just below its role's Inbox
+/// via large server-seeded sentinel orders (Inbox 1e15, FYI 2e15), so a freshly
+/// added focus (a now()-epoch-ms order) lands above both. These tests pin that.
 Priority _priority({
   required String title,
   bool root = false,
   bool isInbox = false,
   bool isFyi = false,
   bool unread = false,
+  double order = 0,
   DateTime? archivedAt,
 }) {
   final row = PriorityRow(
@@ -22,7 +23,7 @@ Priority _priority({
     updatedAt: DateTime(2026, 1, 1),
     title: title,
     path: Path(title.toLowerCase()),
-    order: const Order(0),
+    order: Order(order),
     root: root,
     unread: unread,
     role: 'member',
@@ -38,61 +39,72 @@ Priority _priority({
 }
 
 void main() {
-  group('PrioritiesList FYI focus', () {
-    test('captures the FYI focus into `fyi` and excludes it from `focuses`', () {
-      final inbox = _priority(title: 'Inbox', root: true, isInbox: true);
-      final normal = _priority(title: 'Work');
-      final fyi = _priority(title: 'FYI', isFyi: true, unread: true);
+  group('PrioritiesList per-role FYI', () {
+    test('the FYI renders as an ordinary focus (included in `focuses`)', () {
+      final inbox = _priority(
+        title: 'Inbox',
+        root: true,
+        isInbox: true,
+        order: 1e15,
+      );
+      final normal = _priority(title: 'Work', order: 1000);
+      final fyi = _priority(title: 'FYI', isFyi: true, unread: true, order: 2e15);
 
       final widget = PrioritiesList(
         root: inbox,
         priorities: [normal, inbox, fyi],
       );
 
-      // The FYI focus is captured separately for its fixed row.
-      expect(widget.fyi?.id, fyi.id);
-
-      // …and never appears in the flat/accordion focus list.
+      // No separate fixed FYI row — it is one of the ordinary focuses now.
       final focusIds = widget.focuses.map((p) => p.id).toList();
-      expect(focusIds, isNot(contains(fyi.id)));
-
-      // The ordinary focus and the Inbox still render through the list.
-      expect(focusIds, contains(normal.id));
+      expect(focusIds, contains(fyi.id));
       expect(focusIds, contains(inbox.id));
+      expect(focusIds, contains(normal.id));
     });
 
-    test('`fyi` is null when no FYI focus is present', () {
-      final inbox = _priority(title: 'Inbox', root: true, isInbox: true);
-      final normal = _priority(title: 'Work');
+    test('the Inbox then the FYI default to the bottom two (sentinel orders)', () {
+      final inbox = _priority(
+        title: 'Inbox',
+        root: true,
+        isInbox: true,
+        order: 1e15,
+      );
+      final normal = _priority(title: 'Work', order: 1000);
+      final fyi = _priority(title: 'FYI', isFyi: true, order: 2e15);
 
+      // Pass them out of order; the pure-order sort fixes the layout.
       final widget = PrioritiesList(
         root: inbox,
-        priorities: [normal, inbox],
+        priorities: [fyi, inbox, normal],
       );
 
-      expect(widget.fyi, isNull);
-      expect(widget.focuses.map((p) => p.id), contains(normal.id));
-    });
-
-    test('an archived FYI focus is ignored (not captured)', () {
-      final inbox = _priority(title: 'Inbox', root: true, isInbox: true);
-      final archivedFyi = _priority(
-        title: 'FYI',
-        isFyi: true,
-        archivedAt: DateTime(2026, 1, 2),
-      );
-
-      final widget = PrioritiesList(
-        root: inbox,
-        priorities: [inbox, archivedFyi],
-      );
-
-      // Archived FYI is neither surfaced as the fixed row…
-      expect(widget.fyi, isNull);
-      // …nor leaked into the accordion list.
       expect(
-        widget.focuses.map((p) => p.id),
-        isNot(contains(archivedFyi.id)),
+        widget.focuses.map((p) => p.displayTitle).toList(),
+        ['Work', 'Inbox', 'FYI'],
+      );
+    });
+
+    test('a freshly added focus (now()-order) lands above the Inbox and FYI', () {
+      final inbox = _priority(
+        title: 'Inbox',
+        root: true,
+        isInbox: true,
+        order: 1e15,
+      );
+      final fyi = _priority(title: 'FYI', isFyi: true, order: 2e15);
+      final fresh = _priority(
+        title: 'Fresh',
+        order: DateTime.now().millisecondsSinceEpoch.toDouble(),
+      );
+
+      final widget = PrioritiesList(
+        root: inbox,
+        priorities: [inbox, fyi, fresh],
+      );
+
+      expect(
+        widget.focuses.map((p) => p.displayTitle).toList(),
+        ['Fresh', 'Inbox', 'FYI'],
       );
     });
   });

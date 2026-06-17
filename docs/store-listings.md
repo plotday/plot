@@ -412,7 +412,7 @@ Read, write, organize, and finish work with no connection — everything syncs t
 WORK YOUR WAY
 Use AI as much or as little as you want — bring your own key, point it at your own model, or turn it off entirely. Your data stays yours: you connect each account securely without handing Plot your passwords, your data is encrypted in transit, and only you and the people you share with can see it.
 
-Plot is free to start. Get back to the work only you can do.
+Plot has a free plan. Get back to your best work.
 ```
 
 ### Product features — up to 20, 200 char max each

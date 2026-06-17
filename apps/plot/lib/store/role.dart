@@ -97,11 +97,7 @@ class Role extends RoleRow {
   /// role sorts to the bottom of the sidebar list. Notification fields are left
   /// unset (the server seeds the role's Inbox and defaults). Call [save] to
   /// persist (pushes to `/sync/roles`).
-  factory Role.create({
-    required String name,
-    ThemeColor? color,
-    Order? order,
-  }) {
+  factory Role.create({required String name, ThemeColor? color, Order? order}) {
     final now = DateTime.now();
     return Role._(
       RoleRow(
@@ -175,6 +171,17 @@ class Role extends RoleRow {
         ..addEntries(roles.map((r) => MapEntry(r.id, r)));
       _cacheNotifier.value = roles;
     });
+  }
+
+  /// Test-only: seed the synchronous cache directly, bypassing the store watch
+  /// so widget tests can exercise the focus role-prefix path ([FocusLabel])
+  /// without a live [Store]. Pair with [clearCache] in `tearDown`.
+  @visibleForTesting
+  static void setCacheForTesting(List<Role> roles) {
+    _cacheById
+      ..clear()
+      ..addEntries(roles.map((r) => MapEntry(r.id, r)));
+    _cacheNotifier.value = roles;
   }
 
   /// Clears the role cache and stops its watch. Call on sign-out / store reset

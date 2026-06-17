@@ -190,11 +190,12 @@ class ListTile extends StatefulWidget {
   final Color? highlightColor;
   final Color? selectedColor;
 
-  /// When non-null, the tile reserves a constant 1px border that paints this
-  /// colour while selected and transparent otherwise — so selection never
-  /// shifts content. For rounded tiles (non-null [borderRadius]) this is the
-  /// only way the selection ring is drawn; rounded tiles with a null
-  /// [selectedBorderColor] keep their borderless behaviour.
+  /// The selection-ring colour, painted on the constant 1px border while
+  /// selected. Rounded tiles ([borderRadius] non-null) always reserve that 1px
+  /// border (transparent until selected) and inset their fill inside it, so the
+  /// hover and selected states share identical geometry; this colour just
+  /// decides what the ring shows when selected. Null means the ring stays
+  /// transparent (the tile still gets the consistent inset).
   final Color? selectedBorderColor;
   final Widget? details;
   final Command? command;
@@ -386,32 +387,42 @@ class _ListTileState extends State<ListTile> {
                   fillRowHeight && child != null ? Center(child: child) : child;
               Widget intrinsic(Widget child) =>
                   fillRowHeight ? IntrinsicHeight(child: child) : child;
+              // The tile's fill (selection / hover / focus highlight). Painted
+              // on an inner box that the border below insets, so the fill sits
+              // *inside* the 1px border — exactly the way a selected fill sits
+              // inside its ring. (Flutter paints a BoxDecoration's colour to the
+              // full edge under a transparent border, so reserving the border
+              // alone is not enough; the fill itself has to move in.) This keeps
+              // hover and selection geometry identical: a hover never reads a
+              // hair wider than the selection ring, and a hovered row next to a
+              // selected one lines up instead of butting its background against
+              // the selection border.
+              final Color? fillColor = widget.noBackground
+                  ? null
+                  : widget.selected
+                  ? (widget.selectedColor ??
+                        context.theme.colors.primaryForeground)
+                  : isHighlighted
+                  ? (widget.highlightColor ??
+                        context.theme.plotColors.highlight)
+                  : null;
               final container = Container(
                 decoration: BoxDecoration(
-                  color: widget.noBackground
-                      ? null
-                      : widget.selected
-                      ? (widget.selectedColor ??
-                            context.theme.colors.primaryForeground)
-                      : isHighlighted
-                      ? (widget.highlightColor ??
-                            context.theme.plotColors.highlight)
-                      : null,
                   borderRadius: widget.borderRadius,
-                  // Rounded tiles only get a border when a caller opts in via
-                  // [selectedBorderColor]; the width is constant (1) so toggling
-                  // selection changes only the colour, never the layout. The
-                  // edge-to-edge (non-rounded) feed border is unchanged but will
-                  // honour an explicit [selectedBorderColor] when provided.
+                  // Rounded tiles ALWAYS reserve a constant 1px border —
+                  // transparent at rest/on hover, the [selectedBorderColor]
+                  // when selected. Its dimensions inset the fill above, so the
+                  // inset is identical whether or not a colour is showing. The
+                  // edge-to-edge (non-rounded) feed border is unchanged but
+                  // still honours an explicit [selectedBorderColor].
                   border: widget.borderRadius != null
-                      ? (widget.selectedBorderColor != null
-                            ? Border.all(
-                                color: showBorder
-                                    ? widget.selectedBorderColor!
-                                    : const Color(0x00000000),
-                                width: 1,
-                              )
-                            : null)
+                      ? Border.all(
+                          color:
+                              showBorder && widget.selectedBorderColor != null
+                              ? widget.selectedBorderColor!
+                              : const Color(0x00000000),
+                          width: 1,
+                        )
                       : Border.symmetric(
                           horizontal: BorderSide(
                             color: showBorder
@@ -429,134 +440,149 @@ class _ListTileState extends State<ListTile> {
                           ),
                         ),
                 ),
-                padding: EdgeInsets.only(
-                  left: widget.indentLevel * (16 + context.theme.spacing.sm),
-                ),
-                child: intrinsic(
-                  Row(
-                    crossAxisAlignment: fillRowHeight
-                        ? CrossAxisAlignment.stretch
-                        : widget.crossAxisAlignment,
-                    children: [
-                      SizedBox(
-                        width: widget.leadingBuilder == null
-                            ? widget.padding?.resolve(null).left ?? 20
-                            : 0,
-                      ),
-
-                      ...[
-                        if (widget.leadingBuilder != null)
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap:
-                                widget.onTap ??
-                                (widget.command != null ? () => run() : null),
-                            // While a command is running, overlay a Spinner
-                            // centred on the leading slot. The original widget
-                            // is kept at 0 opacity so the slot width (and the
-                            // title column position) is preserved across the
-                            // swap. Leading slots centre their icon in a
-                            // symmetric box (see sidebarLeading / the modal
-                            // unread dot), so centring the spinner over the slot
-                            // lands it on the icon.
-                            child: fill(
-                              _showSpinner
-                                  ? Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        Opacity(
-                                          opacity: 0,
-                                          child: widget.leadingBuilder!(
-                                            _isHovered,
-                                            _focusNode.hasFocus,
-                                          ),
-                                        ),
-                                        Spinner(
-                                          size: spinnerSize,
-                                          color: context.theme.plotColors.muted,
-                                        ),
-                                      ],
-                                    )
-                                  : widget.leadingBuilder!(
-                                      _isHovered,
-                                      _focusNode.hasFocus,
-                                    ),
-                            ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: fillColor,
+                    borderRadius: widget.borderRadius,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left:
+                          widget.indentLevel * (16 + context.theme.spacing.sm),
+                    ),
+                    child: intrinsic(
+                      Row(
+                        crossAxisAlignment: fillRowHeight
+                            ? CrossAxisAlignment.stretch
+                            : widget.crossAxisAlignment,
+                        children: [
+                          SizedBox(
+                            width: widget.leadingBuilder == null
+                                ? widget.padding?.resolve(null).left ?? 20
+                                : 0,
                           ),
-                      ].whereType<Widget>(),
-                      Expanded(
-                        child: hasPhysicalKeyboard()
-                            // Desktop: GestureDetector participates in gesture arena,
-                            // properly competes with ReorderableDragStartListener
-                            ? GestureDetector(
-                                behavior: fillRowHeight
-                                    ? HitTestBehavior.opaque
-                                    : null,
+
+                          ...[
+                            if (widget.leadingBuilder != null)
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
                                 onTap:
                                     widget.onTap ??
                                     (widget.command != null
                                         ? () => run()
                                         : null),
-                                onLongPress: widget.longPressCommand != null
-                                    ? _runLongPress
-                                    : null,
-                                child: fill(_buildContent()),
-                              )
-                            // Mobile: Listener bypasses gesture arena,
-                            // no conflict with Swipeable or scroll
-                            : Listener(
-                                behavior: fillRowHeight
-                                    ? HitTestBehavior.opaque
-                                    : HitTestBehavior.deferToChild,
-                                onPointerDown: (event) {
-                                  _tapStartPosition = event.position;
-                                  _tapStartTime = Time.now();
-                                },
-                                onPointerUp: (event) {
-                                  if (_tapStartPosition != null) {
-                                    final delta =
-                                        event.position - _tapStartPosition!;
-                                    final duration = Time.now().difference(
-                                      _tapStartTime!,
-                                    );
-                                    if (delta.distance < 10 &&
-                                        duration <
-                                            Duration(milliseconds: 500)) {
-                                      if (widget.onTap != null) {
-                                        widget.onTap!();
-                                      } else if (widget.command != null) {
-                                        run();
-                                      }
-                                    }
-                                  }
-                                  _tapStartPosition = null;
-                                  _tapStartTime = null;
-                                },
+                                // While a command is running, overlay a Spinner
+                                // centred on the leading slot. The original widget
+                                // is kept at 0 opacity so the slot width (and the
+                                // title column position) is preserved across the
+                                // swap. Leading slots centre their icon in a
+                                // symmetric box (see sidebarLeading / the modal
+                                // unread dot), so centring the spinner over the slot
+                                // lands it on the icon.
                                 child: fill(
-                                  GestureDetector(
+                                  _showSpinner
+                                      ? Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            Opacity(
+                                              opacity: 0,
+                                              child: widget.leadingBuilder!(
+                                                _isHovered,
+                                                _focusNode.hasFocus,
+                                              ),
+                                            ),
+                                            Spinner(
+                                              size: spinnerSize,
+                                              color: context
+                                                  .theme
+                                                  .plotColors
+                                                  .muted,
+                                            ),
+                                          ],
+                                        )
+                                      : widget.leadingBuilder!(
+                                          _isHovered,
+                                          _focusNode.hasFocus,
+                                        ),
+                                ),
+                              ),
+                          ].whereType<Widget>(),
+                          Expanded(
+                            child: hasPhysicalKeyboard()
+                                // Desktop: GestureDetector participates in gesture arena,
+                                // properly competes with ReorderableDragStartListener
+                                ? GestureDetector(
+                                    behavior: fillRowHeight
+                                        ? HitTestBehavior.opaque
+                                        : null,
+                                    onTap:
+                                        widget.onTap ??
+                                        (widget.command != null
+                                            ? () => run()
+                                            : null),
                                     onLongPress: widget.longPressCommand != null
                                         ? _runLongPress
                                         : null,
-                                    child: _buildContent(),
+                                    child: fill(_buildContent()),
+                                  )
+                                // Mobile: Listener bypasses gesture arena,
+                                // no conflict with Swipeable or scroll
+                                : Listener(
+                                    behavior: fillRowHeight
+                                        ? HitTestBehavior.opaque
+                                        : HitTestBehavior.deferToChild,
+                                    onPointerDown: (event) {
+                                      _tapStartPosition = event.position;
+                                      _tapStartTime = Time.now();
+                                    },
+                                    onPointerUp: (event) {
+                                      if (_tapStartPosition != null) {
+                                        final delta =
+                                            event.position - _tapStartPosition!;
+                                        final duration = Time.now().difference(
+                                          _tapStartTime!,
+                                        );
+                                        if (delta.distance < 10 &&
+                                            duration <
+                                                Duration(milliseconds: 500)) {
+                                          if (widget.onTap != null) {
+                                            widget.onTap!();
+                                          } else if (widget.command != null) {
+                                            run();
+                                          }
+                                        }
+                                      }
+                                      _tapStartPosition = null;
+                                      _tapStartTime = null;
+                                    },
+                                    child: fill(
+                                      GestureDetector(
+                                        onLongPress:
+                                            widget.longPressCommand != null
+                                            ? _runLongPress
+                                            : null,
+                                        child: _buildContent(),
+                                      ),
+                                    ),
                                   ),
+                          ),
+                          ...[
+                            if (widget.trailingBuilder != null)
+                              fill(
+                                widget.trailingBuilder!(
+                                  _isHovered,
+                                  _focusNode.hasFocus,
                                 ),
                               ),
-                      ),
-                      ...[
-                        if (widget.trailingBuilder != null)
-                          fill(
-                            widget.trailingBuilder!(
-                              _isHovered,
-                              _focusNode.hasFocus,
-                            ),
+                          ].whereType<Widget>(),
+                          SizedBox(
+                            width: widget.trailingBuilder == null
+                                ? widget.padding?.resolve(null).right ?? 20
+                                : 0,
                           ),
-                      ].whereType<Widget>(),
-                      SizedBox(
-                        width: widget.trailingBuilder == null
-                            ? widget.padding?.resolve(null).right ?? 20
-                            : 0,
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               );
@@ -586,10 +612,18 @@ class _ListTileState extends State<ListTile> {
       color: Color(0x00000000), // Transparent to capture taps
       child: Builder(
         builder: (context) {
-          // Build the icon widget
+          // Build the icon widget. [iconSize] is the slot/spinner dimension —
+          // the leading square stays this wide so swapping in a Spinner doesn't
+          // shift the title. [glyphSize] is the resting glyph itself, drawn at
+          // the smaller cap-height leading size for item rows so it sits level
+          // with the label rather than at the full base (1:1) size. Headers
+          // keep their already-small sm glyph.
           final iconSize = widget.style == ListTileStyle.header
               ? context.theme.iconSizes.sm
               : context.theme.iconSizes.base;
+          final glyphSize = widget.style == ListTileStyle.header
+              ? context.theme.iconSizes.sm
+              : context.theme.iconSizes.leading;
           final iconIsHighlighted =
               _focusNode.hasFocus || _isHovered || widget.highlighted;
           final mutedIconColor = widget.muted && iconIsHighlighted
@@ -614,7 +648,7 @@ class _ListTileState extends State<ListTile> {
               // own color (e.g. avatars, logos) override this.
               return IconTheme.merge(
                 data: IconThemeData(
-                  size: iconSize,
+                  size: glyphSize,
                   color: widget.command?.on == true
                       ? context.theme.colors.primary
                       : mutedIconColor,
@@ -633,7 +667,7 @@ class _ListTileState extends State<ListTile> {
               }
               return Icon(
                 widget.icon ?? widget.command?.icon,
-                size: iconSize,
+                size: glyphSize,
                 color: widget.command?.on == true
                     ? context.theme.colors.primary
                     : mutedIconColor,

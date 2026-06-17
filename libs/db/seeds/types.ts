@@ -9,6 +9,7 @@
 export interface SeedData {
   config: Config;
   contacts?: Contact[];
+  roles?: Role[];
   priorities?: Priority[];
   sources?: SeedSource[];
   twists?: SeedTwist[];
@@ -52,6 +53,17 @@ export interface Contact {
 }
 
 // ============================================================================
+// Roles (group focuses; provide colour + notification template)
+// ============================================================================
+
+export interface Role {
+  ref: string; // Unique reference string; priorities point at it via role_ref
+  name: string;
+  color?: number; // Theme colour index 0-7 (default 0). The role's Inbox + FYI
+  // follow this colour.
+}
+
+// ============================================================================
 // Priorities
 // ============================================================================
 
@@ -60,6 +72,14 @@ export interface Priority {
   title: string;
   icon?: string; // Curated kFocusIcons key (e.g. "rocket"). Written to priority.icon.
   root?: boolean; // Default: false
+  // Role this focus belongs to (must reference a `roles[].ref`). Required for
+  // every seeded focus so the priority_role_or_fyi CHECK is satisfied and the
+  // sidebar groups it under the right role.
+  role_ref?: string;
+  // Marks this focus as its role's Inbox (is_inbox = TRUE). Exactly one inbox
+  // per role. The Inbox's colour follows the role; its icon/name are fixed by
+  // the app, so omit `icon`/`settings.color` here.
+  inbox?: boolean;
   archived_at?: string; // Date offset
   settings?: PrioritySettings;
   children?: Priority[]; // Nested child priorities
@@ -301,6 +321,14 @@ export interface GeneratedContact {
   user_id: string | null;
 }
 
+export interface GeneratedRole {
+  id: string; // UUID (deterministic via stableUUID)
+  user_id: string; // UUID
+  name: string;
+  color: number;
+  order: number; // Sidebar order (lower sorts higher)
+}
+
 export interface GeneratedPriority {
   id: string; // UUID
   created_by: string; // UUID
@@ -308,6 +336,10 @@ export interface GeneratedPriority {
   icon: string | null;
   path: string; // ltree path
   archived_at: string | null; // ISO timestamp
+  role_id: string; // UUID — the role this focus groups under
+  is_inbox: boolean; // role's Inbox focus
+  color: number | null; // priority.color column; set for inboxes (= role colour),
+  // null for ordinary focuses (which carry colour via priority_setting)
 }
 
 export interface GeneratedPrioritySettings {
@@ -315,6 +347,8 @@ export interface GeneratedPrioritySettings {
   user_id: string; // UUID
   color: number | null;
   pomodoro: number | null;
+  order: number | null; // sidebar order (key 'order'); set for ordinary focuses
+  // so they sort in YAML order. Inboxes/FYIs get sentinel orders elsewhere.
 }
 
 export interface GeneratedPriorityUser {

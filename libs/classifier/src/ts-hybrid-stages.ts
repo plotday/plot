@@ -286,11 +286,17 @@ export async function roleInboxFallback(
 }
 
 /**
- * FYI stage. Low-signal mail (by facet format) routes to the user's single
- * global FYI focus — beating soft scoring and the role-Inbox fallback — UNLESS
- * the sender already has a learned home in a real (non-Inbox, non-FYI) focus,
- * in which case we yield so scoring routes it there. Fails open (null) when the
- * format doesn't qualify or the user somehow has no FYI focus.
+ * FYI stage. Low-signal mail (by facet format) routes to the FYI focus of the
+ * role it would otherwise be filed in — beating soft scoring and the role-Inbox
+ * fallback — UNLESS the sender already has a learned home in a real (non-Inbox,
+ * non-FYI) focus, in which case we yield so scoring routes it there.
+ *
+ * Each role owns its own FYI now (one per role), so we pick the best-matching
+ * role the same way `roleInboxFallback` does — the role most associated with the
+ * candidate's user-linked accounts (their historical user_moved filing
+ * distribution), the oldest role on a tie/no signal — then return THAT role's
+ * FYI instead of its Inbox. Fails open (null) when the format doesn't qualify or
+ * no role has a live FYI.
  */
 export async function fyiFallback(
   ctx: ClassifierContext,
@@ -309,22 +315,58 @@ export async function fyiFallback(
     if (trainedRow?.trained) return null;
   }
 
-  // Resolve the user's single global FYI focus.
-  const res = await ctx.rawQuery(
-    `SELECT p.id
-       FROM public.priority p
-      WHERE p.user_id = $1::uuid
-        AND p.is_fyi = TRUE
-        AND p.archived_at IS NULL
-      LIMIT 1`,
-    [ctx.userId]
+  // Resolve the best-matching role's FYI focus (mirrors roleInboxFallback's
+  // affinity ranking, but joins the role's FYI rather than its Inbox).
+  const accounts = [candidate.author, ...candidate.contacts].filter(
+    (x): x is string => typeof x === "string"
   );
-  const fyi = res.rows[0] as { id: string } | undefined;
-  if (!fyi?.id) return null;
+  const res = await ctx.rawQuery(
+    `WITH cand AS (
+        SELECT uc.contact_id AS cid
+          FROM public.user_contact uc
+         WHERE uc.user_id = $1::uuid
+           AND uc.linked = TRUE
+           AND uc.archived_at IS NULL
+           AND uc.contact_id = ANY($2::uuid[])
+     ),
+     affinity AS (
+        SELECT p.role_id, COUNT(DISTINCT t.id) AS n
+          FROM public.thread_priority tp
+          JOIN public.thread t   ON t.id = tp.thread_id
+          JOIN public.priority p ON p.id = tp.priority_id
+         WHERE tp.user_id = $1::uuid
+           AND tp.user_moved = TRUE
+           AND t.archived_at IS NULL
+           AND p.role_id IS NOT NULL
+           AND (t.created_by IN (SELECT cid FROM cand)
+                OR t.contacts && ARRAY(SELECT cid FROM cand))
+         GROUP BY p.role_id
+     )
+     SELECT fyi.id AS priority_id, r.id AS role_id, COALESCE(a.n, 0) AS n
+       FROM public.role r
+       JOIN public.priority fyi
+         ON fyi.role_id = r.id
+        AND fyi.is_fyi
+        AND fyi.archived_at IS NULL
+       LEFT JOIN affinity a ON a.role_id = r.id
+      WHERE r.user_id = $1::uuid
+        AND r.archived_at IS NULL
+      ORDER BY COALESCE(a.n, 0) DESC, r.created_at ASC
+      LIMIT 1`,
+    [ctx.userId, accounts]
+  );
+  const row = res.rows[0] as
+    | { priority_id: string; role_id: string; n: number }
+    | undefined;
+  if (!row?.priority_id) return null;
 
   return {
-    priorityId: fyi.id,
+    priorityId: row.priority_id,
     stage: "fyi_fallback",
-    scores: { format: candidate.facets?.["format"] ?? null },
+    scores: {
+      format: candidate.facets?.["format"] ?? null,
+      role_id: row.role_id,
+      affinity: row.n,
+    },
   };
 }

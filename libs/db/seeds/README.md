@@ -97,18 +97,26 @@ contacts:
     email: alice@example.com
     name: Alice Johnson
 
+roles:
+  - ref: work_role
+    name: Work
+    color: 0
+
 priorities:
-  - ref: work
-    title: Work
+  - ref: work_inbox
+    title: Inbox
     root: true
+    role_ref: work_role
+    inbox: true
     children:
       - ref: project-a
         title: Project Alpha
+        role_ref: work_role
 
 sources:
   - ref: slack
     name: Slack
-    priority_ref: work
+    priority_ref: work_inbox
     logo: "https://api.iconify.design/logos/slack-icon.svg"
     link_types:
       - type: message

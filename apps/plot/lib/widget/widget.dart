@@ -41,6 +41,7 @@ export 'link.dart';
 export 'link_input.dart';
 export 'logo_image.dart';
 export 'list_tile.dart';
+export 'leading_icon.dart';
 export 'sidebar_leading.dart';
 export 'priority_selector.dart';
 export 'priority.dart';

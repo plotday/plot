@@ -1,4 +1,5 @@
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 
 /// Selection option for the assignee picker — equality based on actor id.
@@ -64,16 +65,19 @@ Future<void> pickLinkAssignee(BuildContext context, Link link) async {
                   option.email != option.name)
               ? option.email
               : null,
-          leadingBuilder: (isHovered, hasFocus) => Padding(
-            padding: const EdgeInsets.only(left: 16, right: 8),
-            child: isSelected
-                ? Icon(
-                    PlotIcon.done,
-                    size: 14,
-                    color: context.theme.colors.primary,
-                  )
-                : const SizedBox(width: 14),
-          ),
+          leadingBuilder: (isHovered, hasFocus) {
+            final markSize = context.theme.iconSizes.leading;
+            return Padding(
+              padding: const EdgeInsets.only(left: 16, right: 8),
+              child: isSelected
+                  ? Icon(
+                      PlotIcon.done,
+                      size: markSize,
+                      color: context.theme.colors.primary,
+                    )
+                  : SizedBox(width: markSize),
+            );
+          },
           disableInternalHover: true,
         );
       },

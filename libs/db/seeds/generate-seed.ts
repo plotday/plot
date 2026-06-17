@@ -42,6 +42,7 @@ import type {
   GeneratedPriority,
   GeneratedPriorityBlock,
   GeneratedPrioritySettings,
+  GeneratedRole,
   GeneratedSchedule,
   GeneratedThread,
   GeneratedThreadAssociation,
@@ -58,6 +59,14 @@ import type {
   ValidationError,
 } from "./types.js";
 import { ALL_TAGS, FOCUS_ICONS, TAG_IDS } from "./types.js";
+
+// Sidebar order baseline for ordinary seeded focuses. They must sort ABOVE each
+// role's Inbox (sentinel 1e15) and FYI (2e15), so stay well under 1e15. The base
+// sits in epoch-millis range (~2001) so a focus the user later creates in-app
+// (order = now-epoch-millis, ~2026) lands just below the seeded set but still
+// above the Inbox/FYI. STEP leaves room between focuses.
+const FOCUS_ORDER_BASE = 1_000_000_000_000; // 1e12
+const FOCUS_ORDER_STEP = 1000;
 
 // ============================================================================
 // User Management
@@ -817,6 +826,7 @@ function validate(
 
   // Collect all refs
   const contactRefs = new Set<string>();
+  const roleRefs = new Set<string>();
   const priorityRefs = new Set<string>();
   const sourceRefs = new Set<string>();
   const twistRefs = new Set<string>();
@@ -849,14 +859,59 @@ function validate(
     }
   }
 
-  // Validate priorities (recursive)
+  // Validate roles (must be collected before priorities so role_ref resolves)
+  if (data.roles) {
+    for (let i = 0; i < data.roles.length; i++) {
+      const role = data.roles[i];
+      const path = `roles[${i}]`;
+      if (!role.ref) {
+        addError(`${path}.ref`, "Missing ref");
+      } else if (roleRefs.has(role.ref)) {
+        addError(`${path}.ref`, `Duplicate ref: ${role.ref}`);
+      } else {
+        roleRefs.add(role.ref);
+      }
+      if (!role.name) addError(`${path}.name`, "Missing name");
+      if (
+        role.color !== undefined &&
+        (!Number.isInteger(role.color) || role.color < 0 || role.color > 7)
+      ) {
+        addError(`${path}.color`, `Invalid color: ${role.color} (expected 0-7)`);
+      }
+    }
+  }
+
+  // Validate priorities (recursive). Tracks how many inboxes each role has so we
+  // can enforce exactly one Inbox per role (mirrors idx_priority_role_inbox).
+  const inboxCountByRole: Record<string, number> = {};
   if (data.priorities) {
     for (let i = 0; i < data.priorities.length; i++) {
+      const top = data.priorities[i];
+      // The single top-level priority is the user's root and must be a role
+      // Inbox (it becomes the default role's Inbox, like activate_invited_user).
+      if (!top.inbox) {
+        addError(
+          `priorities[${i}].inbox`,
+          "The top-level (root) priority must be a role Inbox (inbox: true)"
+        );
+      }
       validatePriority(
-        data.priorities[i],
+        top,
         `priorities[${i}]`,
         priorityRefs,
+        roleRefs,
+        inboxCountByRole,
         addError
+      );
+    }
+  }
+  // Every declared role needs exactly one Inbox focus.
+  for (const ref of roleRefs) {
+    const count = inboxCountByRole[ref] ?? 0;
+    if (count !== 1) {
+      addError(
+        `roles`,
+        `Role "${ref}" must have exactly one Inbox focus (found ${count})`
       );
     }
   }
@@ -982,6 +1037,8 @@ function validatePriority(
   priority: Priority,
   path: string,
   refs: Set<string>,
+  roleRefs: Set<string>,
+  inboxCountByRole: Record<string, number>,
   addError: (path: string, message: string) => void
 ) {
   if (!priority.ref) {
@@ -994,6 +1051,16 @@ function validatePriority(
 
   if (!priority.title) {
     addError(`${path}.title`, "Missing title");
+  }
+
+  // Every focus must belong to a declared role (priority_role_or_fyi CHECK).
+  if (!priority.role_ref) {
+    addError(`${path}.role_ref`, "Missing role_ref");
+  } else if (!roleRefs.has(priority.role_ref)) {
+    addError(`${path}.role_ref`, `Unknown role_ref: ${priority.role_ref}`);
+  } else if (priority.inbox) {
+    inboxCountByRole[priority.role_ref] =
+      (inboxCountByRole[priority.role_ref] ?? 0) + 1;
   }
 
   if (
@@ -1011,6 +1078,8 @@ function validatePriority(
         priority.children[i],
         `${path}.children[${i}]`,
         refs,
+        roleRefs,
+        inboxCountByRole,
         addError
       );
     }
@@ -1306,6 +1375,15 @@ function generateSQL(
     `DELETE FROM priority_setting WHERE user_id = ${sqlString(userId)};`
   );
   lines.push(`DELETE FROM priority WHERE created_by = ${sqlString(userId)};`);
+  // Roles from prior seed runs (and the activate_invited_user default role).
+  // Must run AFTER the priority DELETE: priority.role_id has a RESTRICTing FK to
+  // role. Safe to re-create despite `role` being synced because the seed uses
+  // deterministic role ids (stableUUID at the role call site) — the INSERT below
+  // re-creates each role under its original primary key in the same transaction,
+  // so clients merge it in place (same pattern as groups). A pre-fix random-id
+  // activation role left on a client is stranded, but the demo account is
+  // re-seeded deliberately.
+  lines.push(`DELETE FROM role WHERE user_id = ${sqlString(userId)};`);
   // Remove non-self user_contact rows so a reseed doesn't carry forward
   // people who happened to share threads with the demo account between runs
   // (visible in share/mention pickers via user.actor regardless of `linked`).
@@ -1350,6 +1428,8 @@ function generateSQL(
 
   // Build reference maps
   const contactIdMap: RefMap<string> = { user: contactId };
+  const roleIdMap: RefMap<string> = {}; // role ref -> role id (deterministic)
+  const roleColorByRef: RefMap<number> = {}; // role ref -> theme colour
   const priorityIdMap: RefMap<string> = {};
   const sourceIdMap: RefMap<string> = {}; // source ref -> twist_instance_id
   const sourceByRef: RefMap<SeedSource> = {}; // source ref -> SeedSource (for direct-URL icon fallback)
@@ -1359,6 +1439,7 @@ function generateSQL(
 
   // Generated entity arrays
   const contacts: GeneratedContact[] = [];
+  const roles: GeneratedRole[] = [];
   const priorities: GeneratedPriority[] = [];
   const prioritySettings: GeneratedPrioritySettings[] = [];
   const threads: GeneratedThread[] = [];
@@ -1404,7 +1485,32 @@ function generateSQL(
     }
   }
 
-  // Process priorities (recursive)
+  // Process roles. Deterministic ids (stableUUID) so a re-seed's DELETE+INSERT
+  // is an in-place primary-key update the Flutter client merges, rather than a
+  // new row that strands the prior copy (same rationale as groups). Sidebar
+  // `order` follows YAML order (first role on top). created_at is staggered
+  // later via UPDATE so the first role is the user's oldest — `default_role_id`
+  // / `fallback_inbox_id` resolve to it (the catch-all Inbox).
+  if (data.roles) {
+    for (let i = 0; i < data.roles.length; i++) {
+      const role = data.roles[i];
+      const id = stableUUID(`role:${userId}:${role.ref}`);
+      roleIdMap[role.ref] = id;
+      roleColorByRef[role.ref] = role.color ?? 0;
+      roles.push({
+        id,
+        user_id: userId,
+        name: role.name,
+        color: role.color ?? 0,
+        order: i + 1,
+      });
+    }
+  }
+
+  // Process priorities (recursive). orderCounter assigns each ordinary focus an
+  // increasing sidebar order in YAML sequence (shared across all roles — each
+  // role's focuses still read top-to-bottom in YAML order).
+  const orderCounter = { next: 0 };
   if (data.priorities) {
     for (let i = 0; i < data.priorities.length; i++) {
       processPriority(
@@ -1414,6 +1520,9 @@ function generateSQL(
         userId,
         baseDate,
         priorityIdMap,
+        roleIdMap,
+        roleColorByRef,
+        orderCounter,
         priorities,
         prioritySettings,
         contactIdMap,
@@ -1611,19 +1720,50 @@ function generateSQL(
     lines.push("");
   }
 
+  // Roles (must precede priorities — priority.role_id FKs to role).
+  if (roles.length > 0) {
+    lines.push("-- Roles (group focuses; provide colour + notification template)");
+    lines.push(
+      'INSERT INTO role (id, created_by, user_id, name, color, "order", created_at, updated_at)'
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < roles.length; i++) {
+      const r = roles[i];
+      const comma = i < roles.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(r.id)}, ${sqlString(userId)}, ${sqlString(
+          r.user_id
+        )}, ${sqlString(r.name)}, ${r.color}, ${r.order}, NOW(), NOW())${comma}`
+      );
+    }
+    lines.push("");
+    // set_created_at forces created_at = now() on INSERT, so all roles would
+    // share the transaction timestamp and "oldest role" (default_role_id /
+    // fallback_inbox_id) would be ambiguous. Stagger created_at via UPDATE
+    // (which does not fire set_created_at) so the FIRST YAML role is
+    // unambiguously the oldest — i.e. the user's default role / catch-all Inbox.
+    lines.push("-- Stagger role created_at so the first role is the oldest (default role)");
+    for (let i = 0; i < roles.length; i++) {
+      const r = roles[i];
+      const secondsAgo = roles.length - i; // first role -> largest offset -> oldest
+      lines.push(
+        `UPDATE role SET created_at = NOW() - INTERVAL '${secondsAgo} seconds' WHERE id = ${sqlString(r.id)};`
+      );
+    }
+    lines.push("");
+  }
+
   // Priorities
   if (priorities.length > 0) {
     lines.push("-- Priorities");
-    // role_id defaults to the owner's default role (their oldest live role) so
-    // every seeded focus groups under a role and satisfies the
-    // priority_role_or_fyi CHECK (role_id IS NOT NULL OR is_fyi). Seeded users
-    // are pre-existing and activated, so default_role_id() is non-null.
-    // NOTE: the cleanup DELETE above also wiped the two special focuses that
-    // activate_invited_user creates — the is_inbox flag on the root and the
-    // role-less FYI focus — and none of the seed-layout rows below restore
-    // them. The block after this INSERT re-creates both (see there).
+    // Each focus carries an explicit role_id (resolved from its YAML role_ref),
+    // satisfying the priority_role_or_fyi CHECK. is_inbox marks the role's Inbox
+    // (from `inbox: true`); the Inbox's colour follows its role via the priority
+    // .color column, while ordinary focuses leave color NULL and take their
+    // colour from priority_setting (below). The per-role FYI focuses the cleanup
+    // DELETE removed are recreated in the block after this INSERT (one per role).
     lines.push(
-      "INSERT INTO priority (id, created_by, title, icon, path, archived_at, role_id, created_at, updated_at)"
+      "INSERT INTO priority (id, created_by, title, icon, path, archived_at, role_id, is_inbox, color, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < priorities.length; i++) {
@@ -1634,50 +1774,60 @@ function generateSQL(
           p.title
         )}, ${sqlString(p.icon)}, ${sqlString(p.path)}, ${sqlString(
           p.archived_at
-        )}, public.default_role_id(${sqlString(p.created_by)}::uuid), NOW(), NOW())${comma}`
+        )}, ${sqlString(p.role_id)}, ${p.is_inbox}, ${
+          p.color === null ? "NULL" : p.color
+        }, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
 
-    // Restore the activate_invited_user artifacts the cleanup DELETE removed:
-    //   1. The user's primary root focus (nlevel(path) = 1) becomes their
-    //      default-role Inbox. fallback_inbox_id() requires a live is_inbox
-    //      priority — without it, pending/unclassified threads and threads
-    //      released from archived focuses resolve to NULL and disappear from
-    //      every focus.
-    //   2. The role-less global FYI focus (is_fyi satisfies priority_role_or_fyi
-    //      without a role_id; muted by default) where the classifier files
-    //      low-signal mail.
-    // Both are scoped to ONE root so the per-role/per-user unique indexes
-    // (idx_priority_role_inbox, idx_priority_user_fyi) hold even if a layout
-    // declares multiple top-level priorities. The seed assigns every focus to
-    // default_role_id (the single oldest role), so exactly one Inbox is correct.
-    // The primary root is chosen deterministically by path (matches the
-    // sidebar's ltree ordering).
+    // Recreate each role's FYI focus (the cleanup DELETE wiped them). Mirrors
+    // activate_invited_user / upsert_role: a muted (early_notifications_enabled
+    // = FALSE), newspaper-iconed, keyless is_fyi focus per role — the classifier
+    // files low-signal mail there. Each FYI is a child of the user's single root
+    // focus (legacy ltree placement; grouping is by role_id, not path). We also
+    // seed the sentinel sidebar orders (Inbox 1e15, FYI 2e15) so both default to
+    // the bottom of the role; user focuses (creation-time order) sort above.
+    // The unique indexes idx_priority_role_inbox / idx_priority_role_fyi hold
+    // because each role gets exactly one Inbox (from YAML) and one FYI (here).
     const rootSubquery =
       `(SELECT id FROM priority WHERE created_by = ${sqlString(userId)} ` +
       `AND nlevel(path) = 1 ORDER BY path LIMIT 1)`;
-    lines.push(
-      "-- Restore activation focuses (root Inbox flag + FYI) removed by the cleanup DELETE"
-    );
-    lines.push(`UPDATE priority SET is_inbox = TRUE WHERE id = ${rootSubquery};`);
-    lines.push(
-      "INSERT INTO priority (created_by, user_id, title, path, color, key, role_id, is_fyi, early_notifications_enabled, created_at, updated_at)"
-    );
-    lines.push(
-      `SELECT root.created_by, ${sqlString(userId)}, 'FYI', public.generate_path(root.path), 0, 'fyi', NULL, TRUE, FALSE, NOW(), NOW()`
-    );
-    lines.push(`FROM priority root WHERE root.id = ${rootSubquery};`);
+    lines.push("-- Per-role FYI focuses + sentinel Inbox/FYI sidebar orders");
+    for (const r of roles) {
+      const roleId = sqlString(r.id);
+      const inboxSubquery =
+        `(SELECT id FROM priority WHERE created_by = ${sqlString(userId)} ` +
+        `AND role_id = ${roleId} AND is_inbox AND archived_at IS NULL LIMIT 1)`;
+      const fyiSubquery =
+        `(SELECT id FROM priority WHERE created_by = ${sqlString(userId)} ` +
+        `AND role_id = ${roleId} AND is_fyi AND archived_at IS NULL LIMIT 1)`;
+      lines.push(
+        "INSERT INTO priority (created_by, user_id, title, path, color, icon, role_id, is_fyi, early_notifications_enabled, created_at, updated_at)"
+      );
+      lines.push(
+        `SELECT root.created_by, ${sqlString(userId)}, 'FYI', public.generate_path(root.path), ${r.color}, 'newspaper', ${roleId}, TRUE, FALSE, NOW(), NOW()`
+      );
+      lines.push(`FROM priority root WHERE root.id = ${rootSubquery};`);
+      lines.push(
+        "INSERT INTO priority_setting (priority_id, user_id, key, value, updated_at)"
+      );
+      lines.push("VALUES");
+      lines.push(
+        `  (${inboxSubquery}, ${sqlString(userId)}, 'order', '1e15'::jsonb, NOW()),`
+      );
+      lines.push(
+        `  (${fyiSubquery}, ${sqlString(userId)}, 'order', '2e15'::jsonb, NOW())`
+      );
+      lines.push(
+        "ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;"
+      );
+    }
     lines.push("");
   }
 
   // Priority settings (key/value format)
   if (prioritySettings.length > 0) {
-    lines.push("-- Priority settings");
-    lines.push(
-      "INSERT INTO priority_setting (priority_id, user_id, key, value, updated_at)"
-    );
-    lines.push("VALUES");
     const settingRows: string[] = [];
     for (const ps of prioritySettings) {
       if (ps.color !== null) {
@@ -1690,9 +1840,24 @@ function generateSQL(
           `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, 'pomodoro', '${ps.pomodoro}'::jsonb, NOW())`
         );
       }
+      if (ps.order !== null) {
+        settingRows.push(
+          `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, 'order', '${ps.order}'::jsonb, NOW())`
+        );
+      }
     }
-    lines.push(settingRows.join(",\n") + ";");
-    lines.push("");
+    // Inboxes carry colour on priority.color and their order via the per-role
+    // sentinel block, so they contribute no rows here — guard against an empty
+    // INSERT if a layout ever yields only inbox focuses.
+    if (settingRows.length > 0) {
+      lines.push("-- Priority settings");
+      lines.push(
+        "INSERT INTO priority_setting (priority_id, user_id, key, value, updated_at)"
+      );
+      lines.push("VALUES");
+      lines.push(settingRows.join(",\n") + ";");
+      lines.push("");
+    }
   }
 
   // Groups
@@ -1997,6 +2162,9 @@ function processPriority(
   userId: string,
   baseDate: string,
   idMap: RefMap<string>,
+  roleIdMap: RefMap<string>,
+  roleColorByRef: RefMap<number>,
+  orderCounter: { next: number },
   outPriorities: GeneratedPriority[],
   outSettings: GeneratedPrioritySettings[],
   contactIdMap?: RefMap<string>,
@@ -2005,14 +2173,20 @@ function processPriority(
   const id = generateUUID();
   idMap[priority.ref] = id;
 
-  // The sidebar orders focuses by ltree path (PriorityOrder.nested →
-  // ORDER BY path). Encode the YAML sibling index as a zero-padded prefix on
-  // the child path segment so display order matches YAML order deterministically
-  // (a bare random segment sorted randomly).
+  // The legacy ltree path still encodes the YAML sibling index (zero-padded
+  // prefix) for any path-ordered reader, but the sidebar now orders focuses by
+  // the `order` priority_setting (pure-order comparator), so we also emit an
+  // explicit order below.
   const orderPrefix = String(siblingIndex).padStart(2, "0");
   const path = parentPath
     ? `${parentPath}.${orderPrefix}${generateRandomPath(4)}`
     : generateRandomPath(12);
+
+  // role_ref is validated to reference a declared role. The Inbox's colour
+  // follows its role (priority.color column); ordinary focuses leave
+  // priority.color null and carry colour via priority_setting (below).
+  const roleRef = priority.role_ref!;
+  const isInbox = priority.inbox ?? false;
 
   outPriorities.push({
     id,
@@ -2023,14 +2197,27 @@ function processPriority(
     archived_at: priority.archived_at
       ? parseDateOffset(baseDate, priority.archived_at).toISOString()
       : null,
+    role_id: roleIdMap[roleRef],
+    is_inbox: isInbox,
+    color: isInbox ? roleColorByRef[roleRef] ?? 0 : null,
   });
 
-  if (priority.settings) {
+  // Sidebar order. The pure-order comparator ties seeded focuses (all share the
+  // transaction `created_at`), so give each ordinary focus an explicit,
+  // increasing order in YAML sequence — well below the Inbox/FYI sentinels
+  // (1e15/2e15), so they sort above those two. Inboxes get their sentinel in the
+  // per-role block, so emit no order here for them.
+  const order = isInbox
+    ? null
+    : FOCUS_ORDER_BASE + orderCounter.next++ * FOCUS_ORDER_STEP;
+
+  if (priority.settings || order !== null) {
     outSettings.push({
       priority_id: id,
       user_id: userId,
-      color: priority.settings.color ?? null,
-      pomodoro: priority.settings.pomodoro_duration ?? null,
+      color: priority.settings?.color ?? null,
+      pomodoro: priority.settings?.pomodoro_duration ?? null,
+      order,
     });
   }
 
@@ -2044,6 +2231,9 @@ function processPriority(
         userId,
         baseDate,
         idMap,
+        roleIdMap,
+        roleColorByRef,
+        orderCounter,
         outPriorities,
         outSettings,
         contactIdMap,

@@ -31,6 +31,9 @@ config:
 contacts:
   -  # Contact definitions
 
+roles:
+  -  # Role definitions (group focuses; provide colour + notifications)
+
 priorities:
   -  # Priority definitions
 
@@ -87,14 +90,53 @@ contacts:
     name: Bob Smith
 ```
 
+## Roles
+
+Roles group a user's focuses in the sidebar and supply a colour (and, in the
+app, a notification template) that each focus follows. Every focus must belong
+to a role (`priority.role_ref`). The generator creates the role rows, and for
+**each role** it also synthesizes two system focuses the app expects:
+
+- an **Inbox** (`is_inbox`) — the focus you flag with `inbox: true` (see below);
+  the role's catch-all. The first role's Inbox is the user's root focus and the
+  default/fallback Inbox for unclassified threads.
+- an **FYI** (`is_fyi`) — a muted "FYI" focus (newspaper icon) for low-signal
+  mail. Synthesized automatically; do **not** declare it in `priorities`.
+
+The **first** role in the list is treated as the user's oldest (default) role.
+
+**Fields:**
+
+- `ref` (required): Unique reference string (referenced by `priority.role_ref`)
+- `name` (required): Display name (e.g. "AFC Marlow", "Personal")
+- `color` (optional, default 0): Theme colour index 0-7. The role's Inbox and FYI
+  follow this colour.
+
+```yaml
+roles:
+  - ref: work_role
+    name: Work
+    color: 1
+  - ref: personal_role
+    name: Personal
+    color: 4
+```
+
 ## Priorities
 
 Priorities are hierarchical (like folders/projects) and use a tree structure.
+Every focus belongs to a role via `role_ref`, and exactly one focus per role is
+its Inbox (`inbox: true`). The single top-level (root) priority must be an Inbox.
 
 **Fields:**
 
 - `ref` (required): Unique reference string
-- `title` (required): Display title
+- `title` (required): Display title (Inbox focuses are usually titled `Inbox`; the
+  app prefixes the role name, e.g. "Work › Inbox")
+- `role_ref` (required): The role this focus groups under (must match a `roles[].ref`)
+- `inbox` (optional, default: false): Marks this focus as its role's Inbox
+  (`is_inbox`). Exactly one per role. Its colour/icon come from the role, so omit
+  `icon` and `settings.color` on an inbox.
 - `icon` (optional): A curated focus-icon key (one of: user, family, briefcase, house, code, receipt, bullhorn, handshake, rocket, building, lightbulb, heart, flask, paintbrush, dumbbell, seedling, balloons, music, plane, mountain, globe, billboard). Written to `priority.icon`. Unknown keys warn but don't fail.
 - `root` (optional, default: false): Whether this is a root priority (only one per user)
 - `archived_at` (optional): Date offset when archived
@@ -109,31 +151,38 @@ Priorities are hierarchical (like folders/projects) and use a tree structure.
 - `pomodoro_duration`: Duration in minutes
 
 ```yaml
+roles:
+  - ref: work_role
+    name: Work
+    color: 0
+  - ref: personal_role
+    name: Personal
+    color: 2
+
 priorities:
-  - ref: work
-    title: Work
+  # Root focus = the Work role's Inbox (the user's catch-all).
+  - ref: work_inbox
+    title: Inbox
     root: true
-    settings:
-      color: 0
+    role_ref: work_role
+    inbox: true
     children:
       - ref: project-alpha
         title: Project Alpha
+        role_ref: work_role
         settings:
           color: 1
-        children:
-          - ref: sprint-1
-            title: Sprint 1
-            # No color - inherits from project-alpha
-
       - ref: project-beta
         title: Project Beta
-        # No color - inherits from work
+        role_ref: work_role
+        # No color - takes the Work role colour
 
-  - ref: personal
-    title: Personal
-    root: false
-    settings:
-      color: 2
+      # The Personal role's Inbox (nested here only for ltree placement; the
+      # sidebar groups by role, not path).
+      - ref: personal_inbox
+        title: Inbox
+        role_ref: personal_role
+        inbox: true
 ```
 
 ## Sources
@@ -529,23 +578,30 @@ contacts:
     email: bob@company.com
     name: Bob Smith
 
+roles:
+  - ref: work_role
+    name: Work
+    color: 0
+
 priorities:
-  - ref: work
-    title: Work
+  - ref: work_inbox
+    title: Inbox
     root: true
-    settings:
-      color: 0
+    role_ref: work_role
+    inbox: true
     children:
       - ref: project-alpha
         title: Project Alpha
+        role_ref: work_role
         children:
           - ref: sprint-1
             title: Sprint 1
+            role_ref: work_role
 
 sources:
   - ref: slack
     name: Slack
-    priority_ref: work
+    priority_ref: work_inbox
     logo: "https://api.iconify.design/logos/slack-icon.svg"
     link_types:
       - type: message
@@ -554,7 +610,7 @@ sources:
 
   - ref: github
     name: GitHub
-    priority_ref: work
+    priority_ref: work_inbox
     logo: "https://api.iconify.design/logos/github-icon.svg"
     logo_dark: "https://api.iconify.design/simple-icons/github.svg?color=%23FFFFFF"
     link_types:

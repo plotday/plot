@@ -275,15 +275,17 @@ Widget _assigneeOptionTile(_AssigneeOption option, ActorId? currentId) {
           ? option.email
           : null,
       // Leading avatar, matching the share modal's rows. The 20/12 padding and
-      // iconSizes.base size reproduce the spacing the command-based share rows
-      // get from the leading slot + 12px icon gap.
+      // iconSizes.base avatar reproduce the spacing the command-based share
+      // rows get from the leading slot + 12px icon gap. The "remove" glyph is a
+      // UI icon, so it takes the cap-height leading size rather than filling the
+      // avatar's box.
       leadingBuilder: (isHovered, hasFocus) => Padding(
         padding: const EdgeInsets.only(left: 20, right: 12),
         child: option.id != null
             ? Avatar(actorId: option.id, size: context.theme.iconSizes.base)
             : Icon(
                 PlotIcon.shareRemove,
-                size: context.theme.iconSizes.base,
+                size: context.theme.iconSizes.leading,
                 color: context.theme.plotColors.muted,
               ),
       ),

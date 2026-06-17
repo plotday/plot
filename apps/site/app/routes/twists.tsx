@@ -120,7 +120,7 @@ export default function Twists() {
                   Twists implement the workflows your team relies on — turning
                   incoming emails into tasks, routing threads to the right place,
                   keeping projects in sync. The repetitive parts run themselves,
-                  so your time goes to the work only you can do.
+                  so your time goes to your best work.
                 </Text>
               </Stack>
               <Stack className={classes.card} gap="md">

@@ -5,18 +5,35 @@
 - When you have more than one role, your focuses now show the role they belong to everywhere they
   appear outside the sidebar — in the header, on threads, and in pickers — written as **Role ›
   Focus**, with the role shown in its own colour. That makes it easy to tell, say, a Work focus from
-  a Personal one at a glance. The sidebar stays as-is since it already groups focuses under each
-  role, and if you only have one role nothing changes.
+  a Personal one at a glance. The sidebar normally stays as-is since it already groups focuses under
+  each role — but when you search, where the results are listed flat, each focus now shows its role
+  too, so you can tell apart same-named focuses like each role's Inbox. If you only have one role
+  nothing changes.
 - Your browser tab and desktop window title now include the focus you're viewing (and its role when
   you have more than one), so Plot is easy to pick out among your open tabs and windows.
+- Low-signal mail — newsletters, receipts, promotions, and service notifications — now gathers in an
+  **FYI** focus under each of your roles, shown just below that role's Inbox, so work newsletters land
+  under Work and personal ones under Personal. It keeps the quiet stuff out of your Inbox while staying
+  one tap away, and it never sends notifications. Otherwise it's an ordinary focus — you can reorder it
+  and change its colour. Your role's Inbox is now reorderable the same way.
 - Choosing where to start during setup is clearer. Each choice — Work, Project, Personal, School,
   Other — now has an icon, and picking one moves you straight on: when your choice needs a name (your
   workplace or project) Plot asks for it on its own step with the box ready to type, instead of a
   field tucked below the list that was easy to miss. Naming it is required, and you can press Enter to
   continue or use Back to pick a different one.
+- In the sidebar, each role now reads clearly as a heading above the focuses it groups: the role name
+  shows in small uppercase lettering, the open role's focuses sit just inside a faint line in the
+  role's colour, and a collapsed role shows a quiet arrow so it's obvious you can tap to open it. The
+  bold text and unread dot still tell you, at a glance, which roles have active or unread work inside.
 
 ### Fixes
 
+- Icons that sit beside text — in the sidebar, menus, pickers, and the new-thread form — are now a
+  touch smaller so they sit level with the words next to them instead of looking oversized, and they
+  line up in a consistent column. The result is a cleaner, less crowded look throughout.
+- Your Personal role's Inbox now shows just like every other role's Inbox — with the inbox icon, its
+  role name (**Personal › Inbox**), and the role's colour. Previously it appeared as a plain "Inbox"
+  with no role and the wrong colour, making it hard to tell apart from your other roles' Inboxes.
 - Opening an older thread you hadn't looked at before now loads its messages faster. Plot fetches the
   thread's messages, tags, and reactions together in a single request instead of three separate ones,
   which cuts the wait — most noticeable on threads with a lot of history.

@@ -154,9 +154,7 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                     // The accordion expands the selected focus's role; the
                     // Everything feed expands none. Computed here (page wires
                     // Bloc state) and handed to PrioritiesList.
-                    final expandedRoleId = everything
-                        ? null
-                        : selected?.roleId;
+                    final expandedRoleId = everything ? null : selected?.roleId;
                     return Column(
                       mainAxisSize: layoutState.multiPanel
                           ? MainAxisSize.min
@@ -311,6 +309,10 @@ class _GlobalViewSidebar extends StatelessWidget {
                 selectedBorder: true,
                 borderRadius: itemBorderRadius,
                 showAncestry: true,
+                // The flat search list drops the sidebar's role accordion, so
+                // name a focus's role when the user has more than one — without
+                // it, each role's "Inbox" is indistinguishable.
+                showRole: true,
                 // Search results read uniformly: no active-state bold and no
                 // unread dot — those cues belong to normal navigation.
                 boldActive: false,
@@ -380,7 +382,7 @@ class LeftPanelFooter extends StatelessWidget {
                       context,
                       Icon(
                         PlotIcon.account,
-                        size: context.theme.iconSizes.base,
+                        size: context.theme.iconSizes.leading,
                         color: highlighted
                             ? context.theme.colors.foreground
                             : context.theme.plotColors.muted,

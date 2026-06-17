@@ -1,7 +1,9 @@
--- priority_role_or_fyi: every focus must have a role unless it is the global
--- FYI focus. Also exercises default_role_id() and the creation-path defaulting
--- (upsert_priority and the role_id => default_role_id(user) pattern used by the
--- REST endpoint, twist focus creation, and the seed generator).
+-- priority_role_or_fyi: every focus must have a role unless it is an FYI focus.
+-- FYI focuses are now per-role (role_id set), but the CHECK still permits a
+-- role-less is_fyi row for deploy-window compat. Also exercises default_role_id()
+-- and the creation-path defaulting (upsert_priority and the role_id =>
+-- default_role_id(user) pattern used by the REST endpoint, twist focus creation,
+-- and the seed generator).
 BEGIN;
 SET LOCAL search_path = public, extensions;
 SELECT plan(5);
@@ -16,7 +18,7 @@ DECLARE
 BEGIN
     -- Inserting a user fires accept_invitations_on_signup → activate_invited_user,
     -- which auto-creates the user's default "Personal" role, its root Inbox
-    -- priority (role_id set), and the role-less FYI focus.
+    -- priority (role_id set), and that role's FYI focus (role_id set).
     INSERT INTO "public"."user" (id, email) VALUES (v_user, 'role-or-fyi@test.local');
     SELECT id, path, role_id INTO v_root, v_root_path, v_role
     FROM priority WHERE user_id = v_user AND nlevel(path) = 1;
@@ -41,13 +43,15 @@ SELECT throws_ok(
          current_setting('test.user'), current_setting('test.root_path')),
   '23514', NULL, 'role-less non-FYI focus is rejected by priority_role_or_fyi');
 
--- (b) The global FYI focus is role-less (role_id NULL) and is_fyi — permitted by
--- the CHECK. Its mere existence (auto-created above) proves the row passed.
-SELECT ok(
-  (SELECT role_id IS NULL AND is_fyi
-   FROM public.priority
-   WHERE user_id = current_setting('test.user')::uuid AND is_fyi AND archived_at IS NULL),
-  'the global FYI focus is role-less (role_id NULL) and is_fyi — allowed by the CHECK');
+-- (b) The CHECK still permits a role-less is_fyi focus (deploy-window compat for
+-- older workers that briefly insert one). The partial unique index keys on
+-- role_id, so a role-less (NULL) is_fyi row never collides with the role-bound
+-- FYI created at activation.
+SELECT lives_ok(
+  format($q$INSERT INTO public.priority (created_by, user_id, title, path, role_id, is_fyi, icon)
+            VALUES (%1$L, %1$L, 'RolelessFYI', %2$L::ltree || generate_path(NULL), NULL, TRUE, 'newspaper')$q$,
+         current_setting('test.user'), current_setting('test.root_path')),
+  'a role-less is_fyi focus is permitted by priority_role_or_fyi (deploy-window compat)');
 
 -- (c) Creation paths set role_id. REST/twist/seed pattern: an insert that
 -- defaults role_id => default_role_id(user) is accepted.

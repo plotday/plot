@@ -960,12 +960,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
                 ),
               );
             }
-            // Inbox (the root focus) and the synthetic Everything feed are
-            // fixed semantic views. The sidebar draws both with the inbox /
-            // inboxes glyph in the Resolution brand colour rather than the
-            // root focus's own icon and colour — match that here instead of
-            // letting FocusLabel fall back to the root's appearance.
-            if (state.everything || state.context.root) {
+            // The synthetic "Everything" feed is a fixed semantic view: draw
+            // it with the inboxes glyph in the Resolution brand colour. The
+            // Inbox is not special-cased here — it's an ordinary role focus,
+            // so it falls through and FocusLabel brands it via `isInbox`
+            // (inbox glyph, role prefix, role colour) like any other focus.
+            if (state.everything) {
               final accent = context.colour.colours.fromTheme(
                 const ThemeColor.defaultColor(),
               );
@@ -974,10 +974,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
                   priority: state.context,
                   boldLeaf: true,
                   color: accent,
-                  iconOverride: state.everything
-                      ? PlotIcon.inboxes
-                      : PlotIcon.inbox,
-                  titleOverride: state.everything ? 'Everything' : 'Inbox',
+                  iconOverride: PlotIcon.inboxes,
+                  titleOverride: 'Everything',
                 ),
               );
             }

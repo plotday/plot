@@ -42,16 +42,16 @@ class PrioritiesState extends Equatable {
     );
   }
 
-  /// Non-archived focuses filed under [roleId], sorted by order with the
-  /// role's Inbox last. Mirrors the sidebar ordering ([Order.between] writes
-  /// the `order` column; ties break on creation time).
+  /// Non-archived focuses filed under [roleId], sorted purely by order then
+  /// creation time. Mirrors the sidebar ordering ([Order.between] writes the
+  /// `order` column). The Inbox and FYI are ordinary focuses that default to
+  /// the bottom two via large server-seeded sentinel orders, not a sort pin.
   List<Priority> focusesForRole(RoleId roleId) {
     final list =
         priorities
             .where((p) => p.roleId == roleId && p.archivedAt == null)
             .toList()
           ..sort((a, b) {
-            if (a.isInbox != b.isInbox) return a.isInbox ? 1 : -1; // Inbox last
             final c = a.order.value.compareTo(b.order.value);
             return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
           });

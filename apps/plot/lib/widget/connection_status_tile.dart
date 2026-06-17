@@ -175,7 +175,7 @@ class ConnectionStatusTile extends StatelessWidget {
       icon,
       Icon(
         icon,
-        size: context.theme.iconSizes.base,
+        size: context.theme.iconSizes.leading,
         color: highlighted
             ? context.theme.colors.foreground
             : context.theme.plotColors.muted,
@@ -188,19 +188,23 @@ class ConnectionStatusTile extends StatelessWidget {
     IconData icon,
     Widget child,
   ) {
-    // FontAwesome plug-circle-* glyphs are 640×512 — they paint wider than
-    // the 16px square the Icon widget reserves and overflow to the right,
-    // crowding the label. Shift the icon left by half the overflow so its
-    // visual centre matches a standard square icon, keeping the label aligned
-    // with neighbouring priority tiles.
+    // FontAwesome plug-circle-* glyphs are 640×512 — they paint wider than the
+    // square the Icon widget reserves and overflow to the right, crowding the
+    // label. Shift the icon left by half the overflow so its visual centre
+    // matches a standard square icon, keeping the label aligned with
+    // neighbouring priority tiles. The overflow scales with the rendered glyph
+    // size, so derive the shift from the cap-height leading size used above.
     final isWidePlug =
         icon == PlotIcon.plugCirclePlus ||
         icon == PlotIcon.plugCircleXmark ||
         icon == PlotIcon.plugCircleExclamation ||
         icon == PlotIcon.plugCircleBolt;
-    final base = context.theme.iconSizes.base;
+    final glyphSize = context.theme.iconSizes.leading;
     final shifted = isWidePlug
-        ? Transform.translate(offset: Offset(-base * 0.125, 0), child: child)
+        ? Transform.translate(
+            offset: Offset(-glyphSize * 0.125, 0),
+            child: child,
+          )
         : child;
     return (isHovered, hasFocus) => sidebarLeading(context, shifted);
   }

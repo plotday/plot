@@ -37,7 +37,7 @@ class ChannelComposeField extends StatelessWidget {
           ComposeLeadingIcon(
             child: Icon(
               FontAwesomeIcons.folder,
-              size: theme.iconSizes.base,
+              size: theme.iconSizes.leading,
             ),
           ),
           const SizedBox(width: composeIconGap),

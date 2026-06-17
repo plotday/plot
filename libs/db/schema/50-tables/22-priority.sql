@@ -33,16 +33,17 @@ CREATE TABLE "public"."priority" (
     "config" jsonb,
     "facet_filters" jsonb,
     "description" text,
-    -- Role grouping (Plan: focus-roles). Every focus belongs to a role except
-    -- the single global FYI focus; enforced by the priority_role_or_fyi CHECK
-    -- below. Kept nullable at the column level precisely so the FYI row
-    -- (role_id NULL, is_fyi TRUE) is allowed — a plain NOT NULL would reject it.
+    -- Role grouping (Plan: focus-roles). Every focus belongs to a role. The
+    -- priority_role_or_fyi CHECK below is kept nullable-tolerant only for the
+    -- deploy window (older workers briefly insert a role-less FYI); current
+    -- code always sets role_id, including on FYI focuses.
     "role_id" uuid REFERENCES public.role,
     -- Marks the role's single auto-managed Inbox focus. Partial-unique below.
     "is_inbox" boolean NOT NULL DEFAULT FALSE,
-    -- Marks the user's single global FYI focus (low-signal mail). Role-less
-    -- (role_id IS NULL); partial-unique per user below. Server-managed. This is
-    -- the only focus permitted to have a NULL role_id (see priority_role_or_fyi).
+    -- Marks a role's auto-managed FYI focus (low-signal mail). One per role
+    -- (role_id set; partial-unique per role below). Server-managed. Defaults
+    -- just below its role's Inbox; muted (no notifications). The classifier
+    -- files low-signal mail into the best-matching role's FYI.
     "is_fyi" boolean NOT NULL DEFAULT FALSE,
     -- Concrete notification settings the focus follows from its role
     -- (see 95-triggers/30-role-propagation.sql). NULL = app default.
@@ -51,11 +52,12 @@ CREATE TABLE "public"."priority" (
     "see_within" jsonb,
     "notification_cleared_at" timestamp with time zone,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
-    -- Every focus must belong to a role, except the single global FYI focus
-    -- (intentionally role-less). focus-roles wires role_id into every creation
-    -- path, with default_role_id() as the fallback for paths that don't supply
-    -- one. This supersedes the once-planned `ALTER COLUMN role_id SET NOT NULL`
-    -- contract step, which would have rejected the FYI row (role_id NULL).
+    -- Every focus must belong to a role. focus-roles wires role_id into every
+    -- creation path (Inbox, FYI, and user focuses), with default_role_id() as
+    -- the fallback. The `OR is_fyi` escape is retained only so a brief
+    -- deploy-window insert by an older worker (which created a role-less FYI)
+    -- still satisfies the CHECK; tightening to a bare NOT NULL is a later
+    -- contract step once no live code creates role-less FYIs.
     CONSTRAINT priority_role_or_fyi CHECK ("role_id" IS NOT NULL OR "is_fyi")
 );
 
@@ -76,9 +78,9 @@ CREATE UNIQUE INDEX idx_priority_role_inbox ON "public"."priority" ("role_id")
 WHERE
     "is_inbox" AND "archived_at" IS NULL;
 
--- At most one live FYI focus per user. Keyed on user_id (not role_id) because
--- the FYI focus is role-less, so role_id is NULL and can't be the unique key.
-CREATE UNIQUE INDEX idx_priority_user_fyi ON "public"."priority" ("user_id")
+-- At most one live FYI focus per role (mirrors idx_priority_role_inbox). Each
+-- role owns its own FYI now, so the key is role_id, not user_id.
+CREATE UNIQUE INDEX idx_priority_role_fyi ON "public"."priority" ("role_id")
 WHERE
     "is_fyi" AND "archived_at" IS NULL;
 

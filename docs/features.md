@@ -215,11 +215,13 @@ instead of all day long. The rest of your day stays yours.
   an unread indicator or send a notification.
 - Low-importance material (promotions, unsolicited pitches, cold outreach) is kept available but
   never pings you, never lands in a digest, and never lights up a focus.
-- A global **FYI** focus, just above Everything, gathers this low-signal mail — promotions,
-  newsletters and long reads, receipts, and routine notifications — so the Inbox stays human
-  collaboration. It's muted by default (no notifications, no unread count) for skimming on your own
-  schedule, and moving anything out teaches Plot to route similar messages elsewhere. Actionable
-  items (bills to pay, one-time codes, confirm links) are deliberately kept out.
+- Each role has its own **FYI** focus, sitting just below that role's Inbox, that gathers this
+  low-signal mail — promotions, newsletters and long reads, receipts, and routine notifications — so
+  the Inbox stays human collaboration. Mail routes to the FYI of whichever role it best fits, so work
+  newsletters and personal ones stay apart. The FYI never sends notifications, so you skim it on your
+  own schedule; otherwise it's an ordinary focus you can reorder and recolour. Moving anything out
+  teaches Plot to route similar messages elsewhere. Actionable items (bills to pay, one-time codes,
+  confirm links) are deliberately kept out.
 - Truly time-sensitive threads are flagged urgent and notify you right away — even outside your
   normal notification hours.
 - You stay in control: drag a thread to reclassify it, and Plot honors the correction.

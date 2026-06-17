@@ -81,7 +81,7 @@ class ContactsComposeField extends StatelessWidget {
           ComposeLeadingIcon(
             child: Icon(
               FontAwesomeIcons.usersSlash,
-              size: theme.iconSizes.base,
+              size: theme.iconSizes.leading,
             ),
           ),
           const SizedBox(width: composeIconGap),

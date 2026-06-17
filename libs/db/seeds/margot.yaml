@@ -47,41 +47,73 @@ contacts:
     email: della.fenwick@afcmarlow.com
     name: Della Fenwick
 
+roles:
+  # Margot's three roles. The demo focuses on AFC Marlow (all the club focuses
+  # live here); Personal and the charity board seat are present but empty. The
+  # first role is the oldest, so it is the default role / catch-all Inbox.
+  - ref: afc_marlow
+    name: AFC Marlow
+    color: 1
+  - ref: personal_role
+    name: Personal
+    color: 4
+  - ref: community_trust
+    name: Marlow Community Trust
+    color: 5
+
 priorities:
+  # The single root focus is the AFC Marlow role's Inbox. The club focuses below
+  # group under AFC Marlow. The Personal and Marlow Community Trust roles each
+  # contribute their own Inbox — nested here only for legacy ltree placement; the
+  # sidebar groups focuses by role, not by path. Each role also gets a muted
+  # "FYI" focus, synthesized by the generator (not declared here).
   - ref: everything
-    title: Everything
+    title: Inbox
     root: true
+    role_ref: afc_marlow
+    inbox: true
     children:
       - ref: womens_team
         title: Launch women's team
         icon: rocket
+        role_ref: afc_marlow
         settings:
           color: 0
       - ref: mens_team
         title: Men's team
         icon: dumbbell
+        role_ref: afc_marlow
         settings:
           color: 1
       - ref: facilities
         title: Facilities
         icon: building
+        role_ref: afc_marlow
         settings:
           color: 1
       - ref: commercial
         title: Commercial & partnerships
         icon: handshake
+        role_ref: afc_marlow
         settings:
           color: 2
       - ref: community
         title: Community & supporters
         icon: bullhorn
+        role_ref: afc_marlow
         settings:
           color: 6
+      # Personal role's Inbox — Margot's personal life (the social events below
+      # file here). Icon and colour come from the role, so none are set.
       - ref: personal
-        title: Personal
-        icon: heart
-        settings:
-          color: 4
+        title: Inbox
+        role_ref: personal_role
+        inbox: true
+      # Marlow Community Trust (charity board seat) Inbox — intentionally empty.
+      - ref: trust_inbox
+        title: Inbox
+        role_ref: community_trust
+        inbox: true
 
 sources:
   - ref: slack

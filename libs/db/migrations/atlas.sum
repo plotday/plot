@@ -1,4 +1,4 @@
-h1:fzcFx7Ff2+7J0O0MdrxNvqxgtm+wFk2YRfuf9NQuLHI=
+h1:ccKH3TMoIWbL4fCUW7aLlFdcJc+1Wpc4wOFTFw3Oo0Q=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -534,3 +534,4 @@ h1:fzcFx7Ff2+7J0O0MdrxNvqxgtm+wFk2YRfuf9NQuLHI=
 20260616014540_onboarding_plot_logo_icon.sql h1:Zr0usSzsijRsmBe8/3ar5D07mtYGfkM8LaH9bulae4g=
 20260616043229_per_user_scoped_note_source_time.sql h1:S63xNWv3TBrG+F8DakJaaNJ0BMPvPXQW8woa8/Nx5TI=
 20260616225154_add_thread_notify_state.sql h1:hY/cERcaEkAMsLrzyW2PfiEyK9CL2Hetwh8xzwa2Rps=
+20260617012722_per_role_fyi.sql h1:t0I2c7AmZy2QFuOMQ71KHBPwY5M+B8CQrsIIFTMVzws=

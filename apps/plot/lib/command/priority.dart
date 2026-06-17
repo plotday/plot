@@ -42,9 +42,12 @@ abstract class PriorityCommand extends Command {
        // ignore: prefer_initializing_formals
        _glyph = glyph,
        super(
-         title: label ?? priority?.title ?? 'None',
+         // Fall back to [Priority.displayTitle] (not the raw [title]) so the
+         // Inbox is searchable/labelled as "Inbox" without a branded [label]
+         // override — the raw root title is the stored "Everything".
+         title: label ?? priority?.displayTitle ?? 'None',
          subtitle: ancestry && label == null
-             ? (priority?.root == true
+             ? (priority?.isInbox == true
                    ? null
                    : (priority?.ancestorsLabel() ?? priority?.title))
              : null,
@@ -221,7 +224,11 @@ class _FocusSwitchGroup extends CommandGroup {
     final commands = <Command>[
       ...focuses.map((priority) => ChangeCurrentPriority(priority)),
       if (root != null) ...[
-        ChangeCurrentPriority(root, label: 'Inbox', glyph: PlotIcon.inbox),
+        // The Inbox renders as the ordinary role focus it is (FocusLabel
+        // brands it via `isInbox`: inbox glyph, role prefix, role colour).
+        // Only "Everything" — the synthetic cross-focus aggregate — keeps a
+        // branded label/glyph.
+        ChangeCurrentPriority(root),
         ChangeCurrentPriority(
           root,
           everything: true,
@@ -1391,26 +1398,39 @@ class EditPriorityCommand extends ShowForm {
             colorField: colorField,
           );
 
+          // The FYI focus is otherwise an ordinary focus, but its name and icon
+          // are fixed ("FYI" / newspaper) and its role can't change (one FYI per
+          // role, enforced by `unique (role_id) where is_fyi`). So its edit form
+          // collects only the colour; name/icon/role stay as-is.
+          final fyi = p.isFyi;
+
           return FormData(
             title: 'Edit focus',
             groups: [
               StaticFormGroup(
                 items: [
-                  roleField,
-                  FormTextInput(
-                    key: 'title',
-                    label: 'Focus name',
-                    initialValue: p.title,
-                    required: true,
-                  ),
-                  _focusIconSelect(initial: p.icon ?? 'bullseyePointer'),
+                  if (!fyi) roleField,
+                  if (!fyi)
+                    FormTextInput(
+                      key: 'title',
+                      label: 'Focus name',
+                      initialValue: p.title,
+                      required: true,
+                    ),
+                  if (!fyi) _focusIconSelect(initial: p.icon ?? 'bullseyePointer'),
                   colorField,
                   FormButton(
                     key: 'save',
                     isPrimary: true,
                     buildCommand: (values) {
-                      final title = values['title'] as String;
                       final color = values['color'] as ThemeColor?;
+                      if (fyi) {
+                        // FYI: name + icon + role are fixed; only colour edits.
+                        return EditPriority(
+                          Future.value(p.copyWith(color: Value(color))),
+                        );
+                      }
+                      final title = values['title'] as String;
                       final icon = values['icon'] as String?;
                       final role = values['role'] as Role?;
                       // Focuses are team-agnostic: no team field. Per-focus
@@ -1469,8 +1489,7 @@ class MergeFocusInto extends ShowCommands {
     }
     final commands = <Command>[
       ...focuses.map((target) => MergeFocus(source, target)),
-      if (root != null && source.id != root.id)
-        MergeFocus(source, root, label: 'Inbox', glyph: PlotIcon.inbox),
+      if (root != null && source.id != root.id) MergeFocus(source, root),
     ];
     return Commands(
       prompt: 'Merge "${source.displayTitle}" into…',
@@ -1580,15 +1599,18 @@ class ShowPriorityCommands extends ShowCommands {
 }
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
-  // The Inbox is auto-managed and not editable/removable: the legacy global
-  // Inbox (root) and every role's Inbox (isInbox) have their name locked to
-  // "Inbox" and their colour/notifications following the role, so they offer
-  // no Edit (the Role field there could try to re-home an Inbox, which the
-  // server's `unique (role_id) where is_inbox` rejects) and no Archive/Merge.
-  if (!priority.root && !priority.isInbox) EditPriorityCommand(priority),
-  ShowEarlyNotificationsSettings(priority),
+  // Every role's Inbox ([isInbox], including the Personal role's, which is the
+  // top-level focus) is auto-managed and not editable/removable: its name is
+  // locked to "Inbox" and its colour/notifications follow the role, so it
+  // offers no Edit (the Role field there could try to re-home an Inbox, which
+  // the server's `unique (role_id) where is_inbox` rejects) and no Archive/Merge.
+  // The FYI focus ([isFyi]) keeps Edit (colour only — name/icon/role are fixed
+  // there) and Archive, but has notifications permanently off, so it offers no
+  // notification settings.
+  if (!priority.isInbox) EditPriorityCommand(priority),
+  if (!priority.isFyi) ShowEarlyNotificationsSettings(priority),
   ShowTimeLog(priority),
-  if (!priority.root && !priority.isInbox) ...archiveOrMergeCommands(priority),
+  if (!priority.isInbox) ...archiveOrMergeCommands(priority),
 ];
 
 /// The destructive slot on a focus menu. An archived focus offers Un-archive.
@@ -1636,7 +1658,7 @@ List<Command> currentPriorityCommands(
 
 List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
   StaticCommandGroup(
-    title: priority.root ? 'Inbox' : 'Focus: ${priority.title}',
+    title: priority.isInbox ? 'Inbox' : 'Focus: ${priority.title}',
     commands: priorityCommands(priority),
   ),
 ];
@@ -1647,7 +1669,7 @@ List<StaticCommandGroup> currentPriorityCommandGroups(
   NowState? nowState,
 }) => [
   StaticCommandGroup(
-    title: priority.root ? 'Inbox' : 'Focus: ${priority.title}',
+    title: priority.isInbox ? 'Inbox' : 'Focus: ${priority.title}',
     commands: currentPriorityCommands(
       priority,
       context: context,

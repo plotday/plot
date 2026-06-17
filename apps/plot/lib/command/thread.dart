@@ -2063,14 +2063,7 @@ class BulkMove extends ShowCommands {
     }
     final commands = <Command>[
       ...focuses.map((priority) => _BulkMoveToPriority(threads, priority, bloc: bloc)),
-      if (root != null)
-        _BulkMoveToPriority(
-          threads,
-          root,
-          bloc: bloc,
-          label: 'Inbox',
-          glyph: PlotIcon.inbox,
-        ),
+      if (root != null) _BulkMoveToPriority(threads, root, bloc: bloc),
     ];
     return Commands(
       prompt: threads.length == 1
@@ -2086,8 +2079,6 @@ class _BulkMoveToPriority extends PriorityCommand {
     this.threads,
     Priority priority, {
     PriorityBloc? bloc,
-    super.label,
-    super.glyph,
     // ignore: prefer_initializing_formals
   }) : _bloc = bloc,
        super(
@@ -2324,8 +2315,8 @@ class MoveThreadToPriority extends ShowCommands {
     // enrichment round-trip.
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
     // Partition out the root (Inbox), which `getRaw` returns alongside the
-    // focuses, so it can be pinned to the bottom as a branded "Inbox" row
-    // instead of appearing inline as a plain focus.
+    // focuses, so it can be pinned to the bottom of the list. It renders as
+    // the ordinary role focus it is (FocusLabel brands it via `isInbox`).
     Priority? root;
     final focuses = <Priority>[];
     for (final p in priorities) {
@@ -2340,13 +2331,7 @@ class MoveThreadToPriority extends ShowCommands {
         (priority) => MoveToPriority(thread, priority, bloc: bloc),
       ),
       if (root != null && thread.priority.id != root.id)
-        MoveToPriority(
-          thread,
-          root,
-          bloc: bloc,
-          label: 'Inbox',
-          glyph: PlotIcon.inbox,
-        ),
+        MoveToPriority(thread, root, bloc: bloc),
     ];
 
     return Commands(

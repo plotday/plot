@@ -85,7 +85,7 @@ export default function Go() {
               conversation that needs a thoughtful reply — email, chat, and
               threads from the tools you use — and organizes them by project and
               priority. You decide when to engage; the rest of your day is yours
-              to make real progress on the work only you can do.
+              to make real progress on your best work.
             </Text>
             <Text className={classes.body}>
               We&rsquo;d love for you to give it a try! We&rsquo;re running

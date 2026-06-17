@@ -8,7 +8,6 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
-import 'package:plot/util/theme_color.dart';
 
 class PriorityWidget extends StatefulWidget {
   const PriorityWidget({
@@ -28,6 +27,7 @@ class PriorityWidget extends StatefulWidget {
     this.monochrome = false,
     this.boldLeaf = false,
     this.boldActive = true,
+    this.showRole = false,
     this.expandable = false,
     this.expanded = false,
     this.onToggleExpand,
@@ -90,6 +90,14 @@ class PriorityWidget extends StatefulWidget {
   /// without the active-state emphasis used during normal navigation.
   final bool boldActive;
 
+  /// When true, prepend the focus's `[Role] ›` crumb (in the role's colour)
+  /// before the title when the user has more than one role — see [FocusLabel].
+  /// Off by default because the normal sidebar already groups focuses under
+  /// their role (accordion sections). The global-view (search/filter) sidebar
+  /// flattens that grouping, so it sets this to `true` to keep same-named
+  /// focuses across roles (e.g. each role's "Inbox") distinguishable.
+  final bool showRole;
+
   /// When true, render an expand/collapse caret directly after the title.
   /// Tapping the caret runs [onToggleExpand] without changing the active
   /// priority.
@@ -128,6 +136,21 @@ class _PriorityWidgetState extends State<PriorityWidget> {
   @override
   Widget build(BuildContext buildContext) {
     final priority = widget.priority;
+    // A role's Inbox draws its icon + label colour from the reactive
+    // [Role.cache] (see [Priority.labelDisplayColor]), so rebuild it when roles
+    // warm up or are recoloured — mirroring [FocusLabel]. Ordinary focuses
+    // don't read the cache, so they skip the listener entirely.
+    if (priority.isInbox || priority.root) {
+      return ValueListenableBuilder<List<Role>>(
+        valueListenable: Role.cache,
+        builder: (context, _, _) => _buildTile(context),
+      );
+    }
+    return _buildTile(buildContext);
+  }
+
+  Widget _buildTile(BuildContext buildContext) {
+    final priority = widget.priority;
     bool isContext = priority == widget.context;
     // The notification box (PriorityNotification) is a 16×16 square that
     // centers a 6px dot — its own internal padding already gives the dot
@@ -136,24 +159,29 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     final leadingH = buildContext.theme.spacing.sm;
 
     final isActive = widget.selected || _isHovered;
+    // A role's Inbox follows its role's colour even when its own stored `color`
+    // is NULL (which [Priority.displayColor] would surface as the brand
+    // default). [Priority.labelDisplayColor] resolves the role colour from the
+    // warm cache; the sidebar rebuilds on role changes (the page passes a fresh
+    // role list), so the lookup stays current. Ordinary focuses are unaffected
+    // (it returns their [displayColor]).
+    final focusColor = priority.labelDisplayColor;
     final priorityAccentBg = widget.monochrome
-        ? buildContext.colour.colours.backgroundFromTheme(priority.displayColor)
+        ? buildContext.colour.colours.backgroundFromTheme(focusColor)
         : null;
     // The selected focus gets a crisp ring in its own colour (see the
     // agent/activity feed). Only in the left-panel monochrome frame — single-
     // panel mode keeps the plain edge-to-edge treatment.
     final priorityRing = widget.monochrome
-        ? buildContext.colour.colours.borderFromTheme(priority.displayColor)
+        ? buildContext.colour.colours.borderFromTheme(focusColor)
         : null;
-    final priorityAccent = buildContext.colour.colours.fromTheme(
-      priority.displayColor,
-    );
+    final priorityAccent = buildContext.colour.colours.fromTheme(focusColor);
     // At rest a focus shows a muted version of its own colour (not a flat
     // monochrome tone), so the colour is always legible and edits to it are
     // visible without hovering. Hover / selection promotes it to the full
     // accent. The title's fontWeight (w500) keeps it prominent.
     final restingColor = buildContext.colour.colours.fromTheme(
-      priority.displayColor,
+      focusColor,
       muted: true,
     );
 
@@ -175,7 +203,8 @@ class _PriorityWidgetState extends State<PriorityWidget> {
         ? restingColor
         : priorityAccent;
 
-    final navigationCommand = widget.command ??
+    final navigationCommand =
+        widget.command ??
         (!isContext
             ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
             : null);
@@ -236,14 +265,27 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       indentLevel: widget.indentLevel,
       textStyle: effectiveTextStyle,
       leadingBuilder: (isHovered, hasFocus) {
-        final iconSize = buildContext.theme.iconSizes.base;
+        // Cap-height leading size so the focus glyph sits level with the label
+        // instead of looming at the full `base` (1:1) size — see
+        // [PlotIconSizes.leading].
+        final iconSize = buildContext.theme.iconSizes.leading;
         // Leading focus icon in the shared sidebar leading slot (md inset on
         // either side — see sidebarLeading). The unread dot now trails the
         // title — see _buildLabel.
+        // The Inbox focus always shows the inbox glyph and the FYI focus the
+        // newspaper glyph, never the focus's own icon (or the default focus
+        // icon when it has none). Mirror [Priority.displayTitle] / [FocusLabel]:
+        // honour both the newer server-managed `isInbox` flag and the legacy
+        // `root` during rollout.
+        final isInbox = priority.isInbox || priority.root;
         return sidebarLeading(
           buildContext,
           Icon(
-            PlotIcon.focusIcon(priority.icon),
+            isInbox
+                ? PlotIcon.inbox
+                : priority.isFyi
+                ? PlotIcon.newspaper
+                : PlotIcon.focusIcon(priority.icon),
             size: iconSize,
             color: labelColor,
           ),
@@ -272,7 +314,9 @@ class _PriorityWidgetState extends State<PriorityWidget> {
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),
-                prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+                prefix: cmd.icon != null
+                    ? Icon(cmd.icon, size: buildContext.theme.iconSizes.leading)
+                    : null,
                 onPress: () {
                   close();
                   buildContext.run(cmd);
@@ -314,9 +358,11 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       color: labelColor,
       fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
       showIcon: false,
-      // The sidebar already groups focuses under their role, so the row never
-      // repeats the role as a prefix.
-      showRole: false,
+      // The normal sidebar groups focuses under their role, so the row never
+      // repeats the role as a prefix. The global-view (search) sidebar
+      // flattens that grouping and opts in via [widget.showRole] so same-named
+      // focuses across roles (e.g. each role's "Inbox") stay distinguishable.
+      showRole: widget.showRole,
     );
 
     // The unread dot trails the title now that the focus icon owns the
@@ -328,7 +374,8 @@ class _PriorityWidgetState extends State<PriorityWidget> {
             padding: EdgeInsets.only(left: buildContext.theme.spacing.sm),
             child: PriorityNotification(
               unread: true,
-              color: priority.displayColor,
+              // Match the Inbox's role-aware label colour (see [build]).
+              color: priority.labelDisplayColor,
             ),
           )
         : null;
@@ -443,9 +490,10 @@ class FocusLabel extends StatelessWidget {
   final double? fontSize;
   final double? height;
 
-  /// Icon glyph size. Defaults to [fontSize] so the icon matches the text.
-  /// Override (e.g. to the ambient `iconSizes.base`) when this label sits in a
-  /// shared leading-icon column alongside non-focus rows.
+  /// Icon glyph size. Defaults to the cap-height `iconSizes.leadingFor(fontSize)`
+  /// so the glyph sits optically level with the label instead of looming at the
+  /// full font size. Override (e.g. to the ambient `iconSizes.base`) when this
+  /// label sits in a shared leading-icon column alongside non-focus rows.
   final double? iconSize;
 
   /// Gap between the icon and the title. Defaults to 6.
@@ -472,14 +520,19 @@ class FocusLabel extends StatelessWidget {
   /// already show the icon separately (e.g. a list row with its own leading).
   final bool showIcon;
 
-  /// Whether to prepend a `[Role] ›` crumb (in the role's colour) before the
-  /// focus icon + title when the user has more than one role. On by default so
-  /// every surface that shows a focus also names its role — the one exception
-  /// is the sidebar, where focuses are already grouped under their role
-  /// ([PriorityWidget] passes `showRole: false`). The prefix is also skipped
-  /// for the branded root Inbox, for fixed semantic views (those pass
-  /// [titleOverride], e.g. the "Everything" feed), and for focuses with no
-  /// role.
+  /// Whether to insert a `[Role] ›` crumb between the leading focus icon and
+  /// the title — `[icon] Role › Focus`, the whole crumb in the focus colour —
+  /// when the user has more than one role. On by default so
+  /// every surface that shows a focus also names its role — the exception is
+  /// the normal sidebar, where focuses are already grouped under their role
+  /// ([PriorityWidget] defaults `showRole: false`). The global-view (search)
+  /// sidebar flattens that grouping and opts back in ([PriorityWidget] with
+  /// `showRole: true`) so same-named focuses across roles stay distinct. The
+  /// prefix is skipped for fixed semantic views (those pass [titleOverride],
+  /// e.g. the synthetic "Everything" feed) and for focuses with no role (e.g.
+  /// the FYI focus). A role's Inbox is a role-owned focus and *does* get the
+  /// prefix (so each role's "Inbox" stays distinguishable), even though it is
+  /// that role's root focus.
   final bool showRole;
 
   /// When true, render the title at semibold.
@@ -499,22 +552,37 @@ class FocusLabel extends StatelessWidget {
 
     final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
 
-    // Whether this label may carry a `[Role] ›` prefix. Skipped for the
-    // branded root Inbox and for fixed semantic views (those pass
-    // [titleOverride], e.g. the "Everything" feed), and for focuses with no
-    // role. The multi-role gate (the prefix only shows with > 1 role) is
-    // applied reactively below.
-    final canShowRole =
-        showRole && titleOverride == null && !p.root && p.roleId != null;
+    // Whether this label may carry a `[Role] ›` prefix. Skipped for fixed
+    // semantic views (those pass [titleOverride], e.g. the "Everything" feed),
+    // and for focuses with no role. The multi-role gate (the prefix only shows
+    // with > 1 role) is applied reactively below.
+    // A role's Inbox is the role's `root` focus, so it must not be excluded
+    // here merely for being root — show the `Role ›` prefix for every
+    // role-owned focus, the Inbox included. The synthetic "Everything"/"Inbox"
+    // header opts out via [titleOverride]; the role-less FYI focus via a null
+    // roleId.
+    final canShowRole = showRole && titleOverride == null && p.roleId != null;
 
-    if (!canShowRole) return _row(context, resolvedFontSize, null);
+    // An Inbox follows its role's colour ([Priority.labelDisplayColor]); when
+    // the caller hasn't forced a [color] we must read the role cache for its
+    // hue, and rebuild when it warms. So the label needs the reactive cache for
+    // the prefix OR for an un-overridden Inbox's colour.
+    final needsRoleColour =
+        (p.isInbox || p.root) && p.roleId != null && color == null;
+
+    if (!canShowRole && !needsRoleColour) {
+      return _row(context, resolvedFontSize, null);
+    }
 
     // Resolve the role from the warm cache, rebuilding if roles change. Only
-    // prepend it when the user has more than one role.
+    // prepend the `[Role] ›` prefix when the label opts in AND the user has
+    // more than one role; the inbox-colour path needs the cache regardless.
     return ValueListenableBuilder<List<Role>>(
       valueListenable: Role.cache,
       builder: (context, roles, _) {
-        final role = roles.length >= 2 ? Role.fromCache(p.roleId) : null;
+        final role = (canShowRole && roles.length >= 2)
+            ? Role.fromCache(p.roleId)
+            : null;
         return _row(context, resolvedFontSize, role);
       },
     );
@@ -523,100 +591,87 @@ class FocusLabel extends StatelessWidget {
   Widget _row(BuildContext context, double? resolvedFontSize, Role? role) {
     final p = priority!;
 
-    // The per-user root focus is stored as "Everything" but is always
-    // presented to users as the branded "Inbox": the inbox glyph in the
-    // Resolution brand colour rather than the root focus's own icon and
-    // colour. Apply that here so every focus picker renders the Inbox
-    // identically without each caller special-casing it. Explicit overrides
-    // still win (e.g. the unified header's synthetic "Everything" view).
-    final isInbox = p.root;
+    // A role's Inbox is presented with the inbox glyph instead of the focus's
+    // own icon, but otherwise wears its role's colour like any other focus.
+    // [Priority.labelDisplayColor] resolves that role colour even when the
+    // Inbox's own stored `color` is NULL (which [displayColor] would surface as
+    // the brand default — notably for the Personal role's root Inbox). The
+    // branded synthetic "Everything"/"Inbox" header passes an explicit [color]
+    // (+ [iconOverride]), so it keeps the Resolution brand colour and is
+    // unaffected. Mirror [Priority.displayTitle]: honour both the newer
+    // server-managed [isInbox] flag and the legacy per-user `root` during the
+    // rollout.
+    final isInbox = p.isInbox || p.root;
 
     final accent =
         color ??
-        (isInbox
-            ? context.colour.colours.fromTheme(const ThemeColor.defaultColor())
-            : context.colour.colours.fromTheme(p.displayColor, muted: muted));
+        context.colour.colours.fromTheme(p.labelDisplayColor, muted: muted);
 
     final glyph =
-        iconOverride ?? (isInbox ? PlotIcon.inbox : PlotIcon.focusIcon(p.icon));
+        iconOverride ??
+        (isInbox
+            ? PlotIcon.inbox
+            : p.isFyi
+            ? PlotIcon.newspaper
+            : PlotIcon.focusIcon(p.icon));
 
-    // With a role prefix, render the whole crumb as a single line so it
-    // truncates conventionally: the role name and ` › ` separator stay intact
-    // and only the focus name ellipsizes at the end — instead of the role and
-    // focus each truncating independently. The icon rides inline as a
-    // [WidgetSpan]. (The no-role path below keeps the original Row geometry,
-    // including the [iconColumnWidth] gutter, untouched.)
-    if (role != null) {
-      final text = Text.rich(
-        TextSpan(
-          style: TextStyle(
-            fontSize: resolvedFontSize,
-            height: height,
-            fontWeight: fontWeight,
-          ),
-          children: [
+    // Cap-height-matched glyph size. A focus icon set 1:1 with the label font
+    // (the old default) looms ~30-40% larger than the text beside it, since
+    // text fills only its cap height of the line — so default to the leading
+    // size. Callers still override [iconSize] for shared leading-icon columns.
+    final glyphSize = iconSize ??
+        context.theme.iconSizes.leadingFor(
+          resolvedFontSize ?? context.theme.iconSizes.base,
+        );
+
+    final iconWidget = Icon(glyph, size: glyphSize, color: accent);
+
+    // The focus glyph always leads the row: `[icon] Role › Focus`. With a role
+    // prefix the role name, ` › ` separator, and focus name render as one line
+    // so only the focus name ellipsizes (role and separator stay intact) —
+    // rather than the role and focus each truncating independently. The leading
+    // icon optionally sits in a fixed [iconColumnWidth] gutter so the label text
+    // lines up across rows, and a centred icon sits optically level with the
+    // text (the old role path put it inline as a [WidgetSpan], which read as
+    // floating low and out of column).
+    final Widget label = role != null
+        ? Text.rich(
             TextSpan(
-              text: role.name,
+              // The whole crumb — role, ` › ` separator, and focus name — is
+              // shown in the one focus colour ([accent]); the role is no longer
+              // tinted its own colour.
               style: TextStyle(
-                color: context.colour.colours.fromTheme(
-                  role.displayColor,
-                  muted: muted,
-                ),
-              ),
-            ),
-            TextSpan(
-              text: Priority.separator,
-              style: TextStyle(color: context.colour.muted),
-            ),
-            if (showIcon) ...[
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Icon(
-                  glyph,
-                  size: iconSize ?? resolvedFontSize,
-                  color: accent,
-                ),
-              ),
-              WidgetSpan(child: SizedBox(width: iconGap ?? 6)),
-            ],
-            TextSpan(
-              text: titleOverride ?? p.displayTitle,
-              style: TextStyle(
+                fontSize: resolvedFontSize,
+                height: height,
+                fontWeight: fontWeight,
                 color: accent,
-                fontWeight: fontWeight ?? (boldLeaf ? FontWeight.w600 : null),
               ),
+              children: [
+                TextSpan(text: role.name),
+                TextSpan(text: Priority.separator),
+                TextSpan(
+                  text: titleOverride ?? p.displayTitle,
+                  style: TextStyle(
+                    fontWeight:
+                        fontWeight ?? (boldLeaf ? FontWeight.w600 : null),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        overflow: TextOverflow.ellipsis,
-        maxLines: 1,
-      );
-
-      if (onLeafTap == null) return text;
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onLeafTap,
-        child: text,
-      );
-    }
-
-    final title = Text(
-      titleOverride ?? p.displayTitle,
-      overflow: TextOverflow.ellipsis,
-      maxLines: 1,
-      style: TextStyle(
-        color: accent,
-        fontSize: resolvedFontSize,
-        height: height,
-        fontWeight: fontWeight ?? (boldLeaf ? FontWeight.w600 : null),
-      ),
-    );
-
-    final iconWidget = Icon(
-      glyph,
-      size: iconSize ?? resolvedFontSize,
-      color: accent,
-    );
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          )
+        : Text(
+            titleOverride ?? p.displayTitle,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: TextStyle(
+              color: accent,
+              fontSize: resolvedFontSize,
+              height: height,
+              fontWeight: fontWeight ?? (boldLeaf ? FontWeight.w600 : null),
+            ),
+          );
 
     final children = <Widget>[
       if (showIcon) ...[
@@ -628,7 +683,7 @@ class FocusLabel extends StatelessWidget {
             : iconWidget,
         SizedBox(width: iconGap ?? 6),
       ],
-      Flexible(child: title),
+      Flexible(child: label),
     ];
 
     final row = Row(
@@ -647,9 +702,9 @@ class FocusLabel extends StatelessWidget {
 }
 
 /// A flat icon-plus-label row with the exact geometry of [FocusLabel] — icon
-/// sized to the text, a 6px gap, single-line with ellipsis, and a bare
-/// [TextStyle] (no typography line-height). Use for non-focus rows that must
-/// line up pixel-for-pixel with focus rows in the same picker (e.g. the
+/// at the cap-height leading size, a 6px gap, single-line with ellipsis, and a
+/// bare [TextStyle] (no typography line-height). Use for non-focus rows that
+/// must line up pixel-for-pixel with focus rows in the same picker (e.g. the
 /// "Auto-organize" choice), which a plain `ListTile(icon:, title:)` does not.
 class IconLabel extends StatelessWidget {
   const IconLabel({
@@ -673,7 +728,13 @@ class IconLabel extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(icon, size: resolvedFontSize, color: resolvedColor),
+        Icon(
+          icon,
+          size: context.theme.iconSizes.leadingFor(
+            resolvedFontSize ?? context.theme.iconSizes.base,
+          ),
+          color: resolvedColor,
+        ),
         const SizedBox(width: 6),
         Flexible(
           child: Text(

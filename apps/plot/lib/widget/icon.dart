@@ -26,6 +26,9 @@ class PlotIcon {
   static const inbox = FontAwesomeIcons.inbox;
   static const inboxes = FontAwesomeIcons.inboxes;
 
+  /// The fixed icon for a role's FYI focus (low-signal mail).
+  static const newspaper = FontAwesomeIcons.newspaper;
+
   /// The default icon for a focus when none is chosen.
   static const focusDefault = FontAwesomeIcons.bullseyePointer;
 

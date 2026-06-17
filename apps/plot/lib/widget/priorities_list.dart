@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
@@ -13,14 +12,19 @@ import 'package:plot/widget/widget.dart';
 /// The focus sidebar. Focuses are grouped under their [Role]; the layout
 /// depends on how many roles the user has:
 ///
-/// - **0–1 roles:** a flat, drag-reorderable list of focuses (the role's
-///   Inbox last), exactly as before roles existed — no role header.
+/// - **0–1 roles:** a flat, drag-reorderable list of focuses, exactly as before
+///   roles existed — no role header.
 /// - **2+ roles:** an accordion. An outer drag-reorderable list of collapsible
 ///   [RoleHeader]s; the role whose focus is currently selected
 ///   ([expandedRoleId]) discloses an inner drag-reorderable list of its
 ///   focuses (animated open/closed). It's a pure accordion — exactly one role
 ///   is expanded (the selected focus's role), derived client-side, never
 ///   persisted.
+///
+/// Each role's Inbox and FYI are ordinary focuses (drag-reorderable, they bold
+/// when active and show unread), just with a fixed name + icon — and the FYI is
+/// muted. They default to the bottom two of the role (Inbox then FYI) via large
+/// server-seeded sentinel orders, so a freshly added focus lands above them.
 ///
 /// Below the (flat or accordion) list come the "Add a focus" tail and finally
 /// the "Everything" feed — both scroll with the list. There is no longer a
@@ -33,12 +37,6 @@ class PrioritiesList extends StatefulWidget {
   final List<Priority> focuses;
   final Priority root;
   final Priority? selected;
-
-  /// The single, role-less global "FYI" focus, if it exists. Rendered as a
-  /// fixed row just above "Everything" (outside the role accordion), with a
-  /// subtle unread dot but never bold. Excluded from [focuses] so it never
-  /// appears in the flat/accordion list. Null when the user has no FYI focus.
-  final Priority? fyi;
 
   /// The user's live roles, already sorted for the sidebar (see
   /// [PrioritiesState.sortedRoles]). With <= 1 role the list renders flat.
@@ -67,19 +65,17 @@ class PrioritiesList extends StatefulWidget {
     // so the Personal Inbox renders only through this list now; excluding all
     // roots would make it vanish for backfilled users. The non-inbox root (if
     // any survives pre-backfill) is still dropped — the Everything tile covers
-    // it.
+    // it. The per-role FYI is an ordinary focus and renders through this list
+    // too (it has a non-root path), so it is not filtered out.
   }) : focuses =
-           (priorities.where((p) => (!p.root || p.isInbox) && !p.isFyi).toList()
-             ..sort(_byOrder)),
-       fyi = priorities
-           .where((p) => p.isFyi && p.archivedAt == null)
-           .firstOrNull;
+           (priorities.where((p) => !p.root || p.isInbox).toList()
+             ..sort(_byOrder));
 
-  /// Sidebar focus ordering: the (per-role) Inbox last, then by [Order], then
-  /// creation time. Shared by the flat list and each role's inner list so both
-  /// keep the Inbox at the bottom.
+  /// Sidebar focus ordering: purely by [Order], then creation time. The Inbox
+  /// and FYI are ordinary reorderable focuses; they default to the bottom two
+  /// of their role via large server-seeded sentinel orders, not a comparator
+  /// pin. Shared by the flat list and each role's inner list.
   static int _byOrder(Priority a, Priority b) {
-    if (a.isInbox != b.isInbox) return a.isInbox ? 1 : -1; // Inbox last
     final c = a.order.value.compareTo(b.order.value);
     return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
   }
@@ -120,6 +116,42 @@ class _PrioritiesListState extends State<PrioritiesList> {
     return widget.focuses.where((p) => p.roleId == roleId).toList();
   }
 
+  /// Whether to draw the per-role "whisper rail" — the 1px hued left border that
+  /// indents an open role's focuses. Flip to `false` to preview the focuses
+  /// flush under their eyebrow with no rail, so the hierarchy rests on the
+  /// uppercase eyebrow + the group gaps alone. A getter (not a `const`) so
+  /// neither branch of [_focusGroup] reads as dead code while we A/B it.
+  bool get _showFocusRail => false;
+
+  /// Lays out an open role's disclosed focus [list] under its eyebrow. Always
+  /// adds a tight [PlotSpacing.xs] gap below the role header. When
+  /// [_showFocusRail] is set it also wraps the list in the whisper rail: a 1px
+  /// left border in a pale tint of the role's hue ([borderFromTheme]) inset
+  /// [PlotSpacing.lg] from the panel edge, with a small [PlotSpacing.sm] inner
+  /// pad. (Focus rows keep their own `sidebarLeading` 14px inset, which already
+  /// supplies most of the rail→icon gap — a larger pad just double-counts it and
+  /// pushes the focuses too far right.) Lives inside the disclosure's
+  /// `SizeTransition`, so a collapsed role shows nothing.
+  Widget _focusGroup(BuildContext context, Role role, Widget list) {
+    final topGap = context.theme.spacing.xs;
+    if (!_showFocusRail) {
+      return Padding(padding: EdgeInsets.only(top: topGap), child: list);
+    }
+    return Container(
+      margin: EdgeInsets.only(top: topGap, left: context.theme.spacing.lg),
+      padding: EdgeInsets.only(left: context.theme.spacing.sm),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: context.colour.colours.borderFromTheme(role.displayColor),
+            width: 1,
+          ),
+        ),
+      ),
+      child: list,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
@@ -150,11 +182,21 @@ class _PrioritiesListState extends State<PrioritiesList> {
             : null;
         final bool monochrome = isLeftPanel;
 
+        // Vertical gap above each role group (between groups). Touch devices get
+        // a touch more air so the groups stay easy to separate by eye and tap;
+        // desktop (mouse) reads cleanly tighter. Both are well below the old
+        // [PlotSpacing.xl] (20), which left the sidebar feeling loose.
+        final double roleGroupGap = isMobilePlatform()
+            ? context.theme.spacing.lg // 14
+            : context.theme.spacing.md; // 10
+
         TextStyle focusStyle(Priority p) => itemStyle.copyWith(
           color: p.archivedAt != null
               ? context.theme.colors.mutedForeground
+              // A role's Inbox follows its role's colour (its own stored
+              // `color` may be NULL); [Priority.labelDisplayColor] resolves it.
               : context.colour.colours.fromTheme(
-                  p.displayColor,
+                  p.labelDisplayColor,
                   muted: !monochrome && !p.unread,
                 ),
         );
@@ -241,13 +283,17 @@ class _PrioritiesListState extends State<PrioritiesList> {
               return _RoleSection(
                 key: ValueKey('role-${role.id}'),
                 expanded: expanded,
+                // A clear gap separates each role group from the one above —
+                // except the topmost, which already sits below the list's own
+                // top padding. Keyed on position so it stays correct after a
+                // role reorder.
+                topGap: (reorderableIndex ?? 0) > 0 ? roleGroupGap : 0.0,
                 header: RoleHeader(
                   role: role,
                   expanded: expanded,
                   childFocuses: childFocuses,
                   monochrome: monochrome,
                   borderRadius: itemBorderRadius,
-                  textStyle: itemStyle,
                   reorderableIndex: reorderableIndex,
                   onTap: () {
                     if (singlePanel) {
@@ -269,12 +315,13 @@ class _PrioritiesListState extends State<PrioritiesList> {
                     }
                   },
                 ),
-                // Lazily built so only the expanded (or currently-animating-
-                // closed) role ever constructs its inner reorderable focus
-                // list — collapsed roles pay nothing, and no nested reorderable
-                // exists to compete for gestures. _RoleSection keeps the child
-                // mounted through the close animation, then drops it.
-                childBuilder: () => focusList(childFocuses),
+                // The disclosed focus list, laid out under the eyebrow (with
+                // the whisper rail when [_showFocusRail] is on). Built for every
+                // role and kept mounted (clipped to zero height when collapsed)
+                // — see [_RoleSection.build] for why this avoids the nested-
+                // reorderable layout crash.
+                childBuilder: () =>
+                    _focusGroup(context, role, focusList(childFocuses)),
               );
             },
             onReorder: (oldIndex, newIndex) =>
@@ -307,25 +354,8 @@ class _PrioritiesListState extends State<PrioritiesList> {
                     ),
                   ),
                 addFocusTile,
-                // The global, role-less FYI focus — a fixed row just above
-                // "Everything", outside the accordion/reorderable list. Carries
-                // a subtle unread dot but never bolds (active: false), and the
-                // app badge / global unread indicator excludes it (Task 5.2).
-                if (widget.fyi != null)
-                  FixedFocusTile(
-                    title: 'FYI',
-                    icon: PlotIcon.bullhorn,
-                    isSelected:
-                        !widget.everything &&
-                        widget.selected?.id == widget.fyi!.id,
-                    command: ChangeCurrentPriority(widget.fyi!),
-                    menuCommand: null,
-                    hasUnread: widget.fyi!.unread,
-                    active: false,
-                    borderRadius: itemBorderRadius,
-                    textStyle: itemStyle,
-                    monochrome: monochrome,
-                  ),
+                // Each role's FYI focus is an ordinary focus row inside the
+                // (flat or accordion) list above — no separate fixed tile.
                 everythingTile,
                 SizedBox(height: context.theme.spacing.md),
               ],
@@ -411,10 +441,16 @@ class _RoleSection extends StatefulWidget {
     required this.header,
     required this.childBuilder,
     required this.expanded,
+    this.topGap = 0.0,
     super.key,
   });
 
   final Widget header;
+
+  /// Height of the gap above this role group (0 for the topmost — it already
+  /// clears the list's own top padding). Sets the between-groups rhythm; the
+  /// parent picks the value (platform-aware). See `roleGroupGap`.
+  final double topGap;
 
   /// Builds the disclosed inner focus list (a nested [ReorderableListView] so
   /// focuses can be drag-reordered within their role). Built for every role —
@@ -472,6 +508,7 @@ class _RoleSectionState extends State<_RoleSection>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.topGap > 0) SizedBox(height: widget.topGap),
         widget.header,
         // The inner focus list stays mounted whether the role is expanded or
         // collapsed; the controller only animates the disclosure height. This
@@ -585,7 +622,9 @@ class FixedFocusTileState extends State<FixedFocusTile> {
         }
       },
       leadingBuilder: (isHovered, hasFocus) {
-        final iconSize = context.theme.iconSizes.base;
+        // Cap-height leading size so this fixed tile's glyph matches the focus
+        // and connection tiles in the same sidebar column.
+        final iconSize = context.theme.iconSizes.leading;
         return sidebarLeading(
           context,
           Icon(widget.icon, size: iconSize, color: labelColor),

@@ -3,16 +3,21 @@ import 'package:flutter/material.dart' as material;
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/sidebar.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
 /// A collapsible role header row in the accordion sidebar. Renders the role's
-/// name (in its colour, muted at rest like a focus tile) as a flush-left
-/// section label — no leading caret — and a hover-revealed "…" menu
-/// ([ShowRoleCommands]). Tapping a **collapsed** header runs [onTap] (the left
-/// panel selects the role's first focus; single-panel just discloses them); the
-/// **expanded** header is inert. When the role is **collapsed**, its status is
+/// name as an **uppercase eyebrow** ([eyebrowLabelStyle]) — small, widely
+/// tracked, in the role's colour (muted at rest like a focus tile) — so a role
+/// reads as a section heading a level above its focuses without spending the
+/// weight (status) or colour (identity) signals on level. A **collapsed**
+/// header also carries a faint trailing chevron (a quiet "open me" cue) that
+/// cross-fades to the hover-revealed "…" menu ([ShowRoleCommands]). Tapping a
+/// **collapsed** header runs [onTap] (the left panel selects the role's first
+/// focus; single-panel just discloses them); the **expanded** header is inert —
+/// no chevron, no hover pill. When the role is **collapsed**, its status is
 /// reverse-inherited from its child focuses:
 ///
 /// - **bold** when any child focus is active, and
@@ -28,7 +33,6 @@ class RoleHeader extends StatefulWidget {
     required this.onTap,
     this.monochrome = false,
     this.borderRadius,
-    this.textStyle,
     this.reorderableIndex,
     super.key,
   });
@@ -64,9 +68,6 @@ class RoleHeader extends StatefulWidget {
   /// Border radius for the hover/selection highlight (rounded pill in the
   /// left panel, rectangular edge-to-edge single-panel).
   final BorderRadius? borderRadius;
-
-  /// Base text style for the role name (the sidebar item style).
-  final TextStyle? textStyle;
 
   @override
   State<RoleHeader> createState() => _RoleHeaderState();
@@ -107,6 +108,29 @@ class _RoleHeaderState extends State<RoleHeader> {
         ? context.colour.colours.backgroundFromTheme(role.displayColor)
         : null;
 
+    // The role row renders at a focus tile's full height ([tileHeight]) so its
+    // (collapsed) hover pill matches the focuses' — but its layout *footprint*
+    // is compressed to the shorter [layoutHeight], so the eyebrow keeps its
+    // tight spacing. [compress] absorbs the difference into the gap around the
+    // role: the tile overflows that gap symmetrically instead of pushing its
+    // neighbours. The eyebrow (centred in the tile) stays put, and the row
+    // height is identical collapsed vs expanded, so the disclosure never jumps.
+    final tileHeight = context.theme.iconSizes.base * 2;
+    final layoutHeight =
+        context.theme.iconSizes.base + context.theme.spacing.md;
+    // Let the tile lay out at its own natural (focus-tile) height — capping it
+    // would clip the body once the 1px border is accounted for — and centre it
+    // in the shorter [layoutHeight] footprint, overflowing the gap evenly.
+    Widget compress(Widget child) => SizedBox(
+      height: layoutHeight,
+      child: OverflowBox(
+        minHeight: 0,
+        maxHeight: double.infinity,
+        alignment: Alignment.center,
+        child: child,
+      ),
+    );
+
     final listTile = ListTile(
       // A collapsed role is a tap target (selects its first focus, expanding
       // it). The expanded role is the current section header — tapping it does
@@ -139,16 +163,20 @@ class _RoleHeaderState extends State<RoleHeader> {
       // it, so the whole sidebar shares one left margin.
       leadingBuilder: (isHovered, hasFocus) =>
           SizedBox(width: context.theme.spacing.lg),
-      // Role name + (collapsed) unread dot. The dot sits outside the Flexible
-      // so it survives title truncation.
+      // Role name as an uppercase eyebrow + (collapsed) unread dot. The dot
+      // sits outside the Flexible so it survives title truncation. The name is
+      // uppercased render-only (the stored [Role.name] keeps its original
+      // case); weight still carries status (w600 active / w400 idle) and colour
+      // still carries the role identity — the case + scale shift alone signals
+      // "section heading".
       body: Row(
         children: [
           Flexible(
             child: Text(
-              role.name,
+              role.name.toUpperCase(),
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
-              style: (widget.textStyle ?? const TextStyle()).copyWith(
+              style: eyebrowLabelStyle(context.theme.typography).copyWith(
                 color: labelColor,
                 fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
               ),
@@ -164,33 +192,50 @@ class _RoleHeaderState extends State<RoleHeader> {
             ),
         ],
       ),
-      // Reserve the menu-button slot height so the header row matches the
-      // focus tiles, then reveal the "…" menu on hover/focus. Mirrors
-      // PriorityWidget's buttonSlotHeight.
+      // Reserve the full menu-button slot height so the role row is the same
+      // height as a focus tile (its hover pill therefore matches theirs). The
+      // tighter *visual* spacing is restored by compressing the row's layout
+      // footprint below (see `compress`) — the tile overflows into the
+      // surrounding gap rather than being physically shorter. At rest a
+      // *collapsed* role shows a faint role-hue chevron — a quiet "openable"
+      // cue — overlaid centred on the "…" menu ([ShowRoleCommands]) footprint,
+      // so the chevron and the "…" sit in the same spot. The expanded role is
+      // inert: just the reserved (invisible) slot, menu revealed on hover.
       trailingBuilder: (isHovered, hasFocus) {
-        final buttonSlotHeight = context.theme.iconSizes.base * 2;
         final hovered = isHovered || hasFocus;
         return Padding(
           padding: EdgeInsets.only(right: context.theme.spacing.sm),
           child: SizedBox(
-            height: buttonSlotHeight,
+            height: tileHeight,
             child: Center(
-              child: hovered
-                  ? Button.icon(ShowRoleCommands(role))
-                  : Visibility(
-                      visible: false,
-                      maintainSize: true,
-                      maintainAnimation: true,
-                      maintainState: true,
-                      child: Button.icon(ShowRoleCommands(role)),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Visibility(
+                    visible: hovered,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: Button.icon(ShowRoleCommands(role)),
+                  ),
+                  if (!hovered && !widget.expanded)
+                    Icon(
+                      PlotIcon.right,
+                      size: context.theme.iconSizes.xs,
+                      color: context.colour.colours.fromTheme(
+                        role.displayColor,
+                        lightness: 0.66,
+                      ),
                     ),
+                ],
+              ),
             ),
           ),
         );
       },
     );
 
-    if (hasPhysicalKeyboard()) return listTile;
+    if (hasPhysicalKeyboard()) return compress(listTile);
 
     // Touch: open the role menu via a long-left swipe, and start the role
     // reorder drag on a long-press of the header only. Wrapping just the header
@@ -204,10 +249,12 @@ class _RoleHeaderState extends State<RoleHeader> {
       child: listTile,
     );
     final index = widget.reorderableIndex;
-    if (index == null) return swipeable;
-    return material.ReorderableDelayedDragStartListener(
-      index: index,
-      child: swipeable,
+    if (index == null) return compress(swipeable);
+    return compress(
+      material.ReorderableDelayedDragStartListener(
+        index: index,
+        child: swipeable,
+      ),
     );
   }
 }

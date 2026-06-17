@@ -1245,18 +1245,34 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// back to false when not computed (e.g. loaded without `_enrichWithStatus`).
   final bool? _hasThreadsComputed;
 
-  /// The user-facing name for this priority. The per-user root focus is
-  /// stored as "Everything" in the database (the server projects it as
-  /// "Inbox" at apiVersion >= 4, but older synced roots still carry the raw
-  /// title), yet it is always presented to users as "Inbox". Read this
-  /// anywhere a priority name is shown to the user instead of the raw
-  /// [title], so the stored "Everything" never leaks into the UI.
+  /// The user-facing name for this priority. A role's auto-managed Inbox
+  /// focus ([isInbox]) — including the Personal role's, which is stored as
+  /// "Everything" in the database — is always presented to users as "Inbox".
+  /// Read this anywhere a priority name is shown to the user instead of the
+  /// raw [title], so the stored "Everything" never leaks into the UI.
+  String get displayTitle => isInbox ? 'Inbox' : title;
+
+  /// The colour a focus's icon + label should render in.
   ///
-  /// A role's auto-managed Inbox focus ([isInbox]) is always presented as
-  /// "Inbox". `root` is also honoured for back-compat during the additive
-  /// rollout: a legacy per-user root still labels "Inbox" until the server
-  /// has backfilled [isInbox]. (Plan 6 removes `root` entirely.)
-  String get displayTitle => (isInbox || root) ? 'Inbox' : title;
+  /// Identical to [displayColor] for an ordinary focus. For a role's Inbox
+  /// ([isInbox], including the Personal role's root Inbox) it resolves to the
+  /// **role's** colour from the warm [Role.cache]. The server keeps an Inbox's
+  /// `color` synced to its role (`propagate_role_to_focuses`), but that trigger
+  /// only fires on a role colour *change* — a freshly-created Inbox, and notably
+  /// the Personal role's root Inbox (stored as "Everything" with a NULL `color`),
+  /// can still have no stored colour, which [displayColor] would surface as the
+  /// brand default rather than the role's hue. Reading the role keeps every
+  /// Inbox following its role's colour.
+  ///
+  /// Falls back to [displayColor] when the role isn't cached yet; widgets that
+  /// must update the instant the cache warms rebuild on [Role.cache].
+  ThemeColor get labelDisplayColor {
+    if ((isInbox || root) && roleId != null) {
+      final role = Role.fromCache(roleId);
+      if (role != null) return role.displayColor;
+    }
+    return displayColor;
+  }
 
   /// Parsed attention window settings (inherited from this priority or ancestors).
   List<AttentionWindow>? get attentionWindows =>

@@ -184,7 +184,7 @@ class TitleComposeFieldState extends State<TitleComposeField> {
         ComposeLeadingIcon(
           child: Icon(
             PlotIcon.sparkles,
-            size: theme.iconSizes.base,
+            size: theme.iconSizes.leading,
             color: color,
           ),
         ),

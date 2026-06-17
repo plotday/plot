@@ -67,7 +67,7 @@ Show it through what Plot does, never by reciting it (see "Don't preach the phil
 
 2. **Believe in the reader — show it, never say it.** Write to a capable person doing work that
    matters. Convey faith through your assumptions about them, not through compliments or pep talks.
-   _Avoid:_ "You've got this!" _Instead:_ "the work only you can do."
+   _Avoid:_ "You've got this!" _Instead:_ "get back to your best work."
 
 3. **With people, not around them.** Great work happens with people — they bring creativity, wisdom,
    challenge, and inspiration, not just extra hands. People aren't the bottleneck and aren't a
@@ -202,7 +202,7 @@ poster; show it through what Plot does instead.
   today," "what deserves your time right now," "put your time where it counts."
 - **Permission & grace:** "let it wait," "safe to ignore," "catch up when you have time," "no need
   to," "when you're ready," "the rest of your day is yours."
-- **Real progress:** "make progress on what matters," "the work only you can do," "get traction,"
+- **Real progress:** "make progress on what matters," "your best work," "get traction,"
   "keep going."
 - **On the reader's side:** "your call," "you choose," "you decide how much and how often."
 - **People & collaboration:** "the people you work with," "bring the right people in," "share it

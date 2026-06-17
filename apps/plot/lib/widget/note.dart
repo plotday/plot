@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/recipient_change_line.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
@@ -353,7 +354,9 @@ class _NoteWidgetState extends State<NoteWidget> {
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),
-                prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+                prefix: cmd.icon != null
+                    ? Icon(cmd.icon, size: context.theme.iconSizes.leading)
+                    : null,
                 onPress: () {
                   close();
                   context.run(cmd);

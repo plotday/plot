@@ -14,10 +14,10 @@ const double composeIconGap = 10;
 
 /// Extra width added to the leading-icon column beyond the ambient icon
 /// size, split evenly on both sides by [ComposeLeadingIcon]'s centering.
-/// Glyph icons keep their `iconSizes.base` size and gain breathing room,
-/// while the contacts field's avatar (which fills its full circle) renders
-/// at the full column width — visibly larger than a bare glyph — without
-/// any row's label falling out of alignment.
+/// Glyph icons render at the cap-height `iconSizes.leading` size and gain
+/// breathing room, while the contacts field's avatar (which fills its full
+/// circle) renders at the full column width — visibly larger than a bare
+/// glyph — without any row's label falling out of alignment.
 const double composeLeadingPadding = 8;
 
 /// Resolved width of the leading-icon column: the ambient `iconSizes.base`
@@ -38,12 +38,8 @@ class ComposeLeadingIcon extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: composeLeadingWidth(context),
-      child: Center(child: child),
-    );
-  }
+  Widget build(BuildContext context) =>
+      LeadingIcon(slotWidth: composeLeadingWidth(context), child: child);
 }
 
 /// Shared chrome for compose-surface rows. Renders the row's [child]

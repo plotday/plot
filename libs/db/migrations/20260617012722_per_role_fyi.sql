@@ -1,12 +1,77 @@
--- Ensures a user has their own root priority. Idempotent — safe to call
--- multiple times. In the per-user model the root is just a priority
--- with nlevel(path) = 1 and user_id = the user, so we don't touch
--- priority_user at all.
-CREATE OR REPLACE FUNCTION public.activate_invited_user (p_user_id uuid)
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Drop index "idx_priority_user_fyi" from table: "priority"
+DROP INDEX "public"."idx_priority_user_fyi";
+
+-- ============================================================================
+-- Data backfill: move from one global FYI per user to one FYI per role.
+-- The old per-user unique index is dropped above; the new per-role unique index
+-- (idx_priority_role_fyi) is created at the END of this block, once the data
+-- satisfies one-live-FYI-per-role.
+-- ============================================================================
+
+-- 1. Attach each user's existing global FYI (role_id IS NULL) to their OLDEST
+--    live role, preserving the threads already filed there. Adopt the role's
+--    colour and the fixed newspaper icon, and drop the legacy 'fyi' key (keys
+--    are unique per root tree; the FYI is identified by is_fyi).
+UPDATE public.priority p
+SET role_id = oldest.role_id,
+    color = oldest.color,
+    icon = 'newspaper',
+    key = NULL
+FROM (
+    SELECT r.user_id, r.id AS role_id, r.color,
+           ROW_NUMBER() OVER (
+               PARTITION BY r.user_id ORDER BY r.created_at ASC, r.id ASC
+           ) AS rn
+    FROM public.role r
+    WHERE r.archived_at IS NULL
+) oldest
+WHERE p.is_fyi
+  AND p.role_id IS NULL
+  AND p.archived_at IS NULL
+  AND oldest.user_id = p.user_id
+  AND oldest.rn = 1;
+
+-- 2. Create a muted FYI for every other live role that still lacks one. Child
+--    of the user's root (mirrors upsert_role's path synthesis).
+INSERT INTO public.priority
+    (user_id, created_by, title, color, icon, is_fyi, role_id,
+     early_notifications_enabled, path)
+SELECT r.user_id, r.user_id, 'FYI', r.color, 'newspaper', TRUE, r.id, FALSE,
+       public.generate_path(root.path)
+FROM public.role r
+JOIN LATERAL (
+    SELECT path FROM public.priority
+    WHERE user_id = r.user_id AND nlevel(path) = 1
+    ORDER BY created_at ASC LIMIT 1
+) root ON TRUE
+WHERE r.archived_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM public.priority f
+      WHERE f.role_id = r.id AND f.is_fyi AND f.archived_at IS NULL
+  );
+
+-- 3. Every live role now has exactly one live FYI — enforce it.
+-- Create index "idx_priority_role_fyi" to table: "priority"
+CREATE UNIQUE INDEX "idx_priority_role_fyi" ON "public"."priority" ("role_id") WHERE (is_fyi AND (archived_at IS NULL));
+
+-- 4. Seed sentinel sidebar orders so each role's Inbox (1e15) then FYI (2e15)
+--    default to the bottom two of the role; user focuses keep their
+--    creation-time order, which sorts above. Then bump priority.updated_at so
+--    clients re-pull the new order and the FYIs' new role_id (priority_setting
+--    writes don't bump the parent on their own).
+INSERT INTO public.priority_setting (user_id, priority_id, key, value)
+SELECT p.user_id, p.id, 'order',
+       to_jsonb((CASE WHEN p.is_fyi THEN 2e15 ELSE 1e15 END)::double precision)
+FROM public.priority p
+WHERE (p.is_inbox OR p.is_fyi) AND p.archived_at IS NULL
+ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+
+UPDATE public.priority
+SET updated_at = now()
+WHERE (is_inbox OR is_fyi) AND archived_at IS NULL;
+
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001'::uuid;
     v_root_priority_id uuid;
@@ -203,5 +268,127 @@ We''d love to hear what you''re working on and how Plot can help. Feel free to r
     -- similar future threads.
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
-$function$;
+$$;
+-- Modify "upsert_role" function
+CREATE OR REPLACE FUNCTION "user"."upsert_role" ("user_id" uuid, "p_role" jsonb) RETURNS uuid LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+-- Resolve ambiguous bare identifiers (e.g. the priority_setting ON CONFLICT
+-- target `user_id`, which collides with this function's `user_id` parameter) to
+-- the table column, matching upsert_priority.
+#variable_conflict use_column
+DECLARE
+    _role_id uuid := COALESCE((p_role ->> 'id')::uuid, uuidv7 ());
+    _exists boolean;
+    _archiving boolean := (p_role ? 'archived_at') AND (p_role ->> 'archived_at') IS NOT NULL;
+    _root_path ltree;
+    _inbox_id uuid;
+    _fyi_id uuid;
+    -- Sentinel sidebar orders: Inbox then FYI default to the bottom two of the
+    -- role; user focuses (now()-epoch-ms order ~1.7e12) sort above them.
+    c_inbox_order CONSTANT double precision := 1e15;
+    c_fyi_order CONSTANT double precision := 2e15;
+BEGIN
+    -- SELECT EXISTS always yields a boolean row (never NULL on no-match), unlike
+    -- SELECT TRUE INTO which assigns NULL when no row matches.
+    SELECT
+        EXISTS (
+            SELECT 1 FROM public.role r
+            WHERE r.id = _role_id
+                AND r.user_id = upsert_role.user_id) INTO _exists;
 
+    IF _archiving AND _exists THEN
+        -- archive-only-when-empty: the role must have no live focuses other than
+        -- its auto-managed Inbox and FYI.
+        IF EXISTS (
+            SELECT 1 FROM public.priority p
+            WHERE p.role_id = _role_id
+                AND NOT p.is_inbox
+                AND NOT p.is_fyi
+                AND p.archived_at IS NULL) THEN
+            RAISE EXCEPTION 'role_not_empty' USING ERRCODE = 'check_violation';
+        END IF;
+        -- never archive the user's last non-archived role.
+        IF (
+            SELECT count(*) FROM public.role r
+            WHERE r.user_id = upsert_role.user_id
+                AND r.archived_at IS NULL) <= 1 THEN
+            RAISE EXCEPTION 'role_last' USING ERRCODE = 'check_violation';
+        END IF;
+        UPDATE public.role
+        SET archived_at = (p_role ->> 'archived_at')::timestamptz
+        WHERE id = _role_id
+            AND public.role.user_id = upsert_role.user_id;
+        UPDATE public.priority
+        SET archived_at = (p_role ->> 'archived_at')::timestamptz
+        WHERE role_id = _role_id
+            AND (is_inbox OR is_fyi);
+        RETURN _role_id;
+    END IF;
+
+    INSERT INTO public.role (id, user_id, created_by, name, color, "order",
+        early_notifications_enabled, notify_window, see_within)
+        VALUES (_role_id, upsert_role.user_id, upsert_role.user_id,
+            COALESCE(p_role ->> 'name', 'Role'),
+            COALESCE((p_role ->> 'color')::integer, 0),
+            (p_role ->> 'order')::double precision,
+            (p_role ->> 'early_notifications_enabled')::boolean,
+            CASE WHEN p_role ? 'notify_window' THEN p_role -> 'notify_window' END,
+            CASE WHEN p_role ? 'see_within' THEN p_role -> 'see_within' END)
+    ON CONFLICT (id)
+        DO UPDATE SET
+            name = COALESCE(p_role ->> 'name', role.name),
+            color = COALESCE((p_role ->> 'color')::integer, role.color),
+            "order" = COALESCE((p_role ->> 'order')::double precision, role."order"),
+            early_notifications_enabled = CASE WHEN p_role ? 'early_notifications_enabled'
+                THEN (p_role ->> 'early_notifications_enabled')::boolean
+                ELSE role.early_notifications_enabled END,
+            notify_window = CASE WHEN p_role ? 'notify_window'
+                THEN p_role -> 'notify_window' ELSE role.notify_window END,
+            see_within = CASE WHEN p_role ? 'see_within'
+                THEN p_role -> 'see_within' ELSE role.see_within END;
+
+    -- New role -> auto-create its Inbox and FYI focuses.
+    IF NOT _exists THEN
+        -- Synthesize a child-of-root path (mirrors upsert_priority's flat-client
+        -- path synthesis). Both sit directly under the user's root.
+        SELECT
+            path INTO _root_path
+        FROM public.priority
+        WHERE public.priority.user_id = upsert_role.user_id
+            AND nlevel(path) = 1
+        ORDER BY created_at ASC
+        LIMIT 1;
+        INSERT INTO public.priority (id, user_id, created_by, title, color, is_inbox,
+            role_id, early_notifications_enabled, notify_window, see_within, path)
+        SELECT
+            uuidv7 (), upsert_role.user_id, upsert_role.user_id, 'Inbox', r.color,
+            TRUE, r.id, r.early_notifications_enabled, r.notify_window, r.see_within,
+            CASE WHEN _root_path IS NULL THEN generate_path (NULL)
+                ELSE _root_path || generate_path (NULL) END
+        FROM public.role r
+        WHERE r.id = _role_id
+        RETURNING id INTO _inbox_id;
+        -- The role's FYI focus: muted (no notifications), fixed newspaper icon,
+        -- no key (idx_priority_key_per_root forbids duplicate keys per root; the
+        -- FYI is identified by is_fyi).
+        INSERT INTO public.priority (id, user_id, created_by, title, color, icon,
+            is_fyi, role_id, early_notifications_enabled, path)
+        SELECT
+            uuidv7 (), upsert_role.user_id, upsert_role.user_id, 'FYI', r.color,
+            'newspaper', TRUE, r.id, FALSE,
+            CASE WHEN _root_path IS NULL THEN generate_path (NULL)
+                ELSE _root_path || generate_path (NULL) END
+        FROM public.role r
+        WHERE r.id = _role_id
+        RETURNING id INTO _fyi_id;
+        -- Sentinel sidebar orders so the Inbox then the FYI default to the
+        -- bottom two of the role; user focuses (now()-epoch-ms order) sort above.
+        INSERT INTO public.priority_setting (user_id, priority_id, key, value)
+        VALUES
+            (upsert_role.user_id, _inbox_id, 'order', to_jsonb(c_inbox_order)),
+            (upsert_role.user_id, _fyi_id, 'order', to_jsonb(c_fyi_order))
+        ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+    END IF;
+
+    RETURN _role_id;
+END;
+$$;

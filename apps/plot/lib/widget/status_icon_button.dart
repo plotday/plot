@@ -138,24 +138,27 @@ class StatusIconButton extends StatelessWidget {
           final s = statuses.firstWhere((ls) => ls.status == status);
           return ListTile(
             title: s.label,
-            leadingBuilder: (isHovered, hasFocus) => Padding(
-              padding: const EdgeInsets.only(left: 16, right: 8),
-              child: s.icon != null
-                  ? Icon(
-                      s.icon!.glyph,
-                      size: 14,
-                      color: s.status == link.status
-                          ? context.theme.colors.primary
-                          : context.theme.colors.mutedForeground,
-                    )
-                  : s.status == link.status
-                  ? Icon(
-                      PlotIcon.done,
-                      size: 14,
-                      color: context.theme.colors.primary,
-                    )
-                  : const SizedBox(width: 14),
-            ),
+            leadingBuilder: (isHovered, hasFocus) {
+              final markSize = context.theme.iconSizes.leading;
+              return Padding(
+                padding: const EdgeInsets.only(left: 16, right: 8),
+                child: s.icon != null
+                    ? Icon(
+                        s.icon!.glyph,
+                        size: markSize,
+                        color: s.status == link.status
+                            ? context.theme.colors.primary
+                            : context.theme.colors.mutedForeground,
+                      )
+                    : s.status == link.status
+                    ? Icon(
+                        PlotIcon.done,
+                        size: markSize,
+                        color: context.theme.colors.primary,
+                      )
+                    : SizedBox(width: markSize),
+              );
+            },
             disableInternalHover: true,
           );
         },

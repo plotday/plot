@@ -1163,7 +1163,9 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                 .map(
                   (cmd) => FItem(
                     title: Text(cmd.title),
-                    prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
+                    prefix: cmd.icon != null
+                        ? Icon(cmd.icon, size: buildContext.theme.iconSizes.leading)
+                        : null,
                     onPress: () {
                       close();
                       buildContext.run(cmd);

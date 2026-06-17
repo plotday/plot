@@ -30,6 +30,29 @@ class PlotIconSizes extends ThemeExtension<PlotIconSizes> {
     xl: 20.0,
   );
 
+  /// Ratio of a *leading* icon's glyph size to its adjacent label font size.
+  ///
+  /// A glyph drawn at its full em box reads ~30–40% larger than the capital
+  /// letters beside it, because text only fills roughly its cap height (~0.7em)
+  /// of the line. So an icon set 1:1 with the font size (the old default, since
+  /// [base] equals the `md` font size) looks too big and crowds the label. A
+  /// leading icon is instead sized to roughly cap height — about one step down
+  /// the size ladder — so it sits optically level with the text. Tune here to
+  /// move every leading icon at once.
+  static const double leadingRatio = 0.86;
+
+  /// Cap-height-matched glyph size for a leading icon sitting before a label of
+  /// [labelSize] (a sidebar row, menu item, picker option, compose row, …).
+  /// Prefer this over matching the icon to the font size 1:1. See
+  /// [leadingRatio].
+  double leadingFor(double labelSize) => labelSize * leadingRatio;
+
+  /// Convenience leading-icon size for body-text (`md`) labels — equal to
+  /// `leadingFor(base)`, roughly the `sm` token. Use for fixed-size rows such
+  /// as the sidebar, where every leading glyph shares one size so the icon
+  /// column reads as a single rhythm regardless of each row's label size.
+  double get leading => leadingFor(base);
+
   @override
   PlotIconSizes copyWith({
     double? xs,

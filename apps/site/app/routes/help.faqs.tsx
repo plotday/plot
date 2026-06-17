@@ -95,7 +95,7 @@ export default function FAQs() {
               fees. It works just as well if you only connect your own accounts
               — you'll still see every conversation that needs you, organized
               and prioritized. Either way, nothing gets dropped, and your time
-              goes to the work only you can do.
+              goes to your best work.
             </Accordion.Panel>
           </Accordion.Item>
 

@@ -117,14 +117,17 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
             FItemStyleDelta.delta(
               contentStyle: FItemContentStyleDelta.delta(
                 prefixIconStyle: FVariants(
+                  // Cap-height leading size so a menu item's prefix glyph sits
+                  // level with its label instead of at the full base (1:1)
+                  // size — see [PlotIconSizes.leading].
                   IconThemeData(
                     color: colorScheme.foreground,
-                    size: 15,
+                    size: iconSizes.leading,
                   ),
                   variants: {
                     [FTappableVariantConstraint.disabled]: IconThemeData(
                       color: colorScheme.disable(colorScheme.foreground),
-                      size: 15,
+                      size: iconSizes.leading,
                     ),
                   },
                 ),
