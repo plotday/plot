@@ -14,6 +14,7 @@ import {
   aggregateNeighbors,
   type ScoredNeighbor,
 } from "./ts-hybrid-aggregate";
+import { buildAliasMap, expandWithAliasMap } from "./ts-hybrid-contacts";
 import {
   detectCandidateAccounts,
   fetchAccountHierarchyAffinity,
@@ -97,7 +98,7 @@ export async function scoringStage(
             mt.topic,
             mt.created_by,
             CASE WHEN mt.twist_id IS NOT NULL THEN mt.created_by ELSE NULL END AS conn_id,
-            public.expand_contacts(mt.contacts) AS contacts_expanded,
+            mt.contacts,
             mt.groups,
             CASE WHEN mt.embedding IS NULL THEN NULL ELSE mt.embedding::text END AS embedding
        FROM public.thread_priority tp
@@ -108,31 +109,45 @@ export async function scoringStage(
     [ctx.userId]
   );
 
-  const rows = (
-    res.rows as Array<{
-      priority_id: string;
-      thread_id: string;
-      title: string | null;
-      topic: string | null;
-      created_by: string | null;
-      conn_id: string | null;
-      contacts_expanded: string[];
-      groups: string[];
-      embedding: string | null;
-    }>
-  ).map<NeighborRow>((r) => ({
+  const rawRows = res.rows as Array<{
+    priority_id: string;
+    thread_id: string;
+    title: string | null;
+    topic: string | null;
+    created_by: string | null;
+    conn_id: string | null;
+    contacts: string[] | null;
+    groups: string[] | null;
+    embedding: string | null;
+  }>;
+
+  // Alias-expand every training thread's contacts (and the candidate's) so the
+  // `con` overlap signal treats the same human reached via different linked
+  // contacts (work + personal email) as overlapping. We resolve the alias
+  // edges for the WHOLE distinct contact set in one query and expand in JS,
+  // instead of calling the non-inlinable public.expand_contacts() SQL function
+  // once per training row — that per-row call crossed the worker's 30s
+  // statement_timeout on large training sets, leaving threads unclassified.
+  const allContacts = new Set<string>(candidate.contacts);
+  for (const r of rawRows) for (const c of r.contacts ?? []) allContacts.add(c);
+  const aliasMap = await buildAliasMap(ctx, allContacts);
+
+  const rows: NeighborRow[] = rawRows.map((r) => ({
     priority_id: r.priority_id,
     thread_id: r.thread_id,
     title: r.title,
     topic: r.topic,
     created_by: r.created_by,
     conn_id: r.conn_id,
-    contacts_expanded: r.contacts_expanded ?? [],
+    contacts_expanded: expandWithAliasMap(r.contacts ?? [], aliasMap),
     groups: r.groups ?? [],
     embedding: parseEmbedding(r.embedding),
   }));
 
-  const expandedCandidateContacts = await expandContacts(ctx, candidate.contacts);
+  const expandedCandidateContacts = expandWithAliasMap(
+    candidate.contacts,
+    aliasMap
+  );
 
   // Connection-origin: resolve org keys for the candidate's connection and
   // every distinct neighbor connection in one round trip. Skipped when the
@@ -405,19 +420,6 @@ export async function scoringStage(
     top1,
     top2,
   };
-}
-
-async function expandContacts(
-  ctx: ClassifierContext,
-  contacts: string[]
-): Promise<string[]> {
-  if (contacts.length === 0) return [];
-  const res = await ctx.rawQuery(
-    `SELECT public.expand_contacts($1::uuid[]) AS expanded`,
-    [contacts]
-  );
-  return ((res.rows[0] as { expanded: string[] | null } | undefined)?.expanded ??
-    []) as string[];
 }
 
 function parseEmbedding(s: string | null): number[] | null {
