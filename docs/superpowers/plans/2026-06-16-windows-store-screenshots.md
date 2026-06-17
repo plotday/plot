@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Resolution:** `[3840, 2160]` (4K, 16:9). MS Store desktop guidance: PNG, landscape, 1366×768 minimum, "Supports 4K images (3840 × 2160)."
+- **Resolution:** `[2880, 1800]` (16:10) — the Retina-capturable ceiling, matching the macOS/iPad plans (1440×900 window @2×, used 1:1, no upscaling). MS Store desktop accepts PNG landscape 1366×768–4K. **Revised from an initial `[3840, 2160]`** after validating the capture path (true 4K isn't crisply producible: the built-in Retina can't fit a >~1512pt-wide window, and a 1× external would only give 1440×900). The task snippets below still show the original `[3840, 2160]`; the committed `manifest.ts` is authoritative.
 - **Captions (locked):** mirror the five macOS headlines exactly — S1 "All your work, ready for action", S2 "Reply to anything without opening another app", S11 "Drive it from the keyboard", S7 (dark) "AI alongside your work — or off entirely", S8 "Works with the tools you already use".
 - **Emulation is debug-only:** the platform override must be gated on `kDebugMode && CliArgs.emulateWindows` — a release build can never override the platform.
 - **Capture window size:** the scene pins the window to 1440×900 (`scenes.dart:83`); on a Retina Mac this captures at 2× = 2880×1800 px. Do not change it.
@@ -571,7 +571,7 @@ Run:
 ```bash
 cd apps/plot/screenshots && for f in store/ms-store/windows/*.png; do echo -n "$f: "; sips -g pixelWidth -g pixelHeight "$f" | awk '/pixelWidth/{w=$2}/pixelHeight/{h=$2}END{print w"x"h}'; done
 ```
-Expected: each file `3840x2160`.
+Expected: each file `2880x1800` (the Retina capture size, used 1:1).
 
 - [ ] **Step 3: Eyeball the screenshots (the Task 2 visual gate)**
 

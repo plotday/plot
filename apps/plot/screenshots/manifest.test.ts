@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PLANS, capturesFor } from './manifest.ts';
 
-test('windows plan targets MS Store at 4K with multipanel-windows framing', () => {
+test('windows plan targets MS Store at the Retina-capturable 2880x1800 with multipanel-windows framing', () => {
   const win = PLANS.find((p) => p.platform === 'windows');
   assert.ok(win, 'windows plan exists');
   assert.equal(win!.store, 'ms-store');
   assert.equal(win!.captureDevice, 'macos');
-  assert.deepEqual(win!.resolution, [3840, 2160]);
+  assert.deepEqual(win!.resolution, [2880, 1800]);
   assert.ok(
     win!.slots.every((s) => s.framing === 'multipanel-windows'),
     'every slot uses multipanel-windows framing',

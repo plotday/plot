@@ -99,10 +99,13 @@ existing `dartArgs()` already sets `--profile=screenshots-windows`,
   `store/ms-store/windows/`, parallel to `store/app-store/…` and
   `store/play/…`).
 - `captureDevice: 'macos'` (it is a macOS capture).
-- `resolution: [3840, 2160]` — Microsoft Store desktop guidance is 1366×768
-  minimum and explicitly "Supports 4K images (3840 × 2160)"; 4K is the top
-  recommended size. 16:9 canvas; the 16:10 capture fits centered with slim
-  brand-gradient gutters (the `multipanel-flat` template already fits-to-area).
+- `resolution: [2880, 1800]` — the capturable ceiling, matching the macOS/iPad
+  plans. A 1440×900 scene window captured at 2× on a Retina display yields
+  2880×1800; used 1:1 with no upscaling. (MS Store desktop accepts 1366×768–4K,
+  but true 4K isn't crisply producible here: the built-in Retina can't fit a
+  window wider than ~1512pt, and a 1× external display would only yield
+  1440×900. **Revised from an initial [3840, 2160]** once the capture path was
+  validated — a 2880-wide source upscaled into a 4K canvas would only soften it.)
 - `framing: 'multipanel-windows'` (see compose) for each slot.
 - Slots mirror the macOS plan's five scenes/headlines (S1, S2, S11, S7, S8).
   Captions are compose-only and trivially re-editable later.

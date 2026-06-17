@@ -106,7 +106,12 @@ export const PLANS: PlatformPlan[] = [
   },
   {
     platform: 'windows', store: 'ms-store',
-    captureDevice: 'macos', resolution: [3840, 2160],
+    // 2880×1800 = a 1440×900 scene window captured at 2× on a Retina display
+    // (matches the macOS/iPad plans). MS Store desktop accepts 1366×768–4K; we
+    // can't crisply produce 4K — the built-in Retina can't fit a window wider
+    // than ~1512pt and a 1× external would only yield 1440×900 — so this is the
+    // capturable ceiling, used 1:1 with no upscaling.
+    captureDevice: 'macos', resolution: [2880, 1800],
     slots: [
       { slots: [1], scene: 'S1', mode: 'light', framing: 'multipanel-windows',
         headline: 'All your work, ready for action' },
