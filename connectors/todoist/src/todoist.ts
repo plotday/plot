@@ -19,7 +19,8 @@ import {
   type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
-import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { Network } from "@plotday/twister/tools/network";
+import { Callbacks } from "@plotday/twister/tools/callbacks";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import { Files } from "@plotday/twister/tools/files";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
@@ -38,7 +39,6 @@ import {
   updateComment,
   uploadFile,
   listCollaborators,
-  verifyWebhookSignature,
   type TodoistTask,
   type TodoistSection,
   type TodoistComment,
@@ -115,6 +115,7 @@ export class Todoist extends Connector<Todoist> {
     return {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.todoist.com/*"] }),
+      callbacks: build(Callbacks),
       tasks: build(Tasks),
       files: build(Files),
     };
@@ -210,12 +211,19 @@ export class Todoist extends Connector<Todoist> {
 
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Queue webhook setup as a separate task to avoid blocking the HTTP response
-    const webhookCallback = await this.callback(
-      this.setupWebhook,
+    // Register the app-level webhook callback so realtime task/comment events
+    // for this project flow to onWebhook. Todoist webhooks are configured once
+    // at the app level (a single Console callback URL), so the API worker's
+    // /hook/todoist route receives every user's events, verifies the signature,
+    // and dispatches here keyed on project id. Storing the callback token under
+    // `webhook_callback_<projectId>` is exactly what that route looks up.
+    // Idempotent: an onChannelEnabled re-dispatch (auto-enable / recovery) just
+    // overwrites the token.
+    const webhookCallback = await this.tools.callbacks.createFromParent(
+      this.onWebhook,
       channel.id
     );
-    await this.runTask(webhookCallback);
+    await this.set(`webhook_callback_${channel.id}`, webhookCallback);
 
     await this.startBatchSync(channel.id, syncHistoryMin);
   }
@@ -227,41 +235,11 @@ export class Todoist extends Connector<Todoist> {
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.clear(`sync_enabled_${channel.id}`);
     await this.clear(`sync_state_${channel.id}`);
-    await this.clear(`webhook_secret_${channel.id}`);
+    await this.clear(`webhook_callback_${channel.id}`);
 
     await this.tools.integrations.archiveLinks({
       channelId: channel.id,
     });
-  }
-
-  /**
-   * Set up webhook for real-time updates from Todoist.
-   */
-  async setupWebhook(projectId: string): Promise<void> {
-    try {
-      const webhookUrl = await this.tools.network.createWebhook(
-        {},
-        this.onWebhook,
-        projectId
-      );
-
-      // Skip webhook setup for localhost (development mode)
-      if (
-        webhookUrl.includes("localhost") ||
-        webhookUrl.includes("127.0.0.1")
-      ) {
-        return;
-      }
-
-      // Store webhook URL — Todoist app webhooks are configured at the app level,
-      // not per-project. The webhook handler filters by project_id.
-      await this.set(`webhook_url_${projectId}`, webhookUrl);
-    } catch (error) {
-      console.error(
-        "Failed to set up Todoist webhook - real-time updates will not work:",
-        error
-      );
-    }
   }
 
   /**
@@ -391,36 +369,23 @@ export class Todoist extends Connector<Todoist> {
   }
 
   /**
-   * Handle incoming webhook events from Todoist.
+   * Handle a Todoist webhook event.
+   *
+   * Dispatched by the API worker's /hook/todoist route, which receives
+   * Todoist's single app-level webhook for every connected user, verifies the
+   * HMAC signature (the app client secret is server-only — the connector can't
+   * see it), and routes here keyed on `event_data.project_id`. We therefore
+   * receive the already-parsed event plus the project this connector enabled.
    */
   private async onWebhook(
-    request: WebhookRequest,
+    event: { eventName: string; eventData: any },
     projectId: string
   ): Promise<void> {
-    // Verify webhook signature if we have a client secret
-    const webhookSecret = await this.get<string>(
-      `webhook_secret_${projectId}`
-    );
-    if (webhookSecret && request.rawBody) {
-      const signature = request.headers["x-todoist-hmac-sha256"];
-      const isValid = await verifyWebhookSignature(
-        webhookSecret,
-        request.rawBody,
-        signature
-      );
-      if (!isValid) {
-        console.warn("Todoist webhook signature verification failed");
-        return;
-      }
-    }
+    const { eventName, eventData } = event;
+    if (!eventName || !eventData) return;
 
-    const payload = request.body as any;
-    if (!payload?.event_name || !payload?.event_data) return;
-
-    const eventName: string = payload.event_name;
-    const eventData = payload.event_data;
-
-    // Filter by project
+    // Defensive: the route already keys on event_data.project_id; guard against
+    // a mismatched dispatch.
     if (eventData.project_id && eventData.project_id !== projectId) return;
 
     // Check sync is still enabled

@@ -361,35 +361,3 @@ export async function listCollaborators(
     `/projects/${projectId}/collaborators`
   );
 }
-
-/**
- * Verify a Todoist webhook signature using HMAC-SHA256.
- */
-export async function verifyWebhookSignature(
-  clientSecret: string,
-  rawBody: string,
-  signature: string | undefined
-): Promise<boolean> {
-  if (!signature) return false;
-
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(clientSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const signatureBytes = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(rawBody)
-  );
-
-  // Convert to base64
-  const expectedSignature = btoa(
-    String.fromCharCode(...new Uint8Array(signatureBytes))
-  );
-
-  return signature === expectedSignature;
-}
