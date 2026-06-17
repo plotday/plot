@@ -92,22 +92,31 @@ async reconcileComments() {
   }
 }
 
-// ✅ CORRECT — periodic background work uses runAt, not a self-chain
+// ✅ CORRECT — periodic background work uses scheduleTask, not a self-chain
 async pollForChanges() {
   await this.processBatch();
   const callback = await this.callback(this.pollForChanges);
-  // Schedule the next run 5 minutes from now. Cloudflare's queue stays
-  // out of the loop entirely between runs.
-  await this.runTask(callback, {
+  // Singleton: re-scheduling under the same key atomically replaces the
+  // pending run, so the poll can never fork into parallel chains even if
+  // pollForChanges is entered more than once. Cloudflare's queue stays out
+  // of the loop entirely between runs.
+  await this.scheduleTask("poll-for-changes", callback, {
     runAt: new Date(Date.now() + 5 * 60 * 1000),
   });
 }
 ```
 
+> ⚠️ A self-rescheduling `runTask({ runAt })` (not keyed) is a hidden trap: if
+> the method is entered twice — a re-dispatched lifecycle hook, a re-init, two
+> racing triggers — you get **two** independent chains, then four, accumulating
+> forever and tripping the execution quota. `scheduleTask(key, …)` keys the task
+> so re-scheduling replaces rather than forks. This is the single most common
+> source of slow-burn auto-suspensions.
+
 **Guidelines:**
 
 - Every `runTask` self-chain must have an explicit exit condition (a cursor that ends, a counter that reaches a limit, a `hasMore` flag).
-- For periodic "keep checking" patterns, use `runTask({ runAt })` instead of an immediate self-chain — the queue stays free between runs.
+- For periodic/self-renewing work (polling, watch renewals), use **`scheduleTask(key, callback, { runAt })`** — it guarantees a single live chain per key. Plain `runTask({ runAt })` forks if its method ever runs twice; `cancelScheduledTask(key)` tears it down.
 - Cap recursion depth: store a counter in `this.set` and stop after a sane bound (e.g., 100 batches).
 - For sync flows, paginate with `runTask` per page rather than fanning out hundreds of tasks at once.
 

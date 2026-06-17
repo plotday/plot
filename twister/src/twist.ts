@@ -295,6 +295,39 @@ export abstract class Twist<TSelf> {
   }
 
   /**
+   * Schedules a **singleton** task keyed by `key`: re-scheduling under the same
+   * key atomically replaces any pending task, so at most one is ever live.
+   *
+   * Prefer this over `runTask({ runAt })` for recurring/self-renewing jobs
+   * (watch renewals, polling, deferred cleanup) — it removes the error-prone
+   * "store token, cancel before re-scheduling" bookkeeping that otherwise leaks
+   * parallel task chains. See {@link Tasks.scheduleTask}.
+   *
+   * @param key - Stable identifier scoped to what the task renews
+   * @param callback - The callback token created with `this.callback()`
+   * @param options.runAt - When to run (required)
+   * @returns Promise resolving to the scheduled task's cancellation token
+   */
+  protected async scheduleTask(
+    key: string,
+    callback: Callback,
+    options: { runAt: Date }
+  ): Promise<string | void> {
+    return this.tools.tasks.scheduleTask(key, callback, options);
+  }
+
+  /**
+   * Cancels the singleton task previously scheduled under `key` (if any).
+   * No-op if none exists or it already ran. See {@link Tasks.cancelScheduledTask}.
+   *
+   * @param key - The same key passed to {@link scheduleTask}
+   * @returns Promise that resolves when the cancellation is processed
+   */
+  protected async cancelScheduledTask(key: string): Promise<void> {
+    return this.tools.tasks.cancelScheduledTask(key);
+  }
+
+  /**
    * Called when the twist is installed by a user.
    *
    * This method should contain initialization logic such as seeding
