@@ -700,7 +700,10 @@ class MuteSimilarThreads extends Command {
       // opens the next thread (decided against pre-change positions).
       final isCurrentThread = priorityBloc?.state.thread?.id == _thread.id;
       final nav = isCurrentThread
-          ? priorityBloc?.threadAfterStateChange(_thread.id)
+          ? priorityBloc?.threadAfterStateChange(
+              _thread.id,
+              multiPanel: context.isMultiPanel,
+            )
           : null;
       priorityBloc?.markFeedMove(_thread.id);
       priorityBloc?.optimisticallyUpdateThread(muted);
@@ -966,7 +969,10 @@ class ToggleThreadActive extends _UpdateThreadCommand {
     // re-activating from Done the helper returns stay (no navigation) and
     // the thread moves to the bottom of Active while remaining open.
     final nav = isCurrentThread
-        ? priorityBloc?.threadAfterStateChange(thread.id)
+        ? priorityBloc?.threadAfterStateChange(
+            thread.id,
+            multiPanel: context.isMultiPanel,
+          )
         : null;
     final updated = thread.copyWith(
       todo: !thread.todo,
@@ -1091,7 +1097,10 @@ class FinishThread extends _UpdateThreadCommand {
     // feed has nothing else to open, fall back to the compose page.
     CommandReturn? navigationResult;
     if (isCurrentThread) {
-      final nav = priorityBloc?.threadAfterStateChange(thread.id);
+      final nav = priorityBloc?.threadAfterStateChange(
+        thread.id,
+        multiPanel: context.isMultiPanel,
+      );
       if (nav?.open != null) {
         navigationResult = await ChangeCurrentThread(nav!.open!).run(context);
       } else if (nav != null && !nav.stay) {
@@ -1291,7 +1300,12 @@ class ScheduleThread extends _UpdateThreadCommand {
     // Rule 2/3: rescheduling the open thread opens the next thread below
     // (decided against pre-change feed positions).
     final isCurrentThread = bloc?.state.thread?.id == thread.id;
-    final nav = isCurrentThread ? bloc?.threadAfterStateChange(thread.id) : null;
+    final nav = isCurrentThread
+        ? bloc?.threadAfterStateChange(
+            thread.id,
+            multiPanel: context.isMultiPanel,
+          )
+        : null;
     var updated = thread;
     // Ensure thread is a todo (creates per-user schedule if needed)
     if (!updated.todo) {
@@ -1834,7 +1848,10 @@ class BulkFinish extends Command {
     final openId = priorityBloc?.state.thread?.id;
     CommandReturn? navigationResult;
     if (openId != null && targets.any((t) => t.id == openId)) {
-      final nav = priorityBloc?.threadAfterStateChange(openId);
+      final nav = priorityBloc?.threadAfterStateChange(
+        openId,
+        multiPanel: context.isMultiPanel,
+      );
       if (nav?.open != null) {
         navigationResult = await ChangeCurrentThread(nav!.open!).run(context);
       } else if (nav != null && !nav.stay) {
@@ -2220,7 +2237,10 @@ Future<void> _applyPriorityMove(
       priority.id != contextPriority.id;
   final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
   final nav = (isCurrentThread && leavesContext)
-      ? priorityBloc?.threadAfterStateChange(thread.id)
+      ? priorityBloc?.threadAfterStateChange(
+          thread.id,
+          multiPanel: context.isMultiPanel,
+        )
       : null;
   final updated = thread.copyWith(priority: priority);
   priorityBloc?.markFeedMove(thread.id);

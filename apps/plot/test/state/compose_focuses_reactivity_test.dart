@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/widget/compose/compose_target.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/profile_preferences.dart';
 
@@ -113,9 +114,54 @@ void main() {
       expect(sections.focuses, hasLength(4),
           reason: 'every non-archived priority is offered as a focus note');
       // The view drops any focus that does not resolve in priorityById, so the
-      // resolution map must be consistent with the focuses it returns.
+      // resolution map carried WITH the sections must be consistent with the
+      // focuses it returns.
       for (final t in sections.focuses) {
-        expect(bloc.priorityById[t.priorityId], isNotNull);
+        expect(sections.priorityById[t.priorityId], isNotNull);
+      }
+    });
+
+    test(
+        'the section snapshot resolves its own focuses even after the live '
+        'bloc context is invalidated (no "Private note" section flicker during '
+        'sync churn)', () async {
+      final self = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+
+      await _insertPriority(store, Uuid.generate(),
+          createdBy: self,
+          title: 'Everything',
+          path: 'a',
+          isInbox: true,
+          roleId: Uuid.generate());
+      await _insertPriority(store, Uuid.generate(),
+          createdBy: self, title: "Men's team", path: 'a.b', roleId: Uuid.generate());
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+
+      final sections = await bloc.loadSections();
+      expect(sections.focuses, isNotEmpty);
+
+      // A reactive refresh (priority/channel/twist sync) drops the bloc's cached
+      // search context between the load resolving and the view resolving the
+      // focuses. prependToCache invalidates the context exactly as a refresh
+      // does, leaving the bloc's live priority map momentarily empty. The view
+      // used to read that live map (bloc.priorityById) and would drop every
+      // focus — making the whole "Private note" section disappear. The section
+      // must instead resolve against its OWN snapshot, which stays consistent.
+      bloc.prependToCache(ComposeTarget.focusNote(
+        priorityId: sections.focuses.first.priorityId!,
+        teamId: null,
+      ));
+
+      for (final t in sections.focuses) {
+        expect(sections.priorityById[t.priorityId], isNotNull,
+            reason: 'a focus must resolve against the section it was returned '
+                'with, regardless of the live bloc context');
       }
     });
 

@@ -48,7 +48,7 @@ void main() {
         row(b),
         row(c),
       ];
-      final nav = nextThreadAfterStateChange(items, a.id);
+      final nav = nextThreadAfterStateChange(items, a.id, multiPanel: true);
       expect(nav.open?.id, b.id);
       expect(nav.stay, isFalse);
     });
@@ -60,7 +60,7 @@ void main() {
         _header(ActivitySection.scheduled, date: Date(2026, 6, 20)),
         row(b),
       ];
-      final nav = nextThreadAfterStateChange(items, a.id);
+      final nav = nextThreadAfterStateChange(items, a.id, multiPanel: true);
       expect(nav.open?.id, b.id);
     });
 
@@ -72,7 +72,7 @@ void main() {
         _header(ActivitySection.activity),
         row(done1),
       ];
-      final nav = nextThreadAfterStateChange(items, b.id);
+      final nav = nextThreadAfterStateChange(items, b.id, multiPanel: true);
       expect(nav.open?.id, a.id, reason: 'works bottom-up: prefer above');
       expect(nav.stay, isFalse);
     });
@@ -85,7 +85,7 @@ void main() {
         _header(ActivitySection.activity),
         row(done1),
       ];
-      final nav = nextThreadAfterStateChange(items, a.id);
+      final nav = nextThreadAfterStateChange(items, a.id, multiPanel: true);
       expect(nav.open?.id, done1.id);
     });
 
@@ -97,7 +97,7 @@ void main() {
         row(done1),
         row(b),
       ];
-      final nav = nextThreadAfterStateChange(items, done1.id);
+      final nav = nextThreadAfterStateChange(items, done1.id, multiPanel: true);
       expect(nav.open, isNull);
       expect(nav.stay, isTrue);
     });
@@ -108,7 +108,7 @@ void main() {
         row(a),
         row(b),
       ];
-      final nav = nextThreadAfterStateChange(items, b.id);
+      final nav = nextThreadAfterStateChange(items, b.id, multiPanel: true);
       expect(nav.open?.id, a.id);
     });
 
@@ -117,7 +117,7 @@ void main() {
         _header(ActivitySection.doing),
         row(a),
       ];
-      final nav = nextThreadAfterStateChange(items, a.id);
+      final nav = nextThreadAfterStateChange(items, a.id, multiPanel: true);
       expect(nav.open, isNull);
       expect(nav.stay, isFalse);
     });
@@ -127,9 +127,37 @@ void main() {
         _header(ActivitySection.doing),
         row(a),
       ];
-      final nav = nextThreadAfterStateChange(items, b.id);
+      final nav = nextThreadAfterStateChange(items, b.id, multiPanel: true);
       expect(nav.open, isNull);
       expect(nav.stay, isTrue);
+    });
+
+    group('single panel never repositions', () {
+      // In single panel the user explicitly drilled into the thread, so a
+      // state change keeps it open; they pop back to the list when ready.
+      test('a thread that would open the next below instead stays open', () {
+        final items = [
+          _header(ActivitySection.doing),
+          row(a),
+          row(b),
+          row(c),
+        ];
+        final nav = nextThreadAfterStateChange(items, a.id, multiPanel: false);
+        expect(nav.open, isNull);
+        expect(nav.stay, isTrue);
+      });
+
+      test('the last actionable thread does not fall back to compose', () {
+        final items = [
+          _header(ActivitySection.doing),
+          row(a),
+        ];
+        final nav = nextThreadAfterStateChange(items, a.id, multiPanel: false);
+        expect(nav.open, isNull);
+        // stay (not the "nothing left to open" sentinel), so FinishThread
+        // keeps the thread open instead of opening the compose page.
+        expect(nav.stay, isTrue);
+      });
     });
   });
 }

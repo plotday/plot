@@ -30,8 +30,22 @@
   role's colour, and a collapsed role shows a quiet arrow so it's obvious you can tap to open it. The
   bold text and unread dot still tell you, at a glance, which roles have active or unread work inside.
 
+### Thread swipe actions
+
+- Swiping a thread now follows a simple **left to take it on, right to clear it** pattern. A short
+  swipe **left** starts working on a thread (**To do**), or — if it's already on your list — pushes
+  it to a later day (**Do later**); a long swipe left **moves** it to another focus. A short swipe
+  **right** marks it **done** (and clears unread updates), while a long swipe right — or a short
+  swipe right on a thread that's already done — opens the **menu** of more actions.
+
 ### Fixes
 
+- On phones and other single-column layouts, marking a thread done — or changing its state another
+  way — while you have it open no longer jumps you to a different thread. The thread stays open so you
+  can keep reading or make more changes, and you go back to the list whenever you're ready. On wider
+  layouts, where the list stays visible beside the open thread, it still moves you on to the next one.
+- On thread rows, the status, mute, and assignee icons on the right now line up exactly with the date
+  shown above them, instead of sitting a couple of pixels off to the side.
 - Focuses no longer disappear from your sidebar when you archive an old, unrelated focus. Previously,
   archiving a focus could silently hide other live focuses that happened to have been organised under
   it in the past, even though they were still active and assigned to a role. Every live focus now

@@ -44,11 +44,21 @@ class ComposeSections extends Equatable {
     required this.twists,
     required this.channels,
     required this.focuses,
+    this.priorityById = const {},
   });
   final List<ComposePeopleEntry> people;
   final List<ComposeTarget> twists; // kind == twist
   final List<ComposeTarget> channels; // kind == connector, channel != null
   final List<ComposeTarget> focuses; // kind == note (focusNote)
+
+  /// The focus priorities by id, snapshotted from the same search context that
+  /// produced [focuses]. Carried WITH the sections (rather than read back off
+  /// the bloc's live, mutable context) so the view resolves every focus-note
+  /// row against a map guaranteed consistent with [focuses]. A reactive
+  /// `refresh()` invalidating the bloc's context mid-render must not drop the
+  /// "Private note" section to empty — see [ComposeTargetsBloc.loadSections].
+  final Map<Uuid, Priority> priorityById;
+
   @override
   List<Object?> get props => [people, twists, channels, focuses];
 }
@@ -203,6 +213,8 @@ ComposeSections linkModeSections(
     twists: const [],
     channels: _orderBySignature(linkChannels, rankByLinkMru).take(perSection).toList(),
     focuses: _orderBySignature(sections.focuses, rankByLinkMru).take(perSection).toList(),
+    // Preserve the resolution map so the surviving focuses still resolve.
+    priorityById: sections.priorityById,
   );
 }
 
@@ -666,17 +678,6 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     _contextToken++;
   }
 
-  /// Focuses-by-id from the most-recently-built search context, for resolving
-  /// focus-note pills in the sections view without a redundant
-  /// `Priority.getRaw()` on every load and keystroke. Populated once
-  /// [loadSections] / [searchSections] (or [warm]) has built the context;
-  /// empty before then. The sections view reads this synchronously right after
-  /// a load resolves — at which point the context is freshly cached — and a
-  /// concurrent invalidate only drops it to an empty map for the brief window
-  /// before the view's reactive reload rebuilds it.
-  Map<Uuid, Priority> get priorityById =>
-      _searchContext?.priorityById ?? const {};
-
   /// Loads the query-independent pieces every base-list/search pass needs:
   /// active teams, the connector create-targets (with per-connector counts and
   /// a signature index), and the recent authored-thread roster scan.
@@ -993,6 +994,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
           twists: const [],
           channels: allChannels,
           focuses: allFocuses,
+          priorityById: ctx.priorityById,
         ),
         (sigs) => _prefs.rankByLinkMru(signatures: sigs),
         perSection: perSection,
@@ -1004,6 +1006,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       twists: twists.take(perSection).toList(),
       channels: allChannels.take(perSection).toList(),
       focuses: allFocuses.take(perSection).toList(),
+      priorityById: ctx.priorityById,
     );
   }
 
@@ -1267,6 +1270,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       twists: base.twists.where(matchesTarget).take(perSection).toList(),
       channels: base.channels.where(matchesTarget).take(perSection).toList(),
       focuses: base.focuses.where(matchesTarget).take(perSection).toList(),
+      // [base] was built from one search context; carry its resolution map so
+      // the filtered focuses still resolve in the view.
+      priorityById: base.priorityById,
     );
   }
 

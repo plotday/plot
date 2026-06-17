@@ -221,10 +221,13 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           if (_isDisposed || requestId != _requestId) return;
           setState(() {
             _sections = sections;
-            // Reuse the focuses the bloc already resolved while building this
-            // list (its context build runs Priority.getRaw) instead of issuing
-            // a second identical query here on every load.
-            _priorityById = bloc.priorityById;
+            // Resolve focuses against the map carried WITH these sections, not
+            // the bloc's live context: a reactive refresh can invalidate that
+            // context between this load resolving and us reading it, leaving it
+            // momentarily empty — which would drop every focus and hide the
+            // "Private note" section. The snapshot stays consistent with
+            // [sections.focuses].
+            _priorityById = sections.priorityById;
           });
         })
         .catchError((Object e, StackTrace s) {
@@ -261,9 +264,8 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           if (_isDisposed || requestId != _requestId) return;
           setState(() {
             _sections = sections;
-            // Reuse the bloc's resolved focuses (see [_loadSections]) rather
-            // than re-querying all priorities on every keystroke.
-            _priorityById = bloc.priorityById;
+            // Resolve against the section's own snapshot (see [_loadSections]).
+            _priorityById = sections.priorityById;
           });
         })
         .catchError((Object e, StackTrace s) {

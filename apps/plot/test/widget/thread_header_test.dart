@@ -76,4 +76,91 @@ void main() {
       );
     });
   });
+
+  // The trailing command cluster is overlaid via a [Positioned] whose negative
+  // right offset is tuned for a ghost icon BUTTON: the button box extends past
+  // the content edge by its internal icon padding, landing the glyph (inset by
+  // that padding) right at the content edge — the same edge as the header
+  // timestamp. Only a trailing-most item that is NOT a padded ghost button (a
+  // bare RSVP chip, or a read-only assignee avatar rendered without its button
+  // wrapper) needs a compensating inset. A writable assignee avatar IS a padded
+  // ghost button (ThreadAssignee wraps it in FButton.icon), so insetting it
+  // again double-pads it ~one icon-padding inboard of the timestamp.
+  group('trailingClusterInset', () {
+    const pad = 7.5;
+
+    test('no inset for a writable assignee avatar (already a padded button)', () {
+      expect(
+        trailingClusterInset(
+          hasRsvpChip: false,
+          hasAssignee: true,
+          assigneeIsReadOnly: false,
+          ghostIconPadding: pad,
+        ),
+        0.0,
+      );
+    });
+
+    test('insets a read-only assignee avatar (bare, no button padding)', () {
+      expect(
+        trailingClusterInset(
+          hasRsvpChip: false,
+          hasAssignee: true,
+          assigneeIsReadOnly: true,
+          ghostIconPadding: pad,
+        ),
+        pad,
+      );
+    });
+
+    test('insets a trailing RSVP chip (bare pill)', () {
+      expect(
+        trailingClusterInset(
+          hasRsvpChip: true,
+          hasAssignee: false,
+          assigneeIsReadOnly: false,
+          ghostIconPadding: pad,
+        ),
+        pad,
+      );
+    });
+
+    test('no inset when a writable assignee trails an RSVP chip', () {
+      // Cluster order ends … · rsvp · assignee, so the writable (padded) avatar
+      // is the trailing-most item and needs no compensation.
+      expect(
+        trailingClusterInset(
+          hasRsvpChip: true,
+          hasAssignee: true,
+          assigneeIsReadOnly: false,
+          ghostIconPadding: pad,
+        ),
+        0.0,
+      );
+    });
+
+    test('insets when a read-only assignee trails an RSVP chip', () {
+      expect(
+        trailingClusterInset(
+          hasRsvpChip: true,
+          hasAssignee: true,
+          assigneeIsReadOnly: true,
+          ghostIconPadding: pad,
+        ),
+        pad,
+      );
+    });
+
+    test('no inset when the cluster ends in a ghost icon button', () {
+      expect(
+        trailingClusterInset(
+          hasRsvpChip: false,
+          hasAssignee: false,
+          assigneeIsReadOnly: false,
+          ghostIconPadding: pad,
+        ),
+        0.0,
+      );
+    });
+  });
 }

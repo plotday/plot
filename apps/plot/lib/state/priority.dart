@@ -3525,9 +3525,20 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Rule 2/3 navigation decision for an explicit state change on the
   /// open thread. Computed against the CURRENT feed items — call BEFORE
   /// applying the optimistic update.
-  StateChangeNav threadAfterStateChange(ThreadId changedId) {
+  ///
+  /// [multiPanel] gates the advance-to-next behaviour: in single panel the
+  /// changed thread always stays open (the user pops back to the list when
+  /// ready), so callers pass `context.isMultiPanel`.
+  StateChangeNav threadAfterStateChange(
+    ThreadId changedId, {
+    required bool multiPanel,
+  }) {
     if (_activeTabFlatMode) return (open: null, stay: true);
-    return nextThreadAfterStateChange(state.activityFeedItems, changedId);
+    return nextThreadAfterStateChange(
+      state.activityFeedItems,
+      changedId,
+      multiPanel: multiPanel,
+    );
   }
 
   /// Determines which list to navigate based on prior context.

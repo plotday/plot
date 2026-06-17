@@ -16,6 +16,12 @@ typedef StateChangeNav = ({Thread? open, bool stay});
 ///
 /// - The decision is computed against the PRE-change [items] (call this
 ///   before applying the optimistic update).
+/// - In single panel ([multiPanel] false) the changed thread always stays
+///   open. The user explicitly drilled into the thread (it is a pushed
+///   full-screen route, not a row beside a visible list), so auto-advancing
+///   to an unrelated thread is disorienting — they pop back to the list when
+///   ready. The advance-through-the-list flow only makes sense in multi
+///   panel, where the list stays visible alongside the open thread.
 /// - Threads rendered in Active (Doing, including the unread cluster) or
 ///   Scheduled open the next thread below, across sections.
 /// - Exception: when the changed thread is the last one before the Done
@@ -24,8 +30,11 @@ typedef StateChangeNav = ({Thread? open, bool stay});
 /// - In the Done section the changed thread stays open.
 StateChangeNav nextThreadAfterStateChange(
   List<AgendaItem> items,
-  ThreadId changedId,
-) {
+  ThreadId changedId, {
+  required bool multiPanel,
+}) {
+  if (!multiPanel) return (open: null, stay: true);
+
   // Walk the feed, tracking each thread row's section from the
   // marker-encoded headers above it.
   ActivitySection? section;

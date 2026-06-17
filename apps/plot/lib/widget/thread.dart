@@ -14,6 +14,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/util/logo_cache.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/thread_assignee.dart';
+import 'package:plot/widget/thread_swipe_commands.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -45,6 +46,37 @@ bool reserveContactsLabel({
   required bool actorsLoaded,
   required bool hasResolvedLabel,
 }) => !isChannelThread && hasContactIds && (!actorsLoaded || hasResolvedLabel);
+
+/// The right-edge inset (px) to append after the trailing command cluster so
+/// its trailing-most *visible* element lines up with the header timestamp.
+///
+/// The cluster is overlaid via a [Positioned] whose negative offset is tuned
+/// for a ghost icon button: the button box extends past the content edge by its
+/// internal icon padding, landing the glyph (inset by that padding) right at the
+/// content edge — the same edge the header timestamp sits at. A trailing item
+/// that is *not* a padded ghost button needs compensation so it doesn't
+/// overshoot to the panel edge:
+///   - The RSVP chip is a bare pill (its visible edge is its box edge).
+///   - A *read-only* assignee avatar is rendered bare (ThreadAssignee returns
+///     the AvatarGroup directly, with no button wrapper or padding).
+/// Both are pulled in by one [ghostIconPadding].
+///
+/// A *writable* assignee avatar is itself a padded ghost button (ThreadAssignee
+/// wraps it in `FButton.icon` with the same icon padding), so it already hugs
+/// the edge exactly like a sibling icon button — insetting it again double-pads
+/// it ~one icon-padding inboard of the timestamp. The persistent cluster ends
+/// with `… · rsvp · assignee`, so the assignee is the trailing-most item
+/// whenever it is present, and the RSVP chip only when there is no assignee.
+double trailingClusterInset({
+  required bool hasRsvpChip,
+  required bool hasAssignee,
+  required bool assigneeIsReadOnly,
+  required double ghostIconPadding,
+}) {
+  final trailingIsBareAvatar = hasAssignee && assigneeIsReadOnly;
+  final trailingIsBareChip = !hasAssignee && hasRsvpChip;
+  return (trailingIsBareAvatar || trailingIsBareChip) ? ghostIconPadding : 0.0;
+}
 
 /// How a plain row tap should be interpreted (see [_rowClickIntent]).
 enum _RowClickIntent { open, toggle, range }
@@ -401,45 +433,23 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     }
   }
 
-  // Short right: Toggle active. Universal "deal with this now" — flips
-  // active on so the thread lands in Doing (or off, mirroring the leading
-  // icon tap on desktop).
-  Command? _getSwipeRightShortCommand() {
-    if (widget.isOutsidePriority) return null;
-    return ToggleThreadActive(activity);
-  }
-
-  // Long right: Schedule for another day.
-  Command? _getSwipeRightLongCommand() {
-    if (widget.isOutsidePriority) return null;
-    return PickScheduleThread(activity);
-  }
-
-  // Short left: Finish (only for scheduled/todo threads — inert on
-  // unscheduled threads, the user must reach the long zone for the menu).
-  Command? _getSwipeLeftShortCommand() {
-    if (widget.isOutsidePriority) return null;
-    if (!activity.todo) return null;
-    return FinishThread(
-      activity,
-      bump: bump,
-      // Link schedule instances stay visible after finish, so skip removal
-      // animation. For swipe, the non-link-schedule path uses an empty
-      // callback so onSwipeExit handles the visual removal instead.
-      onBeforeRun: activity.isLinkScheduleInstance
-          ? null
-          : widget.onSwipeExit != null
-          ? (_) async {}
-          : null,
-    );
-  }
-
-  // Long left: Menu. Universal across all list views. Less-frequent actions
-  // are accessible from here.
-  Command? _getSwipeLeftLongCommand() {
-    if (widget.isOutsidePriority) return null;
-    return ShowThreadCommands(activity);
-  }
+  // Swipe actions. Left = engage (To do / Do later), Move on the long zone;
+  // right = clear it (Done / mark read), the menu otherwise. The full
+  // per-state mapping lives in [resolveThreadSwipeCommands].
+  ThreadSwipeCommands _swipeCommands() => resolveThreadSwipeCommands(
+    activity,
+    isOutsidePriority: widget.isOutsidePriority,
+    bump: bump,
+    // Link schedule instances stay visible after finish, so skip the removal
+    // animation. Otherwise, when a swipe-exit animation is wired, hand the
+    // removal to it via an empty callback so FinishThread doesn't also remove
+    // the row.
+    finishOnBeforeRun: activity.isLinkScheduleInstance
+        ? null
+        : widget.onSwipeExit != null
+        ? (_) async {}
+        : null,
+  );
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
     // In a focus feed the label is shown only for threads filed elsewhere
@@ -1035,24 +1045,24 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                     // effective background so the title text is cleanly
                     // truncated rather than bleeding through the buttons.
                     Positioned(
-                      // Push the trailing row right enough that its icon
-                      // glyphs / avatars line up with the right edge of
-                      // header durations (block headers end at
-                      // `spacing.lg` from the agenda edge — same as the
-                      // ListTile's right padding — so we offset by the
-                      // button's own internal icon padding to land the
-                      // visible glyph/avatar right at that boundary).
-                      right:
-                          -buildContext
-                              .theme
-                              .buttonStyles
-                              .ghost
-                              .md
-                              .iconContentStyle
-                              .padding
-                              .resolve(TextDirection.ltr)
-                              .right -
-                          buildContext.theme.spacing.xs,
+                      // Push the trailing row right by exactly the ghost
+                      // button's internal icon padding, so the visible glyph /
+                      // avatar lands at the ListTile's content edge — the same
+                      // right edge the header timestamp (and the agenda's
+                      // block-header durations, also `spacing.lg` in) sit at.
+                      // No extra nudge beyond the icon padding: the status
+                      // circle / check and the assignee avatar fill their icon
+                      // box, so any additional offset visibly overshoots the
+                      // timestamp's right edge.
+                      right: -buildContext
+                          .theme
+                          .buttonStyles
+                          .ghost
+                          .md
+                          .iconContentStyle
+                          .padding
+                          .resolve(TextDirection.ltr)
+                          .right,
                       top: 0,
                       bottom: 0,
                       child: Builder(
@@ -1177,10 +1187,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       );
     }
 
-    final swipeRightShort = _getSwipeRightShortCommand();
-    final swipeRightLong = _getSwipeRightLongCommand();
-    final swipeLeftShort = _getSwipeLeftShortCommand();
-    final swipeLeftLong = _getSwipeLeftLongCommand();
+    final swipe = _swipeCommands();
+    final swipeRightShort = swipe.rightShort;
+    final swipeRightLong = swipe.rightLong;
+    final swipeLeftShort = swipe.leftShort;
+    final swipeLeftLong = swipe.leftLong;
     final hasSwipeCommands =
         swipeRightShort != null ||
         swipeRightLong != null ||
@@ -1345,21 +1356,28 @@ class ThreadCommands extends HookWidget {
     ];
 
     // The trailing row is overlaid via a [Positioned] (see _buildListTile)
-    // whose negative right offset is tuned for ghost icon buttons: it pushes
-    // the row right by the button's internal icon padding so the visible glyph
-    // lands at the content's right edge. Non-button trailing items (the RSVP
-    // chip, the assignee avatar) carry no such internal inset, so when one of
-    // them is the trailing-most child it overshoots and sits flush against the
-    // panel edge. The persistent cluster's rightmost item is the RSVP chip or
-    // assignee avatar whenever either is present, so apply the inset based on
-    // that — independent of hover — so the chip/avatar holds its position
-    // instead of shifting right when hover commands appear.
-    final trailingIsNonButton = rsvpChip != null || activity.assigneeId != null;
-    final trailingInset = trailingIsNonButton
-        ? context.theme.buttonStyles.ghost.md.iconContentStyle.padding
-              .resolve(TextDirection.ltr)
-              .right
-        : 0.0;
+    // whose negative right offset is tuned for ghost icon buttons so the visible
+    // glyph lands at the content's right edge (aligned with the header
+    // timestamp). Bare trailing items — the RSVP chip and a *read-only* assignee
+    // avatar — carry no such internal inset and would overshoot to the panel
+    // edge, so they get a compensating inset. A *writable* assignee avatar is
+    // itself a padded ghost button and already hugs the edge, so it must not be
+    // inset again. Computed independent of hover so the chip/avatar holds its
+    // position when hover commands appear. See [trailingClusterInset].
+    final trailingInset = trailingClusterInset(
+      hasRsvpChip: rsvpChip != null,
+      hasAssignee: activity.assigneeId != null,
+      assigneeIsReadOnly: activity.isReadOnly,
+      ghostIconPadding: context
+          .theme
+          .buttonStyles
+          .ghost
+          .md
+          .iconContentStyle
+          .padding
+          .resolve(TextDirection.ltr)
+          .right,
+    );
 
     return Row(
       mainAxisSize: MainAxisSize.min,
