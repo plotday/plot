@@ -2562,7 +2562,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 373;
+  int get schemaVersion => 374;
 
   @override
   MigrationStrategy get migration {
@@ -4204,6 +4204,12 @@ class Store extends _$Store {
       // TableMigration rebuilds the table from the current Drift schema (no
       // `root` column), preserving all other data.
       await m.alterTable(TableMigration(priorities));
+    }
+
+    if (from < 374) {
+      // Runtime-only "Failed to send" marker. NULL everywhere on upgrade; only
+      // the server ever sets it (synced in like cta).
+      await _safeAddColumn(m, notes, notes.deliveryError);
     }
   }
 

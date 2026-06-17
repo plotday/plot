@@ -499,6 +499,11 @@ export interface Note {
    * The user_id or twist_instance_id that actually created this note. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.
    */
   created_by: string;
+  /**
+   * Time-sensitive call-to-action extracted at ingest (OTP code or confirm link): {kind:"otp"|"confirm", service, code, url}. NULL when none. Set by the twist runtime from connector extraction; drives the client's ephemeral OTP/confirm toast and push.
+   */
+  cta: Json | null;
+  delivery_error: Json | null;
   draft: Generated<boolean>;
   embedding: string | null;
   /**
@@ -591,6 +596,7 @@ export interface Priority {
   icon: string | null;
   id: Generated<string>;
   inherit_members: Generated<boolean>;
+  is_fyi: Generated<boolean>;
   is_inbox: Generated<boolean>;
   key: string | null;
   notification_cleared_at: Timestamp | null;
@@ -835,6 +841,7 @@ export interface Thread {
    * Contacts whose own sync wants to join but who have not yet been attested by another user's sync. Promoted to contacts (with thread_priority filing) once a subsequent attester includes them.
    */
   pending_contacts: Generated<string[]>;
+  pending_create_link: Json | null;
   preview: string | null;
   seq: Generated<string>;
   sync_depth: number | null;
@@ -862,6 +869,12 @@ export interface ThreadAssociation {
   parent_thread_id: string;
   seq: Generated<string>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface ThreadNotifyState {
+  notified_at: Timestamp;
+  thread_id: string;
+  user_id: string;
 }
 
 export interface ThreadPriority {
@@ -932,6 +945,7 @@ export interface ThreadState {
   at: string | null;
   bumped_at: Timestamp | null;
   importance: Generated<number>;
+  last_note_source_created_at: Timestamp | null;
   on: string | null;
   order: number | null;
   read_at: Timestamp | null;
@@ -989,6 +1003,7 @@ export interface ThreadX {
   last_note_source_created_at: Timestamp | null;
   merged_into_thread_id: string | null;
   pending_contacts: string[] | null;
+  pending_create_link: Json | null;
   preview: string | null;
   seq: string | null;
   sync_depth: number | null;
@@ -1587,6 +1602,8 @@ export interface UserNote {
   content: string | null;
   created_at: Timestamp | null;
   created_by: string | null;
+  cta: Json | null;
+  delivery_error: Json | null;
   draft: boolean | null;
   id: string | null;
   mentions: string[] | null;
@@ -1620,6 +1637,8 @@ export interface UserNoteRedacted {
   content: string | null;
   created_at: Timestamp | null;
   created_by: string | null;
+  cta: Json | null;
+  delivery_error: Json | null;
   draft: boolean | null;
   id: string | null;
   mentions: string[] | null;
@@ -1656,6 +1675,7 @@ export interface UserPriority {
   icon: string | null;
   id: string | null;
   inherit_members: boolean | null;
+  is_fyi: boolean | null;
   is_inbox: boolean | null;
   key: string | null;
   notification_cleared_at: Timestamp | null;
@@ -2036,6 +2056,7 @@ export interface DB {
   team_user: TeamUser;
   thread: Thread;
   thread_association: ThreadAssociation;
+  thread_notify_state: ThreadNotifyState;
   thread_priority: ThreadPriority;
   thread_priority_negative: ThreadPriorityNegative;
   thread_reaction: ThreadReaction;

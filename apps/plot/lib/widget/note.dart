@@ -223,6 +223,8 @@ class _NoteWidgetState extends State<NoteWidget> {
               ),
               child: _NoteActionsLayout(actions: noteLinks, note: widget.note),
             ),
+          if (widget.note.deliveryError != null)
+            _DeliveryErrorBanner(note: widget.note),
           SizedBox(
             height: 30,
             child: Stack(
@@ -862,6 +864,11 @@ class _PendingSyncIndicatorState extends State<_PendingSyncIndicator> {
 
   @override
   Widget build(BuildContext context) {
+    // A delivery failure takes precedence — the "Failed to send" banner is the
+    // source of truth, so don't also show the "waiting for sync" cloud.
+    if (widget.note.deliveryError != null) {
+      return const SizedBox.shrink();
+    }
     if (widget.note.pending == null || !_pastWindow) {
       return const SizedBox.shrink();
     }
@@ -873,6 +880,77 @@ class _PendingSyncIndicatorState extends State<_PendingSyncIndicator> {
           FontAwesomeIcons.cloudArrowUp,
           size: 10,
           color: context.colour.muted.withValues(alpha: 0.6),
+        ),
+      ),
+    );
+  }
+}
+
+/// Footer shown on a note whose outbound send failed: "Failed to send",
+/// the reason (when available), and Retry / Discard actions.
+class _DeliveryErrorBanner extends StatelessWidget {
+  const _DeliveryErrorBanner({required this.note});
+
+  final Note note;
+
+  @override
+  Widget build(BuildContext context) {
+    final error = note.deliveryError;
+    if (error == null) return const SizedBox.shrink();
+    final errorColor = context.theme.colors.error;
+    final label = (error.message != null && error.message!.isNotEmpty)
+        ? 'Failed to send · ${error.message}'
+        : 'Failed to send';
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, right: 6, top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            FontAwesomeIcons.triangleExclamation,
+            size: 11,
+            color: errorColor,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.typography.xs.copyWith(color: errorColor),
+            ),
+          ),
+          const SizedBox(width: 6),
+          _DeliveryErrorAction(label: 'Retry', onTap: () => note.retrySend()),
+          const SizedBox(width: 4),
+          _DeliveryErrorAction(label: 'Discard', onTap: () => note.discard()),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeliveryErrorAction extends StatelessWidget {
+  const _DeliveryErrorAction({required this.label, required this.onTap});
+
+  final String label;
+  final Future<void> Function() onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FTappable(
+      onPress: () {
+        unawaited(onTap());
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Text(
+          label,
+          style: context.theme.typography.xs.copyWith(
+            color: context.colour.foreground,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

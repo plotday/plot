@@ -16,6 +16,7 @@ CREATE TABLE "public"."note" (
     "external_content_hash" text, -- SHA-256 of (contentType + "\n" + content) as last seen by the connector; baseline for sync-in preservation
     "actions" jsonb,
     "cta" jsonb, -- time-sensitive call-to-action {kind, service, code, url}; client shows ephemeral prompt
+    "delivery_error" jsonb, -- runtime-only: set when an outbound send/write-back failed {code, message, failedAt}; clients READ it to show a "Failed to send" affordance, never write it
     "key" text,
     "mentions" uuid[],
     "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,

@@ -962,6 +962,7 @@ export type Database = {
           created_at: string
           created_by: string
           cta: Json | null
+          delivery_error: Json | null
           draft: boolean
           embedding: unknown
           external_content_hash: string | null
@@ -989,6 +990,7 @@ export type Database = {
           created_at?: string
           created_by: string
           cta?: Json | null
+          delivery_error?: Json | null
           draft?: boolean
           embedding?: unknown
           external_content_hash?: string | null
@@ -1016,6 +1018,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           cta?: Json | null
+          delivery_error?: Json | null
           draft?: boolean
           embedding?: unknown
           external_content_hash?: string | null
@@ -2141,6 +2144,7 @@ export type Database = {
           last_note_source_created_at: string | null
           merged_into_thread_id: string | null
           pending_contacts: string[]
+          pending_create_link: Json | null
           preview: string | null
           seq: unknown
           sync_depth: number | null
@@ -2174,6 +2178,7 @@ export type Database = {
           last_note_source_created_at?: string | null
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
+          pending_create_link?: Json | null
           preview?: string | null
           seq?: unknown
           sync_depth?: number | null
@@ -2207,6 +2212,7 @@ export type Database = {
           last_note_source_created_at?: string | null
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
+          pending_create_link?: Json | null
           preview?: string | null
           seq?: unknown
           sync_depth?: number | null
@@ -3923,6 +3929,7 @@ export type Database = {
           last_note_source_created_at: string | null
           merged_into_thread_id: string | null
           pending_contacts: string[] | null
+          pending_create_link: Json | null
           preview: string | null
           seq: unknown
           sync_depth: number | null
@@ -3956,6 +3963,7 @@ export type Database = {
           last_note_source_created_at?: string | null
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
+          pending_create_link?: Json | null
           preview?: string | null
           seq?: unknown
           sync_depth?: number | null
@@ -3989,6 +3997,7 @@ export type Database = {
           last_note_source_created_at?: string | null
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
+          pending_create_link?: Json | null
           preview?: string | null
           seq?: unknown
           sync_depth?: number | null
@@ -5541,6 +5550,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           cta: Json | null
+          delivery_error: Json | null
           draft: boolean | null
           id: string | null
           mentions: string[] | null
@@ -5677,6 +5687,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           cta: Json | null
+          delivery_error: Json | null
           draft: boolean | null
           id: string | null
           mentions: string[] | null

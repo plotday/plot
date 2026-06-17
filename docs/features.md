@@ -113,6 +113,9 @@ original app when you need to.
   to the sender, plus per-message recipient editing.
 - React from Plot and it syncs both ways — the full standard emoji set with skin tones, plus Slack
   workspace custom emoji.
+- Sends that can't be delivered never fail silently: Plot retries brief network hiccups
+  automatically, and if a message still can't be sent it marks the thread unread and flags the
+  message **Failed to send** (with the reason when available) so you can **Retry** or **Discard** it.
 - Threads from tools that track status (a Linear issue, a calendar event) show one clear status icon
   in the header and on the row; tap it to change the status right from Plot.
 

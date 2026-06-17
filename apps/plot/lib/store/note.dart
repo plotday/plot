@@ -49,6 +49,54 @@ class CtaConverter extends TypeConverter<Cta?, String?>
   Map<String, dynamic>? toJson(Cta? value) => value?.toJson();
 }
 
+/// Set by the runtime (never the client) when an outbound send / write-back of
+/// this note failed and couldn't be recovered. Drives the "Failed to send"
+/// affordance on the note. Cleared when a retry succeeds.
+class DeliveryError extends Equatable {
+  const DeliveryError({required this.code, this.message});
+
+  /// Stable machine code, e.g. "rejected", "too_large", "rate_limited",
+  /// "send_failed".
+  final String code;
+
+  /// User-safe reason to show beside "Failed to send", or null.
+  final String? message;
+
+  factory DeliveryError.fromJson(Map<String, dynamic> json) => DeliveryError(
+        code: json['code'] as String? ?? 'send_failed',
+        message: json['message'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'message': message,
+      };
+
+  @override
+  List<Object?> get props => [code, message];
+}
+
+class DeliveryErrorConverter extends TypeConverter<DeliveryError?, String?>
+    with JsonTypeConverter2<DeliveryError?, String?, Map<String, dynamic>?> {
+  const DeliveryErrorConverter();
+
+  @override
+  DeliveryError? fromSql(String? fromDb) => fromDb == null
+      ? null
+      : DeliveryError.fromJson(jsonDecode(fromDb) as Map<String, dynamic>);
+
+  @override
+  String? toSql(DeliveryError? value) =>
+      value == null ? null : jsonEncode(value.toJson());
+
+  @override
+  DeliveryError? fromJson(Map<String, dynamic>? json) =>
+      json == null ? null : DeliveryError.fromJson(json);
+
+  @override
+  Map<String, dynamic>? toJson(DeliveryError? value) => value?.toJson();
+}
+
 @DataClassName('NoteRow')
 class Notes extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
@@ -62,6 +110,8 @@ class Notes extends Table
       dateTime().map(const LocalDateTimeConverter())();
   TextColumn get actions => text().nullable().map(const UserActionsConverter())();
   TextColumn get cta => text().nullable().map(const CtaConverter())();
+  TextColumn get deliveryError =>
+      text().nullable().map(const DeliveryErrorConverter())();
   TextColumn get mentions =>
       text().nullable().map(const ActorIdListConverter())();
   BlobColumn get reNoteId => blob().nullable().map(const UuidConverter())();
@@ -155,6 +205,7 @@ class Note extends Equatable implements Comparable<Note> {
     String? content,
     List<UserAction>? actions,
     Cta? cta,
+    DeliveryError? deliveryError,
     List<ActorId>? mentions,
     NoteId? reNoteId,
     required DateTime createdAt,
@@ -180,6 +231,7 @@ class Note extends Equatable implements Comparable<Note> {
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
       cta: cta,
+      deliveryError: deliveryError,
       mentions: effectiveMentions,
       reNoteId: reNoteId,
       createdAt: createdAt,
@@ -200,6 +252,7 @@ class Note extends Equatable implements Comparable<Note> {
       content = null,
       actions = null,
       cta = null,
+      deliveryError = null,
       mentions = null,
       reNoteId = null,
       createdAt = DateTime.now(),
@@ -220,6 +273,7 @@ class Note extends Equatable implements Comparable<Note> {
     this.content,
     this.actions,
     this.cta,
+    this.deliveryError,
     this.mentions,
     this.reNoteId,
     required this.createdAt,
@@ -251,6 +305,7 @@ class Note extends Equatable implements Comparable<Note> {
       sourceCreatedAt: noteRow.sourceCreatedAt,
       actions: noteRow.actions,
       cta: noteRow.cta,
+      deliveryError: noteRow.deliveryError,
       mentions: effectiveMentions,
       reNoteId: noteRow.reNoteId,
       createdAt: noteRow.createdAt,
@@ -294,6 +349,7 @@ class Note extends Equatable implements Comparable<Note> {
   final String? content;
   final List<UserAction>? actions;
   final Cta? cta;
+  final DeliveryError? deliveryError;
   final List<ActorId>? mentions;
   final NoteId? reNoteId;
   final DateTime createdAt;
@@ -828,6 +884,7 @@ class Note extends Equatable implements Comparable<Note> {
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
       cta: cta,
+      deliveryError: deliveryError,
       mentions: mentions,
       reNoteId: reNoteId,
       createdAt: createdAt,
@@ -947,6 +1004,36 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   Future<void> archive() => copyWith(archivedAt: Value(DateTime.now())).save();
+
+  /// Retry a failed outbound send. Asks the server to re-dispatch the
+  /// connector write-back (POST /sync/note-retry-send). When the server
+  /// re-dispatched it (`redispatched: true`) it has cleared `delivery_error`
+  /// server-side, so we clear the local marker too for instant feedback; if
+  /// the retry fails again the server re-marks it and the affordance reappears
+  /// via sync. When there's nothing to re-dispatch to (a failed new-message
+  /// compose leaves no connector link), we leave the marker in place.
+  Future<void> retrySend() async {
+    if (deliveryError == null) return;
+    try {
+      final res = await api.post<Map<String, dynamic>>(
+        '/sync/note-retry-send',
+        body: {'note_id': id.toString()},
+      );
+      if (res['redispatched'] == true) {
+        await (Store.get.update(Store.get.notes)
+              ..where((t) => t.id.equals(id.toBytes())))
+            .write(
+              const NotesCompanion(deliveryError: Value<DeliveryError?>(null)),
+            );
+      }
+    } catch (e, t) {
+      log.warning('Failed to retry note send for $id: $e\n$t');
+    }
+  }
+
+  /// Discard a note that failed to send. It never reached its recipient, so
+  /// archiving it (which syncs) removes it from the thread on every device.
+  Future<void> discard() => archive();
 
   // Tag-related getters
   //
@@ -1280,6 +1367,7 @@ class Note extends Equatable implements Comparable<Note> {
     String? content,
     List<UserAction>? actions,
     Value<Cta?> cta = const Value.absent(),
+    Value<DeliveryError?> deliveryError = const Value.absent(),
     List<ActorId>? mentions,
     List<ActorId>? addMentions,
     NoteId? reNoteId,
@@ -1357,6 +1445,7 @@ class Note extends Equatable implements Comparable<Note> {
         sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
         actions: actions ?? this.actions,
         cta: cta.present ? cta.value : this.cta,
+        deliveryError: deliveryError.present ? deliveryError.value : this.deliveryError,
         mentions: effectiveMentions,
         reNoteId: clearReNoteId ? null : (reNoteId ?? this.reNoteId),
         createdAt: isPublishing ? now : createdAt,
@@ -1379,6 +1468,7 @@ class Note extends Equatable implements Comparable<Note> {
     content,
     actions,
     cta,
+    deliveryError,
     mentions,
     reNoteId,
     createdAt,

@@ -807,6 +807,26 @@ export default class extends WorkerEntrypoint {
                   }
                 } catch (error) {
                   await runFailureHandler(callbackInfo, error);
+                  // Tier-B "Failed to send" fallback: a note write-back
+                  // (onNoteCreated / onNoteUpdated, identified by
+                  // deferredNoteKeyUpdate) that THROWS means the send did not
+                  // happen. Mark the originating note so the user sees a
+                  // generic "Failed to send" affordance even when the connector
+                  // didn't return a structured deliveryError. Best-effort: a
+                  // failure here must not mask the original error.
+                  if (
+                    callbackInfo.deferredNoteKeyUpdate?.noteId &&
+                    typeof tool.markSendFailed === 'function'
+                  ) {
+                    try {
+                      await tool.markSendFailed(
+                        callbackInfo.deferredNoteKeyUpdate.noteId,
+                        { code: 'send_failed', message: null }
+                      );
+                    } catch (markError) {
+                      console.warn('Failed to mark note send-failed:', markError);
+                    }
+                  }
                   const errorData = {
                     message: error instanceof Error ? error.message : String(error),
                     twistStack: error instanceof Error ? error.stack || '' : '',

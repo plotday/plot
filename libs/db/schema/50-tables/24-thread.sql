@@ -65,6 +65,12 @@ CREATE TABLE "public"."thread" (
     -- Does not affect access control — thread.contacts remains the source
     -- of truth for visibility.
     "contact_meta" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    -- Server-only (NOT in user.thread): the create_link dispatch spec, stashed
+    -- when the user composes a new external item from Plot so a failed send can
+    -- be retried. Shape: { twist_instance_id, channel_id, type, status,
+    -- invite_emails }. Set at dispatch, cleared once the connector's
+    -- onCreateLink succeeds. Recipients are re-resolved from thread.contacts.
+    "pending_create_link" jsonb,
     "facets" jsonb,
     -- Monotonic sync cursor (writing transaction's xid8). Maintained by the
     -- update_seq_and_updated_at BEFORE INSERT/UPDATE trigger. Sync queries

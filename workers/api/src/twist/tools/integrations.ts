@@ -1281,6 +1281,32 @@ export class Integrations extends Tool implements IAuth {
   ): Promise<void> {
     if (!link) return;
 
+    // Compose send failed: the connector returned a delivery-error marker
+    // (originatingNote.deliveryError set, no real link source) instead of a
+    // link, because there is no external item to bind. Mark the thread's
+    // opening note as failed and stop — do NOT create a link. A later retry
+    // re-runs onCreateLink and creates the link on success.
+    const composeFailure = (link as any).originatingNote?.deliveryError as
+      | { code: string; message?: string | null }
+      | null
+      | undefined;
+    if (
+      composeFailure &&
+      !(link as any).source &&
+      !((link as any).sources?.length)
+    ) {
+      const openingNote = await this.db
+        .selectFrom("note")
+        .select("id")
+        .where("thread_id", "=", threadId as string)
+        .where("draft", "=", false)
+        .orderBy("created_at", "asc")
+        .limit(1)
+        .executeTakeFirst();
+      if (openingNote) await this.markSendFailed(openingNote.id, composeFailure);
+      return;
+    }
+
     // Apply runtime defaults so the connector's return value stays focused on
     // external-system fields (external id, title, status, etc.).
     if (link.channelId === undefined || link.channelId === null) {
@@ -1380,9 +1406,13 @@ export class Integrations extends Tool implements IAuth {
     // note on the thread. updateNoteBaseline also stamps updated_by with the
     // connector marker so the keyed note doesn't re-enter the create dispatch.
     const originatingNote = (link as any).originatingNote as
-      | { key?: string; externalContent?: string }
+      | { key?: string; externalContent?: string; deliveryError?: { code: string; message?: string | null } | null }
       | undefined;
-    if (originatingNote?.key || originatingNote?.externalContent) {
+    if (
+      originatingNote?.key ||
+      originatingNote?.externalContent ||
+      originatingNote?.deliveryError !== undefined
+    ) {
       const openingNote = await this.db
         .selectFrom("note")
         .select("id")
@@ -1418,6 +1448,16 @@ export class Integrations extends Tool implements IAuth {
       }
     } else {
     }
+
+    // The compose succeeded — drop the stashed retry spec so the thread isn't
+    // re-dispatched later. (On failure the connector returns a deliveryError
+    // and the spec is intentionally left for the retry path.)
+    await this.db
+      .updateTable("thread")
+      .set({ pending_create_link: null })
+      .where("id", "=", threadId as string)
+      .where("pending_create_link", "is not", null)
+      .execute();
 
     // Create task schedule for assignee, and notify.
     await this.createTaskScheduleForLink(threadId);
@@ -5399,6 +5439,17 @@ export class Integrations extends Tool implements IAuth {
     noteId: string,
     result: NoteWriteBackResult
   ): Promise<void> {
+    // Delivery-failure signalling is orthogonal to key/baseline. A write-back
+    // that reports `deliveryError` records the failure on the note (and marks
+    // the thread unread); any other return clears a previously-recorded
+    // failure (e.g. a successful retry).
+    if (result.deliveryError) {
+      await this.markSendFailed(noteId, result.deliveryError);
+      // A failure return carries no key/externalContent — nothing else to do.
+      return;
+    }
+    await this.clearSendFailed(noteId);
+
     const patch: { key?: string; external_content_hash?: string; link_id?: string } = {};
     if (typeof result.key === "string" && result.key.length > 0) {
       patch.key = result.key;
@@ -5435,6 +5486,87 @@ export class Integrations extends Tool implements IAuth {
       .updateTable("note")
       .set({ ...patch, updated_by: this.connectorUpdatedBy() })
       .where("id", "=", noteId)
+      .execute();
+  }
+
+  /**
+   * Record that an outbound send / write-back for `noteId` failed and could
+   * not be recovered, so the app can surface a "Failed to send" affordance.
+   * Sets `note.delivery_error` and marks the thread unread for the note's
+   * author (the sender). Called from the write-back path when a connector
+   * returns a `deliveryError`, from the dispatch-error fallback in the
+   * entrypoint when a write-back throws, and from the compose path.
+   *
+   * Idempotent: only writes (and bumps `seq` → re-syncs) when the recorded
+   * error actually changes. The seq bump would otherwise re-qualify the note
+   * for the channel-note dispatch view (which is seq-cursor driven and does
+   * not filter on `updated_by`) and re-fire `onNoteCreated` on the next poll;
+   * the `IS DISTINCT FROM` guard bounds that to a single extra cycle, and the
+   * connector's own send idempotency guard prevents an actual re-send.
+   */
+  async markSendFailed(
+    noteId: string,
+    error: { code: string; message?: string | null }
+  ): Promise<void> {
+    const code = error.code;
+    const message = error.message ?? null;
+    const payload = JSON.stringify({ code, message });
+    const res = await this.db
+      .updateTable("note")
+      .set({
+        delivery_error: sql<Json>`${payload}::jsonb`,
+        updated_by: this.connectorUpdatedBy(),
+      })
+      .where("id", "=", noteId)
+      .where(sql<boolean>`note.delivery_error IS DISTINCT FROM ${payload}::jsonb`)
+      .executeTakeFirst();
+
+    // Only mark unread when we actually changed the error (avoids re-flagging
+    // a thread the user has already seen for an unchanged, still-failing send).
+    if (!res.numUpdatedRows || res.numUpdatedRows === 0n) return;
+
+    const note = await this.db
+      .selectFrom("note")
+      .select(["thread_id", "created_by"])
+      .where("id", "=", noteId)
+      .executeTakeFirst();
+    if (!note?.thread_id || !note.created_by) return;
+    try {
+      await rpcUser(this.db, "upsert_thread_state", {
+        user_id: note.created_by,
+        p_thread_id: note.thread_id,
+        p_active: false,
+        p_urgent: false,
+        p_importance: 50,
+        // p_read_at omitted → NULL; with p_set_read_at: true this marks the
+        // thread unread for the sender (race-safe via p_note_created_at).
+        p_set_active: false,
+        p_set_urgent: false,
+        p_set_importance: false,
+        p_set_read_at: true,
+        p_note_created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      createLogger({ twist_instance_id: this.twistInstanceId }).error(
+        "markSendFailed: failed to mark thread unread",
+        err as Error,
+        { note_id: noteId, thread_id: note.thread_id }
+      );
+    }
+  }
+
+  /**
+   * Clear a previously-recorded send failure on `noteId` (e.g. after a
+   * successful retry or any later successful write-back). Idempotent — the
+   * `delivery_error IS NOT NULL` guard means it only bumps `seq` (re-syncing
+   * the cleared state to the client) when there was actually an error.
+   */
+  async clearSendFailed(noteId: string): Promise<void> {
+    await this.db
+      .updateTable("note")
+      .set({ delivery_error: null, updated_by: this.connectorUpdatedBy() })
+      .where("id", "=", noteId)
+      .where("delivery_error", "is not", null)
       .execute();
   }
 }

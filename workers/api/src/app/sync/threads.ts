@@ -35,7 +35,10 @@ import {
   stripAnnounceContactsFromThreads,
   stripHiddenRoleContactsFromThreads,
 } from "./viewer";
-import { twistFactory } from "../../twist/factory";
+import {
+  resolveCreateLinkContacts,
+  dispatchCreateLink,
+} from "./create-link-dispatch";
 
 /** Client-supplied request to create an external item via a connector. */
 export type CreateLinkSpec = {
@@ -1017,45 +1020,16 @@ threads.post("/sync/threads", async (c) => {
           // Resolve the thread's contacts into Actor rows for the connector,
           // excluding every contact linked to the creating user so the author
           // isn't passed as a recipient.
-          const contacts: Array<{ id: string; type: "contact" | "user"; email: string | null; name: string | null }> = [];
-          const resolveContactIds = await expandGroupsToContactIds(
+          const contacts = await resolveCreateLinkContacts(
             db,
             userId,
             dispatchContactIds,
             dispatchGroupIds,
-            (error) => {
+            (error: unknown) => {
               console.error("[sync/threads] expand_group_contacts failed:", error);
               tracker.captureException(error as Error);
             },
           );
-          if (resolveContactIds.length > 0) {
-            const rows = await db
-              .selectFrom("contact as c")
-              .leftJoin("user_contact as uc", (join) =>
-                join
-                  .onRef("uc.contact_id", "=", "c.id")
-                  .on("uc.user_id", "=", userId)
-                  .on("uc.linked", "=", true)
-                  .on("uc.archived_at", "is", null)
-              )
-              .select([
-                "c.id",
-                "c.email",
-                "c.name",
-                "uc.user_id as linked_user_id",
-              ])
-              .where("c.id", "in", resolveContactIds)
-              .execute();
-            for (const row of rows) {
-              if (row.linked_user_id) continue;
-              contacts.push({
-                id: row.id,
-                type: "contact",
-                email: row.email ?? null,
-                name: row.name ?? null,
-              });
-            }
-          }
 
           const draft = {
             channelId: createLinkSpec.channel_id!,
@@ -1067,17 +1041,29 @@ threads.post("/sync/threads", async (c) => {
             inviteEmails: dispatchInviteEmails,
           };
 
-          const factory = twistFactory({
-            env: c.env,
-            ctx: c.executionCtx as any,
-            db,
-          });
-          const wrapper = await factory({
-            twistInstanceId: createLinkSpec.twist_instance_id!,
-          });
-          await wrapper.dispatch("Integrations", {
-            itemType: "create_link",
+          // Stash the spec so a failed send can be retried (cleared once
+          // onCreateLink succeeds, in saveCreatedLink). Server-only — not in
+          // user.thread, so it doesn't sync. Recipients are re-resolved from
+          // thread.contacts on retry; only the parts not derivable from the
+          // thread (connector, channel, type, status, typed addresses) are
+          // stored.
+          await db
+            .updateTable("thread")
+            .set({
+              pending_create_link: sql`${JSON.stringify({
+                twist_instance_id: createLinkSpec.twist_instance_id!,
+                channel_id: createLinkSpec.channel_id ?? null,
+                type: createLinkSpec.type!,
+                status: createLinkSpec.status ?? null,
+                invite_emails: dispatchInviteEmails,
+              })}::jsonb`,
+            })
+            .where("id", "=", dispatchThreadId)
+            .execute();
+
+          await dispatchCreateLink(c.env, c.executionCtx as any, db, {
             threadId: dispatchThreadId,
+            twistInstanceId: createLinkSpec.twist_instance_id!,
             draft,
           });
         } catch (error) {

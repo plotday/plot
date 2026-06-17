@@ -26,6 +26,7 @@ SELECT
     n.content,
     n.actions,
     n.cta,
+    n.delivery_error,
     n.mentions,
     n.re_note_id,
     n.merged_from_thread_id
@@ -83,6 +84,7 @@ SELECT
     NULL::text AS content,
     NULL::jsonb AS actions,
     NULL::jsonb AS cta,
+    NULL::jsonb AS delivery_error,
     CAST(NULL AS uuid[]) AS mentions,
     n.re_note_id,
     n.merged_from_thread_id

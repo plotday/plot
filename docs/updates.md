@@ -30,6 +30,14 @@
   role's colour, and a collapsed role shows a quiet arrow so it's obvious you can tap to open it. The
   bold text and unread dot still tell you, at a glance, which roles have active or unread work inside.
 
+### Sending messages
+
+- If a message you send to a connected account — like a reply to a Gmail thread or a new email you
+  start from Plot — can't be delivered, Plot no longer drops it silently. Brief network hiccups are
+  retried automatically, and if it still can't be sent the thread shows as unread and the message is
+  marked **Failed to send** (with the reason when one is available). You can tap **Retry** to send it
+  again, or **Discard** to remove it. This works across your connected accounts, not just Gmail.
+
 ### Thread swipe actions
 
 - Swiping a thread now follows a simple **left to take it on, right to clear it** pattern. A short
