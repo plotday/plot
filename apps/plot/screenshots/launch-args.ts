@@ -11,6 +11,7 @@ export function dartArgs(scene: string, mode: Mode, platform: string): string[] 
     `--frozen-time=${FROZEN}`,
     mode === 'dark' ? '--dark-mode' : '--light-mode',
     `--profile=screenshots-${platform}`,
+    ...(platform === 'windows' ? ['--emulate-windows'] : []),
     `--scene=${scene}`,
   ];
 }

@@ -6,6 +6,7 @@ import { composePlatform } from './compose/compose.ts';
 const CAPTURE: Record<string, string> = {
   'iphone-6.9': new URL('./capture/ios.sh', import.meta.url).pathname,
   'macos': new URL('./capture/macos.sh', import.meta.url).pathname,
+  'windows': new URL('./capture/macos.sh', import.meta.url).pathname,
 };
 const RAW = new URL('./raw/', import.meta.url).pathname;
 const REPO = new URL('../../../', import.meta.url).pathname;

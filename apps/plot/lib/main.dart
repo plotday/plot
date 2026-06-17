@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:platform_builder/platform_builder.dart' as pb;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -94,6 +95,15 @@ Future<void> run(List<String> args) async {
   // effect. CliArgs.init only parses strings, so it is safe to run before
   // bindings.
   CliArgs.init(args);
+  // Screenshot-only: render the app's Windows chrome on a macOS capture by
+  // overriding the reported platform. This affects ONLY platform_builder's
+  // Platform.instance.* (the in-app chrome — windowsBuilder, header insets,
+  // Flutter-drawn caption buttons). dart:io Platform.* — and thus every
+  // native/host call — stays macOS, so no Windows-only plugin fires here.
+  // Must run before any Platform.instance access and before Window.init().
+  if (kDebugMode && CliArgs.emulateWindows) {
+    pb.Platform.init(override: pb.Platforms.windows);
+  }
   if (kDebugMode && CliArgs.enableDriverExtension) {
     DriverBinding.ensureInitialized();
     // Force frames to keep pumping while the driver extension is active.

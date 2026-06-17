@@ -17,6 +17,8 @@ import 'package:logging/logging.dart';
 /// - --enable-driver-extension: Register the flutter_driver VM service
 ///   extension so agents can drive the app via dart-mcp's flutter_driver
 ///   tool. Debug builds only — the call is a no-op in release.
+/// - --emulate-windows: Render the app's Windows window chrome (caption
+///   buttons, header insets) on a macOS build. Screenshot/debug only.
 class CliArgs {
   CliArgs._();
 
@@ -33,6 +35,7 @@ class CliArgs {
   static bool _noProfile = false;
   static bool _enableDriverExtension = false;
   static String? _scene;
+  static bool _emulateWindows = false;
 
   /// Initializes the CLI argument parser.
   ///
@@ -92,6 +95,9 @@ class CliArgs {
       } else if (arg.startsWith('--scene=')) {
         _scene = arg.substring('--scene='.length);
         _log.info('Screenshot scene: $_scene');
+      } else if (arg == '--emulate-windows') {
+        _emulateWindows = true;
+        _log.info('--emulate-windows: rendering Windows chrome');
       }
     }
 
@@ -175,11 +181,16 @@ class CliArgs {
   /// Returns the screenshot scene id if --scene was provided.
   static String? get scene => _scene;
 
+  /// Returns true if --emulate-windows was specified (screenshot-only:
+  /// renders the app's Windows chrome on a macOS capture).
+  static bool get emulateWindows => _emulateWindows;
+
   @visibleForTesting
   static void resetForTest() {
     _initialized = false;
     _user = _password = _url = _profile = _scene = null;
-    _darkMode = _lightMode = _noProfile = _enableDriverExtension = false;
+    _darkMode = _lightMode = _noProfile = _enableDriverExtension =
+        _emulateWindows = false;
     _frozenTime = null;
   }
 }

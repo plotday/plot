@@ -1,5 +1,5 @@
 export type Mode = 'light' | 'dark';
-export type Framing = 'phone' | 'phone-hero-span' | 'multipanel-flat';
+export type Framing = 'phone' | 'phone-hero-span' | 'multipanel-flat' | 'multipanel-windows';
 
 export interface SlotPlan {
   slots: number[];          // [3] = one slot; [1,2] = spanning hero
@@ -10,8 +10,8 @@ export interface SlotPlan {
   subhead?: string;
 }
 export interface PlatformPlan {
-  platform: 'iphone-6.9' | 'ipad-13' | 'macos' | 'android-phone' | 'android-tablet';
-  store: 'app-store' | 'play';
+  platform: 'iphone-6.9' | 'ipad-13' | 'macos' | 'android-phone' | 'android-tablet' | 'windows';
+  store: 'app-store' | 'play' | 'ms-store';
   captureDevice: string;    // sim name or 'macos'
   resolution: [number, number]; // exact px per slot
   slots: SlotPlan[];
@@ -101,6 +101,22 @@ export const PLANS: PlatformPlan[] = [
       { slots: [3], scene: 'S7', mode: 'dark', framing: 'multipanel-flat',
         headline: 'AI alongside your work — or off entirely' },
       { slots: [4], scene: 'S8', mode: 'light', framing: 'multipanel-flat',
+        headline: 'Works with the tools you already use' },
+    ],
+  },
+  {
+    platform: 'windows', store: 'ms-store',
+    captureDevice: 'macos', resolution: [3840, 2160],
+    slots: [
+      { slots: [1], scene: 'S1', mode: 'light', framing: 'multipanel-windows',
+        headline: 'All your work, ready for action' },
+      { slots: [2], scene: 'S2', mode: 'light', framing: 'multipanel-windows',
+        headline: 'Reply to anything without opening another app' },
+      { slots: [3], scene: 'S11', mode: 'light', framing: 'multipanel-windows',
+        headline: 'Drive it from the keyboard' },
+      { slots: [4], scene: 'S7', mode: 'dark', framing: 'multipanel-windows',
+        headline: 'AI alongside your work — or off entirely' },
+      { slots: [5], scene: 'S8', mode: 'light', framing: 'multipanel-windows',
         headline: 'Works with the tools you already use' },
     ],
   },

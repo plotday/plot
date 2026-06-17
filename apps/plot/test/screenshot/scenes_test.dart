@@ -24,4 +24,16 @@ void main() {
     Scenes.clear();
     expect(Scenes.draftContentFor('Chelsea (A) — coaching staff plan'), isNull);
   });
+
+  test('parses --emulate-windows', () {
+    CliArgs.resetForTest();
+    CliArgs.init(['--emulate-windows']);
+    expect(CliArgs.emulateWindows, isTrue);
+  });
+
+  test('emulateWindows defaults to false', () {
+    CliArgs.resetForTest();
+    CliArgs.init(['--scene=S1']);
+    expect(CliArgs.emulateWindows, isFalse);
+  });
 }

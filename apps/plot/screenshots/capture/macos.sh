@@ -22,6 +22,7 @@ set -euo pipefail
 
 SCENE="$1"; MODE="$2"; OUT="$3"; shift 3
 DART_ARGS=("$@")
+PROFILE="$(printf '%s\n' "${DART_ARGS[@]}" | sed -n 's/^--profile=//p' | head -1)"
 APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 WIN_W=1440
 WIN_H=900
@@ -33,7 +34,7 @@ for a in "${DART_ARGS[@]}"; do RUN_ARGS+=(--dart-entrypoint-args="$a"); done
 ( cd "$APP_DIR" && flutter run -d macos "${RUN_ARGS[@]}" >"$LOG" 2>&1 ) &
 RUN_PID=$!
 
-cleanup() { kill "$RUN_PID" 2>/dev/null || true; pkill -f "profile=screenshots-macos" 2>/dev/null || true; }
+cleanup() { kill "$RUN_PID" 2>/dev/null || true; [ -n "$PROFILE" ] && pkill -f "profile=$PROFILE" 2>/dev/null || true; }
 trap cleanup EXIT
 
 # Wait for the scene to compose (first build can take minutes).

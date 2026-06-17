@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' as io;
 import 'dart:ui' show AppExitResponse;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -71,14 +72,28 @@ class Window extends StatefulWidget {
   }
 
   static Future<void> init() async {
+    // Native window configuration must follow the real HOST OS, not the
+    // rendered platform. A screenshot build can render Windows *chrome* on a
+    // macOS host (CliArgs.emulateWindows overrides Platform.instance to
+    // Windows; see main.dart), but the underlying NSWindow must still be set up
+    // as macOS — otherwise it is left misconfigured (wrong size, uncapturable).
+    // `currentHost` is unaffected by the override; gate on !kIsWeb so the web
+    // build (where currentHost may report the browser's OS) does no native
+    // setup, exactly as the previous `isMacOS || isWindows` guards did.
+    final macHost = !kIsWeb && Platform.instance.currentHost == Platforms.macOS;
+    final winHost =
+        !kIsWeb && Platform.instance.currentHost == Platforms.windows;
+    final emulatingWindows = macHost && Platform.instance.isWindows;
+
     // Initialize cross-platform window manager on desktop platforms
-    if (Platform.instance.isMacOS || Platform.instance.isWindows) {
+    if (macHost || winHost) {
       await windowManager.ensureInitialized();
       await windowManager.setPreventClose(true);
     }
 
-    // Initialize macOS-specific window styling
-    if (Platform.instance.isMacOS) {
+    // Initialize macOS-specific window styling (runs on a macOS host even when
+    // emulating Windows chrome — the NSWindow is physically macOS).
+    if (macHost) {
       await WindowManipulator.initialize(enableWindowDelegate: false);
       await WindowManipulator.setMaterial(
         NSVisualEffectViewMaterial.windowBackground,
@@ -91,21 +106,35 @@ class Window extends StatefulWidget {
         toolbarStyle: NSWindowToolbarStyle.unifiedCompact,
       );
 
-      toolbarHeight = await macos_win.WindowManipulator.getTitlebarHeight();
-      const buttonTypes = [
-        NSWindowButtonType.closeButton,
-        NSWindowButtonType.miniaturizeButton,
-        NSWindowButtonType.zoomButton,
-      ];
-      final buttonRects = [
-        for (final type in buttonTypes)
-          await macos_win.WindowManipulator.getStandardWindowButtonPosition(
-            buttonType: type,
-          ),
-      ];
-      _trafficLightOriginalX = [for (final r in buttonRects) r.left];
-      toolbarPadding = EdgeInsets.only(left: buttonRects.last.right);
-    } else if (Platform.instance.isWindows) {
+      if (emulatingWindows) {
+        // Rendered chrome is Windows: the Flutter-drawn caption buttons
+        // (_WindowControls, top-right) stand in, so hide the macOS traffic
+        // lights and use the Windows header inset. alignTrafficLightsToHeader
+        // is a no-op under the override (its isMacOS guard is false), so the
+        // hidden buttons are never repositioned back on screen.
+        await WindowManipulator.hideCloseButton();
+        await WindowManipulator.hideMiniaturizeButton();
+        await WindowManipulator.hideZoomButton();
+        toolbarHeight = 32.0;
+        // ~138px for 3 caption buttons (46px each)
+        toolbarPadding = const EdgeInsets.only(right: 138);
+      } else {
+        toolbarHeight = await macos_win.WindowManipulator.getTitlebarHeight();
+        const buttonTypes = [
+          NSWindowButtonType.closeButton,
+          NSWindowButtonType.miniaturizeButton,
+          NSWindowButtonType.zoomButton,
+        ];
+        final buttonRects = [
+          for (final type in buttonTypes)
+            await macos_win.WindowManipulator.getStandardWindowButtonPosition(
+              buttonType: type,
+            ),
+        ];
+        _trafficLightOriginalX = [for (final r in buttonRects) r.left];
+        toolbarPadding = EdgeInsets.only(left: buttonRects.last.right);
+      }
+    } else if (winHost) {
       await windowManager.setTitleBarStyle(
         TitleBarStyle.hidden,
         windowButtonVisibility: true,
@@ -120,7 +149,7 @@ class Window extends StatefulWidget {
 
     // Restore window state after platform styling (especially toolbar) is
     // applied, so macOS doesn't shift the window to accommodate the toolbar.
-    if (Platform.instance.isMacOS || Platform.instance.isWindows) {
+    if (macHost || winHost) {
       await _restoreWindowState();
       // The macOS window is kept hidden at launch (see MainFlutterWindow.swift
       // `order(_:relativeTo:)` override) so the user doesn't see the default
@@ -130,7 +159,7 @@ class Window extends StatefulWidget {
       // focus from the editor that ran `flutter run`. Use our own method
       // channel that calls `orderFront(nil)` so the window appears without
       // bringing Plot to the foreground.
-      if (Platform.instance.isMacOS) {
+      if (macHost) {
         const channel = MethodChannel('day.plot.app/window');
         await channel.invokeMethod<void>('showInactive');
       } else {

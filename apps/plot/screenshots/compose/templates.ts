@@ -100,6 +100,34 @@ export function heroSpan(o: {
     </div></body></html>`;
 }
 
+/** Flat multi-panel with a synthesized Windows 11 window frame: a subtle 1px
+ *  border, rounded corners, and a soft drop shadow. Used for Microsoft Store
+ *  desktop screenshots captured on macOS in Windows-emulation mode. Mirrors
+ *  multipanelFlat's caption band + fit-to-area layout; only the image frame
+ *  differs. The radius/border are tunable — calibrated to read as Windows 11
+ *  at store scale. */
+export function multipanelWindows(o: {
+  src: string; w: number; h: number; headline: string;
+}): string {
+  const bandH = Math.round(o.h * 0.105);
+  const pad = Math.round(o.h * 0.03);
+  const radius = Math.round(o.w * 0.005); // ~19px @ 3840w — Windows 11 corner
+  return `<!doctype html><html><body style="margin:0">
+    <div style="width:${o.w}px;height:${o.h}px;background:${gradient(120)};
+      box-sizing:border-box;display:flex;flex-direction:column;
+      align-items:center">
+      <div style="flex:0 0 ${bandH}px;display:flex;align-items:center;
+        font-family:${FONT};color:#fff;font-weight:700;
+        font-size:${Math.round(o.w * 0.024)}px">${o.headline}</div>
+      <div style="flex:1 1 auto;min-height:0;width:100%;display:flex;
+        align-items:flex-start;justify-content:center;padding:0 0 ${pad}px">
+        <img src="${o.src}" style="max-width:95%;max-height:100%;
+          border-radius:${radius}px;border:1px solid rgba(255,255,255,.10);
+          box-shadow:0 30px 90px rgba(0,0,0,.45)"/>
+      </div>
+    </div></body></html>`;
+}
+
 /** Flat multi-panel (tablet/desktop): caption band on top, then the shot
  *  scaled to fit the remaining area (works for both 16:10 macOS and 4:3 iPad
  *  captures — fit-to-area, not width-only, so the taller iPad shot doesn't

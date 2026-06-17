@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { chromium } from 'playwright';
 import { PLANS, type PlatformPlan } from '../manifest.ts';
 import { heroCanvas, heroClips } from '../geometry.ts';
-import { phoneSlot, heroSpan, multipanelFlat } from './templates.ts';
+import { phoneSlot, heroSpan, multipanelFlat, multipanelWindows } from './templates.ts';
 
 const RAW = new URL('../raw/', import.meta.url).pathname;
 const STORE = new URL('../store/', import.meta.url).pathname;
@@ -38,6 +38,7 @@ const SCREEN = {
   'macos': { w: 2880, h: 1800 },
   'android-phone': { w: 1080, h: 2340 },   // Galaxy S25
   'android-tablet': { w: 2560, h: 1600 },  // Galaxy Tab S8 Ultra landscape (unused by flat)
+  'windows': { w: 1440, h: 900 },          // macOS capture window (emulated)
 } as const;
 
 export async function composePlatform(p: PlatformPlan) {
@@ -61,6 +62,10 @@ export async function composePlatform(p: PlatformPlan) {
     } else if (slot.framing === 'phone') {
       const html = phoneSlot({ src, w: W, h: H, screenW: sc.w, screenH: sc.h,
         headline: slot.headline, subhead: slot.subhead, platform: p.platform });
+      const png = await renderPng(html, W, H);
+      await save(`${dir}/${String(slot.slots[0]).padStart(2, '0')}-${slot.scene}.png`, png);
+    } else if (slot.framing === 'multipanel-windows') {
+      const html = multipanelWindows({ src, w: W, h: H, headline: slot.headline });
       const png = await renderPng(html, W, H);
       await save(`${dir}/${String(slot.slots[0]).padStart(2, '0')}-${slot.scene}.png`, png);
     } else { // multipanel-flat
