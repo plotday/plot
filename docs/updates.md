@@ -18,6 +18,9 @@
   each role — but when you search, where the results are listed flat, each focus now shows its role
   too, so you can tell apart same-named focuses like each role's Inbox. If you only have one role
   nothing changes.
+- When you have more than one role, you can now find a focus by typing its role name in any focus
+  picker — switching focuses, moving or merging threads, or choosing where a new thread goes. Typing a
+  role surfaces every focus under it, alongside matches on the focus's own name.
 - Your browser tab and desktop window title now include the focus you're viewing (and its role when
   you have more than one), so Plot is easy to pick out among your open tabs and windows.
 - Low-signal mail — newsletters, receipts, promotions, and service notifications — now gathers in an
@@ -38,6 +41,11 @@
   shows in small uppercase lettering, the open role's focuses sit just inside a faint line in the
   role's colour, and a collapsed role shows a quiet arrow so it's obvious you can tap to open it. The
   bold text and unread dot still tell you, at a glance, which roles have active or unread work inside.
+- When you move a thread to a focus, the picker now surfaces the most useful focuses first: the focus
+  you most recently moved a thread into rises to the top, then focuses in the same role as the thread
+  you're moving, then everything else. Triaging a run of threads is quicker because wherever you just
+  sent one is right there for the next. It works the same whether you move a single thread or several
+  at once, and your Inbox is now an ordinary focus in this list rather than always pinned to the bottom.
 
 ### Sending messages
 
@@ -57,6 +65,8 @@
 
 ### Fixes
 
+- Connecting Todoist now works. The button correctly reads "Continue with Todoist" with the Todoist
+  logo, instead of showing "Continue with Other" and failing when tapped.
 - On phones and other single-column layouts, marking a thread done — or changing its state another
   way — while you have it open no longer jumps you to a different thread. The thread stays open so you
   can keep reading or make more changes, and you go back to the list whenever you're ready. On wider
@@ -88,6 +98,9 @@
 - New accounts now reliably start in the welcome and setup flow, and stay there until you've chosen
   where to start — previously some new accounts skipped setup entirely and landed in the app with a
   default space they never picked.
+- If you quit Plot partway through the welcome and setup flow, it now picks back up the next time you
+  open the app instead of disappearing for good. Setup only goes away once you've finished it or
+  closed it yourself.
 - Text boxes you aren't currently typing in — like the email and password fields on the sign-in
   screen — no longer look greyed-out as if they were disabled. They now match the box you're typing
   in.
@@ -108,6 +121,17 @@
 - On a narrow or single-column layout, tapping a role in the Focus list now just opens it to reveal
   its focuses so you can choose one, instead of jumping straight into its first focus — which had
   left no way to pick a different one.
+- Plot no longer rebuilds its local data and signs you out every time you open it. A recent change
+  left the app re-downloading everything from scratch on each launch — making startup slow and, on a
+  large account, occasionally bouncing you to the sign-in screen before it finished. Launches are now
+  fast again and your data stays put between sessions.
+- Signing in on a new device is much faster, especially on accounts with a long contact history.
+  Setup no longer waits to download your entire address book before showing you anything — it loads
+  what the first screen needs and fills in the rest in the background. Names on people you don't have
+  saved yet may take a moment to appear right after sign-in.
+- Opening a private note no longer flashes a faint, empty reply bar above the composer for a split
+  second before it vanishes. Private notes have no one to reply to, so that bar is now correctly
+  absent from the moment the thread opens.
 
 ### Fixes
 

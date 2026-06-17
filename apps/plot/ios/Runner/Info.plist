@@ -72,6 +72,8 @@
 	<string>Dictate notes and thread content with your voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Convert your dictation into text for notes and threads.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Plot only accesses your location if a website you open in the in-app browser asks for it.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

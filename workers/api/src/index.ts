@@ -64,6 +64,7 @@ import { runSweep as runClassifySweep } from "./state/classify-thread";
 // Import webhook routes
 import webhook from "./webhook";
 import hookMessaging from "./app/hook-messaging";
+import hookTodoist from "./app/hook-todoist";
 // Import rate limiting middleware
 import {
   generalRateLimiter,
@@ -255,6 +256,9 @@ app.route("/", webhook);
 
 // Unipile messaging webhook (account lifecycle + message events)
 app.route("/", hookMessaging);
+
+// Todoist app-level webhook (task + comment events for all connected users)
+app.route("/", hookTodoist);
 
 // OAuth bridge — public endpoint hit by the provider's browser redirect
 // (no user-auth context), so it must live outside the /app section.

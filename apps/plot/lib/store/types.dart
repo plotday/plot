@@ -9,7 +9,7 @@ import 'enums.dart';
 
 final _serializerLog = Logger('plot.serializer');
 
-enum AuthProvider { google, microsoft, slack, apple, github, discord, notion, atlassian, linear, monday, asana, hubspot, airtable, linkedin, other }
+enum AuthProvider { google, microsoft, slack, apple, github, discord, notion, atlassian, linear, monday, asana, hubspot, todoist, airtable, linkedin, other }
 
 class EnumConverter<T extends Enum> extends TypeConverter<T, String>
     with JsonTypeConverter2<T, String, String> {

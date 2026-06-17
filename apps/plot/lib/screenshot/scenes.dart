@@ -1,18 +1,21 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:logging/logging.dart';
 import 'package:plot/main.dart' show navigatorKey;
 import 'package:plot/command/base.dart';
 import 'package:plot/command/provider.dart';
-import 'package:plot/command/twist.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/onboarding.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/priorities_shell.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Debug-only screenshot scene runner. Sets up deterministic UI states for the
@@ -80,8 +83,7 @@ class Scenes {
     if (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) {
       try {
         await windowManager.ensureInitialized();
-        await windowManager.setSize(const Size(1440, 900));
-        await windowManager.setAlignment(Alignment.center);
+        await _placeWindowForCapture(const Size(1440, 900));
       } catch (e) {
         _log.warning('window sizing failed', e);
       }
@@ -116,6 +118,56 @@ class Scenes {
     } catch (e, s) {
       _log.warning('Scene $id failed', e, s);
     }
+  }
+
+  /// Sizes the capture window and places it on the display with the highest
+  /// backing scale factor (the built-in Retina panel on a Mac), centered within
+  /// that display's visible bounds.
+  ///
+  /// The macOS capture uses `screencapture -l <windowID>`, which renders the
+  /// window bitmap at the scale of whichever display the window sits on. If the
+  /// window lands on a 1× external monitor (e.g. when that monitor is the "main"
+  /// display), a 1440×900 window captures at 1440×900 and the compose step —
+  /// which never upscales — yields a small, low-res shot. Targeting the Retina
+  /// display makes the same window capture at 2× (2880×1800), matching the rest
+  /// of the macOS/Windows store assets. Reads the live display layout, so it's
+  /// independent of the user's monitor arrangement / which display is primary.
+  static Future<void> _placeWindowForCapture(Size size) async {
+    await windowManager.setSize(size);
+    try {
+      // `screen_retriever` doesn't report a scale factor on macOS, but Flutter's
+      // PlatformDispatcher exposes each display's devicePixelRatio — use it to
+      // pick the Retina (2×) display, then match that display to a
+      // `screen_retriever` entry (which carries the on-screen position) by
+      // logical size so we know where to move the window.
+      final uiDisplays = WidgetsBinding.instance.platformDispatcher.displays;
+      ui.Display? hi;
+      for (final d in uiDisplays) {
+        if (hi == null || d.devicePixelRatio > hi.devicePixelRatio) hi = d;
+      }
+      if (hi != null && hi.devicePixelRatio > 1) {
+        final wantW = hi.size.width / hi.devicePixelRatio;
+        final wantH = hi.size.height / hi.devicePixelRatio;
+        for (final g in await screenRetriever.getAllDisplays()) {
+          if ((g.size.width - wantW).abs() < 2 &&
+              (g.size.height - wantH).abs() < 2) {
+            final origin = g.visiblePosition ?? Offset.zero;
+            final area = g.visibleSize ?? g.size;
+            await windowManager.setPosition(Offset(
+              origin.dx + (area.width - size.width) / 2,
+              origin.dy + (area.height - size.height) / 2,
+            ));
+            _log.info('Capture window placed on "${g.name}" '
+                '(devicePixelRatio ${hi.devicePixelRatio})');
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      _log.warning('high-DPI display targeting failed; centering on main', e);
+    }
+    // No Retina display found (or lookup failed): center on the main display.
+    await windowManager.setAlignment(Alignment.center);
   }
 
   // ---------------------------------------------------------------------------
@@ -245,18 +297,21 @@ class Scenes {
           row.priorityId.toShortString(), row.id.toShortString());
     },
     'S8': (context) async {
-      // Open the Connections manager (Gmail, Calendar, Slack, Teams, Notion, …
-      // tiles, some Connected). Two requirements, learned the hard way:
-      //  1. SelectModal needs a context UNDER ModalProvider — the root navigator
-      //     context is above it, so use the focused widget's context (the
-      //     default new-thread picker field sits under the provider).
-      //  2. SelectModal.open pre-fetches its items and bails if that context
-      //     unmounts during the await — prewarm so the pre-fetch is instant.
-      await ManageConnections.prewarm();
-      final scoped = FocusManager.instance.primaryFocus?.context;
-      if (scoped == null || !scoped.mounted) return;
-      // Fire-and-forget so the modal stays open while SCENE_READY prints.
-      unawaited(ManageConnections(keepCache: true).run(scoped));
+      // Open onboarding directly at the "Connect your tools" step — the
+      // sectioned Messaging / Calendars / Apps connector grid plus the user's
+      // existing connections. The OnboardingBloc provider (app.dart) sits above
+      // the navigator, so the navigator context can read it.
+      //
+      // RootProvider fires `OnboardingBloc.start()` concurrently with the scene
+      // runner; for a returning user (margot) it emits OnboardingCompleted.
+      // Wait for that single emission to land before we override the step so it
+      // can't clobber the screenshot state.
+      final bloc = context.read<OnboardingBloc>();
+      for (var i = 0; i < 30; i++) {
+        if (bloc.state is! OnboardingLoading) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      bloc.showStepForScreenshot('Connect your tools');
     },
     'S11': (context) async {
       // Open the ⌘K command palette over the multi-panel — the exact Commands

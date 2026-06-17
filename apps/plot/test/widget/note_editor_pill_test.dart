@@ -14,6 +14,35 @@ void main() {
   final original = ActorId.fromUuid(Uuid.generate());
   final other = ActorId.fromUuid(Uuid.generate());
 
+  group('reserveEmptyTopBar', () {
+    // The composer holds an empty, height-reserving placeholder bar only while
+    // a *shared* thread's links load — a shared thread always resolves to a
+    // bar, so reserving height avoids the plain-Plot→connector pill flash and a
+    // layout shift. An unshared thread resolves to no bar, so a placeholder
+    // there would flash a one-frame empty strip that then collapses (the
+    // private-thread bug).
+
+    test('unshared thread, links loading: no placeholder (the private-thread '
+        'flash this guards against)', () {
+      expect(
+        reserveEmptyTopBar(linksLoaded: false, hasSharing: false),
+        isFalse,
+      );
+    });
+
+    test('shared thread, links loading: hold the placeholder', () {
+      expect(
+        reserveEmptyTopBar(linksLoaded: false, hasSharing: true),
+        isTrue,
+      );
+    });
+
+    test('links loaded: never a placeholder, regardless of sharing', () {
+      expect(reserveEmptyTopBar(linksLoaded: true, hasSharing: false), isFalse);
+      expect(reserveEmptyTopBar(linksLoaded: true, hasSharing: true), isFalse);
+    });
+  });
+
   group('messageReplyPillId', () {
     test('draft narrowed to self + original resolves to the replyOriginal pill',
         () {

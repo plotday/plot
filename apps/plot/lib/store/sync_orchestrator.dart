@@ -224,6 +224,19 @@ class SyncOrchestrator {
     },
   );
 
+  /// Actor entity for critical initial sync — the current user's OWN (self)
+  /// actors only, via the bounded `/sync/actors?self=true` pull. Loads just the
+  /// 1–10 rows identity/ownership logic needs at first paint (canonicalId,
+  /// count-tag "is this me"); the full address book + archived actors pull in
+  /// the background through the regular `actor` entity in `syncInitialDeferred`.
+  /// No dependencies — runs in the first level.
+  static final _actorCritical = SyncEntity(
+    debugName: 'actor_critical',
+    dependsOn: [],
+    pushFn: () async => true,
+    pullFn: Actor.pullSelf,
+  );
+
   /// TwistInstance for critical initial sync — initial only, no updates.
   /// Uses `pullInitial` (single bounded page) rather than `pull` (initial +
   /// full incremental sweep) so the critical path stays inside its 30s
@@ -257,8 +270,21 @@ class SyncOrchestrator {
   ///      `Store.pull(...)` on a high-volume table (e.g. links, threads,
   ///      schedules, notes)? If yes, that helper is the wrong primitive
   ///      for this list.
+  ///
+  /// NOTE — the FULL `actor` pull is deliberately NOT here. `Actor.pull`
+  /// paginates the entire address book (all non-archived contacts) AND sweeps
+  /// every archived actor. On a fresh device with a large account that single
+  /// pull dominated — and blew — the 30s budget, while `role`/`priority`/
+  /// `_threadCritical` (which declare `dependsOn: [actor]`) sat blocked behind
+  /// it. The full pull now runs first in `syncInitialDeferred`; the critical
+  /// sort tolerates the dangling `actor` dependency (see `_topologicalSort`).
+  /// In its place `_actorCritical` pulls ONLY the current user's own (self)
+  /// actors — bounded to ~1–10 rows — so identity/ownership logic is correct at
+  /// first paint. Other people's actors (thread participants) resolve as the
+  /// deferred pull lands; the thread UI skips not-yet-resolved contacts rather
+  /// than blocking.
   static final _criticalEntities = [
-    actor,
+    _actorCritical,
     userSettings,
     role,
     priority,
@@ -266,6 +292,13 @@ class SyncOrchestrator {
     _threadCritical,
     _twistInstanceCritical,
   ];
+
+  /// The critical pull levels (topologically sorted). Exposed for tests to
+  /// assert the unbounded `actor` pull stays off the critical path and the
+  /// sort tolerates its dangling dependency.
+  @visibleForTesting
+  List<List<SyncEntity>> criticalPullLevels() =>
+      _topologicalSort(_criticalEntities, forward: true);
 
   // ============================================================================
   // PUBLIC API
@@ -390,15 +423,23 @@ class SyncOrchestrator {
       'Critical pull levels: ${pullLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}',
     );
 
+    // Per-level wall-clock at info: the critical sync runs once per fresh
+    // sign-in and is the place slow first-paints are diagnosed, so make the
+    // breakdown visible in real (release) logs rather than behind `fine`.
+    final sw = Stopwatch()..start();
     for (var i = 0; i < pullLevels.length; i++) {
       final level = pullLevels[i];
-      _syncOrchestratorLog.fine(
-        'Critical pulling level $i: ${level.map((e) => e.debugName).toList()}',
-      );
+      final levelSw = Stopwatch()..start();
       await _executePullLevel(level);
+      _syncOrchestratorLog.info(
+        'Critical pull L$i (${level.map((e) => e.debugName).join(",")}) '
+        '${levelSw.elapsedMilliseconds}ms @ ${sw.elapsedMilliseconds}ms',
+      );
     }
 
-    _syncOrchestratorLog.info('Completed critical initial sync');
+    _syncOrchestratorLog.info(
+      'Completed critical initial sync in ${sw.elapsedMilliseconds}ms',
+    );
   }
 
   /// Completes remaining sync work after critical path.
@@ -406,6 +447,14 @@ class SyncOrchestrator {
   Future<void> syncInitialDeferred() async {
     await _waitForRateLimitCooldown();
     _syncOrchestratorLog.info('Starting deferred initial sync');
+
+    // Full address book + archived actors. Moved off the critical path: the
+    // `/sync/actors` pagination is unbounded for large accounts and used to
+    // dominate (and blow) the 30s critical budget while blocking roles,
+    // priorities, and threads behind it. Pulled first here so contact and
+    // participant names settle in soon after first paint; the thread UI skips
+    // contacts whose actors aren't resolved yet (no blocking, no crash).
+    await pull(actor);
 
     // Complete the full thread pull (unread threads, schedules, incremental)
     // pullInitial and pull use sync state to skip already-pulled data.
@@ -758,6 +807,14 @@ class SyncOrchestrator {
 
     for (final entity in entities) {
       for (final dep in entity.dependsOn) {
+        // A dependency may be absent when sorting a SUBSET of entities — the
+        // critical-sync set omits the full `actor` pull (see `_criticalEntities`)
+        // even though `role`/`priority`/`_threadCritical` declare it. Treat an
+        // out-of-set dependency as already satisfied rather than dereferencing a
+        // null `dependents[dep]` bucket (which would throw). Full-closure callers
+        // (`_computePull/PushLevels`, `syncSubset`) include every dependency, so
+        // this guard is a no-op for them.
+        if (!inDegree.containsKey(dep)) continue;
         if (forward) {
           // For pull and push (forward): entity depends on dep
           // dep must be processed before entity (parent before child)

@@ -5,6 +5,7 @@ import { createLogger } from "@plotday/worker-util";
 import { withDb } from "../db";
 import type { Bindings } from "../env";
 import { rpc } from "../rpc";
+import { dispatchInChunks, FAN_OUT_DISPATCH } from "../utils/dispatch-chunks";
 
 const BATCH_WINDOW_MS = 100;
 
@@ -99,25 +100,29 @@ export class SyncNotify extends DurableObject<Bindings> {
       return;
     }
 
-    const promises = userIds.map(async (userId) => {
-      try {
-        const userSyncId = this.env.USER_SYNC.idFromName(userId);
-        const userSyncDO = this.env.USER_SYNC.get(userSyncId);
-        await userSyncDO.fetch(
-          new Request("http://do/notify", {
-            method: "POST",
-            body: JSON.stringify({ id: userId }),
-          })
-        );
-      } catch (error) {
-        logger.error("Error notifying UserSync DO", error as Error, {
-          user_id: userId,
-          priority_id: this.priorityId!,
-        });
-      }
-    });
-
-    await Promise.allSettled(promises);
+    // Chunked dispatch: a priority shared with many users must not schedule
+    // every UserSync alarm in the same instant and spike Hyperdrive connections.
+    await dispatchInChunks(
+      userIds,
+      async (userId) => {
+        try {
+          const userSyncId = this.env.USER_SYNC.idFromName(userId);
+          const userSyncDO = this.env.USER_SYNC.get(userSyncId);
+          await userSyncDO.fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ id: userId }),
+            })
+          );
+        } catch (error) {
+          logger.error("Error notifying UserSync DO", error as Error, {
+            user_id: userId,
+            priority_id: this.priorityId!,
+          });
+        }
+      },
+      FAN_OUT_DISPATCH
+    );
   }
 
   private async notifyTwists(
@@ -152,24 +157,29 @@ export class SyncNotify extends DurableObject<Bindings> {
       return;
     }
 
-    const promises = twists.map(async (twist) => {
-      try {
-        const twistSyncId = this.env.TWIST_SYNC.idFromName(twist.id);
-        const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
-        await twistSyncDO.fetch(
-          new Request("http://do/notify", {
-            method: "POST",
-            body: JSON.stringify({ id: twist.id }),
-          })
-        );
-      } catch (error) {
-        logger.error("Error notifying TwistSync DO", error as Error, {
-          twist_instance_id: twist.id,
-          priority_id: this.priorityId!,
-        });
-      }
-    });
-
-    await Promise.allSettled(promises);
+    // Chunked dispatch: one change fans out to every twist the user owns, so
+    // firing all notifications at once would schedule a burst of TwistSync
+    // alarms that each open a DB connection within the same jitter window.
+    await dispatchInChunks(
+      twists,
+      async (twist) => {
+        try {
+          const twistSyncId = this.env.TWIST_SYNC.idFromName(twist.id);
+          const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
+          await twistSyncDO.fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ id: twist.id }),
+            })
+          );
+        } catch (error) {
+          logger.error("Error notifying TwistSync DO", error as Error, {
+            twist_instance_id: twist.id,
+            priority_id: this.priorityId!,
+          });
+        }
+      },
+      FAN_OUT_DISPATCH
+    );
   }
 }

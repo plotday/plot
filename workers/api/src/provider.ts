@@ -635,6 +635,11 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Todoist",
     authUrl: "https://todoist.com/oauth/authorize",
     tokenUrl: "https://todoist.com/oauth/access_token",
+    // Todoist's App Console registers a single OAuth redirect URL and rejects
+    // custom-scheme / loopback URIs, so every flow must funnel through the
+    // server bridge (${API_ROOT}/auth/bridge) — the one URL registered with
+    // Todoist — which then deep-links back to the client. Same as Airtable.
+    requiresHttpsRedirect: true,
     parseTokenResponse: parseTodoistTokenResponse,
     extractAccountLabel: (d) => {
       const t = d as TodoistProviderData;

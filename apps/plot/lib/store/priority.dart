@@ -539,7 +539,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   }
 
   static Stream<Priority> watchDefault() {
-    return _default().watchSingleOrNull().map((p) => p!);
+    // Skip null emissions rather than `.map((p) => p!)`: the local DB can have
+    // no default focus yet (a brand-new user before critical sync lands a
+    // priority, or any transiently-empty priorities table). Crashing here threw
+    // "Null check operator used on a null value" up through `NowBloc.start()`,
+    // which surfaced as "Failed to start app" and signed the user out. Simply
+    // wait to emit until a default focus exists.
+    return _default()
+        .watchSingleOrNull()
+        .where((p) => p != null)
+        .map((p) => p!);
   }
 
   static Future<List<Priority>> getRoot({int? depth, bool? archived = false}) =>
@@ -1219,15 +1228,26 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// whitespace-separated search token must prefix some word somewhere
   /// in the path — so "per" matches "Personal" and "Personal › Fitness"
   /// but never "Hyper", and "per fit" still matches "Personal › Fitness".
+  ///
+  /// When the user has more than one role, the owning role's name is also
+  /// part of the corpus, so a focus is findable by its role as well as its
+  /// own / ancestor names (e.g. "marlow" surfaces every focus under the
+  /// "AFC Marlow" role). The 2+-role gate mirrors [FocusLabel]'s role-prefix
+  /// display: with a single role the name is redundant noise.
   bool matchesSearch(String search) {
     final query = search.trim().toLowerCase();
     if (query.isEmpty) return true;
     final tokens = query.split(RegExp(r'\s+'));
-    final words =
-        <String>[title, for (final ancestor in ancestors()) ancestor.title]
-            .expand((t) => t.toLowerCase().split(RegExp(r'[\s/]+')))
-            .where((w) => w.isNotEmpty)
-            .toList();
+    final roleName =
+        Role.cachedCount >= 2 ? Role.fromCache(roleId)?.name : null;
+    final words = <String>[
+      title,
+      for (final ancestor in ancestors()) ancestor.title,
+      ?roleName,
+    ]
+        .expand((t) => t.toLowerCase().split(RegExp(r'[\s/]+')))
+        .where((w) => w.isNotEmpty)
+        .toList();
     return tokens.every((t) => words.any((w) => w.startsWith(t)));
   }
 

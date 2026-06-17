@@ -139,8 +139,9 @@ PII to scrub — but never swap in a real account.
   a calmer, premium feel — one to two dark shots per set.
 - **Apple compliance:** third-party services (Gmail, Slack, Linear…) appear only
   as they naturally render inside Plot's UI — small source chips on rows, the
-  real Connections screen. Don't build a slide that's a wall of competitor logos,
-  and keep other marketplace names out of captions.
+  real Connections / onboarding "Connect your tools" screen. Don't build a slide
+  that's a wall of competitor logos, and keep other marketplace names out of
+  captions.
 
 ### Device framing and angled spanning
 
@@ -170,7 +171,7 @@ add framing.
 | **S5** | Start a thread (New tab → `NewThreadRoute`) | People-first picker: recent people (Posy, Wes, Eli, Maurice), groups (Coaching staff, Board, Women's team taskforce), and **Plot AI chat**. **Interaction: typing "Po"** → filtered to **Posy Mercer** with reach options shown. | Light |
 | **S6** | Search (Search tab → `SearchRoute`) | **Interaction: typing "Chelsea"** → cross-source results spanning Slack, Notion, Sheets, and Calendar (match tactics, travel roster, formation notes, perflab pack, fixture). | Light |
 | **S7** | Plot AI — *Revenue model assumptions* (`ThreadRoute`, Women's team, Plot AI chat) | Scrolled to the **@plot** stress-test exchange — the question and Plot AI's three-scenario answer rendered in full. No interaction. | Dark |
-| **S8** | Connections (onboarding **"Connect your tools"**, sectioned Messaging / Calendars / Apps — or Settings → Connections) | Gmail, Google Calendar, Google Chat, Slack, Microsoft Teams, Linear, Notion, PostHog, Apple Calendar tiles, several marked **Connected**. No interaction. | Light |
+| **S8** | Onboarding **"Connect your tools"** step (`OnboardingBloc` driven to that step; full-screen overlay) | Sectioned Messaging / Calendars / Apps connector grid — Gmail, Google Calendar, Google Chat, Slack, Microsoft Teams, Linear, Notion, PostHog, Apple Calendar tiles — plus the user's existing connections under **Your connections**. No interaction. | Light |
 | **S9** | Reactions & status (optional) — *Founding-season scarf design* (`ThreadRoute`, Women's team, Slack) | Emoji reaction chips on Posy's image note; or, alternatively, an event/Linear thread showing the single status icon in the header. No interaction. | Light |
 | **S11** | Command bar (desktop only) | Multi-panel with the **⌘K command palette open** over it (jump-to-focus / quick actions). No interaction beyond the open palette. | Light |
 | **S12** | Share sheet (Android only) | The OS share sheet sending a link from another app into **Plot**, landing on `NewThreadRoute` with the focus picker. | Light |

@@ -18,6 +18,7 @@ import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/move_recency.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/thread.dart';
@@ -2084,19 +2085,21 @@ class BulkMove extends ShowCommands {
     PriorityBloc? bloc,
   ) async {
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
-    final inboxId = Priority.defaultInbox(priorities)?.id;
-    Priority? root;
-    final focuses = <Priority>[];
-    for (final p in priorities) {
-      if (p.id == inboxId) {
-        root = p;
-      } else {
-        focuses.add(p);
-      }
-    }
+    // Same tiered ordering as the single-thread Move modal: Tier 1 recently
+    // moved-into (this session), Tier 2 the selection's role, Tier 3 the
+    // getRaw base order. Inbox/FYI participate like any focus (no longer
+    // pinned). A bulk selection can span focuses, so — unlike the single-
+    // thread modal — no current focus is filtered out. Same-role affinity
+    // applies only when the whole selection shares one role; otherwise it
+    // spans roles and there is no single role to favor.
+    final ordered = orderMoveTargets(
+      focuses: priorities,
+      recentMoves: MoveRecency.instance.recent,
+      currentRoleId: sharedRoleId(threads.map((t) => t.priority.roleId)),
+    );
     final commands = <Command>[
-      ...focuses.map((priority) => _BulkMoveToPriority(threads, priority, bloc: bloc)),
-      if (root != null) _BulkMoveToPriority(threads, root, bloc: bloc),
+      for (final priority in ordered)
+        _BulkMoveToPriority(threads, priority, bloc: bloc),
     ];
     return Commands(
       prompt: threads.length == 1
@@ -2243,6 +2246,8 @@ Future<void> _applyPriorityMove(
         )
       : null;
   final updated = thread.copyWith(priority: priority);
+  // Remember this destination so the next Move opens with it on top (Tier 1).
+  MoveRecency.instance.record(priority.id);
   priorityBloc?.markFeedMove(thread.id);
   if (leavesContext) {
     // Collapse the row out of this focus immediately; the stream stops
@@ -2350,25 +2355,21 @@ class MoveThreadToPriority extends ShowCommands {
     // displays — so the modal opens immediately instead of stalling on the
     // enrichment round-trip.
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
-    // Partition out the root (Inbox), which `getRaw` returns alongside the
-    // focuses, so it can be pinned to the bottom of the list. It renders as
-    // the ordinary role focus it is (FocusLabel brands it via `isInbox`).
-    final inboxId = Priority.defaultInbox(priorities)?.id;
-    Priority? root;
-    final focuses = <Priority>[];
-    for (final p in priorities) {
-      if (p.id == inboxId) {
-        root = p;
-      } else if (p.id != thread.priority.id) {
-        focuses.add(p);
-      }
-    }
+    // Every non-current focus participates in the tiered ordering — Inbox and
+    // FYI focuses included (no longer pinned). Tier 1: focuses moved-into this
+    // session (MRU); Tier 2: focuses in the moved thread's current role; Tier 3:
+    // the getRaw base order (visit-recency, then alphabetical). FocusLabel still
+    // brands the Inbox via `isInbox`.
+    final focuses =
+        priorities.where((p) => p.id != thread.priority.id).toList();
+    final ordered = orderMoveTargets(
+      focuses: focuses,
+      recentMoves: MoveRecency.instance.recent,
+      currentRoleId: thread.priority.roleId,
+    );
     final commands = <Command>[
-      ...focuses.map(
-        (priority) => MoveToPriority(thread, priority, bloc: bloc),
-      ),
-      if (root != null && thread.priority.id != root.id)
-        MoveToPriority(thread, root, bloc: bloc),
+      for (final priority in ordered)
+        MoveToPriority(thread, priority, bloc: bloc),
     ];
 
     return Commands(

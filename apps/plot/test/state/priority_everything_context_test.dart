@@ -128,4 +128,59 @@ void main() {
       throwsA(isA<AssertionError>()),
     );
   });
+
+  group('shouldApplyWatchedContext', () {
+    PriorityState everythingState(Priority inbox) {
+      final draft = Thread(priority: inbox, draft: true);
+      return PriorityState(
+        context: null,
+        everything: true,
+        draftFallbackPriority: inbox,
+        draft: draft,
+        draftNote: draftNoteFor(draft),
+      );
+    }
+
+    PriorityState focusState(Priority context) {
+      final draft = Thread(priority: context, draft: true);
+      return PriorityState(
+        context: context,
+        everything: false,
+        draft: draft,
+        draftNote: draftNoteFor(draft),
+      );
+    }
+
+    test('applies an emission while still scoped to that focus', () {
+      final work = focus('Work');
+      expect(
+        PriorityBloc.shouldApplyWatchedContext(focusState(work), work),
+        isTrue,
+      );
+    });
+
+    test(
+        'drops a stale emission after the view switched to Everything '
+        '(would otherwise stamp a non-null context onto an everything state '
+        'and throw)', () {
+      final inbox = focus('Inbox', isInbox: true);
+      final work = focus('Work');
+      // The per-focus watch for `work` is not torn down when the view enters
+      // Everything, so a late emission for `work` must be ignored — applying it
+      // would violate the invariant (everything <=> context == null).
+      expect(
+        PriorityBloc.shouldApplyWatchedContext(everythingState(inbox), work),
+        isFalse,
+      );
+    });
+
+    test('drops an emission for a focus the view already left', () {
+      final work = focus('Work');
+      final other = focus('Other');
+      expect(
+        PriorityBloc.shouldApplyWatchedContext(focusState(other), work),
+        isFalse,
+      );
+    });
+  });
 }

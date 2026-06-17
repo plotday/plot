@@ -13,6 +13,7 @@ import 'package:plot/command/page_link.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/share_intent.dart';
+import 'package:plot/state/move_recency.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/onboarding.dart';
@@ -255,6 +256,7 @@ class RootProviderState extends State<RootProvider> {
               Link.clearCache();
               Priority.clearCache();
               Role.clearCache();
+              MoveRecency.instance.clear();
               // Reset the window/tab title to the bare app name.
               setWindowTitle(windowTitleForFocus(null));
               // Set theme to Catalyst when signed out

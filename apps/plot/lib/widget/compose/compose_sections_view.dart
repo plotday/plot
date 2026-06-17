@@ -65,6 +65,7 @@ class ComposeSectionsView extends StatefulWidget {
     this.activeListenable,
     this.pendingLink,
     this.onClearLink,
+    this.pinnedFocusId,
   });
 
   /// Scroll controller for the pill grid (owned by the host page so it
@@ -122,6 +123,12 @@ class ComposeSectionsView extends StatefulWidget {
 
   /// Clears the pending link (the chip's ✕), returning to text-filter mode.
   final VoidCallback? onClearLink;
+
+  /// The focus the user is currently viewing. The "Private notes" section
+  /// leads with it (moved to the front, never duplicated) so the most likely
+  /// note destination is the first option. Null in the Everything view (no
+  /// current focus), where nothing is pinned.
+  final Uuid? pinnedFocusId;
 
   @override
   State<ComposeSectionsView> createState() => _ComposeSectionsViewState();
@@ -206,6 +213,11 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     }
     if (enteringLinkMode || exitingLinkMode) {
       _loadSections();
+    } else if (old.pinnedFocusId != widget.pinnedFocusId) {
+      // The current focus changed under the open picker (e.g. another panel
+      // switched focus). Re-run the active view so the pinned focus updates,
+      // preserving any in-progress search query.
+      _reload();
     }
   }
 
@@ -216,7 +228,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final requestId = ++_requestId;
     final bloc = context.read<ComposeTargetsBloc>();
     bloc
-        .loadSections(linkMode: _linkMode)
+        .loadSections(linkMode: _linkMode, currentFocusId: widget.pinnedFocusId)
         .then((sections) {
           if (_isDisposed || requestId != _requestId) return;
           setState(() {
@@ -259,7 +271,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final requestId = ++_requestId;
     final bloc = context.read<ComposeTargetsBloc>();
     bloc
-        .searchSections(trimmed)
+        .searchSections(trimmed, currentFocusId: widget.pinnedFocusId)
         .then((sections) {
           if (_isDisposed || requestId != _requestId) return;
           setState(() {

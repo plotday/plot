@@ -5,6 +5,7 @@ import { withDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
+import { dispatchInChunks, FAN_OUT_DISPATCH } from "../utils/dispatch-chunks";
 
 // Configuration
 const STALE_THRESHOLD_MS = 60_000; // 60 seconds (increased from 30s to reduce false positives)
@@ -195,26 +196,30 @@ export class SyncRecovery extends DurableObject<Bindings> {
     const notifyStartTime = Date.now();
     // rpc() unwraps single-column TABLE results into raw values
     const userIds = staleUserSyncs as unknown as string[];
-    const notifyPromises = userIds.map(async (userId) => {
-      try {
-        const userSyncId = this.env.USER_SYNC.idFromName(userId);
-        const userSyncDO = this.env.USER_SYNC.get(userSyncId);
-        await userSyncDO.fetch(
-          new Request("http://do/notify", {
-            method: "POST",
-            body: JSON.stringify({ id: userId }),
-          })
-        );
-        return { success: true, user_id: userId };
-      } catch (error) {
-        logger.error("Error notifying UserSync DO", error as Error, {
-          user_id: userId,
-        });
-        return { success: false, user_id: userId, error };
-      }
-    });
-
-    const results = await Promise.allSettled(notifyPromises);
+    // Chunked dispatch so a sweep of up to MAX_ITEMS_PER_QUERY stale syncs does
+    // not schedule that many UserSync alarms in one instant (Hyperdrive pool).
+    const results = await dispatchInChunks(
+      userIds,
+      async (userId) => {
+        try {
+          const userSyncId = this.env.USER_SYNC.idFromName(userId);
+          const userSyncDO = this.env.USER_SYNC.get(userSyncId);
+          await userSyncDO.fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ id: userId }),
+            })
+          );
+          return { success: true, user_id: userId };
+        } catch (error) {
+          logger.error("Error notifying UserSync DO", error as Error, {
+            user_id: userId,
+          });
+          return { success: false, user_id: userId, error };
+        }
+      },
+      FAN_OUT_DISPATCH
+    );
     const notifyTime = Date.now() - notifyStartTime;
 
     // Count successes/failures
@@ -272,26 +277,32 @@ export class SyncRecovery extends DurableObject<Bindings> {
     const notifyStartTime = Date.now();
     // rpc() unwraps single-column TABLE results into raw values
     const twistInstanceIds = staleTwistSyncs as unknown as string[];
-    const notifyPromises = twistInstanceIds.map(async (twistInstanceId) => {
-      try {
-        const twistSyncId = this.env.TWIST_SYNC.idFromName(twistInstanceId);
-        const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
-        await twistSyncDO.fetch(
-          new Request("http://do/notify", {
-            method: "POST",
-            body: JSON.stringify({ id: twistInstanceId }),
-          })
-        );
-        return { success: true, twist_instance_id: twistInstanceId };
-      } catch (error) {
-        logger.error("Error notifying TwistSync DO", error as Error, {
-          twist_instance_id: twistInstanceId,
-        });
-        return { success: false, twist_instance_id: twistInstanceId, error };
-      }
-    });
-
-    const results = await Promise.allSettled(notifyPromises);
+    // Chunked dispatch so a sweep of up to MAX_ITEMS_PER_QUERY stale twist syncs
+    // does not schedule that many TwistSync alarms in one instant — each alarm
+    // opens a Hyperdrive connection, and the unbounded burst is what exhausted
+    // the pool.
+    const results = await dispatchInChunks(
+      twistInstanceIds,
+      async (twistInstanceId) => {
+        try {
+          const twistSyncId = this.env.TWIST_SYNC.idFromName(twistInstanceId);
+          const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
+          await twistSyncDO.fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ id: twistInstanceId }),
+            })
+          );
+          return { success: true, twist_instance_id: twistInstanceId };
+        } catch (error) {
+          logger.error("Error notifying TwistSync DO", error as Error, {
+            twist_instance_id: twistInstanceId,
+          });
+          return { success: false, twist_instance_id: twistInstanceId, error };
+        }
+      },
+      FAN_OUT_DISPATCH
+    );
     const notifyTime = Date.now() - notifyStartTime;
 
     const successful = results.filter(

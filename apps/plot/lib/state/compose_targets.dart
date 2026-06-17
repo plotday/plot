@@ -901,6 +901,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   Future<ComposeSections> loadSections({
     int perSection = 8,
     bool linkMode = false,
+    Uuid? currentFocusId,
   }) async {
     // See [refresh]: before sign-in / after sign-out the store is unavailable,
     // so there is nothing to build. [warm] (called from the shell at boot)
@@ -976,8 +977,30 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
           ),
     ];
 
+    // The "Private notes" section leads with the focus the user is currently
+    // viewing (when they're in a focus — not the Everything view), so the most
+    // likely note destination is the first option. It's MOVED to the front of
+    // the MRU order, never duplicated lower down. A current focus that no
+    // longer resolves (e.g. just archived) is ignored.
+    var focusOrder = ctx.focusNoteOrder;
+    if (currentFocusId != null && ctx.priorityById.containsKey(currentFocusId)) {
+      BigInt? pinnedTeamId;
+      final rest = <({Uuid priorityId, BigInt? teamId})>[];
+      for (final f in focusOrder) {
+        if (f.priorityId == currentFocusId) {
+          pinnedTeamId = f.teamId;
+        } else {
+          rest.add(f);
+        }
+      }
+      focusOrder = [
+        (priorityId: currentFocusId, teamId: pinnedTeamId),
+        ...rest,
+      ];
+    }
+
     final allFocuses = <ComposeTarget>[
-      for (final f in ctx.focusNoteOrder)
+      for (final f in focusOrder)
         ComposeTarget.focusNote(
           priorityId: f.priorityId,
           teamId: f.teamId,
@@ -1152,11 +1175,15 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   Future<ComposeSections> searchSections(
     String query, {
     int perSection = 8,
+    Uuid? currentFocusId,
   }) async {
     final trimmed = query.trim();
-    if (trimmed.isEmpty) return loadSections(perSection: perSection);
+    if (trimmed.isEmpty) {
+      return loadSections(perSection: perSection, currentFocusId: currentFocusId);
+    }
     // Unbounded-ish base, then filter; perSection caps the final output.
-    final base = await loadSections(perSection: _kSearchPoolLimit);
+    final base = await loadSections(
+        perSection: _kSearchPoolLimit, currentFocusId: currentFocusId);
     final lower = trimmed.toLowerCase();
 
     // Email mode: when the query parses to one or more addresses (comma-,
@@ -1190,6 +1217,19 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     bool matchesTarget(ComposeTarget t) =>
         t.label.toLowerCase().contains(lower) ||
         (t.twistHeader?.toLowerCase().contains(lower) ?? false);
+
+    // Focus ("Private notes") rows also match on focus name, ancestor path,
+    // and — with more than one role — the owning role name, via
+    // [Priority.matchesSearch], consistent with the other focus pickers. The
+    // priority resolves against the same snapshot the focuses were built from
+    // ([base.priorityById]); fall back to the shared label match when it
+    // hasn't resolved.
+    bool matchesFocus(ComposeTarget t) {
+      final priority =
+          t.priorityId == null ? null : base.priorityById[t.priorityId!];
+      if (priority != null && priority.matchesSearch(trimmed)) return true;
+      return matchesTarget(t);
+    }
 
     final people = <ComposePeopleEntry>[];
     final seenRosters = <String>{};
@@ -1269,7 +1309,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       people: people.take(perSection).toList(),
       twists: base.twists.where(matchesTarget).take(perSection).toList(),
       channels: base.channels.where(matchesTarget).take(perSection).toList(),
-      focuses: base.focuses.where(matchesTarget).take(perSection).toList(),
+      focuses: base.focuses.where(matchesFocus).take(perSection).toList(),
       // [base] was built from one search context; carry its resolution map so
       // the filtered focuses still resolve in the view.
       priorityById: base.priorityById,

@@ -56,6 +56,17 @@ export async function withDb<T>(
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
+    // Before a retry, wait out a transient Hyperdrive pool-exhaustion burst so
+    // peer connections can drain. The previous attempt's pool was already torn
+    // down in its `finally`, freeing our slot, so this pause doesn't hold one.
+    // No-op (0ms) for connection-recycling errors, which just need a fresh
+    // connection and would only be slowed by waiting.
+    if (attempt > 0) {
+      const delayMs = transientRetryDelayMs(lastError);
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
     const db = createDb(env);
     try {
       // Also set statement_timeout via explicit SET as a fallback.
@@ -77,9 +88,54 @@ export async function withDb<T>(
   throw lastError;
 }
 
-function isTransientDbError(error: unknown): boolean {
-  const msg = (error as Error)?.message ?? "";
-  return msg.includes("shutting down") || msg.includes("connection terminated");
+export function isTransientDbError(error: unknown): boolean {
+  // Lowercase before matching: pg throws "Connection terminated unexpectedly"
+  // (capital C) from client.js when a pooled Hyperdrive connection is recycled
+  // mid-query. A case-sensitive check for "connection terminated" missed it, so
+  // the retry below never fired and the drop surfaced as a captured exception.
+  const msg = ((error as Error)?.message ?? "").toLowerCase();
+  return (
+    msg.includes("shutting down") ||
+    msg.includes("connection terminated") ||
+    isPoolExhaustedError(error)
+  );
+}
+
+/**
+ * Hyperdrive's connection-pool-exhaustion error. Cloudflare's Hyperdrive proxy
+ * throws "Timed out while waiting for an open slot in the pool." when every slot
+ * in its connection pool (60 by default, shared across the whole Worker and all
+ * its Durable Objects) is busy. It spikes during bursts of concurrent DB use —
+ * e.g. one change fanning out to many TwistSync DOs that each open a connection
+ * inside the same jitter window. It is transient: a brief pause lets peer
+ * connections drain. Kept distinct from connection-recycling errors so the retry
+ * can back off before re-requesting a slot — a tight retry just re-loses the
+ * race and adds churn to an already-saturated pool.
+ */
+export function isPoolExhaustedError(error: unknown): boolean {
+  const msg = ((error as Error)?.message ?? "").toLowerCase();
+  return msg.includes("open slot in the pool");
+}
+
+// Bounds for the jittered backoff before retrying a Hyperdrive pool-exhaustion
+// error. A few hundred ms covers the sub-second bursts the retry can salvage;
+// genuinely sustained over-capacity needs more Hyperdrive connections, not a
+// longer wait. Jitter de-synchronizes the many DOs retrying at once.
+const POOL_RETRY_MIN_MS = 100;
+const POOL_RETRY_MAX_MS = 400;
+
+/**
+ * Backoff (ms) to wait before retrying a transient DB error. Pool-exhaustion
+ * bursts get a short jittered pause so peer connections can drain; other
+ * transient errors (connection recycled / server shutting down) just need a
+ * fresh connection, so they retry immediately (0ms).
+ */
+export function transientRetryDelayMs(error: unknown): number {
+  if (!isPoolExhaustedError(error)) return 0;
+  return (
+    POOL_RETRY_MIN_MS +
+    Math.floor(Math.random() * (POOL_RETRY_MAX_MS - POOL_RETRY_MIN_MS))
+  );
 }
 
 // Deadlock/serialization retry lives in @plotday/worker-util so the classify

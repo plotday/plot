@@ -7,7 +7,6 @@
     "@plotday/connector-gmail",
     "@plotday/connector-google-calendar",
     "@plotday/connector-google-chat",
-    "@plotday/connector-google-contacts",
     "@plotday/connector-google-drive",
     "@plotday/connector-google-tasks",
     "@plotday/connector-granola",

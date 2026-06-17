@@ -220,6 +220,56 @@ class Actor extends ActorRow {
     }
   }
 
+  /// Pulls ONLY the current user's own (self) actors — their primary contact
+  /// plus any linked work/personal contacts (typically 1–10 rows) — and warms
+  /// the in-memory cache + primary-by-user index from them.
+  ///
+  /// Used on the critical sign-in path (see `SyncOrchestrator._actorCritical`)
+  /// so identity/ownership logic — [canonicalId], [sameIdentity], count-tag
+  /// "is this me" — is correct at first paint WITHOUT waiting for the full
+  /// address book. The whole contact list is unbounded and used to dominate the
+  /// 30s critical budget while blocking roles/priorities/threads behind it; it
+  /// now pulls in the background via [pull] in `syncInitialDeferred`. Other
+  /// people's actors (thread participants) resolve as that deferred pull lands —
+  /// the thread UI skips not-yet-resolved contacts rather than blocking.
+  ///
+  /// Bounded TWO ways so it stays fast even before the server-side `self=true`
+  /// filter is deployed: (1) `self=true` narrows the result to the user's own
+  /// actors once the server honors it; (2) `maxPages: 1` caps the pull to a
+  /// single seq-ascending page regardless — and the user's own actors have the
+  /// lowest seq (created at signup), so they're always in page 1. Deliberately
+  /// does NOT advance the shared actor seq cursor (`stampCursor: false`) — it
+  /// returns only a subset, so stamping would make the later full [pull] skip
+  /// every unfetched contact below that horizon.
+  static Future<void> pullSelf() async {
+    try {
+      await Future(() async {
+        await Store.get.pull(
+          table,
+          ActorsBase(),
+          initial: true,
+          extraParams: const {'self': 'true'},
+          stampCursor: false,
+          maxPages: 1,
+        );
+        // Warm the cache + primary-by-user index from the rows just written so
+        // canonicalId() resolves the user's own aliases synchronously.
+        await get(self: true, archived: false);
+        await _rebuildPrimaryIndex();
+      }).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      log.warning(
+        "Actor.pullSelf timed out after 10s — continuing with local data",
+      );
+      Tracker.trackError(
+        'auth',
+        errorType: 'TimeoutException',
+        errorMessage: 'Actor.pullSelf timed out after 10s',
+        context: 'sign_in_actor_self_pull_timeout',
+      );
+    }
+  }
+
   static Future<List<Actor>> get({
     ActorId? id,
     List<ActorType>? types,

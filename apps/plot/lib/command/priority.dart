@@ -51,9 +51,23 @@ abstract class PriorityCommand extends Command {
                    ? null
                    : (priority?.ancestorsLabel() ?? priority?.title))
              : null,
+         searchTerms: _roleSearchTerms(priority, label),
        );
 
   final Priority? priority;
+
+  /// The owning role's name, exposed as hidden [Command.searchTerms] so a focus
+  /// is findable by its role in command modals (the focus switcher) — but only
+  /// when the user has more than one role, mirroring [FocusLabel]'s role-prefix
+  /// display. Null for branded rows (Inbox/Everything use [label]) and
+  /// role-less focuses (e.g. FYI). Combines with the role search baked into
+  /// [Priority.matchesSearch], which backs the SelectModal-based focus pickers.
+  static String? _roleSearchTerms(Priority? priority, String? label) {
+    if (label != null) return null;
+    final roleId = priority?.roleId;
+    if (roleId == null || Role.cachedCount < 2) return null;
+    return Role.fromCache(roleId)?.name;
+  }
 
   /// When set, the row renders as a fixed semantic view (the Inbox /
   /// Everything feeds) with this wording and [_glyph] in the brand colour

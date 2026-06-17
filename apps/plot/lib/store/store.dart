@@ -332,6 +332,7 @@ abstract class BaseTable {
     bool initial = false,
     bool archived = false,
     Map<String, dynamic>? prefetched,
+    Map<String, String>? extraParams,
   }) async {
     final useSeqCursor = lastHorizon != null;
     final params = buildParams(
@@ -343,6 +344,7 @@ abstract class BaseTable {
       initial: initial,
       archived: archived,
     );
+    if (extraParams != null) params.addAll(extraParams);
 
     // For non-cursor pulls, add sort params so server sorts consistently.
     // (Seq-cursor pulls always sort by `seq, id` server-side.)
@@ -1445,6 +1447,21 @@ class Store extends _$Store {
     // behaviour exactly — the automatic fallback when the combined endpoint is
     // unavailable. See [Note.pullForActivity].
     Map<String, dynamic>? prefetched,
+    // Extra server query params merged into every page request (e.g.
+    // `{'self': 'true'}` to restrict /sync/actors to the user's own actors).
+    Map<String, String>? extraParams,
+    // When false, the shared per-entity seq cursor (`syncStates`) is NOT
+    // advanced after this pull. Required for FILTERED bounded pulls (e.g. the
+    // self-only actor pull): they return a subset, so stamping the cursor would
+    // make the later full pull skip every unfetched row below that horizon.
+    bool stampCursor = true,
+    // Stop after at most this many pages instead of draining the whole table.
+    // For bounded critical pulls that must NOT depend on a server-side filter
+    // (e.g. the self-actor pull, in case the `self=true` filter isn't deployed
+    // yet): one page of the seq-ascending cursor still contains the user's own
+    // actors (lowest seq, created at signup). Pair with `stampCursor: false`
+    // so the early stop never advances the cursor past unfetched rows.
+    int? maxPages,
   }) async {
     final entity = baseTable.fullName;
     final sw = Stopwatch()..start();
@@ -1508,6 +1525,7 @@ class Store extends _$Store {
         // Only the first page can come from the prefetched envelope; any
         // subsequent pages (pageSeq set) fetch over HTTP.
         prefetched: pages == 1 ? prefetched : null,
+        extraParams: extraParams,
       );
       httpMs += httpSw.elapsedMilliseconds;
       more = batchMore;
@@ -1573,7 +1591,7 @@ class Store extends _$Store {
       // unparseable, compounding the data loss. The current `syncState`
       // cursor stays put; the next sync re-fetches from the same place.
       if (rowParseFailed) break;
-    } while (more);
+    } while (more && (maxPages == null || pages < maxPages));
 
     if (totalRows > 0) {
       log.fine("Synced ${baseTable.name}: $totalRows rows");
@@ -1590,6 +1608,7 @@ class Store extends _$Store {
     // sync attempt re-pull from the same cursor with — hopefully — a
     // fixed deserializer.
     final shouldStamp =
+        stampCursor &&
         !rowParseFailed &&
         (finalHorizon != null ||
             (initial && baseTable.filterName == null));
@@ -2564,6 +2583,24 @@ class Store extends _$Store {
   @override
   int get schemaVersion => 374;
 
+  /// Schema-drift probes run in `beforeOpen` (one column-set per
+  /// recently-changed table). A stale on-disk schema — e.g. web OPFS surviving
+  /// "Clear site data", which passes `CREATE TABLE IF NOT EXISTS` migration but
+  /// is missing newer columns — throws on the probe, triggering a full rebuild.
+  ///
+  /// CRITICAL: only probe columns that EXIST in the current Drift schema. Never
+  /// probe a column that a migration dropped (e.g. the removed `priorities.root`
+  /// — dropped in v373): the on-disk schema correctly lacks it, so the probe
+  /// would throw on *every* launch and rebuild the DB every time — wiping local
+  /// data and forcing a full re-sync each start. `priority_schema_probe_test`
+  /// guards this by running every probe against a freshly-created schema.
+  static const schemaProbes = [
+    'SELECT id, archived_at, created_at, icon, role_id, is_inbox FROM priorities LIMIT 0',
+    'SELECT id, updated_at, multiple_instances, is_builtin FROM twist_instances LIMIT 0',
+    'SELECT id, updated_at FROM groups LIMIT 0',
+    'SELECT id, topic, groups FROM threads LIMIT 0',
+  ];
+
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
@@ -2623,16 +2660,7 @@ class Store extends _$Store {
         // Validate critical tables have expected columns. On web, OPFS may
         // survive "Clear site data" leaving a stale schema that passes
         // migration (CREATE TABLE IF NOT EXISTS) but fails at query time.
-        // Probe one column from each recently-changed table so drift in
-        // twist_instances (v302/v307), groups (v308), or threads.topic
-        // (v308) triggers a rebuild alongside priorities drift.
-        const probes = [
-          'SELECT id, archived_at, root, created_at, icon, role_id, is_inbox FROM priorities LIMIT 0',
-          'SELECT id, updated_at, multiple_instances, is_builtin FROM twist_instances LIMIT 0',
-          'SELECT id, updated_at FROM groups LIMIT 0',
-          'SELECT id, topic, groups FROM threads LIMIT 0',
-        ];
-        for (final sql in probes) {
+        for (final sql in schemaProbes) {
           try {
             await customSelect(sql).get();
           } catch (e) {

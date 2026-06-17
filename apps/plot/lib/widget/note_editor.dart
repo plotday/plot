@@ -57,6 +57,22 @@ String messageReplyPillId({
   return isReplyToOriginal ? 'replyOriginal' : 'reply';
 }
 
+/// Whether the composer should hold an empty, height-reserving placeholder top
+/// bar while a thread's links finish their first load.
+///
+/// Only shared threads get the placeholder. A shared thread always resolves to
+/// a bar (Reply/Private, or connector pills), so reserving its height avoids
+/// both a layout shift and the plain-Plot→connector content flash when the real
+/// pills land. An *unshared* thread resolves to **no** bar, so holding a
+/// placeholder there would paint a one-frame empty strip that then collapses —
+/// the private-thread header flash. Pure so the decision can be unit-tested
+/// without the Actor cache or a mounted editor.
+@visibleForTesting
+bool reserveEmptyTopBar({
+  required bool linksLoaded,
+  required bool hasSharing,
+}) => !linksLoaded && hasSharing;
+
 class NoteEditor extends StatefulWidget {
   const NoteEditor({
     required this.draft,
@@ -730,14 +746,19 @@ class NoteEditorState extends State<NoteEditor> {
           prev.linksLoaded != curr.linksLoaded,
       builder: (context, state) {
         final topBarState = _computeTopBarState(state);
-        // Omit the bar entirely once links have loaded and there are no pills
-        // to show — an unshared Plot thread, where Note/Task were the only
-        // tabs and "Task" now lives as the bottom-bar "To do" toggle. The
-        // pre-load placeholder (empty pills before links load) still reserves
-        // height to avoid the connector-pill flash.
+        // Omit the bar entirely whenever there are no pills to show — an
+        // unshared Plot thread, where Note/Task were the only tabs and "Task"
+        // now lives as the bottom-bar "To do" toggle. The one exception is the
+        // pre-load placeholder for *shared* threads, which intentionally holds
+        // an empty (height-reserving) row to avoid the connector-pill flash;
+        // [reserveEmptyTopBar] is the single source of truth for that case and
+        // is what [_computeTopBarState] used to produce the empty row.
         if (topBarState is PillRowState &&
             topBarState.pills.isEmpty &&
-            state.linksLoaded) {
+            !reserveEmptyTopBar(
+              linksLoaded: state.linksLoaded,
+              hasSharing: _hasSharing(state),
+            )) {
           return const SizedBox.shrink();
         }
         final threadBloc = context.read<ThreadBloc>();
@@ -774,24 +795,41 @@ class NoteEditorState extends State<NoteEditor> {
     if (editingNote != null) {
       return EditingState(quotePreview: _previewOf(editingNote.content));
     }
-    // Render an empty (height-reserved) pill row until this thread's links
-    // load. The pill set derives from the primary link's type config; building
-    // it before links arrive would show the plain-Plot pills for a frame and
-    // then swap to the connector pills (e.g. on a Google Calendar thread) — a
-    // visible flash. _PillRow reserves its height even with no pills, so the
-    // placeholder doesn't shift layout. (Reply / editing takeover above is
-    // link-agnostic and still renders immediately.)
+    // Render an empty (height-reserved) pill row until a *shared* thread's
+    // links load. The pill set derives from the primary link's type config;
+    // building it before links arrive would show the plain-Plot pills for a
+    // frame and then swap to the connector pills (e.g. on a Google Calendar
+    // thread) — a visible flash. _PillRow reserves its height even with no
+    // pills, so the placeholder doesn't shift layout. (Reply / editing takeover
+    // above is link-agnostic and still renders immediately.)
+    //
+    // We only hold the placeholder for shared threads: a shared thread always
+    // resolves to a bar, so the empty row is height we'll need. An *unshared*
+    // thread resolves to no bar at all, so falling through here yields no pills
+    // and _buildTopBar omits the bar entirely — without the placeholder, the
+    // private-thread case no longer flashes a one-frame empty strip that then
+    // collapses. If links later reveal a connector/twist on an unshared thread,
+    // the bar simply appears a frame late instead of flashing.
     //
     // Note: every thread open/switch mounts a fresh page (ThreadRoute uses
     // usesPathAsKey), so there is no persisted previous-thread chrome to hold
-    // here — a thread whose links are still loading shows the empty row until
-    // they arrive. That blank is the data-loading floor: the only alternative
-    // is the provisional-then-corrected pills (the flash) this avoids.
-    if (!s.linksLoaded) {
+    // here.
+    if (reserveEmptyTopBar(
+      linksLoaded: s.linksLoaded,
+      hasSharing: _hasSharing(s),
+    )) {
       return const PillRowState(pills: [], activeId: null);
     }
     return PillRowState(pills: _buildPills(s), activeId: _activePillId(s));
   }
+
+  /// Whether the thread reaches anyone besides the current user — a non-self
+  /// active contact or any group. Drives the pill set (a shared thread shows
+  /// Reply/Private) and the pre-load placeholder decision (only shared threads
+  /// reserve the bar's height while links load).
+  bool _hasSharing(ThreadState s) =>
+      s.thread.activeContacts.where((c) => !_isSelfContact(c)).isNotEmpty ||
+      s.thread.groups.isNotEmpty;
 
   /// Whether any of the user's linked actors matches the candidate. Threads
   /// can list contacts under any of the user's email aliases, so canonical
@@ -898,10 +936,7 @@ class NoteEditorState extends State<NoteEditor> {
     if (_hasMentionableTwist(s)) return 'reply';
     final cfg = s.primaryLinkTypeConfig;
     final isPlotThread = cfg == null;
-    final hasSharing =
-        s.thread.activeContacts.where((c) => !_isSelfContact(c)).isNotEmpty ||
-        s.thread.groups.isNotEmpty;
-    if (isPlotThread) return hasSharing ? 'reply' : 'note';
+    if (isPlotThread) return _hasSharing(s) ? 'reply' : 'note';
     switch (cfg.sharingModel) {
       case SharingModel.message:
         final orig = _originalAuthorIfDistinct(s);
@@ -928,9 +963,7 @@ class NoteEditorState extends State<NoteEditor> {
     final pills = <TopBarPill>[];
     final cfg = s.primaryLinkTypeConfig;
     final isPlotThread = cfg == null;
-    final hasSharing =
-        s.thread.activeContacts.where((c) => !_isSelfContact(c)).isNotEmpty ||
-        s.thread.groups.isNotEmpty;
+    final hasSharing = _hasSharing(s);
 
     if (_hasMentionableTwist(s)) {
       // Twist chat: chat-like — a single Reply (to everyone) + Private note.

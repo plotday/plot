@@ -240,7 +240,8 @@ class OnboardingSteps {
       ),
       FullScreenStep(
         title: 'Connect your tools',
-        body: "All your work in one place, organized and prioritized.",
+        body:
+            "Plot brings all your conversations together. Calendars show your agenda and group meeting notes. Apps add your tasks, comments, and more.",
         background: const ThemeColor(1),
         contentMaxWidth: 640,
         contentBuilder: (context) => const OnboardingTools(),

@@ -48,6 +48,13 @@ void main() {
     });
   });
 
+  group('OnboardingRoleSelection defaults', () {
+    test('defaults to Work', () {
+      // The picker pre-selects Work so a new user starts in their work role.
+      expect(OnboardingRoleSelection().option, RoleOption.work);
+    });
+  });
+
   group('OnboardingRoleContent (picker)', () {
     testWidgets('renders all five labelled, icon-bearing tiles', (tester) async {
       await tester.pumpWidget(

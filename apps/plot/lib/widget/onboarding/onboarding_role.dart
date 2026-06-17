@@ -20,9 +20,12 @@ enum RoleOption { work, project, personal, school, other }
 /// is built once in `OnboardingBloc.start()`, so this object persists across
 /// rebuilds and step changes for the life of the flow.
 class OnboardingRoleSelection {
-  /// The currently selected option. Defaults to [RoleOption.personal] so a user
-  /// who taps Next without choosing still gets a sensible single-role name.
-  RoleOption option = RoleOption.personal;
+  /// The currently selected option. Defaults to [RoleOption.work] — most new
+  /// users come to Plot for work, so it's the sensible starting role. A user
+  /// who advances without choosing lands on Work's follow-up ("Where do you
+  /// work?"), where the role is named from their answer (or the "Work" label
+  /// if left blank).
+  RoleOption option = RoleOption.work;
 
   final ValueNotifier<String> _text = ValueNotifier<String>('');
 

@@ -31,12 +31,24 @@ actors.get("/sync/actors", async (c) => {
 
   const useSeqCursor = seqSince !== null;
 
+  // `self=true` restricts the result to the user's OWN actors (their primary
+  // contact plus any linked work/personal contacts — typically 1–10 rows).
+  // The Flutter critical sign-in path uses this to load just the current user
+  // up front (so identity/ownership logic works at first paint) while the full
+  // address book is pulled in the background. Absent/any-other value = no
+  // filter, so existing clients are unaffected.
+  const selfOnly = c.req.query("self") === "true";
+
   const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.actor")
       .selectAll()
       .where("user_id", "=", userId)
       .limit(limit);
+
+    if (selfOnly) {
+      query = query.where("self", "=", true);
+    }
 
     // Apply sort
     if (useSeqCursor) {

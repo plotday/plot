@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { withUserDb } from "./db";
+import {
+  withUserDb,
+  isTransientDbError,
+  isPoolExhaustedError,
+  transientRetryDelayMs,
+} from "./db";
 
 /** Minimal stand-in for the Kysely handle: only `.transaction().execute(cb)` is used. */
 function fakeDb(executeImpl: (cb: (trx: any) => Promise<any>) => Promise<any>) {
@@ -70,5 +75,100 @@ describe("withUserDb deadlock retry", () => {
       "deadlock detected"
     );
     expect(attempts).toBe(3);
+  });
+});
+
+describe("isTransientDbError", () => {
+  it("matches pg's actual capitalized 'Connection terminated unexpectedly'", () => {
+    // pg throws this exact string (capital C) from client.js when a pooled
+    // Hyperdrive connection is recycled mid-query. The retry in withDb only
+    // fires when this returns true.
+    expect(isTransientDbError(new Error("Connection terminated unexpectedly"))).toBe(
+      true
+    );
+  });
+
+  it("matches a lowercase 'connection terminated'", () => {
+    expect(isTransientDbError(new Error("connection terminated"))).toBe(true);
+  });
+
+  it("matches 'shutting down' regardless of case", () => {
+    expect(
+      isTransientDbError(new Error("the database system is shutting down"))
+    ).toBe(true);
+    expect(isTransientDbError(new Error("Server is Shutting Down"))).toBe(true);
+  });
+
+  it("matches Hyperdrive's pool-exhaustion 'open slot in the pool' error", () => {
+    // Cloudflare Hyperdrive throws this exact string when all of its connection
+    // slots are busy during a burst of concurrent DB use. Before this was
+    // recognized, withDb's retry never fired and the burst surfaced as a flood
+    // of captured exceptions (PostHog issue 019ed540).
+    expect(
+      isTransientDbError(
+        new Error("Timed out while waiting for an open slot in the pool.")
+      )
+    ).toBe(true);
+  });
+
+  it("does not match an unrelated error", () => {
+    expect(isTransientDbError(new Error("duplicate key value"))).toBe(false);
+  });
+
+  it("is safe for null/undefined/non-Error inputs", () => {
+    expect(isTransientDbError(undefined)).toBe(false);
+    expect(isTransientDbError(null)).toBe(false);
+    expect(isTransientDbError({})).toBe(false);
+  });
+});
+
+describe("isPoolExhaustedError", () => {
+  it("matches Hyperdrive's connection-pool-exhaustion message", () => {
+    expect(
+      isPoolExhaustedError(
+        new Error("Timed out while waiting for an open slot in the pool.")
+      )
+    ).toBe(true);
+  });
+
+  it("does not match connection-recycling errors", () => {
+    // These are transient too, but they need a fresh connection — not a backoff.
+    expect(
+      isPoolExhaustedError(new Error("Connection terminated unexpectedly"))
+    ).toBe(false);
+    expect(
+      isPoolExhaustedError(new Error("the database system is shutting down"))
+    ).toBe(false);
+  });
+
+  it("is safe for null/undefined/non-Error inputs", () => {
+    expect(isPoolExhaustedError(undefined)).toBe(false);
+    expect(isPoolExhaustedError(null)).toBe(false);
+    expect(isPoolExhaustedError({})).toBe(false);
+  });
+});
+
+describe("transientRetryDelayMs", () => {
+  it("returns a positive jittered backoff for pool exhaustion", () => {
+    // Pool exhaustion is a burst: wait briefly so peer connections drain before
+    // re-requesting a slot. A tight (0ms) retry would just re-lose the race.
+    const delay = transientRetryDelayMs(
+      new Error("Timed out while waiting for an open slot in the pool.")
+    );
+    expect(delay).toBeGreaterThanOrEqual(100);
+    expect(delay).toBeLessThanOrEqual(400);
+  });
+
+  it("returns 0 (immediate retry) for connection-recycling errors", () => {
+    expect(
+      transientRetryDelayMs(new Error("Connection terminated unexpectedly"))
+    ).toBe(0);
+    expect(
+      transientRetryDelayMs(new Error("the database system is shutting down"))
+    ).toBe(0);
+  });
+
+  it("returns 0 for non-transient errors", () => {
+    expect(transientRetryDelayMs(new Error("duplicate key value"))).toBe(0);
   });
 });

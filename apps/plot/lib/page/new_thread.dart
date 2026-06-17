@@ -1587,6 +1587,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     final notes = sharingModel == SharingModel.message
         ? await Note.getForThread(draft.id)
         : null;
+    if (!context.mounted) return;
     await context.run(
       PickDraftThreadShared(
         thread: draft,
@@ -1965,6 +1966,13 @@ class NewThreadPageState extends State<NewThreadPage> {
     BuildContext context, {
     required bool multiPanel,
   }) {
+    // The "Private notes" section leads with the focus the user is currently
+    // viewing, so the most likely note destination is the first option. In the
+    // Everything view there's no current focus, so nothing is pinned.
+    final priorityState = context.read<PriorityBloc>().state;
+    final pinnedFocusId =
+        priorityState.everything ? null : priorityState.context?.id;
+
     final picker = ComposeSectionsView(
       key: const ValueKey('new-thread-sections'),
       scrollController: _pickerScrollController,
@@ -1987,6 +1995,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       // new-thread flow is the default right-panel so there's nothing to exit.
       pendingLink: _pendingLink,
       onClearLink: _clearPendingLink,
+      pinnedFocusId: pinnedFocusId,
     );
 
     if (!multiPanel) {

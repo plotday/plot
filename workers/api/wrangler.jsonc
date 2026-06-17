@@ -222,7 +222,9 @@
           {
             "queue": "updates-development",
             "max_batch_size": 50,
-            "max_batch_timeout": 0
+            "max_batch_timeout": 0,
+            // Bound concurrency to the DB connection budget (mirrors production).
+            "max_concurrency": 10
           },
           {
             "queue": "twist-logs-development",
@@ -359,6 +361,24 @@
         "RELEASE": "\"prod\"",
         "PACKAGE": "\"api\""
       },
+      // Pooled connection to prod Postgres via Hyperdrive.
+      //
+      // The pool size (`origin_connection_limit`) is NOT a wrangler field — it
+      // lives on the Hyperdrive config resource. Change it with:
+      //   wrangler hyperdrive update 831ea7d10ef54346b084baaa1a46dfa6 \
+      //     --origin-connection-limit <N>
+      // (read current with `wrangler hyperdrive get <id>`).
+      //
+      // Sizing: Hyperdrive keeps the whole pool warm, and the limit is *soft*
+      // (it can transiently overshoot), so it must stay below the origin's
+      // max_connections, not at it.
+      //   - Origin max_connections = 100, of which 3 are superuser-reserved
+      //     → ~97 usable. Leave room for migrations/admin/psql/cloudsqladmin.
+      //   - Hyperdrive paid per-config cap ≈ 100 (soft).
+      //   Current limit: 60. Safe immediate value on the current origin: 80.
+      //   True 10x (≈600) is gated on infra, NOT a config bump: first raise the
+      //   origin's max_connections (Cloud SQL resize + RAM), then request a
+      //   Cloudflare Hyperdrive limit increase (or shard across configs).
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
@@ -481,7 +501,14 @@
           {
             "queue": "updates-production-v2",
             "max_batch_size": 50,
-            "max_batch_timeout": 0
+            "max_batch_timeout": 0,
+            // Bound concurrency to the DB connection budget: each consumer
+            // invocation holds one Hyperdrive connection for its whole batch
+            // while running twist callbacks. Left unset, Cloudflare auto-scales
+            // consumers on backlog and the connection demand is unbounded, which
+            // helped exhaust Hyperdrive's pool. Raise alongside the Hyperdrive
+            // origin-connection-limit (see the hyperdrive binding note above).
+            "max_concurrency": 10
           },
           {
             "queue": "twist-logs-production",

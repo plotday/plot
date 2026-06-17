@@ -197,6 +197,8 @@ export type Bindings = {
   readonly AUTH_ASANA_SECRET: string;
   readonly AUTH_HUBSPOT_ID: string;
   readonly AUTH_HUBSPOT_SECRET: string;
+  readonly AUTH_TODOIST_ID: string;
+  readonly AUTH_TODOIST_SECRET: string;
   readonly AUTH_AIRTABLE_ID: string;
   readonly AUTH_AIRTABLE_SECRET: string;
 

@@ -32,7 +32,7 @@ void main() {
 
     test('ring is fully opaque', () {
       final colours = coloursFor(Brightness.light);
-      expect(colours.borderFromTheme(const ThemeColor(2)).opacity, 1.0);
+      expect(colours.borderFromTheme(const ThemeColor(2)).a, 1.0);
     });
 
     test('ring hue tracks the focus color (different colors → different rings)', () {

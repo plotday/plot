@@ -1012,6 +1012,7 @@ class ProviderIcon extends StatelessWidget {
       case AuthProvider.linear:
       case AuthProvider.asana:
       case AuthProvider.hubspot:
+      case AuthProvider.todoist:
       case AuthProvider.airtable:
       case AuthProvider.monday:
       case AuthProvider.notion:
@@ -1039,6 +1040,8 @@ class ProviderIcon extends StatelessWidget {
         return 'assets/asana.svg';
       case AuthProvider.hubspot:
         return 'assets/hubspot.svg';
+      case AuthProvider.todoist:
+        return 'assets/todoist.svg';
       case AuthProvider.airtable:
         return 'assets/airtable.svg';
       case AuthProvider.monday:

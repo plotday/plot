@@ -3598,6 +3598,26 @@ class PriorityBloc extends Cubit<PriorityState> {
     });
   }
 
+  /// Whether a [Priority.watchOne] emission for [watched] should be written
+  /// back into the current [state]'s context.
+  ///
+  /// The per-focus watch registered in [_loadPriority] keeps `state.context`
+  /// in sync with edits to the focus the user is viewing. That subscription is
+  /// NOT torn down when the view switches to the synthetic Everything feed
+  /// ([setEverything] only emits a new state), so a late emission for the
+  /// focus we just left would otherwise stamp a non-null context onto an
+  /// `everything == true` state — violating the PriorityState invariant
+  /// (everything <=> context == null) and throwing. It also guards against a
+  /// queued emission for a focus the view has already switched away from.
+  ///
+  /// Only apply the emission while the bloc is still scoped to that focus.
+  @visibleForTesting
+  static bool shouldApplyWatchedContext(
+    PriorityState state,
+    Priority watched,
+  ) =>
+      state.context?.id == watched.id;
+
   void _loadPriority({
     _PriorityLoadProfile? profile,
     bool reloadAgenda = true,
@@ -3625,6 +3645,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       _subscriptions.add(
         Priority.watchOne(priorityToLoad.id).listen((priority) {
           log.fine('Priority updated');
+          // Drop stale emissions after the view left this focus (e.g. entered
+          // the Everything feed, where context must stay null). Stamping a
+          // non-null context onto an `everything` state violates the
+          // PriorityState invariant. See [shouldApplyWatchedContext].
+          if (!shouldApplyWatchedContext(state, priority)) return;
           emit(state.copyWith(context: Value(priority)));
         }),
       );

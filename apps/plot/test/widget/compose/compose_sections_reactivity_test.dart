@@ -38,7 +38,11 @@ class _SpyComposeTargetsBloc extends ComposeTargetsBloc {
   // ThemeBloc / icon-font dependencies); the test only cares that the view
   // re-queries when the underlying connections change.
   @override
-  Future<ComposeSections> loadSections({int perSection = 8, bool linkMode = false}) async {
+  Future<ComposeSections> loadSections({
+    int perSection = 8,
+    bool linkMode = false,
+    Uuid? currentFocusId,
+  }) async {
     loadCount++;
     return const ComposeSections(
       people: [],

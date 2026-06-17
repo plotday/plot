@@ -3,7 +3,14 @@ import superjson from "superjson";
 
 import { createLogger } from "@plotday/worker-util";
 
-import { createDb, sql, type DB, type Kysely } from "../db";
+import {
+  createDb,
+  isTransientDbError,
+  transientRetryDelayMs,
+  sql,
+  type DB,
+  type Kysely,
+} from "../db";
 import { type Bindings } from "../env";
 import { CallbackError, type CallbackErrorContext } from "../errors";
 import { Usage } from "../state/usage";
@@ -66,11 +73,6 @@ function isValidDoId(id: string): boolean {
   return /^[0-9a-f]{64}$/i.test(id);
 }
 
-function isTransientDbError(error: unknown): boolean {
-  const msg = (error as Error)?.message ?? "";
-  return msg.includes("shutting down") || msg.includes("connection terminated");
-}
-
 export class CallbacksState extends DurableObject<Bindings> {
   private sql: SqlStorage;
   private db?: Kysely<DB>;
@@ -94,17 +96,30 @@ export class CallbacksState extends DurableObject<Bindings> {
    * one. Mirrors the retry semantics of the module-level withDb helper.
    */
   private async withDb<T>(fn: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
-      if (!this.db) {
-        this.db = createDb(this.env);
-        // Set statement_timeout explicitly as a fallback for when the
-        // underlying pg connection was reused by Hyperdrive past its startup
-        // phase — matches the module-level withDb behavior.
-        await sql`SET statement_timeout = 30000`.execute(this.db);
+      // Wait out a transient Hyperdrive pool-exhaustion burst before retrying
+      // (no-op for connection-recycling errors). The stale connection was
+      // already discarded below, so peer connections can drain during the pause.
+      if (attempt > 0) {
+        const delayMs = transientRetryDelayMs(lastError);
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
       }
       try {
+        if (!this.db) {
+          this.db = createDb(this.env);
+          // Set statement_timeout explicitly as a fallback for when the
+          // underlying pg connection was reused by Hyperdrive past its startup
+          // phase — matches the module-level withDb behavior. Inside the try so
+          // a pool-exhaustion or connection error on this establishing query is
+          // caught and retried rather than escaping the loop.
+          await sql`SET statement_timeout = 30000`.execute(this.db);
+        }
         return await fn(this.db);
       } catch (error) {
+        lastError = error;
         if (attempt === 0 && isTransientDbError(error)) {
           const stale = this.db;
           this.db = undefined;

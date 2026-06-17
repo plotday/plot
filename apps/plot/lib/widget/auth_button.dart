@@ -1268,6 +1268,24 @@ AuthProviderConfig getAuthProviderConfig(AuthProvider provider) {
         buttonText: 'Continue with HubSpot',
       );
 
+    case AuthProvider.todoist:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF202020),
+        borderColor: const Color(0xFFE2E5EA),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFFCF1F0),
+        focusColor: const Color(0xFFE44332),
+        loadingColor: const Color(0xFFE44332),
+        disabledTextColor: const Color(0xFF9AA4B2),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Todoist',
+      );
+
     case AuthProvider.airtable:
       return AuthProviderConfig(
         backgroundColor: Colors.white,
@@ -1385,6 +1403,8 @@ String? authProviderIconAsset(AuthProvider provider) {
       return "assets/asana.svg";
     case AuthProvider.hubspot:
       return "assets/hubspot.svg";
+    case AuthProvider.todoist:
+      return "assets/todoist.svg";
     case AuthProvider.airtable:
       return "assets/airtable.svg";
     case AuthProvider.linkedin:

@@ -81,6 +81,7 @@ abstract class Command {
     required this.eventObject,
     required this.eventAction,
     this.subtitle,
+    this.searchTerms,
     this.description,
     this.icon,
     this.hoverIcon,
@@ -96,6 +97,13 @@ abstract class Command {
   final EventObject eventObject;
   final EventAction eventAction;
   final String? subtitle;
+
+  /// Extra text matched by [CommandGroup.filter] but never displayed. Lets a
+  /// command be found by terms outside its visible label — e.g. a focus
+  /// command includes its role name so "marlow" surfaces every "AFC Marlow ›"
+  /// focus. Matched at a lower rank than [title]/[subtitle] so visible-label
+  /// matches sort first.
+  final String? searchTerms;
 
   /// Longer description displayed below the title in command modals.
   final String? description;
@@ -436,8 +444,13 @@ abstract class CommandGroup {
     }
 
     return commands
-        .where((command) => match(command.title) || match(command.subtitle))
+        .where((command) =>
+            match(command.title) ||
+            match(command.subtitle) ||
+            match(command.searchTerms))
         .toList()
+      // Visible-label matches (title 3, subtitle 2) sort above commands matched
+      // only by their hidden [Command.searchTerms] (1).
       ..sort((a, b) {
         int aScore = match(a.title)
             ? 3
