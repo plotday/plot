@@ -681,6 +681,14 @@ export function transformSlackThread(
     notes: [],
     preview: firstText || null,
     ...(initialSync ? { unread: false, archived: false } : {}),
+    // Opt into sequential auto-threading, keyed on the channel. A no-op
+    // unless the connection enabled it. 1:1 DMs (channel id "D…") read as one
+    // continuous conversation, so fold every message into a single running
+    // thread; channels and group DMs use the LLM continuation check.
+    autoThread: {
+      key: channelId,
+      mode: channelId.startsWith("D") ? "fold" : "sequential",
+    },
   };
 
   // Create Notes for all messages (including first). Reactions live
