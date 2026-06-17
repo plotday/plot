@@ -879,15 +879,13 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     return batchMap.values.toList();
   }
 
-  /// Find the first-level focus that owns [priority] (path-independent).
+  /// Find the first-level focus that owns [priority].
   ///
-  /// In the flat/role model focuses are direct children of the root and
-  /// threads are filed directly in a focus, so the first-level focus for a
-  /// thread is simply its filed priority — unless that priority is the root
-  /// (Inbox), which has no enclosing focus (returns null, matching the old
-  /// `threadDepth <= rootDepth` skip).
+  /// In the flat/role model threads are filed directly in a focus, so the
+  /// first-level focus for a thread is simply its filed priority (every focus,
+  /// the Inbox included, is its own first-level focus).
   PriorityRow? _firstLevelFocusFor(PriorityRow priority) {
-    return priority.root ? null : priority;
+    return priority;
   }
 
   /// Fetch AI-generated summaries from the API.
@@ -1125,10 +1123,10 @@ Future<void> syncNotifyWindowsToPrefs([SharedPreferences? prefs]) async {
     prefs ??= await SharedPreferences.getInstance();
     final store = Store.get;
 
-    // Prefer the root priority's `notify_window` (its inherited resolved
-    // value), and fall back to any explicit override if root isn't loaded.
+    // Prefer the default Inbox's `notify_window`, and fall back to any
+    // explicit override if it isn't loaded.
     final rootRows = await (store.select(store.priorities)
-          ..where((t) => t.root.equals(true))
+          ..where((t) => t.isInbox.equals(true))
           ..limit(1))
         .get();
     String? window = rootRows.firstOrNull?.notifyWindow;

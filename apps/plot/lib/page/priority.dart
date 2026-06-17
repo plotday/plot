@@ -307,7 +307,12 @@ class _PriorityCommandScope extends StatelessWidget {
     // The sidebar's PrioritiesBloc list is enriched with hasThreads; reuse it
     // so the command-palette focus menu shows the right Archive/Merge label.
     final loaded = context.watch<PrioritiesBloc>().state.priorities;
-    final focus = bloc.state.thread?.priority ?? bloc.state.context;
+    // The unscoped Everything view has a null context; its priority command
+    // scope operates on the draft's Inbox fallback (the focus a new thread
+    // would file into).
+    final focus = bloc.state.thread?.priority ??
+        bloc.state.context ??
+        bloc.state.draft.priority;
     return CommandScope(
       commands: currentPriorityCommandGroups(
         enrichFocusFromList(focus, loaded),
@@ -884,8 +889,10 @@ class _PriorityPageState extends State<PriorityPage>
     return MultiBlocListener(
       listeners: [
         BlocListener<PriorityBloc, PriorityState>(
+          // Null id in the unscoped Everything view; the ?.id comparison still
+          // fires on entering/leaving Everything (null <-> a focus id).
           listenWhen: (previous, current) =>
-              previous.context.id != current.context.id,
+              previous.context?.id != current.context?.id,
           listener: (context, state) {
             final nowBloc = context.read<NowBloc>();
             nowBloc.setFocus(state.context);
@@ -1233,9 +1240,7 @@ class _PriorityPageState extends State<PriorityPage>
       final extras = scope == null
           ? state.remoteSearchExtras
           : state.remoteSearchExtras.where(
-              (t) => scope.root
-                  ? t.priority.root
-                  : t.priority.id == scope.id,
+              (t) => t.priority.id == scope.id,
             );
       final merged = <AgendaItem>[...items];
       for (final t in extras) {
@@ -1496,8 +1501,12 @@ class _PriorityPageState extends State<PriorityPage>
                   // live one) so the per-row focus label stays consistent with
                   // the rows during a focus switch — the previous focus's kept
                   // rows must not flash the previous focus's label before they
-                  // swap out. Drag (below) still targets the live context.
-                  priorityContext: state.activeTabContext ?? state.context,
+                  // swap out. Drag (below) still targets the live context. In
+                  // the unscoped Everything view both are null, so fall back to
+                  // the draft's Inbox priority.
+                  priorityContext: state.activeTabContext ??
+                      state.context ??
+                      state.draft.priority,
                   isAssociated: agendaActivity.isAssociated,
                   isSearch: isSearching,
                   multiSelected:
@@ -1514,7 +1523,9 @@ class _PriorityPageState extends State<PriorityPage>
                 return [
                   ActivityFeedDraggableRow(
                     threadId: baseThread.id,
-                    priorityContext: state.context,
+                    // Everything (null context) → drag default-targets the
+                    // draft's Inbox priority.
+                    priorityContext: state.context ?? state.draft.priority,
                     child: item,
                   ),
                 ];

@@ -196,7 +196,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
     BuildContext context,
     Priority priority,
   ) async {
-    final isRoot = priority.root;
+    final isRoot = priority.isInbox;
 
     final inherited = await _resolveInherited(priority);
 
@@ -316,7 +316,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
   static Future<_EarlyNotificationsValues> _resolveInherited(
     Priority priority,
   ) async {
-    if (priority.root) {
+    if (priority.isInbox) {
       return _EarlyNotificationsValues(
         earlyNotificationsEnabled: priority.earlyNotificationsEnabled ?? true,
         notifyWindow: priority.notifyWindows ?? _defaultNotifyWindow,

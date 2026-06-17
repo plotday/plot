@@ -19,7 +19,7 @@ void main() {
   Future<void> insertPriority({
     required Uuid id,
     required String path,
-    required bool root,
+    bool isInbox = false,
     DateTime? archivedAt,
   }) async {
     await store.into(store.priorities).insert(
@@ -29,7 +29,7 @@ void main() {
             createdBy: Value(Uuid.generate()),
             path: Value(Path(path)),
             order: const Value(Order(0)),
-            root: Value(root),
+            isInbox: Value(isInbox),
             unread: const Value(false),
             role: const Value('member'),
             archivedAt: Value(archivedAt),
@@ -39,10 +39,10 @@ void main() {
 
   test('resolves focus successfully with single active root', () async {
     final rootId = Uuid.generate();
-    await insertPriority(id: rootId, path: 'inbox', root: true);
+    await insertPriority(id: rootId, path: 'inbox', isInbox: true);
 
     final focusId = Uuid.generate();
-    await insertPriority(id: focusId, path: 'inbox.focus1', root: false);
+    await insertPriority(id: focusId, path: 'inbox.focus1');
 
     // Call the watermark update which internally invokes _firstLevelFocusFor.
     await store.updateNotificationWatermark(focusId);
@@ -56,19 +56,19 @@ void main() {
 
   test('does not crash when an archived duplicate root exists', () async {
     final rootId = Uuid.generate();
-    await insertPriority(id: rootId, path: 'inbox', root: true);
+    await insertPriority(id: rootId, path: 'inbox', isInbox: true);
 
     // Insert an archived root priority row
     final archivedRootId = Uuid.generate();
     await insertPriority(
       id: archivedRootId,
       path: 'inbox-old',
-      root: true,
+      isInbox: true,
       archivedAt: DateTime(2026, 1, 1),
     );
 
     final focusId = Uuid.generate();
-    await insertPriority(id: focusId, path: 'inbox.focus1', root: false);
+    await insertPriority(id: focusId, path: 'inbox.focus1');
 
     // This would crash with 'Bad state: Too many elements' without the fix
     await store.updateNotificationWatermark(focusId);
@@ -87,20 +87,19 @@ void main() {
     // stamped directly on the resolved focus and no other (archived) row is
     // touched.
     final rootId = Uuid.generate();
-    await insertPriority(id: rootId, path: 'inbox', root: true);
+    await insertPriority(id: rootId, path: 'inbox', isInbox: true);
 
     // Insert an archived focus with same path
     final archivedFocusId = Uuid.generate();
     await insertPriority(
       id: archivedFocusId,
       path: 'inbox.focus1',
-      root: false,
       archivedAt: DateTime(2026, 1, 1),
     );
 
     // Insert an active focus
     final activeFocusId = Uuid.generate();
-    await insertPriority(id: activeFocusId, path: 'inbox.focus1', root: false);
+    await insertPriority(id: activeFocusId, path: 'inbox.focus1');
 
     // Resolve watermark for the active focus directly.
     await store.updateNotificationWatermark(activeFocusId);

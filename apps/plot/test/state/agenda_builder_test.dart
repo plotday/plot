@@ -20,7 +20,6 @@ Priority _testPriority({
     title: title,
     path: Path(path),
     order: Order(order),
-    root: false,
     unread: false,
     role: 'member',
     isInbox: false,

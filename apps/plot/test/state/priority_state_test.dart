@@ -12,7 +12,6 @@ Priority _testPriority() {
     title: 'Test',
     path: Path('test'),
     order: const Order(0),
-    root: false,
     unread: false,
     role: 'member',
     isInbox: false,
@@ -45,8 +44,11 @@ PriorityState _stateWith({
     sourceCreatedAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 1),
   );
+  // Honor the everything <=> context == null invariant: the Everything view
+  // is context-less and files its draft into the supplied fallback priority.
   return PriorityState(
-    context: priority,
+    context: everything ? null : priority,
+    draftFallbackPriority: priority,
     draft: draft,
     draftNote: draftNote,
     agendaItems: agendaItems,
@@ -269,7 +271,7 @@ void main() {
         },
       );
 
-      expect(state.context.id, newFocus.id);
+      expect(state.context!.id, newFocus.id);
       expect(
         state.activeTabContext?.id,
         previousFocus.id,

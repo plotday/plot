@@ -683,8 +683,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
         // The timer pill (or, when no timer is running, the start-timer
         // button) lives at the start of the sidebar header while the
         // sidebar is open. It collapses to nothing when nothing is
-        // trackable for the context priority.
-        _PriorityHeaderTrackingControl(priority: state.context),
+        // trackable for the context priority — and there is no single
+        // context to track in the unscoped Everything view.
+        if (state.context != null)
+          _PriorityHeaderTrackingControl(priority: state.context!)
+        else
+          const SizedBox.shrink(),
         const Expanded(child: SizedBox.shrink()),
         Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
       ],
@@ -913,9 +917,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
           SizedBox(width: layoutState.multiPanel ? 4 : 8),
           if (layoutState.multiPanel) _searchButton(),
           // When the sidebar is open the tracking control moves to the
-          // start of the sidebar header instead.
-          if (showTracking)
-            _PriorityHeaderTrackingControl(priority: state.context),
+          // start of the sidebar header instead. The unscoped Everything view
+          // has no single context to track, so the pill is omitted there.
+          if (showTracking && state.context != null)
+            _PriorityHeaderTrackingControl(priority: state.context!),
         ],
       );
     }
@@ -971,7 +976,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
               );
               return withTrackingPill(
                 FocusLabel(
-                  priority: state.context,
+                  // Everything has a null context; FocusLabel renders nothing
+                  // for a null priority, so hand it the draft's Inbox fallback.
+                  // The title/icon/colour are all overridden, so only a
+                  // non-null priority (not its identity) matters here.
+                  priority: state.context ?? state.draft.priority,
                   boldLeaf: true,
                   color: accent,
                   iconOverride: PlotIcon.inboxes,
@@ -1351,7 +1360,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
         final thread = state.thread;
         final priorityBloc = context.read<PriorityBloc?>();
         final nowState = context.read<NowBloc?>()?.state;
-        final focus = state.thread?.priority ?? state.context;
+        // In the unscoped Everything view (null context) the priority menu
+        // operates on the draft's Inbox fallback — the focus a new thread
+        // would file into.
+        final focus =
+            state.thread?.priority ?? state.context ?? state.draft.priority;
         final hasThreads = await Priority.hasThreadsFor(focus.id);
         final threadGroups = thread != null
             ? await threadCommandGroups(thread, priorityBloc: priorityBloc)
@@ -1375,7 +1388,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final nowState = context.read<NowBloc?>()?.state;
-        final focus = state.context;
+        // Everything (null context) → operate on the draft's Inbox fallback.
+        final focus = state.context ?? state.draft.priority;
         final hasThreads = await Priority.hasThreadsFor(focus.id);
         if (!context.mounted) return const Commands(groups: []);
         final priorityGroups = currentPriorityCommandGroups(

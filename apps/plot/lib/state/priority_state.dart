@@ -7,7 +7,8 @@ enum ThreadListSource { agenda, activityFeed }
 @immutable
 class PriorityState extends Equatable {
   factory PriorityState({
-    required Priority context,
+    required Priority? context,
+    Priority? draftFallbackPriority,
     Thread? thread,
     Thread? draft,
     Note? draftNote,
@@ -43,7 +44,27 @@ class PriorityState extends Equatable {
     Set<ThreadId> selected = const {},
     ThreadId? selectionAnchor,
   }) {
-    draft ??= Thread(priority: context, draft: true);
+    // Invariant: the synthetic "Everything" view is the one and only
+    // context-less state. `everything == true` iff `context == null`, so
+    // every reader can treat a null context as "Everything" without a
+    // separate flag check.
+    assert(
+      (context == null) == everything,
+      'PriorityState invariant: everything <=> context == null',
+    );
+    // Drafts must always file somewhere. In a focus view that is the focus
+    // itself; in the context-less Everything view it is the supplied
+    // fallback (the app's default Inbox). Only resolved when a draft must be
+    // synthesized — callers that pass an explicit draft already chose where
+    // it files.
+    if (draft == null) {
+      final draftPriority = context ?? draftFallbackPriority;
+      assert(
+        draftPriority != null,
+        'a context-less state needs a draftFallbackPriority',
+      );
+      draft = Thread(priority: draftPriority!, draft: true);
+    }
 
     return PriorityState._(
       context: context,
@@ -140,7 +161,12 @@ class PriorityState extends Equatable {
     this.selectionAnchor,
   });
 
-  final Priority context;
+  /// The focus (priority) this page is scoped to. `null` is the synthetic
+  /// "Everything" view — see the [everything] invariant. Readers must treat
+  /// null as "unscoped / Everything", never dereference it. The draft files
+  /// under [draft]'s priority (the focus, or the default-Inbox fallback in
+  /// the Everything view), not under this field.
+  final Priority? context;
   final Thread? thread;
   final Thread draft;
   final Note draftNote;
@@ -251,8 +277,10 @@ class PriorityState extends Equatable {
 
   /// When true, this bloc renders the synthetic "Everything" feed: every
   /// thread across the Inbox and all focuses, unscoped and unsectioned.
-  /// Mirrored from [NowBloc.everything] by the priority page. [context]
-  /// stays the root so drafts land in the Inbox.
+  /// Mirrored from [NowBloc.everything] by the priority page. In this mode
+  /// [context] is `null` (the invariant `everything == (context == null)`),
+  /// and drafts file under [draft]'s priority — the default Inbox supplied as
+  /// `draftFallbackPriority`.
   final bool everything;
 
   /// While a global view is open (an active [search] or any active filter),
@@ -294,9 +322,7 @@ class PriorityState extends Equatable {
     bool keep(Thread t) {
       if (muteOnly && t.muteByThreadId == null) return false;
       if (scope != null) {
-        return scope.root
-            ? t.priority.root
-            : t.priority.id == scope.id;
+        return t.priority.id == scope.id;
       }
       return true;
     }
@@ -420,7 +446,8 @@ class PriorityState extends Equatable {
 
 
   PriorityState copyWith({
-    Priority? context,
+    Value<Priority?> context = const Value.absent(),
+    Priority? draftFallbackPriority,
     Value<Thread?> thread = const Value.absent(),
     Thread? draft,
     Note? draftNote,
@@ -457,7 +484,8 @@ class PriorityState extends Equatable {
     Value<ThreadId?> selectionAnchor = const Value.absent(),
   }) {
     return PriorityState(
-      context: context ?? this.context,
+      context: context.or(this.context),
+      draftFallbackPriority: draftFallbackPriority,
       thread: thread.or(this.thread),
       draft: draft ?? this.draft,
       draftNote: draftNote ?? this.draftNote,
@@ -567,7 +595,7 @@ class PriorityState extends Equatable {
 
   @override
   String toString() {
-    return 'PriorityState(context: ${context.title}, thread: ${thread?.title}, draft: $draft, showArchived: $showArchived, filter: $filter, search: $search, twists: ${twists.length}, tags: ${tags.length})';
+    return 'PriorityState(context: ${context?.title ?? 'Everything'}, thread: ${thread?.title}, draft: $draft, showArchived: $showArchived, filter: $filter, search: $search, twists: ${twists.length}, tags: ${tags.length})';
   }
 }
 

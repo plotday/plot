@@ -2562,7 +2562,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 372;
+  int get schemaVersion => 373;
 
   @override
   MigrationStrategy get migration {
@@ -2736,13 +2736,12 @@ class Store extends _$Store {
     }
   }
 
-  /// Resolve the first-level focus that contains the given priority
-  /// (path-independent). Flat/role model: focuses are direct children of the
-  /// root and threads are filed directly in a focus, so the first-level focus
-  /// is the priority itself — unless it is the root (Inbox), which has no
-  /// enclosing focus.
+  /// Resolve the first-level focus that contains the given priority. Flat/role
+  /// model: threads are filed directly in a focus, so the first-level focus is
+  /// simply the priority itself (every focus, the Inbox included, is its own
+  /// first-level focus).
   Future<PriorityRow?> _firstLevelFocusFor(PriorityRow priority) async {
-    return priority.root ? null : priority;
+    return priority;
   }
 
   /// Performs a full re-sync from the server without losing local data.
@@ -4195,6 +4194,16 @@ class Store extends _$Store {
       // Default false: anything truly unpushed pre-upgrade was already lost
       // by the old fire-and-forget push, so existing rows start clean.
       await _safeAddColumn(m, threads, threads.statePending);
+    }
+
+    if (from < 373) {
+      // Drop the vestigial `priorities.root` flag. In the flat/role model
+      // nothing reads it — the default Inbox is resolved from `is_inbox` +
+      // role age — so it carried no meaning. The server may still send `root`
+      // for now; `PrioritiesBase.fromBase` strips it before deserialization.
+      // TableMigration rebuilds the table from the current Drift schema (no
+      // `root` column), preserving all other data.
+      await m.alterTable(TableMigration(priorities));
     }
   }
 

@@ -37,7 +37,6 @@ class Priorities extends Table
   /// this field was introduced.
   TextColumn get description => text().nullable()();
   TextColumn get key => text().nullable()();
-  BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
   TextColumn get attentionWindow => text().nullable()();
@@ -96,6 +95,10 @@ class PrioritiesBase extends BaseTable {
   Insertable<PriorityRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
     json.remove('global_path');
+    // The vestigial `root` flag was dropped from the Drift schema; the server
+    // may still send it during the rollout, so strip it before
+    // `PriorityRow.fromJson` (which no longer has a `root` field).
+    json.remove('root');
     json['role'] ??= 'member';
     // Remap old column names (response_window → attention_window)
     if (json.containsKey('response_window') &&
@@ -509,21 +512,22 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return (await _default().getSingleOrNull()) != null;
   }
 
-  /// True when the user has any non-archived focus beyond the two that
-  /// `activate_invited_user` auto-seeds at signup — the root ("Everything")
-  /// and the global role-less "FYI" focus. Used as a second-device signal
-  /// that the user has already used Plot, so onboarding can be skipped.
+  /// True when the user has any non-archived focus beyond the ones that
+  /// `activate_invited_user` auto-seeds at signup — each role's auto-managed
+  /// Inbox (`is_inbox`) and the global role-less "FYI" focus (`is_fyi`). Used
+  /// as a second-device signal that the user has already used Plot, so
+  /// onboarding can be skipped.
   ///
-  /// The FYI focus is a *non-root* priority (`is_fyi = true`), so it MUST be
-  /// excluded here: counting it makes this fire for every brand-new user and
-  /// silently suppresses onboarding (the user keeps the seeded 'Personal'
-  /// role they never chose). See `apps/plot/lib/state/onboarding.dart`.
+  /// The seeded Inbox and FYI focuses MUST be excluded: counting them makes
+  /// this fire for every brand-new user and silently suppresses onboarding
+  /// (the user keeps the seeded 'Personal' role they never chose). See
+  /// `apps/plot/lib/state/onboarding.dart`.
   static Future<bool> hasNonRoot() async {
     final query = Store.get.select(table)
       ..where(
         (t) =>
             t.archivedAt.isNull() &
-            t.root.equals(false) &
+            t.isInbox.equals(false) &
             t.isFyi.equals(false),
       )
       ..limit(1);
@@ -898,21 +902,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         // Show only archived priorities
         query.where(p.archivedAt.isNotNull());
       } else {
-        // Show only active priorities: not archived AND no archived ancestors
+        // Show only active priorities — the focus's own archived state is the
+        // only thing that hides it. In the flat/role model a focus must NEVER
+        // be hidden because of where its old ltree path sat: the previous
+        // path-derived "no archived ancestor" filter silently hid live,
+        // correctly-roled focuses whose old container focus had been archived.
         query.where(p.archivedAt.isNull());
-
-        // Join ancestry to check for archived ancestors
-        final paForFilter = Store.get.alias(
-          Store.get.priorityAncestry,
-          'pa_filter',
-        );
-        query = query.join([
-          leftOuterJoin(paForFilter, paForFilter.priorityId.equalsExp(p.id)),
-        ]);
-        query.where(
-          paForFilter.hasArchivedAncestor.isNull() |
-              paForFilter.hasArchivedAncestor.equals(0),
-        );
       }
     }
 
@@ -972,13 +967,31 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return (Store.get.select(table)
           ..where((t) => t.archivedAt.isNull())
           ..orderBy([
-            (t) => OrderingTerm(expression: t.root, mode: OrderingMode.desc),
-            // If no priority is marked default, fall back to the first one created
+            // The user's default "home" focus is the Inbox of their oldest
+            // role — the Inbox created first, at signup. Prefer an Inbox, then
+            // the oldest by creation. (Path-/root-independent: the old `root`
+            // flag marked exactly this focus.)
+            (t) => OrderingTerm(expression: t.isInbox, mode: OrderingMode.desc),
             (t) =>
                 OrderingTerm(expression: t.createdAt, mode: OrderingMode.asc),
           ])
           ..limit(1))
         .map(Priority.fromStore);
+  }
+
+  /// The user's default Inbox resolved from an in-hand priority list: the
+  /// oldest `is_inbox` focus (their oldest role's Inbox, created first at
+  /// signup). This is the single "home" focus the app lands and files in —
+  /// the role-model successor to the old per-user root. Resolved purely from
+  /// `is_inbox` + creation order, with no dependence on the vestigial
+  /// `root`/`path` columns.
+  static Priority? defaultInbox(List<Priority> priorities) {
+    Priority? best;
+    for (final p in priorities) {
+      if (!p.isInbox) continue;
+      if (best == null || p.createdAt.isBefore(best.createdAt)) best = p;
+    }
+    return best;
   }
 
   static Map<Uuid, Priority> asMap(List<Priority> list) {
@@ -1013,7 +1026,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       final match = priorities.firstWhereOrNull((p) => p.id == id);
       return match != null ? [match] : [];
     }
-    return priorities.where((p) => p.root).toList();
+    final inbox = defaultInbox(priorities);
+    return inbox == null ? [] : [inbox];
   }
 
   Priority({
@@ -1048,7 +1062,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          // the expand phase.
          path: null,
          order: Order(DateTime.now().millisecondsSinceEpoch.toDouble()),
-         root: false,
          unread: false,
          role: parent.role,
          roleId: parent.roleId,
@@ -1099,7 +1112,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
            _computeDisplayColor(
              ancestry: ancestry,
              parent: parent,
-             isRoot: row.root,
            ),
        _activeComputed = active,
        // ignore: prefer_initializing_formals
@@ -1119,7 +1131,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          icon: row.icon,
          description: row.description,
          key: row.key,
-         root: row.root,
          path: row.path,
          createdBy: row.createdBy,
          unread: row.unread,
@@ -1146,7 +1157,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   static ThemeColor _computeDisplayColor({
     PriorityAncestryData? ancestry,
     Priority? parent,
-    required bool isRoot,
   }) {
     // If we have ancestry data, walk from last (parent) to first (root)
     if (ancestry != null) {
@@ -1267,7 +1277,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Falls back to [displayColor] when the role isn't cached yet; widgets that
   /// must update the instant the cache warms rebuild on [Role.cache].
   ThemeColor get labelDisplayColor {
-    if ((isInbox || root) && roleId != null) {
+    if (isInbox && roleId != null) {
       final role = Role.fromCache(roleId);
       if (role != null) return role.displayColor;
     }
@@ -1359,7 +1369,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<String?> icon = const Value.absent(),
     Value<String?> description = const Value.absent(),
     Value<String?> key = const Value.absent(),
-    bool? root,
     Priority? parent,
     Value<int?> pending = const Value.absent(),
     bool? unread,
@@ -1408,7 +1417,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         icon: icon,
         description: description,
         key: key,
-        root: root,
         unread: unread,
         role: role,
         attentionWindow: attentionWindow,

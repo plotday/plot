@@ -25,7 +25,6 @@ void main() {
   Future<void> insertPriority(
     Uuid id, {
     Path? path,
-    bool root = false,
     String title = 'Focus',
   }) async {
     await store.into(store.priorities).insert(
@@ -35,7 +34,6 @@ void main() {
             createdBy: Value(Uuid.generate()),
             path: Value(path),
             order: const Value(Order(0)),
-            root: Value(root),
             unread: const Value(false),
             role: const Value('member'),
           ),

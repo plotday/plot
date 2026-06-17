@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -184,6 +184,12 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
     // Reset state to prevent stale data from persisting across user sessions
     emit(const NowLoading());
   }
+
+  /// Seeds the bloc into a known [NowLoaded] state for unit tests.
+  /// The bloc must not have been [start]ed; this bypasses the database
+  /// subscription entirely. For use in tests only.
+  @visibleForTesting
+  void seedForTesting(NowLoaded state) => emit(state);
 
   /// Maintenance tick for the active pomodoro session.
   ///

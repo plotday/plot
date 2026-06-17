@@ -898,10 +898,11 @@ class NewThreadPageState extends State<NewThreadPage> {
         // Partition out the root (Inbox), which `get` returns alongside the
         // focuses, so it's pinned to the bottom as a branded "Inbox" row
         // instead of appearing inline as a plain focus.
+        final inboxId = Priority.defaultInbox(priorities)?.id;
         Priority? root;
         final focuses = <Priority>[];
         for (final p in priorities) {
-          if (p.root) {
+          if (p.id == inboxId) {
             root = p;
           } else if (query.isEmpty || p.matchesSearch(search ?? '')) {
             focuses.add(p);
@@ -1478,9 +1479,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     final ranked = <Priority>[];
     for (final id in rankedIds) {
       final p = byId[id];
-      // Skip the root: "auto-organize"-style filing is gone, but a suggestion
-      // should still land in a real focus, not the Inbox.
-      if (p != null && !p.root) ranked.add(p);
+      // Skip Inbox focuses: "auto-organize"-style filing is gone, but a
+      // suggestion should still land in a real focus, not an Inbox.
+      if (p != null && !p.isInbox) ranked.add(p);
     }
     if (ranked.isEmpty) return;
 

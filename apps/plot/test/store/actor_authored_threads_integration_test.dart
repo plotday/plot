@@ -48,7 +48,7 @@ void main() {
     Uuid id,
     String path, {
     required Uuid createdBy,
-    bool root = false,
+    bool isInbox = false,
   }) async {
     await store.into(store.priorities).insert(
           PrioritiesCompanion(
@@ -57,7 +57,7 @@ void main() {
             createdBy: Value(createdBy),
             path: Value(Path(path)),
             order: const Value(Order(0)),
-            root: Value(root),
+            isInbox: Value(isInbox),
             unread: const Value(false),
             role: const Value('member'),
           ),
@@ -130,7 +130,7 @@ void main() {
     final child = Uuid.generate();
     final outside = Uuid.generate();
 
-    await insertPriority(root, 'root', createdBy: self, root: true);
+    await insertPriority(root, 'root', createdBy: self, isInbox: true);
     await insertPriority(child, 'root.child', createdBy: self);
     await insertPriority(outside, 'other', createdBy: self);
 
@@ -171,7 +171,7 @@ void main() {
     await insertActor(authoredPerson, name: 'Authored Person');
     await insertActor(mailingList, name: 'Mailing List');
 
-    await insertPriority(root, 'root', createdBy: self, root: true);
+    await insertPriority(root, 'root', createdBy: self, isInbox: true);
     await insertPriority(emptyChild, 'root.empty', createdBy: self);
     await insertPriority(otherChild, 'root.other', createdBy: self);
 

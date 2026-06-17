@@ -352,9 +352,12 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     // still loading — the agenda body only mounts after [NowLoaded]
     // upstream, so this branch is just defensive.
     final nowState = context.watch<NowBloc>().state;
+    final priorityState = context.read<PriorityBloc>().state;
     final currentPriorityId = nowState is NowLoaded
         ? nowState.priority.id
-        : context.read<PriorityBloc>().state.context.id;
+        // Defensive fallback before NowBloc loads. The unscoped Everything
+        // view has a null context, so fall back to the draft's Inbox priority.
+        : (priorityState.context ?? priorityState.draft.priority).id;
     // A directly-tapped event ([NowLoaded.currentEvent]) or focus block
     // ([NowLoaded.selectedBlockId]) is highlighted verbatim, wherever it
     // sits. With neither, we auto-highlight only the block covering the

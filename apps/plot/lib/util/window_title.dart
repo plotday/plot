@@ -14,7 +14,7 @@ import 'package:plot/util/document_title.dart';
 /// is just "Plot".
 String windowTitleForFocus(Priority? context) {
   const app = 'Plot';
-  if (context == null || context.root) return app;
+  if (context == null || context.isInbox) return app;
 
   final focus = context.displayTitle;
 

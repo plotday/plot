@@ -1238,8 +1238,11 @@ class _SidebarDrawerOverlayState extends State<_SidebarDrawerOverlay>
     // Selecting a focus inside the drawer changes the context priority — close
     // the drawer so the chosen focus's threads are visible in the panel behind.
     return BlocListener<PriorityBloc, PriorityState>(
+      // Null id in the unscoped Everything view; the ?.id comparison still
+      // detects the focus change (null <-> a focus id) that should close the
+      // drawer.
       listenWhen: (previous, current) =>
-          widget.open && previous.context.id != current.context.id,
+          widget.open && previous.context?.id != current.context?.id,
       listener: (context, state) => widget.onDismiss(),
       child: AnimatedBuilder(
         animation: _controller,

@@ -16,6 +16,10 @@
   under Work and personal ones under Personal. It keeps the quiet stuff out of your Inbox while staying
   one tap away, and it never sends notifications. Otherwise it's an ordinary focus — you can reorder it
   and change its colour. Your role's Inbox is now reorderable the same way.
+- The Everything view is now a true cross-focus view rather than being quietly tied to one focus.
+  When you're in Everything, focus-specific controls step aside and the header simply reads
+  "Everything"; starting a thread there files it into your main Inbox unless you pick a focus (or it
+  follows your usual most-recent focus for the people you're messaging).
 - Choosing where to start during setup is clearer. Each choice — Work, Project, Personal, School,
   Other — now has an icon, and picking one moves you straight on: when your choice needs a name (your
   workplace or project) Plot asks for it on its own step with the box ready to type, instead of a
@@ -28,6 +32,10 @@
 
 ### Fixes
 
+- Focuses no longer disappear from your sidebar when you archive an old, unrelated focus. Previously,
+  archiving a focus could silently hide other live focuses that happened to have been organised under
+  it in the past, even though they were still active and assigned to a role. Every live focus now
+  stays visible regardless of what you archive around it.
 - Icons that sit beside text — in the sidebar, menus, pickers, and the new-thread form — are now a
   touch smaller so they sit level with the words next to them instead of looking oversized, and they
   line up in a consistent column. The result is a cleaner, less crowded look throughout.

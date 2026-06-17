@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:rxdart/rxdart.dart';
 
 import 'package:plot/util/async.dart';
@@ -98,6 +99,14 @@ class ScheduledDay extends Equatable {
     // since gaps are now computed in PriorityState._makeAgenda
     Priority? defaultPriority,
   });
+
+  /// An empty [ScheduledDay] for the current local date. For use in tests only;
+  /// production code must always obtain a [ScheduledDay] from [watchToday].
+  @visibleForTesting
+  static ScheduledDay empty() => ScheduledDay._(
+    date: Date.today(),
+    threads: const [],
+  );
 
   final Date date;
   final List<Thread> threads;

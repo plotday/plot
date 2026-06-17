@@ -48,19 +48,18 @@ void main() {
 
   // A per-role Inbox focus: `is_inbox`, owned by [roleId]. Its
   // [Priority.displayTitle] is the fixed "Inbox", so two of these are
-  // indistinguishable without their role prefix. [root] is true for the
+  // indistinguishable without their role prefix. [everything] is true for the
   // Personal role's Inbox, which is that role's root focus (stored title
-  // "Everything", displayed "Inbox"); non-root for every other role's Inbox.
-  Priority inboxFocus(RoleId roleId, {bool root = false, String? title}) {
+  // "Everything", displayed "Inbox"); false for every other role's Inbox.
+  Priority inboxFocus(RoleId roleId, {bool everything = false, String? title}) {
     final row = PriorityRow(
       id: Uuid.generate(),
       createdBy: Uuid.generate(),
       createdAt: DateTime(2026, 1, 1),
       updatedAt: DateTime(2026, 1, 1),
-      title: title ?? (root ? 'Everything' : 'Inbox'),
+      title: title ?? (everything ? 'Everything' : 'Inbox'),
       path: Path('inbox'),
       order: const Order(0),
-      root: root,
       unread: false,
       role: 'member',
       roleId: roleId,
@@ -104,7 +103,7 @@ void main() {
       await tester.pumpWidget(
         host(
           FocusLabel(
-            priority: inboxFocus(personal.id, root: true),
+            priority: inboxFocus(personal.id, everything: true),
             showRole: true,
           ),
         ),
@@ -165,7 +164,7 @@ void main() {
       final personal = role('Personal', color: const ThemeColor(3));
       Role.setCacheForTesting([personal]);
 
-      final inbox = inboxFocus(personal.id, root: true);
+      final inbox = inboxFocus(personal.id, everything: true);
       // The stored Inbox has no `color`, so its raw displayColor is the brand
       // default, but the role-aware label colour is the role's.
       expect(inbox.displayColor, const ThemeColor.defaultColor());
@@ -187,7 +186,7 @@ void main() {
       // Cache intentionally NOT seeded with [personal].
       Role.setCacheForTesting([]);
 
-      final inbox = inboxFocus(personal.id, root: true);
+      final inbox = inboxFocus(personal.id, everything: true);
       expect(inbox.labelDisplayColor, inbox.displayColor);
     });
 
@@ -200,7 +199,7 @@ void main() {
       await tester.pumpWidget(
         host(
           FocusLabel(
-            priority: inboxFocus(personal.id, root: true),
+            priority: inboxFocus(personal.id, everything: true),
             showRole: false,
           ),
         ),
@@ -222,7 +221,7 @@ void main() {
         await tester.pumpWidget(
           host(
             FocusLabel(
-              priority: inboxFocus(personal.id, root: true),
+              priority: inboxFocus(personal.id, everything: true),
               showRole: true,
             ),
           ),
@@ -244,7 +243,7 @@ void main() {
     final personal = role('Personal');
     // Stored title is "Everything"; the command must still surface as "Inbox"
     // (via displayTitle) so typing "inbox" finds it.
-    final rootInbox = inboxFocus(personal.id, root: true);
+    final rootInbox = inboxFocus(personal.id, everything: true);
     expect(ChangeCurrentPriority(rootInbox).title, 'Inbox');
   });
 
@@ -255,7 +254,7 @@ void main() {
     final work = role('Work');
     Role.setCacheForTesting([personal, work]);
 
-    final rootInbox = inboxFocus(personal.id, root: true);
+    final rootInbox = inboxFocus(personal.id, everything: true);
     await tester.pumpWidget(
       host(
         Builder(

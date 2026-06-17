@@ -68,7 +68,6 @@ void main() {
             createdBy: Value(Uuid.generate()),
             path: Value(Path('keep')),
             order: const Value(Order(0)),
-            root: const Value(false),
             unread: const Value(false),
             role: const Value('member'),
           ),

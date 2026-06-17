@@ -9,7 +9,6 @@ import 'package:plot/widget/priorities_list.dart';
 /// added focus (a now()-epoch-ms order) lands above both. These tests pin that.
 Priority _priority({
   required String title,
-  bool root = false,
   bool isInbox = false,
   bool isFyi = false,
   bool unread = false,
@@ -24,7 +23,6 @@ Priority _priority({
     title: title,
     path: Path(title.toLowerCase()),
     order: Order(order),
-    root: root,
     unread: unread,
     role: 'member',
     isInbox: isInbox,
@@ -43,7 +41,6 @@ void main() {
     test('the FYI renders as an ordinary focus (included in `focuses`)', () {
       final inbox = _priority(
         title: 'Inbox',
-        root: true,
         isInbox: true,
         order: 1e15,
       );
@@ -65,7 +62,6 @@ void main() {
     test('the Inbox then the FYI default to the bottom two (sentinel orders)', () {
       final inbox = _priority(
         title: 'Inbox',
-        root: true,
         isInbox: true,
         order: 1e15,
       );
@@ -87,7 +83,6 @@ void main() {
     test('a freshly added focus (now()-order) lands above the Inbox and FYI', () {
       final inbox = _priority(
         title: 'Inbox',
-        root: true,
         isInbox: true,
         order: 1e15,
       );

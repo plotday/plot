@@ -55,7 +55,7 @@ void main() {
             createdBy: Value(Uuid.generate()),
             path: Value(Path('social')),
             order: const Value(Order(0)),
-            root: const Value(true),
+            isInbox: const Value(true),
             unread: const Value(false),
             role: const Value('member'),
           ),

@@ -25,7 +25,7 @@ void main() {
   });
 
   Future<void> insertPriority({
-    bool root = false,
+    bool isInbox = false,
     bool isFyi = false,
     bool archived = false,
     String title = 'Focus',
@@ -37,7 +37,7 @@ void main() {
             createdBy: Value(Uuid.generate()),
             path: Value(Path(title.toLowerCase())),
             order: const Value(Order(0)),
-            root: Value(root),
+            isInbox: Value(isInbox),
             isFyi: Value(isFyi),
             unread: const Value(false),
             role: const Value('member'),
@@ -47,25 +47,26 @@ void main() {
         );
   }
 
-  test('false for a fresh user (root + seeded FYI focus only)', () async {
-    await insertPriority(root: true, title: 'Everything');
+  test('false for a fresh user (seeded Inbox + FYI focus only)', () async {
+    await insertPriority(isInbox: true, title: 'Inbox');
     await insertPriority(isFyi: true, title: 'FYI');
 
-    // The seeded FYI focus is non-root but auto-created at signup, so it is
-    // NOT evidence the user has used Plot — onboarding must still run.
+    // Both seeded focuses (the role's auto-managed Inbox and the global FYI)
+    // are auto-created at signup, so neither is evidence the user has used
+    // Plot — onboarding must still run.
     expect(await Priority.hasNonRoot(), isFalse);
   });
 
-  test('true once the user has a real (non-FYI) focus', () async {
-    await insertPriority(root: true, title: 'Everything');
+  test('true once the user has a real (non-Inbox, non-FYI) focus', () async {
+    await insertPriority(isInbox: true, title: 'Inbox');
     await insertPriority(isFyi: true, title: 'FYI');
     await insertPriority(title: 'Work');
 
     expect(await Priority.hasNonRoot(), isTrue);
   });
 
-  test('an archived non-root focus does not count', () async {
-    await insertPriority(root: true, title: 'Everything');
+  test('an archived focus does not count', () async {
+    await insertPriority(isInbox: true, title: 'Inbox');
     await insertPriority(title: 'Old', archived: true);
 
     expect(await Priority.hasNonRoot(), isFalse);

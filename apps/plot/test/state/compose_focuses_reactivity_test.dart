@@ -38,7 +38,6 @@ Future<void> _insertPriority(
   required Uuid createdBy,
   required String title,
   String? path,
-  bool root = false,
   bool isInbox = false,
   bool isFyi = false,
   Uuid? roleId,
@@ -49,7 +48,6 @@ Future<void> _insertPriority(
           title: Value(title),
           createdBy: Value(createdBy),
           path: path == null ? const Value.absent() : Value(Path(path)),
-          root: Value(root),
           isInbox: Value(isInbox),
           isFyi: Value(isFyi),
           roleId: roleId == null ? const Value.absent() : Value(roleId),
@@ -90,7 +88,6 @@ void main() {
           createdBy: self,
           title: 'Everything',
           path: 'a',
-          root: true,
           isInbox: true,
           roleId: personalRole);
       await _insertPriority(store, Uuid.generate(),
@@ -129,7 +126,7 @@ void main() {
       await Actor.get(self: true);
 
       await _insertPriority(store, Uuid.generate(),
-          createdBy: self, title: 'Everything', root: true, isInbox: true);
+          createdBy: self, title: 'Everything', isInbox: true);
       await _insertPriority(store, Uuid.generate(),
           createdBy: self, title: "Men's team", roleId: Uuid.generate());
 
@@ -165,7 +162,7 @@ void main() {
       // Priorities/roles now arrive via sync (direct store writes, exactly as
       // the sync layer applies them).
       await _insertPriority(store, Uuid.generate(),
-          createdBy: self, title: 'Everything', root: true, isInbox: true);
+          createdBy: self, title: 'Everything', isInbox: true);
       await _insertPriority(store, Uuid.generate(),
           createdBy: self, title: "Men's team", roleId: Uuid.generate());
 

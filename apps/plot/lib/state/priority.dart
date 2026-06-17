@@ -266,8 +266,13 @@ class PriorityBloc extends Cubit<PriorityState> {
        _reactionsSubscription = null,
        _draftModified = false,
        super(
+         // Everything mode is the context-less view (invariant:
+         // everything <=> context == null). The priority passed in becomes
+         // the draft fallback so new threads still file under a real focus
+         // (the app's default Inbox) even with no scoped context.
          PriorityState(
-           context: priority,
+           context: everything ? null : priority,
+           draftFallbackPriority: priority,
            thread: thread,
            everything: everything,
          ),
@@ -331,7 +336,36 @@ class PriorityBloc extends Cubit<PriorityState> {
   void setEverything(bool everything) {
     if (state.everything == everything) return;
     log.info('Setting everything feed mode to $everything');
-    emit(state.copyWith(everything: everything));
+    // The default Inbox the draft falls back to with no scoped context. The
+    // raw priorities watch ([_priorityById]) is the cheapest in-hand list;
+    // fall back to the current context / existing draft priority before the
+    // watch warms.
+    final inbox = Priority.defaultInbox(_priorityById.values.toList()) ??
+        state.context ??
+        state.draft.priority;
+    if (everything) {
+      // Enter Everything: drop the scoped context (invariant) and re-aim the
+      // draft at the Inbox fallback so a new thread started from Everything
+      // files there rather than under the focus we just left.
+      emit(
+        state.copyWith(
+          context: const Value(null),
+          everything: true,
+          draft: Thread(priority: inbox, draft: true),
+        ),
+      );
+    } else {
+      // Leave Everything: restore a non-null context to satisfy the
+      // invariant. A following [setPriority] swaps in the actual focus the
+      // user navigated to; the Inbox fallback covers the gap.
+      emit(
+        state.copyWith(
+          context: Value(inbox),
+          everything: false,
+          draft: Thread(priority: inbox, draft: true),
+        ),
+      );
+    }
     _restartActiveTabSubscription();
   }
 
@@ -816,7 +850,10 @@ class PriorityBloc extends Cubit<PriorityState> {
   }) {
     final agenda = AgendaBuilder.build(
       threads: _lastAgendaThreads,
-      context: state.context,
+      // The agenda needs a real priority for its [isOutside] dimming; with no
+      // scoped context (Everything) use the draft's Inbox fallback, matching
+      // the focus the Everything feed files into.
+      context: state.context ?? state.draft.priority,
       horizonDays: _agendaHorizonDays,
       minFillDays: _agendaFillDays,
       associationsByParentId: _associations,
@@ -960,11 +997,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (state.search.isNotEmpty || _hasActiveFilter) {
       return null;
     }
-    // The dedicated (non-search) Everything feed is also global.
+    // The dedicated (non-search) Everything feed is also global. Past this
+    // guard the invariant guarantees a non-null context, but read it
+    // null-safely regardless.
     if (state.everything) {
       return null;
     }
-    return state.context.id;
+    return state.context?.id;
   }
 
   void _subscribeAllTabHead() {
@@ -1643,7 +1682,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final nowState = _nowBloc.state;
     if (shouldDeferEventMirror(
       nowContextId: nowState is NowLoaded ? nowState.context?.id : null,
-      feedContextId: state.context.id,
+      feedContextId: state.context?.id,
     )) {
       _pendingEventForFeed = event;
       _hasPendingEventForFeed = true;
@@ -1785,7 +1824,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // back to its original position before the next frame settled.
     final agenda = AgendaBuilder.build(
       threads: _lastAgendaThreads,
-      context: state.context,
+      // No scoped context (Everything) → dim against the draft's Inbox
+      // fallback (see [_rebuildAgendaModel]).
+      context: state.context ?? state.draft.priority,
       horizonDays: _agendaHorizonDays,
       minFillDays: _agendaFillDays,
       associationsByParentId: _associations,
@@ -2122,7 +2163,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (targetSection == ActivitySection.eventAgenda) {
       // Same ownership gate as _buildEventAgendaItems — the section is only
       // rendered (and so only a drop target) for an event this context owns.
-      final parent = eventAgendaEventFor(_currentEventForFeed, state.context.id);
+      final parent = eventAgendaEventFor(
+        _currentEventForFeed,
+        state.context?.id,
+      );
       if (parent == null) return;
       // Resolve neighbouring association orders (if any) to compute a
       // fractional order between them.
@@ -2438,7 +2482,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     return super.close();
   }
 
-  PriorityId get currentId => state.context.id;
+  /// The scoped focus id, or `null` in the unscoped Everything view.
+  PriorityId? get currentId => state.context?.id;
 
   /// Optimistically remove a thread from the agenda for instant UI feedback.
   /// The stream-based update will confirm the same state when it catches up.
@@ -2732,7 +2777,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> setPriority(Priority newPriority) async {
-    if (state.context.id == newPriority.id) return;
+    // No-op when already on this focus. A null context (Everything) is never
+    // equal to a real focus id, so a switch out of Everything proceeds.
+    if (state.context?.id == newPriority.id) return;
 
     // Leaving the current focus invalidates any multi-selection (the new
     // focus shows a different set of rows).
@@ -2758,12 +2805,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     // user can see exactly how each phase contributes to time-to-threads.
     final profile = _PriorityLoadProfile('switch:${newPriority.id}');
     profile.mark(
-      'setPriority start: ${state.context.title} -> ${newPriority.title}',
+      'setPriority start: ${state.context?.title ?? 'Everything'} -> '
+      '${newPriority.title}',
     );
 
-    // Track previous non-root context for new-thread priority chips
-    if (!state.context.root) {
-      _previousContextPriority = state.context;
+    // Track the previous non-Inbox context for new-thread priority chips.
+    // Everything (null context) leaves the previous chip untouched.
+    final prev = state.context;
+    if (prev != null && !prev.isInbox) {
+      _previousContextPriority = prev;
     }
     _newThreadDefaultPriority = null;
     // We're switching priorities, so any in-progress edit on the old draft
@@ -2828,7 +2878,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
     emit(
       state.copyWith(
-        context: newPriority,
+        // Navigating to a real focus always leaves the Everything view, so
+        // clear `everything` alongside the context to keep the invariant
+        // (everything <=> context == null) intact even when this switch
+        // originates from Everything.
+        context: Value(newPriority),
+        everything: false,
         agenda: newAgenda,
         agendaItems: newAgenda.flatItems(),
         // Deliberately KEEP the previous focus's `activityFeedByTab` /
@@ -2891,11 +2946,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       // Preserve the draft's filed priority — don't reassign to context.
       newDraft = existingDraft;
 
-      // Auto-organize is only meaningful in the root priority. If the chain
-      // draft was auto-filed at root and we're entering a non-root context,
-      // drop the auto flag and re-file to the new context priority so the
-      // chip reflects "where the user is working" instead of "Auto".
-      if (!newPriority.root &&
+      // Auto-organize is only meaningful in an Inbox. If the chain draft was
+      // auto-filed in an Inbox and we're entering a non-Inbox context, drop
+      // the auto flag and re-file to the new context priority so the chip
+      // reflects "where the user is working" instead of "Auto".
+      if (!newPriority.isInbox &&
           ThreadsBase.autoFileIds.remove(newDraft.id.toString())) {
         newDraft = newDraft.copyWith(priority: newPriority);
         // Don't await — the save can finish in the background. The user only
@@ -3537,25 +3592,32 @@ class PriorityBloc extends Cubit<PriorityState> {
     bool reloadAgenda = true,
     bool loadDraft = true,
   }) {
-    final priorityToLoad = state.context;
+    // Null in the unscoped Everything view. The per-focus chain-draft load
+    // and the focus watch below are both scoped to a real focus, so they are
+    // skipped — the Everything feed's draft already files into the Inbox
+    // fallback (set when entering Everything) and the unscoped feed query
+    // needs no focus watch.
+    final Priority? priorityToLoad = state.context;
 
     // [setPriority] passes loadDraft: false — it owns the chain-draft lookup
     // itself (including the auto-file re-file and fresh-draft fallback that
     // [_loadDraft] doesn't do), so running both would issue the same
     // chain-draft and draft-note queries twice per switch and race the two
     // draft emits against each other.
-    if (loadDraft) _loadDraft(priorityToLoad);
+    if (loadDraft && priorityToLoad != null) _loadDraft(priorityToLoad);
 
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
     _subscriptions.clear();
-    _subscriptions.add(
-      Priority.watchOne(priorityToLoad.id).listen((priority) {
-        log.fine('Priority updated');
-        emit(state.copyWith(context: priority));
-      }),
-    );
+    if (priorityToLoad != null) {
+      _subscriptions.add(
+        Priority.watchOne(priorityToLoad.id).listen((priority) {
+          log.fine('Priority updated');
+          emit(state.copyWith(context: Value(priority)));
+        }),
+      );
+    }
     if (state.thread != null) {
       _loadThread(state.thread!);
     }
@@ -3779,10 +3841,16 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   void _loadAgenda({bool triggerSync = true, _PriorityLoadProfile? profile}) {
-    final priorityToLoad = state.context;
+    // Null in the unscoped Everything view. The agenda streams are global
+    // (search/filter/focus never narrow them), so [priorityToLoad] only
+    // selects the [AgendaBuilder] dimming context and the per-focus sync.
+    final Priority? priorityToLoad = state.context;
+    // The agenda always needs a real priority for [isOutside] dimming; with
+    // no scoped context use the draft's Inbox fallback.
+    final agendaContext = priorityToLoad ?? state.draft.priority;
 
     profile?.mark('_loadAgenda subscribe start');
-    log.fine('Loading agenda for priority ${priorityToLoad.id}');
+    log.fine('Loading agenda for priority ${agendaContext.id}');
     _agendaSubscription?.cancel();
     var firstEmissionLogged = false;
 
@@ -4118,7 +4186,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                   : (Stopwatch()..start());
               final agenda = AgendaBuilder.build(
                 threads: patchedThreads,
-                context: priorityToLoad,
+                context: agendaContext,
                 horizonDays: _agendaHorizonDays,
                 minFillDays: _agendaFillDays,
                 associationsByParentId: _associations,
@@ -4164,7 +4232,10 @@ class PriorityBloc extends Cubit<PriorityState> {
               profile?.mark('agenda state emitted');
             });
 
-    if (triggerSync) {
+    // The per-focus agenda sync is scoped to a real focus; the unscoped
+    // Everything view has no focus to anchor it, and its activity-feed sync
+    // already populates the local DB the global agenda streams read from.
+    if (triggerSync && priorityToLoad != null) {
       _agendaSyncFuture = _triggerAgendaSync(priorityToLoad);
     }
   }
@@ -4233,7 +4304,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   List<AgendaItem> _buildEventAgendaItems() {
     final currentEvent = eventAgendaEventFor(
       _currentEventForFeed,
-      state.context.id,
+      state.context?.id,
     );
     if (currentEvent == null) return const <AgendaItem>[];
     final items = <AgendaItem>[
@@ -4765,8 +4836,11 @@ class _ErrorPage extends StatelessWidget {
 /// [nowContextId] (NowBloc not loaded) applies immediately.
 bool shouldDeferEventMirror({
   required PriorityId? nowContextId,
-  required PriorityId feedContextId,
+  required PriorityId? feedContextId,
 }) {
+  // A null [feedContextId] is the unscoped Everything feed — there is no
+  // per-focus row swap to wait for, so apply the mirror immediately.
+  if (feedContextId == null) return false;
   return nowContextId != null && nowContextId != feedContextId;
 }
 
@@ -4774,7 +4848,11 @@ bool shouldDeferEventMirror({
 /// context is [feedContextId]: [event] when that context owns it, null
 /// otherwise. Keeps an event filed in another focus from ever rendering
 /// over rows it doesn't belong with.
-Thread? eventAgendaEventFor(Thread? event, PriorityId feedContextId) {
+Thread? eventAgendaEventFor(Thread? event, PriorityId? feedContextId) {
   if (event == null) return null;
+  // No scoped context (Everything) → no focus owns the event, so the
+  // ownership-gated Event Agenda prefix is empty (the flat Everything feed
+  // leads with rows, not an event section).
+  if (feedContextId == null) return null;
   return event.priority.id == feedContextId ? event : null;
 }

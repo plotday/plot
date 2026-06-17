@@ -13,7 +13,6 @@ Priority _priority() {
     title: 'Test',
     path: Path('test'),
     order: Order(0),
-    root: false,
     unread: false,
     role: 'member',
     isInbox: false,

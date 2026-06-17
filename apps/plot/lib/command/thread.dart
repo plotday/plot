@@ -173,9 +173,13 @@ class ChangeCurrentThread extends ThreadCommand {
         return const CommandDone();
       }
 
-      // Navigate to just the PriorityRoute without ThreadRoute
+      // Navigate to just the PriorityRoute without ThreadRoute. In the
+      // unscoped Everything view (null context) route to the draft's Inbox
+      // fallback so the back navigation always lands on a real priority.
+      final returnPriority =
+          currentPriority ?? priorityBloc.state.draft.priority;
       return CommandRoute(
-        PriorityRoute(priorityIdString: currentPriority.id.toShortString()),
+        PriorityRoute(priorityIdString: returnPriority.id.toShortString()),
       );
     }
 
@@ -220,9 +224,13 @@ class ChangeCurrentThread extends ThreadCommand {
     }
 
     // Navigate using the CURRENT priority (not thread's priority)
-    // This keeps PriorityPage showing the parent priority
+    // This keeps PriorityPage showing the parent priority. In the unscoped
+    // Everything view (null context) route through the draft's Inbox fallback
+    // so the PriorityRoute still resolves to a real priority.
     final route = PriorityRoute(
-      priorityIdString: currentPriority.id.toShortString(),
+      priorityIdString: (currentPriority ?? priorityBloc.state.draft.priority)
+          .id
+          .toShortString(),
       children: [ThreadRoute(threadIdString: thread!.id.toShortString())],
     );
 
@@ -297,16 +305,23 @@ class NewThread extends Command {
     // Disable when already on the new thread page
     if (context.router.current.name == NewThreadRoute.name) return false;
     // The command bar surfaces commands across scopes, so this can be
-    // called from a context without a PriorityBloc (e.g. Agenda tab).
-    final priority = context.read<PriorityBloc?>()?.state.context;
-    if (priority == null) return false;
+    // called from a context without a PriorityBloc (e.g. Agenda tab). A
+    // present bloc — even the context-less Everything view — can compose: the
+    // draft files into the Inbox fallback. So gate on the bloc itself, not on
+    // a scoped context.
+    final priorityBloc = context.read<PriorityBloc?>();
+    if (priorityBloc == null) return false;
     return true;
   }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
-    final priorityId = priorityBloc.state.context.id;
+    // The unscoped Everything view has a null context; route through the
+    // draft's Inbox fallback so the new-thread page mounts under a real
+    // priority (drafts file into the Inbox).
+    final priorityId =
+        (priorityBloc.state.context ?? priorityBloc.state.draft.priority).id;
 
     // Always start a fresh new-thread flow. AutoRoute reuses an already-mounted
     // NewThreadPage when navigating to NewThreadRoute (it does not build a new
@@ -2052,10 +2067,11 @@ class BulkMove extends ShowCommands {
     PriorityBloc? bloc,
   ) async {
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
+    final inboxId = Priority.defaultInbox(priorities)?.id;
     Priority? root;
     final focuses = <Priority>[];
     for (final p in priorities) {
-      if (p.root) {
+      if (p.id == inboxId) {
         root = p;
       } else {
         focuses.add(p);
@@ -2317,10 +2333,11 @@ class MoveThreadToPriority extends ShowCommands {
     // Partition out the root (Inbox), which `getRaw` returns alongside the
     // focuses, so it can be pinned to the bottom of the list. It renders as
     // the ordinary role focus it is (FocusLabel brands it via `isInbox`).
+    final inboxId = Priority.defaultInbox(priorities)?.id;
     Priority? root;
     final focuses = <Priority>[];
     for (final p in priorities) {
-      if (p.root) {
+      if (p.id == inboxId) {
         root = p;
       } else if (p.id != thread.priority.id) {
         focuses.add(p);

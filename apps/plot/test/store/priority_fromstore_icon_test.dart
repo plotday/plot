@@ -18,7 +18,6 @@ PriorityRow _row({String? icon}) => PriorityRow(
       title: 'Test',
       path: Path('test'),
       order: const Order(0),
-      root: false,
       unread: false,
       role: 'member',
       isInbox: false,

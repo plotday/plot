@@ -49,7 +49,6 @@ void main() {
       title: 'Things',
       path: Path('things'),
       order: const Order(0),
-      root: false,
       unread: false,
       role: 'member',
       roleId: null,

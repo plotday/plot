@@ -237,7 +237,7 @@ class _GlobalViewSidebar extends StatelessWidget {
     bool hasInboxMatch = false;
     void addThread(Thread t) {
       final p = t.priority;
-      if (p.root) {
+      if (p.isInbox) {
         hasInboxMatch = true;
         return;
       }
@@ -291,7 +291,7 @@ class _GlobalViewSidebar extends StatelessWidget {
               FixedFocusTile(
                 title: 'Inbox',
                 icon: PlotIcon.inbox,
-                isSelected: scope?.root ?? false,
+                isSelected: scope?.id == root.id,
                 command: SetGlobalViewScope(root),
                 menuCommand: null,
                 hasUnread: false,

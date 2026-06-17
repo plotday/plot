@@ -16,6 +16,7 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/priority_nav.dart';
@@ -411,7 +412,12 @@ class AgendaTile extends StatelessWidget {
       return _GapHeaderRow(
         command: OpenScheduleFocusModal(
           date: Date(effStart.year, effStart.month, effStart.day),
-          defaultPriority: priorityBloc.state.context,
+          // In the unscoped Everything view (null context) pre-select the
+          // default Inbox so the focus-block form still opens with a focus.
+          defaultPriority: priorityBloc.state.context ??
+              Priority.defaultInbox(
+                context.read<PrioritiesBloc>().state.priorities,
+              ),
           start: startForModal,
           maxDuration: maxDur,
         ),

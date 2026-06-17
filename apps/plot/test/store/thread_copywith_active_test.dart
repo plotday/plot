@@ -11,7 +11,6 @@ Priority _priority({String path = 'test'}) {
     title: 'Test',
     path: Path(path),
     order: Order(0),
-    root: false,
     unread: false,
     role: 'member',
     isInbox: false,

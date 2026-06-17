@@ -69,10 +69,11 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
         final priorities = await Priority.get(order: PriorityOrder.nested);
         // Pin the root (Inbox) to the bottom as a branded row rather than
         // letting it appear inline as a plain focus.
+        final inboxId = Priority.defaultInbox(priorities)?.id;
         Priority? root;
         final focuses = <Priority>[];
         for (final p in priorities) {
-          if (p.root) {
+          if (p.id == inboxId) {
             root = p;
           } else {
             focuses.add(p);

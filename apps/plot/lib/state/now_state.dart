@@ -449,7 +449,10 @@ final class NowLoaded extends NowState {
     Session? session,
     ScheduledDay? day,
     Priority? defaultPriority,
-    Priority? context,
+    // Use a sentinel so callers can explicitly pass null to clear the context.
+    // `context ?? this.context` would silently keep the old value when null is
+    // intentional (e.g. entering the Everything feed with no focus anchor).
+    Object? context = _sentinel,
     List<Priority>? priorities,
     Map<PriorityId, List<PriorityBlockRow>>? priorityBlocksByPriority,
     Object? currentEvent = _sentinel,
@@ -463,7 +466,7 @@ final class NowLoaded extends NowState {
       session: session ?? this.session,
       day: day ?? _day,
       defaultPriority: defaultPriority ?? this.defaultPriority,
-      context: context ?? this.context,
+      context: identical(context, _sentinel) ? this.context : context as Priority?,
       priorities: priorities ?? this.priorities,
       priorityBlocksByPriority:
           priorityBlocksByPriority ?? this.priorityBlocksByPriority,

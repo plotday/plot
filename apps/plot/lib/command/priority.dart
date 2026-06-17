@@ -95,11 +95,29 @@ class ChangeCurrentPriority extends PriorityCommand {
          eventAction: EventAction.viewed,
        );
 
-  /// When true, switch to the synthetic "Everything" feed rooted on this
-  /// priority (the root): every thread across the Inbox and all focuses,
-  /// unscoped. Sets [NowBloc.everything], which the priority page mirrors
-  /// into the feed scope. Any ordinary navigation passes false, so moving to
-  /// a focus or the Inbox leaves Everything mode.
+  /// Named constructor for opening the synthetic "Everything" feed.
+  /// Unlike the default constructor this takes no [Priority] — the feed is
+  /// unanchored to any specific focus. The route still navigates to the
+  /// default-Inbox priority URL (so the URL is valid and back-navigation
+  /// works), but [NowBloc] receives `setContext(null, everything: true)` so
+  /// [PriorityBloc] enters the null-context Everything mode.
+  ChangeCurrentPriority.everything()
+      : selectedBlockId = null,
+        everything = true,
+        super(
+          null,
+          ancestry: false,
+          label: 'Everything',
+          glyph: PlotIcon.inboxes,
+          eventObject: EventObject.priority,
+          eventAction: EventAction.viewed,
+        );
+
+  /// When true, switch to the synthetic "Everything" feed: every thread
+  /// across the Inbox and all focuses, unscoped. Sets [NowBloc.everything],
+  /// which the priority page mirrors into the feed scope. Any ordinary
+  /// navigation passes false, so moving to a focus or the Inbox leaves
+  /// Everything mode.
   final bool everything;
 
   /// When this change originates from tapping a block in the agenda,
@@ -134,7 +152,24 @@ class ChangeCurrentPriority extends PriorityCommand {
       currentSourceTab: PrioritiesShell.sourceTab,
     );
 
-    final targetPriorityIdString = priority!.id.toShortString();
+    // For the Everything entry the route target is the default-Inbox priority
+    // (the URL must resolve to a real priority page). For ordinary focus
+    // navigation it is the tapped focus itself.
+    final String? targetPriorityIdString;
+    if (everything && priority == null) {
+      // Resolve the default Inbox from PrioritiesBloc (already loaded in the
+      // widget tree) so we don't need a DB round-trip inside a command.
+      final root = context.read<PrioritiesBloc>().state.root;
+      targetPriorityIdString = root?.id.toShortString();
+    } else {
+      targetPriorityIdString = priority!.id.toShortString();
+    }
+
+    if (targetPriorityIdString == null) {
+      // No inbox priority loaded yet — nothing to navigate to.
+      return const CommandDone();
+    }
+
     // `context` here is the CommandModal's rootContext, which can be the
     // global CommandScope from GlobalShortcuts — that scope sits above
     // LayoutStateProvider, so `read<LayoutBloc>()` throws. `isMultiPanel`
@@ -212,10 +247,11 @@ class _FocusSwitchGroup extends CommandGroup {
   @override
   Future<List<Command>> list({String? search}) async {
     final priorities = await Priority.get(order: PriorityOrder.recent);
+    final inboxId = Priority.defaultInbox(priorities)?.id;
     Priority? root;
     final focuses = <Priority>[];
     for (final priority in priorities) {
-      if (priority.root) {
+      if (priority.id == inboxId) {
         root = priority;
       } else {
         focuses.add(priority);
@@ -229,12 +265,7 @@ class _FocusSwitchGroup extends CommandGroup {
         // Only "Everything" — the synthetic cross-focus aggregate — keeps a
         // branded label/glyph.
         ChangeCurrentPriority(root),
-        ChangeCurrentPriority(
-          root,
-          everything: true,
-          label: 'Everything',
-          glyph: PlotIcon.inboxes,
-        ),
+        ChangeCurrentPriority.everything(),
       ],
     ];
     return CommandGroup.filter(commands, search);
@@ -396,7 +427,10 @@ class TogglePriorityArchived extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
-    if (priority.root) {
+    final inboxId = Priority.defaultInbox(
+      await Priority.getRaw(order: PriorityOrder.recent),
+    )?.id;
+    if (priority.id == inboxId) {
       return CommandMessage(
         "The default focus can't be archived",
         isError: true,
@@ -1478,10 +1512,11 @@ class MergeFocusInto extends ShowCommands {
     // `getRaw` skips the unread/active enrichment the picker doesn't display,
     // so the modal opens immediately (same reasoning as MoveThreadToPriority).
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
+    final inboxId = Priority.defaultInbox(priorities)?.id;
     Priority? root;
     final focuses = <Priority>[];
     for (final p in priorities) {
-      if (p.root) {
+      if (p.id == inboxId) {
         root = p;
       } else if (p.id != source.id) {
         focuses.add(p);

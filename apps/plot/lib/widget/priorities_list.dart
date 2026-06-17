@@ -60,16 +60,14 @@ class PrioritiesList extends StatefulWidget {
     this.selected,
     this.everything = false,
     this.expandedRoleId,
-    // Keep the backfilled root focus when it is the Personal role's Inbox
-    // (`root == true && isInbox == true`). The old global Inbox tile is gone,
-    // so the Personal Inbox renders only through this list now; excluding all
-    // roots would make it vanish for backfilled users. The non-inbox root (if
-    // any survives pre-backfill) is still dropped — the Everything tile covers
-    // it. The per-role FYI is an ordinary focus and renders through this list
-    // too (it has a non-root path), so it is not filtered out.
-  }) : focuses =
-           (priorities.where((p) => !p.root || p.isInbox).toList()
-             ..sort(_byOrder));
+    // Every focus renders inline in this list — each role's Inbox (including
+    // the Personal role's) and the per-role FYI focus are all ordinary
+    // reorderable focuses here. The old global Inbox tile is gone, and with
+    // the vestigial `root` flag dropped there is no longer a non-inbox root to
+    // exclude (the synthetic "Everything" tile, appended below, covers it).
+    // The FYI is an ordinary focus and gets a newspaper glyph (see
+    // [PriorityListTile]), so it is not filtered out.
+  }) : focuses = (priorities.toList()..sort(_byOrder));
 
   /// Sidebar focus ordering: purely by [Order], then creation time. The Inbox
   /// and FYI are ordinary reorderable focuses; they default to the bottom two
@@ -252,7 +250,7 @@ class _PrioritiesListState extends State<PrioritiesList> {
           title: 'Everything',
           icon: PlotIcon.inboxes,
           isSelected: widget.everything,
-          command: ChangeCurrentPriority(widget.root, everything: true),
+          command: ChangeCurrentPriority.everything(),
           menuCommand: null,
           // Everything never carries its own unread indicator and never bolds.
           hasUnread: false,

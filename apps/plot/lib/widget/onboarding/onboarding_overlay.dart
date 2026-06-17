@@ -359,11 +359,11 @@ class OnboardingOverlay extends StatelessWidget {
 
   Future<void> _navigateToNamedThread(NamedThreadTarget target) async {
     try {
-      // Onboarding threads live in the user's Inbox (root) now, so resolve the
+      // Onboarding threads live in the user's Inbox now, so resolve the
       // target thread there rather than under a named focus.
       final priorityRow =
           await (Store.get.select(Store.get.priorities)
-                ..where((tbl) => tbl.root.equals(true))
+                ..where((tbl) => tbl.isInbox.equals(true))
                 ..where((tbl) => tbl.archivedAt.isNull())
                 ..limit(1))
               .getSingleOrNull();

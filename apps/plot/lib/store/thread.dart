@@ -4636,8 +4636,7 @@ SELECT
       // Per-priority default contacts/groups/invite-emails are intentionally
       // NOT seeded here: the two-step target picker drives the thread's
       // roster, superseding per-focus default sharing.
-      topic: priority.priorityConfig.topic ??
-          (priority.root ? null : priority.id.toString()),
+      topic: priority.priorityConfig.topic ?? priority.id.toString(),
       // Team scope for the draft (null = Personal until Phase 5 sets it from
       // the target picker). Round-trips through sync via `team_id`.
       teamId: teamId,

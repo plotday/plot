@@ -140,7 +140,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     // [Role.cache] (see [Priority.labelDisplayColor]), so rebuild it when roles
     // warm up or are recoloured — mirroring [FocusLabel]. Ordinary focuses
     // don't read the cache, so they skip the listener entirely.
-    if (priority.isInbox || priority.root) {
+    if (priority.isInbox) {
       return ValueListenableBuilder<List<Role>>(
         valueListenable: Role.cache,
         builder: (context, _, _) => _buildTile(context),
@@ -274,10 +274,8 @@ class _PriorityWidgetState extends State<PriorityWidget> {
         // title — see _buildLabel.
         // The Inbox focus always shows the inbox glyph and the FYI focus the
         // newspaper glyph, never the focus's own icon (or the default focus
-        // icon when it has none). Mirror [Priority.displayTitle] / [FocusLabel]:
-        // honour both the newer server-managed `isInbox` flag and the legacy
-        // `root` during rollout.
-        final isInbox = priority.isInbox || priority.root;
+        // icon when it has none). Mirror [Priority.displayTitle] / [FocusLabel].
+        final isInbox = priority.isInbox;
         return sidebarLeading(
           buildContext,
           Icon(
@@ -568,7 +566,7 @@ class FocusLabel extends StatelessWidget {
     // hue, and rebuild when it warms. So the label needs the reactive cache for
     // the prefix OR for an un-overridden Inbox's colour.
     final needsRoleColour =
-        (p.isInbox || p.root) && p.roleId != null && color == null;
+        p.isInbox && p.roleId != null && color == null;
 
     if (!canShowRole && !needsRoleColour) {
       return _row(context, resolvedFontSize, null);
@@ -595,13 +593,11 @@ class FocusLabel extends StatelessWidget {
     // own icon, but otherwise wears its role's colour like any other focus.
     // [Priority.labelDisplayColor] resolves that role colour even when the
     // Inbox's own stored `color` is NULL (which [displayColor] would surface as
-    // the brand default — notably for the Personal role's root Inbox). The
-    // branded synthetic "Everything"/"Inbox" header passes an explicit [color]
-    // (+ [iconOverride]), so it keeps the Resolution brand colour and is
-    // unaffected. Mirror [Priority.displayTitle]: honour both the newer
-    // server-managed [isInbox] flag and the legacy per-user `root` during the
-    // rollout.
-    final isInbox = p.isInbox || p.root;
+    // the brand default — notably for the Personal role's Inbox). The branded
+    // synthetic "Everything"/"Inbox" header passes an explicit [color] (+
+    // [iconOverride]), so it keeps the Resolution brand colour and is
+    // unaffected.
+    final isInbox = p.isInbox;
 
     final accent =
         color ??

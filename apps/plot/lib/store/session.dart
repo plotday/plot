@@ -267,23 +267,10 @@ class Session extends SessionRow {
   }
 
   /// Stream the set of priority ids covered by [priority] for time-tracking
-  /// totals. Path-independent (flat/role model): focuses are leaves, so the
-  /// only priority that aggregates others is the root (Inbox) — its total
-  /// spans every non-archived focus. A non-root focus covers only itself.
-  ///
-  /// The root case watches the priorities table so the set stays reactive as
-  /// focuses are added / archived; the leaf case is a constant set.
-  ///
-  /// The priorities table is small (dozens of rows for a real user), so
-  /// computing the set in Dart is cheap.
+  /// totals. Path-independent (flat/role model): focuses are leaves that cover
+  /// only themselves, so the covered set is always the constant `{priority.id}`.
   static Stream<Set<PriorityId>> watchSelfAndDescendantIds(Priority priority) {
-    if (!priority.root) {
-      return Stream.value({priority.id});
-    }
-    return (Store.get.select(Store.get.priorities)
-          ..where((t) => t.archivedAt.isNull()))
-        .watch()
-        .map((rows) => rows.map((r) => r.id).toSet());
+    return Stream.value({priority.id});
   }
 
   /// Resume or create a session for [priority].
