@@ -52,6 +52,9 @@ export class Fellow extends Connector<Fellow> {
           label: "API key",
           default: "",
           placeholder: "your-fellow-api-key",
+          helpText:
+            "In Fellow, open User Settings → Developer tools, create a new API key, then paste it here. If you don't see Developer tools, an admin must first enable the API in Workspace Security Settings.",
+          helpUrl: "https://help.fellow.ai/en/articles/11817206-developer-api",
         },
         subdomain: {
           type: "text" as const,
