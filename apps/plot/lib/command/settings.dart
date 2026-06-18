@@ -58,6 +58,39 @@ final appearanceCommands = StaticCommandGroup(
   ],
 );
 
+/// The subscription-related Settings entries (manage / upgrade / restore),
+/// in display order, per the cross-platform gating matrix. Pure for testing.
+List<Command> subscriptionCommandsFor({
+  required SubscriptionInfo? subscription,
+  required bool isAppStoreBuild,
+}) {
+  final cmds = <Command>[];
+  final s = subscription;
+
+  // Upgrade: only when there are tiers to offer for this state.
+  if (s != null) {
+    if (isAppStoreBuild) {
+      final upgradePlans = ShowUpgradeOptions.plansFor(s);
+      if (upgradePlans.isNotEmpty) {
+        cmds.add(ShowUpgradeOptions(availablePlans: upgradePlans));
+      }
+    } else if (!s.canBuildTwists) {
+      // Web/DMG: existing behavior — offer upgrade unless already top-tier.
+      cmds.add(ShowUpgradeOptions());
+    }
+  }
+
+  // Manage: app_store paid → Apple; stripe paid → web. Not for trial/free.
+  if (s != null && s.hasPaidPlan && (s.isAppStore || s.isPaidStripe)) {
+    cmds.add(ManageSubscriptionCommand(appStoreOrigin: s.isAppStore));
+  }
+
+  // Restore: always available on App Store builds.
+  if (isAppStoreBuild) cmds.add(RestorePurchasesCommand());
+
+  return cmds;
+}
+
 /// Build the App settings command group from [PrioritiesState].
 ///
 /// [hasTeams] should be true when the user belongs to at least one team
@@ -115,34 +148,16 @@ List<StaticCommandGroup> settingsCommands({
           ),
       // Only show Enter Behavior setting on devices with physical keyboards
       if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
-      // Surface "Manage subscription" only when we have a path that
-      // works for this user's purchase origin. On App Store builds we
-      // can only manage App-Store-origin subscriptions (via Apple's
-      // account URL). On DMG/web we route both web and App Store
-      // subscriptions to their respective management surfaces.
-      if (subscription != null &&
-          subscription.hasPaidPlan &&
-          (!UpgradeUi.isAppStoreBuild || subscription.isAppStoreOrigin))
-        ManageSubscriptionCommand(
-          appStoreOrigin: subscription.isAppStoreOrigin,
-        ),
       if (hasTeams) ManageTeams(),
     ],
   ),
   StaticCommandGroup(
     title: 'App',
     commands: [
-      // Only offer IAP/web upgrade when the user isn't already on a Pro/
-      // Team tier. On App Store builds we additionally avoid offering
-      // IAP to users with a Stripe-origin paid plan — they already pay
-      // through plot.day and the canonical path stays with Stripe.
-      if (subscription != null &&
-          !subscription.canBuildTwists &&
-          (!UpgradeUi.isAppStoreBuild ||
-              subscription.isFree ||
-              subscription.isAppStoreOrigin))
-        ShowUpgradeOptions(),
-      if (UpgradeUi.isAppStoreBuild) RestorePurchasesCommand(),
+      ...subscriptionCommandsFor(
+        subscription: subscription,
+        isAppStoreBuild: UpgradeUi.isAppStoreBuild,
+      ),
       if (rootPriority != null) HelpAndFeedback(rootPriority),
       OpenCopiedPageLink(),
       FullResync(),

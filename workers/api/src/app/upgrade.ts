@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 
+import type { Kysely } from "kysely";
+
 import type { Bindings } from "../env";
 import {
   createStripeClient,
@@ -11,12 +13,13 @@ import {
   applyAppleTransactionToUser,
   verifyTransaction,
 } from "../apple/iap";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, type Logger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
 import { getUsage } from "../utils/limits";
 import { createTeamSetupTask } from "./team";
 import { notifySync } from "./sync/notify";
+import type { DB } from "../db-types";
 
 const upgrade = new Hono<{ Bindings: Bindings }>();
 
@@ -24,6 +27,70 @@ function planFromLookupKey(key: string): "core" | "pro" | "team" {
   if (key.startsWith("team")) return "team";
   if (key.startsWith("core")) return "core";
   return "pro";
+}
+
+// ---------------------------------------------------------------------------
+// IAP helpers — exported for unit testing
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true iff the user currently holds an active, paid (non-free) Stripe
+ * subscription. A trialing or free_monthly Stripe row is convertible to Apple
+ * IAP and does NOT trigger the guard.
+ */
+export async function hasActivePaidStripeSubscription(
+  db: Kysely<DB>,
+  userId: string
+): Promise<boolean> {
+  const row = await db
+    .selectFrom("user_subscription")
+    .select(["origin", "status", "plan"])
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  return (
+    row !== undefined &&
+    row.origin === "stripe" &&
+    row.status === "active" &&
+    row.plan !== "free"
+  );
+}
+
+/** Minimal interface for the Stripe client surface we need at cancel time. */
+type StripeCancelClient = {
+  subscriptions: {
+    cancel: (id: string) => Promise<unknown>;
+  };
+};
+
+/** Minimal tracker interface so tests can pass a simple stub. */
+type Tracker = { captureException: (e: Error) => void };
+
+/**
+ * Best-effort cancellation of a superseded Stripe subscription.
+ *
+ * If `stripeSubId` is null, does nothing. If the Stripe API call fails, the
+ * error is reported to PostHog via `tracker.captureException` and a warning is
+ * logged, but the error is NOT re-thrown — the Apple entitlement has already
+ * been applied and must not be rolled back due to a Stripe API hiccup. The
+ * `customer.subscription.deleted` webhook guard (Task 3) provides an
+ * additional safety net.
+ */
+export async function cancelStripeSubscriptionBestEffort(
+  stripeSubId: string | null,
+  stripe: StripeCancelClient,
+  tracker: Tracker,
+  logger: Pick<Logger, "warn">
+): Promise<void> {
+  if (!stripeSubId) return;
+  try {
+    await stripe.subscriptions.cancel(stripeSubId);
+  } catch (e) {
+    tracker.captureException(e as Error);
+    logger.warn(
+      "IAP: failed to cancel superseded Stripe subscription",
+      { stripe_subscription_id: stripeSubId, error: (e as Error).message }
+    );
+  }
 }
 
 // GET /upgrade - Get current subscription status with effective plan
@@ -539,7 +606,31 @@ upgrade.post("/upgrade/iap/verify", async (c) => {
     );
   }
 
+  // Defense-in-depth: a genuinely paid Stripe subscriber must manage/upgrade
+  // on the web (the client already hides IAP for them). A trial or free
+  // (free_monthly) Stripe row is convertible.
+  if (await hasActivePaidStripeSubscription(c.var.db, user.id)) {
+    logger.warn("IAP: blocked — active paid Stripe plan, manage on web", {
+      user_id: user.id,
+    });
+    return c.json({ error: "manage_on_web" }, 409);
+  }
+
   const result = await applyAppleTransactionToUser(c.var.db, user.id, txn);
+
+  // Reconcile: cancel the now-superseded Stripe subscription (the Core trial
+  // or the free_monthly tracker). The row is already origin=app_store, so the
+  // customer.subscription.deleted webhook will defer to it (Task 3).
+  const prevSubId = result.previous?.stripeSubscriptionId ?? null;
+  if (prevSubId) {
+    const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+    await cancelStripeSubscriptionBestEffort(
+      prevSubId,
+      stripe,
+      c.var.tracker,
+      logger
+    );
+  }
 
   c.var.tracker.capture("[User] Subscription Created", {
     plan: result.plan,

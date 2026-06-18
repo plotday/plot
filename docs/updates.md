@@ -78,6 +78,10 @@
 
 - Your active to-dos now stay put at the top of a focus — new and unread items arrive below them, so incoming messages no longer push your committed work down. A new envelope toggle in the header shows only unread when you want to catch up.
 
+### Subscriptions
+
+- You can now subscribe to Core or Pro right inside the app on iPhone, iPad, and Mac, and your plan stays in sync no matter where you signed up — if you started a plan on the web, the apps recognize it automatically.
+
 ### Fixes
 
 - On the web app, refreshing the page or opening a link to a specific focus or thread now keeps you on

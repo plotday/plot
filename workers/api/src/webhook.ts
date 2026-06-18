@@ -7,7 +7,6 @@ import { sendEmail } from "./email/send";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
 import {
-  applyAppleTransactionToUser,
   findUserByOriginalTransactionId,
   verifyAppleJws,
   type JwsNotificationPayload,
@@ -29,6 +28,7 @@ import {
 } from "./errors";
 import { captureServerError } from "./utils/error-capture";
 import { disposeRpc } from "./utils/rpc";
+import { handleAppStoreTransaction } from "./apple/handle-appstore";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
 
@@ -1039,17 +1039,18 @@ webhook.post(
         return c.json({ ok: true, deferred: true });
       }
 
-      await applyAppleTransactionToUser(db, userId, txn);
+      const result = await handleAppStoreTransaction(
+        db,
+        c.env,
+        userId,
+        notif,
+        txn,
+        renewal,
+        c.var.tracker,
+        logger
+      );
 
-      c.var.tracker.capture("[User] Subscription Updated", {
-        plan: txn.productId,
-        origin: "app_store",
-        notification_type: notif.notificationType,
-        subtype: notif.subtype ?? null,
-        auto_renew_status: renewal?.autoRenewStatus ?? null,
-      });
-
-      return c.json({ ok: true });
+      return c.json(result);
     } finally {
       await db.destroy();
     }

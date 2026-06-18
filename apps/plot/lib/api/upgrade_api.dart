@@ -257,11 +257,17 @@ class SubscriptionInfo extends Equatable {
   /// Used to route "Manage subscription" to the right destination.
   final String? origin;
 
+  /// Personal subscription status: 'active' | 'trialing' | 'canceled' | …
+  /// Distinguishes a Stripe free trial (convertible to IAP) from an actively
+  /// paid Stripe plan (web-managed).
+  final String status;
+
   const SubscriptionInfo({
     required this.plan,
     required this.effectivePlan,
     required this.effectiveSource,
     this.origin,
+    this.status = 'active',
   });
 
   factory SubscriptionInfo.fromJson(Map<String, dynamic> json) {
@@ -270,6 +276,7 @@ class SubscriptionInfo extends Equatable {
       effectivePlan: json['effective_plan'] as String? ?? 'free',
       effectiveSource: json['effective_source'] as String? ?? 'personal',
       origin: json['origin'] as String?,
+      status: json['status'] as String? ?? 'active',
     );
   }
 
@@ -282,8 +289,18 @@ class SubscriptionInfo extends Equatable {
   /// Store IAP (so management goes through StoreKit, not Stripe portal).
   bool get isAppStoreOrigin => origin == 'app_store';
 
+  /// On the 30-day Stripe Core trial — convertible to IAP on App Store builds.
+  bool get isStripeTrial => origin == 'stripe' && status == 'trialing';
+
+  /// Actively paying via Stripe (web) — managed on the web, never offered IAP.
+  bool get isPaidStripe =>
+      origin == 'stripe' && status == 'active' && effectivePlan != 'free';
+
+  /// Active subscription purchased via App Store IAP.
+  bool get isAppStore => origin == 'app_store';
+
   @override
-  List<Object?> get props => [plan, effectivePlan, effectiveSource, origin];
+  List<Object?> get props => [plan, effectivePlan, effectiveSource, origin, status];
 }
 
 /// API methods for subscription and usage

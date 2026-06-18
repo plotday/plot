@@ -317,7 +317,7 @@ yours.
 - **Team** — shared org connections (per 50), unlimited twists, no-code twist builder. $124/mo, or
   $99/mo annually; scales per 50 connections.
 - 30-day Core trial for new signups, with reminders and a graceful downgrade.
-- Annual billing saves 20%. Stripe-powered checkout and self-service subscription management.
+- Annual billing saves 20%. Stripe-powered checkout and self-service subscription management. On Apple platforms (iPhone, iPad, Mac), subscriptions can also be purchased directly in-app via Apple's in-app purchase (StoreKit), with a single cross-platform entitlement shared between web and native.
 - Plan changes propagate instantly to all devices.
 
 ### Organizations

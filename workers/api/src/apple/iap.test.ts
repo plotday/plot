@@ -1,13 +1,40 @@
+import { randomUUID } from "node:crypto";
+
+import { sql, type Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
 
+import { createDb, type DB } from "../db";
+import type { Bindings } from "../env";
 import {
   APPLE_BUNDLE_ID,
   IAP_PRODUCT_TO_PLAN,
+  applyAppleTransactionToUser,
   decodeJws,
   decodeTransaction,
   verifyAppleJws,
   type JwsTransactionPayload,
 } from "./iap";
+
+const DATABASE_URL = process.env.DATABASE_URL;
+
+/** Sentinel thrown to force the seeding transaction to roll back. */
+class Rollback extends Error {}
+
+/** Build a minimal decoded JwsTransactionPayload for a given productId. */
+function makeTxn(
+  overrides: Partial<JwsTransactionPayload> & { productId: string }
+): JwsTransactionPayload {
+  const now = Date.now();
+  return {
+    transactionId: "2000000999999999",
+    originalTransactionId: "2000000999999999",
+    bundleId: APPLE_BUNDLE_ID,
+    purchaseDate: now,
+    originalPurchaseDate: now,
+    expiresDate: now + 30 * 24 * 60 * 60 * 1000,
+    ...overrides,
+  };
+}
 
 /** Build a JWS with a caller-supplied header so we can exercise the
  *  verifier's structural checks without a real Apple chain. */
@@ -149,6 +176,72 @@ describe("apple/iap", () => {
     );
   });
 });
+
+// -----------------------------------------------------------------
+// applyAppleTransactionToUser — DB tests (skipped when no DATABASE_URL)
+// -----------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "applyAppleTransactionToUser",
+  () => {
+    it("reports the prior Stripe row and clears stripe_subscription_id on convert", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          // Arrange: user with a Stripe Core trial row
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "core",
+              status: "trialing",
+              origin: "stripe",
+              stripe_customer_id: "cus_test",
+              stripe_subscription_id: "sub_test",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 8.64e7
+              ).toISOString(),
+            })
+            .execute();
+
+          const txn = makeTxn({ productId: "day.plot.app.core_monthly" });
+
+          const result = await applyAppleTransactionToUser(trx, userId, txn);
+
+          await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+
+          expect(result.previous).toMatchObject({
+            origin: "stripe",
+            status: "trialing",
+            plan: "core",
+            stripeSubscriptionId: "sub_test",
+            stripeCustomerId: "cus_test",
+          });
+
+          const row = await trx
+            .selectFrom("user_subscription")
+            .selectAll()
+            .where("user_id", "=", userId)
+            .executeTakeFirstOrThrow();
+
+          expect(row.origin).toBe("app_store");
+          expect(row.stripe_subscription_id).toBeNull();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+  }
+);
 
 /** Build a minimal X.509 v3 cert (DER) that's just well-formed enough
  *  for the verifier to parse it before rejecting on the root pin. We

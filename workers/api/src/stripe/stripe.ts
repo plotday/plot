@@ -12,7 +12,7 @@ import {
 } from "./utils";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
-import { sql } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { PLAN_LIMITS, type PlanKey } from "../utils/limits";
 import { backfillEmbeddings } from "../queue/backfill-embeddings";
 import { twistFactory } from "../twist/factory";
@@ -20,6 +20,7 @@ import { enforcePersonalPlanLimits } from "../twist/management";
 import { disposeRpc } from "../utils/rpc";
 import { notifyUserSync } from "../app/sync/notify";
 import { expireTrial, handleTrialUpgrade, handleTrialWillEnd } from "../utils/trial";
+import type { DB } from "../db-types";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
 
@@ -187,7 +188,7 @@ async function identifyStripeUser(c: any, stripeCustomerId: string) {
 /**
  * Handle subscription created/updated events
  */
-async function handleSubscriptionUpdate(
+export async function handleSubscriptionUpdate(
   c: any,
   subscription: Stripe.Subscription
 ) {
@@ -195,6 +196,20 @@ async function handleSubscriptionUpdate(
   const logger = createLogger(context);
 
   const customerId = subscription.customer as string;
+
+  // Cross-platform guard: if this user has flipped to an active App Store
+  // entitlement (e.g. the IAP convert path just cancelled their Stripe sub
+  // and Stripe fires both subscription.deleted AND subscription.updated with
+  // status='canceled'), do NOT overwrite the apple entitlement row.
+  // handleSubscriptionDeleted already guards the same way.
+  if (await hasActiveAppStoreEntitlement(c.var.db, customerId)) {
+    logger.info(
+      "Skipping Stripe subscription.updated — user has an active App Store entitlement",
+      { customer_id: customerId, subscription_id: subscription.id }
+    );
+    return;
+  }
+
   const { start, end } = getBillingCycleDates(subscription);
   const status = mapStripeStatus(subscription.status);
 
@@ -395,10 +410,42 @@ async function handleSubscriptionUpdate(
   }
 }
 
+// ---------------------------------------------------------------------------
+// App Store entitlement guard — exported for unit testing
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true iff the stripe_customer_id currently maps to an active App Store
+ * entitlement. A row is considered active when `origin = 'app_store'` AND either
+ * `status = 'active'` OR `billing_cycle_end` is in the future (covers
+ * cancelled-but-not-yet-expired Apple subscriptions).
+ *
+ * Used by `handleSubscriptionDeleted` to avoid reverting a user to free when the
+ * IAP convert path has already replaced their Stripe sub with an Apple entitlement
+ * and then cancelled the Stripe sub (which fires `customer.subscription.deleted`).
+ */
+export async function hasActiveAppStoreEntitlement(
+  db: Kysely<DB>,
+  stripeCustomerId: string
+): Promise<boolean> {
+  const row = await db
+    .selectFrom("user_subscription")
+    .select(["status", "billing_cycle_end"])
+    .where("stripe_customer_id", "=", stripeCustomerId)
+    .where("origin", "=", "app_store")
+    .executeTakeFirst();
+  return (
+    row !== undefined &&
+    (row.status === "active" ||
+      (row.billing_cycle_end != null &&
+        new Date(row.billing_cycle_end).getTime() > Date.now()))
+  );
+}
+
 /**
  * Handle subscription deleted event - revert to free tier
  */
-async function handleSubscriptionDeleted(
+export async function handleSubscriptionDeleted(
   c: any,
   subscription: Stripe.Subscription
 ) {
@@ -427,6 +474,18 @@ async function handleSubscriptionDeleted(
         active_subscription_ids: otherActive.map((s) => s.id),
       }
     );
+    return;
+  }
+
+  // Cross-platform guard: if this user has flipped to an active App Store
+  // entitlement (e.g. the IAP convert path just cancelled their Stripe trial /
+  // free_monthly sub), do NOT revert to free or recreate a free Stripe sub.
+  // The Apple subscription is the source of truth now.
+  if (await hasActiveAppStoreEntitlement(c.var.db, customerId)) {
+    logger.info("Skipping free-revert — user has an active App Store entitlement", {
+      customer_id: customerId,
+      deleted_subscription_id: subscription.id,
+    });
     return;
   }
 

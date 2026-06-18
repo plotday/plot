@@ -590,11 +590,43 @@ export async function applyAppleTransactionToUser(
   db: Kysely<DB>,
   userId: string,
   txn: JwsTransactionPayload
-): Promise<{ plan: "free" | "core" | "pro"; expiresAt: Date | null }> {
+): Promise<{
+  plan: "free" | "core" | "pro";
+  expiresAt: Date | null;
+  previous: {
+    origin: string;
+    status: string;
+    plan: string;
+    stripeSubscriptionId: string | null;
+    stripeCustomerId: string | null;
+  } | null;
+}> {
   const plan = IAP_PRODUCT_TO_PLAN[txn.productId];
   if (!plan) {
     throw new Error(`Unsupported productId: ${txn.productId}`);
   }
+
+  // Snapshot the prior row so the caller can reconcile (cancel) any Stripe sub.
+  const prior = await db
+    .selectFrom("user_subscription")
+    .select([
+      "origin",
+      "status",
+      "plan",
+      "stripe_subscription_id",
+      "stripe_customer_id",
+    ])
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  const previous = prior
+    ? {
+        origin: prior.origin,
+        status: prior.status,
+        plan: prior.plan,
+        stripeSubscriptionId: prior.stripe_subscription_id,
+        stripeCustomerId: prior.stripe_customer_id,
+      }
+    : null;
 
   const now = new Date();
   const expiresAt = txn.expiresDate ? new Date(txn.expiresDate) : null;
@@ -622,6 +654,9 @@ export async function applyAppleTransactionToUser(
       origin: "app_store",
       apple_original_transaction_id: txn.originalTransactionId,
       apple_product_id: txn.productId,
+      // Intentionally cleared on every Apple transaction (including DID_RENEW):
+      // an app_store-origin row must never carry a live Stripe subscription ID.
+      stripe_subscription_id: null,
       billing_cycle_start: cycleStart.toISOString(),
       billing_cycle_end: cycleEnd.toISOString(),
     })
@@ -632,6 +667,9 @@ export async function applyAppleTransactionToUser(
         origin: "app_store",
         apple_original_transaction_id: txn.originalTransactionId,
         apple_product_id: txn.productId,
+        // Intentionally cleared on every Apple transaction (including DID_RENEW):
+        // an app_store-origin row must never carry a live Stripe subscription ID.
+        stripe_subscription_id: null,
         billing_cycle_start: cycleStart.toISOString(),
         billing_cycle_end: cycleEnd.toISOString(),
         updated_at: sql`now()`,
@@ -639,7 +677,7 @@ export async function applyAppleTransactionToUser(
     )
     .execute();
 
-  return { plan: targetPlan, expiresAt };
+  return { plan: targetPlan, expiresAt, previous };
 }
 
 /**
