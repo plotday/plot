@@ -1369,7 +1369,7 @@ jobs:
 
       - name: Set up Microsoft Store Developer CLI
         if: steps.ms-store.outputs.enabled == 'true'
-        uses: microsoft/setup-msstore-cli@v1.2
+        uses: microsoft/setup-msstore-cli@v1.3
 
       - name: Configure Microsoft Store CLI
         if: steps.ms-store.outputs.enabled == 'true'
