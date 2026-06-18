@@ -1,3 +1,15 @@
+import 'package:plot/store/store.dart';
+
+/// Returns the [DoingCluster] for [t] in the unified Doing section.
+///
+/// Active to-dos (isActiveThread) always belong to the read (active) cluster,
+/// even if they have an unread badge — the cluster key is active state, not
+/// the unread flag. Non-active unread threads carry their (urgent, importance)
+/// bucket as the unread cluster.
+DoingCluster doingClusterFor(Thread t) => t.isActiveThread
+    ? const DoingCluster.read()
+    : DoingCluster.unread(urgent: t.urgent, importance: t.importance);
+
 /// Identity of an order-sort sub-cluster within the unified feed's
 /// Doing section.
 ///
@@ -53,6 +65,15 @@ class DoingDropResolution {
   final bool usePrev;
   final bool useNext;
 }
+
+/// An active (read-cluster) thread dragged toward the bottom unread
+/// cluster must never join it — clamp the destination back to the active
+/// (read) order-space so it lands at the end of Active instead.
+DoingCluster clampDraggedActiveDestination({
+  required bool draggedActive,
+  required DoingCluster destination,
+}) =>
+    draggedActive && destination.unread ? const DoingCluster.read() : destination;
 
 /// Pick the destination cluster and order bounds for a drop into the
 /// unified feed's Doing section.

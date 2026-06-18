@@ -4,12 +4,19 @@ import 'package:plot/store/store.dart';
 /// Cross-component signal: when the user taps a multi-thread
 /// notification, [NotificationLandingPage] sets this to true. The
 /// matching priority page consumes it on mount and scrolls to the top
-/// of the unified feed (where unread threads cluster at the top of
-/// Doing), then clears the flag. Single-thread notifications still
-/// route through `ThreadLookupRoute` and never touch this signal.
+/// of the unified feed, then clears the flag. Single-thread notifications
+/// still route through `ThreadLookupRoute` and never touch this signal.
 class PendingActivityFeedView {
   /// Scroll-to-top hint for multi-thread notification taps.
   static bool scrollToUpdates = false;
+
+  /// One-shot: when true, the next [PriorityPage] to mount will enable
+  /// the unread-only filter once, then clear this flag. Set by
+  /// [_navigateToNotificationTarget] for multi-thread and no-thread
+  /// notification taps. Single-thread deep-links leave this false (the
+  /// thread opens directly; Task 11's auto-off handles the empty case).
+  /// Normal (non-notification) navigation into a focus never sets this.
+  static bool openUnreadOnly = false;
 }
 
 /// Transitional shim: the unified feed has only one "tab" (the whole
@@ -185,6 +192,7 @@ class ActivityFeedTabData {
     this.context,
     this.moveGen = 0,
     this.movedIds = const {},
+    this.unreadClusterIds = const {},
   });
 
   final List<AgendaItem> items;
@@ -217,6 +225,14 @@ class ActivityFeedTabData {
   /// same generation: when the flag flips on navigation but the feed hasn't
   /// rebuilt yet, the header doesn't appear over stale sectioned data.
   final bool everythingFeed;
+
+  /// Thread ids of the non-active unread cluster at the bottom of the Doing
+  /// section. Used by the drag system to apply source-aware drop boundaries:
+  /// an active thread can only land at the end of Active (not between cluster
+  /// rows), while an unread thread keeps full reorder + promote-up behavior.
+  /// Empty when the feed is in flat mode (search/filter/everything) or when
+  /// there is no unread cluster.
+  final Set<ThreadId> unreadClusterIds;
 
   static const empty = ActivityFeedTabData(items: []);
 }

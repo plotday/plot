@@ -249,7 +249,7 @@ class OnboardingSteps {
       const HighlightStep(
         title: 'Built for action',
         body:
-            "Updates land at the top of Active. Read them and they'll move to Done.\n"
+            "New and unread items arrive at the bottom of Active, below your committed to-dos. Read them and they'll move to Done.\n"
             'Mark threads "To do" to keep them in Active until done.\n'
             "Prioritize threads by dragging them, or schedule them to do later.",
         target: PanelTarget.feed,

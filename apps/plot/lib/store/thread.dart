@@ -5730,12 +5730,15 @@ SELECT
   /// Returns a copy in the "active" state (todo with `todoNowDate` sentinel).
   /// Preserves the existing state_order if [order] is null. When the thread
   /// was unread, marks it acknowledged (so the user isn't shown an unread
-  /// dot on something they're already acting on). Used by the Activity-tab
-  /// drag dispatcher when a thread is dropped in the Today section.
-  Thread asActiveToday({Order? order}) {
+  /// dot on something they're already acting on). Passing [markRead] as false
+  /// skips acknowledging and keeps the thread's unread state, used when
+  /// reordering an active to-do or promoting an unread thread into Active
+  /// to preserve the unread dot. Used by the Activity-tab drag dispatcher
+  /// when a thread is dropped in the Today section.
+  Thread asActiveToday({Order? order, bool markRead = true}) {
     final effectiveOrder = order ?? _thread.stateOrder ?? Order.last();
     final restored = withScheduleRestored(order: effectiveOrder);
-    if (!unread) return restored;
+    if (!unread || !markRead) return restored;
     return restored.copyWith(unread: false, readAt: Value(contentTimestamp));
   }
 
@@ -6325,7 +6328,7 @@ SELECT
     //   * explicit completion (`bump: true, todo: false`) of an Active /
     //     Scheduled thread, or
     //   * an unread thread with no active state being marked read (or
-    //     muted) — it leaves the unread cluster at the top of Active, so
+    //     muted) — it leaves the unread section at the bottom of Active, so
     //     it lands at the top of Done rather than sinking to its old
     //     recency slot.
     // It then drifts down naturally as newer activity lands above it.

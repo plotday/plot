@@ -14,6 +14,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/command/unread_filter.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/state/layout.dart';
@@ -758,6 +759,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
 
     final List<Widget> trailing = <Widget>[
       Button.icon(NewThread()),
+      Button.icon(
+        ToggleUnreadFilter(context: context),
+        selected: state.unreadFilterActive,
+        selectedColor: context.colour.accent,
+      ),
       Button.icon(_buildPriorityMenuCommand(state)),
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),

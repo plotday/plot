@@ -74,6 +74,10 @@
   out at the top, so you land in context instead of jumping straight into the event. (On larger
   screens, where the list and the event sit side by side, tapping still opens the event directly.)
 
+### Focuses
+
+- Your active to-dos now stay put at the top of a focus — new and unread items arrive below them, so incoming messages no longer push your committed work down. A new envelope toggle in the header shows only unread when you want to catch up.
+
 ### Fixes
 
 - Notifications now lead with who a message is from and what it's about. A single new thread shows the

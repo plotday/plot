@@ -736,6 +736,11 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
                 context,
               );
               if (shortcuts != null && shortcuts.tryCloseSearch()) return;
+              final priorityBloc = context.read<PriorityBloc>();
+              if (priorityBloc.state.unreadFilterActive) {
+                priorityBloc.updateUnreadFilter(false); // first back clears the filter
+                return; // stay in the focus
+              }
               // Return to whichever bottom-nav tab the user came from
               // when they tapped the priority chip. Shared with the
               // visible header back button so both behave identically.
@@ -784,6 +789,10 @@ class _PriorityPageState extends State<PriorityPage>
   BlockDragController? _activityFeedDragControllerInstance;
   BlockDragController get _activityFeedDragController =>
       _activityFeedDragControllerInstance ??= BlockDragController(vsync: this);
+
+  /// Guard: ensure the notification unread-intent is applied at most once
+  /// per mount even if the bloc rebuilds before the post-frame callback fires.
+  bool _appliedUnreadIntent = false;
 
   /// Memoized drop-boundary computation. Recomputing on every parent
   /// rebuild would re-walk the entire feed and re-parse every section
@@ -873,6 +882,20 @@ class _PriorityPageState extends State<PriorityPage>
         if (!PendingActivityFeedView.scrollToUpdates) return;
         PendingActivityFeedView.scrollToUpdates = false;
         context.read<PriorityBloc>().selectActivityTab(ActivityTab.unified);
+      });
+    }
+    // One-shot: when the user opens a focus from a notification,
+    // [_navigateToNotificationTarget] sets `openUnreadOnly`. Apply the
+    // unread filter exactly once on the first post-frame so PriorityBloc
+    // is reachable. If there is nothing unread, Task 11's auto-off safety
+    // net (`_rebuildActiveTabSection`: `unreadFilterActive && !hasUnread`)
+    // will clear the filter on the next feed rebuild — no need to gate here.
+    if (PendingActivityFeedView.openUnreadOnly) {
+      PendingActivityFeedView.openUnreadOnly = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _appliedUnreadIntent) return;
+        _appliedUnreadIntent = true;
+        context.read<PriorityBloc>().updateUnreadFilter(true);
       });
     }
   }
@@ -1335,6 +1358,17 @@ class _PriorityPageState extends State<PriorityPage>
     final footerIndex = showFooter ? renderItems.length : -1;
     final totalCount = renderItems.length + (showFooter ? 1 : 0);
 
+    // Source-aware drag: determine whether the currently-dragged thread is
+    // active (so we can suppress drop slots inside the unread cluster).
+    final draggingBlockId = _activityFeedDragController.draggingBlockId;
+    final draggingActive = draggingBlockId != null &&
+        displayItems
+            .whereType<AgendaThreadItem>()
+            .any((i) =>
+                i.thread.id.toString() == draggingBlockId &&
+                i.thread.isActiveThread);
+    final unreadClusterIds = state.unreadClusterIds;
+
     // Drop boundaries depend only on `displayItems`, which gets a fresh
     // identity from `_rebuildActivityFeedSections`. Cache by reference so
     // unrelated parent rebuilds (e.g. RSVP changes elsewhere on the page)
@@ -1342,25 +1376,42 @@ class _PriorityPageState extends State<PriorityPage>
     // ghosts are spliced in, boundaries are computed over the projected
     // list WITHOUT touching the cache, so the post-animation rebuild
     // doesn't serve stale ghost-offset slots.
+    //
+    // Note: the boundary cache does NOT key on draggingActive/unreadClusterIds
+    // because boundaries are recomputed on every drag-start rebuild (the drag
+    // controller notifies listeners when dragging begins, triggering a rebuild).
     final ({Map<int, FeedDropSlot> before, FeedDropSlot? afterList}) boundaries;
     final hasGhosts = renderItems.length != displayItems.length;
     if (hasGhosts) {
       boundaries = computeActivityFeedDropBoundaries(
         items: [for (final e in renderItems) e.item],
+        draggingActive: draggingActive,
+        unreadClusterIds: unreadClusterIds,
       );
     } else if (identical(_cachedDropBoundaryItems, displayItems) &&
-        _cachedDropBoundaries != null) {
+        _cachedDropBoundaries != null &&
+        !draggingActive) {
+      // Cache hit only when not dragging an active thread — when dragging
+      // active, the cluster-suppressed boundaries differ from the normal set.
       boundaries = _cachedDropBoundaries!;
     } else {
-      boundaries = computeActivityFeedDropBoundaries(items: displayItems);
-      _cachedDropBoundaryItems = displayItems;
-      _cachedDropBoundaries = boundaries;
+      boundaries = computeActivityFeedDropBoundaries(
+        items: displayItems,
+        draggingActive: draggingActive,
+        unreadClusterIds: unreadClusterIds,
+      );
+      if (!draggingActive) {
+        _cachedDropBoundaryItems = displayItems;
+        _cachedDropBoundaries = boundaries;
+      }
     }
     _activityFeedDragController.dispatcher = (payload, target) {
       dispatchActivityFeedThreadDrop(
         bloc: bloc,
         payload: payload,
         target: target,
+        draggingActive: draggingActive,
+        unreadClusterIds: unreadClusterIds,
       );
     };
     // No preview builder for the activity feed: the drop zone shows a

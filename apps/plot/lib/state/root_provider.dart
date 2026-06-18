@@ -13,6 +13,7 @@ import 'package:plot/command/page_link.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/share_intent.dart';
+import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/move_recency.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
@@ -391,6 +392,10 @@ class RootProviderState extends State<RootProvider> {
     // thread rows are prefetched (showing a LoadingPage) before the user
     // lands on the activity feed.
     if (target.threadIds.length > 1) {
+      // NOTE: PendingActivityFeedView.openUnreadOnly is set in
+      // NotificationLandingPage._resolve() immediately before the final
+      // replaceAll, AFTER the async prefetch completes, to avoid a stale-flag
+      // leak when the user navigates away during the prefetch window.
       router.replaceAll([
         NotificationLandingRoute(
           priorityIdString: shortId,
@@ -402,6 +407,8 @@ class RootProviderState extends State<RootProvider> {
 
     // No thread ids on the payload (very old format / fallback) — open the
     // target priority directly.
+    // Signal PriorityPage to auto-enable the unread filter on mount.
+    PendingActivityFeedView.openUnreadOnly = true;
     router.replaceAll([PriorityRoute(priorityIdString: shortId)]);
   }
 }

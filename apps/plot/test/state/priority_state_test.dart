@@ -378,4 +378,71 @@ void main() {
       expect(selState(priority: p, feed: [a]).selectedThreads, isEmpty);
     });
   });
+
+  group('PriorityState.hasUnread', () {
+    test('hasUnread reflects unread rows in the activity feed', () {
+      final priority = _testPriority();
+      final unread = Thread(priority: priority)
+          .asUnreadInDoing(order: const Order(1), urgent: false, importance: 0);
+      final state = _stateWith(
+        priority: priority,
+        agendaItems: const [],
+        activityFeedByTab: {
+          ActivityTab.catchUp: ActivityFeedTabData(
+            items: [AgendaThreadItem(unread)],
+          ),
+        },
+      );
+      expect(state.hasUnread, isTrue);
+      expect(
+        state
+            .copyWith(
+              activityFeedByTab: {
+                ActivityTab.catchUp: const ActivityFeedTabData(items: []),
+              },
+            )
+            .hasUnread,
+        isFalse,
+      );
+    });
+  });
+
+  group('PriorityState.activityFeedViewItems unread filter', () {
+    test('unread filter keeps unread rows + the open thread, drops read rows',
+        () {
+      final priority = _testPriority();
+      final read = Thread(priority: priority).asActiveToday(order: const Order(1));
+      final unread = Thread(priority: priority)
+          .asUnreadInDoing(order: const Order(2), urgent: false, importance: 0);
+      final openRead =
+          Thread(priority: priority).asActiveToday(order: const Order(3));
+
+      final state = _stateWith(
+        priority: priority,
+        agendaItems: const [],
+        activityFeedByTab: {
+          ActivityTab.catchUp: ActivityFeedTabData(
+            items: [
+              AgendaHeaderItem(
+                text: ActivitySectionMarker.encode(ActivitySection.doing),
+              ),
+              AgendaThreadItem(read),
+              AgendaThreadItem(unread),
+              AgendaThreadItem(openRead),
+            ],
+          ),
+        },
+      ).copyWith(
+        unreadFilterActive: true,
+        thread: Value(openRead),
+      );
+
+      final rows = state.activityFeedViewItems
+          .whereType<AgendaThreadItem>()
+          .map((i) => i.thread.id)
+          .toSet();
+      expect(rows, {unread.id, openRead.id});
+      expect(rows.contains(read.id), isFalse);
+    });
+  });
 }

@@ -43,6 +43,7 @@ class PriorityState extends Equatable {
     Priority? globalViewScope,
     Set<ThreadId> selected = const {},
     ThreadId? selectionAnchor,
+    bool unreadFilterActive = false,
   }) {
     // Invariant: the synthetic "Everything" view is the one and only
     // context-less state. `everything == true` iff `context == null`, so
@@ -120,6 +121,7 @@ class PriorityState extends Equatable {
       globalViewScope: globalViewScope,
       selected: selected.isNotEmpty ? Set.unmodifiable(selected) : selected,
       selectionAnchor: selectionAnchor,
+      unreadFilterActive: unreadFilterActive,
     );
   }
 
@@ -159,6 +161,7 @@ class PriorityState extends Equatable {
     this.globalViewScope,
     this.selected = const {},
     this.selectionAnchor,
+    this.unreadFilterActive = false,
   });
 
   /// The focus (priority) this page is scoped to. `null` is the synthetic
@@ -236,6 +239,12 @@ class PriorityState extends Equatable {
   /// build — callers fall back to the live [context].
   Priority? get activeTabContext => activityFeedByTab[activeTab]?.context;
 
+  /// Thread ids of the non-active unread cluster at the bottom of the Doing
+  /// section (see [ActivityFeedTabData.unreadClusterIds]). Empty outside
+  /// sectioned mode or when there is no cluster.
+  Set<ThreadId> get unreadClusterIds =>
+      activityFeedByTab[activeTab]?.unreadClusterIds ?? const {};
+
   final bool activityFeedDoneEnd;
   final bool activityFeedLoaded;
 
@@ -303,6 +312,19 @@ class PriorityState extends Equatable {
   /// open thread when multi-select began on it). Null outside multi-select.
   final ThreadId? selectionAnchor;
 
+  /// When true, the activity feed is filtered to unread threads only.
+  /// In-memory only; resets to false on bloc rebuild.
+  final bool unreadFilterActive;
+
+  /// True when the active tab's feed currently contains at least one unread
+  /// thread. Drives the unread-filter toggle visibility.
+  bool get hasUnread {
+    for (final item in activityFeedItems) {
+      if (item is AgendaThreadItem && item.thread.unread) return true;
+    }
+    return false;
+  }
+
   /// True when a multi-select is in progress (any thread is [selected]).
   bool get multiSelecting => selected.isNotEmpty;
 
@@ -318,12 +340,12 @@ class PriorityState extends Equatable {
   /// display filter is what makes a focus pick narrow the visible results.
   List<AgendaItem> get activityFeedViewItems {
     final scope = globalViewScope;
-    if (!muteOnly && scope == null) return activityFeedItems;
+    if (!muteOnly && scope == null && !unreadFilterActive) return activityFeedItems;
+    final openId = thread?.id;
     bool keep(Thread t) {
       if (muteOnly && t.muteByThreadId == null) return false;
-      if (scope != null) {
-        return t.priority.id == scope.id;
-      }
+      if (scope != null && t.priority.id != scope.id) return false;
+      if (unreadFilterActive && !t.unread && t.id != openId) return false;
       return true;
     }
 
@@ -482,6 +504,7 @@ class PriorityState extends Equatable {
     Value<Priority?> globalViewScope = const Value.absent(),
     Set<ThreadId>? selected,
     Value<ThreadId?> selectionAnchor = const Value.absent(),
+    bool? unreadFilterActive,
   }) {
     return PriorityState(
       context: context.or(this.context),
@@ -551,6 +574,7 @@ class PriorityState extends Equatable {
       globalViewScope: globalViewScope.or(this.globalViewScope),
       selected: selected ?? this.selected,
       selectionAnchor: selectionAnchor.or(this.selectionAnchor),
+      unreadFilterActive: unreadFilterActive ?? this.unreadFilterActive,
     );
   }
 
@@ -591,6 +615,7 @@ class PriorityState extends Equatable {
     globalViewScope,
     selected,
     selectionAnchor,
+    unreadFilterActive,
   ];
 
   @override

@@ -1,5 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plot/state/activity_feed_drop.dart';
+import 'package:plot/store/store.dart';
+
+Priority _testPriority() {
+  final row = PriorityRow(
+    id: Uuid.generate(),
+    createdBy: Uuid.generate(),
+    createdAt: DateTime(2026, 1, 1),
+    updatedAt: DateTime(2026, 1, 1),
+    title: 'p',
+    path: Path('p'),
+    order: Order(0),
+    unread: false,
+    role: 'member',
+    isInbox: false,
+    isFyi: false,
+    attentionWindowSet: false,
+    seeWithinSet: false,
+    earlyNotificationsEnabledSet: false,
+    notifyWindowSet: false,
+  );
+  return Priority.fromStore(row, draft: true);
+}
 
 void main() {
   const read = DoingCluster.read();
@@ -155,6 +177,55 @@ void main() {
       expect(r.destination, equals(unreadMid));
       expect(r.usePrev, isTrue);
       expect(r.useNext, isTrue);
+    });
+  });
+
+  group('clampDraggedActiveDestination', () {
+    test('active dragged, destination=unread → clamped to read', () {
+      expect(
+        clampDraggedActiveDestination(
+          draggedActive: true,
+          destination: unreadHi,
+        ),
+        equals(read),
+      );
+    });
+
+    test('active dragged, destination=read → unchanged', () {
+      expect(
+        clampDraggedActiveDestination(
+          draggedActive: true,
+          destination: read,
+        ),
+        equals(read),
+      );
+    });
+
+    test('non-active dragged, destination=unread → unchanged (unread reorder)', () {
+      expect(
+        clampDraggedActiveDestination(
+          draggedActive: false,
+          destination: unreadMid,
+        ),
+        equals(unreadMid),
+      );
+    });
+  });
+
+  group('doingClusterFor', () {
+    test('active thread → read cluster regardless of unread', () {
+      final p = _testPriority();
+      final activeUnread = Thread(priority: p)
+          .asActiveToday(order: const Order(1), markRead: false)
+          .copyWith(unread: true);
+      expect(doingClusterFor(activeUnread), const DoingCluster.read());
+    });
+
+    test('non-active unread → unread cluster with its bucket', () {
+      final p = _testPriority();
+      final u = Thread(priority: p)
+          .asUnreadInDoing(order: const Order(1), urgent: true, importance: 3);
+      expect(doingClusterFor(u), const DoingCluster.unread(urgent: true, importance: 3));
     });
   });
 }

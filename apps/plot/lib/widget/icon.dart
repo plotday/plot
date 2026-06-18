@@ -308,4 +308,11 @@ class PlotIcon {
   // Focus / agenda
   static const arrowsToDot = FontAwesomeIcons.arrowsToDot;
   static const location = FontAwesomeIcons.locationDot;
+
+  // Unread filter toggle
+  /// Shown when there are unread threads and the filter is off or on.
+  static const envelopeUnread = FontAwesomeIcons.envelopeDot;
+
+  /// Shown when there are no unread threads (filter disabled state).
+  static const envelopeAllRead = FontAwesomeIcons.envelopeCircleCheck;
 }

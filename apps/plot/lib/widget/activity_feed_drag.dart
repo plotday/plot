@@ -90,6 +90,8 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
   FeedDropSlot? afterList,
 }) computeActivityFeedDropBoundaries({
   required List<AgendaItem> items,
+  bool draggingActive = false,
+  Set<ThreadId> unreadClusterIds = const {},
 }) {
   final before = <int, FeedDropSlot>{};
   FeedDropSlot? afterList;
@@ -101,6 +103,10 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
   // (or as `afterList` when Done is empty). Tracks whether that single
   // boundary has been emitted so subsequent done threads don't get one.
   var doneBoundaryEmitted = false;
+  // When draggingActive is true, only the boundary above the FIRST
+  // unread-cluster row is emitted (the end-of-active boundary). Subsequent
+  // cluster rows are skipped so no gap opens between them.
+  var emittedUnreadBoundary = false;
 
   BlockDropTarget doneTopTarget() => BlockDropTarget(
     targetDate: null,
@@ -171,7 +177,19 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
         }
         continue;
       }
-      final threadIdStr = item.thread.id.toString();
+      final threadId = item.thread.id;
+      final threadIdStr = threadId.toString();
+      final inUnreadCluster = unreadClusterIds.contains(threadId);
+      // When dragging an ACTIVE thread, the only slot in/around the unread
+      // cluster is the boundary above its FIRST row (== end of active). Skip
+      // slots above every subsequent cluster row so no gap opens between them.
+      if (draggingActive && inUnreadCluster) {
+        if (emittedUnreadBoundary) {
+          prevThreadId = threadIdStr;
+          continue;
+        }
+        emittedUnreadBoundary = true;
+      }
       // Pinned rows (the event row at the top of "Event Agenda") are
       // anchored in place — emit no "before" drop slot for them so
       // the user can't drop above the event. The "prev" tracking still
@@ -235,10 +253,18 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
 /// from the section-marker stashed in `target.targetPeriodStart` (or
 /// `targetDate` for Scheduled), then calls
 /// `PriorityBloc.applyActivityFeedThreadDrop`.
+///
+/// [draggingActive] and [unreadClusterIds] are accepted for callers
+/// that already compute them (e.g. for boundary suppression), but the
+/// apply-side guard in [PriorityBloc.applyActivityFeedThreadDrop]
+/// (via [clampDraggedActiveDestination]) is the authoritative safety
+/// net ensuring an active thread never resolves to the unread cluster.
 void dispatchActivityFeedThreadDrop({
   required PriorityBloc bloc,
   required BlockDragPayload payload,
   required BlockDropTarget target,
+  bool draggingActive = false,
+  Set<ThreadId> unreadClusterIds = const {},
 }) {
   final section = _sectionFromTarget(target);
   if (section == null) return;
@@ -249,13 +275,14 @@ void dispatchActivityFeedThreadDrop({
     return;
   }
 
-  final draggedId = ThreadId.fromString(payload.blockId);
-  final prevId = target.prevBlockId == null
+  ThreadId? prevId = target.prevBlockId == null
       ? null
       : ThreadId.fromString(target.prevBlockId!);
-  final nextId = target.nextBlockId == null
+  ThreadId? nextId = target.nextBlockId == null
       ? null
       : ThreadId.fromString(target.nextBlockId!);
+
+  final draggedId = ThreadId.fromString(payload.blockId);
 
   bloc.applyActivityFeedThreadDrop(
     draggedId: draggedId,

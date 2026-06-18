@@ -8,6 +8,7 @@ import 'package:drift/drift.dart' hide Column;
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/state/activity_feed_drop.dart';
+import 'package:plot/state/activity_feed_layout.dart';
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/agenda_builder.dart';
 import 'package:plot/state/agenda_model.dart';
@@ -441,6 +442,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     ));
     _loadPriority();
     _restartActiveTabSubscription();
+  }
+
+  void updateUnreadFilter(bool active) {
+    if (state.unreadFilterActive == active) return;
+    log.info('Updating unread filter to $active');
+    emit(state.copyWith(unreadFilterActive: active));
   }
 
   void updateFilter(List<Tag> filter) {
@@ -1195,13 +1202,16 @@ class PriorityBloc extends Cubit<PriorityState> {
         state.everything || state.search.isNotEmpty || _hasActiveFilter;
 
     final List<AgendaItem> items;
+    Set<ThreadId> unreadClusterIds = const {};
     if (flatMode) {
       items = <AgendaItem>[
         ...eventPrefix,
         for (final t in merged) AgendaThreadItem(t),
       ];
     } else {
-      items = _buildUnifiedFeedItems(merged, eventPrefix);
+      final built = _buildUnifiedFeedItems(merged, eventPrefix);
+      items = built.items;
+      unreadClusterIds = built.unreadClusterIds;
     }
 
     final byTab = Map<ActivityTab, ActivityFeedTabData>.from(
@@ -1231,6 +1241,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       context: state.context,
       moveGen: _feedMoveGen,
       movedIds: _feedMovedIds,
+      unreadClusterIds: unreadClusterIds,
     );
     emit(
       state.copyWith(
@@ -1239,68 +1250,48 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedLoaded: true,
       ),
     );
+    // Auto-off: if the filter is on but nothing is unread any more (e.g. the
+    // last unread was read on another device and synced in), release it so we
+    // never show an empty filtered feed behind a disabled toggle.
+    if (state.unreadFilterActive && !state.hasUnread) {
+      emit(state.copyWith(unreadFilterActive: false));
+    }
   }
 
   /// Build the unified feed: Doing → Scheduled (per-day) → Activity.
-  /// Unread threads project to the top of Doing (sorted by urgent,
-  /// importance, order) regardless of their underlying state, so each
-  /// thread appears exactly once. When an unread thread is marked read
-  /// it falls back to its natural primary section on the next rebuild
-  /// (handled by the sticky-unread overlay while the user is reading).
-  List<AgendaItem> _buildUnifiedFeedItems(
+  /// Active to-dos hold their `order` position (read and unread intermixed).
+  /// Non-active unread threads cluster at the BOTTOM of Doing (urgent,
+  /// importance, order) and drain to Activity (Done) once read and navigated
+  /// away from. Scheduled unread threads stay in their date slot.
+  ///
+  /// Returns both the item list and the set of thread ids that make up the
+  /// non-active unread cluster (for source-aware drop boundaries).
+  ({List<AgendaItem> items, Set<ThreadId> unreadClusterIds})
+  _buildUnifiedFeedItems(
     List<Thread> merged,
     List<AgendaItem> eventPrefix,
   ) {
-    final unreadDoing = <Thread>[];
-    final readDoing = <Thread>[];
+    final doingEligible = <Thread>[];   // active to-dos + bottom unread cluster
     final scheduled = <Thread>[];
     final activity = <Thread>[];
 
     for (final t in merged) {
-      if (t.unread || _isStickyPinned(t.id)) {
-        // All unread threads cluster at the top of Doing — regardless
-        // of whether they would otherwise be active, scheduled, or
-        // inactive. Underlying state is preserved so the thread returns
-        // to its natural section once read. The sticky-pinned thread
-        // (the open one the user just read) stays in this cluster too
-        // even though its dot has cleared, so it holds its pre-read
-        // position until the user navigates away.
-        unreadDoing.add(t);
+      if (t.isActiveThread) {
+        doingEligible.add(t);            // active to-dos stay in place (incl. unread)
         continue;
       }
-
-      switch (primarySectionFor(t)) {
-        case ActivitySection.doing:
-          readDoing.add(t);
-        case ActivitySection.scheduled:
-          scheduled.add(t);
-        case ActivitySection.activity:
-          activity.add(t);
-        case ActivitySection.eventAgenda:
-          break;
+      if (t.isScheduledThread) {
+        scheduled.add(t);                // scheduled stays in place (incl. unread)
+        continue;
       }
+      if (t.unread || _isStickyPinned(t.id)) {
+        doingEligible.add(t);            // non-active unread → bottom cluster
+        continue;
+      }
+      activity.add(t);                   // read, non-active → Done
     }
 
-    // Unread cluster: urgent DESC, importance DESC, order ASC, id ASC.
-    // Order is the tie-breaker so reorders within the same urgent /
-    // importance bucket are stable.
-    unreadDoing.sort((a, b) {
-      if (a.urgent != b.urgent) return a.urgent ? -1 : 1;
-      final imp = b.importance.compareTo(a.importance);
-      if (imp != 0) return imp;
-      final ord = a.order.compareTo(b.order);
-      if (ord != 0) return ord;
-      return a.id.toString().compareTo(b.id.toString());
-    });
-
-    // Doing (read): order ASC, id ASC tie-break. Order is the sole
-    // visual driver for read-active threads; deterministic id tiebreak
-    // keeps the list stable across rebuilds.
-    readDoing.sort((a, b) {
-      final ord = a.order.compareTo(b.order);
-      if (ord != 0) return ord;
-      return a.id.toString().compareTo(b.id.toString());
-    });
+    final split = splitDoingSection(doingEligible);
 
     // Scheduled: bucket date ASC, then state_order, then id.
     scheduled.sort((a, b) {
@@ -1331,16 +1322,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Doing header is emitted only when the section has threads, so an
     // empty Active section doesn't render a floating header (e.g. when the
     // feed contains only Done threads).
-    if (unreadDoing.isNotEmpty || readDoing.isNotEmpty) {
+    if (split.active.isNotEmpty || split.unreadCluster.isNotEmpty) {
       items.add(
-        AgendaHeaderItem(
-          text: ActivitySectionMarker.encode(ActivitySection.doing),
-        ),
+        AgendaHeaderItem(text: ActivitySectionMarker.encode(ActivitySection.doing)),
       );
-      for (final t in unreadDoing) {
+      for (final t in split.active) {
         items.add(AgendaThreadItem(t));
       }
-      for (final t in readDoing) {
+      for (final t in split.unreadCluster) {
         items.add(AgendaThreadItem(t));
       }
     }
@@ -1375,7 +1364,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    return items;
+    final clusterIds = {for (final t in split.unreadCluster) t.id};
+    return (items: items, unreadClusterIds: clusterIds);
   }
 
   /// Apply the activity-feed overlay to a per-tab SQL result. Substitutes
@@ -2232,15 +2222,21 @@ class PriorityBloc extends Cubit<PriorityState> {
         // order space. resolveDoingDrop picks the destination cluster
         // (preserving the dragged row's own bucket at a boundary slot)
         // and tells us which neighbours' orders we can use as bounds.
-        DoingCluster clusterOf(Thread t) => t.unread
-            ? DoingCluster.unread(urgent: t.urgent, importance: t.importance)
-            : const DoingCluster.read();
         final resolution = resolveDoingDrop(
-          prev: prevThread == null ? null : clusterOf(prevThread),
-          next: nextThread == null ? null : clusterOf(nextThread),
-          dragged: clusterOf(dragged),
+          prev: prevThread == null ? null : doingClusterFor(prevThread),
+          next: nextThread == null ? null : doingClusterFor(nextThread),
+          dragged: doingClusterFor(dragged),
         );
-        final destination = resolution.destination;
+        // Guard: an active thread must never resolve to the unread cluster,
+        // regardless of which slot triggered the drop (handles both the
+        // backwards-clamp case and the tail-escape case where
+        // resolveDoingDrop sees prev=unread, next=null and returns unread).
+        final destination = clampDraggedActiveDestination(
+          draggedActive: dragged.isActiveThread,
+          destination: resolution.destination,
+        );
+        final clamped =
+            dragged.isActiveThread && resolution.destination.unread;
         // Legacy data contains runs of identical persisted orders (seeded
         // constants; NULL state_order rows all sharing the lowerBound
         // fallback). A plain Order.between inside such a run lands the
@@ -2253,14 +2249,27 @@ class PriorityBloc extends Cubit<PriorityState> {
             section: ActivitySection.doing,
             exclude: draggedId,
           ))
-            if (clusterOf(t) == destination) t,
+            if (doingClusterFor(t) == destination) t,
         ];
+        // When the clamp fired the original neighbours are in the unread
+        // cluster and their orders belong to a different order-space.
+        // Place the thread at the END of the active (read) sub-cluster by
+        // setting prevId to the last active thread's id and nextId to null.
+        final ThreadId? effectivePrevId;
+        final ThreadId? effectiveNextId;
+        if (clamped) {
+          effectivePrevId = doingBucket.isEmpty ? null : doingBucket.last.id;
+          effectiveNextId = null;
+        } else {
+          effectivePrevId = resolution.usePrev ? prevId : null;
+          effectiveNextId = resolution.useNext ? nextId : null;
+        }
         final doingResolved = resolveDropOrderWithRepair(
           bucket: doingBucket,
           gapIndex: feedDropGapIndex(
             doingBucket,
-            prevId: resolution.usePrev ? prevId : null,
-            nextId: resolution.useNext ? nextId : null,
+            prevId: effectivePrevId,
+            nextId: effectiveNextId,
           ),
         );
         _persistOrderRepairs(doingResolved.rewrites);
@@ -2275,11 +2284,10 @@ class PriorityBloc extends Cubit<PriorityState> {
             importance: destination.importance,
           );
         } else {
-          // Land in the read-active cluster: mark read (if unread),
-          // ensure active state, set order. Clear any sticky pin —
-          // an explicit drop into the read cluster is the user telling
-          // us this thread isn't pinned to the unread area any more.
-          updated = dragged.asActiveToday(order: doingNewOrder);
+          // Land in the active order-space: become/stay an active to-do, set
+          // order, but DON'T mark read — reordering or promoting up must not
+          // clear the unread dot. Clear any sticky pin.
+          updated = dragged.asActiveToday(order: doingNewOrder, markRead: false);
           _overlay.remove(draggedId);
         }
         break;
@@ -3143,6 +3151,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     if (thread != null &&
         thread.unread &&
+        !thread.isActiveThread &&
         _activeTabSubscriptionTab == ActivityTab.catchUp) {
       _overlay[thread.id] = _Overlay.stickyUnread(
         thread,
@@ -3153,6 +3162,19 @@ class PriorityBloc extends Cubit<PriorityState> {
         ),
       );
       _rebuildActiveTabSection();
+    }
+
+    // Clear the unread filter when the user opens the last remaining unread.
+    // The sticky-pin above keeps the just-opened thread visible while the
+    // full feed reappears behind it, so it's safe to drop the filter here.
+    if (thread != null && thread.unread && state.unreadFilterActive) {
+      final otherUnread = state.activityFeedItems.any((item) =>
+          item is AgendaThreadItem &&
+          item.thread.unread &&
+          item.thread.id != thread.id);
+      if (!otherUnread) {
+        updateUnreadFilter(false); // opening the last unread reveals the full feed
+      }
     }
 
     if (state.thread == thread) {
