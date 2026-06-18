@@ -131,3 +131,80 @@ export async function stampThreadsNotified(
       SET notified_at = GREATEST(thread_notify_state.notified_at, EXCLUDED.notified_at)
   `.execute(db);
 }
+
+/** Author context for laying out a notification: the thread originator, the
+ * authors of currently-unread notes (the repliers), and whether the user has
+ * read the thread before. */
+export type NotificationAuthors = {
+  original_author_name: string | null;
+  unread_author_names: string | null;
+  has_been_read: boolean;
+};
+
+/**
+ * Resolve notification author context for a set of threads, keyed by thread id.
+ *
+ * The foreground push path (`/notification-summary`) builds its batches from
+ * the client's local data, which carries no author — so it calls this to fill
+ * in the same author fields `/notification-content` computes inline, keeping
+ * both paths' notification layout identical. `original_author_name` is the
+ * thread's credited author (now the human sender, not the connection — see
+ * `selectThreadAuthorSpec`), with the first note's author as a legacy fallback
+ * for any pre-backfill thread whose `author_id` was never set.
+ *
+ * `db` may be a Kysely instance or a transaction handle.
+ */
+export async function loadNotificationAuthors(
+  db: Kysely<DB>,
+  userId: string,
+  threadIds: string[]
+): Promise<Map<string, NotificationAuthors>> {
+  const map = new Map<string, NotificationAuthors>();
+  if (threadIds.length === 0) return map;
+  const idList = sql.join(threadIds.map((id) => sql`${id}::uuid`));
+  const result = await sql<{
+    thread_id: string;
+    original_author_name: string | null;
+    unread_author_names: string | null;
+    has_been_read: boolean;
+  }>`
+    SELECT
+      t.id::text AS thread_id,
+      EXISTS (
+        SELECT 1 FROM thread_read tr
+        WHERE tr.thread_id = t.id AND tr.user_id = ${userId}::uuid
+      ) AS has_been_read,
+      (
+        SELECT a.name FROM actor a
+        WHERE a.id = COALESCE(
+          t.author_id,
+          (
+            SELECT n.author_id FROM note n
+            WHERE n.thread_id = t.id AND n.archived_at IS NULL
+            ORDER BY n.created_at ASC LIMIT 1
+          )
+        )
+      ) AS original_author_name,
+      (
+        SELECT string_agg(DISTINCT COALESCE(a.name, 'Someone'), ',')
+        FROM note n
+        JOIN actor a ON a.id = n.author_id
+        LEFT JOIN thread_read tr ON tr.thread_id = t.id AND tr.user_id = ${userId}::uuid
+        WHERE n.thread_id = t.id
+          AND n.archived_at IS NULL
+          AND n.draft = false
+          AND NOT (n.author_id = ANY("user".user_contact_ids(${userId}::uuid)))
+          AND (tr.read_at IS NULL OR n.created_at > tr.read_at)
+      ) AS unread_author_names
+    FROM thread t
+    WHERE t.id IN (${idList})
+  `.execute(db);
+  for (const row of result.rows) {
+    map.set(row.thread_id, {
+      original_author_name: row.original_author_name,
+      unread_author_names: row.unread_author_names,
+      has_been_read: row.has_been_read,
+    });
+  }
+  return map;
+}

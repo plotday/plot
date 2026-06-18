@@ -4,8 +4,51 @@ import {
   createPreviewFromMarkdown,
   markdownToPlainText,
   plainTextToMarkdown,
+  selectThreadAuthorSpec,
   stripMarkdown,
 } from "./thread-helpers";
+
+describe("selectThreadAuthorSpec", () => {
+  it("returns the explicit link author when present", () => {
+    expect(
+      selectThreadAuthorSpec({
+        title: "t",
+        author: { id: "contact-ada" },
+        notes: [{ author: { id: "contact-other" } }],
+      } as any)
+    ).toEqual({ id: "contact-ada" });
+  });
+
+  it("falls back to the first note's author when the link has none", () => {
+    // Gmail-style: no link author, each note carries its sender. Credit the
+    // ORIGINATOR — the first note's author — never a later replier.
+    expect(
+      selectThreadAuthorSpec({
+        title: "Workshop ideas",
+        notes: [
+          { author: { id: "contact-phil" } },
+          { author: { id: "contact-stacy" } },
+        ],
+      } as any)
+    ).toEqual({ id: "contact-phil" });
+  });
+
+  it("skips leading authorless notes to find the first author", () => {
+    expect(
+      selectThreadAuthorSpec({
+        title: "t",
+        notes: [{ content: "system note" }, { author: { id: "contact-bob" } }],
+      } as any)
+    ).toEqual({ id: "contact-bob" });
+  });
+
+  it("returns null when there is neither a link author nor a note author", () => {
+    expect(selectThreadAuthorSpec({ title: "t" } as any)).toBeNull();
+    expect(
+      selectThreadAuthorSpec({ title: "t", notes: [{ content: "x" }] } as any)
+    ).toBeNull();
+  });
+});
 
 describe("plainTextToMarkdown", () => {
   it("auto-links bare URLs", () => {

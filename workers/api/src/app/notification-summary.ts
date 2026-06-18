@@ -8,6 +8,7 @@ import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { checkAiLimit, isAiEnabled, recordAiUsage } from "../utils/ai-limits";
 import {
+  loadNotificationAuthors,
   selectUnsuppressedThreadIds,
   stampThreadsNotified,
 } from "../state/notify-candidates";
@@ -51,6 +52,57 @@ export function formatSingleThreadNotification(
     }
     return title;
   }
+}
+
+/** Split a comma-joined author-name string into trimmed, non-empty names. */
+function splitAuthorNames(s?: string | null): string[] {
+  return (s ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+/** Join author names for a heading: "A", "A & B", or "A, B & more". */
+function joinAuthorNames(names: string[]): string | null {
+  if (names.length === 0) return null;
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} & ${names[1]}`;
+  return `${names[0]}, ${names[1]} & more`;
+}
+
+/**
+ * Lay out a single-thread PUSH notification: lead with the author (the heading)
+ * and use the thread title as the body. The most important information for a
+ * thread is who it's from and what it's about; the connection is omitted.
+ *
+ * For a new thread the heading is the originator; for a new reply to a thread
+ * the user already read, it's the replier(s) — so a reply from Stacy on Phil's
+ * thread shows "Stacy", not "Phil". When no human author is resolvable (e.g.
+ * automated mail), the title leads instead.
+ */
+export function singleThreadPushNotification(thread: {
+  title: string | null;
+  preview?: string | null;
+  has_been_read?: boolean;
+  original_author_name?: string | null;
+  unread_author_names?: string | null;
+}): { title: string; body: string } {
+  const threadTitle = thread.title?.trim() || null;
+  const preview = thread.preview?.trim() || null;
+  const repliers = joinAuthorNames(splitAuthorNames(thread.unread_author_names));
+
+  const heading = thread.has_been_read
+    ? repliers
+    : splitAuthorNames(thread.original_author_name)[0] ?? repliers;
+
+  if (heading) {
+    return { title: heading, body: threadTitle ?? preview ?? "New message" };
+  }
+  // No human author — lead with the title (or preview for title-less items).
+  return {
+    title: threadTitle ?? preview ?? "New message",
+    body: threadTitle ? preview ?? "" : "",
+  };
 }
 
 const BatchSchema = z.object({
@@ -107,18 +159,46 @@ notificationSummary.post("/notification-summary", async (c) => {
     ]);
     const useAi = aiAllowed.allowed && aiOn;
 
+    // The client builds batches from local data with no author context. Fill
+    // in the same author fields /notification-content computes inline, so the
+    // foreground push layout matches the background one (author as heading,
+    // thread title as body for a single thread).
+    const authorsByThread = await loadNotificationAuthors(
+      db,
+      userId,
+      filteredBatches.flatMap((b) => b.threads.map((t) => t.id))
+    );
+    const enrich = (t: z.infer<typeof ThreadSchema>) => {
+      const a = authorsByThread.get(t.id);
+      return a ? { ...t, ...a } : t;
+    };
+
     const summaries = await Promise.all(
       filteredBatches.map(async (batch) => {
-        const displayPriorityTitle = batch.priority_title === "Everything" ? "Inbox" : batch.priority_title;
-        const body = useAi
-          ? await generateSummary(c.env, batch.threads, user_name, displayPriorityTitle, c.var.user.id)
-          : fallbackSummary(batch.threads);
+        const focusTitle =
+          batch.priority_title === "Everything" ? "Inbox" : batch.priority_title;
+        const threads = batch.threads.map(enrich);
+
+        // Single thread → author heading + title body (connection omitted).
+        // Multiple → focus heading + summary of the threads.
+        let title = focusTitle ?? "Updates";
+        let body: string;
+        if (threads.length === 1) {
+          const single = singleThreadPushNotification(threads[0]);
+          title = single.title;
+          body = single.body;
+        } else {
+          body = useAi
+            ? await generateSummary(c.env, threads, user_name, focusTitle, c.var.user.id)
+            : fallbackSummary(threads);
+        }
+
         return {
           first_level_priority_id: batch.first_level_priority_id,
-          title: displayPriorityTitle ?? "Updates",
+          title,
           body,
           target_priority_id: batch.target_priority_id,
-          thread_ids: batch.threads.map((t) => t.id),
+          thread_ids: threads.map((t) => t.id),
         };
       })
     );

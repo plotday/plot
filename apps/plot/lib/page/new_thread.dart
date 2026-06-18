@@ -83,7 +83,7 @@ class NewThreadPage extends StatefulWidget {
     @QueryParam('duration') this.duration,
     @QueryParam('priorityId') this.priorityId,
     @QueryParam('sharedUrl') this.sharedUrl,
-    @QueryParam('feedback') this.feedback = false,
+    @QueryParam('feedback') this.feedback,
   });
 
   final String? startTime;
@@ -94,7 +94,12 @@ class NewThreadPage extends StatefulWidget {
 
   /// When true (set by the Help & Feedback command), the draft is pre-shared
   /// with the Plot Team group so the new Inbox thread reaches the Plot team.
-  final bool feedback;
+  ///
+  /// Nullable so the route only serialises `?feedback=true` when set — a
+  /// non-null `false` default would append a redundant `?feedback=false` to
+  /// every normal new-thread URL (auto_route drops null/empty query values,
+  /// not `false`).
+  final bool? feedback;
 
   @override
   State<NewThreadPage> createState() => NewThreadPageState();
@@ -669,7 +674,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Help & Feedback (fresh mount): configure the page for a Plot-Team chat
     // filed under Inbox. A reused live page is handled via [feedbackRequest]
     // instead (this path won't re-run — see [_hasAppliedQueryParams]).
-    if (widget.feedback) {
+    if (widget.feedback ?? false) {
       await _applyFeedbackMode();
     }
   }

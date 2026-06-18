@@ -1181,6 +1181,34 @@ export async function markThreadReadForAuthor(
 }
 
 /**
+ * Pick the actor a thread should be credited to (its `author_id`):
+ *  1. the explicit link/thread author, when supplied; otherwise
+ *  2. the author of the first note that carries one — the thread's originator.
+ *
+ * Returns `null` when neither exists, so the caller falls back to the twist
+ * instance. Messaging connectors (Gmail, WhatsApp, …) set only per-note
+ * authors; without this fallback the runtime would credit the thread to the
+ * connection's `twist_instance` (e.g. "Gmail (Plot)") instead of the human
+ * who started it — which then surfaces as the author in notifications and the
+ * thread header. A later replier never wins: only the FIRST note's author is
+ * used (unread replies are credited separately via the per-note author).
+ */
+export function selectThreadAuthorSpec(
+  activity: NewThread | NewThreadWithNotes
+): NewActor | null {
+  const explicit = (activity as { author?: NewActor | null }).author;
+  if (explicit) return explicit;
+  if ("notes" in activity && activity.notes) {
+    for (const note of activity.notes) {
+      const author = (note as { author?: NewActor | null } | null | undefined)
+        ?.author;
+      if (author) return author;
+    }
+  }
+  return null;
+}
+
+/**
  * Prepares a NewThread for database insertion, handling all common preparation logic:
  * - Priority resolution via classify_thread_for_user (rule-based)
  * - Embedding generation from title + first note content
@@ -1314,14 +1342,18 @@ export async function prepareThreadForDb(
     }
   }
 
-  // Resolve thread-level author for read-marking.
-  // The author field comes from NewLink.author (passed via createLink → createThread).
-  // created_by in the DB remains plot.twistInstanceId (the twist created it).
+  // Resolve thread-level author for read-marking and attribution.
+  // Prefer the explicit NewLink.author; otherwise credit the thread to its
+  // originator (the first note's author) so messaging connectors that set only
+  // per-note authors (e.g. Gmail) don't fall through to the connection's twist
+  // instance. created_by in the DB remains plot.twistInstanceId (the twist
+  // created it). See selectThreadAuthorSpec.
   let authorId = plot.twistInstanceId;
-  if ("author" in activity && (activity as any).author) {
+  const authorSpec = selectThreadAuthorSpec(activity);
+  if (authorSpec) {
     const resolvedAuthorId = await processNewActor(
       plot,
-      (activity as any).author,
+      authorSpec,
       targetPriorityId
     );
     if (resolvedAuthorId) {

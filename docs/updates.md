@@ -76,6 +76,11 @@
 
 ### Fixes
 
+- Notifications now lead with who a message is from and what it's about. A single new thread shows the
+  sender's name and the thread's title — for example **Phil Lee · Workshop ideas** — instead of the
+  connection it arrived through (no more "Gmail (Plot)" standing in for the sender). When someone
+  replies to a thread you've already read, the notification credits the person who replied, not whoever
+  started it. The connection name is no longer shown.
 - Search and filter boxes now look consistent everywhere. The magnifying-glass icon stays on the
   buttons that open search, and the boxes themselves rely on a clear placeholder — so pickers like
   emoji and link search no longer look different from the rest.

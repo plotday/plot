@@ -432,7 +432,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   static void _pushNewThreadWhenInnerReady(
     BuildContext context, {
     required int attempt,
-    bool feedback = false,
+    bool? feedback,
   }) {
     if (!context.mounted) return;
     final innerRouter = _findPriorityInnerRouter(context.router.root);

@@ -4,7 +4,11 @@ import { sql } from "kysely";
 import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { checkAiLimit, isAiEnabled, recordAiUsage } from "../utils/ai-limits";
-import { generateSummary, fallbackSummary } from "./notification-summary";
+import {
+  generateSummary,
+  fallbackSummary,
+  singleThreadPushNotification,
+} from "./notification-summary";
 
 const notificationContent = new Hono<{ Bindings: Bindings }>();
 
@@ -221,15 +225,26 @@ notificationContent.get("/notification-content", async (c) => {
       [...batchMap.values()].map(async (batch) => {
         const targetPriorityId = batch.firstLevelPriorityId;
         const threadList = batch.threads.slice(0, 10);
-        const displayTitle = batch.priorityTitle === "Everything" ? "Inbox" : batch.priorityTitle;
+        const focusTitle = batch.priorityTitle === "Everything" ? "Inbox" : batch.priorityTitle;
 
-        const body = useAi
-          ? await generateSummary(c.env, threadList, c.var.user.name, displayTitle, c.var.user.id)
-          : fallbackSummary(threadList);
+        // A single unread thread leads with its author (heading) and uses the
+        // thread title as the body — connection omitted. Multi-thread batches
+        // keep the focus as the heading and summarize the threads.
+        let title = focusTitle;
+        let body: string;
+        if (threadList.length === 1) {
+          const single = singleThreadPushNotification(threadList[0]);
+          title = single.title;
+          body = single.body;
+        } else {
+          body = useAi
+            ? await generateSummary(c.env, threadList, c.var.user.name, focusTitle, c.var.user.id)
+            : fallbackSummary(threadList);
+        }
 
         return {
           first_level_priority_id: batch.firstLevelPriorityId,
-          title: displayTitle,
+          title,
           body,
           target_priority_id: targetPriorityId,
           urgent: batch.urgent,
