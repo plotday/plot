@@ -2,6 +2,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
+import 'package:provider/provider.dart';
+import 'package:plot/style/colors.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/note_editor_top_bar.dart';
 
 void main() {
@@ -15,10 +18,16 @@ void main() {
 
   Widget host(Widget child) => FTheme(
         data: FThemes.zinc.light.desktop,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
-          child: Overlay(
-            initialEntries: [OverlayEntry(builder: (_) => child)],
+        child: Provider<ColourSchemeData>.value(
+          value: ColourSchemeData(
+            themeColor: const ThemeColor(0),
+            brightness: Brightness.light,
+          ),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Overlay(
+              initialEntries: [OverlayEntry(builder: (_) => child)],
+            ),
           ),
         ),
       );
@@ -167,6 +176,55 @@ void main() {
       await tester.pumpAndSettle();
       expect(edited, isTrue);
       expect(tapped, isFalse);
+    });
+
+    testWidgets('flexible pill with a long label ellipsizes instead of '
+        'overflowing the row', (tester) async {
+      await tester.pumpWidget(host(Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          // Wide enough for the fixed-label pills (flutter_test renders glyphs
+          // wider than production), but narrower than the full natural width
+          // once the long "Reply to {name}" pill is added — so that pill must
+          // flex/ellipsize or the row overflows (the real-world bug).
+          width: 480,
+          child: NoteEditorTopBar(
+            roundTop: false,
+            state: PillRowState(
+              pills: [
+                TopBarPill(
+                  id: 'reply',
+                  label: 'Reply all',
+                  leadingIcon: FontAwesomeIcons.replyAll,
+                  recipientCount: 4,
+                  editIcon: FontAwesomeIcons.pen,
+                  editTooltip: 'Edit recipients',
+                  onTap: () {},
+                  onEdit: () {},
+                ),
+                TopBarPill(
+                  id: 'replyOriginal',
+                  label: 'Reply to Alexandra Bartholomew-Richardson',
+                  leadingIcon: FontAwesomeIcons.reply,
+                  flexible: true,
+                  onTap: () {},
+                ),
+                pill('private', 'Private note'),
+              ],
+              activeId: 'reply',
+            ),
+            onClearReply: () {},
+            onCancelEdit: () {},
+          ),
+        ),
+      )));
+      // No RenderFlex overflow should be thrown during layout.
+      expect(tester.takeException(), isNull);
+      // The fixed-label pills stay fully visible.
+      expect(find.text('Reply all'), findsOneWidget);
+      expect(find.text('Private note'), findsOneWidget);
+      // The variable-length label still renders (ellipsized by the framework).
+      expect(find.textContaining('Reply to Alexandra'), findsOneWidget);
     });
 
     testWidgets('no edit affordance when editIcon is null', (tester) async {

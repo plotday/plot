@@ -856,9 +856,9 @@ class NoteEditorState extends State<NoteEditor> {
   ({List<Actor> actors, int total}) _replyAudience(ThreadState s) {
     final base = s.primaryLinkTypeConfig?.sharingModel == SharingModel.message
         ? () {
-            final audience = Thread.latestNoteAudience(s.notes)
-                .map((a) => a.toUuid())
-                .toList();
+            final audience = Thread.latestNoteAudience(
+              s.notes,
+            ).map((a) => a.toUuid()).toList();
             return audience.isEmpty ? s.thread.activeContacts : audience;
           }()
         : s.thread.activeContacts;
@@ -971,7 +971,11 @@ class NoteEditorState extends State<NoteEditor> {
         TopBarPill(id: 'reply', label: 'Reply', onTap: _activatePlotReply),
       );
       pills.add(
-        TopBarPill(id: 'private', label: 'Private note', onTap: _activatePrivate),
+        TopBarPill(
+          id: 'private',
+          label: 'Private note',
+          onTap: _activatePrivate,
+        ),
       );
       return pills;
     }
@@ -988,7 +992,11 @@ class NoteEditorState extends State<NoteEditor> {
         TopBarPill(id: 'reply', label: 'Reply', onTap: _activatePlotReply),
       );
       pills.add(
-        TopBarPill(id: 'private', label: 'Private note', onTap: _activatePrivate),
+        TopBarPill(
+          id: 'private',
+          label: 'Private note',
+          onTap: _activatePrivate,
+        ),
       );
       return pills;
     }
@@ -1023,12 +1031,17 @@ class NoteEditorState extends State<NoteEditor> {
               id: 'replyOriginal',
               label: 'Reply to ${_displayName(orig)}',
               leadingIcon: FontAwesomeIcons.reply,
+              flexible: true,
               onTap: () => _activateReplyToOriginal(orig),
             ),
           );
         }
         pills.add(
-          TopBarPill(id: 'private', label: 'Private note', onTap: _activatePrivate),
+          TopBarPill(
+            id: 'private',
+            label: 'Private note',
+            onTap: _activatePrivate,
+          ),
         );
         return pills;
       case SharingModel.channel:
@@ -1351,7 +1364,8 @@ class NoteEditorState extends State<NoteEditor> {
             .where((s) => s.status == action.status)
             .firstOrNull
             ?.label ??
-        action.status ?? '';
+        action.status ??
+        '';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -1528,7 +1542,8 @@ class NoteEditorState extends State<NoteEditor> {
                   children: [
                     // To-do toggle — first item, marks this note as the user's
                     // own task. Hidden for viewers who can't compose.
-                    if (!widget.viewerMode) _buildTodoToggle(activityState.draft),
+                    if (!widget.viewerMode)
+                      _buildTodoToggle(activityState.draft),
                     // Link / Attach availability comes from the primary link's
                     // type config. Withhold both until links load so they don't
                     // render as plain-Plot affordances and then vanish on a
@@ -1923,10 +1938,12 @@ class NoteEditorState extends State<NoteEditor> {
     // added to those groups later still see the reply.
     final bool readOnlyViewer = widget.viewerMode && thread.isReadOnly;
 
-    final readOnlyShareContacts =
-        readOnlyViewer ? _readOnlyDefaultShareContacts(thread) : <ActorId>[];
-    final readOnlyShareGroups =
-        readOnlyViewer ? _readOnlyDefaultShareGroups(thread) : <ActorId>[];
+    final readOnlyShareContacts = readOnlyViewer
+        ? _readOnlyDefaultShareContacts(thread)
+        : <ActorId>[];
+    final readOnlyShareGroups = readOnlyViewer
+        ? _readOnlyDefaultShareGroups(thread)
+        : <ActorId>[];
 
     // The recipient picker narrows the read-only default by writing its
     // selection into the draft's access fields (see editNoteRecipients). When

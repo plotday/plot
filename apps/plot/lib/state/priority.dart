@@ -3151,7 +3151,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     if (thread != null &&
         thread.unread &&
-        !thread.isActiveThread &&
         _activeTabSubscriptionTab == ActivityTab.catchUp) {
       _overlay[thread.id] = _Overlay.stickyUnread(
         thread,

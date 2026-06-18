@@ -80,6 +80,11 @@
 
 ### Fixes
 
+- On the web app, refreshing the page or opening a link to a specific focus or thread now keeps you on
+  that page. Previously it would load for a moment and then bounce you to your Personal Inbox; now a
+  refresh stays put and a shared link opens exactly the focus or thread it points to.
+- The note editor's reply options no longer get cut off when a "Reply to {name}" option has a long
+  name — the name now shortens to fit so the other options stay fully visible.
 - Notifications now lead with who a message is from and what it's about. A single new thread shows the
   sender's name and the thread's title — for example **Phil Lee · Workshop ideas** — instead of the
   connection it arrived through (no more "Gmail (Plot)" standing in for the sender). When someone

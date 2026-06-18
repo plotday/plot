@@ -59,6 +59,12 @@ class TopBarPill {
   /// Tooltip shown over the [editIcon]/[recipientCount] affordance.
   final String? editTooltip;
 
+  /// When true, the pill's label may shrink and ellipsize to fit the available
+  /// width instead of pushing the row into overflow. Use for pills with a
+  /// variable-length label (e.g. "Reply to {name}"); fixed-label pills should
+  /// keep their natural width.
+  final bool flexible;
+
   /// Called when the pill body (leading icon + label) is tapped.
   final VoidCallback onTap;
 
@@ -73,6 +79,7 @@ class TopBarPill {
     this.recipientCount,
     this.editIcon,
     this.editTooltip,
+    this.flexible = false,
     required this.onTap,
     this.onEdit,
   }) : assert(
@@ -179,7 +186,12 @@ class _PillRow extends StatelessWidget {
         child: Row(
           children: [
             for (final pill in state.pills)
-              _Pill(pill: pill, isActive: pill.id == state.activeId),
+              if (pill.flexible)
+                Flexible(
+                  child: _Pill(pill: pill, isActive: pill.id == state.activeId),
+                )
+              else
+                _Pill(pill: pill, isActive: pill.id == state.activeId),
           ],
         ),
       ),
@@ -199,6 +211,20 @@ class _Pill extends StatefulWidget {
 
 class _PillState extends State<_Pill> {
   bool _hovering = false;
+
+  Widget _label(BuildContext context, Color foregroundColor) {
+    return Text(
+      widget.pill.label,
+      maxLines: 1,
+      overflow: widget.pill.flexible
+          ? TextOverflow.ellipsis
+          : TextOverflow.clip,
+      style: context.theme.typography.sm.copyWith(
+        color: foregroundColor,
+        fontWeight: widget.isActive ? FontWeight.w600 : FontWeight.normal,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,15 +257,15 @@ class _PillState extends State<_Pill> {
                   ),
                   const SizedBox(width: 5),
                 ],
-                Text(
-                  widget.pill.label,
-                  style: context.theme.typography.sm.copyWith(
-                    color: foregroundColor,
-                    fontWeight: widget.isActive
-                        ? FontWeight.w600
-                        : FontWeight.normal,
-                  ),
-                ),
+                // A flexible pill (variable-length label) may shrink: wrap the
+                // label so it ellipsizes within the space the parent Row grants
+                // it instead of overflowing. Fixed-label pills keep their
+                // natural width (and must not use Flexible — the surrounding
+                // Row gives them unbounded width).
+                if (widget.pill.flexible)
+                  Flexible(child: _label(context, foregroundColor))
+                else
+                  _label(context, foregroundColor),
                 if (widget.pill.editIcon != null) ...[
                   const SizedBox(width: 6),
                   _EditAffordance(

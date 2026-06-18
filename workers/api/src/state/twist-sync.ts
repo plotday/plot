@@ -3,7 +3,7 @@ import { PostHog } from "posthog-node";
 
 import { sql } from "kysely";
 
-import { withDb, createDb } from "../db";
+import { withDb, createDb, isLockContentionError } from "../db";
 import type { ThreadTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { processTwistBatch } from "../queue/updates";
@@ -708,25 +708,54 @@ export class TwistSync extends DurableObject<Bindings> {
 
       if (cursorRows.length > 0) {
         try {
-          await db
-            .insertInto("twist_instance_sync")
-            .values(cursorRows as any)
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`now()`,
-                last_sync_seq: sql`GREATEST(twist_instance_sync.last_sync_seq, EXCLUDED.last_sync_seq)`,
-              } as any)
-            )
-            .execute();
+          // Bound the lock wait for the cursor advance. These twist_instance_sync
+          // rows are also UPSERTed by the high-frequency sync_twist_for_* write-
+          // path triggers (same PK), which hold the row lock for the life of the
+          // connector/API write transaction that fired them. If one of those runs
+          // long, a plain UPSERT here would block until the connection's 30s
+          // statement_timeout — surfacing as a captured "canceling statement due
+          // to statement timeout" (PostHog 019ed540) and, worse, pinning a
+          // Hyperdrive pool slot for 30s, which feeds the pool-exhaustion that is
+          // this DO's other failure mode. SET LOCAL scopes the shorter timeout to
+          // this one statement (it resets on commit); the advance is idempotent,
+          // so on a bail the cursor stays stale, SyncRecovery re-notifies within
+          // ~30s, and the next alarm retries.
+          await db.transaction().execute(async (trx) => {
+            await sql`SET LOCAL lock_timeout = '5000ms'`.execute(trx);
+            await trx
+              .insertInto("twist_instance_sync")
+              .values(cursorRows as any)
+              .onConflict((oc) =>
+                oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
+                  last_sync_at: sql`now()`,
+                  last_sync_seq: sql`GREATEST(twist_instance_sync.last_sync_seq, EXCLUDED.last_sync_seq)`,
+                } as any)
+              )
+              .execute();
+          });
         } catch (error) {
-          logger.error("Failed to advance twist_instance_sync cursors", error as Error, {
-            twist_instance_id: twistInstanceId!,
-            cursor_count: cursorRows.length,
-          });
-          this.captureException(error as Error, {
-            sync_update: "batch cursor advance",
-            cursor_count: cursorRows.length,
-          });
+          // Contention with a concurrent write-path transaction is expected and
+          // self-healing (next alarm re-advances) — log it but don't report it as
+          // a bug. Anything else is a genuine fault worth capturing.
+          if (isLockContentionError(error)) {
+            logger.warn(
+              "Cursor advance contended on twist_instance_sync lock; retrying next alarm",
+              {
+                twist_instance_id: twistInstanceId!,
+                cursor_count: cursorRows.length,
+                pg_code: (error as { code?: string })?.code,
+              }
+            );
+          } else {
+            logger.error("Failed to advance twist_instance_sync cursors", error as Error, {
+              twist_instance_id: twistInstanceId!,
+              cursor_count: cursorRows.length,
+            });
+            this.captureException(error as Error, {
+              sync_update: "batch cursor advance",
+              cursor_count: cursorRows.length,
+            });
+          }
         }
       }
 

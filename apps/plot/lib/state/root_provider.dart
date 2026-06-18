@@ -18,6 +18,7 @@ import 'package:plot/state/move_recency.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/onboarding.dart';
+import 'package:plot/state/post_auth_navigation_gate.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/util/theme_color.dart';
@@ -57,6 +58,12 @@ class RootProviderState extends State<RootProvider> {
   StreamSubscription<void>? _reAuthSubscription;
   bool _hasNavigatedToCliUrl = false;
   bool _routerInitialized = false;
+
+  /// Gates the post-auth jump to the default priority so it fires only on a
+  /// genuine re-sign-in — never on cold start / web refresh, where it would
+  /// clobber the router's already-resolved deep link. See
+  /// [PostAuthNavigationGate].
+  final PostAuthNavigationGate _postAuthNav = PostAuthNavigationGate();
   NotificationTapTarget? _pendingNotificationTarget;
 
   @override
@@ -172,6 +179,11 @@ class RootProviderState extends State<RootProvider> {
 
           switch (state) {
             case UserReady _:
+              // Decide BEFORE the async setup whether this ready is a
+              // re-sign-in (came back from signed-out) so a concurrent
+              // sign-out during setup can't change the answer.
+              final navigateToDefault =
+                  _postAuthNav.shouldNavigateToDefaultOnReady();
               try {
                 final onboardingBloc = context.read<OnboardingBloc>();
                 // Each .start() awaits its first Drift stream emission and they
@@ -199,10 +211,13 @@ class RootProviderState extends State<RootProvider> {
                 };
                 if (context.mounted) _setupReAuthListener(context);
 
-                // Navigate to main app after re-sign-in. On first startup
-                // _routerInitialized is still false (router not yet built),
-                // so the router's own initial navigation handles it.
-                if (_routerInitialized && context.mounted) {
+                // On a re-sign-in (user signed out and back in while the app
+                // was running) jump to the default priority. NOT on cold start
+                // / web refresh: there the router has already resolved the real
+                // browser URL (a deep link to a focus or thread) and clobbering
+                // it bounces the user to their Inbox. See
+                // [PostAuthNavigationGate].
+                if (navigateToDefault && context.mounted) {
                   final priorityId = nowBloc.loadedState.defaultPriority.id;
                   router.replaceAll([
                     PriorityRoute(
@@ -246,6 +261,9 @@ class RootProviderState extends State<RootProvider> {
               }
               break;
             case UserSignedOut _:
+              // Latch the sign-out so the next UserReady is recognised as a
+              // re-sign-in (and navigates to the default priority).
+              _postAuthNav.onSignedOut();
               await NotificationService.instance.stop();
               _teardownNowBlocListener();
               _reAuthSubscription?.cancel();

@@ -117,6 +117,36 @@ export function isPoolExhaustedError(error: unknown): boolean {
   return msg.includes("open slot in the pool");
 }
 
+/**
+ * Row-lock contention surfacing as a canceled statement. Two pg error codes:
+ *
+ *   - 55P03 (lock_not_available): the statement set a `lock_timeout` and gave
+ *     up waiting for a row lock. This is the *intended* fast-fail for the
+ *     TwistSync cursor advance (see twist-sync.ts), which shares its
+ *     twist_instance_sync PK rows with the high-frequency sync_twist_for_*
+ *     write-path triggers.
+ *   - 57014 (query_canceled): the statement hit `statement_timeout`. For a
+ *     write to the tiny (sub-MB, ~800-row) twist_instance_sync table there is
+ *     no computational path to 30s, so this can only mean the UPSERT blocked
+ *     on a row lock held by a concurrent writer. This is how the contention
+ *     historically surfaced as a captured exception (PostHog 019ed540).
+ *
+ * Deadlocks (40P01) are deliberately excluded — Postgres rolls the victim back
+ * and `retryOnTxnConflict` handles those; they are a different failure mode.
+ *
+ * Callers use this to treat contention on an idempotent, retried-next-cycle
+ * write as expected rather than reporting it as a bug.
+ */
+export function isLockContentionError(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  if (code === "55P03" || code === "57014") return true;
+  const msg = ((error as Error)?.message ?? "").toLowerCase();
+  return (
+    msg.includes("canceling statement due to lock timeout") ||
+    msg.includes("canceling statement due to statement timeout")
+  );
+}
+
 // Bounds for the jittered backoff before retrying a Hyperdrive pool-exhaustion
 // error. A few hundred ms covers the sub-second bursts the retry can salvage;
 // genuinely sustained over-capacity needs more Hyperdrive connections, not a

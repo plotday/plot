@@ -4,6 +4,7 @@ import {
   withUserDb,
   isTransientDbError,
   isPoolExhaustedError,
+  isLockContentionError,
   transientRetryDelayMs,
 } from "./db";
 
@@ -145,6 +146,60 @@ describe("isPoolExhaustedError", () => {
     expect(isPoolExhaustedError(undefined)).toBe(false);
     expect(isPoolExhaustedError(null)).toBe(false);
     expect(isPoolExhaustedError({})).toBe(false);
+  });
+});
+
+describe("isLockContentionError", () => {
+  it("matches lock_timeout cancellation (55P03)", () => {
+    // Raised when a statement gives up after `lock_timeout` waiting for a row
+    // lock. The TwistSync cursor advance sets a short lock_timeout so it bails
+    // fast instead of pinning a Hyperdrive slot for the full 30s.
+    expect(
+      isLockContentionError(
+        pgError("canceling statement due to lock timeout", "55P03")
+      )
+    ).toBe(true);
+  });
+
+  it("matches statement_timeout cancellation (57014)", () => {
+    // The historical surfacing of this contention (PostHog 019ed540): the tiny
+    // twist_instance_sync UPSERT can only reach the 30s statement_timeout by
+    // blocking on a row lock, so 57014 here means contention, not a slow query.
+    expect(
+      isLockContentionError(
+        pgError("canceling statement due to statement timeout", "57014")
+      )
+    ).toBe(true);
+  });
+
+  it("matches by message when the pg code is absent", () => {
+    expect(
+      isLockContentionError(new Error("canceling statement due to lock timeout"))
+    ).toBe(true);
+    expect(
+      isLockContentionError(
+        new Error("canceling statement due to statement timeout")
+      )
+    ).toBe(true);
+  });
+
+  it("does not match a deadlock (40P01) — that is a real conflict, retried elsewhere", () => {
+    expect(isLockContentionError(pgError("deadlock detected", "40P01"))).toBe(
+      false
+    );
+  });
+
+  it("does not match unrelated errors", () => {
+    expect(isLockContentionError(pgError("duplicate key value", "23505"))).toBe(
+      false
+    );
+    expect(isLockContentionError(new Error("connection terminated"))).toBe(false);
+  });
+
+  it("is safe for null/undefined/non-Error inputs", () => {
+    expect(isLockContentionError(undefined)).toBe(false);
+    expect(isLockContentionError(null)).toBe(false);
+    expect(isLockContentionError({})).toBe(false);
   });
 });
 
