@@ -17,7 +17,7 @@
     "kysely": "^0.29.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260611.1",
+    "@cloudflare/workers-types": "^4.20260617.1",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "vitest": "^3.0.5"

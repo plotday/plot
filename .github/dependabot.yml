@@ -8,6 +8,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 3
+    ignore:
+      # 0.16+ targets vitest 4 (drops the `./config` export and requires
+      # vitest@^4.1.0). The monorepo is on vitest 3, so pin to the 0.8.x line
+      # until we migrate the test stack to vitest 4. Dependabot groups 0.x
+      # minor bumps as "minor", so without this it keeps reopening a broken PR.
+      - dependency-name: "@cloudflare/vitest-pool-workers"
+        versions: [">=0.9.0"]
     groups:
       npm-minor-and-patch:
         update-types:
