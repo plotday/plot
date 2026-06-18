@@ -445,12 +445,15 @@ class OnboardingOverlay extends StatelessWidget {
   }
 }
 
-/// Full-screen step layer. Cross-fades the per-step content (X dismiss +
-/// title/body/illustration) but keeps the progress pager mounted across
-/// step swaps so it doesn't fade in and out — the active dot just slides
-/// to its new position via [OnboardingProgress]'s existing
-/// [AnimatedContainer]. Owns the `_committing` flag because the pager's
-/// Next button (now external to the content) drives [FullScreenStep.onBeforeNext].
+/// Full-screen step layer. Cross-fades the per-step content
+/// (title/body/illustration) but keeps the X dismiss and progress pager
+/// mounted across step swaps so they don't fade in and out — the active dot
+/// just slides to its new position via [OnboardingProgress]'s existing
+/// [AnimatedContainer]. The X and pager scroll with the content in normal
+/// flow rather than being pinned to the viewport, so the X never overlaps
+/// content as the page scrolls. Owns the `_committing` flag because the
+/// pager's Next button (external to the content) drives
+/// [FullScreenStep.onBeforeNext].
 class _FullScreenLayer extends StatefulWidget {
   const _FullScreenLayer({
     required this.step,
@@ -540,120 +543,118 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
 
   @override
   Widget build(BuildContext context) {
-    // Single outer scroll containing both the per-step content (in an
-    // AnimatedSwitcher) and the pager. The pager sits directly below the
-    // content in normal flow — it scrolls with the content rather than
-    // being pinned to the viewport. When content fits, the whole group
-    // (content + pager) centers vertically; when it doesn't, the user
-    // scrolls down to reach the pager.
+    // Single outer scroll containing the X dismiss, the per-step content (in
+    // an AnimatedSwitcher) and the pager — all in normal flow. The X scrolls
+    // with the page rather than being pinned to the viewport, so it never
+    // overlaps content as the user scrolls. When content fits, the whole
+    // group centers vertically between the X bar and the pager; when it
+    // doesn't, the user scrolls down to reach the pager.
     //
-    // The pager is OUTSIDE the AnimatedSwitcher so it persists across
-    // step swaps (no fade on the pager itself). Same goes for the X
-    // dismiss button, which lives in the outer Stack.
+    // The X and pager are OUTSIDE the AnimatedSwitcher so they persist across
+    // step swaps (no fade on them).
     return SafeArea(
-      child: Stack(
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // Vertical space the pager block occupies in normal flow:
-              // 32px gap above the pager + ~40px pager intrinsic
-              // height + 24px breathing room below. The page content
-              // is given a min-height of (viewport - this) so when
-              // it's short it fills exactly the area above the pager
-              // (centering within it), and when tall it grows past
-              // the min and the whole column scrolls naturally.
-              const pagerBlockHeight = 96.0;
-              final contentMinHeight = constraints.maxHeight - pagerBlockHeight;
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: contentMinHeight > 0 ? contentMinHeight : 0,
-                      ),
-                      child: Padding(
-                        // X button clearance (40px button at top:16).
-                        padding: const EdgeInsets.only(top: 56),
-                        child: Center(
-                          // Per-step content cross-fades. Same
-                          // asymmetric curves as the highlight branch.
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 400),
-                            switchOutCurve: const Interval(
-                              0.5,
-                              1.0,
-                              curve: Curves.easeIn,
-                            ),
-                            switchInCurve: const Interval(
-                              0.4,
-                              1.0,
-                              curve: Curves.easeOut,
-                            ),
-                            // Scope exposes `_handleNext` to the step content so
-                            // interactive content (the role picker) can advance
-                            // on selection. Keyed by step so the switcher still
-                            // cross-fades between steps.
-                            child: OnboardingStepScope(
-                              key: ValueKey(widget.currentStep),
-                              advance: _handleNext,
-                              child: OnboardingFullScreen(step: widget.step),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Vertical space reserved outside the centered content: the top bar
+          // holding the X (56 = 40px button at top:16) plus the pager block
+          // (32px gap above + ~40px pager + 24px below). Content gets a
+          // min-height of (viewport - these) so when it's short it centers in
+          // the area between them, and when tall it grows past the min and the
+          // whole column scrolls naturally.
+          const topBarHeight = 56.0;
+          const pagerBlockHeight = 96.0;
+          final contentMinHeight =
+              constraints.maxHeight - topBarHeight - pagerBlockHeight;
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Top bar with the × dismiss, right-aligned. The space is
+                // reserved (as an empty bar) even on non-dismissible steps
+                // (welcome + role selection) so content sits at the same
+                // height regardless. Hiding the X there also stops a brand-new
+                // user from closing onboarding before choosing a role.
+                SizedBox(
+                  height: topBarHeight,
+                  child: widget.step.dismissible
+                      ? Align(
+                          alignment: Alignment.topRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 16, right: 16),
+                            child: OnboardingHoverable(
+                              onTap: widget.onDismiss,
+                              builder: (context, hovered) => AnimatedContainer(
+                                duration: const Duration(milliseconds: 120),
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: hovered
+                                      ? const Color(0x26FFFFFF)
+                                      : const Color(0x00FFFFFF),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '×',
+                                    style: TextStyle(
+                                      color: hovered
+                                          ? const Color(0xFFFFFFFF)
+                                          : const Color(0xB3FFFFFF),
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w300,
+                                      decoration: TextDecoration.none,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    // Persistent pager — single instance across all
-                    // full-screen steps. Label flip ("Next" →
-                    // "Finish") is acceptable as a one-frame change.
-                    // Rebuilds on the step's advanceListenable (if any) so a
-                    // required-field step can disable Next live as the user
-                    // types; non-null onNext means enabled.
-                    _buildPager(),
-                    const SizedBox(height: 24),
-                  ],
+                        )
+                      : null,
                 ),
-              );
-            },
-          ),
-          // Persistent × dismiss — stays in place while the page scrolls and
-          // across step swaps. Hidden on non-dismissible steps (welcome + role
-          // selection) so a new user can't close onboarding before choosing a
-          // role.
-          if (widget.step.dismissible)
-            Positioned(
-              top: 16,
-              right: 16,
-              child: OnboardingHoverable(
-                onTap: widget.onDismiss,
-                builder: (context, hovered) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 120),
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: hovered
-                        ? const Color(0x26FFFFFF)
-                        : const Color(0x00FFFFFF),
-                    shape: BoxShape.circle,
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: contentMinHeight > 0 ? contentMinHeight : 0,
                   ),
                   child: Center(
-                    child: Text(
-                      '×',
-                      style: TextStyle(
-                        color: hovered
-                            ? const Color(0xFFFFFFFF)
-                            : const Color(0xB3FFFFFF),
-                        fontSize: 28,
-                        fontWeight: FontWeight.w300,
-                        decoration: TextDecoration.none,
+                    // Per-step content cross-fades. Same asymmetric curves as
+                    // the highlight branch.
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 400),
+                      switchOutCurve: const Interval(
+                        0.5,
+                        1.0,
+                        curve: Curves.easeIn,
+                      ),
+                      switchInCurve: const Interval(
+                        0.4,
+                        1.0,
+                        curve: Curves.easeOut,
+                      ),
+                      // Scope exposes `_handleNext` to the step content so
+                      // interactive content (the role picker) can advance
+                      // on selection. Keyed by step so the switcher still
+                      // cross-fades between steps.
+                      child: OnboardingStepScope(
+                        key: ValueKey(widget.currentStep),
+                        advance: _handleNext,
+                        child: OnboardingFullScreen(step: widget.step),
                       ),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 32),
+                // Persistent pager — single instance across all full-screen
+                // steps. Label flip ("Next" → "Finish") is acceptable as a
+                // one-frame change. Rebuilds on the step's advanceListenable
+                // (if any) so a required-field step can disable Next live as
+                // the user types; non-null onNext means enabled.
+                _buildPager(),
+                const SizedBox(height: 24),
+              ],
             ),
-        ],
+          );
+        },
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
@@ -10,8 +11,9 @@ import 'package:plot/widget/spinner.dart';
 
 /// Footer shown below search results: a spinner while a remote search is in
 /// flight, an archived-matches hint button, or an offline note. Shared between
-/// the activity feed ([PriorityPage]) and the global Search tab. Requires an
-/// ancestor [PriorityBloc] for [PriorityBloc.toggleShowArchived].
+/// the activity feed ([PriorityPage]) and the global Search tab. The
+/// archived-matches button flips the global archived-visibility flag on
+/// [LocalPreferencesBloc], which [PriorityBloc] reacts to.
 class SearchFooter extends StatelessWidget {
   const SearchFooter({required this.state, super.key});
 
@@ -42,7 +44,8 @@ class SearchFooter extends StatelessWidget {
           alignment: Alignment.center,
           child: FButton(
             variant: FButtonVariant.ghost,
-            onPress: () => context.read<PriorityBloc>().toggleShowArchived(),
+            onPress: () =>
+                context.read<LocalPreferencesBloc>().toggleShowAllPriorities(),
             child: const Text('View archived items matching this search'),
           ),
         ),

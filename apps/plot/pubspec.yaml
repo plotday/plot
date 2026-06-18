@@ -273,7 +273,7 @@ msix_config:
   display_name: "Plot: All your work, organized"
   publisher_display_name: Plot Technologies Inc.
   identity_name: PlotTechnologiesInc.Plot-TractiononPriorities
-  msix_version: 1.4.0+354
+  msix_version: 1.5.0+359
   logo_path: assets/plot-windows-512x512.png
   icons_background_color: "#01845e"
   protocol_activation: plotday

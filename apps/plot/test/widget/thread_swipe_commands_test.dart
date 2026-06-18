@@ -36,66 +36,63 @@ void main() {
         finishOnBeforeRun: null,
       );
 
+  // The model is **right = act on it (Done / engage), left = Move / menu**.
+  // The left slots (Move short, menu long) are identical in every state.
+  void expectLeftIsMoveThenMenu(Thread thread) {
+    expect(resolve(thread).leftShort, isA<MoveThreadToPriority>());
+    expect(resolve(thread).leftLong, isA<ShowThreadCommands>());
+  }
+
   group('new update (not a to-do, unread)', () {
     final thread = Thread(priority: priority, unread: true);
 
-    test('left short offers To do', () {
-      expect(resolve(thread).leftShort, isA<ToggleThreadActive>());
-    });
-    test('left long offers Move', () {
-      expect(resolve(thread).leftLong, isA<MoveThreadToPriority>());
-    });
     test('right short finishes (marks read, bumps to Done)', () {
       expect(resolve(thread).rightShort, isA<FinishThread>());
     });
-    test('right long opens the menu', () {
-      expect(resolve(thread).rightLong, isA<ShowThreadCommands>());
+    test('right long offers To do (not yet a to-do)', () {
+      expect(resolve(thread).rightLong, isA<ToggleThreadActive>());
     });
-  });
-
-  group('seen / done (not a to-do, read)', () {
-    final thread = Thread(priority: priority, readAt: DateTime(2026, 1, 1));
-
-    test('left short re-activates with To do', () {
-      expect(resolve(thread).leftShort, isA<ToggleThreadActive>());
+    test('left short offers Move', () {
+      expect(resolve(thread).leftShort, isA<MoveThreadToPriority>());
     });
-    test('left long offers Move', () {
-      expect(resolve(thread).leftLong, isA<MoveThreadToPriority>());
-    });
-    test('right short opens the menu (nothing to finish)', () {
-      expect(resolve(thread).rightShort, isA<ShowThreadCommands>());
-    });
-    test('right long is empty so the menu never shows twice', () {
-      expect(resolve(thread).rightLong, isNull);
+    test('left long opens the menu', () {
+      expect(resolve(thread).leftLong, isA<ShowThreadCommands>());
     });
   });
 
   group('doing (a to-do)', () {
     final thread = Thread(priority: priority, active: true);
 
-    test('left short defers with Do later', () {
-      expect(resolve(thread).leftShort, isA<PickScheduleThread>());
-    });
-    test('left long offers Move', () {
-      expect(resolve(thread).leftLong, isA<MoveThreadToPriority>());
-    });
     test('right short finishes', () {
       expect(resolve(thread).rightShort, isA<FinishThread>());
     });
-    test('right long opens the menu', () {
-      expect(resolve(thread).rightLong, isA<ShowThreadCommands>());
+    test('right long defers with Do later (already a to-do)', () {
+      expect(resolve(thread).rightLong, isA<PickScheduleThread>());
     });
+    test('left is Move then menu', () => expectLeftIsMoveThenMenu(thread));
   });
 
   group('a to-do that is also unread', () {
     final thread = Thread(priority: priority, active: true, unread: true);
 
-    test('left short still defers with Do later', () {
-      expect(resolve(thread).leftShort, isA<PickScheduleThread>());
-    });
-    test('right short finishes (not the mark-read menu branch)', () {
+    test('right short finishes (not the engage branch)', () {
       expect(resolve(thread).rightShort, isA<FinishThread>());
     });
+    test('right long still defers with Do later', () {
+      expect(resolve(thread).rightLong, isA<PickScheduleThread>());
+    });
+  });
+
+  group('the Done list (read, not a to-do)', () {
+    final thread = Thread(priority: priority, readAt: DateTime(2026, 1, 1));
+
+    test('right short re-activates with To do', () {
+      expect(resolve(thread).rightShort, isA<ToggleThreadActive>());
+    });
+    test('right long defers with Do later', () {
+      expect(resolve(thread).rightLong, isA<PickScheduleThread>());
+    });
+    test('left is Move then menu', () => expectLeftIsMoveThenMenu(thread));
   });
 
   group('outside its priority', () {
@@ -123,7 +120,7 @@ void main() {
         expect(
           cmds.rightShort.runtimeType,
           isNot(cmds.rightLong.runtimeType),
-          reason: 'the menu would show at both short and long thresholds',
+          reason: 'the same command would show at both short and long zones',
         );
       }
     }

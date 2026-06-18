@@ -1371,7 +1371,7 @@ jobs:
         if: steps.ms-store.outputs.enabled == 'true'
         uses: microsoft/setup-msstore-cli@v1.2
 
-      - name: Publish MSIX to Microsoft Store
+      - name: Configure Microsoft Store CLI
         if: steps.ms-store.outputs.enabled == 'true'
         shell: bash
         env:
@@ -1379,26 +1379,88 @@ jobs:
           SELLER_ID: ${{ secrets.SELLER_ID }}
           AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
           AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
-          SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
         run: |
-          cd apps/plot/build/windows/x64/runner/Release
-          MSIX_FILE="Plot-${{ needs.prepare-release.outputs.release_version }}.msix"
-
-          # Authenticate msstore with the Partner Center Entra app credentials.
+          # reconfigure persists credentials to disk for the rest of the job,
+          # so the publish/metadata/submit steps below need no re-auth.
           msstore reconfigure \
             --tenantId "$AZURE_AD_TENANT_ID" \
             --sellerId "$SELLER_ID" \
             --clientId "$AZURE_AD_APPLICATION_CLIENT_ID" \
             --clientSecret "$AZURE_AD_APPLICATION_SECRET"
 
-          # Product 9PKTCSN8SNZF = Plot in Partner Center (same ID linked in the
-          # build summary below). Default leaves the submission as a draft;
-          # submit_for_review=true commits it to certification.
-          if [ "$SUBMIT_FOR_REVIEW" = "true" ]; then
-            msstore publish "$MSIX_FILE" -id 9PKTCSN8SNZF
-          else
-            msstore publish "$MSIX_FILE" -id 9PKTCSN8SNZF --noCommit
+      - name: Publish MSIX to Microsoft Store (draft)
+        if: steps.ms-store.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          cd apps/plot/build/windows/x64/runner/Release
+          MSIX_FILE="Plot-${{ needs.prepare-release.outputs.release_version }}.msix"
+
+          # Product 9PKTCSN8SNZF = Plot in Partner Center. Always upload as a
+          # draft (--noCommit) so the metadata step can patch the same pending
+          # submission; the "Submit ... for review" step commits package +
+          # metadata together when submit_for_review is set.
+          msstore publish "$MSIX_FILE" -id 9PKTCSN8SNZF --noCommit
+
+      # Best-effort: patch the committed Windows listing text onto the pending
+      # draft submission. continue-on-error so a locked listing can't fail an
+      # otherwise-successful binary release (matches the iOS/Android/macOS
+      # metadata steps). updateMetadata is a FULL replace for packaged apps, so
+      # we fetch the whole submission and overwrite only the text fields —
+      # screenshots and every other field pass through untouched.
+      - name: Upload metadata to Microsoft Store
+        id: metadata
+        if: steps.ms-store.outputs.enabled == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/apps/plot/windows/store/en-US"
+
+          # Fetch the pending draft as JSON; strip any leading Spectre.Console
+          # status line by taking from the first '{' onward.
+          RAW="$(msstore submission get 9PKTCSN8SNZF)"
+          SUB="$(printf '%s' "$RAW" | awk '/^{/{f=1} f')"
+          if [ -z "$SUB" ]; then
+            echo "::warning::Could not read submission JSON — skipping metadata."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Pick the English listing key (e.g. en-us); fall back to the first.
+          LANG_KEY="$(printf '%s' "$SUB" | jq -r '
+            (.listings // {}) as $l
+            | ([$l | keys[] | select(test("^en";"i"))][0]) // ($l | keys[0]) // empty')"
+          if [ -z "$LANG_KEY" ]; then
+            echo "::warning::No listing language on the submission — skipping metadata."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Patching listing '$LANG_KEY'"
+
+          PATCHED="$(printf '%s' "$SUB" | jq \
+            --arg k "$LANG_KEY" \
+            --rawfile desc     "$SRC/description.txt" \
+            --rawfile short    "$SRC/short_description.txt" \
+            --rawfile features "$SRC/features.txt" \
+            --rawfile terms    "$SRC/search_terms.txt" '
+            .listings[$k].baseListing.description      = ($desc  | rtrimstr("\n"))
+            | .listings[$k].baseListing.shortDescription = ($short | rtrimstr("\n"))
+            | .listings[$k].baseListing.features         = ($features | split("\n") | map(select(. != "")))
+            | .listings[$k].baseListing.keywords         = ($terms    | split("\n") | map(select(. != "")))
+          ')"
+
+          msstore submission updateMetadata 9PKTCSN8SNZF "$PATCHED"
+          echo "Metadata pushed for listing '$LANG_KEY'."
+
+      - name: Submit Microsoft Store submission for review
+        if: steps.ms-store.outputs.enabled == 'true' && inputs.submit_for_review
+        continue-on-error: true
+        shell: bash
+        run: |
+          # Commits the pending submission (package + patched metadata) to
+          # certification. Skipped when submit_for_review is false, leaving the
+          # draft in Partner Center.
+          msstore submission publish 9PKTCSN8SNZF
 
       - name: Tag store submission
         shell: bash
@@ -1427,6 +1489,7 @@ jobs:
             else
               echo "- 📝 Uploaded as draft — submit it in Partner Center"
             fi
+            echo "- Listing metadata: ${{ steps.metadata.outcome == 'success' && steps.metadata.outputs.skipped != 'true' && 'pushed from apps/plot/windows/store/en-US' || 'not pushed — see the Upload metadata step (skipped if credentials absent)' }}"
             echo ""
             echo "### Admin"
             echo "- [Microsoft Partner Center](https://partner.microsoft.com/en-us/dashboard/products/9PKTCSN8SNZF/)"

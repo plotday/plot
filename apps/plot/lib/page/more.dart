@@ -47,7 +47,12 @@ class _MorePageState extends State<MorePage> {
   Widget build(BuildContext context) {
     // Tab root: no header (no back affordance — you leave via the bottom bar)
     // and bottom padding for the overlaid nav, matching [PrioritiesPage].
-    return Scaffold(
+    //
+    // Wrapped in a [SecondaryTabBackScope] so the single-panel back gesture
+    // out of the More tab returns to the previous tab instead of exiting the
+    // app.
+    return SecondaryTabBackScope(
+      child: Scaffold(
       header: null,
       childPad: false,
       scrollable: false,
@@ -136,6 +141,7 @@ class _MorePageState extends State<MorePage> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

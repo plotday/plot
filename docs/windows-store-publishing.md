@@ -61,3 +61,36 @@ to GitHub, and the next Windows release uploads to the Store automatically.
   resolved — commit or delete it in Partner Center (or `msstore submission
   delete <productId>`).
 - The `msstore` CLI is in preview; the action is pinned to `@v1.2`.
+
+## Listing metadata
+
+On every `release-windows` run with Store credentials configured, the workflow
+pushes the listing **text** to the pending submission, then commits it together
+with the package when `submit_for_review` is checked.
+
+**Source files** (`apps/plot/windows/store/en-US/`, one field per file):
+
+| File | Store field |
+| --- | --- |
+| `description.txt` | Description (≤ 10,000 chars) |
+| `short_description.txt` | Short description (one line) |
+| `features.txt` | Product features (one per line, ≤ 20, ≤ 200 chars) |
+| `search_terms.txt` | Search terms (one per line, ≤ 7, ≤ 30 chars) |
+
+**How it works:** the workflow runs `msstore submission get`, patches only those
+four fields with `jq`, and calls `msstore submission updateMetadata`. For
+packaged (MSIX) apps `updateMetadata` is a *full replace*, so the workflow
+fetches the whole submission and overwrites only the text — **screenshots and
+every other field are preserved**.
+
+**Still manual in Partner Center:**
+
+- **Screenshots / images** — the `updateMetadata` path cannot upload image bytes
+  (that lives only in the `msstore publish <project>` project-init flow, which
+  this pipeline does not use). Upload screenshots once in Partner Center; the
+  workflow leaves them untouched on every run.
+- **Release notes** and the **product / reserved name** — out of scope.
+
+**Precondition:** app updates via the CLI are supported for **free** products
+only; the CLI deletes the submission and errors on a paid product. Plot's listing
+is free.

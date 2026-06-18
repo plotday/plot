@@ -433,9 +433,10 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     }
   }
 
-  // Swipe actions. Left = engage (To do / Do later), Move on the long zone;
-  // right = clear it (Done / mark read), the menu otherwise. The full
-  // per-state mapping lives in [resolveThreadSwipeCommands].
+  // Swipe actions. Right = act on it (Done short, engage long); left = file it
+  // (Move short, menu long). The full per-state mapping — including the Done
+  // list, where right re-engages instead of finishing — lives in
+  // [resolveThreadSwipeCommands].
   ThreadSwipeCommands _swipeCommands() => resolveThreadSwipeCommands(
     activity,
     isOutsidePriority: widget.isOutsidePriority,

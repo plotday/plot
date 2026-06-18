@@ -1420,6 +1420,29 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
+  /// Runs the current compose step's "go back" action, mirroring the mapping
+  /// in [_publishHeaderBack] so the system back gesture (PopScope) and the
+  /// header back chevron behave identically:
+  ///
+  ///   * compose (step 3) → [_backFromCompose]
+  ///   * connection (step 2) → [_returnToSectionsStep]
+  ///   * sections (step 1) → no step to go back to
+  ///
+  /// Returns true when a step-back was performed; false on step 1 (the caller
+  /// then leaves the compose page entirely).
+  bool _composeStepBack() {
+    switch (_step) {
+      case _ComposeStep.sections:
+        return false;
+      case _ComposeStep.connection:
+        _returnToSectionsStep();
+        return true;
+      case _ComposeStep.compose:
+        _backFromCompose();
+        return true;
+    }
+  }
+
   /// Compose-step "go back": to step 2 when a recipient is chosen, else step 1.
   void _backFromCompose() {
     if (_selectedRecipient != null) {
@@ -1953,6 +1976,21 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
+  /// Horizontal page inset for the single-panel pickers (steps 1 & 2).
+  ///
+  /// Every other single-panel tab (focus list, agenda, search) renders its list
+  /// edge-to-edge with leading content sitting at `spacing.lg` from the screen
+  /// edge. The picker's rows and section headers already carry a `spacing.sm`
+  /// internal inset (PillGrid's row chrome + header indent), so we subtract that
+  /// from `spacing.lg` here. That lands the picker's content at the same
+  /// `spacing.lg` margin as the other tabs, rather than stacking a full
+  /// `contentPaddingH` (`spacing.xl`) gutter on top of the internal inset —
+  /// which read as noticeably more padded than every other page.
+  double _singlePanelPickerInset(BuildContext context) {
+    final spacing = context.theme.spacing;
+    return spacing.lg - spacing.sm;
+  }
+
   /// Step 1: the inline sections picker. Picking a people pill advances to the
   /// connection step (see [_pickRecipient]); picking a twist/channel/focus pill
   /// skips straight to compose (see [_applyDirectTarget]). Returning here from
@@ -2003,8 +2041,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       // bar (single-panel keeps the bar on /new). Returns 0 in multi-panel.
       return Padding(
         padding: EdgeInsets.only(
-          left: context.contentPaddingH,
-          right: context.contentPaddingH,
+          left: _singlePanelPickerInset(context),
+          right: _singlePanelPickerInset(context),
           bottom: BottomNavInset.of(context),
         ),
         child: picker,
@@ -2053,8 +2091,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       // /new). Mirrors [_buildTargetPickerStep].
       return Padding(
         padding: EdgeInsets.only(
-          left: context.contentPaddingH,
-          right: context.contentPaddingH,
+          left: _singlePanelPickerInset(context),
+          right: _singlePanelPickerInset(context),
           bottom: BottomNavInset.of(context),
         ),
         child: view,
@@ -2177,6 +2215,12 @@ class NewThreadPageState extends State<NewThreadPage> {
                     context,
                   );
                   if (provider != null && provider.tryCloseSearch()) return;
+                  // Step back through the compose flow before leaving it, so
+                  // the back gesture returns to the previous compose step
+                  // (compose → connection → sections) instead of jumping
+                  // straight out to the thread list. Only a back from step 1
+                  // (sections) falls through to exit the compose page.
+                  if (_composeStepBack()) return;
                   if (!context.isMultiPanel) {
                     context.run(ChangeCurrentThread(null));
                   }

@@ -30,6 +30,7 @@ export 'package:plot/state/agenda_model.dart'
     show AgendaItem, AgendaHeaderItem, AgendaThreadItem;
 import 'package:plot/util/async.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/router.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
@@ -257,6 +258,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   PriorityBloc({
     required Priority priority,
     required NowBloc nowBloc,
+    required LocalPreferencesBloc localPreferences,
     Thread? thread,
     bool everything = false,
   }) : _subscriptions = [],
@@ -275,12 +277,26 @@ class PriorityBloc extends Cubit<PriorityState> {
            draftFallbackPriority: priority,
            thread: thread,
            everything: everything,
+           // Seed from the single persisted archived-visibility flag so a
+           // freshly opened focus honours a "Show archived items" toggle the
+           // user already made elsewhere.
+           showArchived: localPreferences.state.showAllPriorities,
          ),
        ) {
     _allInstances.add(this);
     _nowBloc = nowBloc;
     _loadPriority();
     _restartActiveTabSubscription();
+
+    // React to the global archived-visibility flag so toggling it (via the
+    // unified "Show archived items" command) flips this focus's archived
+    // threads & notes too, regardless of where the toggle was triggered.
+    _showArchivedFromPrefs = localPreferences.state.showAllPriorities;
+    _localPreferencesSubscription = localPreferences.stream.listen((prefs) {
+      if (prefs.showAllPriorities == _showArchivedFromPrefs) return;
+      _showArchivedFromPrefs = prefs.showAllPriorities;
+      _applyShowArchived(prefs.showAllPriorities);
+    });
 
     // Seed pausedFocus from current NowBloc state immediately so the
     // first agenda build already has the sliding block if paused.
@@ -390,10 +406,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     ));
   }
 
-  void toggleShowArchived() {
-    final newShowArchived = !state.showArchived;
-    log.info('Toggling showArchived to $newShowArchived');
-    emit(state.copyWith(showArchived: newShowArchived));
+  /// Applies a new archived-visibility value, driven by the global
+  /// `showAllPriorities` flag on [LocalPreferencesBloc]. No-ops when the value
+  /// is unchanged so unrelated preference emissions don't trigger reloads.
+  void _applyShowArchived(bool showArchived) {
+    if (state.showArchived == showArchived) return;
+    log.info('Applying showArchived = $showArchived');
+    emit(state.copyWith(showArchived: showArchived));
 
     // Reload agenda items with new archived filter
     _loadPriority();
@@ -1009,7 +1028,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _subscribeAllTabHead() {
     final isSearching = state.search.isNotEmpty;
     final priorityId = _feedScope();
-    final archived = state.showArchived;
+    // "Show archived items" is a superset toggle: when on, show active AND
+    // archived (null = no archived filter); when off, active only.
+    final bool? archived = state.showArchived ? null : false;
     final filter = state.filter.isNotEmpty ? state.filter : null;
     final reactionFilter =
         state.reactionFilter.isNotEmpty ? state.reactionFilter : null;
@@ -1518,7 +1539,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       try {
         page = await Thread.fetchDonePage(
           priorityId: scopeId,
-          archived: state.showArchived,
+          archived: state.showArchived ? null : false,
           reactionFilter:
               state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           limit: _activityFeedLimit,
@@ -1599,7 +1620,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       try {
         page = await Thread.fetchAllTabPage(
           priorityId: scopeId,
-          archived: state.showArchived,
+          archived: state.showArchived ? null : false,
           filter: state.filter.isNotEmpty ? state.filter : null,
           reactionFilter:
               state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
@@ -2464,6 +2485,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     Time.setOnTimeChanged(null);
 
     _nowSubscription?.cancel();
+    _localPreferencesSubscription?.cancel();
     _fullResyncSubscription?.cancel();
     for (final subscription in _subscriptions) {
       subscription.cancel();
@@ -3910,7 +3932,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // [showArchived] gates which threads appear here, mirroring the
     // user's archived-view toggle.
     final eventsStream = Thread.watch(
-      archived: state.showArchived,
+      archived: state.showArchived ? null : false,
       order: ThreadOrder.sorted,
       includeUnscheduled: false,
       range: dateRange,
@@ -3935,7 +3957,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // existence query, but at present even calendar-heavy users land
     // in the low-hundreds range.
     final todosStream = Thread.watch(
-      archived: state.showArchived,
+      archived: state.showArchived ? null : false,
       order: ThreadOrder.sorted,
       todoOnly: true,
     ).startWith(_seedTodosResult);
@@ -4477,6 +4499,14 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Subscription to [NowBloc.stream] for [_pausedFocus] updates.
   StreamSubscription<NowState>? _nowSubscription;
 
+  /// Subscription to [LocalPreferencesBloc.stream] so the global
+  /// archived-visibility flag drives this focus's `showArchived`.
+  StreamSubscription<LocalPreferencesState>? _localPreferencesSubscription;
+
+  /// Last `showAllPriorities` value seen from [LocalPreferencesBloc], used to
+  /// ignore preference emissions that don't change archived visibility.
+  bool _showArchivedFromPrefs = false;
+
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<void>? _fullResyncSubscription;
   StreamSubscription<void>? _threadSubscription;
@@ -4601,6 +4631,9 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     // Everything) starts in the right feed mode. The priority page keeps
     // it in sync afterwards via setEverything.
     final nowBloc = context.read<NowBloc>();
+    // Capture before any await — used to seed the bloc's archived visibility
+    // and keep it reacting to the global flag.
+    final localPreferences = context.read<LocalPreferencesBloc>();
     final everything = nowBloc.everything;
     // Snapshot the switch generation at load-initiation. If a newer switch
     // arrives via didUpdateWidget while Priority.getOne is in flight,
@@ -4664,6 +4697,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         PriorityBloc(
           priority: priority,
           nowBloc: nowBloc,
+          localPreferences: localPreferences,
           everything: everything,
         ),
       );
@@ -4699,6 +4733,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
           PriorityBloc(
             priority: defaultPriority,
             nowBloc: nowBloc,
+            localPreferences: localPreferences,
             everything: everything,
           ),
           isFallback: true,

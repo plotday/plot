@@ -103,6 +103,11 @@ Future<void> run(List<String> args) async {
   // Must run before any Platform.instance access and before Window.init().
   if (kDebugMode && CliArgs.emulateWindows) {
     pb.Platform.init(override: pb.Platforms.windows);
+    // NOTE: we deliberately do NOT set debugDefaultTargetPlatformOverride here.
+    // It breaks the macOS-host PlatformMenuBar (its items are gated on
+    // defaultTargetPlatform, so a windows override yields an empty menu group
+    // and asserts). Windows shortcut *labels* are handled in shortcut.dart via
+    // CliArgs.emulateWindows instead, which doesn't disturb the host menu bar.
   }
   if (kDebugMode && CliArgs.enableDriverExtension) {
     DriverBinding.ensureInitialized();

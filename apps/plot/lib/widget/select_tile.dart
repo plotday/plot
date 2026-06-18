@@ -13,6 +13,7 @@ class SelectTile extends StatefulWidget {
     required this.label,
     required this.onSelect,
     this.value,
+    this.valueWidget,
     this.leading,
     this.placeholder,
     this.autofocus = false,
@@ -28,6 +29,12 @@ class SelectTile extends StatefulWidget {
 
   /// The current selected value to display.
   final String? value;
+
+  /// Optional rich replacement for the selected-value [Text]. When set (and a
+  /// value is selected) this widget is rendered in the value slot instead of
+  /// [value] — e.g. a label that carries its own colour. [value] is still used
+  /// for the empty/placeholder check, so provide both.
+  final Widget? valueWidget;
 
   /// Optional leading widget (e.g., a color dot).
   final Widget? leading;
@@ -107,6 +114,7 @@ class _SelectTileState extends State<SelectTile> {
   @override
   Widget build(BuildContext context) {
     final hasValue = widget.value != null && widget.value!.isNotEmpty;
+    final showValueWidget = hasValue && widget.valueWidget != null;
     final displayText = hasValue ? widget.value! : (widget.placeholder ?? '');
     final isInteractive = widget.enabled || widget.readonlyMessage != null;
     final isHighlighted =
@@ -147,16 +155,18 @@ class _SelectTileState extends State<SelectTile> {
                   SizedBox(width: context.theme.spacing.md),
                 ],
                 Expanded(
-                  child: Text(
-                    displayText,
-                    style: context.theme.typography.md.copyWith(
-                      color: isInteractive
-                          ? (hasValue
-                                ? context.theme.colors.foreground
-                                : context.theme.plotColors.muted)
-                          : context.theme.plotColors.muted,
-                    ),
-                  ),
+                  child: showValueWidget
+                      ? widget.valueWidget!
+                      : Text(
+                          displayText,
+                          style: context.theme.typography.md.copyWith(
+                            color: isInteractive
+                                ? (hasValue
+                                      ? context.theme.colors.foreground
+                                      : context.theme.plotColors.muted)
+                                : context.theme.plotColors.muted,
+                          ),
+                        ),
                 ),
                 Icon(
                   PlotIcon.verticalExpand,

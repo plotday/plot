@@ -4,6 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 import 'package:intl/intl.dart';
 
+import 'package:plot/style/button.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/step_controller.dart';
 import 'package:plot/style/spacing.dart';
@@ -101,7 +102,6 @@ class _DateInputState extends State<DateInput> {
 
     return Row(
       children: [
-        SizedBox(width: theme.spacing.md),
         // Double left chevron (back one week)
         _buildButton(
           icon: FontAwesomeIcons.chevronsLeft,
@@ -169,7 +169,6 @@ class _DateInputState extends State<DateInput> {
           onPressed: () => _navigateDate(7),
           theme: theme,
         ),
-        SizedBox(width: theme.spacing.md),
       ],
     );
   }
@@ -181,6 +180,7 @@ class _DateInputState extends State<DateInput> {
   }) {
     return FButton(
       variant: FButtonVariant.ghost,
+      style: stepperButtonStyleDelta(),
       onPress: onPressed,
       child: Icon(icon, size: theme.iconSizes.sm),
     );

@@ -44,11 +44,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
     final commands = [
       StaticCommandGroup(
         title: 'Navigation',
-        commands: [PageBackCommand()],
-      ),
-      StaticCommandGroup(
-        title: 'Focuses',
-        commands: [PickCurrentPriority(), AddFocus()],
+        commands: [PageBackCommand(), PickCurrentPriority(), AddFocus()],
       ),
       ...settingsCommandsFromState(
         prioritiesState,

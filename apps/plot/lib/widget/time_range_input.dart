@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/button.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/step_controller.dart';
 import 'package:plot/style/spacing.dart';
@@ -164,7 +165,6 @@ class _TimeRangeInputState extends State<TimeRangeInput>
 
     return Row(
       children: [
-        SizedBox(width: theme.spacing.md),
         // Double left chevron (shift range -1 hour or snap to 30-min)
         _buildButton(
           icon: FontAwesomeIcons.chevronsLeft,
@@ -398,7 +398,6 @@ class _TimeRangeInputState extends State<TimeRangeInput>
           onPressed: _shiftRight1Hour,
           theme: theme,
         ),
-        SizedBox(width: theme.spacing.md),
       ],
     );
   }
@@ -410,6 +409,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
   }) {
     return FButton(
       variant: FButtonVariant.ghost,
+      style: stepperButtonStyleDelta(),
       onPress: onPressed,
       child: Icon(icon, size: theme.iconSizes.sm),
     );

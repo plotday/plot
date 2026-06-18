@@ -25,12 +25,31 @@ EMU="${ANDROID_HOME:-$HOME/Library/Android/sdk}/emulator/emulator"
 
 # Boot the emulator if it isn't already online.
 if [ "$("$ADB" -s "$SERIAL" get-state 2>/dev/null)" != "device" ]; then
-  nohup "$EMU" -avd "$AVD" -port "$PORT" -no-snapshot-save -no-boot-anim >/dev/null 2>&1 &
+  # Override the AVD's configured RAM: the Plot debug APK is ~150MB, and a
+  # streamed install on a 2GB AVD (Galaxy_S25's default) OOM-kills the
+  # emulator's system_server mid-install ("Failure calling service package:
+  # Broken pipe"). Give it enough headroom. Tunable via SS_EMU_RAM.
+  # SS_EMU_EXTRA passes extra emulator flags (e.g. -no-window for a leaner
+  # headless capture; screencap reads the framebuffer, so no window is needed).
+  nohup "$EMU" -avd "$AVD" -port "$PORT" -no-snapshot-save -no-boot-anim \
+    -memory "${SS_EMU_RAM:-6144}" ${SS_EMU_EXTRA:-} >/dev/null 2>&1 &
   "$ADB" -s "$SERIAL" wait-for-device
   until [ "$("$ADB" -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
     sleep 2
   done
 fi
+
+# `sys.boot_completed` fires while the Google-Play system image is still bringing
+# up GMS/Play services, during which the package manager is unresponsive and a
+# `flutter run` install silently stalls (no "Installing" line, then SCENE_READY
+# times out). Wait until `pm` actually answers, then a short extra settle, so the
+# install proceeds against a ready device. Bounded (~3 min) so a wedged emulator
+# still fails fast rather than hanging.
+for _ in $(seq 1 60); do
+  timeout 8 "$ADB" -s "$SERIAL" shell pm list packages >/dev/null 2>&1 && break
+  sleep 3
+done
+sleep 5
 
 # Suppress ANR / "isn't responding" dialogs so they can't overlay the capture
 # (the Tab emulator ANRs under host load; the dialog otherwise survives onto the

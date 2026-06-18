@@ -1,0 +1,30 @@
+Your most important work isn't the newest email or the loudest notification. It's scattered across a dozen apps, mixed in with everything else competing for your attention. Plot brings it together, organized around the roles and goals you care about, so you can choose a focus and make real progress.
+
+Reply, react, assign, and finish work in one place — across team chat, email, meeting notes, and the comment threads inside the tools you already use — without opening five apps full of distractions.
+
+Plot also protects your attention. Low-signal mail — newsletters, receipts, promotions — waits in a muted FYI focus instead of pinging you, and you decide when notifications are allowed. Genuinely urgent threads still break through; the rest of your day stays yours.
+
+WHAT YOU CAN DO
+• Bring team chat, email, meeting notes, and app comments into one organized list
+• Reply, react, comment, and change status without leaving Plot
+• Mark anything To do, schedule it for later, or finish it — so nothing gets dropped
+• Group your work under roles and focuses, so the right things get your best attention
+• Let low-signal mail — newsletters, receipts, promotions — wait in a muted FYI focus instead of pinging you
+• Set when interruptions are allowed; genuinely urgent threads still break through
+• See your whole day — calendar events and scheduled work — on one agenda
+• Search across everything, wherever it came from
+• Use AI right alongside your work, as much or as little as you like — or turn it off entirely
+
+MADE FOR WINDOWS
+Native desktop notifications that quiet down when the app is in front of you and respect your Focus assist settings. A keyboard-driven command bar for getting around fast. Light, dark, or system — it follows Windows.
+
+WORKS WITH YOUR TOOLS
+Connect Gmail, Google Calendar, Google Chat, Outlook Calendar, Microsoft Teams, Slack, Linear, Notion, PostHog, and Apple Calendar. WhatsApp, Instagram, and LinkedIn messaging are available too. Read and reply in one place; jump to the source whenever you need it.
+
+WORKS OFFLINE, ON EVERY DEVICE
+Read, write, organize, and finish work with no connection — everything syncs the moment you're back online. Plot runs on Windows, Mac, iPhone, iPad, Android, and the web, with a consistent experience and platform-native touches.
+
+WORK YOUR WAY
+Use AI as much or as little as you want — bring your own key, point it at your own model, or turn it off entirely. Your data stays yours: you connect each account securely without handing Plot your passwords, your data is encrypted in transit, and only you and the people you share with can see it.
+
+Plot has a free plan. Get back to your best work.

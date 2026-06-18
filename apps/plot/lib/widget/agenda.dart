@@ -1480,9 +1480,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // default-priority PriorityBloc, so [ChangeCurrentThread]'s
           // "stay on currentPriority" navigation would yank the user
           // onto the default priority instead of the event's. Drive
-          // navigation explicitly to the event's priority, set the
-          // event as current, and let [ThreadPage] wire `setThread`
-          // into the destination [PriorityBloc] on mount.
+          // navigation explicitly to the event's priority and set the
+          // event as current — [setCurrentEvent] pulls context to the
+          // event's priority and drives the destination PriorityPage's
+          // "Event Agenda" section.
           context.read<NowBloc>().setCurrentEvent(eventThread);
           // Record the source tab so back from the destination priority
           // page returns to Agenda instead of exiting the app. Mark for
@@ -1503,12 +1504,26 @@ class _BlockHeaderState extends State<_BlockHeader> {
           }
           final targetPriorityIdString = eventThread.priority.id
               .toShortString();
-          final targetThreadIdString = eventThread.id.toShortString();
-          _openThreadOnActivityStack(
-            tabsRouter: tabsRouter,
-            targetPriorityIdString: targetPriorityIdString,
-            targetThreadIdString: targetThreadIdString,
-          );
+          // Multi-panel renders the agenda, the priority feed, and the
+          // thread in three side-by-side panels, so opening the event
+          // thread also leaves the feed (with its Event Agenda) visible
+          // alongside. Single-panel can only show one of those at a time,
+          // so stop at the priority's thread list — the Event Agenda
+          // section (driven by [setCurrentEvent] above) pins the event at
+          // the top — instead of drilling straight into the thread.
+          if (context.isMultiPanel) {
+            final targetThreadIdString = eventThread.id.toShortString();
+            _openThreadOnActivityStack(
+              tabsRouter: tabsRouter,
+              targetPriorityIdString: targetPriorityIdString,
+              targetThreadIdString: targetThreadIdString,
+            );
+          } else {
+            _openPriorityFeedOnActivityStack(
+              tabsRouter: tabsRouter,
+              targetPriorityIdString: targetPriorityIdString,
+            );
+          }
         },
         child: child,
       ),
@@ -1600,6 +1615,69 @@ class _BlockHeaderState extends State<_BlockHeader> {
       targetPriorityIdString: targetPriorityIdString,
       targetThreadIdString: targetThreadIdString,
       attempt: 0,
+    );
+  }
+
+  /// Single-panel sibling of [_openThreadOnActivityStack]: lands the
+  /// Activity tab on the target priority's thread list (PriorityPage)
+  /// without drilling into a thread. The event the user tapped is pinned
+  /// at the top via the "Event Agenda" section, which [setCurrentEvent]
+  /// (called before this) drives.
+  ///
+  /// Mirrors [_openThreadOnActivityStack]'s routing strategy — switch to
+  /// the Activity tab, take the same-priority fast path when the target is
+  /// already on top, otherwise navigate the Activity-scoped stack router —
+  /// but stops at [PriorityOnlyRoute] (the priority feed) instead of
+  /// replacing the inner stack with a [ThreadRoute].
+  void _openPriorityFeedOnActivityStack({
+    required TabsRouter? tabsRouter,
+    required String targetPriorityIdString,
+  }) {
+    // No tabs router in scope — single-panel always has one, so this is
+    // purely defensive. Fall back to a by-name root navigate to the
+    // priority feed (no ThreadRoute child).
+    if (tabsRouter == null) {
+      context.router.root.navigate(
+        PriorityRoute(priorityIdString: targetPriorityIdString),
+      );
+      return;
+    }
+
+    if (tabsRouter.activeIndex != PriorityTabs.activity) {
+      tabsRouter.setActiveIndex(PriorityTabs.activity);
+    }
+
+    // Fast path: the Activity tab's top PriorityRoute already targets this
+    // priority — drive its inner stack back to the feed, clearing any
+    // thread that was open inside it.
+    if (isSamePriorityAtActivityTop(
+      tabsRouter: tabsRouter,
+      targetPriorityIdString: targetPriorityIdString,
+      priorityRouteName: PriorityRoute.name,
+    )) {
+      final innerRouter = findActivityPriorityInnerRouter(
+        tabsRouter,
+        PriorityRoute.name,
+      );
+      if (innerRouter != null) {
+        innerRouter.replaceAll([PriorityOnlyRoute()]);
+        return;
+      }
+    }
+
+    // Cross-priority (or PriorityRoute not yet mounted): navigate the
+    // ACTIVITY-scoped stack router to the target priority feed (NOT root —
+    // that re-introduces the Search-subtree ambiguity documented in
+    // [_openThreadOnActivityStack]).
+    final activityRouter = tabsRouter.stackRouterOfIndex(PriorityTabs.activity);
+    if (activityRouter == null) {
+      context.router.root.navigate(
+        PriorityRoute(priorityIdString: targetPriorityIdString),
+      );
+      return;
+    }
+    activityRouter.navigate(
+      PriorityRoute(priorityIdString: targetPriorityIdString),
     );
   }
 

@@ -447,3 +447,21 @@ FButtonStyleDelta ghostSizedStyleDelta(
     ),
   );
 }
+
+/// Padding for the chevron/stepper ghost [FButton]s used in the compound
+/// scheduler inputs ([DateInput], [TimeRangeInput], [DurationInput]).
+///
+/// Trims only the *horizontal* padding versus the default ghost button so the
+/// centered value field (date, time range, duration) has room to render in full
+/// at phone widths, while keeping the full vertical padding — and therefore the
+/// tap-target height — unchanged.
+EdgeInsets stepperButtonPadding() =>
+    EdgeInsets.symmetric(horizontal: 10, vertical: isMobilePlatform() ? 14 : 10);
+
+/// Ghost-button [FButton.style] override that applies [stepperButtonPadding]
+/// without disturbing the theme's ghost colors or hover/pressed transitions.
+FButtonStyleDelta stepperButtonStyleDelta() => FButtonStyleDelta.delta(
+  contentStyle: FButtonContentStyleDelta.delta(
+    padding: EdgeInsetsGeometryDelta.value(stepperButtonPadding()),
+  ),
+);

@@ -11,6 +11,9 @@
 
 ### Roles & focuses
 
+- Notifications in Settings now open your role's default notification settings. If you have more than
+  one role, Plot asks which role first; if you have just one, it goes straight there. You can still
+  fine-tune notifications for an individual focus from that focus's menu.
 - When you have more than one role, your focuses now show the role they belong to everywhere they
   appear outside the sidebar — in the header, on threads, and in pickers — written as **Role ›
   Focus**, with the role shown in its own colour. That makes it easy to tell, say, a Work focus from
@@ -57,20 +60,39 @@
 
 ### Thread swipe actions
 
-- Swiping a thread now follows a simple **left to take it on, right to clear it** pattern. A short
-  swipe **left** starts working on a thread (**To do**), or — if it's already on your list — pushes
-  it to a later day (**Do later**); a long swipe left **moves** it to another focus. A short swipe
-  **right** marks it **done** (and clears unread updates), while a long swipe right — or a short
-  swipe right on a thread that's already done — opens the **menu** of more actions.
+- Swiping a thread now follows a simple **right to act on it, left to file it** pattern. A short
+  swipe **right** marks a thread **done** (and clears unread updates); a long swipe right starts
+  working on it (**To do**), or — if it's already on your list — pushes it to a later day (**Do
+  later**). A short swipe **left** **moves** it to another focus, and a long swipe left opens the
+  **menu** of more actions. In your Done list, where there's nothing left to clear, a short swipe
+  right instead puts the thread back on your list (**To do**) and a long swipe right schedules it
+  (**Do later**).
+
+### Agenda
+
+- On a phone, tapping an event in your agenda now opens that focus's list with the event's day laid
+  out at the top, so you land in context instead of jumping straight into the event. (On larger
+  screens, where the list and the event sit side by side, tapping still opens the event directly.)
 
 ### Fixes
 
+- Search and filter boxes now look consistent everywhere. The magnifying-glass icon stays on the
+  buttons that open search, and the boxes themselves rely on a clear placeholder — so pickers like
+  emoji and link search no longer look different from the rest.
+- Showing archived items is now a single command. Where there used to be separate toggles for archived
+  focuses and for archived threads and notes, one **Show archived items** command now reveals all of
+  them together — archived focuses in your list, plus archived threads and notes inside a focus or
+  thread — and stays in sync wherever you turn it on or off.
 - Turning off AI in settings is now respected everywhere. With AI off, Plot still sorts incoming
   threads into your focuses using your own past filing — just without the AI step — and skips
   AI-written titles, notification summaries, and focus suggestions entirely. Previously a few of these
   could still run, especially on paid accounts, even with AI switched off.
 - Connecting Todoist now works. The button correctly reads "Continue with Todoist" with the Todoist
   logo, instead of showing "Continue with Other" and failing when tapped.
+- Connecting LinkedIn, Instagram, or WhatsApp now works. Starting the connection no longer fails with
+  an internal error before the sign-in screen could open.
+- During setup, the **Pro** label now shows on Pro connections in the "Connect your tools" step, so
+  it's clear which ones need a Pro plan before you start connecting them.
 - On phones and other single-column layouts, marking a thread done — or changing its state another
   way — while you have it open no longer jumps you to a different thread. The thread stays open so you
   can keep reading or make more changes, and you go back to the list whenever you're ready. On wider
@@ -136,6 +158,14 @@
 - Opening a private note no longer flashes a faint, empty reply bar above the composer for a split
   second before it vanishes. Private notes have no one to reply to, so that bar is now correctly
   absent from the moment the thread opens.
+- On phones, the back gesture now keeps your place instead of dropping you out of Plot. Backing out of
+  Search clears your search text first, then leaves the tab; backing out of Agenda, Search, or the
+  More menu returns you to the screen you came from rather than closing the app. And in the new-thread
+  form, back now steps you back through the form — for example, from choosing how to reach someone back
+  to where you started — instead of jumping straight out to your thread list.
+- On phones, the **Schedule focus block** form no longer cuts off the date and time — the year and the
+  end of "a.m."/"p.m." were getting clipped. The stepper rows now give the date, time, and duration
+  more room while keeping the chevron buttons comfortably tappable.
 
 ### Fixes
 

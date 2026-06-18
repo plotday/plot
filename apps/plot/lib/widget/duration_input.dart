@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/button.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/step_controller.dart';
 
@@ -227,7 +228,6 @@ class _DurationInputState extends State<DurationInput> {
 
     return Row(
       children: [
-        const SizedBox(width: 8),
         // Double left chevron (decrease 1 hour)
         _buildButton(
           icon: FontAwesomeIcons.chevronsLeft,
@@ -288,7 +288,6 @@ class _DurationInputState extends State<DurationInput> {
           onPressed: _incrementHour,
           theme: theme,
         ),
-        const SizedBox(width: 8),
       ],
     );
   }
@@ -300,6 +299,7 @@ class _DurationInputState extends State<DurationInput> {
   }) {
     return FButton(
       variant: FButtonVariant.ghost,
+      style: stepperButtonStyleDelta(),
       onPress: onPressed,
       child: Icon(icon, size: theme.iconSizes.sm),
     );

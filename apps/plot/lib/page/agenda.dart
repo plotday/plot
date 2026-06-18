@@ -15,6 +15,7 @@ import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/block_list_separator.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/window_controls_inset.dart';
+import 'package:plot/widget/priorities_shell.dart' show SecondaryTabBackScope;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'loading.dart';
@@ -161,23 +162,29 @@ class _AgendaBody extends StatelessWidget {
         // into the status-bar background. (DecoratedBox + Border.top is
         // not enough — the list's opaque rows paint over a background
         // decoration, hiding the line.)
-        return Scaffold(
-          scrollable: false,
-          translucent: true,
-          childPad: false,
-          body: SafeArea(
-            top: true,
-            bottom: false,
-            left: false,
-            right: false,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Desktop (macOS) traffic-light clearance; nothing on mobile.
-                const WindowControlsInset(),
-                Container(height: 1, color: context.theme.colors.border),
-                Expanded(child: AgendaList(items: state.agendaViewItems)),
-              ],
+        //
+        // Wrapped in a [SecondaryTabBackScope] so the single-panel back
+        // gesture out of the Agenda tab returns to the previous tab instead
+        // of exiting the app.
+        return SecondaryTabBackScope(
+          child: Scaffold(
+            scrollable: false,
+            translucent: true,
+            childPad: false,
+            body: SafeArea(
+              top: true,
+              bottom: false,
+              left: false,
+              right: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Desktop (macOS) traffic-light clearance; nothing on mobile.
+                  const WindowControlsInset(),
+                  Container(height: 1, color: context.theme.colors.border),
+                  Expanded(child: AgendaList(items: state.agendaViewItems)),
+                ],
+              ),
             ),
           ),
         );

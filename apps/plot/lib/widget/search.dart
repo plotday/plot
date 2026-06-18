@@ -126,7 +126,7 @@ class _SearchWidgetState extends State<SearchWidget> {
                 child: FTextField(
                   control: .managed(controller: _controller),
                   focusNode: _focusNode,
-                  hint: 'Search...',
+                  hint: 'Search…',
                   style: FTextFieldStyleDelta.delta(
                     contentPadding: EdgeInsetsGeometryDelta.value(
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

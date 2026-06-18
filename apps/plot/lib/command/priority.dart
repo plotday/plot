@@ -638,7 +638,11 @@ FormSelect<Role> _roleSelect({
         )
         .toList(),
     titleBuilder: (r) => r.name,
-    leadingBuilder: (r) => ColorDot(color: r.displayColor),
+    // A role carries its colour as identity, so the name is rendered in the
+    // role's colour rather than tagged with a leading ColorDot (which is for
+    // colour selection only). [labelBuilder] colours both the modal list rows
+    // and the selected-value chip.
+    labelBuilder: (r) => RoleLabel(role: r),
     onAdd: (ctx) => createRoleInline(ctx),
     onChanged: () {
       final role = field.getValue();
@@ -793,15 +797,9 @@ class AddFocus extends Command {
             horizontal: ctx.theme.spacing.lg,
             vertical: ctx.theme.spacing.md,
           ),
-          child: Row(
-            children: [
-              ColorDot(color: role.displayColor),
-              SizedBox(width: ctx.theme.spacing.md),
-              Expanded(
-                child: Text(role.name, overflow: TextOverflow.ellipsis),
-              ),
-            ],
-          ),
+          // The role's colour is its identity, so the name is rendered in it
+          // (not paired with a ColorDot, which is for colour selection only).
+          child: RoleLabel(role: role),
         ),
       ),
     );
@@ -1698,7 +1696,7 @@ List<Command> currentPriorityCommands(
   NowState? nowState,
 }) => [
   ...prioritySecondaryCommands(priority),
-  if (context != null) ToggleArchivedVisibility(context: context),
+  if (context != null) ToggleArchived.fromContext(context),
   NewThread(),
   OpenNextThread(),
   OpenPreviousThread(),
@@ -1727,78 +1725,39 @@ List<StaticCommandGroup> currentPriorityCommandGroups(
   ),
 ];
 
-class ToggleShowArchived extends Command {
-  ToggleShowArchived({required this.showArchived})
+/// Toggle archived visibility everywhere with a single command: archived
+/// focuses in the focus list, plus archived threads and notes inside the open
+/// focus/thread.
+///
+/// Backed by the single persisted `showAllPriorities` flag on
+/// [LocalPreferencesBloc] (always in scope, provided app-wide). [PriorityBloc]
+/// and [ThreadBloc] seed their own `showArchived` from this flag at
+/// construction and react to its changes, so toggling here flips archived
+/// visibility consistently across every view without touching those blocs
+/// directly.
+class ToggleArchived extends Command {
+  ToggleArchived({required this.showingArchived})
     : super(
-        title: showArchived ? 'Show active items' : 'Show archived items',
-        subtitle: showArchived ? 'Hide archived items' : 'Show archived items',
-        eventObject: EventObject.archived,
-        eventAction: EventAction.viewed,
-        icon: PlotIcon.archived,
-      );
-
-  final bool showArchived;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    context.read<PriorityBloc>().toggleShowArchived();
-    return const CommandDone();
-  }
-}
-
-/// Toggle archived visibility across the current priority's threads and
-/// notes (and, via the priorities-list watcher, archived focuses too).
-/// Backed by `showArchived` on `PriorityBloc` (and `ThreadBloc` when a thread
-/// is open) so it stays independent of search and filter state.
-class ToggleArchivedVisibility extends Command {
-  ToggleArchivedVisibility._({required this.showingArchived})
-    : super(
-        title: showingArchived ? 'Hide archived' : 'Show archived',
+        title: showingArchived ? 'Hide archived items' : 'Show archived items',
         subtitle: showingArchived
-            ? 'Hide archived threads, notes and focuses'
-            : 'Show archived threads, notes and focuses',
+            ? 'Hide archived focuses, threads and notes'
+            : 'Show archived focuses, threads and notes',
         eventObject: EventObject.archived,
         eventAction: EventAction.viewed,
         icon: PlotIcon.archived,
       );
 
-  factory ToggleArchivedVisibility({required BuildContext context}) {
-    final showing = context.read<PriorityBloc>().state.showArchived;
-    return ToggleArchivedVisibility._(showingArchived: showing);
+  /// Reads the current archived-visibility flag from [LocalPreferencesBloc]
+  /// to title the command.
+  factory ToggleArchived.fromContext(BuildContext context) {
+    final showing = context
+        .read<LocalPreferencesBloc>()
+        .state
+        .showAllPriorities;
+    return ToggleArchived(showingArchived: showing);
   }
 
   final bool showingArchived;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    context.read<PriorityBloc>().toggleShowArchived();
-
-    try {
-      context.read<ThreadBloc>().toggleShowArchived();
-    } on ProviderNotFoundException {
-      // No thread open — nothing to toggle.
-    }
-
-    return const CommandDone();
-  }
-}
-
-/// Toggle showing all priorities (active + archived) vs active only
-class ToggleArchivedPrioritiesFilter extends Command {
-  ToggleArchivedPrioritiesFilter({required this.showAllPriorities})
-    : super(
-        title: showAllPriorities
-            ? 'Hide archived focuses'
-            : 'Show archived focuses',
-        subtitle: showAllPriorities
-            ? 'Showing all focuses (active & archived)'
-            : 'Showing active focuses only',
-        eventObject: EventObject.filter,
-        eventAction: EventAction.filtered,
-        icon: PlotIcon.archived,
-      );
-
-  final bool showAllPriorities;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

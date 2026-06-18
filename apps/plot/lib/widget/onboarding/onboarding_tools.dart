@@ -10,6 +10,7 @@ import 'package:plot/command/twist.dart';
 import 'package:plot/command/upgrade.dart' show ShowUpgradeOptions;
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/pro_badge.dart';
+import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 
@@ -67,6 +68,13 @@ class _OnboardingToolsState extends State<OnboardingTools> {
   }
 
   Future<void> _openSetup(Twist twist) async {
+    // Kick off the subscription/usage refresh now, before createDraft, so the
+    // three-call refresh overlaps the draft round-trip instead of running
+    // after it. The premium gate below and `_buildForm`'s `_freshUsage()` both
+    // coalesce onto this in-flight refresh (SubscriptionService dedupes), so
+    // this only ever moves the work earlier — never duplicates it.
+    unawaited(SubscriptionService.instance.ensureFresh());
+
     // Pull a fresh subscription/usage snapshot before gating. After a browser
     // (Stripe) upgrade, the cached value could otherwise still read "blocked"
     // and re-show the subscribe modal. The service coalesces this with any
@@ -145,7 +153,8 @@ class _OnboardingToolsState extends State<OnboardingTools> {
     if (_loading) {
       return const SizedBox(
         height: 80,
-        child: Center(child: _WhiteSpinner()),
+        // White to read on the colored onboarding backdrop.
+        child: Center(child: Spinner(size: 20, color: Color(0xFFFFFFFF))),
       );
     }
 
@@ -209,8 +218,11 @@ class _OnboardingToolsState extends State<OnboardingTools> {
               minTile,
               280.0,
             );
-        // Activated connections render two-up regardless of the tile grid.
-        final connectedTileWidth = (available - spacing) / 2;
+        // Activated connections render two-up, but collapse to one-up on a
+        // phone (narrow) where the tile grid is already a single column.
+        final connectedTileWidth = columns < 2
+            ? available
+            : (available - spacing) / 2;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -255,16 +267,39 @@ class _OnboardingToolsState extends State<OnboardingTools> {
 
 /// Brand-styled tile for a single connector. Tapping opens AddSourceDetail
 /// so the connector's standard auth + options form drives the rest.
-class _ToolTile extends StatelessWidget {
+///
+/// Opening that modal makes a couple of network round-trips (create draft →
+/// fetch integrations + usage) before anything appears, so the tile shows a
+/// spinner in place of its logo while [onTap] is in flight to make the wait
+/// legible instead of looking unresponsive.
+class _ToolTile extends StatefulWidget {
   const _ToolTile({required this.twist, required this.onTap});
 
   final Twist twist;
-  final VoidCallback onTap;
+  final Future<void> Function() onTap;
+
+  @override
+  State<_ToolTile> createState() => _ToolTileState();
+}
+
+class _ToolTileState extends State<_ToolTile> {
+  bool _busy = false;
+
+  Future<void> _handleTap() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await widget.onTap();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final twist = widget.twist;
     return OnboardingHoverable(
-      onTap: onTap,
+      onTap: _handleTap,
       builder: (context, hovered) => AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -286,7 +321,16 @@ class _ToolTile extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (twist.logoUrl != null) ...[
+            if (_busy) ...[
+              // Standard app spinner (SpinKitFadingCircle), sized to the logo
+              // slot it replaces so the tile doesn't reflow while loading.
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: Center(child: Spinner(size: 18)),
+              ),
+              const SizedBox(width: 10),
+            ] else if (twist.logoUrl != null) ...[
               LogoImage(url: twist.logoUrl!, size: 20),
               const SizedBox(width: 10),
             ],
@@ -305,7 +349,11 @@ class _ToolTile extends StatelessWidget {
             ),
             if (twist.premium) ...[
               const SizedBox(width: 8),
-              const ProBadge(),
+              // The tile is a hardcoded white surface on a themed backdrop, so
+              // pass the onboarding brand violet explicitly — the theme-derived
+              // default accent is the neutral-theme grey here and "Pro" would
+              // be invisible on white.
+              const ProBadge(color: Color(0xFF7C3AED)),
             ],
           ],
         ),
@@ -329,7 +377,7 @@ class _ToolSection extends StatelessWidget {
   final List<Twist> twists;
   final double tileWidth;
   final double spacing;
-  final void Function(Twist) onTap;
+  final Future<void> Function(Twist) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -581,47 +629,3 @@ class _ConnectedRow extends StatelessWidget {
   }
 }
 
-class _WhiteSpinner extends StatefulWidget {
-  const _WhiteSpinner();
-
-  @override
-  State<_WhiteSpinner> createState() => _WhiteSpinnerState();
-}
-
-class _WhiteSpinnerState extends State<_WhiteSpinner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RotationTransition(
-      turns: _controller,
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: const Color(0x66FFFFFF), width: 2),
-          gradient: const SweepGradient(
-            colors: [Color(0x00FFFFFF), Color(0xFFFFFFFF)],
-          ),
-        ),
-      ),
-    );
-  }
-}

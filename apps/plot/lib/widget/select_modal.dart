@@ -144,7 +144,7 @@ class SelectModal<T> extends Modal {
   final String? title;
 
   /// The placeholder text for the search input.
-  /// When null, displays a search icon with "Search..." placeholder.
+  /// When null, defaults to a "Search…" placeholder.
   final String? prompt;
 
   /// Optional subtitle displayed below the search area and above the list.
@@ -1406,20 +1406,6 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                               Expanded(
                                 child: Row(
                                   children: [
-                                    if (widget.prompt == null)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8,
-                                        ),
-                                        child: Icon(
-                                          PlotIcon.search,
-                                          size: context.theme.iconSizes.sm,
-                                          color: context
-                                              .theme
-                                              .colors
-                                              .mutedForeground,
-                                        ),
-                                      ),
                                     Expanded(
                                       child: TextField(
                                         maxLines: 1,
@@ -1427,8 +1413,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                         controller: _controller,
                                         autofocus: hasPhysicalKeyboard(),
                                         label: widget.prompt != null
-                                            ? "${widget.prompt}..."
-                                            : "Search...",
+                                            ? "${widget.prompt}…"
+                                            : "Search…",
                                         focusNode: focusNode,
                                         onChanged: (text) => _initItems(),
                                         onSubmitted: (_) => _handleEnter(),

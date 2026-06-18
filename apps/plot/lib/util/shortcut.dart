@@ -1,6 +1,7 @@
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import '../cli_args.dart';
 import 'shortcut_platform_stub.dart'
     if (dart.library.js_interop) 'shortcut_platform_web.dart';
 
@@ -39,6 +40,11 @@ String _formatSingleActivator(SingleActivator activator) {
 }
 
 bool _isMacOS() {
+  // Screenshot Windows-emulation: show Ctrl-based shortcuts, not ⌘. Gated on the
+  // debug --emulate-windows flag so it never affects real macOS users. (We can't
+  // use defaultTargetPlatform here — overriding it app-wide breaks the macOS
+  // host's PlatformMenuBar; see main.dart.)
+  if (!kIsWeb && kDebugMode && CliArgs.emulateWindows) return false;
   if (kIsWeb) {
     return isMacOSWeb();
   }

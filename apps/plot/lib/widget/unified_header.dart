@@ -1337,7 +1337,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
             StaticCommandGroup(
               title: 'View',
               commands: [
-                ToggleArchivedPrioritiesFilter(showAllPriorities: showAll),
+                ToggleArchived(showingArchived: showAll),
               ],
             ),
           ],

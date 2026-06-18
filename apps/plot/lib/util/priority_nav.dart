@@ -16,6 +16,32 @@ class PriorityTabs {
   /// Tab 2: the Activity stack (path: `'' + /p/:priorityId`). Hosts
   /// PriorityRoute, NewThreadRoute, and ThreadRoute.
   static const int activity = 2;
+
+  /// Tab 3: the global Search tab (path: `/search`). A "secondary" tab —
+  /// reachable only from the bottom nav.
+  static const int search = 3;
+
+  /// Tab 4: the More / settings tab (path: `/more`). A "secondary" tab —
+  /// reachable only from the bottom nav.
+  static const int more = 4;
+}
+
+/// Computes the bottom-nav tab to switch to when the back gesture is invoked
+/// from a *secondary* tab (Agenda, Search, or More).
+///
+/// Those tabs sit at the root of their own nested navigator and have nothing
+/// to pop, so without an explicit handler the back gesture falls through every
+/// navigator and exits the app. Instead we return the user to the tab they
+/// were on before they opened the secondary tab ([previousTab]); when that's
+/// unknown — or, defensively, the same tab we're leaving — we fall back to
+/// [homeTab] (Focus) so one more back from there exits cleanly.
+int computeBackTabFromSecondaryTab({
+  required int currentTab,
+  required int? previousTab,
+  required int homeTab,
+}) {
+  if (previousTab != null && previousTab != currentTab) return previousTab;
+  return homeTab;
 }
 
 /// Computes the new value of the cross-tab back-source tracker (consumed

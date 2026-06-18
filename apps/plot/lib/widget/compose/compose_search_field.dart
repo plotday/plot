@@ -58,8 +58,10 @@ class ComposeSearchField extends StatelessWidget {
   /// field's built-in single-style hint can't.
   final String? hintDetail;
 
-  /// Optional leading widget (e.g. a search icon in step 1, a recipient chip
-  /// in step 2). Rendered with a small right gap before the field.
+  /// Optional leading widget (e.g. a back button in the connection picker, a
+  /// recipient chip in step 2). Rendered with a small right gap before the
+  /// field. Note: not a search icon — the magnifying glass is an entry-point
+  /// affordance (nav tab / header toggle), never repeated inside the field.
   final Widget? leading;
 
   /// Whether to auto-focus the field when first mounted.

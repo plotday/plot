@@ -45,6 +45,42 @@ The `Plot.storekit` config is now wired into both Run schemes
 scheme only and is **not** in any Copy-Bundle-Resources phase, so it never ships
 in a release build.
 
+### ⚠️ Before building from Xcode: the SPM deployment-floor trap
+
+If an Xcode build fails with:
+
+> The package product 'firebase-messaging' requires minimum platform version
+> 15.0 for the iOS platform, but this target supports 13.0
+
+it is **not** a StoreKit problem. The project uses Flutter's Swift Package
+Manager integration, and the generated `FlutterGeneratedPluginSwiftPackage`
+declares an iOS deployment floor. Flutter only raises that floor to the app's
+`IPHONEOS_DEPLOYMENT_TARGET` (16.0) during `flutter build` / `flutter run`; a
+bare **`flutter pub get`** (run by the worktree hook, `pnpm install`,
+build_runner, or the IDE) regenerates the package at Flutter's **13.0 default**,
+which is below Firebase's 15.0 requirement. Xcode resolves the package graph
+*before* the scheme's prepare pre-action runs, so the first build after a
+`flutter pub get` hits the stale 13.0.
+
+Two mitigations are in place / available:
+
+1. **Canonical pre-Xcode step (zero failures).** Run this once after any
+   `flutter pub get`, before building in Xcode — it writes the 16.0 floor
+   *before* Xcode resolves packages:
+
+   ```bash
+   cd apps/plot && flutter build ios --config-only --simulator --debug
+   ```
+
+2. **Self-heal pre-action (committed).** The Runner scheme's "Prepare Flutter
+   Framework" pre-action runs `ios/scripts/spm_deployment_floor.sh`, which
+   re-applies the floor on every build. Because Xcode resolves packages before
+   pre-actions, this can't rescue the *first* build after a `flutter pub get`,
+   but it makes every subsequent build pass without the manual step above.
+
+So: if a fresh Xcode build shows the Firebase 15.0 error, either run the
+`--config-only` command above, or just build a second time.
+
 ### iOS Simulator (recommended — zero extra config)
 
 `isAppStoreBuild` is `true` on iOS purely from `Platform.isIOS`, so no dart-define

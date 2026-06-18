@@ -361,10 +361,13 @@ signals and the tablet listing. Reuse the iPad framing and captions.
 
 ## Microsoft Store — Windows
 
-Windows has no fastlane metadata, so — unlike iOS/macOS/Android above — this copy
-**is** the source of truth and is submitted by hand via Partner Center. Keep it in
-sync with the Apple/Play copy by eye; the `lint:store-metadata` check does not
-cover it.
+The Windows listing **text** is now pushed by the `release-windows` workflow
+from dedicated source files under `apps/plot/windows/store/en-US/` (mirroring the
+fastlane convention the other platforms use). Edit the copy in those files; the
+blocks below are reproduced for review only. **Screenshots, release notes, and
+the product name are still submitted by hand** via Partner Center — the msstore
+`updateMetadata` path cannot upload images, and notes/name are out of scope. The
+`lint:store-metadata` check does not cover these files.
 
 ### Product name
 
@@ -374,6 +377,8 @@ Plot: All your work, organized
 
 ### Short description / summary — Windows has no subtitle field, so use the full site tagline verbatim
 
+**Source:** `apps/plot/windows/store/en-US/short_description.txt`
+
 ```
 Team chat, email, meeting notes, and threads from your apps, organized around your priorities.
 ```
@@ -382,6 +387,8 @@ Team chat, email, meeting notes, and threads from your apps, organized around yo
 fits here verbatim with no trim.
 
 ### Description — 10,000 char max
+
+**Source:** `apps/plot/windows/store/en-US/description.txt`
 
 ```
 Your most important work isn't the newest email or the loudest notification. It's scattered across a dozen apps, mixed in with everything else competing for your attention. Plot brings it together, organized around the roles and goals you care about, so you can choose a focus and make real progress.
@@ -418,6 +425,8 @@ Plot has a free plan. Get back to your best work.
 
 ### Product features — up to 20, 200 char max each
 
+**Source:** `apps/plot/windows/store/en-US/features.txt` (one feature per line)
+
 ```
 Team chat, email, and app comment threads in one organized place
 Reply, react, and change status without leaving Plot
@@ -432,6 +441,8 @@ Works offline and syncs across all your devices
 ```
 
 ### Search terms — up to 7, 30 char max each
+
+**Source:** `apps/plot/windows/store/en-US/search_terms.txt` (one term per line)
 
 ```
 email client

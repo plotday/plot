@@ -6,6 +6,7 @@ import 'package:equatable/equatable.dart';
 import 'package:collection/collection.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/command/command.dart';
@@ -17,13 +18,29 @@ import 'logging.dart';
 part 'thread_state.dart';
 
 class ThreadBloc extends Cubit<ThreadState> {
-  ThreadBloc({required Thread thread})
+  ThreadBloc({required Thread thread, required LocalPreferencesBloc localPreferences})
     : _subscriptions = [],
       _tagsSubscription = null,
       _reactionsSubscription = null,
-      super(ThreadState(thread: thread)) {
+      super(
+        // Seed from the single persisted archived-visibility flag so opening a
+        // thread honours a "Show archived items" toggle made elsewhere.
+        ThreadState(
+          thread: thread,
+          showArchived: localPreferences.state.showAllPriorities,
+        ),
+      ) {
     _loadThread();
     _initNotesLoaded();
+
+    // React to the global archived-visibility flag (the unified "Show archived
+    // items" command) so archived notes appear/hide here in lockstep.
+    _showArchivedFromPrefs = localPreferences.state.showAllPriorities;
+    _localPreferencesSubscription = localPreferences.stream.listen((prefs) {
+      if (prefs.showAllPriorities == _showArchivedFromPrefs) return;
+      _showArchivedFromPrefs = prefs.showAllPriorities;
+      _applyShowArchived(prefs.showAllPriorities);
+    });
   }
 
   /// Resolves the [ThreadState.notesLoaded] latch once this thread's notes are
@@ -46,10 +63,12 @@ class ThreadBloc extends Cubit<ThreadState> {
     }
   }
 
-  void toggleShowArchived() {
-    final newShowArchived = !state.showArchived;
-    log.info('Toggling showArchived to $newShowArchived');
-    emit(state.copyWith(showArchived: newShowArchived));
+  /// Applies a new archived-visibility value, driven by the global
+  /// `showAllPriorities` flag on [LocalPreferencesBloc]. No-ops when unchanged.
+  void _applyShowArchived(bool showArchived) {
+    if (state.showArchived == showArchived) return;
+    log.info('Applying showArchived = $showArchived');
+    emit(state.copyWith(showArchived: showArchived));
     _loadNotes();
   }
 
@@ -78,6 +97,7 @@ class ThreadBloc extends Cubit<ThreadState> {
     _tagsSubscription?.cancel();
     _reactionsSubscription?.cancel();
     _notesSubscription?.cancel();
+    _localPreferencesSubscription?.cancel();
     return super.close();
   }
 
@@ -471,7 +491,9 @@ class ThreadBloc extends Cubit<ThreadState> {
     _notesSubscription =
         Note.watch(
           state.thread.id,
-          archived: state.showArchived,
+          // "Show archived items" shows active AND archived notes (null = no
+          // archived filter); off shows active only.
+          archived: state.showArchived ? null : false,
           draft: false,
           filter: state.filter.isNotEmpty ? state.filter : null,
           reactionFilter: state.reactionFilter.isNotEmpty
@@ -493,6 +515,14 @@ class ThreadBloc extends Cubit<ThreadState> {
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
   StreamSubscription<List<(Reaction, int)>>? _reactionsSubscription;
   StreamSubscription<List<Note>>? _notesSubscription;
+
+  /// Subscription to [LocalPreferencesBloc.stream] so the global
+  /// archived-visibility flag drives this thread's `showArchived`.
+  StreamSubscription<LocalPreferencesState>? _localPreferencesSubscription;
+
+  /// Last `showAllPriorities` value seen, to ignore unrelated preference
+  /// emissions that don't change archived visibility.
+  bool _showArchivedFromPrefs = false;
 }
 
 class ThreadBlocProvider extends StatefulWidget {
@@ -524,13 +554,20 @@ class ThreadBlocProviderState extends State<ThreadBlocProvider> {
   @override
   void initState() {
     super.initState();
+    // Capture synchronously so the async branch and didUpdateWidget can seed
+    // the bloc's archived visibility without touching context after an await.
+    final localPreferences = context.read<LocalPreferencesBloc>();
     final initial = widget.thread ?? _cachedThread();
     if (initial != null) {
-      _syncBloc = ThreadBloc(thread: initial);
+      _syncBloc = ThreadBloc(
+        thread: initial,
+        localPreferences: localPreferences,
+      );
     } else {
-      _asyncBloc = Thread.getOne(
-        widget.threadId,
-      ).then((thread) => ThreadBloc(thread: thread));
+      _asyncBloc = Thread.getOne(widget.threadId).then(
+        (thread) =>
+            ThreadBloc(thread: thread, localPreferences: localPreferences),
+      );
     }
   }
 
@@ -549,17 +586,23 @@ class ThreadBlocProviderState extends State<ThreadBlocProvider> {
   void didUpdateWidget(ThreadBlocProvider oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    final localPreferences = context.read<LocalPreferencesBloc>();
     if (widget.thread != null && widget.thread != oldWidget.thread) {
-      _replaceWithSync(ThreadBloc(thread: widget.thread!));
+      _replaceWithSync(
+        ThreadBloc(thread: widget.thread!, localPreferences: localPreferences),
+      );
     } else if (widget.threadId != oldWidget.threadId) {
       final cached = _cachedThread();
       if (cached != null) {
-        _replaceWithSync(ThreadBloc(thread: cached));
+        _replaceWithSync(
+          ThreadBloc(thread: cached, localPreferences: localPreferences),
+        );
       } else {
         _replaceWithAsync(
-          Thread.getOne(
-            widget.threadId,
-          ).then((thread) => ThreadBloc(thread: thread)),
+          Thread.getOne(widget.threadId).then(
+            (thread) =>
+                ThreadBloc(thread: thread, localPreferences: localPreferences),
+          ),
         );
       }
     }

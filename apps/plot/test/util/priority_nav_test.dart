@@ -80,6 +80,69 @@ void main() {
     });
   });
 
+  group('computeBackTabFromSecondaryTab', () {
+    test('returns the previous tab when one was recorded', () {
+      // Focus → Search → back → Focus.
+      expect(
+        computeBackTabFromSecondaryTab(
+          currentTab: PriorityTabs.search,
+          previousTab: PriorityTabs.priorities,
+          homeTab: PriorityTabs.priorities,
+        ),
+        PriorityTabs.priorities,
+      );
+    });
+
+    test('honours a non-home previous tab (came from Agenda)', () {
+      // Agenda → Search → back → Agenda (not the home tab).
+      expect(
+        computeBackTabFromSecondaryTab(
+          currentTab: PriorityTabs.search,
+          previousTab: PriorityTabs.agenda,
+          homeTab: PriorityTabs.priorities,
+        ),
+        PriorityTabs.agenda,
+      );
+    });
+
+    test('returns to the Activity stack when that was the previous tab', () {
+      // Viewing a thread (Activity) → Search → back → the thread (Activity).
+      expect(
+        computeBackTabFromSecondaryTab(
+          currentTab: PriorityTabs.search,
+          previousTab: PriorityTabs.activity,
+          homeTab: PriorityTabs.priorities,
+        ),
+        PriorityTabs.activity,
+      );
+    });
+
+    test('falls back to the home tab when no previous tab is recorded', () {
+      // Deep-link / cold arrival straight onto a secondary tab.
+      expect(
+        computeBackTabFromSecondaryTab(
+          currentTab: PriorityTabs.more,
+          previousTab: null,
+          homeTab: PriorityTabs.priorities,
+        ),
+        PriorityTabs.priorities,
+      );
+    });
+
+    test('falls back to home when the previous tab equals the current tab', () {
+      // Defensive: a stale self-reference must not return us to the same tab
+      // (which would no-op the back gesture and trap the user).
+      expect(
+        computeBackTabFromSecondaryTab(
+          currentTab: PriorityTabs.search,
+          previousTab: PriorityTabs.search,
+          homeTab: PriorityTabs.priorities,
+        ),
+        PriorityTabs.priorities,
+      );
+    });
+  });
+
   group('highlightTabForActivityPage', () {
     test('keeps Focus highlighted when drilled in from Priorities', () {
       // /priorities → tap focus → thread list on the Activity tab. The
@@ -118,10 +181,13 @@ void main() {
     test('tab indices match the AutoTabsRouter declaration order in '
         'PrioritiesShell', () {
       // Sanity-check the constants so a reorder in priorities_shell.dart
-      // doesn't silently break the navigation helpers.
+      // doesn't silently break the navigation helpers. These must mirror the
+      // private _kTab* constants in priorities_shell.dart.
       expect(PriorityTabs.priorities, 0);
       expect(PriorityTabs.agenda, 1);
       expect(PriorityTabs.activity, 2);
+      expect(PriorityTabs.search, 3);
+      expect(PriorityTabs.more, 4);
     });
   });
 

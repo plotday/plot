@@ -14,7 +14,11 @@ import 'package:plot/router.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/page/search.dart' show SearchPage;
 import 'package:plot/store/store.dart';
-import 'package:plot/util/priority_nav.dart' show highlightTabForActivityPage;
+import 'package:plot/util/priority_nav.dart'
+    show
+        PriorityTabs,
+        computeBackTabFromSecondaryTab,
+        highlightTabForActivityPage;
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/widget/icon.dart';
@@ -45,6 +49,25 @@ List<NavSlot> navSlotsFor({required bool hasCalendar}) => [
       NavSlot.more,
     ];
 
+/// Returns from a *secondary* bottom-nav tab (Agenda / Search / More) to the
+/// tab the user was on before opening it ([PrioritiesShell.previousTab]),
+/// falling back to the Focus home tab. Shared by those tabs' back-gesture
+/// handlers (via [SecondaryTabBackScope] and the Search tab's inline
+/// PopScope) so the back gesture returns inward instead of dropping out of
+/// the bottom-nav scope and exiting the app. Consumes (clears) the recorded
+/// previous tab. Mirrors [returnFromPriorityToSourceTab] for the Activity
+/// stack.
+void returnFromSecondaryTab(BuildContext context) {
+  final tabsRouter = AutoTabsRouter.of(context);
+  final target = computeBackTabFromSecondaryTab(
+    currentTab: tabsRouter.activeIndex,
+    previousTab: PrioritiesShell.previousTab,
+    homeTab: PriorityTabs.priorities,
+  );
+  PrioritiesShell.previousTab = null;
+  tabsRouter.setActiveIndex(target);
+}
+
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends StatefulWidget {
   const PrioritiesShell({super.key});
@@ -62,6 +85,16 @@ class PrioritiesShell extends StatefulWidget {
   /// switching between priorities while already on `/p/:id`) leave this
   /// untouched so the back gesture still returns to the original origin.
   static int? sourceTab;
+
+  /// The bottom-nav tab the user was on immediately before opening the
+  /// *current* secondary tab (Agenda / Search / More). Recorded by
+  /// [_PrioritiesShellState._switchOrPopToRoot] on every cross-tab bottom-nav
+  /// switch and consumed by those tabs' back-gesture handlers
+  /// ([returnFromSecondaryTab]) so back returns to where the user came from
+  /// instead of falling through every navigator and exiting the app. A null
+  /// value (cold/deep-link arrival) makes back fall back to the Focus home
+  /// tab. Distinct from [sourceTab], which tracks Activity-stack drill-ins.
+  static int? previousTab;
 
   /// Opens the new-thread compose flow in **Help & Feedback** mode (Plot-Team
   /// chat filed under the user's Inbox), driving the Activity-tab inner stack
@@ -308,6 +341,10 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
       }
       return;
     }
+    // Remember where we came from so the back gesture out of a secondary tab
+    // (Agenda/Search/More) returns here instead of exiting the app. Recorded
+    // before the switch so it captures the tab being left.
+    PrioritiesShell.previousTab = tabsRouter.activeIndex;
     // Bottom-nav switches are "replace" so browser/Cmd+[ history doesn't
     // grow a frame per tab tap (mirrors the prior Focus/Agenda behavior).
     PrioritiesShell.sourceTab = null;
@@ -909,6 +946,40 @@ class BottomNavInset extends InheritedWidget {
   @override
   bool updateShouldNotify(BottomNavInset oldWidget) =>
       height != oldWidget.height;
+}
+
+/// Wraps a *secondary* bottom-nav tab root (Agenda / More) with a back-gesture
+/// handler so Android's predictive back returns to the previously active tab
+/// (via [returnFromSecondaryTab]) instead of falling through the nested
+/// navigators and exiting the app.
+///
+/// Single-panel only: multi-panel hides the bottom nav and forces the Activity
+/// tab, so these tab roots are never the active back target there — the
+/// [PopScope] would otherwise needlessly intercept a desktop back. The Search
+/// tab does NOT use this wrapper; it has its own inline [PopScope] that first
+/// clears a typed query before leaving the tab.
+class SecondaryTabBackScope extends StatelessWidget {
+  const SecondaryTabBackScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<LayoutBloc, LayoutState>(
+      buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
+      builder: (context, layoutState) {
+        if (layoutState.multiPanel) return child;
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            returnFromSecondaryTab(context);
+          },
+          child: child,
+        );
+      },
+    );
+  }
 }
 
 class _PersistentBottomNav extends StatelessWidget {

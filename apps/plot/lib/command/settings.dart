@@ -97,7 +97,7 @@ List<StaticCommandGroup> settingsCommands({
     title: 'Settings',
     shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
     commands: [
-      ToggleArchivedPrioritiesFilter(showAllPriorities: showAllPriorities),
+      ToggleArchived(showingArchived: showAllPriorities),
       ManageConnections(),
       ManageTwists(),
       ManageLinkedEmails(),
@@ -105,7 +105,7 @@ List<StaticCommandGroup> settingsCommands({
       if (NotificationService.isSupported &&
           !NotificationService.instance.isTokenRegistered)
         EnableNotifications(),
-      if (rootPriority != null) ShowEarlyNotificationsSettings(rootPriority),
+      if (rootPriority != null) ShowNotificationsSettings(),
       ChangeAiPreference(),
       for (final org in adminOrgs)
         if (org['plan'] != 'free')

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -24,6 +25,17 @@ const _signedOutNotifyCooldown = Duration(hours: 24);
 /// (999900). A newer OTP/confirm replaces any prior one via replace-by-id.
 const _otpNotificationId = 999901;
 
+/// Debug-only logger for the background isolate.
+///
+/// Gated on [kDebugMode] so release builds never write user, thread, or note
+/// identifiers to the device console. Uses [debugPrint] (allowed by the
+/// `avoid_print` lint) instead of `print`.
+void _bgLog(String message) {
+  if (kDebugMode) {
+    debugPrint('[BG_HANDLER] $message');
+  }
+}
+
 /// Top-level background message handler registered with Firebase Messaging.
 ///
 /// Runs in a separate isolate when the app is backgrounded or terminated.
@@ -31,8 +43,7 @@ const _otpNotificationId = 999901;
 /// a local notification.
 @pragma('vm:entry-point')
 Future<void> handleBackgroundMessage(RemoteMessage message) async {
-  // ignore: avoid_print
-  print('[BG_HANDLER] message received type=${message.data['type']}');
+  _bgLog('message received type=${message.data['type']}');
 
   final type = message.data['type'] as String?;
 
@@ -51,20 +62,16 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   final apiRoot = prefs.getString('api_root');
   final publishableKey = prefs.getString('clerk_publishable_key');
   final userId = prefs.getString('notification_user_id');
-  // ignore: avoid_print
-  print('[BG_HANDLER] prefs: apiRoot=$apiRoot userId=$userId publishableKey=${publishableKey != null}');
+  _bgLog('prefs: apiRoot=$apiRoot userId=$userId publishableKey=${publishableKey != null}');
   if (apiRoot == null || publishableKey == null || userId == null) {
-    // ignore: avoid_print
-    print('[BG_HANDLER] missing prefs — aborting');
+    _bgLog('missing prefs — aborting');
     return;
   }
 
   // Obtain a fresh session token using Clerk's persisted cache
-  // ignore: avoid_print
-  print('[BG_HANDLER] getting session token...');
+  _bgLog('getting session token...');
   final token = await _getSessionToken(publishableKey);
-  // ignore: avoid_print
-  print('[BG_HANDLER] token=${token != null ? 'ok' : 'null'}');
+  _bgLog('token=${token != null ? 'ok' : 'null'}');
   if (token == null) {
     // Session is dead — user would otherwise silently miss every push until
     // they happen to reopen the app. Surface a throttled local notification
@@ -74,11 +81,9 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   }
 
   // Fetch up-to-date notification summaries from the API
-  // ignore: avoid_print
-  print('[BG_HANDLER] fetching notification content from $apiRoot...');
+  _bgLog('fetching notification content from $apiRoot...');
   final summaries = await _fetchNotificationContent(apiRoot, token);
-  // ignore: avoid_print
-  print('[BG_HANDLER] summaries=${summaries?.length ?? 'null'}');
+  _bgLog('summaries=${summaries?.length ?? 'null'}');
   if (summaries == null || summaries.isEmpty) return;
 
   // Initialize local notification display
@@ -92,8 +97,7 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   // next opening. Urgent notifications bypass the window.
   final hasUrgent = summaries.any((s) => (s['urgent'] as bool?) ?? false);
   final scheduleAt = hasUrgent ? null : computeWindowOpenTime(prefs);
-  // ignore: avoid_print
-  print('[BG_HANDLER] scheduleAt=$scheduleAt (urgent=$hasUrgent)');
+  _bgLog('scheduleAt=$scheduleAt (urgent=$hasUrgent)');
   if (scheduleAt != null) {
     // Notify window closed: schedule persistent notifications for when it opens.
     await _scheduleNotifications(summaries, scheduleAt);
@@ -127,8 +131,7 @@ Future<void> _handleOtpBackgroundMessage(RemoteMessage message) async {
   final apiRoot = prefs.getString('api_root');
   final publishableKey = prefs.getString('clerk_publishable_key');
 
-  // ignore: avoid_print
-  print('[BG_HANDLER] otp: noteId=$noteId threadId=$threadId kind=$kind');
+  _bgLog('otp: noteId=$noteId threadId=$threadId kind=$kind');
 
   await NotificationDisplay.instance.initialize();
 
@@ -159,8 +162,7 @@ Future<void> _handleOtpBackgroundMessage(RemoteMessage message) async {
     final service = otp.service.isNotEmpty ? otp.service : 'Verification';
     final title = isOtpKind ? service : 'Confirm your $service account';
     final body = isOtpKind ? 'Code: ${otp.code}' : 'Tap to confirm your account';
-    // ignore: avoid_print
-    print('[BG_HANDLER] otp: showing rich notification isOtp=$isOtpKind service=$service');
+    _bgLog('otp: showing rich notification isOtp=$isOtpKind service=$service');
     await NotificationDisplay.instance.showBatchNotification(
       id: _otpNotificationId,
       title: title,
@@ -170,8 +172,7 @@ Future<void> _handleOtpBackgroundMessage(RemoteMessage message) async {
     );
   } else {
     // Fallback: generic notification so the user knows to check the app.
-    // ignore: avoid_print
-    print('[BG_HANDLER] otp: cta unavailable, showing fallback notification');
+    _bgLog('otp: cta unavailable, showing fallback notification');
     await NotificationDisplay.instance.showBatchNotification(
       id: _otpNotificationId,
       title: 'Verification message',
@@ -213,8 +214,7 @@ Future<_OtpContent?> _fetchOtpContent(
         .get(uri, headers: {'Authorization': 'Bearer $token'})
         .timeout(const Duration(seconds: 10));
     if (response.statusCode != 200) {
-      // ignore: avoid_print
-      print('[BG_HANDLER] notification-otp-content HTTP ${response.statusCode}');
+      _bgLog('notification-otp-content HTTP ${response.statusCode}');
       return null;
     }
     final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -227,8 +227,7 @@ Future<_OtpContent?> _fetchOtpContent(
       url: cta['url'] as String?,
     );
   } catch (e) {
-    // ignore: avoid_print
-    print('[BG_HANDLER] _fetchOtpContent error: $e');
+    _bgLog('_fetchOtpContent error: $e');
     return null;
   }
 }
@@ -242,8 +241,7 @@ Future<void> _maybeShowSignedOutNotification(SharedPreferences prefs) async {
   final now = DateTime.now().millisecondsSinceEpoch;
   if (lastMs != null &&
       now - lastMs < _signedOutNotifyCooldown.inMilliseconds) {
-    // ignore: avoid_print
-    print('[BG_HANDLER] skipping signed-out notification (cooldown)');
+    _bgLog('skipping signed-out notification (cooldown)');
     return;
   }
   try {
@@ -257,8 +255,7 @@ Future<void> _maybeShowSignedOutNotification(SharedPreferences prefs) async {
     );
     await prefs.setInt(_lastSignedOutNotifyKey, now);
   } catch (e) {
-    // ignore: avoid_print
-    print('[BG_HANDLER] failed to show signed-out notification: $e');
+    _bgLog('failed to show signed-out notification: $e');
   }
 }
 
@@ -280,8 +277,7 @@ Future<String?> _getSessionToken(String publishableKey) async {
     auth.terminate();
     return token.jwt;
   } catch (e) {
-    // ignore: avoid_print
-    print('[BG_HANDLER] _getSessionToken error: $e');
+    _bgLog('_getSessionToken error: $e');
     return null;
   }
 }
@@ -308,8 +304,7 @@ Future<List<Map<String, dynamic>>?> _fetchNotificationContent(
         .timeout(const Duration(seconds: 15));
 
     if (response.statusCode != 200) {
-      // ignore: avoid_print
-      print('[BG_HANDLER] notification-content HTTP ${response.statusCode}: ${response.body}');
+      _bgLog('notification-content HTTP ${response.statusCode}: ${response.body}');
       return null;
     }
 
@@ -360,8 +355,7 @@ Future<void> _scheduleNotifications(
     );
   }
 
-  // ignore: avoid_print
-  print('[BG_HANDLER] scheduled ${summaries.length} notifications for $scheduleAt');
+  _bgLog('scheduled ${summaries.length} notifications for $scheduleAt');
 }
 
 /// Load persisted thread IDs from SharedPreferences for background dedup.

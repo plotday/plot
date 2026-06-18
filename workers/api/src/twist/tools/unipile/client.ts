@@ -48,7 +48,10 @@ export class UnipileClient {
     // Unipile assigns a per-workspace DSN as a full `host:port`
     // (e.g. `api40.unipile.com:17020`). Use it verbatim.
     this.base = `https://${env.UNIPILE_DSN}/api/v1`;
-    this.fetchImpl = fetchImpl ?? globalThis.fetch;
+    // `globalThis.fetch` must keep `globalThis` as its `this` — calling it as
+    // `this.fetchImpl(...)` rebinds `this` to the client instance, which the
+    // Workers runtime rejects with "Illegal invocation". Bind it explicitly.
+    this.fetchImpl = fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   // ---------- Account lifecycle ----------

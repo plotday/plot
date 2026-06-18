@@ -100,18 +100,20 @@ export function heroSpan(o: {
     </div></body></html>`;
 }
 
-/** Flat multi-panel with a synthesized Windows 11 window frame: a subtle 1px
- *  border, rounded corners, and a soft drop shadow. Used for Microsoft Store
- *  desktop screenshots captured on macOS in Windows-emulation mode. Mirrors
- *  multipanelFlat's caption band + fit-to-area layout; only the image frame
- *  differs. The radius/border are tunable — calibrated to read as Windows 11
- *  at store scale. */
+/** Flat multi-panel with a native-looking Windows 11 window frame: Windows 11's
+ *  circular ~8-DIP corner radius, a subtle 1px border, and a soft drop shadow.
+ *  Used for Microsoft Store desktop screenshots captured on macOS in
+ *  Windows-emulation mode. The raw capture has its macOS squircle corners
+ *  squared first (square-corners.py), so this circular radius is the ONLY corner
+ *  rounding — no macOS corner ghosting through. Radius: the window (1440 logical
+ *  px) is displayed at ~0.95×canvas ≈ 1.9× device scale, so Windows 11's 8 DIP
+ *  ≈ 15px here. */
 export function multipanelWindows(o: {
   src: string; w: number; h: number; headline: string;
 }): string {
   const bandH = Math.round(o.h * 0.105);
   const pad = Math.round(o.h * 0.03);
-  const radius = Math.round(o.w * 0.005); // ~19px @ 3840w — Windows 11 corner
+  const radius = Math.round(o.w * 0.0052); // ~15px @2880w — Windows 11 8-DIP corner
   return `<!doctype html><html><body style="margin:0">
     <div style="width:${o.w}px;height:${o.h}px;background:${gradient(120)};
       box-sizing:border-box;display:flex;flex-direction:column;
@@ -122,8 +124,8 @@ export function multipanelWindows(o: {
       <div style="flex:1 1 auto;min-height:0;width:100%;display:flex;
         align-items:flex-start;justify-content:center;padding:0 0 ${pad}px">
         <img src="${o.src}" style="max-width:95%;max-height:100%;
-          border-radius:${radius}px;border:1px solid rgba(255,255,255,.10);
-          box-shadow:0 30px 90px rgba(0,0,0,.45)"/>
+          border-radius:${radius}px;border:1px solid rgba(0,0,0,.10);
+          box-shadow:0 30px 90px rgba(0,0,0,.42)"/>
       </div>
     </div></body></html>`;
 }

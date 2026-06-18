@@ -1,0 +1,7 @@
+email client
+team chat
+task manager
+calendar
+productivity
+collaboration
+inbox

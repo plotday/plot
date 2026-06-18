@@ -1,10 +1,73 @@
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/store/attention.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/widget.dart';
 
 import 'base.dart';
 import 'early_notifications.dart';
+
+/// Settings → Notifications entry point. Notification settings cascade from
+/// roles to focuses — there is no single global root — so this routes to a
+/// role's notification template rather than a focus:
+///   • One role  → opens that role's settings directly.
+///   • 2+ roles  → prompts the user to pick a role first.
+/// Per-focus overrides remain reachable from each focus's own "…" menu (via
+/// [ShowEarlyNotificationsSettings]).
+class ShowNotificationsSettings extends Command {
+  ShowNotificationsSettings()
+    : super(
+        title: 'Notifications',
+        icon: PlotIcon.notification,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final roles = await Role.all();
+    if (!context.mounted) return const CommandSkipped();
+
+    if (roles.isEmpty) {
+      return const CommandMessage('No roles found', isError: true);
+    }
+
+    // Single role: skip the picker and go straight to its settings.
+    if (roles.length == 1) {
+      return ShowRoleNotificationsSettings(roles.first).run(context);
+    }
+
+    // Multiple roles: choose which role's defaults to edit first.
+    final chosen = await SelectModal.open<Role>(
+      context,
+      title: 'Choose a role',
+      items: (search) async {
+        final filtered = search == null
+            ? roles
+            : roles
+                  .where(
+                    (r) => r.name.toLowerCase().contains(search.toLowerCase()),
+                  )
+                  .toList();
+        return [SelectGroup<Role>(items: filtered)];
+      },
+      itemBuilder: (role, _) => Builder(
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: ctx.theme.spacing.lg,
+            vertical: ctx.theme.spacing.md,
+          ),
+          // The role's colour is its identity, so the name is rendered in it
+          // (not paired with a ColorDot, which is for colour selection only).
+          child: RoleLabel(role: role),
+        ),
+      ),
+    );
+    if (!chosen.present || !context.mounted) return const CommandSkipped();
+
+    return ShowRoleNotificationsSettings(chosen.value).run(context);
+  }
+}
 
 /// Modal for a [Role]'s notification template: a master toggle + active hours +
 /// see-within deadline. Unlike the per-focus editor
@@ -182,7 +245,17 @@ class ShowRoleNotificationsSettings extends ShowForm {
       title: 'Notifications for ${r.name}',
       groups: [
         StaticFormGroup(
-          items: [notifyEnabledToggle, seeWithinSelect, notifyWindowList],
+          items: [
+            FormInfo(
+              key: 'role_notifications_help',
+              text:
+                  'These are your default notifications for this role. You can '
+                  'adjust notifications for a specific focus in its menu.',
+            ),
+            notifyEnabledToggle,
+            seeWithinSelect,
+            notifyWindowList,
+          ],
         ),
         StaticFormGroup(
           items: [

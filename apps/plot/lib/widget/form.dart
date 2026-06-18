@@ -539,6 +539,12 @@ class FormSelect<T> extends FormItem {
     return SelectTile(
       label: label ?? key,
       value: _hasValue ? titleBuilder!(_value as T) : null,
+      // When a Widget label is provided it carries its own styling (e.g. a
+      // role/focus label rendered in its colour), so show it in the value slot
+      // instead of the plain title text.
+      valueWidget: _hasValue && labelBuilder != null
+          ? labelBuilder!(_value as T)
+          : null,
       leading: _hasValue && leadingBuilder != null
           ? IconTheme(
               data: IconThemeData(color: context.theme.colors.foreground),

@@ -318,13 +318,28 @@ class ModalProvider extends StatefulWidget {
             .dependOnInheritedWidgetOfExactType<_InnerModalProvider>()
             ?.provider ??
         context.dependOnInheritedWidgetOfExactType<_ModalProviderInherited>();
-    assert(provider != null, 'No ModalProvider found in context');
-    return provider!;
+    if (provider != null) return provider;
+    // No ModalProvider in this context's ancestry — e.g. a focus deep in an
+    // overlay/route mounted above the shell. Fall back to the outermost
+    // provider so top-level modals (the ⌘/Ctrl-K command palette, pickers,
+    // confirms) open from anywhere instead of asserting. Only fails if no
+    // ModalProvider is mounted at all (shouldn't happen after startup).
+    final _ModalProviderInherited? root = _ModalProviderState._root?._inherited;
+    assert(root != null, 'No ModalProvider found in context or globally');
+    return root!;
   }
 }
 
 class _ModalProviderState extends State<ModalProvider> {
   static final Set<_ModalProviderState> _activeProviders = {};
+
+  /// The outermost (root) provider — the global fallback [ModalProvider.of]
+  /// uses when a caller's context has no ModalProvider ancestor.
+  static _ModalProviderState? _root;
+
+  /// This provider's current inherited widget (rebuilt each [build]); returned
+  /// by [ModalProvider.of]'s root fallback.
+  _ModalProviderInherited? _inherited;
 
   /// Cross-provider notifier for [ModalProvider.hasOpenModalsListenable].
   /// Updated by [_notifyStackChanged] whenever any provider's stack toggles
@@ -613,17 +628,28 @@ class _ModalProviderState extends State<ModalProvider> {
 
   @override
   Widget build(BuildContext context) {
-    return _ModalProviderInherited._(
+    final inherited = _ModalProviderInherited._(
       modalStack: _modalStack,
       modalStackNotifier: _modalStackNotifier,
       state: this,
       child: Container(key: _rootContextKey, child: widget.child),
     );
+    _inherited = inherited;
+    // The outermost provider (no ancestor provider) is the global fallback for
+    // contexts outside any ModalProvider subtree. getElementFor… doesn't create
+    // a dependency, so this is safe to read during build.
+    if (context
+            .getElementForInheritedWidgetOfExactType<_ModalProviderInherited>() ==
+        null) {
+      _root = this;
+    }
+    return inherited;
   }
 
   @override
   void dispose() {
     _activeProviders.remove(this);
+    if (identical(_root, this)) _root = null;
     _modalStackNotifier.dispose();
     super.dispose();
   }

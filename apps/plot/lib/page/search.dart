@@ -18,7 +18,8 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/router.dart';
 import 'package:plot/widget/activity_feed_thread_row.dart';
-import 'package:plot/widget/priorities_shell.dart' show BottomNavInset;
+import 'package:plot/widget/priorities_shell.dart'
+    show BottomNavInset, returnFromSecondaryTab;
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/widget/search_footer.dart';
@@ -181,7 +182,32 @@ class _SearchViewState extends State<_SearchView> {
   Widget build(BuildContext context) {
     return BlocBuilder<PriorityBloc, PriorityState>(
       builder: (context, state) {
-        // Match the per-focus feed (the "usual threads view"). The feed wraps
+        // Intercept the single-panel back gesture: the Search tab sits at the
+        // root of its own navigator with nothing to pop, so without this the
+        // back gesture falls through every navigator and exits the app. The
+        // first back clears a typed query (results collapse back to the prompt)
+        // without leaving the tab; a back on an empty field returns to the tab
+        // the user came from. The Search tab only mounts single-panel (the
+        // multi-panel layout searches inline in the priority panel), so no
+        // layout gate is needed here.
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            if (_searchController.text.isNotEmpty) {
+              _searchController.clear();
+              return;
+            }
+            returnFromSecondaryTab(context);
+          },
+          child: _buildScaffold(context, state),
+        );
+      },
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, PriorityState state) {
+    // Match the per-focus feed (the "usual threads view"). The feed wraps
         // its list in `ScrollEdgeFade(background: context.colour.background)`,
         // which paints a solid [background] fill behind the rows (NOT the
         // darker [panelDarkestBackground], which is only the header/frame
@@ -224,8 +250,6 @@ class _SearchViewState extends State<_SearchView> {
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _buildResults(BuildContext context, PriorityState state) {
