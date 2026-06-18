@@ -1574,7 +1574,6 @@ export class Integrations extends Tool implements IAuth {
             .execute();
         }
       }
-    } else {
     }
 
     // The compose succeeded — drop the stashed retry spec so the thread isn't

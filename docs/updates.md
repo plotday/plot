@@ -84,6 +84,8 @@
 
 ### Fixes
 
+- When a service can't be reached while you're connecting an account, Plot now shows a clear
+  "temporarily unavailable — please try again" message instead of a generic "Server Error".
 - On the web app, refreshing the page or opening a link to a specific focus or thread now keeps you on
   that page. Previously it would load for a moment and then bounce you to your Personal Inbox; now a
   refresh stays put and a shared link opens exactly the focus or thread it points to.

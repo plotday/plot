@@ -303,6 +303,48 @@ pnpm reset
 - **ALWAYS generate types** after schema changes: `pnpm types`
 - **ALWAYS use `$DATABASE_URL`** for psql commands — never hardcode a port number. Exception: if `worktree-db` was run mid-session, `$DATABASE_URL` may be stale (still pointing at the main DB on `54322`) — see "Stale `$DATABASE_URL` after mid-session `worktree-db`" and override it from `.worktree-db` instead.
 
+## Secrets and Environment Variables
+
+Worker secrets and env vars (API keys, OAuth secrets, DSNs, etc.) all originate in **1Password** and flow to local dev and production through a small set of scripts. Understand this before adding, rotating, or debugging any secret — a missing step here surfaces as an upstream `401`/`500` in production even though "the secret is in 1Password."
+
+### Source of truth
+
+- **1Password** (account `plotco`), vaults `Production` and `Development`. Vault names are **case-insensitive**.
+- Root **`.env`** and **`.env.production`** map each var to a `op://` reference, e.g. `UNIPILE_API_KEY=op://$ENV/Unipile/credential`. `$ENV` resolves to `production`/`development`. `.env.local` / `.env.production.local` override (last match wins).
+- Each worker declares **which** vars it deploys in its `package.json` `config.deploy_vars` (a space-separated list). A var must be in `deploy_vars` to reach that worker, AND in the `Bindings` type in `workers/<worker>/src/env.ts`.
+- **Secret vs plaintext is decided by the var NAME**: `scripts/gen-env` output whose name matches `SECRET|KEY|TOKEN` is deployed as a **Cloudflare secret** (`wrangler secret bulk`); everything else is a plaintext **var** (`--var`). Example: `UNIPILE_API_KEY` + `UNIPILE_WEBHOOK_SECRET` → secrets; `UNIPILE_DSN` → plaintext var.
+
+### Local development
+
+`pnpm get-env` (per package → `scripts/get-env` → `scripts/gen-env`) resolves the `op://` refs and writes `.dev.vars.development` and `.dev.vars.production`, then copies development → `.dev.vars` (what `wrangler dev` reads). `.dev.vars.production` therefore holds the **actual resolved production secret values** — handy for debugging, but treat it as secret material (it is gitignored).
+
+### Production deploys — two paths
+
+- **Local manual:** `pnpm --filter @plotday/<worker> deploy:vars` → `scripts/deploy-worker-vars` resolves from 1Password live and pushes secrets (`wrangler secret bulk`) + vars (`--var`) immediately.
+- **CI (normal path):** `.github/workflows/deploy-workers.yml` does **NOT** touch 1Password. It reads a pre-rendered GitHub Actions secret **`WORKER_CONFIGS_JSON`** — a per-worker `{secrets, vars}` bundle — and pushes that.
+
+### CRITICAL: the CI bundle is a static snapshot
+
+`WORKER_CONFIGS_JSON` (and `FLUTTER_ENV_PROD`, `SITE_SECRETS_JSON`) is regenerated **only** when someone runs **`bash scripts/sync-github-secrets`** (resolves 1Password → rebuilds the bundles → `gh secret set`). It is **not** rebuilt on deploy. Consequences:
+
+- **Adding or rotating any secret requires re-running `scripts/sync-github-secrets`.** Otherwise CI keeps deploying the old/missing value forever.
+- `wrangler secret bulk` only **sets** the keys present in the bundle (it never deletes others), so a newly added key that's missing from the snapshot silently never reaches prod — no error, just a stale/absent secret.
+
+### Adding or rotating a secret — checklist
+
+1. Put the value in 1Password (`Production` and `Development` as needed).
+2. Add the `op://$ENV/...` reference to root `.env` (secrets) or a literal to `.env.production` (non-secret config).
+3. Add the var name to the worker's `config.deploy_vars` in `workers/<worker>/package.json` **and** to the `Bindings` type in `src/env.ts`.
+4. `pnpm get-env` to refresh local `.dev.vars`.
+5. **`bash scripts/sync-github-secrets`** to refresh the CI bundles (`WORKER_CONFIGS_JSON` etc.). Skipping this is the #1 cause of "works locally, 401s in prod."
+6. Deploy (CI on merge, or `pnpm --filter @plotday/<worker> deploy:vars` for an immediate manual push).
+
+### Verifying / debugging a secret in production
+
+- **Names only:** `cd workers/<worker> && wrangler secret list --env production` (values are never readable).
+- **Snapshot freshness:** `gh secret list` shows each GitHub secret's `Updated` timestamp. If `WORKER_CONFIGS_JSON` predates your `deploy_vars` change, the snapshot is stale → re-run `sync-github-secrets`.
+- **Is the VALUE itself valid?** The pipeline can be perfect yet the stored credential wrong/expired/mismatched. Resolve the production value locally (`pnpm get-env`, then read `.dev.vars.production`) and test it against the upstream API directly, printing only the HTTP status so the secret never lands in logs — e.g. `curl -s -o /dev/null -w "%{http_code}\n" -H "X-API-KEY: $KEY" "https://$UNIPILE_DSN/api/v1/accounts"`. A `401` here means the 1Password credential (or a key↔DSN mismatch), not the deploy pipeline.
+
 ## Development Webhooks with Cloudflare Tunnel
 
 For testing webhooks from external services (Slack, Gmail, etc.) during local development, you can expose your local API worker via a Cloudflare Tunnel.

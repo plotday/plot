@@ -35,6 +35,7 @@ import {
 } from "vitest";
 
 import { rpc } from "../rpc";
+import type * as RpcModule from "../rpc";
 import { isV3 } from "./topic";
 
 // ---------------------------------------------------------------------------
@@ -111,7 +112,7 @@ describe.skipIf(!DATABASE_URL)("topic RPCs via DB (txn rollback)", () => {
 
   it("create_topic RPC returns a UUID (txn rollback)", async () => {
     // Use the actual (un-mocked) rpc for DB integration tests.
-    const realRpc = (await vi.importActual<typeof import("../rpc")>("../rpc")).rpc;
+    const realRpc = (await vi.importActual<typeof RpcModule>("../rpc")).rpc;
 
     let capturedTopicId: string | undefined;
 
@@ -149,7 +150,7 @@ describe.skipIf(!DATABASE_URL)("topic RPCs via DB (txn rollback)", () => {
   });
 
   it("create_group RPC returns a UUID (txn rollback)", async () => {
-    const realRpc = (await vi.importActual<typeof import("../rpc")>("../rpc")).rpc;
+    const realRpc = (await vi.importActual<typeof RpcModule>("../rpc")).rpc;
 
     let capturedGroupId: string | undefined;
 

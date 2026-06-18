@@ -614,20 +614,41 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
     extraArgs: [],
   });
 
-  // Generate the auth URL
-  const result = await Integrations.GenerateAuthUrl({
-    provider: provider as any,
-    scopes: finalScopes,
-    requiredScopes: providerDecl.scopes,
-    enabledScopeGroups,
-    callback: callback as any,
-    redirectUri,
-    platform,
-    forceBridge,
-    env: c.env,
-    storage: c.env.STORAGE,
-    accountHint,
-  });
+  // Generate the auth URL. Hosted-auth providers (LinkedIn, WhatsApp,
+  // Instagram) mint the URL via a third party (Unipile); OAuth providers build
+  // it locally. A failure in that upstream — Unipile returning 401 (bad/expired
+  // API key or key↔DSN mismatch) or 5xx, the provider being down, etc. — throws
+  // here. Translate it into a clean 502 with an actionable message instead of
+  // letting it bubble to the global handler as an opaque `500 Internal Server
+  // Error`, and capture the underlying error with context for debugging.
+  let result: { url: string; clientId: string; state: string } | null;
+  try {
+    result = await Integrations.GenerateAuthUrl({
+      provider: provider as any,
+      scopes: finalScopes,
+      requiredScopes: providerDecl.scopes,
+      enabledScopeGroups,
+      callback: callback as any,
+      redirectUri,
+      platform,
+      forceBridge,
+      env: c.env,
+      storage: c.env.STORAGE,
+      accountHint,
+    });
+  } catch (err) {
+    c.var.tracker.captureException(err, {
+      context: "integrations:auth",
+      twist_instance_id: twistInstanceId,
+      provider,
+    });
+    return c.json(
+      {
+        message: `Couldn't start authentication for ${provider}. The provider may be temporarily unavailable — please try again.`,
+      },
+      502
+    );
+  }
 
   if (!result) {
     return c.json(
