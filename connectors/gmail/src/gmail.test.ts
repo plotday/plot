@@ -216,6 +216,81 @@ describe("transformGmailThread — mailing-list From rewrite", () => {
   });
 });
 
+describe("transformGmailThread — link author (thread originator)", () => {
+  function linkAuthor(
+    thread: GmailThread
+  ): { email?: string; name?: string } | null | undefined {
+    return (
+      transformGmailThread(thread) as {
+        author?: { email?: string; name?: string } | null;
+      }
+    ).author;
+  }
+
+  /** Build a multi-message thread; each entry is the message's From header. */
+  function threadFrom(...froms: string[]): GmailThread {
+    const messages: GmailMessage[] = froms.map((from, i) => ({
+      id: `msg-${i + 1}`,
+      threadId: "thread-1",
+      labelIds: ["INBOX"],
+      snippet: `body ${i + 1}`,
+      historyId: "1",
+      internalDate: String(1700000000000 + i * 1000),
+      sizeEstimate: 100,
+      payload: {
+        mimeType: "text/plain",
+        headers: [
+          { name: "From", value: from },
+          { name: "To", value: "me@example.com" },
+          { name: "Subject", value: "Workshop ideas" },
+        ],
+        body: { size: 6, data: btoa(`body ${i + 1}`) },
+      },
+    }));
+    return { id: "thread-1", historyId: "1", messages };
+  }
+
+  it("credits the thread to the first message's sender", () => {
+    const thread = threadWith({
+      From: "Jane Doe <jane@example.com>",
+      To: "me@example.com",
+      Subject: "Workshop ideas",
+    });
+    expect(linkAuthor(thread)).toMatchObject({
+      email: "jane@example.com",
+      name: "Jane Doe",
+    });
+  });
+
+  it("credits the ORIGINATOR, not a later replier", () => {
+    // Phil started the thread; Stacy replied. The thread author stays Phil;
+    // the replier (Stacy) is credited via the per-note author, which the
+    // notification path reads for unread replies.
+    const thread = threadFrom(
+      "Phil <phil@example.com>",
+      "Stacy <stacy@example.com>"
+    );
+    expect(linkAuthor(thread)).toMatchObject({
+      email: "phil@example.com",
+      name: "Phil",
+    });
+  });
+
+  it("mirrors the note author's DMARC name suppression", () => {
+    // When a Google Group rewrote the From address, the display name belongs
+    // to a different identity — the link author must suppress it exactly like
+    // the note author does.
+    const thread = threadWith({
+      From: "Cloudflare via Plot Team <team@plot.day>",
+      To: "member@plot.day",
+      "X-Original-Sender": "noreply@cloudflare.com",
+      Subject: "Cloudflare Workers usage reached your threshold",
+    });
+    expect(linkAuthor(thread)).toMatchObject({ email: "team@plot.day" });
+    expect(linkAuthor(thread)?.name).toBeUndefined();
+  });
+});
+
 describe("processEmailThreads — no status set", () => {
   /**
    * Build a minimal Gmail thread with the given labelIds on its single message.
