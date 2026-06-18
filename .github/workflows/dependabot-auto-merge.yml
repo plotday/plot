@@ -1,0 +1,48 @@
+name: Dependabot auto-merge
+
+# Auto-merges low-risk Dependabot version-update PRs once all required status
+# checks pass. This relies on GitHub's native auto-merge (`gh pr merge --auto`),
+# so the actual merge only happens after the required checks on `main` go green
+# — see the repo's branch-protection settings. The repo's `Allow auto-merge`
+# setting must be enabled for this to take effect.
+#
+# Policy (see the `if:` on the merge step):
+#   - patch and minor bumps (any ecosystem: npm, pub, github-actions) -> auto-merge
+#   - any github-actions bump, including major (CI-only, never ships to runtime) -> auto-merge
+#   - all other major bumps (npm/pub) -> left for human review
+#
+# Security note: this runs on `pull_request` (not `pull_request_target`) and
+# never checks out or executes the PR's code, so the elevated `GITHUB_TOKEN`
+# (granted via the `permissions:` block below, which Dependabot runs honour)
+# is not exposed to untrusted code.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # Only ever act on Dependabot's own PRs.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for safe updates
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor' ||
+          steps.meta.outputs.package-ecosystem == 'github_actions'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

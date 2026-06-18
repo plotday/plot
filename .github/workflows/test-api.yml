@@ -4,16 +4,52 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "workers/api/**"
-      - "libs/**"
-      - "public"
-      - "public/twister/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/test-api.yml"
+
+# A fresh push to a PR supersedes the previous test run, so cancel the older
+# one instead of paying for a result no one will look at.
+concurrency:
+  group: test-api-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # Cheap path gate that decides whether the heavy `test` job needs to run.
+  # The `test` job is gated with a job-level `if` (NOT a workflow-level
+  # `paths:` filter) so its check context ALWAYS reports: when nothing
+  # relevant changed the job reports as "skipped", which branch protection
+  # treats as success. A workflow-level `paths:` filter would instead make the
+  # context never appear, which permanently blocks any PR that requires it —
+  # so a Flutter-only or docs-only PR could never satisfy a required `test`
+  # check. Mirrors the same pattern in lint.yml.
+  # Named `detect-api` (not `detect`) to avoid colliding with the Lint
+  # workflow's `detect` check context, which is a required status check.
+  detect-api:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF" >/dev/null 2>&1 || true
+          BASE=$(git merge-base "origin/$BASE_REF" HEAD)
+          FILES=$(git diff --name-only "$BASE" HEAD)
+          echo "Changed files vs $BASE:"; echo "$FILES"
+          if echo "$FILES" | grep -qE '^(workers/api/|libs/|public$|public/twister/|pnpm-lock\.yaml$|\.github/workflows/test-api\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Decision: run=$(tail -1 "$GITHUB_OUTPUT")"
+
   test:
+    needs: detect-api
+    if: needs.detect-api.outputs.run == 'true'
     runs-on: ubuntu-latest
 
     steps:
