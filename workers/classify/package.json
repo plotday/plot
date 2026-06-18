@@ -34,7 +34,7 @@
     "@types/node": "^22.10.2",
     "@types/pg": "^8.16.0",
     "vitest": "^3.0.5",
-    "wrangler": "^4.101.0"
+    "wrangler": "^4.102.0"
   },
   "nx": {
     "tags": [
