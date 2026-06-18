@@ -5,6 +5,7 @@ import type { DB } from "../db";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { rpcUser } from "../rpc";
+import { isAiEnabled } from "../utils/ai-limits";
 
 /**
  * AI-powered note analysis for auto-tagging todos, reply-needed notes,
@@ -18,6 +19,13 @@ export async function analyzeNote(
 ): Promise<boolean> {
   const db = createDb(env);
   try {
+    // Built-in-AI opt-out chokepoint: both enqueue paths (sync/notes and
+    // queue/updates) reach the LLM through here, and the updates path gates
+    // only on the free-tier quota — so enforce the opt-out here too. Returning
+    // false ⇒ "unread not handled by AI", the same path a quota miss takes, so
+    // the thread still marks unread normally without an importance score.
+    if (!(await isAiEnabled(db, userId))) return false;
+
     const context = await gatherContext(db, noteId, threadId);
     if (!context) return false;
 

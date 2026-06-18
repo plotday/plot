@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyThreadState } from "./note-analysis";
+import { analyzeNote, applyThreadState } from "./note-analysis";
+
+// analyzeNote opens its own connection and resolves the opt-out via isAiEnabled
+// before any LLM work; stub both so the early-return path runs without a DB.
+vi.mock("../db", () => ({ createDb: () => ({ destroy: async () => {} }) }));
+const isAiEnabledMock = vi.fn(async () => false);
+vi.mock("../utils/ai-limits", () => ({
+  isAiEnabled: (...args: unknown[]) => isAiEnabledMock(...(args as [])),
+}));
 
 // Capture every rpcUser call so we can assert what applyThreadState writes to
 // thread_state. The DB layer (upsert_thread_state) is covered separately; here
@@ -94,6 +102,27 @@ describe("applyThreadState", () => {
       NOTE_SOURCE_CREATED_AT,
     );
 
+    expect(upsertCalls).toHaveLength(0);
+  });
+});
+
+describe("analyzeNote built-in AI opt-out", () => {
+  beforeEach(() => {
+    upsertCalls.length = 0;
+    isAiEnabledMock.mockClear();
+  });
+
+  it("returns false and writes no thread_state when AI is disabled", async () => {
+    // Both enqueue paths funnel through analyzeNote; the updates.ts path only
+    // checks the free-tier quota, so the opt-out must be enforced here.
+    isAiEnabledMock.mockResolvedValueOnce(false);
+    const handled = await analyzeNote(
+      {} as any,
+      "note-1",
+      "thread-1",
+      "user-1",
+    );
+    expect(handled).toBe(false);
     expect(upsertCalls).toHaveLength(0);
   });
 });

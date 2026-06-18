@@ -11,6 +11,7 @@ import { withDb, withUserDb } from "../db";
 import type { Bindings } from "../env";
 import { enqueueJobs, type ClassifyJob } from "./classify-thread";
 import { notifyUserSyncByEnv } from "../app/sync/notify";
+import { isAiEnabled } from "../utils/ai-limits";
 import { createSystemModel, SYSTEM_PROVIDER_OPTIONS } from "../utils/system-model";
 
 // Debounce window. Priority edits and channel enables arrive in clusters
@@ -158,6 +159,16 @@ async function runRouter(
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
   const start = Date.now();
+
+  // Channel default-routing is entirely LLM-driven. Honor the built-in-AI
+  // opt-out by skipping the run — channels keep their existing defaults and
+  // the user files threads manually.
+  if (!(await isAiEnabled(db, userId))) {
+    logger.info("built-in AI disabled; skipping channel routing", {
+      user_id: userId,
+    });
+    return;
+  }
 
   const { priorities, channels, samplesByChannel } = await withUserDb(
     db,

@@ -13,6 +13,14 @@ export interface ClassifierContext {
   schemaName: string;
   /** Corpus name, for logging. */
   corpusName: string;
+  /**
+   * The user has turned off built-in AI (`ai_preference.builtin_ai_disabled`).
+   * When true, the LLM cascade makes no model calls — every LLM stage is
+   * skipped exactly as if the per-user budget were exhausted, so the cascade
+   * degrades through its deterministic stages (contact scoring, exact-move
+   * memory, channel defaults, role-Inbox fallback). Undefined ⇒ AI enabled.
+   */
+  aiDisabled?: boolean;
 }
 
 export interface Candidate {

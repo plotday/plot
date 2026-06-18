@@ -1230,7 +1230,10 @@ export async function prepareThreadForDb(
       .filter(Boolean)
       .join("\n");
 
-    if (textToEmbed.trim().length > 0) {
+    // Honor the built-in-AI opt-out: skip embedding so no content reaches the
+    // model. The classifier below (also seeing AI is off) files the thread via
+    // its deterministic stages without needing the embedding.
+    if (textToEmbed.trim().length > 0 && (await plot.isAiEnabled())) {
       try {
         const embedding = await plot.ai.embed(textToEmbed);
         embeddingJson = JSON.stringify(embedding);

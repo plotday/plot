@@ -6,7 +6,7 @@ import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
-import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
+import { checkAiLimit, isAiEnabled, recordAiUsage } from "../utils/ai-limits";
 import {
   selectUnsuppressedThreadIds,
   stampThreadsNotified,
@@ -99,13 +99,18 @@ notificationSummary.post("/notification-summary", async (c) => {
       return c.json({ summaries: [] });
     }
 
-    // Check free-tier AI limit
-    const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
+    // Gate on the free-tier AI limit AND the user's built-in-AI opt-out; either
+    // one off ⇒ deterministic fallbackSummary, no model call.
+    const [aiAllowed, aiOn] = await Promise.all([
+      checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing"),
+      isAiEnabled(c.var.db, userId),
+    ]);
+    const useAi = aiAllowed.allowed && aiOn;
 
     const summaries = await Promise.all(
       filteredBatches.map(async (batch) => {
         const displayPriorityTitle = batch.priority_title === "Everything" ? "Inbox" : batch.priority_title;
-        const body = aiAllowed.allowed
+        const body = useAi
           ? await generateSummary(c.env, batch.threads, user_name, displayPriorityTitle, c.var.user.id)
           : fallbackSummary(batch.threads);
         return {
@@ -118,7 +123,7 @@ notificationSummary.post("/notification-summary", async (c) => {
       })
     );
 
-    if (aiAllowed.allowed) {
+    if (useAi) {
       recordAiUsage(c.env, c.var.user.id, "note_processing");
     }
 

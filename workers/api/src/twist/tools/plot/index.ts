@@ -48,6 +48,7 @@ import type { DB } from "../../../db-types";
 import type { Bindings } from "../../../env";
 import { rpc, rpcUser } from "../../../rpc";
 import { truncateUuidForUpdatedBy } from "../../../utils/uuid";
+import { isAiEnabled as isBuiltinAiEnabled } from "../../../utils/ai-limits";
 import { type PermissionFlag, type ToolPermission } from "../../permissions";
 import type {
   EnrichedThread,
@@ -399,8 +400,11 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Checks whether AI features are enabled for the owner of this priority.
-   * Queries user_settings.ai_enabled and caches the result for the request.
+   * Checks whether built-in AI features are enabled for the owner of this
+   * priority, caching the result for the request. Delegates to the shared
+   * gate (`ai_preference.builtin_ai_disabled`, with the legacy
+   * `user_settings.ai_enabled` flag as fallback) so a built-in-AI opt-out is
+   * honored consistently across search, intent matching, and note enrichment.
    * @returns true if AI is enabled (default), false if explicitly disabled
    */
   async isAiEnabled(): Promise<boolean> {
@@ -408,15 +412,7 @@ export class Plot extends Tool implements IPlot {
 
     try {
       const userId = await this.getUserId();
-
-      const settings = await this.db
-        .selectFrom("user_settings")
-        .select("ai_enabled")
-        .where("user_id", "=", userId)
-        .executeTakeFirst();
-
-      // null or true = enabled, only explicit false disables
-      this._aiEnabled = settings?.ai_enabled !== false;
+      this._aiEnabled = await isBuiltinAiEnabled(this.db, userId);
     } catch {
       // Default to enabled if we can't determine the setting
       this._aiEnabled = true;

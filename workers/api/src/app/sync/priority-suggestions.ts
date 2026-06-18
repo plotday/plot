@@ -8,6 +8,7 @@ import { createLogger } from "@plotday/worker-util";
 import type { DB } from "../../db-types";
 import { withUserDb } from "../../db";
 import type { Bindings } from "../../env";
+import { isAiEnabled } from "../../utils/ai-limits";
 import { createSystemModel, SYSTEM_PROVIDER_OPTIONS } from "../../utils/system-model";
 
 const suggestions = new Hono<{ Bindings: Bindings }>();
@@ -143,6 +144,20 @@ export async function runSuggestPriorities(
     component: "priority-suggestions",
     user_id: userId,
   });
+
+  // Priority suggestions are entirely LLM-generated. Honor the user's
+  // built-in-AI opt-out by returning no suggestions rather than calling the
+  // model — the caller (onboarding / UI) just shows an empty set.
+  if (!(await isAiEnabled(db, userId))) {
+    logger.info("built-in AI disabled; returning no priority suggestions");
+    return {
+      existing_priorities: [],
+      suggestions: [],
+      sample_count: 0,
+      sampled_thread_count: 0,
+    };
+  }
+
   const since = options.since;
   const maxSuggestions = Math.min(
     Math.max(Math.trunc(options.maxSuggestions ?? 12), 1),

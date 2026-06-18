@@ -5,7 +5,7 @@ import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
-import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
+import { checkAiLimit, isAiEnabled, recordAiUsage } from "../utils/ai-limits";
 import { cleanTitle } from "../twist/tools/plot/thread";
 import { titleFromContent } from "../twist/tools/plot/thread-helpers";
 import { loadBuiltinProviderConfig, summarizeWithProvider } from "../utils/ai-provider";
@@ -27,9 +27,13 @@ summary.post("/summary", async (c) => {
     }
     const body = parseResult.data;
 
-    // Check free-tier AI limit
-    const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
-    if (!aiAllowed.allowed) {
+    // Gate on both the free-tier AI limit and the user's built-in-AI opt-out.
+    // When either blocks, fall back to a non-AI title derived from the content.
+    const [aiAllowed, aiOn] = await Promise.all([
+      checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing"),
+      isAiEnabled(c.var.db, c.var.user.id),
+    ]);
+    if (!aiAllowed.allowed || !aiOn) {
       return c.json({ title: titleFromContent(body.body) ?? cleanTitle(body.body).slice(0, 60) });
     }
 

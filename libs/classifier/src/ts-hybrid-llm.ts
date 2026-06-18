@@ -156,6 +156,14 @@ export function makeHybridLlmClassifier(
       let budgetExhausted = false;
       let budgetLimits: BudgetLimits | null = null;
       const tryConsumeBudget = async (): Promise<boolean> => {
+        // Built-in-AI opt-out: never make a model call. Mark budgetExhausted
+        // so the cascade degrades through its deterministic stages exactly as
+        // it does when the real per-user budget runs out — and so the no-LLM
+        // fallback is observable downstream (PostHog/classification_decision).
+        if (ctx.aiDisabled) {
+          budgetExhausted = true;
+          return false;
+        }
         budgetLimits ??= await resolveBudgetLimits(ctx, llm);
         const ok = await consumeBudget(ctx.userId, budgetLimits);
         if (!ok) budgetExhausted = true;

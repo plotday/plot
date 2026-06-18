@@ -11,6 +11,7 @@ import type { Candidate } from "@plotday/classifier";
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { sql } from "../db";
+import { isAiEnabled } from "../utils/ai-limits";
 
 export type ClassifyArgs = {
   userId: string;
@@ -132,7 +133,11 @@ export async function classifyThreadForUser(
 ): Promise<ClassifyResult> {
   try {
     const classifier = getProductionClassifier(envWithClassifierBindings(env));
-    const ctx = classifierContextFromDb(db, args.userId);
+    // Honor the user's built-in-AI opt-out: with AI off the cascade still runs,
+    // but every LLM stage is skipped (ctx.aiDisabled), so the thread is filed
+    // by the deterministic stages alone — no model call for classification.
+    const aiDisabled = !(await isAiEnabled(db, args.userId));
+    const ctx = { ...classifierContextFromDb(db, args.userId), aiDisabled };
     const candidate = await buildCandidate(db, args);
     const result = await classifier.classify(ctx, candidate);
     // Log the decision verbatim — for stage 'none', priority_id stays NULL

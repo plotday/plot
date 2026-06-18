@@ -89,6 +89,10 @@ function defaultRespond(overrides?: (sql: string) => { rows: unknown[] } | null)
       };
     }
     if (sql.includes("classification_decision")) return { rows: [] };
+    // isAiEnabled() reads ai_preference.builtin_ai_disabled (canonical) and
+    // user_settings.ai_enabled (legacy fallback) — no rows ⇒ enabled.
+    if (sql.includes("ai_preference")) return { rows: [] };
+    if (sql.includes("user_settings")) return { rows: [] };
     // rootPriorityId now resolves the oldest-role Inbox: SELECT … FROM "role"
     // INNER JOIN "priority" …  (was a single-root FROM "priority" lookup).
     if (sql.includes('from "role"')) return { rows: [{ id: "root-1" }] };
@@ -181,6 +185,39 @@ describe("classifyThreadForUser decision logging", () => {
     });
     expect(out).toEqual({ priorityId: "p-1", pending: false });
     expect(captureException).toHaveBeenCalled();
+  });
+});
+
+describe("classifyThreadForUser built-in AI opt-out", () => {
+  it("passes aiDisabled=true to the classifier when builtin_ai_disabled is set", async () => {
+    classify.mockClear();
+    classify.mockResolvedValueOnce(RESULT);
+    const executed: Executed[] = [];
+    const db = testDb(
+      executed,
+      defaultRespond((sql) =>
+        sql.includes("ai_preference")
+          ? { rows: [{ builtin_ai_disabled: true }] }
+          : null
+      )
+    );
+    await classifyThreadForUser(db, ENV, { userId: "u-1", threadId: "t-1" });
+    expect(classify).toHaveBeenCalledWith(
+      expect.objectContaining({ aiDisabled: true }),
+      expect.anything()
+    );
+  });
+
+  it("passes aiDisabled=false when there is no ai_preference row (default enabled)", async () => {
+    classify.mockClear();
+    classify.mockResolvedValueOnce(RESULT);
+    const executed: Executed[] = [];
+    const db = testDb(executed, defaultRespond());
+    await classifyThreadForUser(db, ENV, { userId: "u-1", threadId: "t-1" });
+    expect(classify).toHaveBeenCalledWith(
+      expect.objectContaining({ aiDisabled: false }),
+      expect.anything()
+    );
   });
 });
 

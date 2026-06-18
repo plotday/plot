@@ -8,7 +8,7 @@ import {
   dispatchPendingForThread,
   enqueueJobs,
 } from "../../state/classify-thread";
-import { checkAiLimit, recordAiUsage } from "../../utils/ai-limits";
+import { checkAiLimit, isAiEnabled, recordAiUsage } from "../../utils/ai-limits";
 import { loadBuiltinProviderConfig, summarizeWithProvider } from "../../utils/ai-provider";
 import { cleanTitle } from "../../twist/tools/plot/thread";
 import { titleFromContent, createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
@@ -584,6 +584,12 @@ threads.post("/sync/threads", async (c) => {
     threadData.title = cleanTitle(threadData.title);
   }
 
+  // Built-in-AI opt-out gate, memoized so the two AI sites below (title +
+  // embedding) share a single lookup and threads that use neither pay nothing.
+  let aiEnabledMemo: Promise<boolean> | undefined;
+  const aiEnabled = () =>
+    (aiEnabledMemo ??= isAiEnabled(c.var.db, c.var.user.id));
+
   // Generate AI title when client sends title=null with preview content
   if (
     !threadData.title &&
@@ -593,7 +599,9 @@ threads.post("/sync/threads", async (c) => {
   ) {
     try {
       const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
-      if (aiAllowed.allowed) {
+      // Skip AI titling entirely when the user has disabled built-in AI; the
+      // fallback below derives a title from content without a model call.
+      if (aiAllowed.allowed && (await aiEnabled())) {
         const providerConfig = await loadBuiltinProviderConfig(c.var.db, c.var.user.id, c.env);
         let aiTitle: string | null = null;
 
@@ -767,7 +775,11 @@ threads.post("/sync/threads", async (c) => {
     let queryEmbedding: string | undefined;
     if (!threadData.draft && upsertResult) {
       const textToEmbed = threadData.title || threadData.preview;
-      if (textToEmbed) {
+      // Honor the built-in-AI opt-out: skip embedding so no content is sent to
+      // the model. The thread stays NULL-embedded and the reconciliation sweep
+      // (which also skips opted-out users) leaves it that way — consistent with
+      // search, which returns no results when AI is off.
+      if (textToEmbed && (await aiEnabled())) {
         try {
           const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
             text: textToEmbed,

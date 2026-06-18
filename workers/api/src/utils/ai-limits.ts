@@ -121,18 +121,35 @@ export function recordAiUsage(
 }
 
 /**
- * Check if built-in AI features are enabled for a user via ai_preference.
+ * Single source of truth for "are built-in AI features enabled for this user".
+ * Every built-in AI call site (classification, embeddings, summaries,
+ * notification copy, priority suggestions, search, intent, note enrichment)
+ * gates on this so the user's opt-out can't leak through one forgotten path.
+ *
+ * `ai_preference.builtin_ai_disabled` is the canonical opt-out written by the
+ * settings UI. When no preference row exists, fall back to the legacy
+ * `user_settings.ai_enabled` flag — accounts that turned AI off before
+ * `ai_preference` existed were never backfilled, so that flag is the only
+ * record of their choice. Either explicit disable wins; absence of both ⇒
+ * enabled (the default).
  */
 export async function isAiEnabled(
   db: Kysely<DB>,
   userId: string
 ): Promise<boolean> {
-  const pref = await db
-    .selectFrom("ai_preference")
-    .select("builtin_ai_disabled")
-    .where("user_id", "=", userId)
-    .executeTakeFirst();
+  const [pref, settings] = await Promise.all([
+    db
+      .selectFrom("ai_preference")
+      .select("builtin_ai_disabled")
+      .where("user_id", "=", userId)
+      .executeTakeFirst(),
+    db
+      .selectFrom("user_settings")
+      .select("ai_enabled")
+      .where("user_id", "=", userId)
+      .executeTakeFirst(),
+  ]);
 
-  // No preference row or false = enabled, only explicit true disables
-  return pref?.builtin_ai_disabled !== true;
+  if (pref) return pref.builtin_ai_disabled !== true;
+  return settings?.ai_enabled !== false;
 }

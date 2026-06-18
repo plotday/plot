@@ -3,7 +3,7 @@ import { sql } from "kysely";
 
 import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
-import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
+import { checkAiLimit, isAiEnabled, recordAiUsage } from "../utils/ai-limits";
 import { generateSummary, fallbackSummary } from "./notification-summary";
 
 const notificationContent = new Hono<{ Bindings: Bindings }>();
@@ -209,8 +209,13 @@ notificationContent.get("/notification-content", async (c) => {
       return c.json({ summaries: [] });
     }
 
-    // Check AI usage limit
-    const aiAllowed = await checkAiLimit(c.env, db, userId, "note_processing");
+    // Gate on the free-tier AI limit AND the user's built-in-AI opt-out; either
+    // one off ⇒ deterministic fallbackSummary, no model call.
+    const [aiAllowed, aiOn] = await Promise.all([
+      checkAiLimit(c.env, db, userId, "note_processing"),
+      isAiEnabled(db, userId),
+    ]);
+    const useAi = aiAllowed.allowed && aiOn;
 
     const summaries = await Promise.all(
       [...batchMap.values()].map(async (batch) => {
@@ -218,7 +223,7 @@ notificationContent.get("/notification-content", async (c) => {
         const threadList = batch.threads.slice(0, 10);
         const displayTitle = batch.priorityTitle === "Everything" ? "Inbox" : batch.priorityTitle;
 
-        const body = aiAllowed.allowed
+        const body = useAi
           ? await generateSummary(c.env, threadList, c.var.user.name, displayTitle, c.var.user.id)
           : fallbackSummary(threadList);
 
@@ -233,7 +238,7 @@ notificationContent.get("/notification-content", async (c) => {
       })
     );
 
-    if (aiAllowed.allowed) {
+    if (useAi) {
       recordAiUsage(c.env, userId, "note_processing");
     }
 

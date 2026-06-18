@@ -13,6 +13,7 @@ import { rpcUser } from "../../rpc";
 import { enqueueChannelRouter } from "../../state/channel-router";
 import { notifySync, notifyUserSync } from "./notify";
 import { deriveFacetFilters } from "../../state/derive-facet-filters";
+import { isAiEnabled } from "../../utils/ai-limits";
 
 const priorities = new Hono<{ Bindings: Bindings }>();
 
@@ -143,7 +144,11 @@ priorities.post("/sync/priorities", async (c) => {
       (async () => {
         const db = createDb(c.env);
         try {
-          const filters = await deriveFacetFilters(c.env, title, description);
+          // Facet filters for a focus are LLM-derived; skip when the user has
+          // disabled built-in AI (the focus simply gets no auto filters).
+          const filters = (await isAiEnabled(db, userId))
+            ? await deriveFacetFilters(c.env, title, description)
+            : null;
           if (filters !== null) {
             await db
               .updateTable("priority")

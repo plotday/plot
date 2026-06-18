@@ -9,6 +9,7 @@ import {
 } from "../../state/classify-thread";
 import { cleanTitle } from "../../twist/tools/plot/thread";
 import { createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
+import { isAiEnabled } from "../../utils/ai-limits";
 import { notifySync } from "./notify";
 
 const BASE58_ALPHABET =
@@ -105,7 +106,10 @@ capture.post("/sync/capture", async (c) => {
     try {
       const textToEmbed = title || preview || "";
       let queryEmbedding: string | undefined;
-      if (textToEmbed) {
+      // Honor the built-in-AI opt-out: skip embedding so no content is sent to
+      // the model. classifyThreadForUser below still files the thread, but
+      // (also seeing AI is off) runs its deterministic stages only.
+      if (textToEmbed && (await isAiEnabled(trx, userId))) {
         const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
           text: textToEmbed,
         })) as { data: number[][] };

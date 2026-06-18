@@ -65,6 +65,10 @@
 
 ### Fixes
 
+- Turning off AI in settings is now respected everywhere. With AI off, Plot still sorts incoming
+  threads into your focuses using your own past filing — just without the AI step — and skips
+  AI-written titles, notification summaries, and focus suggestions entirely. Previously a few of these
+  could still run, especially on paid accounts, even with AI switched off.
 - Connecting Todoist now works. The button correctly reads "Continue with Todoist" with the Todoist
   logo, instead of showing "Continue with Other" and failing when tapped.
 - On phones and other single-column layouts, marking a thread done — or changing its state another

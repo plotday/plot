@@ -1,5 +1,6 @@
 import { createDb } from "../db";
 import type { Bindings } from "../env";
+import { isAiEnabled } from "../utils/ai-limits";
 import { createLogger } from "@plotday/worker-util";
 
 const BATCH_SIZE = 50;
@@ -19,6 +20,14 @@ export async function backfillEmbeddings(
 
   const db = createDb(env);
   try {
+    // Respect the built-in-AI opt-out: a user who turned AI off keeps their
+    // notes un-embedded, matching the reconciliation sweep (which also skips
+    // opted-out users) and search (which returns nothing when AI is off).
+    if (!(await isAiEnabled(db, userId))) {
+      logger.info("[backfill] built-in AI disabled; skipping embedding backfill");
+      return;
+    }
+
     // Find notes without embeddings in the user's threads
     const notes = await db
       .selectFrom("note as n")
