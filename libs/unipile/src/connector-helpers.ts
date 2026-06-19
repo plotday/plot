@@ -16,13 +16,28 @@ import type {
   UnipileMessaging,
 } from "./messaging";
 
-/** Build a Plot contact from a provider profile, keyed on the provider id. */
-export function profileToContact(profile: ChatProfile, provider: string): NewContact {
+/**
+ * Build a Plot contact from a provider profile.
+ *
+ * Identity is the provider-side id (`source.accountId` = `profile.id`), which
+ * `addContacts` persists as a `contact_external_account` row scoped to the
+ * connection. A real `profile.email` (rare on LinkedIn, more common on other
+ * providers) is set so the contact can merge across connectors; when absent we
+ * leave `email` unset and let the source-only path key the contact on the
+ * stable provider id.
+ *
+ * We deliberately do NOT manufacture a `<handle|phone>@<provider>.invalid`
+ * placeholder: a synthetic email gets stored as the contact's real email
+ * (surfacing in share/mention pickers), forces the contact down the global
+ * email-dedup path, blocks cross-connector merge with the same person's real
+ * email, and re-keys identity onto the mutable handle (e.g. a LinkedIn vanity
+ * URL) instead of the stable provider id — spawning duplicate contacts when it
+ * changes.
+ */
+export function profileToContact(profile: ChatProfile): NewContact {
   const source = { accountId: profile.id };
   const avatar = profile.pictureUrl ?? undefined;
   if (profile.email) return { email: profile.email, name: profile.name, avatar, source };
-  if (profile.handle) return { email: `${profile.handle}@${provider}.invalid`, name: profile.name, avatar, source };
-  if (profile.phone) return { email: `${profile.phone}@${provider}.invalid`, name: profile.name, avatar, source };
   return { name: profile.name, avatar, source };
 }
 
@@ -108,7 +123,7 @@ export function buildReactionsFromMessage(
   for (const r of msg.reactions) {
     const participant = chat.participants.find((p) => p.id === r.senderId);
     const actor: NewActor = participant
-      ? profileToContact(participant, provider)
+      ? profileToContact(participant)
       : { name: `${titleCase(provider)} user`, source: { accountId: r.senderId } };
     const existing = byEmoji.get(r.value);
     if (existing) existing.push(actor);
@@ -126,7 +141,7 @@ export function buildNoteFromMessage(
   threadPersonId?: string
 ): NewNote {
   const sender = chat.participants.find((p) => p.id === msg.senderId) ?? null;
-  const author = sender ? profileToContact(sender, provider) : senderFallbackContact(msg, provider);
+  const author = sender ? profileToContact(sender) : senderFallbackContact(msg, provider);
   const actions: Action[] = msg.attachments.map((a: ChatAttachment) => ({
     type: ActionType.fileRef as typeof ActionType.fileRef,
     ref: `${msg.id}:${a.id}`,
@@ -172,7 +187,7 @@ export function assembleConversationLink(opts: {
     preview: chat.lastMessagePreview ?? null,
     sourceUrl: chat.url,
     created: chat.lastActivityAt,
-    accessContacts: [profileToContact(other, provider)],
+    accessContacts: [profileToContact(other)],
     notes,
     meta: { syncProvider: provider, channelId, profileId: other.id, chatId: chat.id },
     ...(initialSync ? { unread: false, archived: false } : {}),
@@ -207,7 +222,7 @@ export function assembleGroupLink(opts: {
     preview: chat.lastMessagePreview ?? null,
     sourceUrl: chat.url,
     created: chat.lastActivityAt,
-    accessContacts: others.map((p) => profileToContact(p, provider)),
+    accessContacts: others.map((p) => profileToContact(p)),
     notes,
     meta: { syncProvider: provider, channelId, chatId: chat.id },
     ...(initialSync ? { unread: false, archived: false } : {}),

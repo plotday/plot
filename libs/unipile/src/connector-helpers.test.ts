@@ -28,22 +28,32 @@ const chat = (over: Partial<ChatThread>): ChatThread => ({
 
 describe("profileToContact", () => {
   test("uses email when present", () => {
-    const c = profileToContact(prof({ email: "a@x.com", name: "Alice" }), "whatsapp");
+    const c = profileToContact(prof({ email: "a@x.com", name: "Alice" }));
     expect(c.email).toBe("a@x.com");
     expect(c.source).toEqual({ accountId: "p1" });
   });
-  test("synthesizes provider-scoped fallback email from handle", () => {
-    const c = profileToContact(prof({ handle: "alice", email: null }), "instagram");
-    expect(c.email).toBe("alice@instagram.invalid");
-  });
-  test("phone fallback for whatsapp without handle/email", () => {
-    const c = profileToContact(prof({ phone: "15551234567", handle: null, email: null }), "whatsapp");
-    expect(c.email).toBe("15551234567@whatsapp.invalid");
-  });
-  test("name-only when nothing addressable", () => {
-    const c = profileToContact(prof({ handle: null, email: null, phone: null }), "linkedin");
+  // Providers like LinkedIn rarely expose a real email. We must NOT manufacture
+  // a `<handle>@<provider>.invalid` address: a synthetic email forces the
+  // contact down addContacts' global email-dedup path and is stored as the
+  // contact's real email (surfacing in pickers, blocking cross-connector merge,
+  // and re-keying onto a mutable handle). Source-only keys identity on the
+  // stable provider id via contact_external_account instead.
+  test("source-only (no synthetic email) when only a handle is known", () => {
+    const c = profileToContact(prof({ handle: "alice", email: null }));
     expect(c.email).toBeUndefined();
     expect(c.name).toBe("Alice");
+    expect(c.source).toEqual({ accountId: "p1" });
+  });
+  test("source-only when only a phone is known", () => {
+    const c = profileToContact(prof({ phone: "15551234567", handle: null, email: null }));
+    expect(c.email).toBeUndefined();
+    expect(c.source).toEqual({ accountId: "p1" });
+  });
+  test("source-only when nothing addressable", () => {
+    const c = profileToContact(prof({ handle: null, email: null, phone: null }));
+    expect(c.email).toBeUndefined();
+    expect(c.name).toBe("Alice");
+    expect(c.source).toEqual({ accountId: "p1" });
   });
 });
 

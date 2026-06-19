@@ -269,7 +269,7 @@ export class LinkedIn extends Connector<LinkedIn> {
       });
 
       const contacts: NewContact[] = page.relations.map((p) =>
-        profileToContact(p, PROVIDER_KEY)
+        profileToContact(p)
       );
 
       if (contacts.length > 0) {
@@ -372,7 +372,7 @@ export class LinkedIn extends Connector<LinkedIn> {
           channelId,
           profileId: event.profileId,
         });
-        const contact = profileToContact(profile, PROVIDER_KEY);
+        const contact = profileToContact(profile);
         await this.tools.integrations.saveContacts([contact]);
       } catch (error) {
         console.warn(
@@ -647,7 +647,7 @@ function buildInvitationLink(
   inv: LinkedInInvitation,
   initialSync: boolean
 ): NewLinkWithNotes {
-  const contact = profileToContact(inv.inviter, PROVIDER_KEY);
+  const contact = profileToContact(inv.inviter);
 
   const notes: NewNote[] = [];
   if (inv.message) {
