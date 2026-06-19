@@ -12,6 +12,10 @@ import {
   buildSizeAwareBatches,
   splitBatch,
 } from "./twist-sync-batching";
+import {
+  selectCursorsToAdvance,
+  type CursorEntityCount,
+} from "./twist-sync-cursor";
 
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 500; // Minimum time to wait before processing (allows better batching)
@@ -661,42 +665,34 @@ export class TwistSync extends DurableObject<Bindings> {
         await sendBatch(batch);
       }
 
-      // Advance seq cursors to the horizon for the 9 (entity, operation) pairs.
-      // We batch these into a single multi-row UPSERT and skip pairs whose
-      // cursor is already at or past horizonSeq with nothing to send — those
-      // rows would have no-op'd anyway. Pairs that returned items, or whose
-      // cursor is behind the horizon, are upserted so SyncRecovery doesn't see
-      // perpetually stale rows and re-notify every 30s.
-      const cursorEntities: ReadonlyArray<readonly [string, string, number]> = [
-        ["thread", "update", updatedActivities.length],
-        ["note", "create", newNotes.length],
-        ["note", "update", updatedNotes.length],
-        ["channel_link", "create", channelNewLinks.length],
-        ["channel_link", "update", channelUpdatedLinks.length],
-        ["channel_note", "create", channelNewNotes.length],
-        ["thread_read", "update", threadReads.length],
-        ["thread_schedule", "update", threadSchedules.length],
-        ["schedule_contact", "update", scheduleContacts.length],
-        ["note_reaction", "update", noteReactions.length],
+      // Advance seq cursors to the horizon for the 10 (entity, operation) pairs.
+      // We batch these into a single multi-row UPSERT. selectCursorsToAdvance
+      // skips only pairs whose existing cursor is already at/past horizonSeq
+      // (genuine no-ops). Pairs that returned items, or whose cursor is behind
+      // the horizon, are upserted so SyncRecovery doesn't see perpetually stale
+      // rows and re-notify every 30s. Pairs with NO existing cursor row are
+      // SEEDED at the horizon even on a 0-item poll — otherwise the entity has
+      // no cursor and falls back to the twist's install-seq floor on every
+      // alarm, re-scanning its entire global seq history forever (the dominant
+      // cost of these polls; see twist-sync-cursor.ts).
+      const cursorEntities: ReadonlyArray<CursorEntityCount> = [
+        { entity: "thread", operation: "update", itemCount: updatedActivities.length },
+        { entity: "note", operation: "create", itemCount: newNotes.length },
+        { entity: "note", operation: "update", itemCount: updatedNotes.length },
+        { entity: "channel_link", operation: "create", itemCount: channelNewLinks.length },
+        { entity: "channel_link", operation: "update", itemCount: channelUpdatedLinks.length },
+        { entity: "channel_note", operation: "create", itemCount: channelNewNotes.length },
+        { entity: "thread_read", operation: "update", itemCount: threadReads.length },
+        { entity: "thread_schedule", operation: "update", itemCount: threadSchedules.length },
+        { entity: "schedule_contact", operation: "update", itemCount: scheduleContacts.length },
+        { entity: "note_reaction", operation: "update", itemCount: noteReactions.length },
       ];
 
-      const horizonSeqBig = BigInt(horizonSeq);
-      const cursorRows = cursorEntities
-        .filter(([entity, operation, itemCount]) => {
-          if (itemCount > 0) return true;
-          const info = syncInfos.find(
-            (s) => s.entity === entity && s.operation === operation
-          );
-          // No existing row: nothing to advance — let triggers bootstrap when
-          // real data arrives. Existing row already at/past horizon: no-op.
-          if (!info) return false;
-          try {
-            return BigInt(info.last_sync_seq_text) < horizonSeqBig;
-          } catch {
-            return true;
-          }
-        })
-        .map(([entity, operation]) => ({
+      const cursorRows = selectCursorsToAdvance(
+        cursorEntities,
+        syncInfos,
+        horizonSeq
+      ).map(({ entity, operation }) => ({
           twist_instance_id: twistInstanceId,
           entity: sql`${entity}`,
           operation: sql`${operation}`,
