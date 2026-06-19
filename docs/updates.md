@@ -1,4 +1,4 @@
-## Next release
+## 1.5.0+359 — 2026-06-19
 
 ### Connections
 
