@@ -673,8 +673,12 @@ jobs:
             echo "Staged ${#pngs[@]} screenshot(s) into $dest_dir"
           }
 
-          # Galaxy Tab S8 Ultra is a large tablet -> tenInchScreenshots.
+          # A Play listing needs phone + 7-inch tablet + 10-inch tablet sets
+          # (plus the committed 1024x500 featureGraphic, uploaded as-is). The
+          # Galaxy Tab S8 Ultra shots (2560x1600) satisfy both tablet slots, so
+          # stage the same tablet set into sevenInch and tenInch.
           stage android-phone phoneScreenshots
+          stage android-tablet sevenInchScreenshots
           stage android-tablet tenInchScreenshots
 
           phone=("$IMAGES/phoneScreenshots"/*.png)
