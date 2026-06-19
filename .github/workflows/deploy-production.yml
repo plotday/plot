@@ -120,16 +120,37 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      # The deploy marker tag points at the approved commit, whose workflow
+      # files can differ from `main` when Dependabot/CI bumps merge during the
+      # approval window. Pushing such a tag counts as updating
+      # `.github/workflows/**`, which the Actions GITHUB_TOKEN is never allowed
+      # to do. Push with the plot-app-builder app token instead (it has the
+      # Workflows: write permission) so the tag push always succeeds.
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
 
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      # Belt-and-suspenders: the deploy marker tag is bookkeeping only, so a
+      # push hiccup must never fail an otherwise-successful production deploy.
       - name: Create and push deploy tag
+        continue-on-error: true
         run: |
           TAG="deploy/$(date -u +%Y%m%d.%H%M%S)"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Production deploy of ${GITHUB_SHA} (run ${GITHUB_RUN_ID})"
           git push origin "$TAG"
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Deployment summary
         run: |
