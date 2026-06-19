@@ -86,17 +86,22 @@ describe("classify queue consumer error handling", () => {
     expect(msg.ack).not.toHaveBeenCalled();
   });
 
-  it("captures a genuine statement_timeout (57014) — a real slow query", async () => {
+  it("defers a statement_timeout (57014) to the hourly sweep: captures once, acks (no retry)", async () => {
+    // A 57014 is transient DB saturation, not a slow query. Retrying it
+    // immediately just re-loads the overloaded backend (the storm). Ack it so
+    // the queue stops re-delivering; classify_at stays set, so the next hourly
+    // sweep re-enqueues it when contention has cleared. Still captured once for
+    // visibility (the rate naturally falls as the storm shrinks).
     handleMock.mockRejectedValueOnce(
       pgError("canceling statement due to statement timeout", "57014")
     );
-    const msg = makeMessage("t-slow");
+    const msg = makeMessage("t-saturated");
 
     await runBatch([msg]);
 
     expect(captureException).toHaveBeenCalledTimes(1);
-    expect(msg.retry).toHaveBeenCalledTimes(1);
-    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+    expect(msg.retry).not.toHaveBeenCalled();
   });
 
   it("captures other unexpected errors and retries", async () => {
@@ -140,10 +145,8 @@ describe("classify queue consumer error handling", () => {
     );
   });
 
-  it("retries (does not park) while attempts remain", async () => {
-    handleMock.mockRejectedValue(
-      pgError("canceling statement due to statement timeout", "57014")
-    );
+  it("retries a non-terminal error (does not park) while attempts remain", async () => {
+    handleMock.mockRejectedValue(new Error("boom"));
     const msg = makeMessage("t-early", 1);
 
     await runBatch([msg]);

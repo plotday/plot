@@ -86,15 +86,40 @@ export async function withDb<T>(
  * the hourly sweep re-enqueue the job to run when the lock is free.
  *
  * Deliberately NARROWER than the api worker's isLockContentionError: it matches
- * only lock_timeout (55P03), NOT statement_timeout (57014). With a short
- * lock_timeout in place, a statement that still hits the 30s statement_timeout
- * genuinely ran that long without lock-waiting — a real slow query (e.g. the
- * classify SQL on a mega-user) worth capturing rather than swallowing.
- * Deadlocks (40P01) are also excluded — retryOnTxnConflict owns those.
+ * only lock_timeout (55P03), NOT statement_timeout (57014) — see
+ * isStatementTimeoutError for the latter. Deadlocks (40P01) are also excluded —
+ * retryOnTxnConflict owns those.
  */
 export function isLockTimeoutError(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "55P03") return true;
   const msg = ((error as Error | null)?.message ?? "").toLowerCase();
   return msg.includes("canceling statement due to lock timeout");
+}
+
+/**
+ * A statement hit the 30s statement_timeout: pg SQLSTATE 57014
+ * (query_canceled). With lock_timeout=5s in place (isLockTimeoutError), a 57014
+ * means the statement genuinely ran 30s WITHOUT waiting on a row lock.
+ *
+ * For the classify worker this is NOT a slow query: every scoring-stage query
+ * is <120ms warm in prod even for the largest training set (verified against
+ * the mega-user — bitmap-indexed training fetch ~35ms, facet gate ~50ms). A
+ * 57014 here is transient DB backend SATURATION during a reclassification
+ * burst: many of one user's threads go pending at once (an hourly sweep of up
+ * to 1000 rows + queue retries + that user's own heavy app traffic), the
+ * backend saturates, and a normally-fast query balloons past 30s.
+ *
+ * It is self-healing and must NOT be hammered: retrying the same job
+ * immediately just re-loads the already-overloaded backend (the captured burst
+ * is exactly this — PostHog 019ed53e). The consumer instead captures it once
+ * for visibility and ACKs the message; classify_at stays set, so the next
+ * hourly sweep re-enqueues the job to run when contention has cleared. Matched
+ * by SQLSTATE or message so it works whether or not the driver attached `code`.
+ */
+export function isStatementTimeoutError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "57014") return true;
+  const msg = ((error as Error | null)?.message ?? "").toLowerCase();
+  return msg.includes("canceling statement due to statement timeout");
 }

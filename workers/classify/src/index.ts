@@ -2,7 +2,7 @@ import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
-import { withDb, isLockTimeoutError } from "./db";
+import { withDb, isLockTimeoutError, isStatementTimeoutError } from "./db";
 import {
   handleClassifyJob,
   parkUnclassifiable,
@@ -121,6 +121,39 @@ export default {
                 pg_code: (err as { code?: string })?.code,
               });
               message.retry();
+            } else if (isStatementTimeoutError(err)) {
+              // A 30s statement_timeout (57014) with lock_timeout=5s in place
+              // means the query genuinely ran 30s without lock-waiting. For
+              // classify that is NOT a slow query — every scoring query is
+              // <120ms warm in prod — but transient DB backend SATURATION
+              // during a reclassification burst (the hourly sweep re-enqueues
+              // up to 1000 of one user's pending rows, which, with queue
+              // retries and that user's own traffic, overloads the backend).
+              // Re-delivering immediately just piles more load onto the
+              // already-overloaded backend and sustains the storm (PostHog
+              // 019ed53e). So we DEFER instead of retry: ack the message to
+              // stop immediate re-delivery while leaving classify_at set, so
+              // the next hourly sweep re-enqueues the job once contention has
+              // cleared (the query is then fast). We do NOT push classify_at
+              // forward — its value gates unfiled-thread visibility via
+              // classify_visibility_window(), so moving it would re-hide the
+              // thread. Captured once (not once per retry) for visibility; the
+              // rate falls as the storm shrinks.
+              posthog.captureException(err as Error, job.userId, {
+                threadId: job.threadId,
+                attempt: message.attempts,
+                deferred_to_sweep: true,
+              });
+              logger.warn(
+                "classify timed out under load; deferring to hourly sweep",
+                {
+                  userId: job.userId,
+                  threadId: job.threadId,
+                  attempt: message.attempts,
+                  pg_code: (err as { code?: string })?.code,
+                }
+              );
+              message.ack();
             } else {
               // Surface every other consumer-throwing failure to PostHog so we
               // notice deployed bugs / chronic issues; classify_at stays set so
