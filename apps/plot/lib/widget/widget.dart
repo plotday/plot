@@ -70,6 +70,7 @@ export 'switch.dart';
 export 'tapable.dart';
 export 'terms_agreement.dart';
 export 'text_field.dart';
+export 'text_field_selection_theme.dart';
 export 'time.dart';
 export 'toast.dart';
 export 'toggle.dart';

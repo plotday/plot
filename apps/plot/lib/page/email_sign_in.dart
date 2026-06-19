@@ -835,6 +835,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                           ),
                           AutofillGroup(
                             child: FTextField(
+                              builder: fieldSelectionBuilder,
                               focusNode: _newPasswordFocusNode,
                               control: .managed(
                                   controller: _newPasswordController),
@@ -899,6 +900,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       FTextField(
+                        builder: fieldSelectionBuilder,
                         focusNode: _emailFocusNode,
                         control: .managed(controller: _emailController),
                         hint: 'your@email.com',
@@ -917,6 +919,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                       // Password field (only in sign-in mode)
                       if (_mode == _AuthMode.signIn)
                         FTextField(
+                          builder: fieldSelectionBuilder,
                           control: .managed(controller: _passwordController),
                           hint: 'Enter your password',
                           label: const Text('Password'),

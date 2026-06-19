@@ -9,6 +9,48 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/widget.dart';
 
+/// The most recently created role in [roles], or null when empty. Used to pick
+/// the role the single-panel accordion defaults open (see
+/// [expandedRoleWithFallback]).
+Role? mostRecentRole(List<Role> roles) {
+  if (roles.isEmpty) return null;
+  var newest = roles.first;
+  for (final role in roles.skip(1)) {
+    if (role.createdAt.isAfter(newest.createdAt)) newest = role;
+  }
+  return newest;
+}
+
+/// The role the focus accordion should keep disclosed.
+///
+/// In single-panel mode the focus sidebar IS the whole screen, so a fully
+/// collapsed accordion (every role shut) leaves the user no way to reach any
+/// focus. To prevent that, when no role is selection- or tap-driven open
+/// ([preferred] is null) we re-open the role of the **last focus the user
+/// opened** ([lastSelected]) — so returning to the list after visiting another
+/// tab lands them back in the role they were working in. Before any focus has
+/// been opened this session (or when that role was since removed), we fall back
+/// to the **most recently created** role so exactly one is always open.
+///
+/// With <= 1 role there's no accordion (the list renders flat) and in
+/// multi-panel mode the feed sits beside the sidebar, so neither needs the
+/// fallback — both return [preferred] unchanged.
+RoleId? expandedRoleWithFallback({
+  required bool singlePanel,
+  required List<Role> roles,
+  required RoleId? preferred,
+  RoleId? lastSelected,
+}) {
+  if (preferred != null) return preferred;
+  if (!singlePanel || roles.length <= 1) return null;
+  // Re-open the last role the user worked in, but only while it still exists;
+  // a removed role falls through to the most-recent default below.
+  if (lastSelected != null && roles.any((r) => r.id == lastSelected)) {
+    return lastSelected;
+  }
+  return mostRecentRole(roles)?.id;
+}
+
 /// The focus sidebar. Focuses are grouped under their [Role]; the layout
 /// depends on how many roles the user has:
 ///
@@ -19,7 +61,12 @@ import 'package:plot/widget/widget.dart';
 ///   ([expandedRoleId]) discloses an inner drag-reorderable list of its
 ///   focuses (animated open/closed). It's a pure accordion — exactly one role
 ///   is expanded (the selected focus's role), derived client-side, never
-///   persisted.
+///   persisted. In single-panel mode, where this sidebar is the whole screen,
+///   a fully collapsed accordion would strand the user, so when no focus is
+///   current (e.g. after returning to the list from another tab) the role of
+///   the last focus the user opened stays open — falling back to the most
+///   recently created role before anything's been opened (see
+///   [expandedRoleWithFallback]).
 ///
 /// Each role's Inbox and FYI are ordinary focuses (drag-reorderable, they bold
 /// when active and show unread), just with a fixed name + icon — and the FYI is
@@ -96,6 +143,24 @@ class _PrioritiesListState extends State<PrioritiesList> {
   /// Always null in the left panel, where a role tap selects the first focus.
   RoleId? _manualExpandedRoleId;
 
+  /// Single-panel only: the role of the last focus the user opened. It outlives
+  /// the selection-derived [widget.expandedRoleId] (which drops to null when no
+  /// focus is current — e.g. after returning to the focus list from another
+  /// bottom-nav tab), so the accordion can re-disclose the role the user was
+  /// last working in instead of collapsing every role. Until the first focus is
+  /// opened this session it stays null and the fallback uses the most recent
+  /// role (see [expandedRoleWithFallback]). Kept across tab switches because
+  /// [PrioritiesList]'s State is on the always-alive home tab.
+  RoleId? _lastSelectedRoleId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed from the initial selection so a focus that is already current when
+    // the list first builds is the one re-opened after the selection clears.
+    _lastSelectedRoleId = widget.expandedRoleId;
+  }
+
   @override
   void didUpdateWidget(PrioritiesList oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -104,6 +169,13 @@ class _PrioritiesListState extends State<PrioritiesList> {
     // newly-selected focus's role drives the disclosure instead of a stale tap.
     if (widget.expandedRoleId != oldWidget.expandedRoleId) {
       _manualExpandedRoleId = null;
+    }
+    // Remember the role of the focus the user is in. Captured here (rather than
+    // only on tap) so opens from anywhere — the agenda, search, a thread link —
+    // are remembered too: the list rebuilds on every selection change even
+    // while it sits offstage behind another tab.
+    if (widget.expandedRoleId != null) {
+      _lastSelectedRoleId = widget.expandedRoleId;
     }
   }
 
@@ -160,12 +232,25 @@ class _PrioritiesListState extends State<PrioritiesList> {
         // tracked locally in [_manualExpandedRoleId]. Left panel: a role tap
         // selects its first focus, so expansion stays purely selection-derived.
         final singlePanel = !layoutState.multiPanel;
-        final RoleId? effectiveExpandedRoleId = singlePanel
+        // The role the selection (or a single-panel header tap) discloses. Null
+        // when the Everything feed is active and nothing has been tapped.
+        final RoleId? preferredExpandedRoleId = singlePanel
             ? (_manualExpandedRoleId ?? widget.expandedRoleId)
             : widget.expandedRoleId;
-        // Every sidebar tile (focuses, role headers, Add a focus, Everything)
-        // shares one default weight — regular. Focus tiles and (collapsed)
-        // role headers go bold when they have active threads.
+        // Single-panel must always keep one role open — a fully collapsed
+        // sidebar (the whole screen here) gives no way to reach a focus. With
+        // nothing else open, re-open the role of the last focus the user worked
+        // in, falling back to the most recent role before anything's been opened.
+        final RoleId? effectiveExpandedRoleId = expandedRoleWithFallback(
+          singlePanel: singlePanel,
+          roles: widget.roles,
+          preferred: preferredExpandedRoleId,
+          lastSelected: _lastSelectedRoleId,
+        );
+        // Default weight for the focus / Add-a-focus / Everything tiles —
+        // regular; focus tiles go bold when they have active threads. (Role
+        // headers don't use this style: they always render at the heavier
+        // weight via [RoleHeader].)
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm

@@ -28,10 +28,17 @@ typedef StateChangeNav = ({Thread? open, bool stay});
 ///   section and there are threads above it, the previous thread above is
 ///   opened instead (supports working bottom-up).
 /// - In the Done section the changed thread stays open.
+/// - When [stayWhenNothingToOpen] is true and there is nothing left to open
+///   (the changed thread was the only row), the changed thread stays open
+///   instead of signaling the compose-page fallback. Used when navigating
+///   the unread-only filtered feed: finishing the last unread auto-clears
+///   the filter and reveals the full feed, so the just-finished thread
+///   should stay open rather than dropping the user into a new compose.
 StateChangeNav nextThreadAfterStateChange(
   List<AgendaItem> items,
   ThreadId changedId, {
   required bool multiPanel,
+  bool stayWhenNothingToOpen = false,
 }) {
   if (!multiPanel) return (open: null, stay: true);
 
@@ -73,5 +80,7 @@ StateChangeNav nextThreadAfterStateChange(
     // above; fall through to the first Done thread when nothing is above.
     return (open: (above ?? below).thread, stay: false);
   }
-  return (open: above?.thread, stay: false);
+  if (above != null) return (open: above.thread, stay: false);
+  // Nothing above or below — the changed thread was the only row.
+  return (open: null, stay: stayWhenNothingToOpen);
 }

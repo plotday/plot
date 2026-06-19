@@ -32,6 +32,7 @@ import 'widget/auth_button.dart';
 import 'util/time_service.dart' show Time;
 import 'util/profile_preferences.dart';
 import 'util/instance_lock.dart';
+import 'util/input_modality.dart';
 import 'command/page_link.dart';
 import 'command/command.dart' show BuildContextCommandExtension;
 import 'command/share.dart';
@@ -127,6 +128,10 @@ Future<void> run(List<String> args) async {
   // If DriverBinding ran above it already installed itself as the binding;
   // this call is then a no-op.
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Track keyboard-vs-pointer input modality so modals can decide whether to
+  // pre-arm a default control when they open (see InputModality / FormModal).
+  InputModality.ensureInstalled();
 
   // During hot restart or startup, Flutter may receive duplicate KeyDownEvents
   // for modifier keys held during the transition. The second event hits an

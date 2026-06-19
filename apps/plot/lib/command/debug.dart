@@ -21,6 +21,7 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/util/developer_mode.dart';
 import 'package:plot/util/time_service.dart';
 import 'package:plot/widget/modal.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 import 'command.dart';
 
 /// TEMPORARY: when true, suppresses the Debug command group entirely so a
@@ -456,6 +457,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
                         ),
                         const SizedBox(height: 4),
                         FTextField(
+                          builder: fieldSelectionBuilder,
                           control: .managed(controller: _hourController),
                           keyboardType: TextInputType.number,
                           inputFormatters: [
@@ -478,6 +480,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
                         ),
                         const SizedBox(height: 4),
                         FTextField(
+                          builder: fieldSelectionBuilder,
                           control: .managed(controller: _minuteController),
                           keyboardType: TextInputType.number,
                           inputFormatters: [

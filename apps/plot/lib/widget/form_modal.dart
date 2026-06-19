@@ -8,10 +8,23 @@ import 'package:plot/widget/form_button_bar.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/input_modality.dart';
 import 'package:plot/style/spacing.dart';
 import 'icon.dart';
 import 'modal.dart';
 import 'logging.dart';
+
+/// Whether a freshly opened [FormModal] should immediately show (and focus) its
+/// initial highlight.
+///
+/// A keyboard open always pre-arms the initial control so Enter activates it. A
+/// pointer (mouse/touch) open only pre-focuses a text input the user clearly
+/// intends to type into — it never pre-highlights a button or other control,
+/// matching SelectModal's no-highlight-until-hover feel.
+bool shouldActivateInitialHighlight({
+  required bool openedViaKeyboard,
+  required bool initialTargetIsTextInput,
+}) => openedViaKeyboard || initialTargetIsTextInput;
 
 class FormModal extends Modal {
   factory FormModal(
@@ -109,6 +122,22 @@ class FormModalState extends State<_FormModal> {
   List<StaticFormGroup> _formGroups = [];
   List<FocusNode> _focusNodes = [];
   int _highlightedIndex = 0; // Track highlighted item for keyboard navigation
+  // Whether the keyboard/initial highlight (and the focus that drives it) is
+  // currently shown. False on a pointer open of a button-only form, and
+  // cleared whenever the mouse takes over (so only the hovered row, which
+  // highlights itself, is emphasised — matching SelectModal). The first arrow/
+  // Tab re-activates it in place via [_moveHighlight].
+  bool _highlightActive = false;
+  // Whether this modal was opened from the keyboard. Decides whether the
+  // initial control is pre-armed. Captured once in [initState].
+  bool _openedViaKeyboard = false;
+  // Neutral focus sink. When no control is pre-armed (pointer open) or the
+  // mouse has cleared the highlight, focus parks here so Esc/Tab/Enter still
+  // route through the form's shortcuts without lighting up any control.
+  final FocusNode _modalFocusNode = FocusNode(
+    debugLabel: 'FormModal-sink',
+    skipTraversal: true,
+  );
   bool _mouseHasMoved = false;
   final Map<FormButton, FormButtonController> _buttonControllers = {};
   final ScrollController _scrollController = ScrollController();
@@ -119,6 +148,9 @@ class FormModalState extends State<_FormModal> {
   @override
   void initState() {
     super.initState();
+    // Snapshot how the modal was opened before any async work changes the
+    // global modality.
+    _openedViaKeyboard = InputModality.lastInputWasKeyboard;
     _initForm();
     widget.form.refreshOn?.addListener(_onExternalRefresh);
   }
@@ -160,7 +192,9 @@ class FormModalState extends State<_FormModal> {
         if (!mounted) return;
         if (widget.form.onRefresh != null) {
           _refreshForm(restoreFocusIndex: restoreIndex);
-        } else if (restoreIndex < _focusNodes.length) {
+        } else if (restoreIndex >= 0 && restoreIndex < _focusNodes.length) {
+          // Returning to an item the user was on — re-arm the highlight.
+          setState(() => _highlightActive = true);
           _focusNodes[restoreIndex].requestFocus();
         }
       });
@@ -240,9 +274,14 @@ class FormModalState extends State<_FormModal> {
     }
 
     _initForm(newGroups);
-    // Restore focus to the item that was highlighted before refresh
-    if (restoreFocusIndex != null && restoreFocusIndex < _focusNodes.length) {
+    // Restore focus to the item that was highlighted before refresh. A restore
+    // means the user was actively on that item, so re-arm the highlight even if
+    // _initForm just reset it (e.g. a pointer-opened form being navigated).
+    if (restoreFocusIndex != null &&
+        restoreFocusIndex >= 0 &&
+        restoreFocusIndex < _focusNodes.length) {
       _highlightedIndex = restoreFocusIndex;
+      _highlightActive = true;
     }
     setState(() {});
   }
@@ -256,6 +295,7 @@ class FormModalState extends State<_FormModal> {
     for (var node in _focusNodes) {
       node.dispose();
     }
+    _modalFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -269,6 +309,19 @@ class FormModalState extends State<_FormModal> {
 
     // Find initial focus index based on form state
     _highlightedIndex = _findInitialFocusIndex();
+
+    // Decide whether to pre-arm that initial control. A pointer open only
+    // pre-focuses a text input; it never lights up a button (Task: only focus
+    // the primary button when the modal was opened via the keyboard).
+    final hasFocusable = _allFocusSlotsCount() > 0;
+    final initialIsTextInput = hasFocusable &&
+        _highlightedIndex >= 0 &&
+        _getItemAndSubIndex(_highlightedIndex).$1 is FormTextInput;
+    _highlightActive = hasFocusable &&
+        shouldActivateInitialHighlight(
+          openedViaKeyboard: _openedViaKeyboard,
+          initialTargetIsTextInput: initialIsTextInput,
+        );
 
     // Wire up onSubmitted for text inputs and add listeners for form state
     // changes. The primary button is set explicitly on each FormButton via
@@ -291,13 +344,19 @@ class FormModalState extends State<_FormModal> {
       }
     }
 
-    // Request focus on determined item after build
+    // Request focus after build. When the initial control is pre-armed, focus
+    // the item itself; otherwise park focus on the neutral sink so the keyboard
+    // stays live (Esc/Tab/Enter) without highlighting any control.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_focusNodes.isNotEmpty &&
-          mounted &&
+      if (!mounted) return;
+      if (_highlightActive &&
+          _focusNodes.isNotEmpty &&
+          _highlightedIndex >= 0 &&
           _highlightedIndex < _focusNodes.length) {
         log.fine('Initial focus request on item (index $_highlightedIndex)');
         _focusNodes[_highlightedIndex].requestFocus();
+      } else {
+        _modalFocusNode.requestFocus();
       }
     });
   }
@@ -351,6 +410,29 @@ class FormModalState extends State<_FormModal> {
     }
 
     return 0;
+  }
+
+  /// The form item that owns [node], or null if [node] isn't one of our slot
+  /// focus nodes.
+  FormItem? _itemForFocusNode(FocusNode node) {
+    final slot = _focusNodes.indexOf(node);
+    if (slot < 0) return null;
+    return _getItemAndSubIndex(slot).$1;
+  }
+
+  /// A pointer is now driving the modal: drop the keyboard/pre-armed highlight
+  /// so only the row under the cursor (which highlights itself on hover) is
+  /// emphasised, matching SelectModal. Real focus is parked on the neutral sink
+  /// so the keyboard stays live and no button keeps a focus-driven highlight.
+  /// A focused text input is left alone — the user may be mid-edit and the
+  /// caret legitimately belongs there.
+  void _clearKeyboardHighlight() {
+    if (_highlightActive) setState(() => _highlightActive = false);
+    final focused = FocusManager.instance.primaryFocus;
+    if (focused != null && _itemForFocusNode(focused) is FormTextInput) {
+      return;
+    }
+    if (!_modalFocusNode.hasFocus) _modalFocusNode.requestFocus();
   }
 
   void _onFormChanged() {
@@ -466,6 +548,18 @@ class FormModalState extends State<_FormModal> {
   }
 
   void _moveHighlight(int offset) {
+    // First keyboard interaction after a pointer open (or after the mouse
+    // cleared the highlight) re-activates the existing highlight in place
+    // rather than stepping past it.
+    if (!_highlightActive) {
+      setState(() => _highlightActive = true);
+      if (_highlightedIndex >= 0 && _highlightedIndex < _focusNodes.length) {
+        _focusNodes[_highlightedIndex].requestFocus();
+      }
+      _scrollToIndex(_highlightedIndex);
+      return;
+    }
+
     setState(() {
       final totalSlots = _allFocusSlotsCount();
       if (totalSlots == 0) return;
@@ -810,6 +904,17 @@ class FormModalState extends State<_FormModal> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Off-screen focus sink: parks keyboard focus when no
+                        // control is pre-armed (pointer open) or after the mouse
+                        // clears the highlight, so Esc/Tab/Enter stay live
+                        // without lighting up any control. It lives inside the
+                        // Shortcuts/Actions subtree, so the form's key handlers
+                        // still fire while it holds focus.
+                        Focus(
+                          focusNode: _modalFocusNode,
+                          skipTraversal: true,
+                          child: const SizedBox.shrink(),
+                        ),
                         // Title header
                         Container(
                           padding: context.theme.spacing.padding,
@@ -946,9 +1051,12 @@ class FormModalState extends State<_FormModal> {
                                 );
                                 final focusCount = item.focusableCount;
 
-                                // Determine which sub-item is highlighted (-1 = none)
+                                // Determine which sub-item is highlighted (-1 =
+                                // none). Suppressed while the highlight is
+                                // inactive (pointer open / mouse took over).
                                 final int highlightedSubIndex;
                                 if (hasPhysicalKeyboard() &&
+                                    _highlightActive &&
                                     _highlightedIndex >= focusSlotStart &&
                                     _highlightedIndex <
                                         focusSlotStart + focusCount) {
@@ -985,17 +1093,20 @@ class FormModalState extends State<_FormModal> {
                                     onEnter: (_) {
                                       if (_mouseHasMoved) {
                                         listController.setHovered(index);
+                                        _clearKeyboardHighlight();
                                       }
                                     },
                                     onExit: (_) {
                                       if (_mouseHasMoved) {
                                         listController.setHovered(null);
+                                        _clearKeyboardHighlight();
                                       }
                                     },
                                     onHover: (_) {
                                       if (!_mouseHasMoved) {
                                         setState(() => _mouseHasMoved = true);
                                         listController.setHovered(index);
+                                        _clearKeyboardHighlight();
                                       }
                                     },
                                     child: Column(

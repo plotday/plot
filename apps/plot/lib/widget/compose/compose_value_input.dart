@@ -123,6 +123,7 @@ class _ComposeValueInputState extends State<ComposeValueInput> {
           Offstage(
             offstage: showLabel,
             child: FTextField(
+              builder: fieldSelectionBuilder,
               control: .managed(controller: widget.controller),
               focusNode: widget.focusNode,
               readOnly: widget.readOnly,

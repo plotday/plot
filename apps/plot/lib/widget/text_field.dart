@@ -9,6 +9,7 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/modal.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 
 enum TextFieldStyle { outline, ghost }
 
@@ -105,6 +106,7 @@ class TextFieldState extends State<TextField> {
       //   autofocus: widget.autofocus,
       // ),
       builder: (_) => FTextField(
+        builder: fieldSelectionBuilder,
         control: .managed(controller: _controller),
         style: widget.style == TextFieldStyle.outline
             ? const FTextFieldStyleDelta.context()

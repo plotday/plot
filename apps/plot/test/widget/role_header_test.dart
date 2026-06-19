@@ -55,17 +55,48 @@ void main() {
     ),
   );
 
-  Widget header({required bool expanded, required VoidCallback onTap}) =>
-      RoleHeader(
-        role: role(),
-        expanded: expanded,
-        childFocuses: const [],
-        monochrome: true,
-        onTap: onTap,
-      );
+  // A focus with active threads, used to prove the role header's weight no
+  // longer depends on whether any child focus is active.
+  Priority activeFocus() => Priority.fromStore(
+    PriorityRow(
+      id: Uuid.generate(),
+      createdBy: Uuid.generate(),
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+      title: 'A focus',
+      path: Path('focus'),
+      order: const Order(0),
+      unread: false,
+      role: 'member',
+      roleId: Uuid.generate(),
+      isInbox: false,
+      isFyi: false,
+      attentionWindowSet: false,
+      seeWithinSet: false,
+      earlyNotificationsEnabledSet: false,
+      notifyWindowSet: false,
+    ),
+    draft: true,
+    active: true,
+  );
+
+  Widget header({
+    required bool expanded,
+    required VoidCallback onTap,
+    List<Priority> childFocuses = const [],
+  }) => RoleHeader(
+    role: role(),
+    expanded: expanded,
+    childFocuses: childFocuses,
+    monochrome: true,
+    onTap: onTap,
+  );
 
   ListTile tileOf(WidgetTester tester) =>
       tester.widget<ListTile>(find.byType(ListTile));
+
+  FontWeight? roleNameWeight(WidgetTester tester) =>
+      tester.widget<Text>(find.text('WORK')).style?.fontWeight;
 
   testWidgets('renders the role name as an uppercase eyebrow', (tester) async {
     await tester.pumpWidget(host(header(expanded: false, onTap: () {})));
@@ -100,6 +131,31 @@ void main() {
       // The "open me" affordance — a chevron (cross-fades to the "…" menu on
       // hover, but at rest it's the visible cue).
       expect(find.byIcon(PlotIcon.right), findsOneWidget);
+    });
+  });
+
+  group('role name weight', () {
+    // The role name always renders at the heavier weight so a role reads as a
+    // section heading regardless of its disclosure state or whether any of its
+    // focuses are active. (Active/idle status is carried by colour + the unread
+    // dot, not by weight.)
+    testWidgets('a collapsed, idle role renders bold', (tester) async {
+      await tester.pumpWidget(host(header(expanded: false, onTap: () {})));
+      expect(roleNameWeight(tester), FontWeight.w600);
+    });
+
+    testWidgets('an expanded role renders bold', (tester) async {
+      await tester.pumpWidget(host(header(expanded: true, onTap: () {})));
+      expect(roleNameWeight(tester), FontWeight.w600);
+    });
+
+    testWidgets('weight is independent of active child focuses', (tester) async {
+      await tester.pumpWidget(
+        host(
+          header(expanded: false, onTap: () {}, childFocuses: [activeFocus()]),
+        ),
+      );
+      expect(roleNameWeight(tester), FontWeight.w600);
     });
   });
 

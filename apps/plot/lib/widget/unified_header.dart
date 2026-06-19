@@ -36,6 +36,7 @@ import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/thread_sharing.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/priority_selector.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 import 'button.dart';
 import 'icon.dart';
 import 'window.dart';
@@ -759,11 +760,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
 
     final List<Widget> trailing = <Widget>[
       Button.icon(NewThread()),
-      Button.icon(
-        ToggleUnreadFilter(context: context),
-        selected: state.unreadFilterActive,
-        selectedColor: context.colour.accent,
-      ),
       Button.icon(_buildPriorityMenuCommand(state)),
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),
@@ -921,6 +917,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
           // text reads as nudged up by a couple of pixels.
           Flexible(child: _tightTextBox(child: title)),
           SizedBox(width: layoutState.multiPanel ? 4 : 8),
+          // The unread-only filter toggle sits just left of the search icon.
+          if (layoutState.multiPanel)
+            Button.icon(
+              ToggleUnreadFilter(context: context),
+              selected: state.unreadFilterActive,
+              selectedColor: context.colour.accent,
+            ),
           if (layoutState.multiPanel) _searchButton(),
           // When the sidebar is open the tracking control moves to the
           // start of the sidebar header instead. The unscoped Everything view
@@ -1119,6 +1122,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
         return KeyEventResult.ignored;
       },
       child: FTextField(
+        builder: fieldSelectionBuilder,
         control: .managed(controller: _searchController),
         focusNode: _searchFocusNode,
         hint: 'Search…',

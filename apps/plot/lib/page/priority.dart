@@ -1428,7 +1428,13 @@ class _PriorityPageState extends State<PriorityPage>
       initialScrollOffset: bloc.activityFeedScrollOffset,
       onScrollOffsetChanged: (offset) => bloc.activityFeedScrollOffset = offset,
       count: totalCount,
-      doneEnd: state.activityFeedDoneEnd,
+      // Use the filtered view's done-end: when the unread-only filter is on,
+      // the whole unread set is already loaded by the head streams, so the
+      // view is complete even though the read/Done tail still paginates.
+      // Otherwise InfiniteList renders a trailing spinner that pages the read
+      // tail forever behind the short filtered list (the spinner-stuck-at-end
+      // bug when the unread toggle is turned on).
+      doneEnd: state.activityFeedViewDoneEnd,
       // Stable identities keep the sliver's elements (and their stored
       // layout offsets) attached to their rows when indices shift — e.g.
       // when a move ghost splices in or out — so the viewport doesn't

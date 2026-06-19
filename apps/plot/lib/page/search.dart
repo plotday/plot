@@ -24,6 +24,7 @@ import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/widget/search_footer.dart';
 import 'package:plot/widget/window_controls_inset.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 
 /// Global Search tab (single-panel). Hosts its own [PriorityBloc] scoped to
 /// the default/root priority in `everything: true` mode, so search spans every
@@ -360,6 +361,7 @@ class _SearchField extends StatelessWidget {
           return KeyEventResult.ignored;
         },
         child: FTextField(
+          builder: fieldSelectionBuilder,
           control: .managed(controller: controller),
           focusNode: focusNode,
           hint: 'Search…',

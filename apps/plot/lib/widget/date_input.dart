@@ -9,6 +9,7 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/step_controller.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/time.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 
 /// A compound input widget for selecting dates with chevron navigation.
 ///
@@ -153,7 +154,7 @@ class _DateInputState extends State<DateInput> {
                 )),
               ]),
             ),
-            builder: (context, style, states, child) => child,
+            builder: fieldSelectionBuilder,
           ),
         ),
         SizedBox(width: theme.spacing.md),

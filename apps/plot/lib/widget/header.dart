@@ -12,6 +12,7 @@ import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/style/theme.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 import 'button.dart';
 import 'window.dart';
 
@@ -215,6 +216,7 @@ class _HeaderState extends State<Header> {
                     return KeyEventResult.ignored;
                   },
                   child: FTextField(
+                    builder: fieldSelectionBuilder,
                     control: .managed(controller: _searchController),
                     focusNode: _searchFocusNode,
                     hint: 'Search…',

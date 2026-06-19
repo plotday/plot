@@ -9,6 +9,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/priority.dart' show formatTrackedDuration;
 import 'package:plot/widget/scroll_edge_fade.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 
 /// Modal showing weekly + per-day time totals for a single priority.
 ///
@@ -626,6 +627,7 @@ class _DurationFields extends StatelessWidget {
     required FThemeData theme,
   }) {
     return FTextField(
+      builder: fieldSelectionBuilder,
       control: .managed(controller: controller),
       focusNode: focusNode,
       textAlign: TextAlign.right,

@@ -248,6 +248,16 @@ class PriorityState extends Equatable {
   final bool activityFeedDoneEnd;
   final bool activityFeedLoaded;
 
+  /// [activityFeedDoneEnd] as the *filtered* view ([activityFeedViewItems])
+  /// sees it. The unread-only filter ([unreadFilterActive]) shows a complete
+  /// set: every unread thread is already loaded by the bounded head streams
+  /// (only the read/Done tail paginates), so paging further can never surface
+  /// a row the filter keeps. Without this, [InfiniteList] sees a short
+  /// filtered list with `doneEnd: false` and renders a trailing spinner that
+  /// auto-pages the read tail forever — visible as a spinner stuck at the end
+  /// of the list the moment the unread filter is turned on.
+  bool get activityFeedViewDoneEnd => activityFeedDoneEnd || unreadFilterActive;
+
   /// Cached agendaViewItems from an optimistic reorder. When set,
   /// [agendaViewItems] returns this directly instead of re-deriving.
   /// Cleared when new agenda data arrives.

@@ -445,4 +445,40 @@ void main() {
       expect(rows.contains(read.id), isFalse);
     });
   });
+
+  group('PriorityState.activityFeedViewDoneEnd', () {
+    test(
+        'reports done-end while the unread filter is active even when raw '
+        'pagination still has read pages to load', () {
+      final priority = _testPriority();
+      // Raw pagination is NOT done (the read/Done tail still has pages), which
+      // is the normal steady state for an active feed.
+      final base = _stateWith(priority: priority, agendaItems: const [])
+          .copyWith(activityFeedDoneEnd: false);
+
+      // Filter off: the view tracks the raw pagination flag.
+      expect(base.activityFeedViewDoneEnd, isFalse);
+
+      // Filter on: all unread is already loaded by the head streams, so the
+      // filtered view is complete. Paging the read tail can never add an
+      // unread row, so the view is done — no perpetual trailing spinner.
+      expect(
+        base.copyWith(unreadFilterActive: true).activityFeedViewDoneEnd,
+        isTrue,
+      );
+    });
+
+    test('mirrors activityFeedDoneEnd when the unread filter is off', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const []);
+      expect(
+        state.copyWith(activityFeedDoneEnd: true).activityFeedViewDoneEnd,
+        isTrue,
+      );
+      expect(
+        state.copyWith(activityFeedDoneEnd: false).activityFeedViewDoneEnd,
+        isFalse,
+      );
+    });
+  });
 }

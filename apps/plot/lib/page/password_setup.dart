@@ -164,6 +164,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     FTextField(
+                      builder: fieldSelectionBuilder,
                       control: .managed(controller: _nameController),
                       hint: 'Enter your name',
                       label: const Text('Name'),
@@ -173,6 +174,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
                     ),
 
                     FTextField(
+                      builder: fieldSelectionBuilder,
                       control: .managed(controller: _passwordController),
                       hint: 'Enter your password',
                       label: const Text('Password'),
@@ -182,6 +184,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
                     ),
 
                     FTextField(
+                      builder: fieldSelectionBuilder,
                       control: .managed(controller: _confirmPasswordController),
                       hint: 'Re-enter your password',
                       label: const Text('Confirm Password'),

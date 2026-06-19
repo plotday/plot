@@ -132,6 +132,63 @@ void main() {
       expect(nav.stay, isTrue);
     });
 
+    group('filtered feed advances within the filter', () {
+      // The bloc passes the filtered/visible feed (unread-only, mute-only or
+      // focus-scope) so Done advances to the next visible thread and never to
+      // one the filter omitted from [items]. stayWhenNothingToOpen keeps the
+      // just-finished thread open when the filtered subset has nothing left,
+      // rather than falling back to the compose page.
+      test('opens the next unread thread below', () {
+        final items = [
+          _header(ActivitySection.doing),
+          row(a),
+          row(b),
+          row(c),
+        ];
+        final nav = nextThreadAfterStateChange(
+          items,
+          a.id,
+          multiPanel: true,
+          stayWhenNothingToOpen: true,
+        );
+        expect(nav.open?.id, b.id);
+        expect(nav.stay, isFalse);
+      });
+
+      test('stays open when it was the last unread (only row)', () {
+        final items = [
+          _header(ActivitySection.doing),
+          row(a),
+        ];
+        final nav = nextThreadAfterStateChange(
+          items,
+          a.id,
+          multiPanel: true,
+          stayWhenNothingToOpen: true,
+        );
+        expect(nav.open, isNull);
+        // stay (not the compose-page sentinel): the filter auto-clears and the
+        // full feed reappears, so the just-finished thread stays open.
+        expect(nav.stay, isTrue);
+      });
+
+      test('still opens the thread above when one exists', () {
+        final items = [
+          _header(ActivitySection.doing),
+          row(a),
+          row(b),
+        ];
+        final nav = nextThreadAfterStateChange(
+          items,
+          b.id,
+          multiPanel: true,
+          stayWhenNothingToOpen: true,
+        );
+        expect(nav.open?.id, a.id);
+        expect(nav.stay, isFalse);
+      });
+    });
+
     group('single panel never repositions', () {
       // In single panel the user explicitly drilled into the thread, so a
       // state change keeps it open; they pop back to the list when ready.

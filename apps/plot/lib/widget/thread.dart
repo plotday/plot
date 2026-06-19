@@ -21,6 +21,7 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/command/page_link.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
 
@@ -1263,7 +1264,9 @@ class ThreadCommands extends HookWidget {
     // per-user agenda action — allowed even on read-only (announce-group /
     // onboarding) threads, same as the leading-icon long-press — so it is
     // not gated on isReadOnly. PickThreadShared stays filtered out — sharing
-    // is reachable via the more-commands menu.
+    // is reachable via the more-commands menu. Copy link (CopyThreadLink) is
+    // likewise more-menu-only — it stays in the more-commands and right-click
+    // menus but is never surfaced on hover.
     final hoverCommands = [
       PickScheduleThread(activity),
       ...rawHoverCommands.where(
@@ -1271,7 +1274,8 @@ class ThreadCommands extends HookWidget {
             cmd is! PickScheduleThread &&
             cmd is! PickThreadShared &&
             cmd is! AssignThread &&
-            cmd is! EditThread,
+            cmd is! EditThread &&
+            cmd is! CopyThreadLink,
       ),
     ];
     Widget buildCommandButton(Command cmd) => Button.icon(cmd);

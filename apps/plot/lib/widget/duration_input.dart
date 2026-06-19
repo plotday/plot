@@ -7,6 +7,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/style/button.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/step_controller.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 
 /// A compound input widget for editing durations with +/- buttons and separate hour/minute fields.
 ///
@@ -317,6 +318,7 @@ class _DurationInputState extends State<DurationInput> {
       children: [
         Flexible(
           child: FTextField(
+            builder: fieldSelectionBuilder,
             control: .managed(controller: controller), focusNode: focusNode,
             autofocus: autofocus,
             textAlign: TextAlign.center,

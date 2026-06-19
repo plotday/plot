@@ -154,6 +154,7 @@ class TitleComposeFieldState extends State<TitleComposeField> {
                     ),
                   ),
                 FTextField(
+                  builder: fieldSelectionBuilder,
                   control: .managed(controller: _controller),
                   focusNode: _focusNode,
                   hint: '',

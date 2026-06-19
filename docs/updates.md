@@ -107,6 +107,21 @@
 
 ### Fixes
 
+- When you're viewing a filtered list of threads — only unread, only skipped, or a single focus —
+  and mark one done, Plot now moves to the next thread in that same list instead of jumping to a
+  thread the filter was hiding. When the filtered list runs out, your finished thread stays open
+  rather than dropping you into a new draft.
+- Switching on "show only unread" no longer leaves a loading spinner stuck at the bottom of the
+  list. The filtered list now knows it's complete instead of trying to load more forever.
+- Selecting text in a field now uses the same subtle highlight as the note editor, instead of a
+  heavy grey that washed out the selected text. It's easier to read what you've selected in both
+  light and dark mode.
+- Dialogs you open with the mouse no longer pre-highlight a button. The highlight now follows your
+  pointer as you hover and clears when you move away, while opening a dialog from the keyboard still
+  focuses its main action so you can press Enter right away.
+- On phones, when you have more than one role, the focus list no longer collapses every role at once.
+  The role you were last working in stays open — so when you return to the list after viewing
+  another tab, you land back where you left off instead of facing a fully collapsed list.
 - Accounts with very large numbers of threads (especially heavy use of moving threads between
   focuses) could see the app sync slowly or briefly fail to load. Plot's behind-the-scenes
   filing now does far less redundant work, so syncing stays fast and reliable at that scale.

@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/logging.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 import 'icon.dart';
 
 /// Toggleable search widget that displays a search icon or input field.
@@ -124,6 +125,7 @@ class _SearchWidgetState extends State<SearchWidget> {
               child: Focus(
                 onKeyEvent: _handleKeyEvent,
                 child: FTextField(
+                  builder: fieldSelectionBuilder,
                   control: .managed(controller: _controller),
                   focusNode: _focusNode,
                   hint: 'Search…',

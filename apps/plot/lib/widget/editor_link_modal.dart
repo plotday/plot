@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/value.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 import 'icon.dart';
 import 'modal.dart';
 
@@ -117,6 +118,7 @@ class _EditorLinkModalContentState extends State<_EditorLinkModalContent> {
         ),
         SizedBox(height: spacing.md),
         FTextField(
+          builder: fieldSelectionBuilder,
           control: .managed(controller: _controller),
           hint: 'https://',
           focusNode: _focusNode,

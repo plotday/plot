@@ -10,18 +10,21 @@ import 'package:plot/widget/widget.dart';
 
 /// A collapsible role header row in the accordion sidebar. Renders the role's
 /// name as an **uppercase eyebrow** ([eyebrowLabelStyle]) — small, widely
-/// tracked, in the role's colour (muted at rest like a focus tile) — so a role
-/// reads as a section heading a level above its focuses without spending the
-/// weight (status) or colour (identity) signals on level. A **collapsed**
-/// header also carries a faint trailing chevron (a quiet "open me" cue) that
-/// cross-fades to the hover-revealed "…" menu ([ShowRoleCommands]). Tapping a
-/// **collapsed** header runs [onTap] (the left panel selects the role's first
-/// focus; single-panel just discloses them); the **expanded** header is inert —
-/// no chevron, no hover pill. When the role is **collapsed**, its status is
-/// reverse-inherited from its child focuses:
+/// tracked, in the role's colour — so a role reads as a section heading a level
+/// above its focuses. The name always renders at the heavier weight (w600), so
+/// a role stays a prominent heading whether it's expanded or collapsed and
+/// whether or not any of its focuses are active. A **collapsed** header also
+/// carries a faint trailing chevron (a quiet "open me" cue) that cross-fades to
+/// the hover-revealed "…" menu ([ShowRoleCommands]). Tapping a **collapsed**
+/// header runs [onTap] (the left panel selects the role's first focus;
+/// single-panel just discloses them); the **expanded** header is inert — no
+/// chevron, no hover pill. The remaining status signals are reverse-inherited
+/// from its child focuses:
 ///
-/// - **bold** when any child focus is active, and
-/// - an unread **dot** ([PriorityNotification]) when any child focus is unread.
+/// - **full colour** (rather than muted at rest) when any child focus is
+///   active, and
+/// - an unread **dot** ([PriorityNotification]) when **collapsed** and any
+///   child focus is unread.
 ///
 /// Stateless except for local hover state (mirrors [PriorityWidget]); all Bloc
 /// state is passed in by the page.
@@ -79,24 +82,26 @@ class _RoleHeaderState extends State<RoleHeader> {
   @override
   Widget build(BuildContext context) {
     final role = widget.role;
-    // Collapsed roles reverse-inherit their children's status: bold when any
-    // focus is active, an unread dot when any focus is unread. Expanded roles
-    // show neither (the focuses below carry their own cues).
+    // A collapsed role still reverse-inherits its children's *colour* status
+    // (full colour when any focus is active) and an unread dot when any focus is
+    // unread. Expanded roles show no dot (the focuses below carry their own
+    // cues). Weight, however, is no longer a status signal — the role name
+    // always renders at the heavier weight (see below).
     final anyActive = widget.childFocuses.any((f) => f.active);
     final anyUnread = widget.childFocuses.any((f) => f.unread);
-    final bool bold = !widget.expanded && anyActive;
     final bool showDot = !widget.expanded && anyUnread;
 
     // Hover / expansion promotes the role to its full colour; otherwise it
     // reads as a muted version of its own colour (or muted resting tone when
-    // monochrome and not bold), just like the focus tiles.
+    // monochrome and idle), just like the focus tiles. A collapsed role with
+    // active focuses also shows in full colour.
     final isActive = _isHovered || widget.expanded;
     final accent = context.colour.colours.fromTheme(role.displayColor);
     final restingColor = context.colour.colours.fromTheme(
       role.displayColor,
       muted: true,
     );
-    final labelColor = widget.monochrome && !isActive && !bold
+    final labelColor = widget.monochrome && !isActive && !anyActive
         ? restingColor
         : accent;
 
@@ -166,9 +171,10 @@ class _RoleHeaderState extends State<RoleHeader> {
       // Role name as an uppercase eyebrow + (collapsed) unread dot. The dot
       // sits outside the Flexible so it survives title truncation. The name is
       // uppercased render-only (the stored [Role.name] keeps its original
-      // case); weight still carries status (w600 active / w400 idle) and colour
-      // still carries the role identity — the case + scale shift alone signals
-      // "section heading".
+      // case). The role name always renders at the heavier weight (w600) so a
+      // role stays a prominent section heading regardless of whether it's
+      // expanded/collapsed or has active focuses; colour (identity / active
+      // status) and the unread dot carry the remaining signals.
       body: Row(
         children: [
           Flexible(
@@ -178,7 +184,7 @@ class _RoleHeaderState extends State<RoleHeader> {
               maxLines: 1,
               style: eyebrowLabelStyle(context.theme.typography).copyWith(
                 color: labelColor,
-                fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),

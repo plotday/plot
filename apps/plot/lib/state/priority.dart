@@ -3577,10 +3577,24 @@ class PriorityBloc extends Cubit<PriorityState> {
     required bool multiPanel,
   }) {
     if (_activeTabFlatMode) return (open: null, stay: true);
+    // Advance through the VISIBLE feed so Done moves to the next visible thread
+    // and never jumps to one the active filter hides. activityFeedViewItems
+    // narrows by the unread-only, mute-only and focus-scope filters; it returns
+    // the full feed unchanged when none is active. (Search and tag / icon /
+    // assignee filters render as a flat list and already stay put via the
+    // flat-mode early-return above.) In a filtered subset "nothing left to
+    // open" doesn't mean the whole list is clear, so keep the just-finished
+    // thread open instead of the compose-page fallback — for the unread filter
+    // it also auto-clears, revealing the full feed. The unfiltered feed keeps
+    // its compose-on-empty behavior.
+    final filtered = state.unreadFilterActive ||
+        state.muteOnly ||
+        state.globalViewScope != null;
     return nextThreadAfterStateChange(
-      state.activityFeedItems,
+      state.activityFeedViewItems,
       changedId,
       multiPanel: multiPanel,
+      stayWhenNothingToOpen: filtered,
     );
   }
 

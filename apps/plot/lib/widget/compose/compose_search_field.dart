@@ -11,6 +11,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/fading_underline.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 
 /// A reusable borderless search input with a fading underline, a leading slot,
 /// and keyboard-navigation callbacks (Enter / ↓ / Escape).
@@ -260,6 +261,7 @@ class ComposeSearchField extends StatelessWidget {
                 child: _withHintOverlay(
                   context,
                   FTextField(
+                    builder: fieldSelectionBuilder,
                     // The parent reads `controller.text` directly, so onChange
                     // just needs to notify the caller that something changed.
                     control: .managed(

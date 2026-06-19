@@ -43,6 +43,7 @@ import 'package:plot/main.dart' show navigatorKey;
 import 'package:plot/router.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
+import 'package:plot/widget/text_field_selection_theme.dart';
 import 'command.dart';
 import 'page_link.dart';
 import 'upgrade.dart'
@@ -1869,6 +1870,7 @@ class _AddEmailContentState extends State<_AddEmailContent> {
             ),
             const SizedBox(height: 16),
             FTextField(
+              builder: fieldSelectionBuilder,
               control: .managed(controller: _emailController),
               hint: 'your@email.com',
               label: const Text('Email'),
