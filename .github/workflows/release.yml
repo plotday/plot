@@ -1404,8 +1404,16 @@ jobs:
             --clientId "$AZURE_AD_APPLICATION_CLIENT_ID" \
             --clientSecret "$AZURE_AD_APPLICATION_SECRET"
 
+      # Best-effort, matching the metadata/submit steps below: the binary
+      # release (R2 upload + GitHub Release) has already succeeded by this
+      # point, so a Store-side problem (e.g. the Azure AD app not yet
+      # associated with the Partner Center account, which surfaces as
+      # "Could not retrieve your application") must not fail the whole release.
+      # --verbose makes the underlying Submission API error visible for
+      # diagnosis when it does fail.
       - name: Publish MSIX to Microsoft Store (draft)
         if: steps.ms-store.outputs.enabled == 'true'
+        continue-on-error: true
         shell: bash
         run: |
           cd apps/plot/build/windows/x64/runner/Release
@@ -1415,7 +1423,7 @@ jobs:
           # draft (--noCommit) so the metadata step can patch the same pending
           # submission; the "Submit ... for review" step commits package +
           # metadata together when submit_for_review is set.
-          msstore publish "$MSIX_FILE" -id 9PKTCSN8SNZF --noCommit
+          msstore publish "$MSIX_FILE" -id 9PKTCSN8SNZF --noCommit --verbose
 
       # Best-effort: patch the committed Windows listing text onto the pending
       # draft submission. continue-on-error so a locked listing can't fail an
