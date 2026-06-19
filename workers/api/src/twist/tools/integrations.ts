@@ -3286,7 +3286,9 @@ export class Integrations extends Tool implements IAuth {
       const nowIso = new Date().toISOString();
       const result = await this.db
         .updateTable("twist_instance_connection")
-        .set({ initial_sync_completed_at: nowIso })
+        // Reset the watchdog's recovery budget — this sync attempt ended, so a
+        // later re-enable starts fresh. See recover-stuck-syncs.ts.
+        .set({ initial_sync_completed_at: nowIso, initial_sync_attempts: 0 })
         .where("twist_instance_id", "=", this.twistInstanceId)
         .where("user_id", "=", resolved.userId)
         .where("provider", "=", provider)

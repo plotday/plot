@@ -12,6 +12,14 @@ CREATE TABLE "public"."twist_instance_connection" (
     -- (initial_sync_started_at IS NOT NULL AND initial_sync_completed_at IS NULL).
     "initial_sync_started_at" timestamptz NULL,
     "initial_sync_completed_at" timestamptz NULL,
+    -- How many times the stuck-sync watchdog has re-dispatched this
+    -- connection's initial sync without it completing. Bounds recovery: after
+    -- a few failed cycles the watchdog stops re-running a sync that never
+    -- finishes (e.g. a connector whose backfill keeps throwing) and instead
+    -- flags `needs_reauth_at`, so the user sees "Reconnect" rather than an
+    -- eternal "Syncing" spinner. Reset to 0 on successful completion
+    -- (channelSyncCompleted) and on re-auth (the needs_reauth clear path).
+    "initial_sync_attempts" integer NOT NULL DEFAULT 0,
     -- Set by the runtime when a queued connector callback fails with an
     -- auth-related error, or after re-auth. The next `onChannelEnabled`
     -- dispatch (from any path: user toggle, refresh, recovery) reads this

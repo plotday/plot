@@ -801,6 +801,7 @@ export interface TeamUser {
 }
 
 export interface Thread {
+  activity_base: Timestamp | null;
   archived_at: Timestamp | null;
   assignee_id: string | null;
   /**
@@ -889,6 +890,7 @@ export interface ThreadNotifyState {
 }
 
 export interface ThreadPriority {
+  activity_at: Timestamp | null;
   applied_default_channel_id: Int8 | null;
   archived_at: Timestamp | null;
   /**
@@ -993,6 +995,7 @@ export interface ThreadTags {
 }
 
 export interface ThreadX {
+  activity_base: Timestamp | null;
   archived_at: Timestamp | null;
   assignee_id: string | null;
   author_id: string | null;
@@ -1238,6 +1241,7 @@ export interface TwistInstanceChannelNoteCreate {
 export interface TwistInstanceConnection {
   actor_id: string;
   connected_at: Generated<Timestamp>;
+  initial_sync_attempts: Generated<number>;
   initial_sync_completed_at: Timestamp | null;
   initial_sync_started_at: Timestamp | null;
   needs_reauth_at: Timestamp | null;

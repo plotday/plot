@@ -3253,6 +3253,7 @@ export type Database = {
         Row: {
           actor_id: string
           connected_at: string
+          initial_sync_attempts: number
           initial_sync_completed_at: string | null
           initial_sync_started_at: string | null
           needs_reauth_at: string | null
@@ -3265,6 +3266,7 @@ export type Database = {
         Insert: {
           actor_id: string
           connected_at?: string
+          initial_sync_attempts?: number
           initial_sync_completed_at?: string | null
           initial_sync_started_at?: string | null
           needs_reauth_at?: string | null
@@ -3277,6 +3279,7 @@ export type Database = {
         Update: {
           actor_id?: string
           connected_at?: string
+          initial_sync_attempts?: number
           initial_sync_completed_at?: string | null
           initial_sync_started_at?: string | null
           needs_reauth_at?: string | null

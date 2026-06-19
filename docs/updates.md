@@ -127,7 +127,8 @@
   filing now does far less redundant work, so syncing stays fast and reliable at that scale.
 - A connection could get stuck showing "Syncing…" indefinitely if its first sync was paused partway
   through. Plot now detects these and resumes them automatically, so the spinner clears and your
-  messages and items finish loading.
+  messages and items finish loading. And if a first sync genuinely can't finish after several
+  automatic retries, the connection now shows a clear "Reconnect" prompt instead of spinning forever.
 - When you connect an account like LinkedIn that has a single thing to sync, the setup screen now
   defaults the **Label** to your account name (for example "Kris Braun") instead of "Personal", and
   no longer shows a "Select what you'd like to sync" prompt when there's nothing to choose.
