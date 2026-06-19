@@ -209,6 +209,39 @@ describe("decision logging", () => {
     expect(events.some((e) => e.includes("classification_decision"))).toBe(false);
   });
 
+  it("clears classify_at when skipping a user_moved row (drains the sweep leak)", async () => {
+    // A user_moved row that still carries classify_at (e.g. the user moved a
+    // thread that was concurrently marked pending) is sticky — the worker won't
+    // re-file it. But leaving classify_at set means the hourly sweep re-enqueues
+    // it forever (prod: 1428 such rows, oldest a month old). The skip must clear
+    // classify_at so the row drains. It is a quiet write (only classify_at
+    // changes) and logs no decision.
+    const events: string[] = [];
+    const db = testDb(
+      events,
+      defaultRespond((sql) => {
+        if (sql.includes('from "thread_priority"')) {
+          return Promise.resolve({
+            rows: [
+              { priority_id: "old-priority", user_moved: true, classify_at: new Date() },
+            ],
+          });
+        }
+        return null;
+      })
+    );
+    const outcome = await handleClassifyJob(JOB, ENV, db);
+    expect(outcome.status).toBe("skipped");
+    const clear = events.find((e) => e.startsWith('update "thread_priority"'));
+    expect(clear).toBeDefined();
+    // Guarded to user_moved rows so a concurrent un-move isn't clobbered.
+    expect(clear).toContain('"user_moved"');
+    // No decision log on a skip, and no transaction/parent-lock (it's a quiet
+    // keyed write, not a re-filing).
+    expect(events.some((e) => e.includes("classification_decision"))).toBe(false);
+    expect(events.includes("BEGIN")).toBe(false);
+  });
+
   it("logs on the same-result branch (classify_at cleared, no move)", async () => {
     const events: string[] = [];
     const db = testDb(

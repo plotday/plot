@@ -107,6 +107,9 @@
 
 ### Fixes
 
+- Accounts with very large numbers of threads (especially heavy use of moving threads between
+  focuses) could see the app sync slowly or briefly fail to load. Plot's behind-the-scenes
+  filing now does far less redundant work, so syncing stays fast and reliable at that scale.
 - A connection could get stuck showing "Syncing…" indefinitely if its first sync was paused partway
   through. Plot now detects these and resumes them automatically, so the spinner clears and your
   messages and items finish loading.

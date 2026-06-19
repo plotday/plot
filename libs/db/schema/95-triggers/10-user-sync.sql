@@ -70,11 +70,16 @@ CREATE TRIGGER user_sync_thread_priority_insert
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_thread_priority();
 
+-- The UPDATE path uses a content-guarded variant (OLD+NEW transition tables)
+-- so a classify_at-only write — the classify worker's "same result" settle and
+-- the reclassify/channel/topic markers — stays quiet and does not bump the
+-- per-user singleton user_sync(user_id,'thread') row. See
+-- sync_user_for_thread_priority_update.
 CREATE TRIGGER user_sync_thread_priority_update
   AFTER UPDATE ON thread_priority
-  REFERENCING NEW TABLE AS new_table
+  REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_thread_priority();
+  EXECUTE FUNCTION sync_user_for_thread_priority_update();
 
 CREATE TRIGGER user_sync_thread_priority_delete
   AFTER DELETE ON thread_priority

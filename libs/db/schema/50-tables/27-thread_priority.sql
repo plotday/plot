@@ -145,10 +145,16 @@ CREATE INDEX idx_thread_priority_user_activity
 CREATE INDEX idx_thread_priority_user_priority_activity
     ON "public"."thread_priority" ("user_id", "priority_id", "activity_at" DESC);
 
+-- Uses the thread_priority-specific seq function so a classify_at-only update
+-- (worker "same result" settle + reclassify/channel/topic markers) does not
+-- advance seq/updated_at — classify_at is internal and never surfaced by a
+-- user.* view, so re-emitting the row to clients would be pure waste. The same
+-- function also honors plot.skip_activity_seq for the activity_at fan-out. See
+-- thread_priority_seq_and_updated_at.
 CREATE TRIGGER set_thread_priority_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_priority"
     FOR EACH ROW
-    EXECUTE FUNCTION update_seq_and_updated_at ();
+    EXECUTE FUNCTION thread_priority_seq_and_updated_at ();
 
 CREATE TRIGGER set_thread_priority_created_at
     BEFORE INSERT ON "public"."thread_priority"

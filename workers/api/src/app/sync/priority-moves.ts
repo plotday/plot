@@ -42,6 +42,11 @@ priorityMoves.post("/sync/priority-moves", async (c) => {
             -- marker so apply_channel_default does not later pull this row
             -- back when the channel default changes.
             applied_default_channel_id = NULL,
+            -- The move settles the placement at the user's choice. Clear any
+            -- pending classify marker so the row doesn't strand: the classify
+            -- worker skips user_moved rows, so a classify_at left set here would
+            -- be re-enqueued by the hourly sweep forever (the user_moved leak).
+            classify_at = NULL,
             archived_at = NULL,
             updated_at = now()
       RETURNING thread_id

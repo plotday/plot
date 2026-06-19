@@ -55,7 +55,27 @@ export async function handleClassifyJob(
 
   if (!row) return { status: "skipped" };
   if (row.classify_at == null) return { status: "skipped" };
-  if (row.user_moved) return { status: "skipped" };
+  if (row.user_moved) {
+    // The placement is sticky (the user's explicit choice) so we never re-file
+    // this row — but classify_at is still set, because a reclassify/channel/
+    // topic marker raced the user's move (the marker guards on user_moved =
+    // FALSE, but the move can land between mark and settle). Leaving classify_at
+    // set strands the row: the hourly sweep re-enqueues it every hour forever
+    // and this same skip fires again, draining nothing (prod: 1428 such rows,
+    // oldest a month old — PostHog 019ed53e backlog). Clear it with a quiet,
+    // guarded keyed write so the row finally settles. The user_moved = TRUE
+    // guard avoids clobbering a row whose stickiness changed under us; the
+    // classify_at-only update is quiet — no seq / user_sync bump (see
+    // thread_priority_seq_and_updated_at / sync_user_for_thread_priority_update).
+    await db
+      .updateTable("thread_priority")
+      .set({ classify_at: null })
+      .where("user_id", "=", job.userId)
+      .where("thread_id", "=", job.threadId)
+      .where("user_moved", "=", true)
+      .execute();
+    return { status: "skipped" };
+  }
 
   const snapshot = row.priority_id; // null = case A (initial classify)
 
