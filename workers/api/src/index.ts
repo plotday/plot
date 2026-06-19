@@ -57,6 +57,7 @@ import { syncUserTwistStats } from "./utils/twist-stats";
 import { refreshAllChannels } from "./scheduled/refresh-channels";
 import { recoverPendingConnections } from "./scheduled/recover-pending-connections";
 import { recoverStuckSyncs } from "./scheduled/recover-stuck-syncs";
+import { clearStaleSuspensions } from "./scheduled/clear-stale-suspensions";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
 import { reconcileMissingEmbeddings } from "./scheduled/reconcile-embeddings";
 import { purgeDeletedAccounts } from "./scheduled/purge-deleted-accounts";
@@ -349,6 +350,17 @@ async function scheduled(
   const scheduledTime = new Date(event.scheduledTime);
   const scheduledMinutes = scheduledTime.getUTCMinutes();
   if (scheduledMinutes < 5 || (scheduledMinutes >= 30 && scheduledMinutes < 35)) {
+    // Lazy-clear stale auto-suspensions (twist redeployed since the
+    // suspension) FIRST. Both recovery sweeps below skip suspended
+    // instances, so a connection auto-suspended mid initial-sync would
+    // otherwise stay stuck on "Syncing X" forever — the suspension blocks
+    // recovery and only an inbound webhook (which may never arrive) clears
+    // it. Clearing here lets the stuck-sync watchdog pick it up this tick.
+    try {
+      await clearStaleSuspensions(env, _ctx);
+    } catch (error) {
+      logger.error("Error clearing stale suspensions", error as Error);
+    }
     // Flag syncs orphaned mid-flight (worker crash) so the recover-pending
     // sweep below picks them up and re-dispatches them in this same tick.
     try {

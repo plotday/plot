@@ -84,6 +84,9 @@
 
 ### Fixes
 
+- A connection could get stuck showing "Syncing…" indefinitely if its first sync was paused partway
+  through. Plot now detects these and resumes them automatically, so the spinner clears and your
+  messages and items finish loading.
 - When your plan changes to one that doesn't include premium connections — like LinkedIn — those
   connections are now properly disconnected. Previously a premium connection could linger after a
   downgrade or cancellation even though your new plan no longer covered it.
