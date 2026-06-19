@@ -25,10 +25,13 @@ The app is already live in the Store. To enable API uploads:
 2. Under **Certificates & secrets**, create a **client secret**; copy its value
    immediately (it is shown only once).
 3. In **Partner Center → Account settings → User management → Microsoft Entra
-   applications**, add that app and assign it the **Manager** role.
+   applications**, add that app and assign it the **Manager** role — **on the
+   Microsoft Store developer account that owns Plot, and only that account**
+   (see [Account topology](#account-topology--the-two-account-gotcha) below;
+   getting this wrong is the #1 cause of upload failures).
 4. Collect: **Tenant ID**, **Client ID** (the app's Application ID), the
-   **Client secret** value, and your **Seller ID** (Partner Center →
-   Account settings → Identifiers / "Seller ID").
+   **Client secret** value, and the **Store account's Seller ID** (Partner
+   Center → Account settings → Identifiers).
 
 ## Secrets (managed in 1Password)
 
@@ -44,10 +47,93 @@ fields:
 | `Tenant ID` | `AZURE_AD_TENANT_ID` | Entra Directory (tenant) ID |
 | `App client ID` | `AZURE_AD_APPLICATION_CLIENT_ID` | App registration Application (client) ID |
 | `password` | `AZURE_AD_APPLICATION_SECRET` | App registration client secret **Value** (not the Secret ID) |
-| `Seller ID` | `SELLER_ID` | Partner Center Seller ID |
+| `Seller ID` | `SELLER_ID` | The **Store developer account's** Seller ID (not the Marketplace account's `93590530`) |
 
 Once the item exists, the next deploy's `refresh-secrets` job pushes all four
 to GitHub, and the next Windows release uploads to the Store automatically.
+
+## Account topology — the two-account gotcha
+
+> If `msstore publish` fails with **"Could not retrieve your application"**, read
+> this first — it has been the cause every time.
+
+Plot is published under **two different Partner Center accounts that share the
+same `kris@plot.day` email** but are different identity *types*:
+
+| | Commercial Marketplace account | **Microsoft Store developer account** |
+| --- | --- | --- |
+| Account-switcher name | `Plot-plot` | **`Plot Technologies Inc.`** |
+| Identity type | work / **Entra** user | personal / **MSA** |
+| Identifier | Seller ID `93590530`, Partner ID `7078039` | Windows publisher ID `CN=3C1B8AFA-75E1-42FE-9717-EB9D1B1820CB` |
+| Owns Store apps? | **No** | **Yes — Plot (`9PKTCSN8SNZF`) lives here** |
+
+The msstore submission API resolves the developer account from the **Entra app's
+association**, *not* from the Seller ID. So the Entra app — and therefore the
+secrets — must be associated with the **Store developer account**, and with
+**only** that one.
+
+### Symptoms of getting it wrong
+
+`msstore publish` → `💥 Could not retrieve your application…` (exit 127). Under
+the hood auth *succeeds* (token `200`), but `GET /my/applications` returns an
+**empty list** and `GET /my/applications/9PKTCSN8SNZF` returns **`403`**. Two
+distinct mistakes both produce this:
+
+1. The Entra app is associated with the **Marketplace** account (owns no Store apps).
+2. The **same** Entra app is associated with **both** accounts — ambiguous; the
+   API still resolves to the Marketplace account.
+
+### The working configuration (set up 2026-06-19)
+
+1. **Associate the Entra tenant with the Store account.** Store account →
+   Account settings → **Tenants → Associate Microsoft Entra tenant**; sign in as
+   a **Global Admin** of the `plot.day` tenant
+   (`e6b8e1e6-b0b5-429d-b5a1-3dbed8e1401e`). This makes the Store account
+   manageable via the Entra identity and surfaces it in the Partner Center
+   **account switcher** (top-right) under the "Plot Technologies Inc." directory.
+   - ⚠️ Because the same email is *both* an MSA and an Entra user, the
+     "Sign in with Microsoft Entra ID" button on the Store account's User
+     management page can bounce you into the Marketplace account. Use the
+     **account switcher** and pick **"Plot Technologies Inc."** explicitly.
+2. **Associate the Entra app with the Store account** (User management →
+   Microsoft Entra applications → Add → the `Windows Store` app → **Manager**).
+3. **Remove that app's association from the Marketplace account** so it maps to
+   **exactly one** account (its User management → Microsoft Entra applications →
+   select `Windows Store` → **Delete**). This is the step that clears the `403`.
+   The Marketplace account has no Store apps, so it doesn't need the app.
+4. Set **`Seller ID`** in 1Password to the **Store account's** seller ID (not the
+   Marketplace `93590530`), then re-run `scripts/sync-github-secrets`.
+
+## Verifying the credentials (read-only probe)
+
+To check whether the configured 1Password creds can actually retrieve Plot —
+without waiting for a release and without printing any secret — authenticate and
+list the apps the principal can see:
+
+```bash
+TENANT=$(op read 'op://Production/Windows Store/Tenant ID')
+CLIENT=$(op read 'op://Production/Windows Store/App client ID')
+SECRET=$(op read 'op://Production/Windows Store/password')
+TOKEN=$(curl -s -X POST \
+  "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
+  -d grant_type=client_credentials --data-urlencode "client_id=$CLIENT" \
+  --data-urlencode "client_secret=$SECRET" \
+  --data-urlencode "scope=https://manage.devcenter.microsoft.com/.default" \
+  | jq -r .access_token)
+# Should list Plot:
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://manage.devcenter.microsoft.com/v1.0/my/applications" \
+  | jq -r '.value[]? | "\(.id)  \(.primaryName)"'
+# Should print 200:
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOKEN" \
+  "https://manage.devcenter.microsoft.com/v1.0/my/applications/9PKTCSN8SNZF"
+```
+
+`9PKTCSN8SNZF` in the list **and** `200` from the second call = the app is
+correctly associated with the Store account. Empty list / `403` = the topology
+problem above. (The probe does **not** send the Seller ID, so it isolates the
+app-association: a passing probe means publishing will work even before the
+Seller ID is corrected.)
 
 ## Caveats
 
