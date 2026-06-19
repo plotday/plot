@@ -89,7 +89,13 @@ class AttachFile extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final result = await FilePicker.pickFiles(allowMultiple: true);
+    // `withData: kIsWeb` is required on web: there is no filesystem path, so
+    // `_uploadFile` reads `file.bytes`. Without it the picker leaves `bytes`
+    // null (it stores a data-URL in `path` instead) and every web upload throws
+    // `StateError('Could not read file bytes.')`. Native keeps `withData` off so
+    // it streams from the path rather than copying the whole file into memory.
+    final result =
+        await FilePicker.pickFiles(allowMultiple: true, withData: kIsWeb);
     if (result == null || result.files.isEmpty) {
       return const CommandSkipped();
     }

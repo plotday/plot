@@ -5,7 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import { createDb, type DB } from "../db";
 import type { Bindings } from "../env";
-import { getPersonalConnectionCount, getTeamConnectionCount } from "./limits";
+import {
+  getPersonalConnectionCount,
+  getTeamConnectionCount,
+  selectConnectionsToTrim,
+  type TrimmableConnection,
+} from "./limits";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -96,5 +101,137 @@ describe.skipIf(!DATABASE_URL)("connection quota excludes stuck instances", () =
 
   it("team: an instance with no enabled channel does NOT count", async () => {
     expect(await seedAndCount({ scope: "team", channelEnabled: false })).toBe(0);
+  });
+});
+
+describe("selectConnectionsToTrim", () => {
+  let seq = 0;
+  /** Build a connection. `connectedAt` increments per call so later calls are
+   * "newer" — pass an explicit value to control ordering. */
+  const conn = (
+    overrides: Partial<TrimmableConnection> & { premium: boolean }
+  ): TrimmableConnection => ({
+    twistInstanceId: `ti-${seq}`,
+    provider: overrides.premium ? "linkedin" : "google",
+    actorId: `actor-${seq}`,
+    connectedAt: new Date(2026, 0, 1 + seq++).toISOString(),
+    ...overrides,
+  });
+  const ids = (cs: TrimmableConnection[]) =>
+    cs.map((c) => c.twistInstanceId).sort();
+
+  it("trims the lone LinkedIn premium connection on Pro→Free downgrade", () => {
+    // The cost bug: Free blocks premium, but a single premium connection sits
+    // within the regular connection budget (2) so a count-only trim keeps it.
+    const linkedin = conn({ twistInstanceId: "linkedin", premium: true });
+    const trimmed = selectConnectionsToTrim([linkedin], {
+      connections: 2,
+      premium: { type: "blocked" },
+    });
+    expect(ids(trimmed)).toEqual(["linkedin"]);
+  });
+
+  it("blocked policy trims every premium connection, keeps regular within limit", () => {
+    const reg1 = conn({ twistInstanceId: "reg1", premium: false });
+    const reg2 = conn({ twistInstanceId: "reg2", premium: false });
+    const prem1 = conn({ twistInstanceId: "prem1", premium: true });
+    const prem2 = conn({ twistInstanceId: "prem2", premium: true });
+    const trimmed = selectConnectionsToTrim([reg1, reg2, prem1, prem2], {
+      connections: 5,
+      premium: { type: "blocked" },
+    });
+    expect(ids(trimmed)).toEqual(["prem1", "prem2"]);
+  });
+
+  it("counts premium separately from the regular pool — a regular within limit survives", () => {
+    // 2 regular + 1 premium = 3 total. Old count-only logic (offset 2 over all)
+    // would trim one. Premium-aware logic keeps both regular (≤2) and trims only
+    // the blocked premium.
+    const reg1 = conn({ twistInstanceId: "reg1", premium: false });
+    const reg2 = conn({ twistInstanceId: "reg2", premium: false });
+    const prem = conn({ twistInstanceId: "prem", premium: true });
+    const trimmed = selectConnectionsToTrim([reg1, reg2, prem], {
+      connections: 2,
+      premium: { type: "blocked" },
+    });
+    expect(ids(trimmed)).toEqual(["prem"]);
+  });
+
+  it("trims the OLDEST excess regular connections, keeping the newest", () => {
+    const oldest = conn({
+      twistInstanceId: "oldest",
+      premium: false,
+      connectedAt: "2026-01-01T00:00:00Z",
+    });
+    const mid = conn({
+      twistInstanceId: "mid",
+      premium: false,
+      connectedAt: "2026-02-01T00:00:00Z",
+    });
+    const newest = conn({
+      twistInstanceId: "newest",
+      premium: false,
+      connectedAt: "2026-03-01T00:00:00Z",
+    });
+    const trimmed = selectConnectionsToTrim([oldest, mid, newest], {
+      connections: 2,
+      premium: { type: "blocked" },
+    });
+    expect(ids(trimmed)).toEqual(["oldest"]);
+  });
+
+  it("credits policy keeps the newest `included + addons` premium, trims older", () => {
+    const old = conn({
+      twistInstanceId: "old",
+      premium: true,
+      connectedAt: "2026-01-01T00:00:00Z",
+    });
+    const newer = conn({
+      twistInstanceId: "newer",
+      premium: true,
+      connectedAt: "2026-02-01T00:00:00Z",
+    });
+    const newest = conn({
+      twistInstanceId: "newest",
+      premium: true,
+      connectedAt: "2026-03-01T00:00:00Z",
+    });
+    const trimmed = selectConnectionsToTrim([old, newer, newest], {
+      connections: Infinity,
+      premium: { type: "credits", included: 1 },
+      premiumAddons: 1,
+    });
+    // included(1) + addons(1) = keep 2 newest; trim the oldest.
+    expect(ids(trimmed)).toEqual(["old"]);
+  });
+
+  it("Infinity connection budget never trims regular connections", () => {
+    const reg1 = conn({ twistInstanceId: "reg1", premium: false });
+    const reg2 = conn({ twistInstanceId: "reg2", premium: false });
+    const prem = conn({ twistInstanceId: "prem", premium: true });
+    const trimmed = selectConnectionsToTrim([reg1, reg2, prem], {
+      connections: Infinity,
+      premium: { type: "credits", included: 1 },
+    });
+    expect(ids(trimmed)).toEqual([]);
+  });
+
+  it("weighted policy (team) leaves premium connections intact", () => {
+    const prem1 = conn({ twistInstanceId: "prem1", premium: true });
+    const prem2 = conn({ twistInstanceId: "prem2", premium: true });
+    const trimmed = selectConnectionsToTrim([prem1, prem2], {
+      connections: Infinity,
+      premium: { type: "weighted", weightAsRegular: 3 },
+    });
+    expect(ids(trimmed)).toEqual([]);
+  });
+
+  it("returns nothing for an empty connection list", () => {
+    expect(
+      selectConnectionsToTrim([], {
+        connections: 2,
+        premium: { type: "blocked" },
+      })
+    ).toEqual([]);
   });
 });

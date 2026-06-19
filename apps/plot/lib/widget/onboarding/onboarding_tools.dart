@@ -21,6 +21,35 @@ import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 const _messagingCategory = 'messaging';
 const _calendarCategory = 'calendar';
 
+/// Only `public`-environment connectors are offered during onboarding.
+const _publicEnvironment = 'public';
+
+/// Selects the connectors to show in the onboarding grid from the raw `/twists`
+/// response.
+///
+/// Onboarding only offers *publicly-installable* connectors. Reviewers and twist
+/// owners also receive `review`/`personal` rows from `/twists`, and those can
+/// carry stale metadata — e.g. a NULL [Twist.category] from before the field
+/// existed — that would otherwise shadow the correct `public` row and drop a
+/// connector into the wrong section. Restricting to `public` keeps a reviewer's
+/// onboarding view identical to what real users can actually install.
+///
+/// Deduped by `twistPackageId` (belt-and-braces — the API already guarantees one
+/// public row per package) and sorted by display name.
+List<Twist> onboardingConnectors(List<Twist> twists) {
+  final seenPackageIds = <String>{};
+  return twists
+      .where(
+        (t) =>
+            t.isSource &&
+            t.environment == _publicEnvironment &&
+            t.twistPackageId != null &&
+            seenPackageIds.add(t.twistPackageId!),
+      )
+      .toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+}
+
 /// Renders the content of the "Connect your other tools" onboarding step.
 ///
 /// Lists every source connector available to the user (Gmail, Slack, Linear,
@@ -158,22 +187,7 @@ class _OnboardingToolsState extends State<OnboardingTools> {
       );
     }
 
-    final twists = _twists ?? const <Twist>[];
-    // Dedupe by package_id — the user can have the same connector available
-    // across multiple environments (e.g. public + personal/review), and we
-    // only want one tile per connector in the onboarding grid. Preserve the
-    // first occurrence per package; sort handles the final order.
-    final seenPackageIds = <String>{};
-    final tools =
-        twists
-            .where(
-              (t) =>
-                  t.isSource &&
-                  t.twistPackageId != null &&
-                  seenPackageIds.add(t.twistPackageId!),
-            )
-            .toList()
-          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final tools = onboardingConnectors(_twists ?? const <Twist>[]);
 
     // Bucket the available connectors into the three onboarding sections.
     // Anything without a recognized category (including null) falls through

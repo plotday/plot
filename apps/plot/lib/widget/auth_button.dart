@@ -508,6 +508,13 @@ class _AuthButtonState extends State<AuthButton>
     try {
       final authUrl = await _generateAuthUrl(redirectUri: redirectUri);
 
+      // The auth popup is now what the user interacts with — drop our button
+      // spinner while it's open. On web the call doesn't resolve until the
+      // callback arrives or FlutterWebAuth2's timeout (default 5 min) elapses,
+      // so leaving the spinner on makes the button look stuck for a user who
+      // closed/abandoned the popup. Restored below for the token exchange.
+      if (mounted) setState(() => _isLoading = false);
+
       final result = await FlutterWebAuth2.authenticate(
         url: authUrl.url,
         callbackUrlScheme: AuthButton._isWindows
@@ -517,6 +524,10 @@ class _AuthButtonState extends State<AuthButton>
             ? const FlutterWebAuth2Options(useWebview: false)
             : const FlutterWebAuth2Options(),
       );
+
+      // Back in the app doing invisible token-exchange work — restore the
+      // spinner (and re-guard against a second tap during the tail).
+      if (mounted) setState(() => _isLoading = true);
 
       final responseUri = Uri.parse(result);
       final params = responseUri.queryParameters;
@@ -528,8 +539,17 @@ class _AuthButtonState extends State<AuthButton>
         state: authUrl.state,
       );
     } catch (e, t) {
-      if (_isUserCanceledAuth(e)) {
+      if (isAuthUserCanceled(e)) {
         log.info('OAuth flow cancelled by user (${widget.provider.name})');
+        return;
+      }
+      if (isAuthCallbackTimeout(e)) {
+        // The user saw the popup and didn't finish (closed/abandoned it). The
+        // spinner is already cleared, so just move on quietly — no toast, and
+        // not a bug to report.
+        log.info(
+          'OAuth flow timed out awaiting callback (${widget.provider.name})',
+        );
         return;
       }
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
@@ -840,8 +860,17 @@ class _AuthButtonState extends State<AuthButton>
         );
       }
     } catch (e, t) {
-      if (_isUserCanceledAuth(e)) {
+      if (isAuthUserCanceled(e)) {
         log.info('OAuth flow cancelled by user (${widget.provider.name})');
+        return;
+      }
+      if (isAuthCallbackTimeout(e)) {
+        // The user saw the popup and didn't finish (closed/abandoned it). The
+        // spinner is already cleared, so just move on quietly — no toast, and
+        // not a bug to report.
+        log.info(
+          'OAuth flow timed out awaiting callback (${widget.provider.name})',
+        );
         return;
       }
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
@@ -912,6 +941,14 @@ class _AuthButtonState extends State<AuthButton>
     TwistAuthUrl authUrl,
     String redirectUri,
   ) async {
+    // The auth popup is now what the user interacts with — drop our button
+    // spinner while it's open. On web the call doesn't resolve until the
+    // callback arrives or FlutterWebAuth2's timeout (default 5 min) elapses, so
+    // leaving the spinner on makes the button look stuck for a user who
+    // closed/abandoned the popup. Restored below once we're back doing
+    // invisible work (token exchange + the caller's activation step).
+    if (mounted) setState(() => _isLoading = false);
+
     final result = await FlutterWebAuth2.authenticate(
       url: authUrl.url,
       callbackUrlScheme: AuthButton._isWindows
@@ -925,6 +962,8 @@ class _AuthButtonState extends State<AuthButton>
     final responseUri = Uri.parse(result);
     final params = responseUri.queryParameters;
     if (params['error'] != null) {
+      // Leave the spinner off; the user reads the error toast and the button is
+      // back to normal so they can retry.
       final errorParam = params['error']!.trim();
       if (mounted) {
         _showTwistAuthError(
@@ -933,6 +972,10 @@ class _AuthButtonState extends State<AuthButton>
       }
       return false;
     }
+
+    // Success (code exchange or bridge `success=1`) — restore the spinner for
+    // the token exchange and the caller's [AuthButton._onSuccess] activation.
+    if (mounted) setState(() => _isLoading = true);
 
     final code = params['code'];
     if (code != null) {
@@ -963,13 +1006,6 @@ class _AuthButtonState extends State<AuthButton>
     }
   }
 
-  /// True if [e] is a user-cancellation from the auth web view
-  /// (FlutterWebAuth2 throws PlatformException(CANCELED, ...) when the user
-  /// dismisses the OAuth browser). Not a bug — don't report.
-  static bool _isUserCanceledAuth(Object e) {
-    return e is PlatformException && e.code == 'CANCELED';
-  }
-
   /// Generate a random nonce string for Apple Sign In.
   static String _generateNonce([int length = 32]) {
     const charset =
@@ -981,6 +1017,26 @@ class _AuthButtonState extends State<AuthButton>
     ).join();
   }
 }
+
+/// True when [e] is a user-cancellation of the OAuth web view. On native
+/// platforms FlutterWebAuth2 throws `PlatformException('CANCELED', …)` when the
+/// user dismisses the browser/sheet. Not a bug — don't report it.
+bool isAuthUserCanceled(Object e) =>
+    e is PlatformException && e.code == 'CANCELED';
+
+/// True when the web OAuth flow ended because the popup never returned a
+/// callback before FlutterWebAuth2's poll timeout — i.e. the user closed or
+/// abandoned the popup (the web equivalent of cancelling), or the callback
+/// handshake never completed. flutter_web_auth_2's web implementation throws
+/// `PlatformException('error', 'Timeout waiting for callback value')` in this
+/// case (see flutter_web_auth_2 `src/web.dart`). Expected and user-recoverable,
+/// so the caller surfaces a retry toast but must NOT report it to error
+/// tracking. Matched on the exact message so genuine provider/runtime errors
+/// (which also use code `error`) are still reported.
+bool isAuthCallbackTimeout(Object e) =>
+    e is PlatformException &&
+    e.code == 'error' &&
+    e.message == 'Timeout waiting for callback value';
 
 FButtonStyle buildAuthButtonStyle(
   BuildContext context,

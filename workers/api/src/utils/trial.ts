@@ -3,7 +3,12 @@ import { sql } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
-import { BUILTIN_TWIST_PACKAGE_ID, PLAN_LIMITS } from "./limits";
+import {
+  BUILTIN_TWIST_PACKAGE_ID,
+  getPersonalPremiumAddons,
+  PLAN_LIMITS,
+  selectConnectionsToTrim,
+} from "./limits";
 import { createLogger } from "@plotday/worker-util";
 import { twistFactory } from "../twist";
 import { enforcePersonalPlanLimits } from "../twist/management";
@@ -43,20 +48,61 @@ export async function getExcessConnectionNames(
   db: Kysely<DB>,
   userId: string
 ): Promise<{ twistName: string; provider: string }[]> {
-  const excess = await db
+  // Mirror what `enforcePersonalPlanLimits` actually trims on downgrade to free
+  // (regular connections beyond the count budget AND premium connections free
+  // blocks), so the "you'll lose access to" preview stays consistent with the
+  // real removal — including premium connectors like LinkedIn.
+  const connections = await db
     .selectFrom("twist_instance_connection as ptc")
     .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .select(["t.name as twist_name", "ptc.provider"])
+    .select([
+      "ptc.twist_instance_id",
+      "ptc.provider",
+      "ptc.actor_id",
+      "ptc.connected_at",
+      "t.premium",
+      "t.name as twist_name",
+    ])
     .where("ptc.user_id", "=", userId)
     .where("pt.archived_at", "is", null)
-    .orderBy("ptc.connected_at", "desc")
-    .offset(PLAN_LIMITS.free.connections)
     .execute();
 
-  return excess.map((r) => ({
-    twistName: r.twist_name ?? "Unknown",
-    provider: r.provider,
+  const keyOf = (c: {
+    twistInstanceId: string;
+    provider: string;
+    actorId: string;
+  }) => `${c.twistInstanceId}|${c.provider}|${c.actorId}`;
+  const nameByKey = new Map(
+    connections.map((r) => [
+      keyOf({
+        twistInstanceId: r.twist_instance_id,
+        provider: r.provider,
+        actorId: r.actor_id,
+      }),
+      r.twist_name ?? "Unknown",
+    ])
+  );
+
+  const premiumAddons = await getPersonalPremiumAddons(db, userId);
+  const toTrim = selectConnectionsToTrim(
+    connections.map((r) => ({
+      twistInstanceId: r.twist_instance_id,
+      provider: r.provider,
+      actorId: r.actor_id,
+      premium: !!r.premium,
+      connectedAt: r.connected_at,
+    })),
+    {
+      connections: PLAN_LIMITS.free.connections,
+      premium: PLAN_LIMITS.free.premium,
+      premiumAddons,
+    }
+  );
+
+  return toTrim.map((c) => ({
+    twistName: nameByKey.get(keyOf(c)) ?? "Unknown",
+    provider: c.provider,
   }));
 }
 

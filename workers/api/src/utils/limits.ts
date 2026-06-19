@@ -215,6 +215,73 @@ export async function getPersonalPremiumAddons(
 }
 
 /**
+ * A user's connection reduced to what the downgrade trimmer needs: the keys
+ * `removeIntegrationAccount` requires plus the premium flag and connect time
+ * used to decide what to keep.
+ */
+export type TrimmableConnection = {
+  twistInstanceId: string;
+  provider: string;
+  actorId: string;
+  premium: boolean;
+  connectedAt: Date | string;
+};
+
+/**
+ * Pure decision for downgrade/cancel/trial-expiry trimming: given a user's
+ * connections and the new plan's budget, return the connections to remove.
+ *
+ * Regular and premium connections are trimmed against SEPARATE budgets,
+ * mirroring how the limits are enforced at add-time (`getPersonalConnectionCount`
+ * excludes premium):
+ *
+ *   - Regular pool: keep the newest `connections`, trim older. `Infinity`
+ *     never trims.
+ *   - Premium pool, per the `premium` policy:
+ *       blocked  → trim ALL premium. Free/Core gate premium entirely, so a
+ *                  premium (e.g. Unipile-backed LinkedIn) connection must be
+ *                  removed even when it fits within the regular budget —
+ *                  otherwise we keep paying its per-account upstream cost.
+ *       credits  → keep the newest `included + premiumAddons`, trim older.
+ *       weighted → team-only; personal plans never use it, so leave premium
+ *                  intact (team trimming is handled separately).
+ *
+ * Newest-first by `connectedAt` so the user keeps their most recent connections.
+ */
+export function selectConnectionsToTrim(
+  connections: TrimmableConnection[],
+  budget: { connections: number; premium: PremiumPolicy; premiumAddons?: number }
+): TrimmableConnection[] {
+  const newestFirst = (a: TrimmableConnection, b: TrimmableConnection) =>
+    new Date(b.connectedAt).getTime() - new Date(a.connectedAt).getTime();
+
+  const regular = connections.filter((c) => !c.premium).sort(newestFirst);
+  const premium = connections.filter((c) => c.premium).sort(newestFirst);
+
+  const toTrim: TrimmableConnection[] = [];
+
+  if (budget.connections !== Infinity) {
+    toTrim.push(...regular.slice(budget.connections));
+  }
+
+  switch (budget.premium.type) {
+    case "blocked":
+      toTrim.push(...premium);
+      break;
+    case "credits": {
+      const keep = budget.premium.included + (budget.premiumAddons ?? 0);
+      toTrim.push(...premium.slice(keep));
+      break;
+    }
+    case "weighted":
+      // Personal plans never use weighted; team trimming is handled separately.
+      break;
+  }
+
+  return toTrim;
+}
+
+/**
  * Count team connections, weighting premium connectors by their plan's
  * `weightAsRegular` factor. Mirrors the personal count above so the total
  * matches the Connections modal list, but each premium connection consumes

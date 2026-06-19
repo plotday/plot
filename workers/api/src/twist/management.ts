@@ -5,7 +5,14 @@ import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
-import { BUILTIN_TWIST_PACKAGE_ID, checkTwistLimit, SingleInstanceError } from "../utils/limits";
+import {
+  BUILTIN_TWIST_PACKAGE_ID,
+  checkTwistLimit,
+  getPersonalPremiumAddons,
+  type PlanLimits,
+  selectConnectionsToTrim,
+  SingleInstanceError,
+} from "../utils/limits";
 import { getEffectivePlan } from "../utils/plan";
 import { disposeRpc } from "../utils/rpc";
 
@@ -1412,7 +1419,7 @@ export async function enforcePersonalPlanLimits({
   env: Bindings;
   twistFactory: ReturnType<typeof twistFactory>;
   userId: string;
-  limits: { connections: number; twists: number };
+  limits: Pick<PlanLimits, "connections" | "twists" | "premium">;
 }): Promise<{ removedConnections: number; archivedTwists: number }> {
   const logger = createLogger({
     operation: "enforcePersonalPlanLimits",
@@ -1422,52 +1429,72 @@ export async function enforcePersonalPlanLimits({
   let removedConnections = 0;
   let archivedTwists = 0;
 
-  // Trim excess connections via each connector's removeAuth callback.
-  if (limits.connections !== Infinity) {
-    const excess = await db
-      .selectFrom("twist_instance_connection as ptc")
-      .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
-      .select([
-        "ptc.twist_instance_id",
-        "ptc.provider",
-        "ptc.actor_id",
-      ])
-      .where("ptc.user_id", "=", userId)
-      .where("pt.archived_at", "is", null)
-      .orderBy("ptc.connected_at", "desc")
-      .offset(limits.connections)
-      .execute();
+  // Trim connections that exceed the new plan, via each connector's removeAuth
+  // callback (which deletes the upstream hosted/Unipile account). Regular and
+  // premium connections are trimmed against separate budgets: a premium
+  // connection the new plan blocks (e.g. LinkedIn on Free/Core) must be removed
+  // even when it fits within the regular connection count, or we keep paying
+  // its per-account upstream cost. See `selectConnectionsToTrim`.
+  const allConnections = await db
+    .selectFrom("twist_instance_connection as ptc")
+    .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select([
+      "ptc.twist_instance_id",
+      "ptc.provider",
+      "ptc.actor_id",
+      "ptc.connected_at",
+      "tw.premium",
+    ])
+    .where("ptc.user_id", "=", userId)
+    .where("pt.archived_at", "is", null)
+    .execute();
 
-    for (const row of excess) {
-      try {
-        await removeIntegrationAccount({
-          db,
-          env,
-          twistFactory: factory,
-          twistInstanceId: row.twist_instance_id,
-          provider: row.provider,
-          actorId: row.actor_id,
-        });
-        removedConnections++;
-      } catch (error) {
-        logger.error(
-          "Failed to remove excess connection during plan downgrade",
-          error as Error,
-          {
-            twist_instance_id: row.twist_instance_id,
-            provider: row.provider,
-            actor_id: row.actor_id,
-          }
-        );
-      }
+  const premiumAddons = await getPersonalPremiumAddons(db, userId);
+  const connectionsToTrim = selectConnectionsToTrim(
+    allConnections.map((row) => ({
+      twistInstanceId: row.twist_instance_id,
+      provider: row.provider,
+      actorId: row.actor_id,
+      premium: !!row.premium,
+      connectedAt: row.connected_at,
+    })),
+    {
+      connections: limits.connections,
+      premium: limits.premium,
+      premiumAddons,
     }
+  );
 
-    if (removedConnections > 0) {
-      logger.info("Removed excess connections on plan downgrade", {
-        user_id: userId,
-        removed: removedConnections,
+  for (const conn of connectionsToTrim) {
+    try {
+      await removeIntegrationAccount({
+        db,
+        env,
+        twistFactory: factory,
+        twistInstanceId: conn.twistInstanceId,
+        provider: conn.provider,
+        actorId: conn.actorId,
       });
+      removedConnections++;
+    } catch (error) {
+      logger.error(
+        "Failed to remove excess connection during plan downgrade",
+        error as Error,
+        {
+          twist_instance_id: conn.twistInstanceId,
+          provider: conn.provider,
+          actor_id: conn.actorId,
+        }
+      );
     }
+  }
+
+  if (removedConnections > 0) {
+    logger.info("Removed excess connections on plan downgrade", {
+      user_id: userId,
+      removed: removedConnections,
+    });
   }
 
   // Archive excess non-source twists (preserving the built-in Plot twist).
