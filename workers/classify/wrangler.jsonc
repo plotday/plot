@@ -25,7 +25,16 @@
             "queue": "classify-thread-development",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
-            "max_retries": 4
+            "max_retries": 4,
+            // Bound concurrent consumer invocations. Without this, Cloudflare
+            // autoscales concurrency to drain a backlog fast — so an hourly
+            // sweep enqueueing up to 1000 jobs spins up many invocations at
+            // once, each holding a connection, and saturates the shared 60-slot
+            // Hyperdrive pool. That contention is what pushed otherwise-cheap
+            // classify queries (~60ms) past the 30s statement_timeout (PostHog
+            // 019ed53e) and exhausted the pool (019ed3b3). 4 keeps classify a
+            // small slice of the pool; raise it only with pool headroom.
+            "max_concurrency": 4
           }
         ]
       }
@@ -55,7 +64,16 @@
             "queue": "classify-thread-production",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
-            "max_retries": 4
+            "max_retries": 4,
+            // Bound concurrent consumer invocations. Without this, Cloudflare
+            // autoscales concurrency to drain a backlog fast — so an hourly
+            // sweep enqueueing up to 1000 jobs spins up many invocations at
+            // once, each holding a connection, and saturates the shared 60-slot
+            // Hyperdrive pool. That contention is what pushed otherwise-cheap
+            // classify queries (~60ms) past the 30s statement_timeout (PostHog
+            // 019ed53e) and exhausted the pool (019ed3b3). 4 keeps classify a
+            // small slice of the pool; raise it only with pool headroom.
+            "max_concurrency": 4
           }
         ]
       }

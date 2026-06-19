@@ -568,6 +568,24 @@ class Store extends _$Store {
   // Track ongoing push operations per table to prevent concurrent pushes
   static final Map<String, Completer<bool>> _pushCompleters = {};
 
+  // Per-table push backoff. After consecutive transient push failures (server
+  // timeout / 5xx / network), skip re-pushing that table until a cooldown
+  // elapses, so a struggling server isn't hammered with 30s requests on every
+  // save/broadcast. Reset on the first successful push. See [pushBackoffDelay].
+  static final Map<String, int> _pushFailureCount = {};
+  static final Map<String, DateTime> _pushBackoffUntil = {};
+
+  static void _registerPushBackoff(String entity) {
+    final count = (_pushFailureCount[entity] ?? 0) + 1;
+    _pushFailureCount[entity] = count;
+    _pushBackoffUntil[entity] = DateTime.now().add(pushBackoffDelay(count));
+  }
+
+  static void _resetPushBackoff(String entity) {
+    _pushFailureCount.remove(entity);
+    _pushBackoffUntil.remove(entity);
+  }
+
   // Client ID for tracking updates to prevent sync loops.
   // Positive values indicate app client updates.
   // Negative values indicate twist/API updates (set by truncateUuidForUpdatedBy).
@@ -794,6 +812,31 @@ class Store extends _$Store {
       return permanentStatuses.contains(error.statusCode);
     }
     return false;
+  }
+
+  /// Whether a failed push should back off (and retry later) rather than fan a
+  /// batch out into individual per-row pushes. True for "server is struggling"
+  /// failures: a request timeout / network drop, or a 5xx / 408 / 429 from the
+  /// API (a 30s statement_timeout surfaces as a 500). For these, fanning out
+  /// into N individual requests that each take up to 30s only hammers a
+  /// struggling server, so we leave the rows pending and retry after a cooldown.
+  /// Auth (401) and permanent data errors (4xx) are handled separately and are
+  /// deliberately NOT transient here.
+  @visibleForTesting
+  static bool isTransientPushError(dynamic error) =>
+      !_isAuthError(error) && !_isPermanentError(error);
+
+  /// Cooldown before re-pushing a table after [consecutiveFailures] consecutive
+  /// transient push failures. Exponential (5s, 10s, 20s, …) capped at five
+  /// minutes — mirroring [_scheduleSyncRetry] — so a struggling server gets
+  /// breathing room while a long outage still retries periodically. Returns
+  /// [Duration.zero] when there have been no failures.
+  @visibleForTesting
+  static Duration pushBackoffDelay(int consecutiveFailures) {
+    if (consecutiveFailures <= 0) return Duration.zero;
+    // Clamp the shift so a huge failure count can't overflow it into nonsense.
+    final exp = min(consecutiveFailures - 1, 16);
+    return Duration(seconds: min(5 * (1 << exp), 300));
   }
 
   /// Renders a row id (stored as blob/bytes or string) for log messages.
@@ -1140,6 +1183,18 @@ class Store extends _$Store {
       }
     }
 
+    // Back off a table whose server side is failing transiently (timeout/5xx):
+    // skip re-pushing until the cooldown elapses rather than retrying on every
+    // save/broadcast and hammering a struggling server. Reset on next success.
+    final backoffUntil = _pushBackoffUntil[entity];
+    if (backoffUntil != null && DateTime.now().isBefore(backoffUntil)) {
+      log.fine(
+        "Skipping push for $entity — backing off until "
+        "${backoffUntil.toIso8601String()}",
+      );
+      return false;
+    }
+
     // Start new push
     final completer = Completer<bool>();
     _pushCompleters[entity] = completer;
@@ -1194,16 +1249,28 @@ class Store extends _$Store {
             "Batch push succeeded for ${pendingRows.length} ${baseTable.name} rows",
           );
         } catch (e, trace) {
+          // A transient batch failure (request timeout / 5xx — a 30s server
+          // statement_timeout surfaces as a 500) means the server is
+          // struggling. Fanning out into N individual requests that each take
+          // up to 30s only hammers it harder, so skip the fan-out and let the
+          // per-table cooldown back it off; the rows stay pending for retry.
+          final batchTransient = Store.isTransientPushError(e);
           log.warning(
-            "Batch push failed for ${baseTable.name} "
-            "(${e.runtimeType}: ${_describeError(e)}), "
-            "falling back to individual pushes",
+            batchTransient
+                ? "Transient batch push failure for ${baseTable.name} "
+                    "(${e.runtimeType}: ${_describeError(e)}); backing off "
+                    "instead of individual retries"
+                : "Batch push failed for ${baseTable.name} "
+                    "(${e.runtimeType}: ${_describeError(e)}), "
+                    "falling back to individual pushes",
             e,
             trace,
           );
 
-          // Step 3b: On batch failure, try individual rows
-          for (final row in pendingRows) {
+          // Step 3b: On a non-transient (permanent) batch failure, try the
+          // rows individually to isolate the specific bad row. A transient
+          // failure iterates an empty list — no fan-out.
+          for (final row in (batchTransient ? const <QueryRow>[] : pendingRows)) {
             final rowId = _rowIdString(row.data['id']);
             try {
               final data = await table.map(row.data);
@@ -1325,10 +1392,20 @@ class Store extends _$Store {
         }
       }
 
+      // Drive the per-table backoff: a clean push resets it; a failed one
+      // (transient batch backoff, or rows left pending) grows the cooldown so
+      // the next attempt waits instead of hammering a struggling server.
+      if (success) {
+        _resetPushBackoff(entity);
+      } else {
+        _registerPushBackoff(entity);
+      }
+
       completer.complete(success);
       return success;
     } catch (e, trace) {
       log.warning("Push failed for ${baseTable.table}", e, trace);
+      _registerPushBackoff(entity);
       completer.complete(false);
       return false;
     } finally {
