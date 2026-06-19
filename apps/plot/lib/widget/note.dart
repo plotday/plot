@@ -180,11 +180,13 @@ class _NoteWidgetState extends State<NoteWidget> {
           // roster as the audience so a null note doesn't fabricate a change.
           return {n.authorId.value, ...threadState.thread.contacts};
         }
+
         changeLabel = Thread.recipientChangeLabel(
           previous: audience(prev),
           current: audience(widget.note),
-          viewerContactIds:
-              Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet(),
+          viewerContactIds: Actor.getCurrentUserActorIds()
+              .map((a) => a.toUuid())
+              .toSet(),
           nameLookup: (id) =>
               Actor.fromCache(ActorId.fromUuid(id))?.nameOrEmail ?? 'Someone',
         );

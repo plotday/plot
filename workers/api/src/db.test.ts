@@ -6,7 +6,11 @@ import {
   isPoolExhaustedError,
   isLockContentionError,
   transientRetryDelayMs,
+  createDb,
+  sql,
 } from "./db";
+
+const DATABASE_URL = process.env.DATABASE_URL;
 
 /** Minimal stand-in for the Kysely handle: only `.transaction().execute(cb)` is used. */
 function fakeDb(executeImpl: (cb: (trx: any) => Promise<any>) => Promise<any>) {
@@ -225,5 +229,37 @@ describe("transientRetryDelayMs", () => {
 
   it("returns 0 for non-transient errors", () => {
     expect(transientRetryDelayMs(new Error("duplicate key value"))).toBe(0);
+  });
+});
+
+describe.skipIf(!DATABASE_URL)("createDb connection GUCs", () => {
+  // Every worker connection must carry bounded timeouts so a worker that stalls
+  // mid-transaction (e.g. reloaded by `wrangler dev`, or awaiting a slow
+  // external call) can't hold row locks indefinitely and wedge a thread's sync.
+  // These are set via the libpq `-c` startup options in createDb so they
+  // survive Hyperdrive connection pooling (a plain SET can be routed to a
+  // different backend). See the 27-minute orphaned `idle in transaction`
+  // backend that blocked every upsert_thread retry.
+  it("sets idle_in_transaction_session_timeout and lock_timeout (not 0)", async () => {
+    const db = createDb({ DATABASE_URL } as any);
+    try {
+      const idle = await sql<{ v: string }>`
+        SELECT current_setting('idle_in_transaction_session_timeout') AS v
+      `.execute(db);
+      const lock = await sql<{ v: string }>`
+        SELECT current_setting('lock_timeout') AS v
+      `.execute(db);
+      const stmt = await sql<{ v: string }>`
+        SELECT current_setting('statement_timeout') AS v
+      `.execute(db);
+      // Disabled GUCs read as '0'; a bounded value is anything else.
+      expect(idle.rows[0]?.v).not.toBe("0");
+      expect(lock.rows[0]?.v).not.toBe("0");
+      // Sanity-anchor on the pre-existing statement_timeout so a misconfigured
+      // harness fails loudly rather than silently passing the two above.
+      expect(stmt.rows[0]?.v).toBe("30s");
+    } finally {
+      await db.destroy();
+    }
   });
 });

@@ -51,23 +51,28 @@ class ReactionPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
-    // Accent when the user reacted; neutral otherwise. The base opacity is
-    // identical either way — only the hue changes — so "mine" reads as a
-    // tint, not a heavier chip. Hover/focus boosts the contrast.
-    final tint = mine ? context.colour.accent : colors.mutedForeground;
-    final countColor = mine ? context.colour.accent : context.colour.muted;
+    final accent = context.colour.accent;
+    final isLight = context.colour.brightness == Brightness.light;
+    // Neutral ink the unselected fill is tinted from — near-black in light
+    // mode, near-white in dark — matching Slack's low-alpha neutral chip wash.
+    final neutralInk = context.colour.foreground;
+    // The "you reacted" count picks up the accent; everyone else's stays a
+    // readable medium grey (Slack uses ~#616061 / ~#ababad here).
+    final countColor = mine ? accent : context.colour.muted;
 
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         EmojiCommandIcon(emoji),
+        // A lone reaction shows just the emoji; the count appears from 2 up.
         if (count > 1) ...[
-          const SizedBox(width: 4),
+          const SizedBox(width: 5),
           Text(
             '$count',
             style: context.theme.typography.xs.copyWith(
               color: countColor,
               height: 1,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -102,19 +107,44 @@ class ReactionPill extends StatelessWidget {
               states.contains(FTappableVariant.hovered) ||
               states.contains(FTappableVariant.focused) ||
               states.contains(FTappableVariant.pressed);
+          // Fill + border, Slack-style: a low-alpha neutral chip when you
+          // haven't reacted, an accent-tinted chip with a solid accent edge
+          // when you have. Hover/focus deepens the fill and border a step.
+          final Color fill;
+          final Color borderColor;
+          if (mine) {
+            fill = context.colour.accentBackground;
+            // Softer than a solid accent edge — enough to read as "yours"
+            // without the chip shouting.
+            borderColor = accent.withValues(alpha: boosted ? 0.7 : 0.5);
+          } else {
+            // Keep the light-mode fill near-white so the colored emoji stays
+            // vibrant (a heavier gray tint visibly washes it out); the chip is
+            // defined by its border, not its fill. Dark mode reads fine with a
+            // slightly stronger neutral wash.
+            fill = neutralInk.withValues(
+              alpha: isLight
+                  ? (boosted ? 0.07 : 0.035)
+                  : (boosted ? 0.12 : 0.07),
+            );
+            // The theme border token already reads as Slack's ~13% chip edge;
+            // lift it a touch on hover.
+            borderColor = boosted
+                ? neutralInk.withValues(alpha: isLight ? 0.28 : 0.20)
+                : colors.border;
+          }
           return AnimatedContainer(
             duration: const Duration(milliseconds: 100),
             curve: Curves.easeOut,
             // Right margin keeps adjacent pill borders from touching; the
             // leading inset aligns the first pill's border with the content.
             margin: EdgeInsets.only(left: leadingInset, right: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color: tint.withValues(alpha: boosted ? 0.12 : 0.05),
-              border: Border.all(
-                color: tint.withValues(alpha: boosted ? 0.5 : 0.25),
-              ),
-              borderRadius: BorderRadius.circular(999),
+              color: fill,
+              border: Border.all(color: borderColor, width: 1),
+              // Rounded rectangle, not a full stadium — matches Slack's chip.
+              borderRadius: BorderRadius.circular(8),
             ),
             child: child,
           );

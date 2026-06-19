@@ -27,7 +27,9 @@ export type PendingCreateLink = {
 export type CreateLinkDraftPayload = {
   channelId: string;
   type: string;
-  status: string;
+  // null for status-less link types (e.g. Gmail email) — matches the
+  // connector-side CreateLinkDraft.status, which onCreateLink handles.
+  status: string | null;
   title: string;
   noteContent: string | null;
   contacts: CreateLinkContact[];

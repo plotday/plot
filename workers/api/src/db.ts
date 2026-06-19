@@ -26,11 +26,23 @@ export function createDb(env: Bindings) {
   const pool = new pg.Pool({
     connectionString,
     max: 1,
-    // Set statement_timeout as a connection-level GUC parameter.
-    // The -c flag sets GUC parameters at connection time, which survives
-    // Hyperdrive's connection pooling (unlike SET commands sent as separate queries
-    // that may be routed to a different backend connection).
-    options: "-c statement_timeout=30000",
+    // Connection-level GUCs set via the libpq `-c` flag at connection time.
+    // `-c` survives Hyperdrive's connection pooling (unlike a `SET` query,
+    // which can be routed to a different backend connection), so every pooled
+    // backend carries these bounds:
+    //   statement_timeout                   — no single statement runs > 30s.
+    //   idle_in_transaction_session_timeout — reap a transaction abandoned
+    //     mid-flight (worker reloaded by `wrangler dev`, or awaiting a slow
+    //     external call) after 2 min, instead of letting it hold row locks
+    //     forever. A 27-min orphaned `idle in transaction` backend stuck in
+    //     upsert_thread once blocked every push retry of a thread, so it never
+    //     synced and its connector link never sent. 120s is comfortably above
+    //     any legitimate in-transaction await (e.g. inline classify).
+    //   lock_timeout                        — a statement waiting on a row lock
+    //     fails fast (10s) and the caller retries, rather than blocking the
+    //     whole request behind a wedged holder.
+    options:
+      "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=120000 -c lock_timeout=10000",
   });
 
   // Prevent pool-level errors from crashing the worker.

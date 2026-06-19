@@ -183,8 +183,10 @@ String composeTwistSignature(TwistInstanceId instanceId) =>
     'twist:$instanceId';
 
 /// Canonical signature for a connector target ([CreateTarget]-shaped),
-/// optionally widened with the roster carried into compose. The no-roster
-/// form delegates to [connectionTargetKey] so it equals [CreateTarget.key].
+/// optionally widened with the roster — contacts/groups plus any pending
+/// [inviteEmails] (typed addresses not yet resolved to a contact) — carried
+/// into compose. The no-roster form delegates to [connectionTargetKey] so it
+/// equals [CreateTarget.key].
 String composeConnectorSignature({
   required String twistInstanceId,
   required String? channelId,
@@ -192,6 +194,7 @@ String composeConnectorSignature({
   required String? dmTargets,
   Iterable<Uuid> contacts = const [],
   Iterable<Uuid> groups = const [],
+  Iterable<String> inviteEmails = const [],
 }) =>
     connectionTargetKey(
       twistInstanceId: twistInstanceId,
@@ -199,7 +202,8 @@ String composeConnectorSignature({
       linkType: linkType,
       dmTargets: dmTargets,
     ) +
-    rosterSignatureSuffix(contacts: contacts, groups: groups);
+    rosterSignatureSuffix(contacts: contacts, groups: groups) +
+    inviteEmailSignatureSuffix(inviteEmails);
 
 /// Build every create-target available to the current user across all enabled
 /// channels.

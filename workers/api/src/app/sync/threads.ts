@@ -46,25 +46,35 @@ export type CreateLinkSpec = {
   twist_instance_id?: string;
   channel_id?: string | null;
   type?: string;
-  status?: string;
+  // null for status-less link types (Gmail email and other message-style
+  // connectors declare no `compose.status`); the client sends it as null.
+  status?: string | null;
 };
 
 /**
  * Whether a `create_link` spec carries enough to dispatch to a connector's
  * onCreateLink.
  *
- * `channel_id` is intentionally NOT required. Address/contacts-mode compose —
- * link types whose `compose.targets` is `"addresses"` (Gmail email) or
- * `"contacts"` (Slack DMs) — has no specific channel: the Flutter client sends
- * `channel_id: null` (see `CreateTarget.toUserAction`, `isDmType ? null : …`)
- * and the connector resolves its own channel inside onCreateLink. Requiring
- * channel_id here silently dropped every such compose — no link, no message,
- * no error. Only twist_instance_id, type, and status are needed to dispatch.
+ * Only the IDENTIFIERS are required: `twist_instance_id` (which connector) and
+ * `type` (which link type). `channel_id` and `status` are intentionally NOT
+ * required:
+ *
+ * - `channel_id`: address/contacts-mode compose — link types whose
+ *   `compose.targets` is `"addresses"` (Gmail email) or `"contacts"` (Slack
+ *   DMs) — has no specific channel; the client sends `channel_id: null` (see
+ *   `CreateTarget.toUserAction`, `isDmType ? null : …`) and the connector
+ *   resolves its own channel inside onCreateLink.
+ * - `status`: status-less link types (Gmail's `email` declares no
+ *   `compose.status`; it's a message, not a task) send `status: null`.
+ *   `CreateLinkDraft.status` is documented as nullable for exactly this case,
+ *   and onCreateLink handles null. Requiring a truthy status here silently
+ *   dropped every status-less compose — no link, no message, no error (the
+ *   thread stayed a plain Plot thread with no email sent).
  */
 export function isDispatchableCreateLink(
   spec: CreateLinkSpec | undefined,
-): spec is CreateLinkSpec & { twist_instance_id: string; type: string; status: string } {
-  return Boolean(spec?.twist_instance_id && spec.type && spec.status);
+): spec is CreateLinkSpec & { twist_instance_id: string; type: string } {
+  return Boolean(spec?.twist_instance_id && spec.type);
 }
 
 /**
@@ -98,6 +108,35 @@ export async function expandGroupsToContactIds(
     }
   }
   return [...ids];
+}
+
+/**
+ * Compute the bge-small content embedding for a thread as a `halfvec` literal
+ * (e.g. `"[0.1,0.2,...]"`), or `null` on any failure or empty result.
+ *
+ * Best-effort and ALWAYS resolves — it never throws. The POST /sync/threads
+ * handler calls this BEFORE opening the `withUserDb` write transaction and
+ * passes the result into `upsert_thread` (via `thread.embedding`), so the model
+ * round-trip can't hold `upsert_thread`'s row locks open. Previously the call
+ * lived inside the transaction; a slow or hung AI binding (or a worker reloaded
+ * mid-request) left the transaction `idle in transaction` holding locks, which
+ * wedged every subsequent push of that thread. A `null` result leaves the
+ * thread NULL-embedded; the reconcile-embeddings sweep backfills it later.
+ */
+export async function computeThreadEmbedding(
+  ai: Ai,
+  text: string,
+): Promise<string | null> {
+  try {
+    const response = (await ai.run("@cf/baai/bge-small-en-v1.5", {
+      text,
+    })) as { data: number[][] };
+    const vec = response?.data?.[0];
+    return vec ? JSON.stringify(vec) : null;
+  } catch (error) {
+    console.error("[sync/threads] Embedding generation failed:", error);
+    return null;
+  }
 }
 
 const threads = new Hono<{ Bindings: Bindings }>();
@@ -706,6 +745,26 @@ threads.post("/sync/threads", async (c) => {
 
   const userId = c.var.user.id;
 
+  // Content embedding for focus-matching / classification. Computed HERE,
+  // before the write transaction below, and passed into upsert_thread via
+  // threadData.embedding so the model round-trip never holds upsert_thread's
+  // row locks open (a slow/hung AI call or a worker reloaded mid-request would
+  // otherwise leave the transaction `idle in transaction` holding locks, which
+  // wedged this thread's sync entirely). Also reused for auto-classification.
+  // Honor the built-in-AI opt-out and skip drafts; best-effort — a null leaves
+  // the thread NULL-embedded for the reconciliation sweep to backfill.
+  let queryEmbedding: string | undefined;
+  if (!threadData.draft) {
+    const textToEmbed = threadData.title || threadData.preview;
+    if (textToEmbed && typeof textToEmbed === "string" && (await aiEnabled())) {
+      const vec = await computeThreadEmbedding(c.env.AI, textToEmbed);
+      if (vec) {
+        queryEmbedding = vec;
+        threadData.embedding = vec;
+      }
+    }
+  }
+
   // Set when the user's explicit priority pick transitions this thread's
   // thread_priority.user_moved from FALSE to TRUE — i.e. this save is the
   // first filing signal. Used post-response to kick off retroactive
@@ -787,41 +846,17 @@ threads.post("/sync/threads", async (c) => {
       }
     }
 
+    // The content embedding was computed and written via threadData.embedding
+    // (upsert_thread) BEFORE this transaction opened — deliberately, so the AI
+    // round-trip never holds upsert_thread's row locks. `queryEmbedding` (outer
+    // scope) carries it into auto-classification below.
+
     // Auto-classify: when the client signals auto_file, score the thread
     // against the user's explicitly-moved training threads via
     // classify_thread_for_user. The function reads topic/contacts/groups
     // directly from the thread row (via p_thread_id), so no extra params
     // are needed. We guard the UPDATE on user_moved = FALSE so the user's
     // own filing choice is never overwritten by an auto-classify pass.
-    // Embed every finalized (non-draft) thread so it is eligible for
-    // focus-matching and classification right away — not only auto_file
-    // threads. Connector/twist threads are embedded by upsert_thread; this
-    // covers app-composed threads. Best-effort: a failure leaves the embedding
-    // NULL and the periodic reconciliation sweep backfills it later.
-    let queryEmbedding: string | undefined;
-    if (!threadData.draft && upsertResult) {
-      const textToEmbed = threadData.title || threadData.preview;
-      // Honor the built-in-AI opt-out: skip embedding so no content is sent to
-      // the model. The thread stays NULL-embedded and the reconciliation sweep
-      // (which also skips opted-out users) leaves it that way — consistent with
-      // search, which returns no results when AI is off.
-      if (textToEmbed && (await aiEnabled())) {
-        try {
-          const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
-            text: textToEmbed,
-          })) as { data: number[][] };
-          queryEmbedding = JSON.stringify(response.data[0]);
-          await sql`UPDATE thread SET embedding = ${sql.val(queryEmbedding!)}::halfvec
-                    WHERE id = ${sql.val(upsertResult.id)}`.execute(trx);
-        } catch (error) {
-          // Transient Workers AI failures are expected and self-healing: the
-          // thread is left with a NULL embedding and the reconciliation sweep
-          // (scheduled/reconcile-embeddings.ts) backfills it. Not reported.
-          console.error("[sync/threads] Embedding generation failed:", error);
-        }
-      }
-    }
-
     if (body.auto_file && !threadData.draft && upsertResult) {
       try {
         const matched = await classifyThreadForUser(trx, c.env, {
@@ -1072,7 +1107,10 @@ threads.post("/sync/threads", async (c) => {
           const draft = {
             channelId: createLinkSpec.channel_id!,
             type: createLinkSpec.type!,
-            status: createLinkSpec.status!,
+            // null for status-less link types (Gmail email); onCreateLink
+            // handles it. Never assert non-null here — that's the value that
+            // gated Gmail compose out.
+            status: createLinkSpec.status ?? null,
             title: dispatchTitle,
             noteContent,
             contacts,

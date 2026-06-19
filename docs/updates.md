@@ -1,3 +1,13 @@
+## Next release
+
+### Fixes
+
+- Emoji reactions now sit centered in their pills on desktop and mobile instead of sitting a little
+  low.
+- Starting a new thread by typing an email address and then picking a connection like Gmail now keeps
+  that address as the recipient, sends the thread as shared rather than private, and leaves it in the
+  focus you were already in instead of jumping to a different one.
+
 ## 1.5.0+359 — 2026-06-19
 
 ### Connections

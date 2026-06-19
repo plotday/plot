@@ -82,6 +82,26 @@ void main() {
       expect(withRoster, isNot(bare));
     });
 
+    test('connector signature folds in pending invite emails (sorted) so a '
+        'connector inviting an address dedups distinctly from bare', () {
+      final instance = Uuid.generate();
+      final bare = composeConnectorSignature(
+        twistInstanceId: instance.toString(),
+        channelId: null,
+        linkType: 'email',
+        dmTargets: 'addresses',
+      );
+      final withInvite = composeConnectorSignature(
+        twistInstanceId: instance.toString(),
+        channelId: null,
+        linkType: 'email',
+        dmTargets: 'addresses',
+        inviteEmails: const ['B@x.com', 'a@x.com'],
+      );
+      expect(withInvite, '$bare:e=a@x.com,b@x.com');
+      expect(withInvite, isNot(bare));
+    });
+
     test('chat signature carries team + sorted roster; note is team-only', () {
       final team = BigInt.from(7);
       final g1 = Uuid.fromString('00000000-0000-0000-0000-0000000000a2');
@@ -1028,6 +1048,35 @@ void main() {
       expect(connectorIndex, greaterThan(chatIndex));
     });
 
+    test('search(unseen email) carries the address onto connector entries too',
+        () async {
+      final self = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+
+      final gmail = await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final results = await bloc.search('new@unseen.com');
+      // The address-capable connector entry carries the typed address through
+      // to compose, exactly like the pinned Plot Chat does — so picking Gmail
+      // for a brand-new address sends to it instead of composing a private,
+      // recipientless thread.
+      final connector =
+          results.firstWhere((v) => v.target.connection?.id == gmail);
+      expect(connector.target.inviteEmails, const ['new@unseen.com']);
+    });
+
     test('search(known contact email) offers a Plot Chat carrying that contact',
         () async {
       final self = Uuid.generate();
@@ -1535,6 +1584,36 @@ void main() {
         connectorTargets.any((t) => t.target!.compose.targets == 'contacts'),
         isTrue,
       );
+    });
+
+    test('connectionsForRoster carries a pending invite email onto connector '
+        'targets so the typed address reaches compose', () async {
+      await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final results = await bloc.connectionsForRoster(
+        contacts: const [],
+        groups: const [],
+        inviteEmails: const ['new@unseen.com'],
+      );
+
+      // The address-capable Gmail connection carries the typed email through to
+      // compose, so the thread is addressed to it (shared, with the address as
+      // a pending invite) rather than landing private with no recipient.
+      final addr = results.firstWhere((t) =>
+          t.kind == ComposeTargetKind.connector &&
+          t.target!.compose.targets == 'addresses');
+      expect(addr.inviteEmails, const ['new@unseen.com']);
     });
   });
 }

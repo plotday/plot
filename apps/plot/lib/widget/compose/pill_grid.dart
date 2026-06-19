@@ -17,6 +17,7 @@ class PillGridItem {
     required this.data,
     required this.onActivate,
     this.onMore,
+    this.trailing,
   });
 
   final ComposePillData data;
@@ -25,6 +26,11 @@ class PillGridItem {
   /// Optional "… More" action (Edit). When non-null, the row shows a trailing
   /// "…" button while highlighted and Cmd+Enter on the highlighted row fires it.
   final VoidCallback? onMore;
+
+  /// An always-visible trailing widget (e.g. a draft's discard ✕ or restore
+  /// icon). When set it takes the trailing slot in place of [onMore]'s
+  /// highlight-gated button.
+  final Widget? trailing;
 }
 
 /// A labeled group of [PillGridItem]s rendered as a section inside [PillGrid].
@@ -277,7 +283,9 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
                         child: ComposePill(data: item.data),
                       ),
                     ),
-                    if (item.onMore != null)
+                    if (item.trailing != null)
+                      item.trailing!
+                    else if (item.onMore != null)
                       Opacity(
                         opacity: index == _highlighted ? 1.0 : 0.0,
                         child: IgnorePointer(

@@ -64,6 +64,32 @@ Note appendExternalLink(
   return note.copyWith(actions: actions);
 }
 
+/// Decides the focus ranking [_NewThreadPageState._suggestFocusForTarget]
+/// applies for a chosen [ComposeTarget], given the roster-specific focus MRU
+/// ([rosterRank]) and the global focus MRU ([globalRank]). The first id (if
+/// any) is pre-selected; the rest seed the focus picker order. An empty result
+/// means "leave the draft on its current focus" (no switch). Pure.
+///
+/// - **Roster history wins**: file under the focus the user last used with this
+///   exact roster.
+/// - A **roster-bearing** target with no roster history keeps the current focus
+///   (returns empty). The global MRU would yank a thread addressed to a person
+///   / email into an unrelated focus — surprising when the user is composing
+///   from a specific focus. This is the case behind "it picked a focus other
+///   than the current one" for a freshly typed recipient.
+/// - Only a **no-roster** (Note-like) target falls back to the global MRU,
+///   where there is no "who" to file by, so the most-recently-used focus is the
+///   sensible default.
+List<Uuid> suggestedFocusRanking({
+  required List<Uuid> rosterRank,
+  required List<Uuid> globalRank,
+  required bool hasRoster,
+}) {
+  if (rosterRank.isNotEmpty) return rosterRank;
+  if (hasRoster) return const [];
+  return globalRank;
+}
+
 @RoutePage(name: "NewThreadWrapperRoute")
 class NewThreadWrapper implements AutoRouteWrapper {
   const NewThreadWrapper();
@@ -1485,17 +1511,28 @@ class NewThreadPageState extends State<NewThreadPage> {
       }
     }
     final targetsBloc = context.read<ComposeTargetsBloc>();
-    var rankedIds = await targetsBloc.rankFocusesForRoster(
+    final rosterRank = await targetsBloc.rankFocusesForRoster(
       contacts: target.contacts,
       groups: target.groups,
     );
     if (!mounted) return;
-    if (rankedIds.isEmpty) {
-      // No roster (or no roster-specific history) → fall back to the global
-      // most-recently-used focus so step 2 always pre-selects a concrete focus.
-      rankedIds = await targetsBloc.rankFocusesGlobal();
-      if (!mounted) return;
-    }
+    // A target carries a roster when the user picked anyone — a known contact,
+    // a group, or a freshly typed (still-unresolved) email invite.
+    final hasRoster = target.contacts.isNotEmpty ||
+        target.groups.isNotEmpty ||
+        target.inviteEmails.isNotEmpty;
+    // Only consult the global MRU for a no-roster target with no roster
+    // ranking; a roster-bearing target with no history keeps the current focus
+    // (see [suggestedFocusRanking]), so skip the extra scan entirely there.
+    final globalRank = (rosterRank.isEmpty && !hasRoster)
+        ? await targetsBloc.rankFocusesGlobal()
+        : const <Uuid>[];
+    if (!mounted) return;
+    final rankedIds = suggestedFocusRanking(
+      rosterRank: rosterRank,
+      globalRank: globalRank,
+      hasRoster: hasRoster,
+    );
     if (rankedIds.isEmpty) return;
 
     // Resolve the ranked ids to Priority objects via the nested focus list.

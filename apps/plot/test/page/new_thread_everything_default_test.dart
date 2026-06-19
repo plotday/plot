@@ -19,6 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:injector/injector.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:plot/page/new_thread.dart' show suggestedFocusRanking;
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
@@ -104,6 +105,51 @@ Future<void> _insertNote(
 // ---------------------------------------------------------------------------
 
 void main() {
+  group('suggestedFocusRanking (compose focus fallback decision)', () {
+    test('roster history wins: returns the roster ranking unchanged', () {
+      final a = Uuid.generate();
+      final b = Uuid.generate();
+      expect(
+        suggestedFocusRanking(
+          rosterRank: [a],
+          globalRank: [b],
+          hasRoster: true,
+        ),
+        [a],
+      );
+    });
+
+    test(
+        'roster-bearing target with no roster history keeps the current focus '
+        '(empty) instead of jumping to the global MRU', () {
+      final b = Uuid.generate();
+      // The user typed a brand-new email (a roster) and picked a connection.
+      // There is no authored history for that roster, but the global MRU is
+      // non-empty — it must NOT yank the draft into an unrelated focus.
+      expect(
+        suggestedFocusRanking(
+          rosterRank: const [],
+          globalRank: [b],
+          hasRoster: true,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('no-roster target with no roster history falls back to the global MRU',
+        () {
+      final b = Uuid.generate();
+      expect(
+        suggestedFocusRanking(
+          rosterRank: const [],
+          globalRank: [b],
+          hasRoster: false,
+        ),
+        [b],
+      );
+    });
+  });
+
   group(
       'NewThreadPage Everything compose fallback '
       '(MRU ranking layer — lock-in)', () {

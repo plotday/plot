@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
@@ -28,11 +27,7 @@ String emojiDisplayName(Reaction emoji) {
 /// string is rendered as a fallback so the user still sees something
 /// (typically the shortcode form).
 class EmojiText extends StatelessWidget {
-  const EmojiText(
-    this.emoji, {
-    this.size = 16,
-    super.key,
-  });
+  const EmojiText(this.emoji, {this.size = 16, super.key});
 
   /// The reaction value: a Unicode grapheme cluster or a custom-emoji ref.
   final Reaction emoji;
@@ -55,11 +50,7 @@ class EmojiText extends StatelessWidget {
     // font as a last resort.
     return Text(
       emoji,
-      style: TextStyle(
-        fontFamily: _fontFamily,
-        fontSize: size,
-        height: 1.0,
-      ),
+      style: TextStyle(fontFamily: _fontFamily, fontSize: size, height: 1.0),
       // Single-line; emoji shouldn't wrap.
       maxLines: 1,
       softWrap: false,
@@ -119,15 +110,15 @@ class _CustomEmojiImage extends StatelessWidget {
     // Follow aliases one hop so aliased Slack emoji render the canonical
     // image. Two-hop chains are rare; the cache is the cheap path so we
     // stop after the first redirect.
-    final row = await (Store.get.select(Store.get.customEmojis)
-          ..where((t) => t.id.equals(refId)))
-        .getSingleOrNull();
+    final row = await (Store.get.select(
+      Store.get.customEmojis,
+    )..where((t) => t.id.equals(refId))).getSingleOrNull();
     if (row == null) return null;
     final aliasOf = row.aliasOf;
     if (aliasOf != null && aliasOf != refId) {
-      final aliasedRow = await (Store.get.select(Store.get.customEmojis)
-            ..where((t) => t.id.equals(aliasOf)))
-          .getSingleOrNull();
+      final aliasedRow = await (Store.get.select(
+        Store.get.customEmojis,
+      )..where((t) => t.id.equals(aliasOf))).getSingleOrNull();
       return aliasedRow ?? row;
     }
     return row;
@@ -145,46 +136,16 @@ class EmojiCommandIcon extends StatelessWidget {
 
   final Reaction emoji;
 
-  /// Downward nudge, as a fraction of the icon size, applied to Unicode
-  /// color-emoji glyphs on **native Skia** (macOS/Windows/iOS/Android). Noto
-  /// Color Emoji draws its glyph high within the `height: 1.0` line box, so a
-  /// raw emoji renders visibly above a neighboring FontAwesome icon (e.g. a
-  /// reaction pill next to a task circle). Shifting the glyph down by this
-  /// amount optically centers it like an icon. Calibrated against a full-em
-  /// face glyph centered inside a reference ring.
-  static const double _emojiGlyphNudgeNative = 0.125;
-
-  /// Web (CanvasKit) positions the same CBDT/CBLC *bitmap* glyph lower in its
-  /// line box than native Skia does, so the native nudge over-shifts the emoji
-  /// well below center — it sits visibly low in its pill. Measuring the
-  /// glyph's ink bounding box against a reference ring in a CanvasKit render
-  /// puts the centered nudge near this value. Kept separate from the native
-  /// constant so fixing web can't regress native (and vice versa).
-  static const double _emojiGlyphNudgeWeb = 0.05;
-
-  /// Fraction of the icon size to shift a color-emoji glyph downward so it
-  /// optically centers like a neighboring icon. The platform and custom-emoji
-  /// inputs are passed in (rather than read from [kIsWeb] / [isCustomEmojiRef])
-  /// so both branches are testable off-web. Custom-emoji *images* are square
-  /// and already centered, so they get no nudge.
-  @visibleForTesting
-  static double glyphNudgeFraction({
-    required bool isWeb,
-    required bool isCustomEmoji,
-  }) {
-    if (isCustomEmoji) return 0.0;
-    return isWeb ? _emojiGlyphNudgeWeb : _emojiGlyphNudgeNative;
-  }
-
   @override
   Widget build(BuildContext context) {
     final iconSize = context.theme.iconSizes.base;
-    final glyphNudge =
-        iconSize *
-        glyphNudgeFraction(
-          isWeb: kIsWeb,
-          isCustomEmoji: isCustomEmojiRef(emoji),
-        );
+    // The glyph is centered with no optical nudge: at the real icon size the
+    // Noto Color Emoji bitmap reads as centered on both native Skia and web
+    // CanvasKit, and — like a neighboring Font Awesome icon — it fills its box,
+    // so there is no extra room to shift it into. (A previous down-nudge,
+    // calibrated by extrapolating from a large-scale render, over-shifted the
+    // emoji low in its pill; bitmap glyphs don't scale linearly to 16px, so
+    // the extrapolation didn't hold.)
     return SizedBox(
       width: iconSize,
       height: iconSize,
@@ -193,10 +154,7 @@ class EmojiCommandIcon extends StatelessWidget {
           maxWidth: double.infinity,
           maxHeight: double.infinity,
           alignment: Alignment.center,
-          child: Transform.translate(
-            offset: Offset(0, glyphNudge),
-            child: EmojiText(emoji, size: iconSize),
-          ),
+          child: EmojiText(emoji, size: iconSize),
         ),
       ),
     );

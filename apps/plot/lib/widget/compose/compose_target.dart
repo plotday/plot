@@ -189,6 +189,7 @@ class ComposeTarget extends Equatable {
     String? contactDetail,
     List<Uuid> contacts = const [],
     List<Uuid> groups = const [],
+    List<String> inviteEmails = const [],
   }) {
     return ComposeTarget._(
       kind: ComposeTargetKind.connector,
@@ -199,6 +200,7 @@ class ComposeTarget extends Equatable {
         dmTargets: target.compose.targets,
         contacts: contacts,
         groups: groups,
+        inviteEmails: inviteEmails,
       ),
       label: _connectorLabel(
         target,
@@ -214,6 +216,7 @@ class ComposeTarget extends Equatable {
       teamId: target.twist.teamId,
       contacts: contacts,
       groups: groups,
+      inviteEmails: inviteEmails,
     );
   }
 
@@ -248,9 +251,11 @@ class ComposeTarget extends Equatable {
   final List<Uuid> groups;
 
   /// Pending email invitations carried into step-2 compose: addresses the user
-  /// typed in the picker that don't (yet) resolve to a known contact. Only a
-  /// [ComposeTargetKind.chat] target carries these (a Plot Chat that invites by
-  /// email); empty for every other kind.
+  /// typed in the picker that don't (yet) resolve to a known contact. Carried
+  /// by a [ComposeTargetKind.chat] target (a Plot Chat that invites by email)
+  /// and by an address-capable [ComposeTargetKind.connector] target (e.g.
+  /// Gmail — the typed address is the connector recipient); empty for every
+  /// other kind.
   final List<String> inviteEmails;
 
   /// For a focus-note target, the focus this note is filed into; null for all

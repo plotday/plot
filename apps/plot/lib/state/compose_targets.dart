@@ -1350,6 +1350,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         connectionCount: ctx.connectionCount(t),
         contacts: contacts,
         groups: groups,
+        // Carry typed-but-unresolved addresses through to compose so the
+        // connector thread is addressed to them (shared) rather than private.
+        inviteEmails: inviteEmails,
       ));
     }
     final ranked = _prefs.rankSignaturesByMru(
@@ -1606,6 +1609,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
               t,
               connectionCount: ctx.connectionCount(t),
               contacts: contactIds,
+              // Carry the pending invites so picking a connection for a typed
+              // address sends to it instead of composing a recipientless thread.
+              inviteEmails: invites,
             ))
         .toList();
     final ranked = _prefs.rankSignaturesByMru(
