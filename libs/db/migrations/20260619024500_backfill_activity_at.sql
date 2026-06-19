@@ -7,10 +7,17 @@
 -- a sync storm on deploy). The app strips activity_at and recomputes feed ordering
 -- locally, so no client re-pull is needed.
 --
--- Idempotent: re-running only ever raises values via GREATEST. For very large
--- deployments these single statements can be split into id-range batches; thread
--- (~tens of thousands of rows) and thread_priority (~hundreds of thousands) are
--- small enough to run as one statement here.
+-- Idempotent: re-running only ever raises values via GREATEST.
+--
+-- Disable statement_timeout for this migration transaction. On large
+-- deployments the whole-table thread UPDATE (with its per-row link/schedule
+-- subqueries) and the unconditional thread_priority rewrite exceed the default
+-- per-statement budget (production hit 57014 on the thread UPDATE). The whole
+-- migration runs in one transaction, so SET LOCAL scopes the override here and
+-- reverts at the end of Atlas's migration transaction. plot.skip_activity_seq
+-- keeps the fan-out trigger quiet, so this long write does not re-emit rows to
+-- clients no matter how many it touches.
+SET LOCAL statement_timeout = 0;
 SELECT set_config('plot.skip_activity_seq', 'on', TRUE);
 
 -- thread.activity_base = GREATEST(last note source time, latest link source time,

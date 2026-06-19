@@ -16,6 +16,12 @@
 -- quiet-classify_at triggers (thread_priority_seq_and_updated_at /
 -- sync_user_for_thread_priority_update, earlier migrations) so it neither bumps
 -- seq nor the user_sync singleton: no client re-sync, no sync storm.
+--
+-- Disable statement_timeout for this migration transaction: the filter scans the
+-- whole thread_priority table, which is large on production, so the one-shot
+-- drain can exceed the default per-statement budget. SET LOCAL reverts at the end
+-- of Atlas's migration transaction.
+SET LOCAL statement_timeout = 0;
 UPDATE public.thread_priority
    SET classify_at = NULL
  WHERE user_moved = TRUE
