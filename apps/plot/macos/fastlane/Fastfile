@@ -96,9 +96,16 @@ platform :mac do
     options = {
       skip_binary_upload: true,
       skip_screenshots: false,
-      # The committed store assets are the source of truth; replace whatever is
-      # on the listing rather than appending.
-      overwrite_screenshots: true,
+      # The committed store assets are the source of truth. Use deliver's sync
+      # logic (checksum-diff: upload only the missing shots, delete only the
+      # extras) rather than overwrite_screenshots. overwrite uploads the whole
+      # set, then reads it back to verify; App Store Connect processes
+      # screenshots asynchronously, so the readback fires before processing
+      # finishes, reports every shot "missing on App Store Connect," and
+      # blind-retries the entire set — leaving two copies of each screenshot on
+      # the listing. sync_screenshots converges idempotently and is retry-safe.
+      # (deliver >= 2.191; the runner ships 2.236, where it needs no env flag.)
+      sync_screenshots: true,
       # We never submit for review here, so skip the metadata precheck.
       run_precheck_before_submit: false,
       force: true,
