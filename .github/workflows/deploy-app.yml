@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload smoke test artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-test-artifacts
           path: apps/plot/build/smoke-test/
@@ -172,7 +172,7 @@ jobs:
 
       - name: Upload post-deploy smoke test artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: post-deploy-smoke-test-artifacts
           path: apps/plot/build/smoke-test/

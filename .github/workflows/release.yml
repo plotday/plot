@@ -422,7 +422,7 @@ jobs:
           fi
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-build-${{ needs.prepare-release.outputs.release_version }}
           path: apps/plot/build/ios/ipa/*.ipa
@@ -680,7 +680,7 @@ jobs:
           git push origin "android/${{ needs.prepare-release.outputs.release_version }}"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-build-${{ needs.prepare-release.outputs.release_version }}
           path: apps/plot/build/app/outputs/bundle/release/app-release.aab
@@ -989,7 +989,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-build-${{ needs.prepare-release.outputs.release_version }}
           path: ${{ env.PKG_PATH }}
@@ -1274,7 +1274,7 @@ jobs:
             --content-type "application/json"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-build-${{ needs.prepare-release.outputs.release_version }}
           path: |
