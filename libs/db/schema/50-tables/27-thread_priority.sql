@@ -69,6 +69,15 @@ CREATE TABLE "public"."thread_priority" (
     -- are archived, not deleted) cleanly orphans dependents.
     "mute_by_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
+    -- Per-user denormalized feed sort key = GREATEST(thread.activity_base,
+    -- thread_state.bumped_at). Drives the indexed `ORDER BY activity_at DESC`
+    -- feed / "load older" pagination instead of recomputing the old inline
+    -- GREATEST(...correlated subqueries...) over the user's whole thread corpus.
+    -- Seeded on INSERT and maintained seq-suppressed (see plot.skip_activity_seq)
+    -- by the fan-out triggers in 95-triggers/31-activity-at-fanout.sql. Nullable
+    -- (expand-safe); user.thread COALESCEs to thread.created_at. NOT part of the
+    -- app's stored shape — the app recomputes ordering locally.
+    "activity_at" timestamptz,
     PRIMARY KEY ("thread_id", "user_id"),
     -- Both NULL is unrecoverable: the row would be invisible to user
     -- views (no priority_id) and invisible to the sweep (no classify_at).
@@ -125,6 +134,16 @@ CREATE INDEX idx_thread_priority_user_moved
 CREATE INDEX idx_thread_priority_applied_default
     ON "public"."thread_priority" ("applied_default_channel_id")
     WHERE applied_default_channel_id IS NOT NULL;
+
+-- Drives the app's feed pagination: `WHERE user_id = $1 [AND priority_id = $2]
+-- AND activity_at < $cursor ORDER BY activity_at DESC LIMIT N`. Replaces the
+-- old full-corpus compute+sort (211k buffers / ~530ms for a heavy user) with an
+-- index range scan touching ~N rows.
+CREATE INDEX idx_thread_priority_user_activity
+    ON "public"."thread_priority" ("user_id", "activity_at" DESC);
+
+CREATE INDEX idx_thread_priority_user_priority_activity
+    ON "public"."thread_priority" ("user_id", "priority_id", "activity_at" DESC);
 
 CREATE TRIGGER set_thread_priority_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_priority"

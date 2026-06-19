@@ -117,6 +117,62 @@ export async function selectChangedThreadIds(
 }
 
 /**
+ * Phase-1 candidate pre-filter for the feed's `sortBy=activity_at` pagination.
+ *
+ * Returns up to `limit` thread ids for the user ordered by the denormalized
+ * `thread_priority.activity_at`, hitting `idx_thread_priority_user_activity`
+ * (or the `(user_id, priority_id, activity_at)` variant) directly — instead of
+ * making Postgres materialize the `user.thread` view over the user's ENTIRE
+ * corpus just to sort+limit (the heavy-user feed page cost 211k buffers / ~530ms;
+ * the view's per-row visibility filters defeat the index, so the sort can't be
+ * pushed down without this pre-filter). The caller re-fetches the full view rows
+ * for these ids (`id = ANY(...)`), which re-applies the real visibility /
+ * archive filters.
+ *
+ * The candidate set is a SUPERSET: it only knows `thread_priority` (revoked /
+ * per-user archive), not the thread-level visibility (contacts/groups/team) or
+ * the thread/priority global archive that the view also checks. So a page may
+ * come back slightly short; the next page continues from the last `activity_at`
+ * cursor, so every visible thread is still reached (matches the seq-cursor
+ * pre-filter `selectChangedThreadIds` / #325). Only the `priority_id` form is
+ * pre-filtered — path-scoped and initial pulls fall back to the single-phase
+ * query.
+ */
+export async function selectThreadIdsByActivity(
+  trx: { execute: (q: any) => any } | any,
+  userId: string,
+  opts: {
+    priorityId: string | null;
+    rangeStart: string | null;
+    rangeEnd: string | null;
+    sortDir: "asc" | "desc";
+    archived: boolean | undefined;
+    limit: number;
+  },
+): Promise<string[]> {
+  const result = await sql<{ id: string }>`
+    SELECT tp.thread_id AS id
+      FROM public.thread_priority tp
+     WHERE tp.user_id = ${userId}::uuid
+       AND tp.revoked_at IS NULL
+       AND tp.activity_at IS NOT NULL
+       ${opts.priorityId ? sql`AND tp.priority_id = ${opts.priorityId}::uuid` : sql``}
+       ${
+         opts.archived === false
+           ? sql`AND tp.archived_at IS NULL`
+           : opts.archived === true
+             ? sql`AND tp.archived_at IS NOT NULL`
+             : sql``
+       }
+       ${opts.rangeStart ? sql`AND tp.activity_at > ${opts.rangeStart}::timestamptz` : sql``}
+       ${opts.rangeEnd ? sql`AND tp.activity_at < ${opts.rangeEnd}::timestamptz` : sql``}
+     ORDER BY tp.activity_at ${opts.sortDir === "asc" ? sql`ASC` : sql`DESC`}
+     LIMIT ${opts.limit}
+  `.execute(trx);
+  return result.rows.map((r) => r.id);
+}
+
+/**
  * Build a WHERE clause for cursor-based pagination on updated_at.
  *
  * Uses date_trunc('milliseconds', ...) because JavaScript Date (used by the

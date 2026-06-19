@@ -2156,6 +2156,7 @@ export type Database = {
       }
       thread: {
         Row: {
+          activity_base: string | null
           archived_at: string | null
           assignee_id: string | null
           author_id: string | null
@@ -2190,6 +2191,7 @@ export type Database = {
           updated_by: number
         }
         Insert: {
+          activity_base?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null
@@ -2224,6 +2226,7 @@ export type Database = {
           updated_by?: number
         }
         Update: {
+          activity_base?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null
@@ -2375,6 +2378,7 @@ export type Database = {
       }
       thread_priority: {
         Row: {
+          activity_at: string | null
           applied_default_channel_id: number | null
           archived_at: string | null
           classify_at: string | null
@@ -2389,6 +2393,7 @@ export type Database = {
           user_moved: boolean
         }
         Insert: {
+          activity_at?: string | null
           applied_default_channel_id?: number | null
           archived_at?: string | null
           classify_at?: string | null
@@ -2403,6 +2408,7 @@ export type Database = {
           user_moved?: boolean
         }
         Update: {
+          activity_at?: string | null
           applied_default_channel_id?: number | null
           archived_at?: string | null
           classify_at?: string | null
@@ -3941,6 +3947,7 @@ export type Database = {
       }
       thread_x: {
         Row: {
+          activity_base: string | null
           archived_at: string | null
           assignee_id: string | null
           author_id: string | null
@@ -3975,6 +3982,7 @@ export type Database = {
           updated_by: number | null
         }
         Insert: {
+          activity_base?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null
@@ -4009,6 +4017,7 @@ export type Database = {
           updated_by?: number | null
         }
         Update: {
+          activity_base?: string | null
           archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null

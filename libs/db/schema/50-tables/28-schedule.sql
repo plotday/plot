@@ -103,6 +103,57 @@ CREATE INDEX idx_schedule_updated_at ON "public"."schedule" ("updated_at");
 
 CREATE INDEX idx_schedule_seq ON "public"."schedule" ("seq");
 
+-- Fold an ALREADY-PAST event end into thread.activity_base at write time. Future
+-- ends are intentionally ignored — the Flutter app computes "event just ended →
+-- top of Done" locally against its own clock (apps/plot/lib/store/thread.dart),
+-- so the server never needs a time-dependent term or a sweep. Recurring and
+-- occurrence-exception schedules are skipped. Handles thread-attached and
+-- link-attached (via link.thread_id) schedules. Seq-suppressed; the
+-- thread_priority.activity_at fan-out is appended once that column exists.
+CREATE OR REPLACE FUNCTION public.update_thread_activity_from_schedule ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+    v_thread_id uuid;
+    v_end       timestamptz;
+BEGIN
+    IF NEW.occurrence IS NOT NULL OR NEW.recurrence_rule IS NOT NULL
+       OR NEW.archived_at IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+    v_end := COALESCE(upper(NEW.at), upper(NEW."on")::timestamptz);
+    IF v_end IS NULL OR v_end > now() THEN
+        RETURN NEW;  -- unbounded or future: client owns ordering
+    END IF;
+    v_thread_id := NEW.thread_id;
+    IF v_thread_id IS NULL AND NEW.link_id IS NOT NULL THEN
+        SELECT l.thread_id INTO v_thread_id FROM link l WHERE l.id = NEW.link_id;
+    END IF;
+    IF v_thread_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    PERFORM set_config('plot.skip_activity_seq', 'on', TRUE);
+    UPDATE thread
+    SET activity_base = GREATEST(COALESCE(activity_base, created_at), v_end)
+    WHERE id = v_thread_id
+      AND (activity_base IS NULL OR activity_base < v_end);
+    PERFORM set_config('plot.skip_activity_seq', 'off', TRUE);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER update_thread_activity_from_schedule_ins
+    AFTER INSERT ON "public"."schedule"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_thread_activity_from_schedule ();
+
+CREATE TRIGGER update_thread_activity_from_schedule_upd
+    AFTER UPDATE OF "at", "on", archived_at ON "public"."schedule"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_thread_activity_from_schedule ();
+
 CREATE TRIGGER set_schedule_updated_at
     BEFORE INSERT OR UPDATE ON "public"."schedule"
     FOR EACH ROW

@@ -101,6 +101,10 @@
   Destructive actions turn red as you hover or select them, and you can still move between buttons
   with the arrow keys.
 
+### Performance
+
+- Scrolling back through a focus or your full list of threads is now much faster, especially if you've built up a lot of history — loading older threads no longer slows down as your thread count grows.
+
 ### Fixes
 
 - A connection could get stuck showing "Syncing…" indefinitely if its first sync was paused partway

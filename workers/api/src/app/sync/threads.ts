@@ -18,6 +18,7 @@ import {
   parseReadParams,
   readSafeHorizon,
   selectChangedThreadIds,
+  selectThreadIdsByActivity,
   seqEnvelope,
   seqSinceCursor,
   updatedSinceCursor,
@@ -300,10 +301,35 @@ threads.get("/sync/threads", async (c) => {
       return { rows: page.rows, horizon: horizonValue, pageKeys: page.pageKeys };
     }
 
-    // Legacy updated_since / custom-sort paths: single query (the unbounded
-    // legacy initial pull cannot two-phase — there is no limit to bound the
-    // phase-2 id list).
-    const visible = await buildQuery("user.thread").execute();
+    // Feed pagination (sortBy=activity_at): two-phase, mirroring the seq path.
+    // Phase-1 hits idx_thread_priority_user_activity for up to `limit` candidate
+    // ids; phase-2 hydrates the full view for just those ids (re-applying the
+    // real visibility / archive filters). Without this the planner materializes
+    // the user.thread view over the user's whole corpus to sort+limit. Path-
+    // scoped and initial pulls fall back to the single-phase query (no bounded
+    // id list / no tp.priority_id pre-filter for ltree paths).
+    let visible;
+    if (!initial && sortBy === "activity_at" && !priorityPath) {
+      const candidateIds = await selectThreadIdsByActivity(trx, userId, {
+        priorityId,
+        rangeStart,
+        rangeEnd,
+        sortDir,
+        archived,
+        limit,
+      });
+      visible =
+        candidateIds.length === 0
+          ? []
+          : await buildQuery("user.thread")
+              .where(sql<boolean>`id = ANY(${candidateIds}::uuid[])`)
+              .execute();
+    } else {
+      // Legacy updated_since / custom-sort / initial paths: single query (the
+      // unbounded legacy initial pull cannot two-phase — there is no limit to
+      // bound the phase-2 id list).
+      visible = await buildQuery("user.thread").execute();
+    }
 
     if (isInitialSync) {
       return { rows: visible, horizon: "0", pageKeys: null };

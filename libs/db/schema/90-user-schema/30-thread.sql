@@ -87,33 +87,23 @@ SELECT
     ts."order" AS state_order,
     ts."on" AS state_on,
     ts."at" AS state_at,
-    -- activity_at: feed ordering timestamp.
-    -- The latest-link timestamp is a correlated scalar subquery (indexed,
-    -- per emitted row) rather than a join to a GROUP BY over link: Postgres
-    -- cannot push join quals into a grouped subquery, so the previous
-    -- `WITH link_agg` LEFT JOIN hash-aggregated the ENTIRE link table on
-    -- every query against this view. As a scalar subquery the planner also
-    -- prunes it (with the other computed columns) when a caller selects
-    -- only cheap columns, which the two-phase /sync/threads fetch relies on.
-    COALESCE(
-        GREATEST(
-            a.last_note_source_created_at,
-            (SELECT MAX(l_agg.source_created_at)
-             FROM link l_agg
-             WHERE l_agg.thread_id = a.id),
-            ts.bumped_at,
-            (SELECT CASE
-                WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz) <= now()
-                THEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz)
-            END
-            FROM schedule s_feed
-            WHERE s_feed.thread_id = a.id
-                AND s_feed.occurrence IS NULL
-                AND s_feed.archived_at IS NULL
-            LIMIT 1)
-        ),
-        a.created_at
-    ) AS activity_at,
+    -- activity_at: feed ordering key, denormalized per-user on thread_priority
+    -- (GREATEST(thread.activity_base, thread_state.bumped_at), maintained by the
+    -- note/link/schedule + thread_state triggers). This replaces the former
+    -- inline GREATEST over correlated link/schedule subqueries, which forced the
+    -- planner to compute activity_at for the user's ENTIRE thread corpus and sort
+    -- before applying LIMIT (211k buffers / ~530ms for a heavy user per feed
+    -- page). Now the (user_id, activity_at DESC) index serves the feed directly.
+    -- Read tp.activity_at DIRECTLY (no COALESCE): a COALESCE expression cannot be
+    -- matched to the (user_id, activity_at DESC) index, which would defeat the whole
+    -- optimization. The seed trigger populates every new row and the migration
+    -- backfills existing rows, so activity_at is never NULL in practice; the feed's
+    -- `activity_at < $cursor` predicate also excludes any stray NULL. The
+    -- time-dependent "latest past schedule end" term is intentionally NOT recomputed
+    -- here: the client derives it live against its own clock (apps/plot
+    -- .../thread.dart), and the server folds already-past ends into activity_base at
+    -- write time.
+    tp.activity_at AS activity_at,
     -- agenda_at: range from earliest schedule start to latest end (or infinity for recurring/unbounded)
     -- Considers shared thread schedules (thread_id), link schedules
     -- (link_id → link.thread_id), and the per-user thread_state on/at.

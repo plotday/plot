@@ -99,7 +99,17 @@ CREATE TABLE "public"."thread" (
     -- a current member of team_id at add-time is recorded here and stays
     -- exempt. Maintained exclusively by set_thread_team_and_external; never
     -- written directly. Always a subset of contacts.
-    "external_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]
+    "external_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+    -- Denormalized thread-level feed-ordering base:
+    -- GREATEST(last_note_source_created_at, MAX(link.source_created_at),
+    -- latest non-recurring schedule end already in the past, created_at).
+    -- The per-user feed sort key (thread_priority.activity_at) adds
+    -- thread_state.bumped_at on top of this. Maintained by
+    -- update_thread_on_note_change (unscoped notes), the link trigger, and the
+    -- schedule trigger — all seq-suppressed (see plot.skip_activity_seq).
+    -- Nullable for expand-safety; user.thread COALESCEs to created_at. NOT part
+    -- of the app's stored shape (the app recomputes ordering locally).
+    "activity_base" timestamptz
 );
 
 ALTER TABLE "public"."thread"

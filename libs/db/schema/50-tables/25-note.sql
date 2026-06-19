@@ -182,13 +182,16 @@ BEGIN
             SET last_note_created_at = GREATEST (last_note_created_at, NEW.created_at),
                 last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at),
                 last_note_seq = GREATEST (last_note_seq, NEW.seq),
+                activity_base = GREATEST (COALESCE(activity_base, created_at), NEW.source_created_at),
                 updated_by = NEW.updated_by
             WHERE id = NEW.thread_id
               AND (last_note_created_at IS NULL
                   OR last_note_created_at < NEW.created_at
                   OR last_note_source_created_at IS NULL
                   OR last_note_source_created_at < NEW.source_created_at
-                  OR last_note_seq < NEW.seq);
+                  OR last_note_seq < NEW.seq
+                  OR activity_base IS NULL
+                  OR activity_base < NEW.source_created_at);
         ELSE
             -- SCOPED note: do NOT touch the shared last_note_* columns (that
             -- would re-emit the thread for the whole audience, leaking the

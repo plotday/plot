@@ -141,6 +141,41 @@ WHERE source_url IS NOT NULL;
 CREATE INDEX idx_link_preview_trgm ON "public"."link" USING gin ("preview" extensions.gin_trgm_ops)
 WHERE preview IS NOT NULL;
 
+-- Maintain thread.activity_base when a link's source_created_at lands later than
+-- the thread's current base (feed ordering includes the latest link time).
+-- Seq-suppressed: the app receives link timestamps via /sync/links and recomputes
+-- ordering locally, so re-emitting the thread would be redundant sync. The
+-- thread_priority.activity_at fan-out is appended once that column exists.
+CREATE OR REPLACE FUNCTION public.update_thread_activity_from_link ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+    IF NEW.thread_id IS NOT NULL AND NEW.source_created_at IS NOT NULL THEN
+        PERFORM set_config('plot.skip_activity_seq', 'on', TRUE);
+        UPDATE thread
+        SET activity_base = GREATEST(COALESCE(activity_base, created_at), NEW.source_created_at)
+        WHERE id = NEW.thread_id
+          AND (activity_base IS NULL OR activity_base < NEW.source_created_at);
+        PERFORM set_config('plot.skip_activity_seq', 'off', TRUE);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER update_thread_activity_from_link_ins
+    AFTER INSERT ON "public"."link"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_thread_activity_from_link ();
+
+CREATE TRIGGER update_thread_activity_from_link_upd
+    AFTER UPDATE OF source_created_at, thread_id ON "public"."link"
+    FOR EACH ROW
+    WHEN (OLD.source_created_at IS DISTINCT FROM NEW.source_created_at
+        OR OLD.thread_id IS DISTINCT FROM NEW.thread_id)
+    EXECUTE FUNCTION update_thread_activity_from_link ();
+
 CREATE TRIGGER set_link_updated_at
     BEFORE INSERT OR UPDATE ON "public"."link"
     FOR EACH ROW
