@@ -28,6 +28,18 @@ concurrency:
   group: native-release
   cancel-in-progress: false
 
+env:
+  # super_clipboard's Rust extension (Cargokit) downloads crates from the
+  # registry during the native build of every platform. Cargo's default HTTP/2
+  # multiplexing intermittently fails on GitHub runners with
+  # "[16] Error in the HTTP2 framing layer", which non-deterministically breaks
+  # the build (e.g. release-ios run 27807580473 failed downloading `syn`).
+  # Force HTTP/1.1 and add generous retries so transient download blips are
+  # retried instead of failing the whole release. Inherited by the cargo
+  # process spawned inside the Xcode/Gradle/MSBuild build phase.
+  CARGO_HTTP_MULTIPLEXING: 'false'
+  CARGO_NET_RETRY: '10'
+
 jobs:
   refresh-secrets:
     uses: ./.github/workflows/refresh-secrets.yml
