@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # Build the Play Store featured graphic (1024x500 PNG).
 #
-# Sources:
-#   - Dark-mode app screenshot: apps/site/public/assets/screenshot-d.png
-#   - Brand wordmark:           apps/site/public/assets/plot.svg
-#   - Font (Instrument Sans):   fetched from google/fonts on demand
+# Sources (all version-controlled, so this is reproducible from a clean clone):
+#   - App screenshot:         ./source-screenshot.png (S7 dark, android-tablet capture)
+#   - Brand wordmark:         apps/site/public/assets/plot.svg
+#   - Font (Instrument Sans): fetched from google/fonts on demand
 #
-# Output:
-#   - featureGraphic.svg (source, version controlled)
-#   - featureGraphic.png (1024x500, what Play Console / Fastlane Supply uploads)
+# Outputs:
+#   - ./featureGraphic.svg   (source, version controlled)
+#   - ../featureGraphic.png  (1024x500, what Play Console / Fastlane Supply uploads)
+#
+# IMPORTANT: Fastlane Supply only discovers the feature graphic at the FLAT path
+# images/featureGraphic.png — it does NOT look inside an images/featureGraphic/
+# subdirectory. So the generated PNG is written one level up (../) while the
+# build inputs (this script, the .svg, the source screenshot) stay in this dir,
+# which Supply ignores.
 
 set -euo pipefail
 
@@ -43,15 +49,16 @@ cat > "$FC_FILE" <<EOF
 EOF
 
 # Crop the screenshot to a tighter framing so it reads at 460px wide
-SHOT_SRC="$SITE_ASSETS/screenshot-d.png"
-SHOT_TRIM="$WORK/screenshot-d-trimmed.png"
+SHOT_SRC="$HERE/source-screenshot.png"
+SHOT_TRIM="$WORK/screenshot-trimmed.png"
 magick "$SHOT_SRC" -resize 1320x -gravity north -crop 1320x780+0+30 +repage "$SHOT_TRIM"
 
 SHOT_B64=$(base64 -i "$SHOT_TRIM" | tr -d '\n')
 LOGO_B64=$(base64 -i "$SITE_ASSETS/plot.svg" | tr -d '\n')
 
 SVG="$HERE/featureGraphic.svg"
-PNG="$HERE/featureGraphic.png"
+# Flat path (parent dir): Supply only finds images/featureGraphic.png, not a subdir.
+PNG="$HERE/../featureGraphic.png"
 
 cat > "$SVG" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -128,14 +135,14 @@ cat > "$SVG" <<EOF
 
   <!-- Headline -->
   <g font-family="Instrument Sans, sans-serif" font-weight="700" letter-spacing="-1.2">
-    <text x="56" y="200" font-size="68" fill="url(#titleGrad)">Your best work,</text>
-    <text x="56" y="272" font-size="68" fill="url(#titleGrad)">every day</text>
+    <text x="56" y="200" font-size="68" fill="url(#titleGrad)">All your work,</text>
+    <text x="56" y="272" font-size="68" fill="url(#titleGrad)">ready for action</text>
   </g>
 
   <!-- Subhead -->
   <g font-family="Instrument Sans, sans-serif" font-weight="400" fill="#e6efe9" opacity="0.86">
-    <text x="56" y="332" font-size="22">Tasks, messages, and meetings —</text>
-    <text x="56" y="362" font-size="22">organized by what matters.</text>
+    <text x="56" y="332" font-size="22">Team chat, email, notes, and app threads,</text>
+    <text x="56" y="362" font-size="22">organized around your priorities.</text>
   </g>
 
   <!-- "Now on Android" pill -->
