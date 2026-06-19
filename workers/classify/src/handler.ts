@@ -240,6 +240,49 @@ async function settlePriority<T>(
   );
 }
 
+/**
+ * Give-up fallback for a thread that repeatedly fails to classify — a slow
+ * scoring query that trips the 30s statement_timeout (57014), or sustained
+ * user_sync row-lock contention. Files the thread at the user's root focus if
+ * it is still unfiled and clears classify_at so the hourly sweep stops
+ * re-enqueuing it. That re-enqueue (classify_at never clearing) is what turns a
+ * single slow/contended thread into an unbounded retry storm, so parking is the
+ * circuit breaker.
+ *
+ * Deliberately scoring-free and cheap (one keyed UPDATE) so it still succeeds
+ * while the scoring query itself is too slow to run. COALESCE never overwrites
+ * an existing priority_id, and the user_moved = FALSE guard preserves an
+ * explicit user filing. Uses the same parent-thread lock ordering as
+ * settlePriority to stay deadlock-safe against a concurrent upsert_thread.
+ * Returns whether a row was parked.
+ */
+export async function parkUnclassifiable(
+  db: ClassifyDb,
+  job: ClassifyJob
+): Promise<boolean> {
+  const rootRow = await sql<{ id: string }>`
+    SELECT id FROM public.priority
+     WHERE user_id = ${job.userId}::uuid
+       AND nlevel(path) = 1
+       AND archived_at IS NULL
+     ORDER BY created_at ASC
+     LIMIT 1`.execute(db);
+  const root = rootRow.rows[0]?.id ?? null;
+  const updated = await settlePriority(db, job, (trx) =>
+    trx
+      .updateTable("thread_priority")
+      .set({
+        priority_id: sql<string>`COALESCE("thread_priority"."priority_id", ${root}::uuid)`,
+        classify_at: null,
+      })
+      .where("user_id", "=", job.userId)
+      .where("thread_id", "=", job.threadId)
+      .where("user_moved", "=", false)
+      .executeTakeFirst()
+  );
+  return updated.numUpdatedRows > 0n;
+}
+
 function parseEmbedding(text: string | null): number[] | null {
   if (text == null) return null;
   const inner = text.trim();

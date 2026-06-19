@@ -40,6 +40,10 @@ class FormButtonController {
 
   /// Internal: Get the ListTileController for passing to ListTile
   ListTileController get _listTileController => _controller;
+
+  /// Public handle to the underlying [ListTileController] so a multi-button
+  /// bar can wire each button's tile to its controller.
+  ListTileController get listTileController => _controller;
 }
 
 /// Provides form values and validation to descendants
@@ -561,6 +565,86 @@ class FormSelect<T> extends FormItem {
   }
 }
 
+/// Builds the command a form button runs: validates the form (unless
+/// [skipValidation]), executes [buildCommand] with the latest [FormScope]
+/// values, then handles the result (error toast, in-place refresh, route, or
+/// `Modal.pop`). Shared by the single [FormButton] row and the multi-button
+/// `FormButtonBar` so both behave identically.
+CommandWrapper buildWrappedFormButtonCommand(
+  BuildContext context, {
+  required Command Function(Map<String, dynamic> values) buildCommand,
+  required bool skipValidation,
+}) {
+  final formValues = FormScope.of(context)?.values ?? {};
+  final formValidate = FormScope.of(context)?.validate;
+
+  // Build display command for icon/text (with current form values)
+  Command displayCommand;
+  try {
+    displayCommand = buildCommand(formValues);
+  } catch (e) {
+    // If command requires values, use fallback command with no icon
+    log.warning('Could not build command for display: $e');
+    displayCommand = _FormSubmitCommand();
+  }
+
+  Future<CommandReturn> runWrappedCommand() async {
+    // Validate form before executing (skip for buttons that opt out)
+    if (!skipValidation && formValidate != null && !formValidate()) {
+      context.showToast(
+        message: 'Please fill in all required fields',
+        isError: true,
+      );
+      return const CommandDone();
+    }
+
+    // Get latest form values and build a fresh command
+    final latestValues = FormScope.of(context)?.values ?? formValues;
+    final command = buildCommand(latestValues);
+    final result = await command.run(context);
+
+    // Handle result inline (FormButton-specific behavior)
+    if (context.mounted) {
+      if (result is CommandMessage && result.isError) {
+        context.showToast(
+          title: result.title,
+          message: result.message,
+          isError: true,
+        );
+      } else if (result is CommandRefresh) {
+        // Refresh in-place if the form supports it, otherwise pop
+        final refresh = FormScope.of(context)?.refresh;
+        if (refresh != null) {
+          await refresh();
+        } else {
+          Modal.pop<CommandReturn>(context, Value(result));
+        }
+      } else if (result is CommandRoute) {
+        await Modal.popAll(context);
+        if (context.mounted) {
+          result.go(context);
+        }
+      } else if (result is! CommandSkipped) {
+        Modal.pop<CommandReturn>(context, Value(result));
+      }
+    }
+
+    // Prevent double-toast: CommandMessage results are already handled above
+    // (error toast shown, or success result passed via Modal.pop for the
+    // parent modal to handle). Return CommandDone so context.run() in
+    // base.dart doesn't show a duplicate toast.
+    if (result is CommandMessage) {
+      return const CommandDone();
+    }
+    return result;
+  }
+
+  return CommandWrapper(
+    displayCommand,
+    run: (_, context) => runWrappedCommand(),
+  );
+}
+
 /// Button form item
 class FormButton extends FormItem {
   FormButton({
@@ -568,6 +652,7 @@ class FormButton extends FormItem {
     required this.buildCommand,
     this.skipValidation = false,
     this.isPrimary = false,
+    this.destructive = false,
   }) : super(required: false, label: '');
 
   final Command Function(Map<String, dynamic> values) buildCommand;
@@ -580,6 +665,11 @@ class FormButton extends FormItem {
   /// mark exactly one button primary; forms with no obvious submit (e.g. an
   /// auth widget that handles its own action) may have none.
   final bool isPrimary;
+
+  /// When true (Archive / Delete), the label turns `colors.destructive` on
+  /// hover/focus in a `FormButtonBar` to signal a destructive action without
+  /// shouting at rest. Has no effect on the standalone [FormButton] rendering.
+  final bool destructive;
 
   @override
   dynamic getValue() => null;
@@ -650,80 +740,10 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // Get form values from FormScope
-    final formValues = FormScope.of(context)?.values ?? {};
-    final formValidate = FormScope.of(context)?.validate;
-
-    // Build display command for icon/text (with current form values)
-    Command displayCommand;
-    try {
-      displayCommand = widget.buildCommand(formValues);
-    } catch (e) {
-      // If command requires values, use fallback command with no icon
-      log.warning('Could not build command for display: $e');
-      displayCommand = _FormSubmitCommand();
-    }
-
-    // Create the run function that validates, executes, and handles result
-    Future<CommandReturn> runWrappedCommand() async {
-      // Validate form before executing (skip for buttons that opt out)
-      if (!widget.skipValidation && formValidate != null && !formValidate()) {
-        context.showToast(
-          message: 'Please fill in all required fields',
-          isError: true,
-        );
-        return const CommandDone();
-      }
-
-      // Get latest form values
-      final latestValues = FormScope.of(context)?.values ?? formValues;
-
-      // Build fresh command with latest values
-      final command = widget.buildCommand(latestValues);
-
-      // Execute command
-      final result = await command.run(context);
-
-      // Handle result inline (FormButton-specific behavior)
-      if (context.mounted) {
-        if (result is CommandMessage && result.isError) {
-          context.showToast(
-            title: result.title,
-            message: result.message,
-            isError: true,
-          );
-        } else if (result is CommandRefresh) {
-          // Refresh in-place if the form supports it, otherwise pop
-          final refresh = FormScope.of(context)?.refresh;
-          if (refresh != null) {
-            await refresh();
-          } else {
-            Modal.pop<CommandReturn>(context, Value(result));
-          }
-        } else if (result is CommandRoute) {
-          await Modal.popAll(context);
-          if (context.mounted) {
-            result.go(context);
-          }
-        } else if (result is! CommandSkipped) {
-          Modal.pop<CommandReturn>(context, Value(result));
-        }
-      }
-
-      // Prevent double-toast: CommandMessage results are already handled above
-      // (error toast shown, or success result passed via Modal.pop for the
-      // parent modal to handle). Return CommandDone so context.run() in
-      // base.dart doesn't show a duplicate toast.
-      if (result is CommandMessage) {
-        return const CommandDone();
-      }
-      return result;
-    }
-
-    // Create CommandWrapper that uses the run function
-    final wrappedCommand = CommandWrapper(
-      displayCommand,
-      run: (_, context) => runWrappedCommand(),
+    final wrappedCommand = buildWrappedFormButtonCommand(
+      context,
+      buildCommand: widget.buildCommand,
+      skipValidation: widget.skipValidation,
     );
 
     return Opacity(

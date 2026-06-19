@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/form_button_bar.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/util/platform.dart';
@@ -48,6 +49,44 @@ class FormModal extends Modal {
     return super
         .show<CommandReturn>(context)
         .then((value) => value.present ? value.value : const CommandSkipped());
+  }
+
+  /// Collapses each group's maximal *trailing* run of [FormButton]s (absorbing
+  /// any [FormDivider]s interleaved with or adjacent to that run) into a single
+  /// [FormButtonBar]. A [FormButton] that is not part of the trailing run
+  /// (e.g. a mid-form `Add account`) is left untouched. Pure — does not mutate
+  /// the input.
+  static List<StaticFormGroup> groupTrailingButtons(
+    List<StaticFormGroup> groups,
+  ) {
+    return groups.map((group) {
+      final items = group.items;
+      // Find the start of the trailing run: items that are FormButton or
+      // FormDivider, scanning from the end.
+      int runStart = items.length;
+      while (runStart > 0 &&
+          (items[runStart - 1] is FormButton ||
+              items[runStart - 1] is FormDivider)) {
+        runStart--;
+      }
+      final tail = items.sublist(runStart);
+      final buttons = tail.whereType<FormButton>().toList();
+      // No trailing buttons (e.g. empty group, or only non-button items) →
+      // leave the group as-is.
+      if (buttons.isEmpty) return group;
+      final head = items.sublist(0, runStart);
+      return StaticFormGroup(
+        title: group.title,
+        subtitle: group.subtitle,
+        items: [
+          ...head,
+          FormButtonBar(
+            key: '${group.title ?? 'actions'}__bar',
+            buttons: buttons,
+          ),
+        ],
+      );
+    }).toList();
   }
 }
 
@@ -222,7 +261,7 @@ class FormModalState extends State<_FormModal> {
   }
 
   void _initForm([List<StaticFormGroup>? groups]) {
-    _formGroups = groups ?? widget.groups;
+    _formGroups = FormModal.groupTrailingButtons(groups ?? widget.groups);
 
     // Create focus nodes — one per focusable sub-item
     final totalCount = _allFocusSlotsCount();
@@ -282,18 +321,24 @@ class FormModalState extends State<_FormModal> {
       }
     }
 
-    // No text inputs, find primary button first
+    // No text inputs, find primary button first (standalone or inside a bar)
     for (int i = 0; i < totalSlots; i++) {
-      final (item, _) = _getItemAndSubIndex(i);
+      final (item, subIndex) = _getItemAndSubIndex(i);
       if (item is FormButton && item.isPrimary && _isFocusSlotEnabled(i)) {
+        return i;
+      }
+      if (item is FormButtonBar &&
+          item.primarySubIndex == subIndex &&
+          _isFocusSlotEnabled(i)) {
         return i;
       }
     }
 
-    // Fall back to first button
+    // Fall back to first button (standalone or any bar slot)
     for (int i = 0; i < totalSlots; i++) {
       final (item, _) = _getItemAndSubIndex(i);
-      if (item is FormButton && _isFocusSlotEnabled(i)) {
+      if ((item is FormButton || item is FormButtonBar) &&
+          _isFocusSlotEnabled(i)) {
         return i;
       }
     }
@@ -410,9 +455,12 @@ class FormModalState extends State<_FormModal> {
   }
 
   bool _isFocusSlotEnabled(int focusIndex) {
-    final (item, _) = _getItemAndSubIndex(focusIndex);
+    final (item, subIndex) = _getItemAndSubIndex(focusIndex);
     if (!item.isFocusable) return false;
     if (item is FormButton) return item.skipValidation || _isFormValid();
+    if (item is FormButtonBar) {
+      return item.isSubSlotEnabled(subIndex, _isFormValid());
+    }
     if (item is FormSelect) return item.enabled;
     return true;
   }
@@ -502,6 +550,17 @@ class FormModalState extends State<_FormModal> {
     });
   }
 
+  /// Whether the very last rendered item is a [FormButtonBar] — in which case
+  /// the action bar sits flush against the modal's bottom edge (no trailing
+  /// gap), so its label is vertically centred in the whole bottom section.
+  bool _lastItemIsButtonBar() {
+    for (var g = _formGroups.length - 1; g >= 0; g--) {
+      final items = _formGroups[g].items;
+      if (items.isNotEmpty) return items.last is FormButtonBar;
+    }
+    return false;
+  }
+
   FormItem _getItemAtIndex(int index) {
     int currentIndex = 0;
     for (var group in _formGroups) {
@@ -545,7 +604,7 @@ class FormModalState extends State<_FormModal> {
     final Map<String, dynamic> values = {};
     for (var group in _formGroups) {
       for (var item in group.items) {
-        if (item is! FormButton) {
+        if (item is! FormButton && item is! FormButtonBar) {
           values[item.key] = item.getValue();
         }
       }
@@ -553,26 +612,22 @@ class FormModalState extends State<_FormModal> {
     return values;
   }
 
-  /// Find the explicit primary button, if any.
-  FormButton? _getPrimaryButton() {
+  /// Execute form submission (triggered by Enter key from text inputs):
+  /// run the primary button, whether standalone or inside a [FormButtonBar].
+  Future<void> _submitForm() async {
     for (var group in _formGroups) {
       for (var item in group.items) {
         if (item is FormButton && item.isPrimary) {
-          return item;
+          await _buttonControllers[item]?.run();
+          return;
         }
-      }
-    }
-    return null;
-  }
-
-  /// Execute form submission (triggered by Enter key from text inputs)
-  Future<void> _submitForm() async {
-    // Find and run the primary (first) button's controller
-    final primaryButton = _getPrimaryButton();
-    if (primaryButton != null) {
-      final controller = _buttonControllers[primaryButton];
-      if (controller != null) {
-        await controller.run();
+        if (item is FormButtonBar) {
+          final controller = item.primaryController;
+          if (controller != null) {
+            await controller.run();
+            return;
+          }
+        }
       }
     }
   }
@@ -589,8 +644,11 @@ class FormModalState extends State<_FormModal> {
       key: ValueKey(totalItemCount),
       onActivate: (index) async {
         if (index >= _allFocusSlotsCount()) return;
-        final (item, _) = _getItemAndSubIndex(index);
-        if (item is FormButton || item.onSubmitted != null) {
+        final (item, subIndex) = _getItemAndSubIndex(index);
+        if (item is FormButtonBar) {
+          // Run the specific button highlighted within the bar.
+          await item.runSubSlot(subIndex);
+        } else if (item is FormButton || item.onSubmitted != null) {
           // Enter key triggers form submission (primary button)
           await _submitForm();
         }
@@ -636,6 +694,21 @@ class FormModalState extends State<_FormModal> {
                   return KeyEventResult.handled;
                 }
               }
+              if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+                  event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                // Only hijack ←/→ when the highlighted slot is inside a button
+                // bar (its buttons render side-by-side in multi-panel).
+                // Elsewhere ←/→ stay available as text-cursor keys.
+                if (_allFocusSlotsCount() > 0) {
+                  final (item, _) = _getItemAndSubIndex(_highlightedIndex);
+                  if (item is FormButtonBar) {
+                    _moveHighlight(
+                      event.logicalKey == LogicalKeyboardKey.arrowLeft ? -1 : 1,
+                    );
+                    return KeyEventResult.handled;
+                  }
+                }
+              }
             }
             return KeyEventResult.ignored;
           },
@@ -675,6 +748,9 @@ class FormModalState extends State<_FormModal> {
                         if (controller != null) {
                           controller.run();
                         }
+                      } else if (item is FormButtonBar) {
+                        // Run the specific button highlighted within the bar
+                        item.runSubSlot(subIndex);
                       } else if (item.onSubmitted != null) {
                         // For text inputs, trigger primary button (first button)
                         _submitForm();
@@ -806,58 +882,60 @@ class FormModalState extends State<_FormModal> {
                                 if (group.title != null &&
                                     (index == 0 ||
                                         group != _getGroupAtIndex(index - 1))) {
+                                  // Section heading: outranks field labels via
+                                  // foreground colour + semibold weight (labels
+                                  // stay muted). Any right-aligned subtitle is
+                                  // secondary meta, so it stays muted.
+                                  final headingStyle = context
+                                      .theme
+                                      .typography
+                                      .sm
+                                      .copyWith(
+                                        color:
+                                            context.theme.colors.foreground,
+                                        fontWeight: FontWeight.w600,
+                                      );
+                                  final subtitleStyle = context
+                                      .theme
+                                      .typography
+                                      .sm
+                                      .copyWith(
+                                        color: context
+                                            .theme
+                                            .colors
+                                            .mutedForeground,
+                                      );
                                   header = Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: context.theme.spacing.xl,
-                                      vertical: context.theme.spacing.sm,
+                                    // Generous space above separates the
+                                    // section from the previous block; tight
+                                    // below so the heading hugs its items. The
+                                    // first group sits under the modal header,
+                                    // so it needs no extra top.
+                                    padding: EdgeInsets.only(
+                                      left: context.theme.spacing.xl,
+                                      right: context.theme.spacing.xl,
+                                      top: index == 0
+                                          ? context.theme.spacing.sm
+                                          : context.theme.spacing.lg,
+                                      bottom: context.theme.spacing.xs,
                                     ),
                                     child: group.subtitle != null
                                         ? Row(
                                             children: [
                                               Text(
                                                 group.title!,
-                                                style: TextStyle(
-                                                  color: context
-                                                      .theme
-                                                      .colors
-                                                      .mutedForeground,
-                                                  fontSize: context
-                                                      .theme
-                                                      .typography
-                                                      .sm
-                                                      .fontSize,
-                                                ),
+                                                style: headingStyle,
                                               ),
                                               const Spacer(),
                                               Text(
                                                 group.subtitle!,
-                                                style: TextStyle(
-                                                  color: context
-                                                      .theme
-                                                      .colors
-                                                      .mutedForeground,
-                                                  fontSize: context
-                                                      .theme
-                                                      .typography
-                                                      .sm
-                                                      .fontSize,
-                                                ),
+                                                style: subtitleStyle,
                                               ),
                                             ],
                                           )
                                         : Text(
                                             group.title!,
-                                            style: TextStyle(
-                                              color: context
-                                                  .theme
-                                                  .colors
-                                                  .mutedForeground,
-                                              fontSize: context
-                                                  .theme
-                                                  .typography
-                                                  .sm
-                                                  .fontSize,
-                                            ),
+                                            style: headingStyle,
                                           ),
                                   );
                                 }
@@ -932,6 +1010,8 @@ class FormModalState extends State<_FormModal> {
                                           enabled: item is FormButton
                                               ? (item.skipValidation ||
                                                     _isFormValid())
+                                              : item is FormButtonBar
+                                              ? _isFormValid()
                                               : true,
                                           focusNodes: itemFocusNodes,
                                           controller: item is FormButton
@@ -949,7 +1029,11 @@ class FormModalState extends State<_FormModal> {
                             ),
                           ),
                         ),
-                        SizedBox(height: context.theme.spacing.md),
+                        // A trailing button bar fills flush to the modal's
+                        // bottom edge (its own symmetric padding centres the
+                        // label); other content keeps a bottom breathing gap.
+                        if (!_lastItemIsButtonBar())
+                          SizedBox(height: context.theme.spacing.md),
                       ],
                     ),
                   );

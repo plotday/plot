@@ -1087,8 +1087,8 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
 
 /// Standard source-modal items shared by [AddSourceDetail] (when reopening
 /// a hosted-auth draft that already has an authenticated account) and
-/// [EditSource]. Keeps the two modals visually identical: Label → Team →
-/// optional sync prompt → channels (account row + channel list inside
+/// [EditSource]. Keeps the two modals visually identical: account header →
+/// Label → Team → channels (with a `<entity> to sync` heading inside
 /// [SetupSourceWidget]) → options. Callers append their own action button
 /// (Add connection vs Save).
 List<FormItem> _buildStandardSourceItems({
@@ -1105,11 +1105,27 @@ List<FormItem> _buildStandardSourceItems({
   required bool Function() channelsValidator,
   required bool setupMode,
   required bool isAccountBased,
-  required bool showSyncMessage,
   TwistOptionItems? optionItems,
   ValueNotifier<int>? refreshNotifier,
 }) {
   return [
+    // Connected account(s) sit at the very top, above the Label field, as the
+    // header that identifies what's being configured.
+    if (integrations.accounts.isNotEmpty)
+      FormInfo(
+        key: 'account_header',
+        builder: (context) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final account in integrations.accounts)
+              SourceAccountRow(
+                account: account,
+                logoUrl: logoUrl,
+                logoUrlDark: logoUrlDark,
+              ),
+          ],
+        ),
+      ),
     FormTextInput(
       key: 'account_label',
       label: 'Label',
@@ -1126,8 +1142,6 @@ List<FormItem> _buildStandardSourceItems({
             ? 'Personal'
             : teams.firstWhere((t) => t.id == id).name,
       ),
-    if (showSyncMessage)
-      FormInfo(key: 'sync_message', text: 'Select what you\'d like to sync.'),
     FormChannelList(
       key: 'integrations',
       controller: channelListController,
@@ -1136,6 +1150,7 @@ List<FormItem> _buildStandardSourceItems({
         twistInstanceId: twistInstanceId,
         setupMode: setupMode,
         isAccountBased: isAccountBased,
+        showAccounts: false,
         sourceName: sourceName,
         logoUrl: logoUrl,
         logoUrlDark: logoUrlDark,
@@ -1349,9 +1364,17 @@ class EditSource extends ShowForm {
         return 'Personal';
       }
 
-      final existingLabel = (storedLabel != null && storedLabel.isNotEmpty)
-          ? storedLabel
-          : fallbackLabel();
+      // A just-connected draft has no user-set label yet — the server only
+      // seeds a generic "Personal"/team placeholder into account_label. Prefer
+      // the connected account's real identity (e.g. "Kris Braun") via
+      // [initialLabelForSource] (the same default AddSourceDetail uses) instead
+      // of defaulting to "Personal". Existing connections keep their stored
+      // (possibly user-customized) label.
+      final existingLabel = isNewlyActivated
+          ? initialLabelForSource(integrations, teams)
+          : (storedLabel != null && storedLabel.isNotEmpty)
+              ? storedLabel
+              : fallbackLabel();
 
       final hasOptions =
           integrations.optionsSchema != null &&
@@ -1387,10 +1410,6 @@ class EditSource extends ShowForm {
                 integrationChanges.selectedChannels.isNotEmpty,
             setupMode: isNewlyActivated,
             isAccountBased: isAccountBased,
-            showSyncMessage:
-                isNewlyActivated &&
-                (integrations.accounts.isNotEmpty ||
-                    integrations.channels.isNotEmpty),
             optionItems: optionItems,
             refreshNotifier: refreshNotifier,
           ),
@@ -1441,10 +1460,10 @@ class EditSource extends ShowForm {
               },
             ),
             if (!isNewlyActivated) ...[
-              FormDivider(key: 'divider'),
               FormButton(
                 key: 'archive',
                 skipValidation: true,
+                destructive: true,
                 buildCommand: (_) => PromptToArchiveSource(
                   twistInstanceId: twistInstanceId,
                   name: name,
@@ -1694,6 +1713,27 @@ bool shouldOpenChannelSetupAfterConnect({
   required bool hasProviders,
   required bool completedInSetupModal,
 }) => connectedDraftId != null && hasProviders && !completedInSetupModal;
+
+/// Initial Label value for the setup modal. Prefers the OAuth-provided account
+/// name (e.g. Unipile's `name` field for LinkedIn) over the stored
+/// `account_label`, because the latter is often the generic "Personal" fallback
+/// that backend activation seeds when no provider metadata is available — a
+/// stale placeholder that should not beat the real account identity surfaced by
+/// the integrations response.
+String initialLabelForSource(
+  TwistIntegrations integrations,
+  List<TeamUsage> teams,
+) {
+  for (final account in integrations.accounts) {
+    final name = account.name;
+    if (name != null && name.isNotEmpty) return name;
+  }
+  final stored = integrations.accountLabel;
+  if (stored != null && stored.isNotEmpty) return stored;
+  final teamName = integrations.teamName;
+  if (teamName != null && teamName.isNotEmpty) return teamName;
+  return 'Personal';
+}
 
 /// Shows source description and branded auth button for setup.
 class AddSourceDetail extends ShowForm {
@@ -1947,7 +1987,7 @@ class AddSourceDetail extends ShowForm {
       // re-rendering the auth button.
       final refreshedHostedHasAccount =
           refreshed.providers.isNotEmpty && refreshed.accounts.isNotEmpty;
-      final refreshedInitialLabel = _initialLabelFor(refreshed, teams);
+      final refreshedInitialLabel = initialLabelForSource(refreshed, teams);
       return [
         StaticFormGroup(
           items: [
@@ -1971,7 +2011,6 @@ class AddSourceDetail extends ShowForm {
                     refreshChanges.selectedChannels.isNotEmpty,
                 setupMode: true,
                 isAccountBased: true,
-                showSyncMessage: false,
                 optionItems: optionItems,
               ),
               FormButton(
@@ -2146,7 +2185,7 @@ class AddSourceDetail extends ShowForm {
     // than re-triggering the hosted-auth flow.
     final hostedHasAccount =
         integrations.providers.isNotEmpty && integrations.accounts.isNotEmpty;
-    final initialLabel = _initialLabelFor(integrations, teams);
+    final initialLabel = initialLabelForSource(integrations, teams);
 
     return FormData(
       title: 'Set up ${twist.name}',
@@ -2178,7 +2217,6 @@ class AddSourceDetail extends ShowForm {
                     noProviderChanges.selectedChannels.isNotEmpty,
                 setupMode: true,
                 isAccountBased: true,
-                showSyncMessage: false,
                 optionItems: optionItems,
               ),
               FormButton(
@@ -2346,27 +2384,6 @@ class AddSourceDetail extends ShowForm {
         ),
       ],
     );
-  }
-
-  /// Initial Label value for the setup modal. Prefers the OAuth-provided
-  /// account name (e.g. Unipile's `name` field for LinkedIn) over the
-  /// stored `account_label`, because the latter is often the generic
-  /// "Personal" fallback that backend activation seeds when no provider
-  /// metadata is available — a stale placeholder that should not beat
-  /// the real account identity surfaced by the integrations response.
-  static String _initialLabelFor(
-    TwistIntegrations integrations,
-    List<TeamUsage> teams,
-  ) {
-    for (final account in integrations.accounts) {
-      final name = account.name;
-      if (name != null && name.isNotEmpty) return name;
-    }
-    final stored = integrations.accountLabel;
-    if (stored != null && stored.isNotEmpty) return stored;
-    final teamName = integrations.teamName;
-    if (teamName != null && teamName.isNotEmpty) return teamName;
-    return 'Personal';
   }
 
   /// After a successful OAuth, hand the still-DRAFT instance off to the
@@ -2788,7 +2805,6 @@ class EditTwist extends ShowForm {
                   );
                 },
               ),
-              FormDivider(key: 'divider'),
               FormButton(
                 key: 'details',
                 buildCommand: (_) => ShowTwistDetails(matchingTwist),
@@ -2796,6 +2812,7 @@ class EditTwist extends ShowForm {
               if (!twistInstance.isBuiltin)
                 FormButton(
                   key: 'archive',
+                  destructive: true,
                   buildCommand: (_) => PromptToArchiveTwist(twistInstance),
                 ),
             ],
@@ -2816,7 +2833,6 @@ class EditTwist extends ShowForm {
                 initialValue: twistInstance.name,
                 required: true,
               ),
-              FormDivider(key: 'divider'),
               FormButton(
                 key: 'save',
                 isPrimary: true,
@@ -2828,6 +2844,7 @@ class EditTwist extends ShowForm {
               if (!twistInstance.isBuiltin)
                 FormButton(
                   key: 'archive',
+                  destructive: true,
                   buildCommand: (_) => PromptToArchiveTwist(twistInstance),
                 ),
             ],

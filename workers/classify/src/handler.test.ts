@@ -8,7 +8,7 @@ import {
   type DatabaseConnection,
 } from "kysely";
 
-import { handleClassifyJob } from "./handler";
+import { handleClassifyJob, parkUnclassifiable } from "./handler";
 import type { DB } from "./db";
 
 vi.mock("@plotday/classifier-runtime", () => ({
@@ -242,5 +242,62 @@ describe("decision logging", () => {
     const outcome = await handleClassifyJob(JOB, ENV, db, onError);
     expect(outcome.status).toBe("moved");
     expect(onError).toHaveBeenCalled();
+  });
+});
+
+describe("parkUnclassifiable (give-up circuit breaker)", () => {
+  // Cheap, scoring-free fallback for a thread that keeps failing to classify
+  // (slow scoring 57014 or sustained user_sync lock contention). It must file
+  // the thread at root if still unfiled and clear classify_at so the hourly
+  // sweep stops re-enqueuing it — that re-enqueue is what turns a slow query
+  // into an unbounded retry storm.
+  function parkRespond(updatedRows: bigint) {
+    return async (sql: string) => {
+      if (sql.includes("public.priority")) {
+        return { rows: [{ id: "root-priority" }] };
+      }
+      if (sql.includes("FOR NO KEY UPDATE")) {
+        return { rows: [{ "?column?": 1 }] };
+      }
+      if (sql.startsWith('update "thread_priority"')) {
+        return { rows: [], numAffectedRows: updatedRows };
+      }
+      throw new Error(`unexpected SQL in test: ${sql}`);
+    };
+  }
+
+  it("files the thread at root and clears classify_at, guarded on user_moved, with parent-thread lock ordering", async () => {
+    const events: string[] = [];
+    const db = testDb(events, parkRespond(1n));
+
+    const parked = await parkUnclassifiable(db, JOB);
+
+    expect(parked).toBe(true);
+    const begin = events.indexOf("BEGIN");
+    const lock = events.findIndex((e) => e.includes("FOR NO KEY UPDATE"));
+    const update = events.findIndex((e) =>
+      e.startsWith('update "thread_priority"')
+    );
+    const commit = events.indexOf("COMMIT");
+    // Same thread-first lock ordering as the normal settle, so parking can't
+    // deadlock against a concurrent upsert_thread.
+    expect(lock).toBeGreaterThan(begin);
+    expect(update).toBeGreaterThan(lock);
+    expect(commit).toBeGreaterThan(update);
+    expect(events[lock]).toContain("public.thread");
+    // Clears classify_at and files at root via COALESCE (never overwrites an
+    // existing priority_id), guarded so an explicit user move is preserved.
+    expect(events[update]).toContain("classify_at");
+    expect(events[update].toLowerCase()).toContain("coalesce");
+    expect(events[update]).toContain("user_moved");
+  });
+
+  it("returns false when no row matches (already settled or user-moved)", async () => {
+    const events: string[] = [];
+    const db = testDb(events, parkRespond(0n));
+
+    const parked = await parkUnclassifiable(db, JOB);
+
+    expect(parked).toBe(false);
   });
 });

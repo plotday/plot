@@ -2,14 +2,24 @@ import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
-import { withDb } from "./db";
+import { withDb, isLockTimeoutError } from "./db";
 import {
   handleClassifyJob,
+  parkUnclassifiable,
   type ClassifyEnv,
   type ClassifyJob,
 } from "./handler";
 
 declare const ENV: string;
+
+// Give-up threshold. The classify-thread queue is configured with
+// max_retries=4 (wrangler.jsonc), i.e. up to 5 deliveries. On the last useful
+// attempt we stop retrying and PARK the thread instead (file at root + clear
+// classify_at) so the hourly sweep stops re-enqueuing it. Without this, a
+// thread whose scoring can't finish inside the 30s statement_timeout — or one
+// wedged on sustained user_sync row-lock contention — is re-fed every hour
+// forever: the retry storm (PostHog 019ed53e / 019ed55a).
+const MAX_CLASSIFY_ATTEMPTS = 4;
 
 export interface Env extends ClassifyEnv {
   readonly DATABASE_URL?: string;
@@ -58,20 +68,74 @@ export default {
             });
             message.ack();
           } catch (err) {
-            // Surface every consumer-throwing failure to PostHog so we
-            // notice deployed bugs / chronic issues; classify_at stays
-            // set so the hourly sweep re-enqueues if queue retries
-            // also exhaust.
-            posthog.captureException(err as Error, job.userId, {
-              threadId: job.threadId,
-              attempt: message.attempts,
-            });
-            logger.error("classify failed", err as Error, {
-              userId: job.userId,
-              threadId: job.threadId,
-              attempt: message.attempts,
-            });
-            message.retry();
+            if (message.attempts >= MAX_CLASSIFY_ATTEMPTS) {
+              // Retries exhausted: give up rather than loop forever. Park the
+              // thread (file at root + clear classify_at) so the hourly sweep
+              // stops re-enqueuing it — that re-enqueue is what turns one
+              // slow/contended thread into an unbounded retry storm. Parking is
+              // cheap and scoring-free, so it succeeds even when classification
+              // itself can't.
+              try {
+                await parkUnclassifiable(db, job);
+                posthog.capture({
+                  distinctId: job.userId,
+                  event: "classify.gave_up",
+                  properties: {
+                    threadId: job.threadId,
+                    attempt: message.attempts,
+                    pg_code: (err as { code?: string })?.code,
+                  },
+                });
+                logger.warn(
+                  "classify gave up after exhausting retries; parked at root",
+                  {
+                    userId: job.userId,
+                    threadId: job.threadId,
+                    attempt: message.attempts,
+                    pg_code: (err as { code?: string })?.code,
+                  }
+                );
+                message.ack();
+              } catch (parkErr) {
+                // Parking failed too (DB still overloaded). Don't silently drop
+                // the job: leave classify_at set and let the queue/sweep retry.
+                logger.error("classify park failed", parkErr as Error, {
+                  userId: job.userId,
+                  threadId: job.threadId,
+                });
+                message.retry();
+              }
+            } else if (isLockTimeoutError(err)) {
+              // Expected, self-healing contention: a concurrent per-user writer
+              // (reclassify_user_threads, a connector sync, or a sibling
+              // settle) held the thread_priority / user_sync row lock past our
+              // short lock_timeout. classify_at stays set, so the queue retry
+              // and the hourly sweep re-enqueue the job to run when the lock is
+              // free. Don't report it as a bug (this is the PostHog 019ed55a
+              // burst). A genuinely slow statement still trips the 30s
+              // statement_timeout (57014), which falls through to capture.
+              logger.warn("classify settle contended on row lock; retrying", {
+                userId: job.userId,
+                threadId: job.threadId,
+                attempt: message.attempts,
+                pg_code: (err as { code?: string })?.code,
+              });
+              message.retry();
+            } else {
+              // Surface every other consumer-throwing failure to PostHog so we
+              // notice deployed bugs / chronic issues; classify_at stays set so
+              // the queue retry re-runs it until the attempt cap above parks it.
+              posthog.captureException(err as Error, job.userId, {
+                threadId: job.threadId,
+                attempt: message.attempts,
+              });
+              logger.error("classify failed", err as Error, {
+                userId: job.userId,
+                threadId: job.threadId,
+                attempt: message.attempts,
+              });
+              message.retry();
+            }
           }
         }
       });

@@ -629,6 +629,16 @@ class _ListTileState extends State<ListTile> {
           final mutedIconColor = widget.muted && iconIsHighlighted
               ? context.theme.colors.foreground
               : context.theme.plotColors.muted;
+          // When the tile is centred (the action bar), the leading icon adopts
+          // the label's colour so icon + label read as one unit — accent for
+          // the primary, muted for secondaries, destructive on hover. Other
+          // tiles keep the muted/primary icon convention.
+          final Color resolvedIconColor =
+              widget.centered && widget.textStyle?.color != null
+              ? widget.textStyle!.color!
+              : (widget.command?.on == true
+                    ? context.theme.colors.primary
+                    : mutedIconColor);
           final iconWidget = () {
             // Skip command's buildIcon when leadingBuilder already provides
             // a visual indicator (avoids double icons in priority tiles).
@@ -649,9 +659,7 @@ class _ListTileState extends State<ListTile> {
               return IconTheme.merge(
                 data: IconThemeData(
                   size: glyphSize,
-                  color: widget.command?.on == true
-                      ? context.theme.colors.primary
-                      : mutedIconColor,
+                  color: resolvedIconColor,
                 ),
                 child: customIcon,
               );
@@ -668,9 +676,7 @@ class _ListTileState extends State<ListTile> {
               return Icon(
                 widget.icon ?? widget.command?.icon,
                 size: glyphSize,
-                color: widget.command?.on == true
-                    ? context.theme.colors.primary
-                    : mutedIconColor,
+                color: resolvedIconColor,
               );
             }
 
@@ -713,11 +719,21 @@ class _ListTileState extends State<ListTile> {
                   );
 
           final mainRow = Row(
+            // When centred, keep the icon directly beside the label and centre
+            // the whole group (a loose title hugs its text); otherwise the
+            // title expands and stays left-aligned as before.
+            mainAxisAlignment: widget.centered
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.center,
-            spacing: hasIcon ? 12 : 0,
+            // Centred (action-bar) buttons keep the icon snug against the label
+            // (sm token) so the pair reads as one unit; other rows keep the
+            // wider leading gap.
+            spacing: hasIcon ? (widget.centered ? context.theme.spacing.sm : 12) : 0,
             children: [
               normalizedIcon,
-              Expanded(
+              Flexible(
+                fit: widget.centered ? FlexFit.loose : FlexFit.tight,
                 child: Padding(
                   padding: contentPadding,
                   child: Column(

@@ -16,6 +16,17 @@ import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
 import 'logging.dart';
 
+/// Width of the leading chevron/disclosure column in the channel tree. Reserved
+/// for every row in a nesting list so labels align in one column.
+const double _disclosureWidth = 16.0;
+
+/// Left indent added per nesting level in the channel tree.
+const double _channelIndent = 20.0;
+
+/// Capitalizes the first letter (channel nouns arrive lowercase, e.g. "teams").
+String _capitalize(String s) =>
+    s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
 /// Selected channel for the setup flow.
 class SelectedChannel {
   final String provider;
@@ -43,6 +54,7 @@ class SetupSourceWidget extends StatefulWidget {
     required this.twistInstanceId,
     this.setupMode = false,
     this.isAccountBased = false,
+    this.showAccounts = true,
     this.sourceName,
     this.logoUrl,
     this.logoUrlDark,
@@ -62,6 +74,12 @@ class SetupSourceWidget extends StatefulWidget {
   /// When true, this is an account-based source (Google, Slack, etc. vs.
   /// no-provider connectors). Controls whether account rows are shown.
   final bool isAccountBased;
+
+  /// Whether to render the connected-account header row(s) inline above the
+  /// channel list. The main setup/edit form sets this false because it renders
+  /// the account at the very top of the modal (above the Label field) via
+  /// [SourceAccountRow] instead.
+  final bool showAccounts;
 
   /// Display name of the source/connector, used in channel config modal titles.
   final String? sourceName;
@@ -227,8 +245,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
   /// Compute and apply smart default channel selections for setup mode.
   void _applySuggestedDefaults(TwistIntegrations data) {
-    final suggestion =
-        ChannelDefaultSuggester.suggest(channels: data.channels);
+    final suggestion = ChannelDefaultSuggester.suggest(channels: data.channels);
 
     setState(() {
       _localSelectedChannels.addAll(suggestion.enabledChannels);
@@ -347,6 +364,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     }
   }
 
+  /// Re-fetch channels for every visible provider (the channel-heading refresh
+  /// action). Most connections have one provider; multi-account connections of
+  /// the same provider collapse to a single refresh.
+  Future<void> _refreshAllChannels(Iterable<AuthProvider> providers) async {
+    await Future.wait(providers.toSet().map(_refreshChannels));
+  }
+
   void _handleChannelTap(TwistChannel channel) {
     final key = '${channel.providerKey}:${channel.id}';
     final isEnabled = _localSelectedChannels.contains(key);
@@ -373,7 +397,10 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
   /// Disables a channel. When [cascadeIfCollapsed] is true and the channel
   /// is collapsed, also disables all descendant channels.
-  void _disableChannel(TwistChannel channel, {bool cascadeIfCollapsed = false}) {
+  void _disableChannel(
+    TwistChannel channel, {
+    bool cascadeIfCollapsed = false,
+  }) {
     final key = '${channel.providerKey}:${channel.id}';
     final isCollapsed = !_expandedChannels.contains(key);
 
@@ -449,6 +476,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     int depth = 0,
     bool ancestorEnabled = false,
     required List<int> focusCounter,
+    required bool reserveDisclosure,
   }) {
     final widgets = <Widget>[];
     final controller = widget.channelListController;
@@ -486,6 +514,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           onToggle: () => _handleChannelTap(channel),
           onQuickToggle: () => _quickToggleChannel(channel),
           depth: depth,
+          reserveDisclosure: reserveDisclosure,
           hasChildren: channel.hasChildren,
           isExpanded: isExpanded,
           onExpandToggle: channel.hasChildren
@@ -512,6 +541,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
             depth: depth + 1,
             ancestorEnabled: isOn,
             focusCounter: focusCounter,
+            reserveDisclosure: reserveDisclosure,
           ),
         );
       }
@@ -567,21 +597,22 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       channelsByProvider.putIfAbsent(channel.provider, () => []).add(channel);
     }
 
-    // Build account rows
+    // Build account rows. Suppressed when the host form renders the account
+    // header itself (above the Label field) — see [showAccounts].
     final accountRows = <Widget>[];
-    for (final account in data.accounts) {
-      final accountKey = '${account.provider.name}:${account.actorId}';
-      final isRemoved = _removedAccounts.contains(accountKey);
-      accountRows.add(
-        _AccountRow(
-          account: account,
-          isRemoved: isRemoved,
-          onRefresh: () => _refreshChannels(account.provider),
-          isRefreshing: _refreshingProviders.contains(account.provider),
-          logoUrl: widget.logoUrl,
-          logoUrlDark: widget.logoUrlDark,
-        ),
-      );
+    if (widget.showAccounts) {
+      for (final account in data.accounts) {
+        final accountKey = '${account.provider.name}:${account.actorId}';
+        final isRemoved = _removedAccounts.contains(accountKey);
+        accountRows.add(
+          SourceAccountRow(
+            account: account,
+            isRemoved: isRemoved,
+            logoUrl: widget.logoUrl,
+            logoUrlDark: widget.logoUrlDark,
+          ),
+        );
+      }
     }
 
     // Collect toggleable channels across all visible providers for the controller
@@ -608,6 +639,11 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       });
     });
 
+    // Reserve a leading chevron gutter only when the list actually nests, so
+    // flat channel lists sit flush-left with the other form fields while
+    // nested lists keep every label aligned in one column.
+    final reserveDisclosure = data.channels.any((c) => c.hasChildren);
+
     // Build channel rows for all visible providers
     final focusCounter = [0];
     final channelRows = <Widget>[];
@@ -617,6 +653,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           _buildChannelTree(
             channelsByProvider[provider]!,
             focusCounter: focusCounter,
+            reserveDisclosure: reserveDisclosure,
           ),
         );
       }
@@ -636,6 +673,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           accountLabel: account.displayName,
           isOn: _autoEnableLocalState[accountKey] ?? false,
           onToggle: () => _toggleAutoEnable(account),
+          reserveDisclosure: reserveDisclosure,
         ),
       );
       // Auto-threading toggle, only for connectors that support it.
@@ -646,16 +684,32 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
             accountLabel: account.displayName,
             isOn: _autoThreadingLocalState[accountKey] ?? false,
             onToggle: () => _toggleAutoThreading(account),
+            reserveDisclosure: reserveDisclosure,
           ),
         );
       }
     }
+
+    // Providers whose channel list the refresh button re-fetches.
+    final refreshableProviders = channelsByProvider.keys
+        .where((p) => !fullyRemovedProviders.contains(p))
+        .toList();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ...accountRows,
+        // Heading above the channel toggles, e.g. "Teams to sync". Uses the
+        // connector's own word for its channels and carries the refresh action.
+        if (channelRows.isNotEmpty)
+          _ChannelSectionHeader(
+            title: '${_capitalize(data.channelNoun.plural)} to sync',
+            isRefreshing: _refreshingProviders.isNotEmpty,
+            onRefresh: refreshableProviders.isEmpty
+                ? null
+                : () => _refreshAllChannels(refreshableProviders),
+          ),
         ...channelRows,
         ...autoEnableRows,
         if (channelRows.isNotEmpty ||
@@ -679,21 +733,28 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   ) {
     final theme = context.theme;
 
+    // The host form may render the account header at the top of the modal
+    // (above the Label field) instead — in that case there's nothing to show
+    // here, since a single-channel connector has no toggles.
     final accountRows = <Widget>[];
-    for (final account in data.accounts) {
-      accountRows.add(
-        _AccountRow(
-          account: account,
-          logoUrl: widget.logoUrl,
-          logoUrlDark: widget.logoUrlDark,
-        ),
-      );
+    if (widget.showAccounts) {
+      for (final account in data.accounts) {
+        accountRows.add(
+          SourceAccountRow(
+            account: account,
+            logoUrl: widget.logoUrl,
+            logoUrlDark: widget.logoUrlDark,
+          ),
+        );
+      }
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       widget.channelListController?.update(0, (context, subIndex) async {});
     });
+
+    if (accountRows.isEmpty) return const SizedBox.shrink();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -706,20 +767,22 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   }
 }
 
-class _AccountRow extends StatelessWidget {
-  const _AccountRow({
+/// The connected-account header: provider icon, account name/email, and a
+/// "manage access" link. Rendered at the top of the setup/edit modal (above the
+/// Label field) and inline by [SetupSourceWidget] for flows that keep accounts
+/// next to their channels. Refreshing the channel list lives on the channel
+/// section heading, not here.
+class SourceAccountRow extends StatelessWidget {
+  const SourceAccountRow({
     required this.account,
     this.isRemoved = false,
-    this.onRefresh,
-    this.isRefreshing = false,
     this.logoUrl,
     this.logoUrlDark,
+    super.key,
   });
 
   final TwistAccount account;
   final bool isRemoved;
-  final VoidCallback? onRefresh;
-  final bool isRefreshing;
   final String? logoUrl;
   final String? logoUrlDark;
 
@@ -729,7 +792,9 @@ class _AccountRow extends StatelessWidget {
     final showEmail =
         account.email != null && account.email != account.displayName;
 
-    final iconSize = theme.iconSizes.base;
+    // Slightly larger than a body glyph so the account reads as the screen's
+    // subject rather than another list row.
+    final iconSize = theme.iconSizes.lg;
     final manageAccessUrl = account.manageAccessUrl;
     final manageAccessLabel = _manageAccessLabel(account.provider);
 
@@ -756,6 +821,7 @@ class _AccountRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: theme.typography.md.fontSize,
+                            fontWeight: FontWeight.w500,
                             color: theme.colors.foreground,
                           ),
                         ),
@@ -776,22 +842,6 @@ class _AccountRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!isRemoved && onRefresh != null)
-                  FButton.icon(
-                    onPress: isRefreshing ? null : onRefresh,
-                    variant: FButtonVariant.ghost,
-                    child: isRefreshing
-                        ? SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: Spinner(size: 14),
-                          )
-                        : Icon(
-                            FontAwesomeIcons.arrowsRotate,
-                            size: 14,
-                            color: theme.colors.mutedForeground,
-                          ),
-                  ),
               ],
             ),
             if (!isRemoved &&
@@ -840,13 +890,65 @@ class _AccountRow extends StatelessWidget {
     final isDark = context.colour.brightness == Brightness.dark;
     final url = isDark && logoUrlDark != null ? logoUrlDark : logoUrl;
     if (url != null) {
-      return LogoImage(
-        url: url,
-        size: size,
-        fallback: providerIcon,
-      );
+      return LogoImage(url: url, size: size, fallback: providerIcon);
     }
     return providerIcon;
+  }
+}
+
+/// Heading above the channel toggle list, e.g. "Teams to sync". Styled like the
+/// form's field labels and carries the refresh-channels action on the right.
+class _ChannelSectionHeader extends StatelessWidget {
+  const _ChannelSectionHeader({
+    required this.title,
+    required this.onRefresh,
+    required this.isRefreshing,
+  });
+
+  final String title;
+  final VoidCallback? onRefresh;
+  final bool isRefreshing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return Padding(
+      // Matches the form's section-heading rhythm: generous space above to
+      // separate it from the Label field, tight below to hug its toggles.
+      padding: EdgeInsets.only(
+        left: theme.spacing.xl,
+        right: theme.spacing.xl,
+        top: theme.spacing.lg,
+        bottom: theme.spacing.xs,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              // Section heading: foreground + semibold, outranking the muted
+              // field labels above. Mirrors FormGroup titles in form_modal.dart.
+              style: theme.typography.sm.copyWith(
+                color: theme.colors.foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (onRefresh != null)
+            FButton.icon(
+              onPress: isRefreshing ? null : onRefresh,
+              variant: FButtonVariant.ghost,
+              child: isRefreshing
+                  ? SizedBox(width: 14, height: 14, child: Spinner(size: 14))
+                  : Icon(
+                      FontAwesomeIcons.arrowsRotate,
+                      size: 14,
+                      color: theme.colors.mutedForeground,
+                    ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -858,6 +960,7 @@ class _ChannelRow extends StatefulWidget {
     required this.onToggle,
     this.onQuickToggle,
     this.depth = 0,
+    this.reserveDisclosure = false,
     this.hasChildren = false,
     this.isExpanded = false,
     this.onExpandToggle,
@@ -872,6 +975,11 @@ class _ChannelRow extends StatefulWidget {
   final VoidCallback onToggle;
   final VoidCallback? onQuickToggle;
   final int depth;
+
+  /// Whether to reserve a leading chevron gutter (true when any channel in the
+  /// list nests, so all labels align in one column). Flat lists pass false so
+  /// labels sit flush-left with the other form fields.
+  final bool reserveDisclosure;
   final bool hasChildren;
   final bool isExpanded;
   final VoidCallback? onExpandToggle;
@@ -910,21 +1018,19 @@ class _ChannelRowState extends State<_ChannelRow> {
             ),
             child: Padding(
               padding: EdgeInsets.only(
-                left:
-                    12.0 + theme.iconSizes.base + 12.0 + (widget.depth * 24.0),
-                right: theme.spacing.sm,
+                left: theme.spacing.xl + (widget.depth * _channelIndent),
+                right: theme.spacing.xl,
                 top: theme.spacing.xs,
                 bottom: theme.spacing.xs,
               ),
               child: Row(
                 children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: widget.hasChildren ? widget.onExpandToggle : null,
-                    child: Padding(
-                      padding: EdgeInsets.only(right: theme.spacing.sm),
+                  if (widget.reserveDisclosure) ...[
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: widget.hasChildren ? widget.onExpandToggle : null,
                       child: SizedBox(
-                        width: 10,
+                        width: _disclosureWidth,
                         child: widget.hasChildren
                             ? Icon(
                                 widget.isExpanded
@@ -936,7 +1042,21 @@ class _ChannelRowState extends State<_ChannelRow> {
                             : null,
                       ),
                     ),
+                    SizedBox(width: theme.spacing.sm),
+                  ],
+                  Expanded(
+                    child: Text(
+                      widget.channel.title,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: theme.typography.sm.fontSize,
+                        color: widget.canToggle
+                            ? theme.colors.foreground
+                            : theme.colors.mutedForeground,
+                      ),
+                    ),
                   ),
+                  SizedBox(width: theme.spacing.md),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: widget.canToggle ? widget.onQuickToggle : null,
@@ -955,19 +1075,6 @@ class _ChannelRowState extends State<_ChannelRow> {
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: theme.spacing.md),
-                  Expanded(
-                    child: Text(
-                      widget.channel.title,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: theme.typography.sm.fontSize,
-                        color: widget.canToggle
-                            ? theme.colors.foreground
-                            : theme.colors.mutedForeground,
                       ),
                     ),
                   ),
@@ -1018,6 +1125,8 @@ class ProviderIcon extends StatelessWidget {
       case AuthProvider.notion:
       case AuthProvider.discord:
       case AuthProvider.github:
+      case AuthProvider.linkedin:
+      case AuthProvider.apple:
         return true;
       default:
         return false;
@@ -1035,7 +1144,10 @@ class ProviderIcon extends StatelessWidget {
       case AuthProvider.atlassian:
         return 'assets/atlassian.svg';
       case AuthProvider.linear:
-        return 'assets/linear.svg';
+        // The mark is monochrome: brand indigo on light, white on dark.
+        return context.colour.brightness == Brightness.dark
+            ? 'assets/linear_dark.svg'
+            : 'assets/linear.svg';
       case AuthProvider.asana:
         return 'assets/asana.svg';
       case AuthProvider.hubspot:
@@ -1054,6 +1166,13 @@ class ProviderIcon extends StatelessWidget {
             : 'assets/github_light.svg';
       case AuthProvider.discord:
         return 'assets/discord.svg';
+      case AuthProvider.linkedin:
+        return 'assets/linkedin.svg';
+      case AuthProvider.apple:
+        // Black wordmark on light, white on dark.
+        return context.colour.brightness == Brightness.dark
+            ? 'assets/apple_dark.svg'
+            : 'assets/apple.svg';
       default:
         return null;
     }
@@ -1068,12 +1187,17 @@ class _AutoThreadingRow extends StatefulWidget {
     required this.onToggle,
     required this.showAccountLabel,
     required this.accountLabel,
+    required this.reserveDisclosure,
   });
 
   final bool isOn;
   final VoidCallback onToggle;
   final bool showAccountLabel;
   final String accountLabel;
+
+  /// Mirrors the channel rows' leading gutter so this row's title aligns with
+  /// the channel labels above it.
+  final bool reserveDisclosure;
 
   @override
   State<_AutoThreadingRow> createState() => _AutoThreadingRowState();
@@ -1104,33 +1228,19 @@ class _AutoThreadingRowState extends State<_AutoThreadingRow> {
             borderRadius: BorderRadius.circular(6),
           ),
           child: Padding(
+            // Share the channel rows' tight vertical rhythm so these settings
+            // read as part of the same "<entity> to sync" block, not detached.
             padding: EdgeInsets.only(
-              left: 12.0 + theme.iconSizes.base + 12.0,
-              right: theme.spacing.sm,
-              top: theme.spacing.sm,
-              bottom: theme.spacing.sm,
+              left: theme.spacing.xl,
+              right: theme.spacing.xl,
+              top: theme.spacing.xs,
+              bottom: theme.spacing.xs,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Padding(
-                  padding: EdgeInsets.only(right: theme.spacing.sm),
-                  child: const SizedBox(width: 10),
-                ),
-                IgnorePointer(
-                  child: SizedBox(
-                    width: 32,
-                    height: 20,
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: FSwitch(
-                        value: widget.isOn,
-                        onChange: (_) {},
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(width: theme.spacing.md),
+                if (widget.reserveDisclosure)
+                  SizedBox(width: _disclosureWidth + theme.spacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1156,6 +1266,17 @@ class _AutoThreadingRowState extends State<_AutoThreadingRow> {
                     ],
                   ),
                 ),
+                SizedBox(width: theme.spacing.md),
+                IgnorePointer(
+                  child: SizedBox(
+                    width: 32,
+                    height: 20,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: FSwitch(value: widget.isOn, onChange: (_) {}),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1172,6 +1293,7 @@ class _AutoEnableNewChannelsRow extends StatefulWidget {
     required this.onToggle,
     required this.showAccountLabel,
     required this.accountLabel,
+    required this.reserveDisclosure,
   });
 
   /// The connector's word for its channels (folders, projects, …). Drives the
@@ -1184,6 +1306,10 @@ class _AutoEnableNewChannelsRow extends StatefulWidget {
   /// account label to the title so the user can tell the toggles apart.
   final bool showAccountLabel;
   final String accountLabel;
+
+  /// Mirrors the channel rows' leading gutter so this row's title aligns with
+  /// the channel labels above it.
+  final bool reserveDisclosure;
 
   @override
   State<_AutoEnableNewChannelsRow> createState() =>
@@ -1215,33 +1341,19 @@ class _AutoEnableNewChannelsRowState extends State<_AutoEnableNewChannelsRow> {
             borderRadius: BorderRadius.circular(6),
           ),
           child: Padding(
+            // Share the channel rows' tight vertical rhythm so these settings
+            // read as part of the same "<entity> to sync" block, not detached.
             padding: EdgeInsets.only(
-              left: 12.0 + theme.iconSizes.base + 12.0,
-              right: theme.spacing.sm,
-              top: theme.spacing.sm,
-              bottom: theme.spacing.sm,
+              left: theme.spacing.xl,
+              right: theme.spacing.xl,
+              top: theme.spacing.xs,
+              bottom: theme.spacing.xs,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Padding(
-                  padding: EdgeInsets.only(right: theme.spacing.sm),
-                  child: const SizedBox(width: 10),
-                ),
-                IgnorePointer(
-                  child: SizedBox(
-                    width: 32,
-                    height: 20,
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: FSwitch(
-                        value: widget.isOn,
-                        onChange: (_) {},
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(width: theme.spacing.md),
+                if (widget.reserveDisclosure)
+                  SizedBox(width: _disclosureWidth + theme.spacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1265,6 +1377,17 @@ class _AutoEnableNewChannelsRowState extends State<_AutoEnableNewChannelsRow> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                SizedBox(width: theme.spacing.md),
+                IgnorePointer(
+                  child: SizedBox(
+                    width: 32,
+                    height: 20,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: FSwitch(value: widget.isOn, onChange: (_) {}),
+                    ),
                   ),
                 ),
               ],

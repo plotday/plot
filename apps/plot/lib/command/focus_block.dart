@@ -310,6 +310,7 @@ FormData scheduleFocusBlockForm({
       FormButton(
         key: 'delete',
         skipValidation: true,
+        destructive: true,
         buildCommand: (_) => ArchiveFocusBlock(row: existingRow),
       ),
   ];

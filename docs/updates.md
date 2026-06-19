@@ -2,18 +2,23 @@
 
 ### Connections
 
-- Connections that carry a conversation as a run of separate messages — like Slack channels — can now
-  group those messages into a single thread instead of starting a new one each time. Turn it on per
-  connection with **Group related messages into conversations**: Plot folds a message into the ongoing
-  conversation when it's clearly a continuation and starts a fresh thread when the topic changes, so
-  one discussion stays in one place instead of scattering across your inbox. Direct messages stay as a
-  single running thread.
+- Connections that carry a conversation as a run of separate messages — like Slack channels — can
+  now group those messages into a single thread instead of starting a new one each time. Turn it on
+  per connection with **Group related messages into conversations**: Plot folds a message into the
+  ongoing conversation when it's clearly a continuation and starts a fresh thread when the topic
+  changes, so one discussion stays in one place instead of scattering across your inbox. Direct
+  messages stay as a single running thread.
+- The connection setup and edit screens are tidier and easier to follow. The connected account now
+  sits at the top as a header, and the list of things to sync gets a clear heading that names them —
+  for example **Teams to sync** or **Folders to sync**. Each channel lines up flush on the left with
+  the other fields, and every on/off switch sits in a single column down the right, so the list is
+  easy to scan.
 
 ### Roles & focuses
 
-- Notifications in Settings now open your role's default notification settings. If you have more than
-  one role, Plot asks which role first; if you have just one, it goes straight there. You can still
-  fine-tune notifications for an individual focus from that focus's menu.
+- Notifications in Settings now open your role's default notification settings. If you have more
+  than one role, Plot asks which role first; if you have just one, it goes straight there. You can
+  still fine-tune notifications for an individual focus from that focus's menu.
 - When you have more than one role, your focuses now show the role they belong to everywhere they
   appear outside the sidebar — in the header, on threads, and in pickers — written as **Role ›
   Focus**, with the role shown in its own colour. That makes it easy to tell, say, a Work focus from
@@ -22,41 +27,43 @@
   too, so you can tell apart same-named focuses like each role's Inbox. If you only have one role
   nothing changes.
 - When you have more than one role, you can now find a focus by typing its role name in any focus
-  picker — switching focuses, moving or merging threads, or choosing where a new thread goes. Typing a
-  role surfaces every focus under it, alongside matches on the focus's own name.
+  picker — switching focuses, moving or merging threads, or choosing where a new thread goes. Typing
+  a role surfaces every focus under it, alongside matches on the focus's own name.
 - Your browser tab and desktop window title now include the focus you're viewing (and its role when
   you have more than one), so Plot is easy to pick out among your open tabs and windows.
 - Low-signal mail — newsletters, receipts, promotions, and service notifications — now gathers in an
-  **FYI** focus under each of your roles, shown just below that role's Inbox, so work newsletters land
-  under Work and personal ones under Personal. It keeps the quiet stuff out of your Inbox while staying
-  one tap away, and it never sends notifications. Otherwise it's an ordinary focus — you can reorder it
-  and change its colour. Your role's Inbox is now reorderable the same way.
+  **FYI** focus under each of your roles, shown just below that role's Inbox, so work newsletters
+  land under Work and personal ones under Personal. It keeps the quiet stuff out of your Inbox while
+  staying one tap away, and it never sends notifications. Otherwise it's an ordinary focus — you can
+  reorder it and change its colour. Your role's Inbox is now reorderable the same way.
 - The Everything view is now a true cross-focus view rather than being quietly tied to one focus.
   When you're in Everything, focus-specific controls step aside and the header simply reads
   "Everything"; starting a thread there files it into your main Inbox unless you pick a focus (or it
   follows your usual most-recent focus for the people you're messaging).
 - Choosing where to start during setup is clearer. Each choice — Work, Project, Personal, School,
-  Other — now has an icon, and picking one moves you straight on: when your choice needs a name (your
-  workplace or project) Plot asks for it on its own step with the box ready to type, instead of a
-  field tucked below the list that was easy to miss. Naming it is required, and you can press Enter to
-  continue or use Back to pick a different one.
-- In the sidebar, each role now reads clearly as a heading above the focuses it groups: the role name
-  shows in small uppercase lettering, the open role's focuses sit just inside a faint line in the
-  role's colour, and a collapsed role shows a quiet arrow so it's obvious you can tap to open it. The
-  bold text and unread dot still tell you, at a glance, which roles have active or unread work inside.
-- When you move a thread to a focus, the picker now surfaces the most useful focuses first: the focus
-  you most recently moved a thread into rises to the top, then focuses in the same role as the thread
-  you're moving, then everything else. Triaging a run of threads is quicker because wherever you just
-  sent one is right there for the next. It works the same whether you move a single thread or several
-  at once, and your Inbox is now an ordinary focus in this list rather than always pinned to the bottom.
+  Other — now has an icon, and picking one moves you straight on: when your choice needs a name
+  (your workplace or project) Plot asks for it on its own step with the box ready to type, instead
+  of a field tucked below the list that was easy to miss. Naming it is required, and you can press
+  Enter to continue or use Back to pick a different one.
+- In the sidebar, each role now reads clearly as a heading above the focuses it groups: the role
+  name shows in small uppercase lettering, the open role's focuses sit just inside a faint line in
+  the role's colour, and a collapsed role shows a quiet arrow so it's obvious you can tap to open
+  it. The bold text and unread dot still tell you, at a glance, which roles have active or unread
+  work inside.
+- When you move a thread to a focus, the picker now surfaces the most useful focuses first: the
+  focus you most recently moved a thread into rises to the top, then focuses in the same role as the
+  thread you're moving, then everything else. Triaging a run of threads is quicker because wherever
+  you just sent one is right there for the next. It works the same whether you move a single thread
+  or several at once, and your Inbox is now an ordinary focus in this list rather than always pinned
+  to the bottom.
 
 ### Sending messages
 
 - If a message you send to a connected account — like a reply to a Gmail thread or a new email you
   start from Plot — can't be delivered, Plot no longer drops it silently. Brief network hiccups are
   retried automatically, and if it still can't be sent the thread shows as unread and the message is
-  marked **Failed to send** (with the reason when one is available). You can tap **Retry** to send it
-  again, or **Discard** to remove it. This works across your connected accounts, not just Gmail.
+  marked **Failed to send** (with the reason when one is available). You can tap **Retry** to send
+  it again, or **Discard** to remove it. This works across your connected accounts, not just Gmail.
 
 ### Thread swipe actions
 
@@ -76,86 +83,106 @@
 
 ### Focuses
 
-- Your active to-dos now stay put at the top of a focus — new and unread items arrive below them, so incoming messages no longer push your committed work down. A new envelope toggle in the header shows only unread when you want to catch up.
+- Your active to-dos now stay put at the top of a focus — new and unread items arrive below them, so
+  incoming messages no longer push your committed work down. A new envelope toggle in the header
+  shows only unread when you want to catch up.
 
 ### Subscriptions
 
-- You can now subscribe to Core or Pro right inside the app on iPhone, iPad, and Mac, and your plan stays in sync no matter where you signed up — if you started a plan on the web, the apps recognize it automatically.
+- You can now subscribe to Core or Pro right inside the app on iPhone, iPad, and Mac, and your plan
+  stays in sync no matter where you signed up — if you started a plan on the web, the apps recognize
+  it automatically.
+
+### Dialogs
+
+- The action buttons at the bottom of dialogs are clearer. The main action now stands out and, on
+  larger screens, sits beside any quieter secondary actions like Archive or Delete rather than
+  stacking with equal weight; on phones the buttons stack neatly, each clearly its own button.
+  Destructive actions turn red as you hover or select them, and you can still move between buttons
+  with the arrow keys.
 
 ### Fixes
 
 - A connection could get stuck showing "Syncing…" indefinitely if its first sync was paused partway
   through. Plot now detects these and resumes them automatically, so the spinner clears and your
   messages and items finish loading.
+- When you connect an account like LinkedIn that has a single thing to sync, the setup screen now
+  defaults the **Label** to your account name (for example "Kris Braun") instead of "Personal", and
+  no longer shows a "Select what you'd like to sync" prompt when there's nothing to choose.
+- Connection logos now show correctly for LinkedIn, Apple, and Linear, instead of appearing as a
+  blank square in the setup and edit screens.
+- On the web app, emoji reactions now sit centered in their pills instead of dropping toward the
+  bottom edge.
 - When your plan changes to one that doesn't include premium connections — like LinkedIn — those
   connections are now properly disconnected. Previously a premium connection could linger after a
   downgrade or cancellation even though your new plan no longer covered it.
 - When a service can't be reached while you're connecting an account, Plot now shows a clear
   "temporarily unavailable — please try again" message instead of a generic "Server Error".
 - When you connect an account, the **Continue with…** button now stops spinning as soon as the
-  sign-in window opens. Previously, if you closed or stepped away from that window without finishing,
-  the button could keep spinning for several minutes; now it returns to normal right away so you can
-  try again.
-- On the web app, refreshing the page or opening a link to a specific focus or thread now keeps you on
-  that page. Previously it would load for a moment and then bounce you to your Personal Inbox; now a
-  refresh stays put and a shared link opens exactly the focus or thread it points to.
+  sign-in window opens. Previously, if you closed or stepped away from that window without
+  finishing, the button could keep spinning for several minutes; now it returns to normal right away
+  so you can try again.
+- On the web app, refreshing the page or opening a link to a specific focus or thread now keeps you
+  on that page. Previously it would load for a moment and then bounce you to your Personal Inbox;
+  now a refresh stays put and a shared link opens exactly the focus or thread it points to.
 - The note editor's reply options no longer get cut off when a "Reply to {name}" option has a long
   name — the name now shortens to fit so the other options stay fully visible.
-- Notifications now lead with who a message is from and what it's about. A single new thread shows the
-  sender's name and the thread's title — for example **Phil Lee · Workshop ideas** — instead of the
-  connection it arrived through (no more "Gmail (Plot)" standing in for the sender). When someone
-  replies to a thread you've already read, the notification credits the person who replied, not whoever
-  started it. The connection name is no longer shown.
+- Notifications now lead with who a message is from and what it's about. A single new thread shows
+  the sender's name and the thread's title — for example **Phil Lee · Workshop ideas** — instead of
+  the connection it arrived through (no more "Gmail (Plot)" standing in for the sender). When
+  someone replies to a thread you've already read, the notification credits the person who replied,
+  not whoever started it. The connection name is no longer shown.
 - Search and filter boxes now look consistent everywhere. The magnifying-glass icon stays on the
   buttons that open search, and the boxes themselves rely on a clear placeholder — so pickers like
   emoji and link search no longer look different from the rest.
-- Showing archived items is now a single command. Where there used to be separate toggles for archived
-  focuses and for archived threads and notes, one **Show archived items** command now reveals all of
-  them together — archived focuses in your list, plus archived threads and notes inside a focus or
-  thread — and stays in sync wherever you turn it on or off.
+- Showing archived items is now a single command. Where there used to be separate toggles for
+  archived focuses and for archived threads and notes, one **Show archived items** command now
+  reveals all of them together — archived focuses in your list, plus archived threads and notes
+  inside a focus or thread — and stays in sync wherever you turn it on or off.
 - Turning off AI in settings is now respected everywhere. With AI off, Plot still sorts incoming
   threads into your focuses using your own past filing — just without the AI step — and skips
-  AI-written titles, notification summaries, and focus suggestions entirely. Previously a few of these
-  could still run, especially on paid accounts, even with AI switched off.
+  AI-written titles, notification summaries, and focus suggestions entirely. Previously a few of
+  these could still run, especially on paid accounts, even with AI switched off.
 - Connecting Todoist now works. The button correctly reads "Continue with Todoist" with the Todoist
   logo, instead of showing "Continue with Other" and failing when tapped.
-- Connecting LinkedIn, Instagram, or WhatsApp now works. Starting the connection no longer fails with
-  an internal error before the sign-in screen could open.
+- Connecting LinkedIn, Instagram, or WhatsApp now works. Starting the connection no longer fails
+  with an internal error before the sign-in screen could open.
 - During setup, the **Pro** label now shows on Pro connections in the "Connect your tools" step, so
   it's clear which ones need a Pro plan before you start connecting them.
 - On phones and other single-column layouts, marking a thread done — or changing its state another
-  way — while you have it open no longer jumps you to a different thread. The thread stays open so you
-  can keep reading or make more changes, and you go back to the list whenever you're ready. On wider
-  layouts, where the list stays visible beside the open thread, it still moves you on to the next one.
-- On thread rows, the status, mute, and assignee icons on the right now line up exactly with the date
-  shown above them, instead of sitting a couple of pixels off to the side.
-- Focuses no longer disappear from your sidebar when you archive an old, unrelated focus. Previously,
-  archiving a focus could silently hide other live focuses that happened to have been organised under
-  it in the past, even though they were still active and assigned to a role. Every live focus now
-  stays visible regardless of what you archive around it.
+  way — while you have it open no longer jumps you to a different thread. The thread stays open so
+  you can keep reading or make more changes, and you go back to the list whenever you're ready. On
+  wider layouts, where the list stays visible beside the open thread, it still moves you on to the
+  next one.
+- On thread rows, the status, mute, and assignee icons on the right now line up exactly with the
+  date shown above them, instead of sitting a couple of pixels off to the side.
+- Focuses no longer disappear from your sidebar when you archive an old, unrelated focus.
+  Previously, archiving a focus could silently hide other live focuses that happened to have been
+  organised under it in the past, even though they were still active and assigned to a role. Every
+  live focus now stays visible regardless of what you archive around it.
 - Icons that sit beside text — in the sidebar, menus, pickers, and the new-thread form — are now a
   touch smaller so they sit level with the words next to them instead of looking oversized, and they
   line up in a consistent column. The result is a cleaner, less crowded look throughout.
 - Your Personal role's Inbox now shows just like every other role's Inbox — with the inbox icon, its
   role name (**Personal › Inbox**), and the role's colour. Previously it appeared as a plain "Inbox"
   with no role and the wrong colour, making it hard to tell apart from your other roles' Inboxes.
-- Opening an older thread you hadn't looked at before now loads its messages faster. Plot fetches the
-  thread's messages, tags, and reactions together in a single request instead of three separate ones,
-  which cuts the wait — most noticeable on threads with a lot of history.
+- Opening an older thread you hadn't looked at before now loads its messages faster. Plot fetches
+  the thread's messages, tags, and reactions together in a single request instead of three separate
+  ones, which cuts the wait — most noticeable on threads with a lot of history.
 - Moving a notified message to another focus no longer sends you a second notification for it. The
   "already told you about this" memory now follows the message itself, so re-filing it stays quiet
   unless there's an actual new reply.
 - Reading a thread on one device now reliably marks it read on your other devices. Previously, when
-  you opened a thread that was in your Doing list, the unread dot cleared on the device you read it on
-  but stayed on your other devices.
+  you opened a thread that was in your Doing list, the unread dot cleared on the device you read it
+  on but stayed on your other devices.
 - Changes you make to a thread — marking it done, reordering it, scheduling it, or reading it — now
   reliably reach your other devices even if your connection drops or hiccups right as you make them.
   Previously a brief network glitch could silently drop the change, leaving that device out of sync.
 - New accounts now reliably start in the welcome and setup flow, and stay there until you've chosen
   where to start — previously some new accounts skipped setup entirely and landed in the app with a
   default space they never picked.
-- If you quit Plot partway through the welcome and setup flow, it now picks back up the next time you
-  open the app instead of disappearing for good. Setup only goes away once you've finished it or
+- If you quit Plot partway through the welcome and setup flow, it now picks back up the next time
+  you open the app instead of disappearing for good. Setup only goes away once you've finished it or
   closed it yourself.
 - Text boxes you aren't currently typing in — like the email and password fields on the sign-in
   screen — no longer look greyed-out as if they were disabled. They now match the box you're typing
@@ -179,27 +206,28 @@
   left no way to pick a different one.
 - Plot no longer rebuilds its local data and signs you out every time you open it. A recent change
   left the app re-downloading everything from scratch on each launch — making startup slow and, on a
-  large account, occasionally bouncing you to the sign-in screen before it finished. Launches are now
-  fast again and your data stays put between sessions.
+  large account, occasionally bouncing you to the sign-in screen before it finished. Launches are
+  now fast again and your data stays put between sessions.
 - Signing in on a new device is much faster, especially on accounts with a long contact history.
   Setup no longer waits to download your entire address book before showing you anything — it loads
-  what the first screen needs and fills in the rest in the background. Names on people you don't have
-  saved yet may take a moment to appear right after sign-in.
+  what the first screen needs and fills in the rest in the background. Names on people you don't
+  have saved yet may take a moment to appear right after sign-in.
 - Opening a private note no longer flashes a faint, empty reply bar above the composer for a split
   second before it vanishes. Private notes have no one to reply to, so that bar is now correctly
   absent from the moment the thread opens.
-- On phones, the back gesture now keeps your place instead of dropping you out of Plot. Backing out of
-  Search clears your search text first, then leaves the tab; backing out of Agenda, Search, or the
-  More menu returns you to the screen you came from rather than closing the app. And in the new-thread
-  form, back now steps you back through the form — for example, from choosing how to reach someone back
-  to where you started — instead of jumping straight out to your thread list.
-- On phones, the **Schedule focus block** form no longer cuts off the date and time — the year and the
-  end of "a.m."/"p.m." were getting clipped. The stepper rows now give the date, time, and duration
-  more room while keeping the chevron buttons comfortably tappable.
+- On phones, the back gesture now keeps your place instead of dropping you out of Plot. Backing out
+  of Search clears your search text first, then leaves the tab; backing out of Agenda, Search, or
+  the More menu returns you to the screen you came from rather than closing the app. And in the
+  new-thread form, back now steps you back through the form — for example, from choosing how to
+  reach someone back to where you started — instead of jumping straight out to your thread list.
+- On phones, the **Schedule focus block** form no longer cuts off the date and time — the year and
+  the end of "a.m."/"p.m." were getting clipped. The stepper rows now give the date, time, and
+  duration more room while keeping the chevron buttons comfortably tappable.
 
 ### Fixes
 
-- Thread times now reflect the message's original time (e.g. when an email was sent) instead of when Plot received it.
+- Thread times now reflect the message's original time (e.g. when an email was sent) instead of when
+  Plot received it.
 
 ## 1.4.0+354 — 2026-06-15
 
