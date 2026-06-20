@@ -522,7 +522,17 @@ export class Linear extends Connector<Linear> {
       );
       await this.tools.tasks.runTask(nextBatch);
     } else {
-      // Initial sync is complete - cleanup sync state
+      // Initial backfill finished. Signal completion so the "Syncing X"
+      // spinner clears — without this the runtime never stamps
+      // `initial_sync_completed_at`, so the connection sits in "Syncing"
+      // until the stuck-sync watchdog gives up and flips it to "Reconnect",
+      // an endless reconnect loop even though every issue synced.
+      // channelSyncCompleted is idempotent and channel-scoped, so it is safe
+      // here and a no-op for incremental runs.
+      if (state.initialSync) {
+        await this.tools.integrations.channelSyncCompleted(projectId);
+      }
+      // Cleanup sync state.
       await this.clear(`sync_state_${projectId}`);
     }
   }
