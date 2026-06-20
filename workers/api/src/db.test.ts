@@ -5,6 +5,7 @@ import {
   isTransientDbError,
   isPoolExhaustedError,
   isLockContentionError,
+  maxRetriesFor,
   transientRetryDelayMs,
   createDb,
   sql,
@@ -207,28 +208,112 @@ describe("isLockContentionError", () => {
   });
 });
 
+describe("maxRetriesFor", () => {
+  it("gives pool exhaustion a multi-retry budget to ride out the burst", () => {
+    // The fan-out that triggers pool exhaustion staggers TwistSync alarms across
+    // a ~2s jitter window (MAX_JITTER_MS in twist-sync.ts). A single sub-second
+    // retry can't outlast that, so the burst needs several backed-off retries.
+    expect(
+      maxRetriesFor(
+        new Error("Timed out while waiting for an open slot in the pool.")
+      )
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("gives connection-termination errors a multi-retry budget too", () => {
+    // "Connection terminated unexpectedly" (PostHog 019c4dff) fires from the same
+    // saturation bursts as pool exhaustion, so a single immediate retry can't ride
+    // it out either. It gets a multi-retry budget (first retry immediate for a
+    // benign idle-recycle, then backoff — see transientRetryDelayMs).
+    expect(
+      maxRetriesFor(new Error("Connection terminated unexpectedly"))
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      maxRetriesFor(new Error("the database system is shutting down"))
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not retry non-transient errors", () => {
+    expect(maxRetriesFor(new Error("duplicate key value"))).toBe(0);
+  });
+
+  it("is safe for null/undefined/non-Error inputs", () => {
+    expect(maxRetriesFor(undefined)).toBe(0);
+    expect(maxRetriesFor(null)).toBe(0);
+    expect(maxRetriesFor({})).toBe(0);
+  });
+});
+
 describe("transientRetryDelayMs", () => {
+  const poolError = () =>
+    new Error("Timed out while waiting for an open slot in the pool.");
+
   it("returns a positive jittered backoff for pool exhaustion", () => {
-    // Pool exhaustion is a burst: wait briefly so peer connections drain before
+    // Pool exhaustion is a burst: wait so peer connections drain before
     // re-requesting a slot. A tight (0ms) retry would just re-lose the race.
-    const delay = transientRetryDelayMs(
-      new Error("Timed out while waiting for an open slot in the pool.")
-    );
-    expect(delay).toBeGreaterThanOrEqual(100);
-    expect(delay).toBeLessThanOrEqual(400);
+    const delay = transientRetryDelayMs(poolError());
+    expect(delay).toBeGreaterThan(0);
   });
 
-  it("returns 0 (immediate retry) for connection-recycling errors", () => {
-    expect(
-      transientRetryDelayMs(new Error("Connection terminated unexpectedly"))
-    ).toBe(0);
-    expect(
-      transientRetryDelayMs(new Error("the database system is shutting down"))
-    ).toBe(0);
+  it("backs off exponentially across attempts, capped", () => {
+    // Pin jitter to the midpoint so the growth is deterministic.
+    const spy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      const d1 = transientRetryDelayMs(poolError(), 1);
+      const d2 = transientRetryDelayMs(poolError(), 2);
+      const d3 = transientRetryDelayMs(poolError(), 3);
+      expect(d2).toBeGreaterThan(d1);
+      expect(d3).toBeGreaterThan(d2);
+      // A very high attempt is capped, not unbounded.
+      const dHigh = transientRetryDelayMs(poolError(), 20);
+      expect(dHigh).toBeLessThanOrEqual(1000);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
-  it("returns 0 for non-transient errors", () => {
+  it("its cumulative budget across all pool retries spans the ~2s burst", () => {
+    // Worst case (max jitter): the sum of the per-attempt ceilings the retry
+    // loop can wait must cover MAX_JITTER_MS (2000ms), or it can't outlast the
+    // burst. Pin jitter high so each delay is at its ceiling.
+    const spy = vi.spyOn(Math, "random").mockReturnValue(0.999);
+    try {
+      const retries = maxRetriesFor(poolError());
+      let total = 0;
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        total += transientRetryDelayMs(poolError(), attempt);
+      }
+      expect(total).toBeGreaterThanOrEqual(2000);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("connection-termination errors: first retry immediate, then backs off", () => {
+    // A benign Hyperdrive idle-recycle just needs a fresh connection, so the
+    // first retry is immediate (0ms). If it keeps failing it's saturation-driven
+    // (same bursts as pool exhaustion), so later retries back off. Pin jitter to
+    // the midpoint so the growth assertion is deterministic.
+    const spy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      for (const msg of [
+        "Connection terminated unexpectedly",
+        "the database system is shutting down",
+      ]) {
+        expect(transientRetryDelayMs(new Error(msg), 1)).toBe(0);
+        expect(transientRetryDelayMs(new Error(msg), 2)).toBeGreaterThan(0);
+        expect(transientRetryDelayMs(new Error(msg), 3)).toBeGreaterThan(
+          transientRetryDelayMs(new Error(msg), 2)
+        );
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns 0 for non-transient errors at any attempt", () => {
     expect(transientRetryDelayMs(new Error("duplicate key value"))).toBe(0);
+    expect(transientRetryDelayMs(new Error("duplicate key value"), 3)).toBe(0);
   });
 });
 

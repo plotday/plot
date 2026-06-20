@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# Config-as-code for the shared Hyperdrive connection pool.
+#
+# The Hyperdrive `origin_connection_limit` (pool size) is NOT a declarative
+# wrangler.jsonc field — it lives on the Hyperdrive config *resource*. This
+# script is the version-controlled source of truth for it: edit the constant
+# below and run `pnpm deploy:hyperdrive` to apply.
+#
+# The SAME Hyperdrive config is shared by BOTH the api and classify workers
+# (see their wrangler.jsonc `hyperdrive` bindings), so the pool is split across
+# both — size it for their combined peak concurrent DB use, plus DO alarms and
+# queue consumers (whose max_concurrency lives in workers/api/wrangler.jsonc).
+#
+# Sizing guidance (see the workers/api/wrangler.jsonc hyperdrive note for more):
+#   - Origin (Cloud SQL) max_connections = 100, ~3 superuser-reserved → ~97
+#     usable; leave headroom for migrations/admin/psql/cloudsqladmin.
+#   - Hyperdrive paid per-config cap ≈ 100 (soft).
+#   - The limit is SOFT (can transiently overshoot), so keep it BELOW the
+#     origin's max_connections, not at it. Safe immediate value: 80.
+#   - True 10x (≈600) is gated on raising the origin's max_connections first
+#     (Cloud SQL resize + RAM), then a Cloudflare limit-increase request.
+#
+# Applying this is a PRODUCTION mutation — run it deliberately, and confirm via
+# the before/after `wrangler hyperdrive get` output this prints.
+
+set -euo pipefail
+
+# --- Versioned source of truth ----------------------------------------------
+HYPERDRIVE_ID="831ea7d10ef54346b084baaa1a46dfa6"
+ORIGIN_CONNECTION_LIMIT="${ORIGIN_CONNECTION_LIMIT:-80}"
+# ----------------------------------------------------------------------------
+
+# Run from the api worker dir so the workspace-pinned wrangler binary is used
+# and its Cloudflare auth context (CLOUDFLARE_API_TOKEN or `wrangler login`)
+# applies.
+cd "$(dirname "$0")/../workers/api"
+
+echo "==> Current Hyperdrive config ($HYPERDRIVE_ID):"
+if ! wrangler hyperdrive get "$HYPERDRIVE_ID"; then
+  echo "Could not read the Hyperdrive config. Ensure wrangler is authenticated" >&2
+  echo "(CLOUDFLARE_API_TOKEN env var, or run 'wrangler login')." >&2
+  exit 1
+fi
+
+echo
+echo "==> Setting origin_connection_limit = $ORIGIN_CONNECTION_LIMIT ..."
+# --origin-connection-limit is a standalone option (separate from the
+# connection-string / individual-origin-parameter groups in `wrangler hyperdrive
+# update --help`), so this is a partial update and does NOT re-supply origin
+# host/credentials. If a future wrangler requires them, the update will error
+# loudly (set -e) before changing anything — at that point resolve them from
+# 1Password via scripts/gen-env, like the worker secret-deploy scripts do.
+wrangler hyperdrive update "$HYPERDRIVE_ID" \
+  --origin-connection-limit "$ORIGIN_CONNECTION_LIMIT"
+
+echo
+echo "==> Updated Hyperdrive config (verify only the connection limit changed):"
+wrangler hyperdrive get "$HYPERDRIVE_ID"

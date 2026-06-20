@@ -361,13 +361,14 @@
         "RELEASE": "\"prod\"",
         "PACKAGE": "\"api\""
       },
-      // Pooled connection to prod Postgres via Hyperdrive.
+      // Pooled connection to prod Postgres via Hyperdrive. SHARED with the
+      // classify worker (same config id) — size the pool for both workers.
       //
       // The pool size (`origin_connection_limit`) is NOT a wrangler field — it
-      // lives on the Hyperdrive config resource. Change it with:
-      //   wrangler hyperdrive update 831ea7d10ef54346b084baaa1a46dfa6 \
-      //     --origin-connection-limit <N>
-      // (read current with `wrangler hyperdrive get <id>`).
+      // lives on the Hyperdrive config resource. Its versioned source of truth
+      // is scripts/deploy-hyperdrive; change the value there and apply with:
+      //   pnpm deploy:hyperdrive
+      // (read current with `wrangler hyperdrive get 831ea7d10ef54346b084baaa1a46dfa6`).
       //
       // Sizing: Hyperdrive keeps the whole pool warm, and the limit is *soft*
       // (it can transiently overshoot), so it must stay below the origin's
@@ -496,7 +497,16 @@
             "queue": "run-production",
             "max_batch_size": 10,
             "max_batch_timeout": 30,
-            "max_concurrency": 25
+            // Bounded so the api worker's queue consumers no longer ALONE
+            // over-subscribe the Hyperdrive pool, which is SHARED with the
+            // classify worker (same hyperdrive config id) plus DO alarms and
+            // request handlers. Bounded consumer ceilings now total ~60
+            // (run 15 + webhook 15 + updates 10 + extract 10 + twist-logs 10),
+            // down from an effectively unbounded fan-out. Headroom for classify
+            // + requests + DO alarms comes from raising the Hyperdrive
+            // origin-connection-limit to 80 (scripts/deploy-hyperdrive); raise
+            // these together.
+            "max_concurrency": 15
           },
           {
             "queue": "updates-production-v2",
@@ -513,13 +523,19 @@
           {
             "queue": "twist-logs-production",
             "max_batch_size": 100,
-            "max_batch_timeout": 1
+            "max_batch_timeout": 1,
+            // Bounded for the shared Hyperdrive pool budget (see run-production
+            // below): this consumer hits the DB via addLogsNote, so leaving it
+            // unbounded let Cloudflare auto-scale its connection demand.
+            "max_concurrency": 10
           },
           {
             "queue": "webhook-production",
             "max_batch_size": 10,
             "max_batch_timeout": 1,
-            "max_concurrency": 25,
+            // Bounded for the shared Hyperdrive pool budget (see run-production
+            // above). Raise alongside the Hyperdrive origin-connection-limit.
+            "max_concurrency": 15,
             "retry_delay": 10
           },
           {

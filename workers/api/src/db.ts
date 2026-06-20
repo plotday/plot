@@ -61,20 +61,22 @@ export function createDb(env: Bindings) {
 
 
 /** Run `fn` with a short-lived Kysely instance that is always destroyed.
- *  Retries once on transient connection errors (e.g. Hyperdrive recycling). */
+ *  Retries on transient connection errors (e.g. Hyperdrive recycling or
+ *  pool exhaustion); see maxRetriesFor for the per-error retry budget. */
 export async function withDb<T>(
   env: Bindings,
   fn: (db: Kysely<DB>) => Promise<T>
 ): Promise<T> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     // Before a retry, wait out a transient Hyperdrive pool-exhaustion burst so
     // peer connections can drain. The previous attempt's pool was already torn
     // down in its `finally`, freeing our slot, so this pause doesn't hold one.
-    // No-op (0ms) for connection-recycling errors, which just need a fresh
-    // connection and would only be slowed by waiting.
+    // The backoff grows with `attempt` so the cumulative wait spans the burst
+    // window. No-op (0ms) for connection-recycling errors, which just need a
+    // fresh connection and would only be slowed by waiting.
     if (attempt > 0) {
-      const delayMs = transientRetryDelayMs(lastError);
+      const delayMs = transientRetryDelayMs(lastError, attempt);
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
@@ -89,7 +91,7 @@ export async function withDb<T>(
       return await fn(db);
     } catch (error) {
       lastError = error;
-      if (attempt === 0 && isTransientDbError(error)) {
+      if (attempt < maxRetriesFor(error)) {
         continue;
       }
       throw error;
@@ -97,7 +99,6 @@ export async function withDb<T>(
       await db.destroy();
     }
   }
-  throw lastError;
 }
 
 export function isTransientDbError(error: unknown): boolean {
@@ -159,25 +160,77 @@ export function isLockContentionError(error: unknown): boolean {
   );
 }
 
-// Bounds for the jittered backoff before retrying a Hyperdrive pool-exhaustion
-// error. A few hundred ms covers the sub-second bursts the retry can salvage;
-// genuinely sustained over-capacity needs more Hyperdrive connections, not a
-// longer wait. Jitter de-synchronizes the many DOs retrying at once.
-const POOL_RETRY_MIN_MS = 100;
-const POOL_RETRY_MAX_MS = 400;
+// Exponential-backoff bounds for retrying a Hyperdrive pool-exhaustion error.
+// The backoff grows per attempt (base * 2^(attempt-1), capped) with equal
+// jitter, so the *cumulative* wait across MAX_POOL_EXHAUSTION_RETRIES spans the
+// ~2s fan-out burst that produces this error: notify() staggers TwistSync
+// alarms across MAX_JITTER_MS (2000ms) in twist-sync.ts, so a single sub-second
+// retry can't outlast the burst — peer connections are still busy when it
+// re-requests a slot, and the alarm drops its sync cycle until SyncRecovery
+// re-notifies ~30s later. Jitter de-synchronizes the many DOs retrying at once.
+const POOL_RETRY_BASE_MS = 100;
+const POOL_RETRY_CAP_MS = 1000;
+
+// Retry budgets per transient error class. Both pool exhaustion and
+// connection-termination fire from the SAME Hyperdrive-saturation bursts during
+// TwistSync alarm fan-out (PostHog issues 019ed540 and 019c4dff track each other
+// minute-for-minute): one can't acquire a slot, the other has its connection
+// recycled mid-read. Both therefore need a burst-spanning budget rather than a
+// single retry. Each attempt fully tears down its pool in withDb's `finally`
+// before the next backoff, so waiting holds no connection — extra retries add no
+// connection pressure to the saturated pool, only delay. Re-running the whole
+// callback is safe: SyncRecovery already re-runs the alarm every ~30s, so it is
+// idempotent by design, and these errors surface during the read phase (the
+// twist-sync.ts:294 SELECTs) before any write/dispatch.
+const MAX_POOL_EXHAUSTION_RETRIES = 5;
+const MAX_TRANSIENT_RETRIES = 4;
 
 /**
- * Backoff (ms) to wait before retrying a transient DB error. Pool-exhaustion
- * bursts get a short jittered pause so peer connections can drain; other
- * transient errors (connection recycled / server shutting down) just need a
- * fresh connection, so they retry immediately (0ms).
+ * How many times withDb should retry a given transient error. Pool exhaustion
+ * is checked first because it is also a "transient" error but warrants the
+ * largest burst-spanning budget; other transient errors (connection recycled /
+ * server shutting down) get a slightly smaller multi-retry budget. Non-transient
+ * errors return 0 (no retry).
  */
-export function transientRetryDelayMs(error: unknown): number {
-  if (!isPoolExhaustedError(error)) return 0;
-  return (
-    POOL_RETRY_MIN_MS +
-    Math.floor(Math.random() * (POOL_RETRY_MAX_MS - POOL_RETRY_MIN_MS))
+export function maxRetriesFor(error: unknown): number {
+  if (isPoolExhaustedError(error)) return MAX_POOL_EXHAUSTION_RETRIES;
+  if (isTransientDbError(error)) return MAX_TRANSIENT_RETRIES;
+  return 0;
+}
+
+// Exponential backoff with equal jitter, capped. `step` is 1-based. Equal jitter
+// (ceiling/2 plus up to another ceiling/2) keeps the pause from collapsing to
+// ~0ms, which would just re-lose the race for a slot.
+function backoffMs(step: number): number {
+  const ceiling = Math.min(
+    POOL_RETRY_CAP_MS,
+    POOL_RETRY_BASE_MS * 2 ** (step - 1)
   );
+  const half = ceiling / 2;
+  return Math.floor(half + Math.random() * half);
+}
+
+/**
+ * Backoff (ms) to wait before the given retry `attempt` (1-based) of a transient
+ * DB error.
+ *
+ * - Pool exhaustion: back off from the first retry — there is no free slot, so
+ *   an immediate retry just re-loses the race. The backoff grows per attempt so
+ *   the cumulative wait spans the ~2s fan-out burst window.
+ * - Other transient errors (connection recycled / server shutting down): the
+ *   first retry is immediate, because a benign Hyperdrive idle-recycle just
+ *   needs a fresh connection. If that also fails, the termination is likely
+ *   saturation-driven (the same bursts that exhaust the pool), so subsequent
+ *   retries back off to ride out the burst instead of hammering a busy origin.
+ */
+export function transientRetryDelayMs(error: unknown, attempt = 1): number {
+  if (isPoolExhaustedError(error)) {
+    return backoffMs(attempt);
+  }
+  if (isTransientDbError(error)) {
+    return attempt <= 1 ? 0 : backoffMs(attempt - 1);
+  }
+  return 0;
 }
 
 // Deadlock/serialization retry lives in @plotday/worker-util so the classify
