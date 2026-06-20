@@ -1250,6 +1250,42 @@ class FinishThread extends _UpdateThreadCommand {
   }
 }
 
+class DiscardDraft extends Command {
+  DiscardDraft(this.thread)
+    : super(
+        title: 'Discard draft',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.archived,
+        icon: PlotIcon.close,
+      );
+
+  final Thread thread;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await thread.delete();
+    return const CommandDone();
+  }
+}
+
+class RestoreDraft extends Command {
+  RestoreDraft(this.thread)
+    : super(
+        title: 'Restore draft',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.unarchived,
+        icon: PlotIcon.restore,
+      );
+
+  final Thread thread;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await thread.copyWith(archivedAt: const Value(null)).save();
+    return const CommandDone();
+  }
+}
+
 class ActorGroup extends CommandGroup {
   ActorGroup({super.title, required this.builder, this.excludeActorIds});
 

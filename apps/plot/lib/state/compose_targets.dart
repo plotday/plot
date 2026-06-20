@@ -8,6 +8,7 @@ import 'package:injector/injector.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/util/draft.dart';
 import 'package:plot/util/theme_color.dart' show ThemeColor;
 import 'package:plot/widget/compose/compose_pill.dart';
 import 'package:plot/widget/compose/compose_target.dart';
@@ -35,6 +36,101 @@ class ComposePeopleEntry extends Equatable {
   List<Object?> get props => [contacts, groups, inviteEmails];
 }
 
+/// Raw per-draft fields the bloc extracts from a draft thread + its draft note,
+/// fed into the pure [buildDraftSummaries]. Kept primitive so the assembly is
+/// store-free and unit-testable.
+class DraftInput {
+  const DraftInput({
+    required this.threadId,
+    required this.title,
+    required this.hasRecipients,
+    required this.hasSchedule,
+    required this.body,
+    required this.hasActions,
+    required this.recipientSummary,
+    required this.icon,
+    required this.sortKey,
+    required this.archived,
+  });
+
+  final Uuid threadId;
+  final String? title;
+  final bool hasRecipients;
+  final bool hasSchedule;
+  final String? body;
+  final bool hasActions;
+
+  /// A pre-resolved "To: …" summary used as the label when there is no title
+  /// or body. Null when the draft has no recipients.
+  final String? recipientSummary;
+
+  /// Optional leading-glyph hint (favicon URL, or null for the default glyph).
+  final String? icon;
+
+  /// Recency key for ordering (updatedAt for active, archivedAt for archived).
+  final DateTime sortKey;
+  final bool archived;
+}
+
+/// A draft row ready to render as a picker tile.
+class DraftSummary extends Equatable {
+  const DraftSummary({
+    required this.threadId,
+    required this.label,
+    required this.detail,
+    required this.icon,
+    required this.archived,
+  });
+
+  final Uuid threadId;
+  final String label;
+  final String? detail;
+  final String? icon;
+  final bool archived;
+
+  @override
+  List<Object?> get props => [threadId, label, detail, icon, archived];
+}
+
+/// Filters [active] and [archived] draft inputs to substantive drafts, orders
+/// each group most-recent first, caps [archived] to [archivedLimit], and
+/// returns active drafts followed by archived ones.
+List<DraftSummary> buildDraftSummaries(
+  List<DraftInput> active,
+  List<DraftInput> archived, {
+  int archivedLimit = 5,
+}) {
+  bool substantive(DraftInput d) => isSubstantiveDraftFields(
+        title: d.title,
+        hasRecipients: d.hasRecipients,
+        hasSchedule: d.hasSchedule,
+        body: d.body,
+        hasActions: d.hasActions,
+      );
+
+  DraftSummary summary(DraftInput d) => DraftSummary(
+        threadId: d.threadId,
+        label: draftPrimaryLabel(
+          title: d.title,
+          bodySnippet: draftBodySnippet(d.body),
+          recipientSummary: d.recipientSummary,
+        ),
+        detail: null,
+        icon: d.icon,
+        archived: d.archived,
+      );
+
+  final activeOut = active.where(substantive).toList()
+    ..sort((a, b) => b.sortKey.compareTo(a.sortKey));
+  final archivedOut = archived.where(substantive).toList()
+    ..sort((a, b) => b.sortKey.compareTo(a.sortKey));
+
+  return [
+    ...activeOut.map(summary),
+    ...archivedOut.take(archivedLimit).map(summary),
+  ];
+}
+
 /// Sectioned step-1 data. Each list is limited for the at-rest view;
 /// [ComposeTargetsBloc.searchSections] returns the same shape filtered/expanded
 /// by query.
@@ -44,12 +140,18 @@ class ComposeSections extends Equatable {
     required this.twists,
     required this.channels,
     required this.focuses,
+    this.drafts = const [],
     this.priorityById = const {},
   });
   final List<ComposePeopleEntry> people;
   final List<ComposeTarget> twists; // kind == twist
   final List<ComposeTarget> channels; // kind == connector, channel != null
   final List<ComposeTarget> focuses; // kind == note (focusNote)
+
+  /// Draft threads to surface as a top "Drafts" section (most-recent first,
+  /// then up to 5 most-recently-archived when show-archived is on). Empty in
+  /// link mode and during search. See [ComposeTargetsBloc.loadSections].
+  final List<DraftSummary> drafts;
 
   /// The focus priorities by id, snapshotted from the same search context that
   /// produced [focuses]. Carried WITH the sections (rather than read back off
@@ -60,7 +162,7 @@ class ComposeSections extends Equatable {
   final Map<Uuid, Priority> priorityById;
 
   @override
-  List<Object?> get props => [people, twists, channels, focuses];
+  List<Object?> get props => [people, twists, channels, focuses, drafts];
 }
 
 /// A distinct compose roster, ignoring team scope and connection. Produced by
@@ -902,6 +1004,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     int perSection = 8,
     bool linkMode = false,
     Uuid? currentFocusId,
+    bool includeArchivedDrafts = false,
   }) async {
     // See [refresh]: before sign-in / after sign-out the store is unavailable,
     // so there is nothing to build. [warm] (called from the shell at boot)
@@ -915,6 +1018,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         focuses: [],
       );
     }
+    final drafts = linkMode
+        ? const <DraftSummary>[]
+        : await _loadDraftSummaries(includeArchived: includeArchivedDrafts);
+
     final ctx = await _searchContextFor();
     final scan = ctx.scan;
 
@@ -1029,8 +1136,71 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       twists: twists.take(perSection).toList(),
       channels: allChannels.take(perSection).toList(),
       focuses: allFocuses.take(perSection).toList(),
+      drafts: drafts,
       priorityById: ctx.priorityById,
     );
+  }
+
+  /// Builds the draft summaries for the picker: substantive active drafts
+  /// (most-recent first) plus, when [includeArchived], up to 5 most-recently
+  /// archived drafts. Returns [] when the store is unavailable.
+  Future<List<DraftSummary>> _loadDraftSummaries({
+    required bool includeArchived,
+  }) async {
+    if (!Store.isAvailable) return const [];
+
+    Future<DraftInput> toInput(Thread t, {required bool archived}) async {
+      final note = await Note.getDraftByActivity(t.id);
+      final hasRecipients =
+          t.contacts.isNotEmpty || t.groups.isNotEmpty || t.inviteEmails.isNotEmpty;
+      return DraftInput(
+        threadId: t.id,
+        title: t.title,
+        hasRecipients: hasRecipients,
+        hasSchedule: t.at != null || t.on != null,
+        body: note?.content,
+        hasActions: note?.actions?.isNotEmpty ?? false,
+        recipientSummary: _draftRecipientSummary(t),
+        icon: (t.icon != null && t.icon!.startsWith('http')) ? t.icon : null,
+        sortKey: archived ? (t.archivedAt ?? t.updatedAt) : t.updatedAt,
+        archived: archived,
+      );
+    }
+
+    final activeThreads = await Thread.get(draft: true, archived: false);
+    final active = [
+      for (final t in activeThreads) await toInput(t, archived: false),
+    ];
+
+    var archived = const <DraftInput>[];
+    if (includeArchived) {
+      final archivedThreads = await Thread.get(draft: true, archived: true);
+      archived = [
+        for (final t in archivedThreads) await toInput(t, archived: true),
+      ];
+    }
+
+    return buildDraftSummaries(active, archived);
+  }
+
+  /// A short "To: …" summary of a draft's recipients, resolved from the warm
+  /// Actor/Group caches. Null when the draft has no recipients.
+  String? _draftRecipientSummary(Thread t) {
+    final names = <String>[];
+    for (final c in t.contacts) {
+      final a = Actor.fromCache(ActorId.fromUuid(c));
+      final n = a?.name ?? a?.email;
+      if (n != null && n.isNotEmpty) names.add(n);
+    }
+    for (final g in t.groups) {
+      final grp = Group.fromCache(g);
+      if (grp != null && grp.name.isNotEmpty) names.add(grp.name);
+    }
+    names.addAll(t.inviteEmails);
+    if (names.isEmpty) return null;
+    final shown = names.take(3).join(', ');
+    final extra = names.length - 3;
+    return extra > 0 ? 'To: $shown +$extra' : 'To: $shown';
   }
 
   /// Build a [ComposePeopleEntry] for a formal group from an already-resolved
@@ -1310,6 +1480,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       twists: base.twists.where(matchesTarget).take(perSection).toList(),
       channels: base.channels.where(matchesTarget).take(perSection).toList(),
       focuses: base.focuses.where(matchesFocus).take(perSection).toList(),
+      drafts: const [],
       // [base] was built from one search context; carry its resolution map so
       // the filtered focuses still resolve in the view.
       priorityById: base.priorityById,

@@ -1,5 +1,11 @@
 ## Next release
 
+### Drafts
+
+- Your drafts are never lost. Start as many as you like — each one is saved and shown in a new Drafts
+  list at the top of the new thread screen, so you can pick up right where you left off. Discard one
+  with the ✕, and turn on "show archived items" to see and restore your most recently discarded drafts.
+
 ### Fixes
 
 - Plot no longer signs you out — or shows a "Plot signed out" notification — just because your phone

@@ -30,6 +30,7 @@ import 'package:plot/store/store.dart' as store show PriorityBlock, Link;
 export 'package:plot/state/agenda_model.dart'
     show AgendaItem, AgendaHeaderItem, AgendaThreadItem;
 import 'package:plot/util/async.dart';
+import 'package:plot/util/draft.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/now.dart';
@@ -3021,39 +3022,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     int myGen,
   ) async {
     try {
-      // Clean up duplicate drafts at the chosen draft's priority (legacy).
-      // The heavy Thread._get hydration here was ~200ms–1s on populated
-      // workspaces, so first run a cheap index-backed count
-      // (idx_threads_draft covers `draft = 1 AND archived_at IS NULL AND
-      // priority_id = ?`) and only pay for the full query + delete when
-      // there's actually more than one draft to dedupe. The common case is
-      // exactly one, which now skips the heavy query entirely.
-      final draftCountQuery = Store.get.selectOnly(Store.get.threads)
-        ..addColumns([Store.get.threads.id]);
-      draftCountQuery.where(
-        Store.get.threads.draft.equals(true) &
-            Store.get.threads.archivedAt.isNull() &
-            Store.get.threads.priorityId.equalsValue(newDraft.priority.id),
-      );
-      final draftRowCount = (await draftCountQuery.get()).length;
-      if (draftRowCount > 1) {
-        final sameIdDrafts = await Thread.get(
-          priorityId: newDraft.priority.id,
-          draft: true,
-          archived: false,
-        );
-        if (sameIdDrafts.length > 1) {
-          sameIdDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-          log.info(
-            '[setPriority] Cleaning up ${sameIdDrafts.length - 1} extra drafts for priority ${newDraft.priority.id}',
-          );
-          for (final stale in sameIdDrafts.skip(1)) {
-            if (stale.id != newDraft.id) await stale.delete();
-          }
-        }
-      }
-      profile.mark('drafts deduped (background)');
-
       // Load the latest active draft note for the draft thread
       final draftNotes =
           await (Store.get.select(Store.get.notes)
@@ -3277,6 +3245,67 @@ class PriorityBloc extends Cubit<PriorityState> {
       preview: const Value(null),
     );
     emit(state.copyWith(draft: clearedDraft));
+  }
+
+  /// Whether the current working draft holds user content worth keeping.
+  bool isWorkingDraftSubstantive() {
+    final t = state.draft;
+    final n = state.draftNote;
+    return isSubstantiveDraftFields(
+      title: t.title,
+      hasRecipients:
+          t.contacts.isNotEmpty || t.groups.isNotEmpty || t.inviteEmails.isNotEmpty,
+      hasSchedule: t.at != null || t.on != null,
+      body: n.content,
+      hasActions: n.actions?.isNotEmpty ?? false,
+    );
+  }
+
+  /// Starts a brand-new empty working draft on the same priority.
+  ///
+  /// If the current working draft is substantive it is left intact (it was
+  /// autosaved by [updateDraft], so it remains in the Drafts list) and a fresh
+  /// draft thread + note replace it in state. If the current draft is an empty
+  /// skeleton it is reused and cleared, so abandoned empties never accumulate.
+  void startFreshDraft() {
+    // Fence any in-flight setPriority background draft-note emit so it can't
+    // land on top of this fresh draft (it checks _priorityLoadGeneration).
+    ++_priorityLoadGeneration;
+    final current = state.draft;
+    if (isWorkingDraftSubstantive()) {
+      final fresh = Thread(priority: current.priority, draft: true);
+      emit(state.copyWith(
+        draft: fresh,
+        draftNote: Note.draft(threadId: fresh.id),
+      ));
+    } else {
+      final cleared = current.copyWith(
+        title: const Value(null),
+        at: const Value(null),
+        on: const Value(null),
+        duration: const Value(null),
+        preview: const Value(null),
+        contacts: const Value(null),
+        groups: const Value(null),
+        inviteEmails: const Value(null),
+        teamId: const Value(null),
+        icon: const Value(null),
+        topicId: const Value(null),
+      );
+      emit(state.copyWith(
+        draft: cleared,
+        draftNote: Note.draft(threadId: cleared.id),
+      ));
+    }
+    _draftModified = false;
+  }
+
+  /// Loads an existing draft thread + note as the working draft (resume). The
+  /// previously-active substantive draft is already autosaved and stays in the
+  /// list; an empty skeleton is simply abandoned.
+  void resumeDraft(Thread thread, Note note) {
+    emit(state.copyWith(draft: thread, draftNote: note));
+    _draftModified = true;
   }
 
   /// Updates the draft thread in state only (no DB save).

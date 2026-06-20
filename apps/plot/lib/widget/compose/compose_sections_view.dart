@@ -66,6 +66,11 @@ class ComposeSectionsView extends StatefulWidget {
     this.pendingLink,
     this.onClearLink,
     this.pinnedFocusId,
+    this.draftsRevision = 0,
+    this.showArchivedDrafts = false,
+    this.onResumeDraft,
+    this.onDiscardDraft,
+    this.onRestoreDraft,
   });
 
   /// Scroll controller for the pill grid (owned by the host page so it
@@ -129,6 +134,29 @@ class ComposeSectionsView extends StatefulWidget {
   /// note destination is the first option. Null in the Everything view (no
   /// current focus), where nothing is pinned.
   final Uuid? pinnedFocusId;
+
+  /// Bumped by the host whenever the draft list may have changed (e.g. after a
+  /// discard or restore). A change in [draftsRevision] triggers a reload of the
+  /// sections (when the search field is empty) so the Drafts section updates
+  /// immediately without waiting for the next bloc emission.
+  final int draftsRevision;
+
+  /// Whether to include recently-archived drafts in the Drafts section. Drives
+  /// [ComposeTargetsBloc.loadSections]'s `includeArchivedDrafts` argument.
+  final bool showArchivedDrafts;
+
+  /// Called when the user taps a draft pill to resume it. Receives the draft's
+  /// thread id and whether it is an archived draft. Null hides the resume
+  /// affordance (the pill is still shown but tapping it is a no-op).
+  final void Function(Uuid threadId, bool archived)? onResumeDraft;
+
+  /// Called when the user taps the discard (✕) button on an active draft.
+  /// Null removes the discard button from active-draft rows.
+  final void Function(Uuid threadId)? onDiscardDraft;
+
+  /// Called when the user taps the restore button on an archived draft.
+  /// Null removes the restore button from archived-draft rows.
+  final void Function(Uuid threadId)? onRestoreDraft;
 
   @override
   State<ComposeSectionsView> createState() => _ComposeSectionsViewState();
@@ -218,6 +246,14 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
       // switched focus). Re-run the active view so the pinned focus updates,
       // preserving any in-progress search query.
       _reload();
+    } else if ((old.draftsRevision != widget.draftsRevision ||
+            old.showArchivedDrafts != widget.showArchivedDrafts) &&
+        widget.searchController.text.trim().isEmpty) {
+      // A draft was discarded/restored (revision bumped) or the archived-drafts
+      // toggle changed. Reload the at-rest sections so the Drafts section
+      // reflects the change immediately. Skip during an active search (drafts
+      // are hidden during search anyway and a reload would discard the results).
+      _loadSections();
     }
   }
 
@@ -228,7 +264,11 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final requestId = ++_requestId;
     final bloc = context.read<ComposeTargetsBloc>();
     bloc
-        .loadSections(linkMode: _linkMode, currentFocusId: widget.pinnedFocusId)
+        .loadSections(
+          linkMode: _linkMode,
+          currentFocusId: widget.pinnedFocusId,
+          includeArchivedDrafts: widget.showArchivedDrafts,
+        )
         .then((sections) {
           if (_isDisposed || requestId != _requestId) return;
           setState(() {
@@ -291,6 +331,35 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final s = _sections;
     if (s == null) return const [];
 
+    // Drafts — shown at the very top in normal mode (hidden in link mode and
+    // during search, where s.drafts is empty).
+    final draftItems = [
+      for (final d in s.drafts)
+        PillGridItem(
+          data: DraftPillData(d.label, detail: d.detail, icon: d.icon),
+          onActivate: () => widget.onResumeDraft?.call(d.threadId, d.archived),
+          trailing: d.archived
+              ? (widget.onRestoreDraft != null
+                  ? _draftTrailingButton(
+                      icon: PlotIcon.restore,
+                      tooltip: 'Restore draft',
+                      onPress: () => widget.onRestoreDraft!.call(d.threadId),
+                    )
+                  : null)
+              : (widget.onDiscardDraft != null
+                  ? _draftTrailingButton(
+                      icon: PlotIcon.close,
+                      tooltip: 'Discard draft',
+                      onPress: () => widget.onDiscardDraft!.call(d.threadId),
+                    )
+                  : null),
+        ),
+    ];
+    final PillGridSection? draftSection = draftItems.isEmpty
+        ? null
+        : PillGridSection(
+            header: _sectionHeader('Drafts'), items: draftItems);
+
     // People & twists (hidden in link mode, where s.people/s.twists are empty).
     final personItems = [
       for (final e in s.people)
@@ -349,11 +418,16 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
         ? null
         : PillGridSection(header: _sectionHeader('Private note'), items: focusItems);
 
-    // Order: link mode → Private notes, then Channels (people hidden).
-    // Normal mode → People, Channels, Private notes (unchanged).
+    // Order: link mode → Private notes, then Channels (people hidden; no drafts).
+    // Normal mode → Drafts (if any), People, Channels, Private notes.
     final ordered = _linkMode
         ? <PillGridSection?>[focusSection, channelSection]
-        : <PillGridSection?>[peopleSection, channelSection, focusSection];
+        : <PillGridSection?>[
+            draftSection,
+            peopleSection,
+            channelSection,
+            focusSection,
+          ];
     return [for (final sec in ordered) ?sec];
   }
 
@@ -477,6 +551,34 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     if (create == null) return;
     final created = await create();
     if (created && !_isDisposed) _reload();
+  }
+
+  /// A small ghost icon button used as the always-visible trailing affordance on
+  /// a draft row: the discard ✕ (active drafts) or the restore ↺ (archived
+  /// drafts). Mirrors [PillGridState._moreButton] in style and size so the
+  /// trailing slot is visually consistent with the highlight-gated "…" button.
+  Widget _draftTrailingButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPress,
+  }) {
+    return Builder(
+      builder: (context) => Semantics(
+        label: tooltip,
+        button: true,
+        child: FButton(
+          onPress: onPress,
+          variant: FButtonVariant.ghost,
+          style: ghostSizedStyleDelta(
+            context,
+            iconSize: context.theme.iconSizes.sm,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          ),
+          mainAxisSize: MainAxisSize.min,
+          child: Icon(icon),
+        ),
+      ),
+    );
   }
 
   /// Reloads the current view — re-running the active search, or the at-rest

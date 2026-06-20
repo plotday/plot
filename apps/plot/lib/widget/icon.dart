@@ -309,6 +309,9 @@ class PlotIcon {
   static const arrowsToDot = FontAwesomeIcons.arrowsToDot;
   static const location = FontAwesomeIcons.locationDot;
 
+  /// Restore an archived draft (undo-arrow icon).
+  static const restore = FontAwesomeIcons.arrowRotateLeft;
+
   // Unread filter toggle
   /// Shown when there are unread threads and the filter is off or on.
   static const envelopeUnread = FontAwesomeIcons.envelopeDot;

@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show StreamSubscription, unawaited;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
@@ -461,6 +461,20 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// and "Send" label active even if the user later removes all contacts.
   bool _hadContactsThisSession = false;
 
+  /// Monotonic revision bumped whenever the drafts list should reload
+  /// (discard, restore, resume, prefs change). Passed to [ComposeSectionsView]
+  /// so it rerenders/reloads without the page rebuilding its whole tree.
+  int _draftsRevision = 0;
+
+  /// Subscription to [LocalPreferencesBloc] so we can reload the Drafts
+  /// section when the "show archived drafts" pref changes.
+  StreamSubscription<LocalPreferencesState>? _prefsSub;
+
+  /// Whether to show archived (discarded) drafts in the Drafts section.
+  /// Mirrors [LocalPreferencesState.showAllPriorities] — set in
+  /// [didChangeDependencies] and kept in sync via [_prefsSub].
+  bool _showArchivedDrafts = false;
+
   void _markContactsAdded() {
     if (!_hadContactsThisSession) {
       setState(() => _hadContactsThisSession = true);
@@ -539,34 +553,11 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _resetToFreshStart() {
     final bloc = _priorityBloc ?? context.read<PriorityBloc>();
 
-    // Clear the draft fully: schedule/title (resetDraft's scope) plus the
-    // connection action, external link action, roster, team scope, and twist
-    // icon that step 2 may have applied. Reuse the existing draft id to avoid
-    // stranding archived drafts.
-    final draft = bloc.state.draft;
-    final note = bloc.state.draftNote;
-    final clearedActions = (note.actions ?? const <UserAction>[])
-        .where((a) => a is! CreateLinkUserAction && a is! ExternalUserAction)
-        .toList();
-    final clearedDraft = draft.copyWith(
-      title: const Value(null),
-      at: const Value(null),
-      on: const Value(null),
-      duration: const Value(null),
-      preview: const Value(null),
-      contacts: const Value(null),
-      groups: const Value(null),
-      inviteEmails: const Value(null),
-      teamId: const Value(null),
-      icon: const Value(null),
-      topicId: const Value(null),
-    );
-    unawaited(
-      bloc.updateDraft(
-        clearedDraft,
-        note: note.copyWith(actions: clearedActions),
-      ),
-    );
+    // Atomically clear or park the working draft. If the current draft is
+    // substantive it is autosaved and stays in the Drafts list; an empty
+    // skeleton is simply cleared in place. Either way the working draft ends
+    // up as a blank slate, ready for the next compose.
+    bloc.startFreshDraft();
 
     // Empty the (page-owned) filter so a fresh compose starts unfiltered.
     _pickerSearchController.clear();
@@ -581,6 +572,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       _hadContactsThisSession = false;
       _focusSuggestionOrder = const [];
       _feedbackMode = false;
+      _draftsRevision++;
     });
     // Reset returns to step 1 — clear the header back affordance.
     _publishHeaderBack();
@@ -606,6 +598,106 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  /// Resumes [threadId] as the active working draft.
+  ///
+  /// Loads the thread + note from the store, calls [PriorityBloc.resumeDraft]
+  /// to swap it in as the working draft, then bumps [_draftsRevision] so the
+  /// Drafts section refreshes. [archived] is false for live drafts, true for
+  /// discarded ones — when [archived] is true, this method clears [archived_at]
+  /// directly so edits autosave back into the active list (spec: tap restores
+  /// and opens the draft).
+  Future<void> _resumeDraft(Uuid threadId, bool archived) async {
+    try {
+      final threads = await Thread.get(
+        id: threadId,
+        draft: null,
+        archived: archived ? true : null,
+      );
+      if (!mounted) return;
+      var thread = threads.firstOrNull;
+      if (thread == null) return;
+      // Resuming an archived draft restores it: clear archived_at so edits
+      // autosave back into the active list (spec: tap restores & opens).
+      if (archived) {
+        thread = thread.copyWith(archivedAt: const Value(null));
+        await thread.save();
+        if (!mounted) return;
+      }
+      final note =
+          await Note.getDraftByActivity(threadId) ??
+          Note.draft(threadId: threadId);
+      if (!mounted) return;
+      final bloc = _priorityBloc ?? context.read<PriorityBloc>();
+      bloc.resumeDraft(thread, note);
+      setState(() {
+        _step = _ComposeStep.compose;
+        _selectedRecipient = null;
+        _draftsRevision++;
+      });
+      _publishHeaderBack();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _threadEditorKey.currentState?.focus();
+      });
+    } catch (e, s) {
+      Tracker.captureException(e, s);
+    }
+  }
+
+  /// Discards the draft with [threadId] (archives it).
+  ///
+  /// Runs [DiscardDraft] then bumps [_draftsRevision] so the Drafts section
+  /// refreshes. Calls [startFreshDraft] if the discarded thread was the
+  /// current working draft.
+  Future<void> _discardDraft(Uuid threadId) async {
+    try {
+      final threads = await Thread.get(
+        id: threadId,
+        draft: null,
+        archived: false,
+      );
+      if (!mounted) return;
+      final thread = threads.firstOrNull;
+      if (thread == null) return;
+      await context.run(DiscardDraft(thread));
+      if (!mounted) return;
+      final bloc = _priorityBloc ?? context.read<PriorityBloc>();
+      if (bloc.state.draft.id == threadId) {
+        bloc.startFreshDraft();
+        setState(() {
+          _step = _ComposeStep.sections;
+          _draftsRevision++;
+        });
+        _publishHeaderBack();
+      } else {
+        setState(() => _draftsRevision++);
+      }
+    } catch (e, s) {
+      Tracker.captureException(e, s);
+    }
+  }
+
+  /// Restores the discarded draft with [threadId] (un-archives it).
+  ///
+  /// Runs [RestoreDraft] then bumps [_draftsRevision] so the Drafts section
+  /// refreshes.
+  Future<void> _restoreDraft(Uuid threadId) async {
+    try {
+      final threads = await Thread.get(
+        id: threadId,
+        draft: null,
+        archived: true,
+      );
+      if (!mounted) return;
+      final thread = threads.firstOrNull;
+      if (thread == null) return;
+      await context.run(RestoreDraft(thread));
+      if (!mounted) return;
+      setState(() => _draftsRevision++);
+    } catch (e, s) {
+      Tracker.captureException(e, s);
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -618,6 +710,18 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     _priorityBloc = context.read<PriorityBloc>();
+
+    // Mirror the "show archived drafts" pref and subscribe for future changes.
+    final prefs = context.read<LocalPreferencesBloc>();
+    _showArchivedDrafts = prefs.state.showAllPriorities;
+    _prefsSub ??= prefs.stream.listen((s) {
+      if (!mounted) return;
+      if (s.showAllPriorities == _showArchivedDrafts) return;
+      setState(() {
+        _showArchivedDrafts = s.showAllPriorities;
+        _draftsRevision++;
+      });
+    });
     // Register with ThreadHeaderNotifier so unified header knows NewThreadPage is visible
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
     // We've arrived — clear the navigation-intent flag set by callers
@@ -673,6 +777,12 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// Sequences query parameter application and post-load setup.
   /// Async because _applyQueryParametersToDraft awaits DB lookups.
   Future<void> _initializeDraft() async {
+    // Ensure a fresh working draft so the page opens the picker on a clean
+    // slate. Any substantive prior draft has already been autosaved and will
+    // appear in the Drafts section.
+    final bloc = _priorityBloc ?? context.read<PriorityBloc>();
+    bloc.startFreshDraft();
+
     await _applyQueryParametersToDraft();
     if (!mounted) return;
 
@@ -900,6 +1010,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (identical(NewThreadPageState._live, this)) {
       NewThreadPageState._live = null;
     }
+    _prefsSub?.cancel();
     NewThreadPageState.resetRequest.removeListener(_onResetRequested);
     NewThreadPageState.feedbackRequest.removeListener(_onFeedbackRequested);
     // Unregister from the focus coordination provider using saved reference
@@ -2076,6 +2187,11 @@ class NewThreadPageState extends State<NewThreadPage> {
       pendingLink: _pendingLink,
       onClearLink: _clearPendingLink,
       pinnedFocusId: pinnedFocusId,
+      draftsRevision: _draftsRevision,
+      showArchivedDrafts: _showArchivedDrafts,
+      onResumeDraft: (id, archived) => unawaited(_resumeDraft(id, archived)),
+      onDiscardDraft: (id) => unawaited(_discardDraft(id)),
+      onRestoreDraft: (id) => unawaited(_restoreDraft(id)),
     );
 
     if (!multiPanel) {

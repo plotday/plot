@@ -42,6 +42,7 @@ class _SpyComposeTargetsBloc extends ComposeTargetsBloc {
     int perSection = 8,
     bool linkMode = false,
     Uuid? currentFocusId,
+    bool includeArchivedDrafts = false,
   }) async {
     loadCount++;
     return const ComposeSections(

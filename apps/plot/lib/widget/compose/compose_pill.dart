@@ -89,6 +89,19 @@ class ConnectionPillData extends ComposePillData {
   final String? detail;
 }
 
+/// A saved draft: note glyph (or favicon from [icon] URL) + [label] + optional
+/// muted [detail] (e.g. the draft's priority path or timestamp).
+class DraftPillData extends ComposePillData {
+  const DraftPillData(this.label, {this.detail, this.icon});
+  final String label;
+  final String? detail;
+
+  /// Optional favicon / logo URL. When non-null, rendered via [LogoImage] with
+  /// [PlotIcon.note] as the fallback; when null the plain [PlotIcon.note] glyph
+  /// is used directly.
+  final String? icon;
+}
+
 // ─── Widget ──────────────────────────────────────────────────────────────────
 
 /// Renders the inner content of a single compose target (person, group,
@@ -366,6 +379,33 @@ class ComposePill extends StatelessWidget {
               Expanded(
                 child: _nameMetaLine(
                   name: displayName,
+                  meta: detail,
+                  nameStyle: nameStyle,
+                  metaStyle: metaStyle,
+                ),
+              ),
+            ],
+          );
+        }(),
+
+      DraftPillData(:final label, :final detail, :final icon) => () {
+          final Widget leading = icon == null
+              ? const Icon(PlotIcon.note, size: composePillLogoSize)
+              : LogoImage(
+                  url: icon,
+                  size: composePillLogoSize,
+                  fallback: const Icon(
+                    PlotIcon.note,
+                    size: composePillLogoSize,
+                  ),
+                );
+          return Row(
+            children: [
+              _gutter(leading),
+              const SizedBox(width: composePillIconGap),
+              Expanded(
+                child: _nameMetaLine(
+                  name: label,
                   meta: detail,
                   nameStyle: nameStyle,
                   metaStyle: metaStyle,
