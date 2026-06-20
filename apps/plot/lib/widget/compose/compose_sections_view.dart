@@ -336,7 +336,13 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final draftItems = [
       for (final d in s.drafts)
         PillGridItem(
-          data: DraftPillData(d.label, detail: d.detail, icon: d.icon),
+          data: DraftPillData(
+            d.label,
+            detail: d.detail,
+            logo: d.logo,
+            logoDark: d.logoDark,
+            focus: d.focus,
+          ),
           onActivate: () => widget.onResumeDraft?.call(d.threadId, d.archived),
           trailing: d.archived
               ? (widget.onRestoreDraft != null

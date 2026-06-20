@@ -11,7 +11,7 @@ void main() {
     String? body,
     bool hasActions = false,
     String? recipientSummary,
-    String? icon,
+    String? logo,
     required int sortMs,
     bool archived = false,
   }) =>
@@ -23,7 +23,9 @@ void main() {
         body: body,
         hasActions: hasActions,
         recipientSummary: recipientSummary,
-        icon: icon,
+        logo: logo,
+        logoDark: null,
+        focus: null,
         sortKey: DateTime.fromMillisecondsSinceEpoch(sortMs),
         archived: archived,
       );

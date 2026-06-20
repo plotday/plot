@@ -92,14 +92,24 @@ class ConnectionPillData extends ComposePillData {
 /// A saved draft: note glyph (or favicon from [icon] URL) + [label] + optional
 /// muted [detail] (e.g. the draft's priority path or timestamp).
 class DraftPillData extends ComposePillData {
-  const DraftPillData(this.label, {this.detail, this.icon});
+  const DraftPillData(
+    this.label, {
+    this.detail,
+    this.logo,
+    this.logoDark,
+    this.focus,
+  });
   final String label;
   final String? detail;
 
-  /// Optional favicon / logo URL. When non-null, rendered via [LogoImage] with
-  /// [PlotIcon.note] as the fallback; when null the plain [PlotIcon.note] glyph
-  /// is used directly.
-  final String? icon;
+  /// Leading logo URL (connection / twist / connector / favicon). When non-null
+  /// it leads via [LogoImage]; otherwise the [focus] icon (in its colour) is
+  /// shown, and failing that the plain [PlotIcon.note] glyph.
+  final String? logo;
+  final String? logoDark;
+
+  /// The draft's focus, rendered as the leading icon when there is no [logo].
+  final Priority? focus;
 }
 
 // ─── Widget ──────────────────────────────────────────────────────────────────
@@ -388,25 +398,55 @@ class ComposePill extends StatelessWidget {
           );
         }(),
 
-      DraftPillData(:final label, :final detail, :final icon) => () {
-          final Widget leading = icon == null
-              ? const Icon(PlotIcon.note, size: composePillLogoSize)
-              : LogoImage(
-                  url: icon,
-                  size: composePillLogoSize,
-                  fallback: const Icon(
-                    PlotIcon.note,
+      DraftPillData(:final label, :final logo, :final logoDark, :final focus) =>
+        () {
+          // A connection / twist / favicon logo leads when present; otherwise
+          // the focus icon (in its colour) via FocusLabel — matching the
+          // picker's Private-note rows; otherwise a plain note glyph.
+          if (logo != null) {
+            final url = isDark ? (logoDark ?? logo) : logo;
+            return Row(
+              children: [
+                _gutter(
+                  LogoImage(
+                    url: url,
                     size: composePillLogoSize,
+                    fallback: const Icon(
+                      PlotIcon.note,
+                      size: composePillLogoSize,
+                    ),
                   ),
-                );
+                ),
+                const SizedBox(width: composePillIconGap),
+                Expanded(
+                  child: _nameMetaLine(
+                    name: label,
+                    meta: null,
+                    nameStyle: nameStyle,
+                    metaStyle: metaStyle,
+                  ),
+                ),
+              ],
+            );
+          }
+          if (focus != null) {
+            return FocusLabel(
+              priority: focus,
+              titleOverride: label,
+              showRole: false,
+              iconColumnWidth: composePillGutter,
+              iconGap: composePillIconGap,
+              iconSize: composePillLogoSize,
+            );
+          }
           return Row(
             children: [
-              _gutter(leading),
+              _gutter(const Icon(PlotIcon.note, size: composePillLogoSize)),
               const SizedBox(width: composePillIconGap),
               Expanded(
                 child: _nameMetaLine(
                   name: label,
-                  meta: detail,
+                  meta: null,
                   nameStyle: nameStyle,
                   metaStyle: metaStyle,
                 ),

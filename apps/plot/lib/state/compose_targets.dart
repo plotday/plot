@@ -48,7 +48,9 @@ class DraftInput {
     required this.body,
     required this.hasActions,
     required this.recipientSummary,
-    required this.icon,
+    required this.logo,
+    required this.logoDark,
+    required this.focus,
     required this.sortKey,
     required this.archived,
   });
@@ -64,8 +66,16 @@ class DraftInput {
   /// or body. Null when the draft has no recipients.
   final String? recipientSummary;
 
-  /// Optional leading-glyph hint (favicon URL, or null for the default glyph).
-  final String? icon;
+  /// Leading-glyph logo URL (connection / twist / connector / favicon), or null
+  /// to fall back to the [focus] icon.
+  final String? logo;
+
+  /// Dark-mode variant of [logo], if any.
+  final String? logoDark;
+
+  /// The draft's focus (its filed priority), used for the leading focus icon
+  /// when there is no [logo].
+  final Priority? focus;
 
   /// Recency key for ordering (updatedAt for active, archivedAt for archived).
   final DateTime sortKey;
@@ -78,18 +88,30 @@ class DraftSummary extends Equatable {
     required this.threadId,
     required this.label,
     required this.detail,
-    required this.icon,
+    required this.logo,
+    required this.logoDark,
+    required this.focus,
     required this.archived,
   });
 
   final Uuid threadId;
   final String label;
   final String? detail;
-  final String? icon;
+
+  /// Leading-glyph logo URL (connection / twist / connector / favicon); when
+  /// null the tile shows the [focus] icon, and failing that a note glyph.
+  final String? logo;
+  final String? logoDark;
+
+  /// The draft's focus, rendered as the leading icon (in its colour) when there
+  /// is no [logo].
+  final Priority? focus;
+
   final bool archived;
 
   @override
-  List<Object?> get props => [threadId, label, detail, icon, archived];
+  List<Object?> get props =>
+      [threadId, label, detail, logo, logoDark, focus?.id, archived];
 }
 
 /// Filters [active] and [archived] draft inputs to substantive drafts, orders
@@ -116,7 +138,9 @@ List<DraftSummary> buildDraftSummaries(
           recipientSummary: d.recipientSummary,
         ),
         detail: null,
-        icon: d.icon,
+        logo: d.logo,
+        logoDark: d.logoDark,
+        focus: d.focus,
         archived: d.archived,
       );
 
@@ -1153,6 +1177,20 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       final note = await Note.getDraftByActivity(t.id);
       final hasRecipients =
           t.contacts.isNotEmpty || t.groups.isNotEmpty || t.inviteEmails.isNotEmpty;
+      // Leading glyph: a connection's logo (carried on the draft note's
+      // create-link) wins; otherwise resolve the thread icon (favicon / twist /
+      // connector); otherwise the tile falls back to the draft's focus icon.
+      final link = note?.actions?.whereType<CreateLinkUserAction>().firstOrNull;
+      String? logo;
+      String? logoDark;
+      if (link?.logo != null) {
+        logo = link!.logo;
+        logoDark = link.logoDark;
+      } else {
+        final resolved = Thread.resolveIcon(t.icon);
+        logo = resolved.logoUrl;
+        logoDark = resolved.logoDarkUrl;
+      }
       return DraftInput(
         threadId: t.id,
         title: t.title,
@@ -1161,7 +1199,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         body: note?.content,
         hasActions: note?.actions?.isNotEmpty ?? false,
         recipientSummary: _draftRecipientSummary(t),
-        icon: (t.icon != null && t.icon!.startsWith('http')) ? t.icon : null,
+        logo: logo,
+        logoDark: logoDark,
+        focus: t.priority,
         sortKey: archived ? (t.archivedAt ?? t.updatedAt) : t.updatedAt,
         archived: archived,
       );
