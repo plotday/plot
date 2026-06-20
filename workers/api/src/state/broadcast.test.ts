@@ -13,8 +13,64 @@ class FakeWebSocket {
   }
 }
 
+// In-memory stand-in for the DO's `ctx.storage.sql`. Models the two activity
+// tables faithfully so behavioural assertions (does last-active survive a
+// disconnect? does others-active exclude the caller?) are meaningful rather
+// than tautological. Recognises only the statements Broadcast actually runs.
+function createSqlFake() {
+  const device = new Map<string, number>();
+  let user: number | null = null;
+  return {
+    device,
+    exec(query: string, ...args: unknown[]): Array<Record<string, unknown>> {
+      const q = query.replace(/\s+/g, " ").trim().toLowerCase();
+      if (q.startsWith("create table")) return [];
+      if (q.startsWith("insert or replace into device_activity")) {
+        device.set(args[0] as string, args[1] as number);
+        return [];
+      }
+      if (q.startsWith("insert into user_activity")) {
+        const v = args[0] as number;
+        user = user == null ? v : Math.max(user, v);
+        return [];
+      }
+      if (q.startsWith("delete from device_activity where client_id")) {
+        device.delete(args[0] as string);
+        return [];
+      }
+      if (q.startsWith("select last_active_at from user_activity")) {
+        return user == null ? [] : [{ last_active_at: user }];
+      }
+      if (q.startsWith("select client_id from device_activity")) {
+        return [...device.keys()].map((client_id) => ({ client_id }));
+      }
+      if (q.includes("from device_activity where client_id !=")) {
+        const exclude = args[0] as string;
+        let max: number | null = null;
+        for (const [c, t] of device) {
+          if (c !== exclude) max = max == null ? t : Math.max(max, t);
+        }
+        return [{ max_active: max }];
+      }
+      if (q.includes("max(last_active_at) as max_active from device_activity")) {
+        let max: number | null = null;
+        for (const t of device.values()) max = max == null ? t : Math.max(max, t);
+        return [{ max_active: max }];
+      }
+      throw new Error(`Unhandled SQL in fake: ${query}`);
+    },
+  };
+}
+
 function createBroadcast(): Broadcast {
-  return new Broadcast({} as any, {} as any);
+  const sql = createSqlFake();
+  return new Broadcast({ storage: { sql } } as any, {} as any);
+}
+
+async function getActive(b: Broadcast, path: string): Promise<string | null> {
+  const res = await b.fetch(new Request(`http://do${path}`));
+  const body = (await res.json()) as { lastActiveAt: string | null };
+  return body.lastActiveAt;
 }
 
 function addConnection(b: Broadcast, clientId: string): FakeWebSocket {
@@ -64,6 +120,50 @@ describe("Broadcast.send", () => {
 
     expect(ws1.sent).toEqual([]);
     expect(ws2.sent.length).toBe(1);
+  });
+});
+
+describe("Broadcast activity tracking", () => {
+  it("/last-active-persisted survives a device disconnect (email gating)", async () => {
+    // Regression: closing the app used to wipe the user's activity record,
+    // so the 18h email digest fired even though the user had opened Plot
+    // earlier. The persisted timestamp must outlive the websocket.
+    const b = createBroadcast();
+    (b as any).maybeRecordActivity("c1");
+
+    const before = await getActive(b, "/last-active-persisted");
+    expect(before).not.toBeNull();
+
+    (b as any).removeDeviceActivity("c1"); // device disconnects
+
+    const after = await getActive(b, "/last-active-persisted");
+    expect(after).toBe(before);
+  });
+
+  it("/last-active reflects only currently-connected devices (push gating)", async () => {
+    // Push must keep its real-time semantics: once the user closes the app
+    // ("walks away"), pushes should flow to their other devices.
+    const b = createBroadcast();
+    (b as any).maybeRecordActivity("c1");
+    expect(await getActive(b, "/last-active")).not.toBeNull();
+
+    (b as any).removeDeviceActivity("c1");
+    expect(await getActive(b, "/last-active")).toBeNull();
+  });
+
+  it("/others-active excludes the caller and disconnected devices", async () => {
+    const b = createBroadcast();
+    addConnection(b, "c1");
+    addConnection(b, "c2");
+    (b as any).maybeRecordActivity("c1");
+    (b as any).maybeRecordActivity("c2");
+
+    // Another active, connected device → suppress this device's notification.
+    expect(await getActive(b, "/others-active?excludeClient=c1")).not.toBeNull();
+
+    // c2 disconnects → only the caller remains → nothing to suppress against.
+    (b as any).connections.delete("c2");
+    expect(await getActive(b, "/others-active?excludeClient=c1")).toBeNull();
   });
 });
 

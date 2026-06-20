@@ -1,3 +1,12 @@
+## Next release
+
+### Fixes
+
+- Email summaries no longer arrive when you've already been using Plot. If you opened the app at any
+  point after a notification came in, Plot now correctly skips the follow-up email — even if you'd
+  since closed the app. Previously closing Plot could make it forget you'd been active, so the email
+  went out anyway.
+
 ## 1.5.0+361 — 2026-06-20
 
 ### Drafts

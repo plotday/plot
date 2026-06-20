@@ -108,11 +108,14 @@ export class EmailNotify extends DurableObject<Bindings> {
       (await this.ctx.storage.get<number>("pendingNotifyTime")) ?? 0;
 
     try {
-      // Check if user has been active since the notification
+      // Check if user has been active since the notification. Uses the
+      // PERSISTED activity timestamp (not `/last-active`, which only reflects
+      // currently-connected devices) — the user may have opened Plot hours ago
+      // and since closed it, which should still suppress this digest.
       const broadcastId = this.env.BROADCAST.idFromName(this.userId);
       const broadcast = this.env.BROADCAST.get(broadcastId);
       const broadcastResponse = await broadcast.fetch(
-        new Request("http://do/last-active")
+        new Request("http://do/last-active-persisted")
       );
       const { lastActiveAt } = (await broadcastResponse.json()) as {
         lastActiveAt: string | null;

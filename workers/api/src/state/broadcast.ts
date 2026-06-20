@@ -21,7 +21,7 @@ export class Broadcast extends DurableObject<Bindings> {
   private userId: string | null = null;
   // Track last DB write time per client to rate-limit activity writes to 1/minute
   private lastActivityWrite: Map<string, number> = new Map();
-  private deviceActivityTableReady = false;
+  private activityTablesReady = false;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -41,16 +41,30 @@ export class Broadcast extends DurableObject<Bindings> {
     this.ctx.waitUntil(postHog.shutdown());
   }
 
-  private ensureDeviceActivityTable(): void {
-    if (this.deviceActivityTableReady) return;
+  private ensureActivityTables(): void {
+    if (this.activityTablesReady) return;
+    // Per-client and EPHEMERAL: rows are deleted when a device disconnects
+    // (see removeDeviceActivity). Drives `/last-active` (push gating) and
+    // `/others-active` (cross-device suppression), which both ask "which
+    // devices are connected and active right now".
     this.ctx.storage.sql.exec(
       "CREATE TABLE IF NOT EXISTS device_activity (client_id TEXT PRIMARY KEY, last_active_at INTEGER)"
     );
-    this.deviceActivityTableReady = true;
+    // A single per-user timestamp that PERSISTS across disconnects. Drives
+    // `/last-active-persisted` (email gating), which asks "was the user active
+    // at any point since the notification was queued" — inherently historical,
+    // so it must survive the app closing. See email-notify.ts.
+    this.ctx.storage.sql.exec(
+      "CREATE TABLE IF NOT EXISTS user_activity (id INTEGER PRIMARY KEY, last_active_at INTEGER)"
+    );
+    this.activityTablesReady = true;
   }
 
   private removeDeviceActivity(clientId: string): void {
-    this.ensureDeviceActivityTable();
+    this.ensureActivityTables();
+    // Only clears the ephemeral per-device row. The persisted `user_activity`
+    // timestamp is intentionally left untouched so email gating still knows
+    // the user was recently active even after every device disconnects.
     this.ctx.storage.sql.exec(
       "DELETE FROM device_activity WHERE client_id = ?",
       clientId
@@ -63,10 +77,18 @@ export class Broadcast extends DurableObject<Bindings> {
     const lastWrite = this.lastActivityWrite.get(clientId) ?? 0;
     if (now - lastWrite < 60_000) return; // rate-limit: 1 write/minute per client
     this.lastActivityWrite.set(clientId, now);
-    this.ensureDeviceActivityTable();
+    this.ensureActivityTables();
+    // Ephemeral per-client activity (cleared on disconnect).
     this.ctx.storage.sql.exec(
       "INSERT OR REPLACE INTO device_activity (client_id, last_active_at) VALUES (?, ?)",
       clientId,
+      now
+    );
+    // Persisted per-user activity (survives disconnect). Kept monotonic so a
+    // late write from a slower client can't move the timestamp backwards.
+    this.ctx.storage.sql.exec(
+      "INSERT INTO user_activity (id, last_active_at) VALUES (0, ?) " +
+        "ON CONFLICT (id) DO UPDATE SET last_active_at = MAX(user_activity.last_active_at, excluded.last_active_at)",
       now
     );
   }
@@ -82,7 +104,10 @@ export class Broadcast extends DurableObject<Bindings> {
     }
 
     if (url.pathname === "/last-active" && request.method === "GET") {
-      this.ensureDeviceActivityTable();
+      // Most recent activity among CURRENTLY-CONNECTED devices (rows are
+      // dropped on disconnect). Push gating wants this real-time view: once
+      // the user closes the app, pushes should flow to their other devices.
+      this.ensureActivityTables();
       const cursor = this.ctx.storage.sql.exec(
         "SELECT MAX(last_active_at) AS max_active FROM device_activity"
       );
@@ -93,9 +118,29 @@ export class Broadcast extends DurableObject<Bindings> {
       });
     }
 
+    if (
+      url.pathname === "/last-active-persisted" &&
+      request.method === "GET"
+    ) {
+      // Last time ANY of the user's devices was active, persisted across
+      // disconnects. Unlike `/last-active`, closing the app does not reset
+      // this — email gating needs to know whether the user opened Plot at any
+      // point since a notification was queued (often many hours earlier).
+      this.ensureActivityTables();
+      const cursor = this.ctx.storage.sql.exec(
+        "SELECT last_active_at FROM user_activity WHERE id = 0"
+      );
+      const rows = [...cursor];
+      const lastActive = rows[0]?.last_active_at as number | null | undefined;
+      return Response.json({
+        lastActiveAt:
+          lastActive != null ? new Date(lastActive).toISOString() : null,
+      });
+    }
+
     if (url.pathname === "/others-active" && request.method === "GET") {
       const excludeClient = url.searchParams.get("excludeClient") ?? "";
-      this.ensureDeviceActivityTable();
+      this.ensureActivityTables();
       // Clean up stale entries for clients that are no longer connected
       const allCursor = this.ctx.storage.sql.exec(
         "SELECT client_id FROM device_activity"
