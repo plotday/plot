@@ -67,12 +67,14 @@ platform :android do
     # (play-deployer-service-key.json). Release notes are not managed here, so
     # skip changelogs — there is no metadata/android/en-US/changelogs dir and we
     # never want a release gated on one.
+    # Honor the release workflow's update_metadata / update_screenshots flags.
+    # SKIP_* default to unset => false => upload, preserving local behavior.
     upload_to_play_store(
       skip_upload_apk: true,
       skip_upload_aab: true,
-      skip_upload_metadata: false,
-      skip_upload_images: false,
-      skip_upload_screenshots: false,
+      skip_upload_metadata: ENV["SKIP_METADATA"] == "true",
+      skip_upload_images: ENV["SKIP_SCREENSHOTS"] == "true",
+      skip_upload_screenshots: ENV["SKIP_SCREENSHOTS"] == "true",
       skip_upload_changelogs: true
     )
 

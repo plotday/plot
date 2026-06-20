@@ -38,9 +38,36 @@ Metadata roots (one `.txt` per field):
 | Description | 4000 | `description.txt` | `full_description.txt` |
 | Release notes ("What's New") | 4000 | `release_notes.txt` | Play Console field |
 
-**Microsoft Store (Windows)** has no fastlane home and is not linted — its copy
-lives in the Microsoft Store section below and is the one listing authored
-directly in this doc.
+**Microsoft Store (Windows)** copy lives in source files under
+`apps/plot/windows/store/en-US/` (not linted), reproduced in the Microsoft Store
+section below for review.
+
+## Pushing listing changes on release (flags)
+
+A regular `Release` run uploads the **binary only** — it does **not** touch any
+store's metadata or screenshots. Listing changes ship deliberately, behind two
+`workflow_dispatch` inputs that apply uniformly to every store in the run:
+
+- **`update_metadata`** — push the text fields (title, description, features,
+  keywords, …) from the source files above. Off by default.
+- **`update_screenshots`** — push the screenshot set. Off by default.
+
+They are independent: tick `update_metadata` alone to fix a description without
+re-running screenshot processing; tick `update_screenshots` when the images
+actually changed. `submit_for_review` still controls whether the result is
+committed to certification (vs left as a draft). Mechanics per store:
+
+- **iOS / macOS / Android** — the inputs become `SKIP_METADATA` / `SKIP_SCREENSHOTS`
+  env vars consumed by the fastlane `metadata` lane (deliver/supply). Apple's
+  deliver uses `sync_screenshots` (idempotent checksum-diff), so re-pushing
+  unchanged shots is cheap and safe.
+- **Windows** — `update_metadata` runs `msstore submission updateMetadata`;
+  `update_screenshots` runs `scripts/ms-store-screenshots.sh`, which pushes the
+  shots through the Submission REST API (msstore has no image command). See
+  [windows-store-publishing.md](./windows-store-publishing.md).
+
+Because pushes are now gated on an explicit flag, there's no per-release image
+churn to guard against — screenshots upload only when you ask.
 
 ## How to use this doc
 

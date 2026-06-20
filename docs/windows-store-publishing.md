@@ -148,13 +148,22 @@ Seller ID is corrected.)
   delete <productId>`).
 - The `msstore` CLI is in preview; the action is pinned to `@v1.2`.
 
-## Listing metadata
+## Listing metadata and screenshots
 
-On every `release-windows` run with Store credentials configured, the workflow
-pushes the listing **text** to the pending submission, then commits it together
-with the package when `submit_for_review` is checked.
+`release-windows` always uploads the **package** to a draft submission
+(`msstore publish --noCommit`). Whether it also touches the listing is gated on
+two workflow inputs (off by default — a regular release leaves the listing
+alone). This matches every other store; see
+[store-listings.md](./store-listings.md#pushing-listing-changes-on-release-flags).
 
-**Source files** (`apps/plot/windows/store/en-US/`, one field per file):
+- **`update_metadata`** → the "Upload metadata to Microsoft Store" step pushes
+  the **text** fields.
+- **`update_screenshots`** → the "Upload screenshots to Microsoft Store" step
+  pushes the **screenshots** via `scripts/ms-store-screenshots.sh`.
+- **`submit_for_review`** → commits the draft (package + whatever metadata /
+  screenshots were pushed) to certification; otherwise it's left as a draft.
+
+**Text source files** (`apps/plot/windows/store/en-US/`, one field per file):
 
 | File | Store field |
 | --- | --- |
@@ -163,20 +172,94 @@ with the package when `submit_for_review` is checked.
 | `features.txt` | Product features (one per line, ≤ 20, ≤ 200 chars) |
 | `search_terms.txt` | Search terms (one per line, ≤ 7, ≤ 30 chars) |
 
-**How it works:** the workflow runs `msstore submission get`, patches only those
-four fields with `jq`, and calls `msstore submission updateMetadata`. For
-packaged (MSIX) apps `updateMetadata` is a *full replace*, so the workflow
-fetches the whole submission and overwrites only the text — **screenshots and
-every other field are preserved**.
+**How text works:** `msstore submission get`, patch those four fields with `jq`,
+`msstore submission updateMetadata`. `updateMetadata` is a *full replace* for
+packaged apps, so the whole submission is fetched and only the text overwritten —
+screenshots and every other field pass through. Two hazards baked into the step:
 
-**Still manual in Partner Center:**
+- The fetched JSON is run through `tr -d '\000-\037'` before jq, because the
+  Store can return a stray control character in a previously UI-authored field
+  that jq rejects (`control characters must be escaped`, exit 5).
+- The step is **`continue-on-error`**, so a failure here does **not** fail the
+  release and is easy to miss — check the job's build summary line and the step
+  log, not just the green checkmark.
 
-- **Screenshots / images** — the `updateMetadata` path cannot upload image bytes
-  (that lives only in the `msstore publish <project>` project-init flow, which
-  this pipeline does not use). Upload screenshots once in Partner Center; the
-  workflow leaves them untouched on every run.
-- **Release notes** and the **product / reserved name** — out of scope.
+**How screenshots work:** `msstore` has no image command, so the screenshots step
+drives the Submission REST API directly against the same pending draft (source:
+`apps/plot/screenshots/store/ms-store/windows/`). It marks the old images
+`PendingDelete`, adds the repo set `PendingUpload`, and — crucially — **appends**
+them to the submission's `fileUploadUrl` blob rather than replacing it, so the
+package `msstore publish` already uploaded into that blob is preserved (the blob
+is replaced whole on each PUT). The script is idempotent and also runs locally
+(auth falls back to `op`); see its header.
+
+**Still out of scope:** **release notes** and the **product / reserved name**
+(the listing title). Title drift self-corrects: once a submission with the right
+title is committed, future cloned submissions inherit it.
 
 **Precondition:** app updates via the CLI are supported for **free** products
 only; the CLI deletes the submission and errors on a paid product. Plot's listing
 is free.
+
+## When the Partner Center UI won't save the listing ("BadRequest")
+
+Symptom (hit 2026-06-20): editing the Store listing in Partner Center fails on
+**every** save — even changing only the product name — with a banner *"We are
+unable to save listing. Please reload the page or try again later"* and a POST
+response of `{"message":"BadRequest","correlationId":"…"}`. Signing out/in,
+discarding the submission, and deleting/recreating screenshots all do nothing.
+
+**This is the Partner Center listing-edit form being broken, not your data.**
+Confirm it via the read-only probe above: if `GET …/submissions/{id}` shows
+`statusDetails.errors: []` with the images `Uploaded` and the names all reserved
+(Product management → Manage app names), the published listing is valid — the
+form's internal save endpoint is the broken link (it drags along legacy payload
+such as the deprecated `SalesUnsupportedWarning` sales resource). **The fix is to
+drive the whole listing — title, copy, screenshots, even the package — through
+the submission REST API and skip the form entirely.**
+
+### The API-bypass recipe
+
+Auth is the same client-credentials token as the read-only probe above
+(`op read 'op://Production/Windows Store/…'`). Two non-obvious gotchas:
+
+- **Bodyless POSTs need an explicit `Content-Length: 0`** or the API returns
+  `HTTP 411 Length Required`. Affects `POST …/submissions` (create) and
+  `POST …/submissions/{id}/commit`.
+- **Images/packages must be edited idempotently.** A new image/package entry is
+  added with `{fileName, fileStatus:"PendingUpload"}` and **no** id; an entry
+  that already exists in the submission **must keep its `id`** or the PUT fails
+  with `InvalidParameterValue … "Existing Image (…) should contain Id"`. So:
+  preserve existing entries by id, only *add* ones whose `fileName` is absent,
+  and mark everything you want gone `PendingDelete`.
+
+Flow (each step is a `curl` against
+`https://manage.devcenter.microsoft.com/v1.0/my/applications/9PKTCSN8SNZF`):
+
+1. **Create** a submission: `POST …/submissions` (`-H "Content-Length: 0"`). It
+   clones the last published submission **including its images** (no re-upload
+   needed) and returns a `fileUploadUrl` (a SAS URL, valid ~24h).
+2. **Edit the listing**: `GET …/submissions/{id}`, patch
+   `.listings["en-us"].baseListing` (`title`, `description`, `features`,
+   `keywords` = search terms, `shortDescription`, `shortTitle`, `voiceTitle`)
+   from `apps/plot/windows/store/en-US/`, then `PUT` the whole object back.
+3. **Swap screenshots / add the build**: mark old `images`/`applicationPackages`
+   `PendingDelete`, add the new ones `PendingUpload`, `PUT`. Then bundle **every
+   still-`PendingUpload` file into one zip** (basenames at the zip root matching
+   each `fileName`) and `PUT` it to `fileUploadUrl` with
+   `-H "x-ms-blob-type: BlockBlob"` (expect `HTTP 201`). The blob is replaced
+   whole on each upload, so the final zip must contain *all* pending files at
+   once. The latest signed MSIX is the same file the workflow publishes — pull it
+   from `https://download.plot.day/windows` (Windows MSIX can't be built on
+   macOS).
+4. **Commit**: `POST …/submissions/{id}/commit` (`-H "Content-Length: 0"`) →
+   `HTTP 202`, then status walks `CommitStarted` → `PreProcessing` →
+   `Certification`. `CommitFailed` puts the reason in `statusDetails.errors`.
+
+This bypasses the form's per-edit save **and** lets one submission carry the
+listing copy + new screenshots + the latest build in a single certification
+round. The `release-windows` workflow now pushes text and screenshots too (gated
+on `update_metadata` / `update_screenshots` — see the section above), but it
+still can't set the **title**; this manual path remains the way to change the
+listing name. After the first commit with the corrected title, future cloned
+submissions inherit it.

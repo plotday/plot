@@ -23,6 +23,14 @@ on:
         description: 'Submit uploaded store builds for review/certification (currently Windows only; off = upload as draft)'
         type: boolean
         default: false
+      update_metadata:
+        description: 'Update store listing text (titles, descriptions, features, keywords) for the released stores — off = listings left untouched'
+        type: boolean
+        default: false
+      update_screenshots:
+        description: 'Update store screenshots for the released stores — off = screenshots left untouched'
+        type: boolean
+        default: false
 
 concurrency:
   group: native-release
@@ -344,9 +352,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Build iOS app (Shorebird release)
         run: |
@@ -383,13 +406,19 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
-      # Best-effort: stage the committed App Store assets and push the listing
-      # metadata + screenshots. Marked continue-on-error so a listing whose
+      # Push the listing text and/or screenshots — only when explicitly
+      # requested via the update_metadata / update_screenshots inputs (a regular
+      # release uploads the binary only). continue-on-error so a listing whose
       # metadata is temporarily locked (a version In Review / Pending Developer
-      # Release) can't fail an otherwise-successful binary release.
+      # Release) can't fail an otherwise-successful binary release. The SKIP_*
+      # env vars flow into fastlane's deliver to honor each flag independently.
       - name: Upload metadata and screenshots to App Store Connect
         id: metadata
+        if: ${{ inputs.update_metadata || inputs.update_screenshots }}
         continue-on-error: true
+        env:
+          SKIP_METADATA: ${{ inputs.update_metadata && 'false' || 'true' }}
+          SKIP_SCREENSHOTS: ${{ inputs.update_screenshots && 'false' || 'true' }}
         run: |
           set -euo pipefail
           # deliver classifies each screenshot by its pixel dimensions, so iPhone
@@ -411,7 +440,7 @@ jobs:
               count=$((count + 1))
             done
           done
-          if [ "$count" -eq 0 ]; then
+          if [ "$count" -eq 0 ] && [ "${SKIP_SCREENSHOTS:-true}" != "true" ]; then
             echo "ERROR: no iPhone/iPad App Store screenshots found under $SRC" >&2
             exit 1
           fi
@@ -447,7 +476,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect (TestFlight)"
-            echo "**Metadata + screenshots:** ${{ steps.metadata.outcome == 'success' && 'uploaded to App Store listing' || 'upload skipped/failed — see the metadata step logs (listing may be locked while a version is in review)' }}"
+            echo "**Metadata + screenshots:** ${{ (inputs.update_metadata || inputs.update_screenshots) && (steps.metadata.outcome == 'success' && 'uploaded to App Store listing' || 'upload failed — see the metadata step logs (listing may be locked while a version is in review)') || 'not requested (set update_metadata / update_screenshots to push)' }}"
             echo ""
             echo "### Admin"
             echo "- [TestFlight (iOS)](https://appstoreconnect.apple.com/teams/0a55108e-af39-475a-a7f1-aada0c1decae/apps/6756905242/testflight/ios)"
@@ -613,9 +642,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Build Android app (Shorebird release)
         run: |
@@ -642,13 +686,19 @@ jobs:
           cd apps/plot/android
           fastlane beta aab:$GITHUB_WORKSPACE/apps/plot/build/app/outputs/bundle/release/app-release.aab
 
-      # Best-effort: stage the committed Play Store assets and push the listing
-      # metadata + screenshots. Marked continue-on-error so a listing whose
+      # Push the listing text and/or screenshots — only when explicitly
+      # requested via the update_metadata / update_screenshots inputs (a regular
+      # release uploads the binary only). continue-on-error so a listing whose
       # metadata is temporarily locked (changes pending review, a halted
-      # rollout) can't fail an otherwise-successful binary release.
+      # rollout) can't fail an otherwise-successful binary release. The SKIP_*
+      # env vars flow into fastlane's supply to honor each flag independently.
       - name: Upload metadata and screenshots to Google Play
         id: metadata
+        if: ${{ inputs.update_metadata || inputs.update_screenshots }}
         continue-on-error: true
+        env:
+          SKIP_METADATA: ${{ inputs.update_metadata && 'false' || 'true' }}
+          SKIP_SCREENSHOTS: ${{ inputs.update_screenshots && 'false' || 'true' }}
         run: |
           set -euo pipefail
           # The committed store assets are the source of truth. Supply uploads
@@ -682,7 +732,7 @@ jobs:
           stage android-tablet tenInchScreenshots
 
           phone=("$IMAGES/phoneScreenshots"/*.png)
-          if [ "${#phone[@]}" -eq 0 ]; then
+          if [ "${#phone[@]}" -eq 0 ] && [ "${SKIP_SCREENSHOTS:-true}" != "true" ]; then
             echo "ERROR: no Android phone screenshots found under $SRC/android-phone" >&2
             exit 1
           fi
@@ -709,7 +759,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** Google Play (internal testing)"
-            echo "**Metadata + screenshots:** ${{ steps.metadata.outcome == 'success' && 'uploaded to Google Play listing' || 'upload skipped/failed — see the metadata step logs (listing may be locked while changes are pending review)' }}"
+            echo "**Metadata + screenshots:** ${{ (inputs.update_metadata || inputs.update_screenshots) && (steps.metadata.outcome == 'success' && 'uploaded to Google Play listing' || 'upload failed — see the metadata step logs (listing may be locked while changes are pending review)') || 'not requested (set update_metadata / update_screenshots to push)' }}"
             echo ""
             echo "### Admin"
             echo "- [Google Play Console (Open Testing)](https://play.google.com/console/u/0/developers/6311596685182865378/app/4972513621080206656/tracks/open-testing)"
@@ -892,9 +942,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Build macOS app (Shorebird release)
         run: |
@@ -963,13 +1028,19 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
-      # Best-effort: stage the committed Mac App Store assets and push the
-      # listing metadata + screenshots. Marked continue-on-error so a listing
-      # whose metadata is temporarily locked (a version In Review / Pending
-      # Developer Release) can't fail an otherwise-successful binary release.
+      # Push the listing text and/or screenshots — only when explicitly
+      # requested via the update_metadata / update_screenshots inputs (a regular
+      # release uploads the binary only). continue-on-error so a listing whose
+      # metadata is temporarily locked (a version In Review / Pending Developer
+      # Release) can't fail an otherwise-successful binary release. The SKIP_*
+      # env vars flow into fastlane's deliver to honor each flag independently.
       - name: Upload metadata and screenshots to App Store Connect
         id: metadata
+        if: ${{ inputs.update_metadata || inputs.update_screenshots }}
         continue-on-error: true
+        env:
+          SKIP_METADATA: ${{ inputs.update_metadata && 'false' || 'true' }}
+          SKIP_SCREENSHOTS: ${{ inputs.update_screenshots && 'false' || 'true' }}
         run: |
           set -euo pipefail
           SRC="apps/plot/screenshots/store/app-store/macos"
@@ -982,7 +1053,7 @@ jobs:
             cp "$png" "$DEST/$(basename "$png")"
             count=$((count + 1))
           done
-          if [ "$count" -eq 0 ]; then
+          if [ "$count" -eq 0 ] && [ "${SKIP_SCREENSHOTS:-true}" != "true" ]; then
             echo "ERROR: no macOS App Store screenshots found under $SRC" >&2
             exit 1
           fi
@@ -1018,7 +1089,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect"
-            echo "**Metadata + screenshots:** ${{ steps.metadata.outcome == 'success' && 'uploaded to Mac App Store listing' || 'upload skipped/failed — see the metadata step logs (listing may be locked while a version is in review)' }}"
+            echo "**Metadata + screenshots:** ${{ (inputs.update_metadata || inputs.update_screenshots) && (steps.metadata.outcome == 'success' && 'uploaded to Mac App Store listing' || 'upload failed — see the metadata step logs (listing may be locked while a version is in review)') || 'not requested (set update_metadata / update_screenshots to push)' }}"
             echo ""
             echo "### Admin"
             echo "- [TestFlight (macOS)](https://appstoreconnect.apple.com/teams/0a55108e-af39-475a-a7f1-aada0c1decae/apps/6756905242/testflight/macos)"
@@ -1162,9 +1233,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Build Windows app (Shorebird release)
         shell: bash
@@ -1433,17 +1519,26 @@ jobs:
       # screenshots and every other field pass through untouched.
       - name: Upload metadata to Microsoft Store
         id: metadata
-        if: steps.ms-store.outputs.enabled == 'true'
+        if: steps.ms-store.outputs.enabled == 'true' && inputs.update_metadata
         continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           SRC="$GITHUB_WORKSPACE/apps/plot/windows/store/en-US"
 
-          # Fetch the pending draft as JSON; strip any leading Spectre.Console
-          # status line by taking from the first '{' onward.
+          # Fetch the pending draft as JSON. Two clean-ups before jq:
+          #  1. drop any leading Spectre.Console status line (take from the
+          #     first '{' onward);
+          #  2. strip C0 control chars (U+0000–U+001F). The Store can return a
+          #     stray control character embedded in a previously UI-authored
+          #     listing field, which jq rejects with "control characters must be
+          #     escaped" (exit 5) — and because this step is continue-on-error,
+          #     that failure is otherwise silent. Those bytes are only ever
+          #     invalid-in-JSON here, never part of a UTF-8 multibyte sequence
+          #     (0x00–0x1F can't be continuation bytes), and the fields we patch
+          #     are replaced from the repo files anyway, so removing them is safe.
           RAW="$(msstore submission get 9PKTCSN8SNZF)"
-          SUB="$(printf '%s' "$RAW" | awk '/^{/{f=1} f')"
+          SUB="$(printf '%s' "$RAW" | awk '/^{/{f=1} f' | tr -d '\000-\037')"
           if [ -z "$SUB" ]; then
             echo "::warning::Could not read submission JSON — skipping metadata."
             echo "skipped=true" >> "$GITHUB_OUTPUT"
@@ -1475,6 +1570,24 @@ jobs:
 
           msstore submission updateMetadata 9PKTCSN8SNZF "$PATCHED"
           echo "Metadata pushed for listing '$LANG_KEY'."
+
+      # Screenshots can't go through `msstore` (no image command) or
+      # updateMetadata (text only), so push them through the Submission REST API
+      # against the same pending draft msstore publish created. The script
+      # preserves the just-uploaded package in the fileUploadUrl blob (it
+      # appends the screenshots rather than replacing it). continue-on-error,
+      # like the metadata step.
+      - name: Upload screenshots to Microsoft Store
+        id: screenshots
+        if: steps.ms-store.outputs.enabled == 'true' && inputs.update_screenshots
+        continue-on-error: true
+        shell: bash
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+        run: |
+          bash "$GITHUB_WORKSPACE/scripts/ms-store-screenshots.sh"
 
       - name: Submit Microsoft Store submission for review
         if: steps.ms-store.outputs.enabled == 'true' && inputs.submit_for_review
@@ -1513,7 +1626,8 @@ jobs:
             else
               echo "- 📝 Uploaded as draft — submit it in Partner Center"
             fi
-            echo "- Listing metadata: ${{ steps.metadata.outcome == 'success' && steps.metadata.outputs.skipped != 'true' && 'pushed from apps/plot/windows/store/en-US' || 'not pushed — see the Upload metadata step (skipped if credentials absent)' }}"
+            echo "- Listing metadata: ${{ inputs.update_metadata && (steps.metadata.outcome == 'success' && steps.metadata.outputs.skipped != 'true' && 'pushed from apps/plot/windows/store/en-US' || 'push failed — see the Upload metadata step') || 'not requested (set update_metadata to push)' }}"
+            echo "- Screenshots: ${{ inputs.update_screenshots && (steps.screenshots.outcome == 'success' && 'pushed from apps/plot/screenshots/store/ms-store/windows' || 'push failed — see the Upload screenshots step') || 'not requested (set update_screenshots to push)' }}"
             echo ""
             echo "### Admin"
             echo "- [Microsoft Partner Center](https://partner.microsoft.com/en-us/dashboard/products/9PKTCSN8SNZF/)"

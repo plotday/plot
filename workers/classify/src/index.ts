@@ -2,6 +2,8 @@ import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
+import type { ClassifierBatchCache } from "@plotday/classifier";
+
 import { withDb, isLockTimeoutError, isStatementTimeoutError } from "./db";
 import {
   handleClassifyJob,
@@ -41,17 +43,30 @@ export default {
       queue: "classify-thread",
       env: typeof ENV !== "undefined" ? ENV : "unknown",
     });
+    // One memo for the whole batch. The hourly sweep enqueues hundreds of ONE
+    // user's pending threads contiguously, so a batch is dominated by a single
+    // user; this loads each user-scoped, batch-stable read (training set,
+    // negative set, focuses, linked contacts, affinity) once per (user, batch)
+    // instead of once per thread — the per-thread re-fetch is what saturated
+    // the DB during sweep bursts (PostHog 019ed53e). Lives only for this
+    // invocation, so it can never serve stale data to a later batch.
+    const batchCache: ClassifierBatchCache = new Map();
 
     try {
       await withDb(env, async (db) => {
         for (const message of batch.messages) {
           const job = message.body;
           try {
-            const outcome = await handleClassifyJob(job, env, db, (logErr) =>
-              posthog.captureException(logErr as Error, job.userId, {
-                threadId: job.threadId,
-                context: "classification_decision_log",
-              })
+            const outcome = await handleClassifyJob(
+              job,
+              env,
+              db,
+              (logErr) =>
+                posthog.captureException(logErr as Error, job.userId, {
+                  threadId: job.threadId,
+                  context: "classification_decision_log",
+                }),
+              batchCache
             );
             posthog.capture({
               distinctId: job.userId,
@@ -137,12 +152,28 @@ export default {
               // cleared (the query is then fast). We do NOT push classify_at
               // forward — its value gates unfiled-thread visibility via
               // classify_visibility_window(), so moving it would re-hide the
-              // thread. Captured once (not once per retry) for visibility; the
-              // rate falls as the storm shrinks.
-              posthog.captureException(err as Error, job.userId, {
-                threadId: job.threadId,
-                attempt: message.attempts,
-                deferred_to_sweep: true,
+              // thread.
+              //
+              // This is an expected, handled, self-healing condition (same
+              // shape as the 55P03 branch above), so — per our error-capture
+              // policy — we do NOT captureException for it. The earlier
+              // "capture once per timeout" still fired once per stuck thread on
+              // every hourly sweep, so with a backlog that the underlying
+              // backend capacity can't drain it never tapered: PostHog 019ed53e
+              // kept bursting indefinitely after the deferral shipped. Emit a
+              // queryable counter event instead so saturation stays observable
+              // (count classify.deferred_timeout) without flooding error
+              // tracking. The real remedy for the saturation itself is the
+              // Hyperdrive origin-connection-limit lever (scripts/deploy-
+              // hyperdrive), not more error capture here.
+              posthog.capture({
+                distinctId: job.userId,
+                event: "classify.deferred_timeout",
+                properties: {
+                  threadId: job.threadId,
+                  attempt: message.attempts,
+                  pg_code: (err as { code?: string })?.code,
+                },
               });
               logger.warn(
                 "classify timed out under load; deferring to hourly sweep",

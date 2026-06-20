@@ -2,7 +2,7 @@ import {
   classifierContextFromDb,
   getProductionClassifier,
 } from "@plotday/classifier-runtime";
-import type { Candidate } from "@plotday/classifier";
+import type { Candidate, ClassifierBatchCache } from "@plotday/classifier";
 
 import { retryOnTxnConflict } from "@plotday/worker-util";
 
@@ -44,7 +44,8 @@ export async function handleClassifyJob(
   job: ClassifyJob,
   env: ClassifyEnv,
   db: ClassifyDb,
-  onError?: (err: unknown) => void
+  onError?: (err: unknown) => void,
+  batchCache?: ClassifierBatchCache
 ): Promise<ClassifyOutcome> {
   const row = await db
     .selectFrom("thread_priority")
@@ -127,7 +128,7 @@ export async function handleClassifyJob(
   }
 
   const classifier = getProductionClassifier(env);
-  const ctx = classifierContextFromDb(db, job.userId);
+  const ctx = classifierContextFromDb(db, job.userId, batchCache);
   const result = await classifier.classify(ctx, candidate);
 
   // Telemetry surfaced to PostHog (see workers/classify/src/index.ts) so a

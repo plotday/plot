@@ -11,6 +11,7 @@ import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/confirm_modal.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
@@ -143,17 +144,101 @@ Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Subscription disclosure text shown in the upgrade picker. Apple's
-/// subscription guidelines require the screen that triggers an IAP to
-/// disclose (a) the subscription length, (b) what auto-renew means, and
-/// (c) links to Terms of Service and Privacy Policy. StoreKit's native
-/// sheet also surfaces price/duration, but having the disclosure in our
-/// own screen avoids review pushback.
-const String _kSubscriptionDisclosure =
-    'Subscriptions auto-renew monthly until canceled. Manage or cancel '
-    'anytime in your App Store account.\n'
-    'Terms: https://plot.day/terms · '
-    'Privacy: https://plot.day/privacy';
+/// Subscription disclosure shown on every screen that can trigger a StoreKit
+/// purchase. Apple's subscription guidelines (3.1.2) require the purchase
+/// screen to disclose (a) the subscription length, (b) that it auto-renews,
+/// and (c) functional links to the Terms of Service and Privacy Policy.
+/// StoreKit's native sheet also surfaces price/duration, but carrying the
+/// disclosure on our own screen avoids review pushback.
+///
+/// Rendered with the theme's body typography (not a raw [TextStyle]) so the
+/// copy reads like body text elsewhere, with the Terms / Privacy links shown
+/// as tappable accent-coloured links instead of inline raw URLs.
+class _SubscriptionDisclosure extends StatelessWidget {
+  const _SubscriptionDisclosure({this.priceLine, this.note});
+
+  /// Optional bold price line shown above the disclosure. Used on the
+  /// single-plan confirmation path, where there's no plan tile to carry the
+  /// price.
+  final String? priceLine;
+
+  /// Optional lead-in line supplied by the caller (e.g. a custom upgrade
+  /// prompt). No call site sets this today; it preserves the prior
+  /// `subtitle`-prefix behaviour.
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    final body = context.theme.typography.sm.copyWith(
+      color: context.theme.colors.mutedForeground,
+      height: 1.4,
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (priceLine != null) ...[
+          Text(
+            priceLine!,
+            style: context.theme.typography.sm.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: context.theme.spacing.sm),
+        ],
+        if (note != null && note!.isNotEmpty) ...[
+          Text(note!, style: body),
+          SizedBox(height: context.theme.spacing.sm),
+        ],
+        DefaultTextStyle(
+          style: body,
+          child: Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(
+                  text:
+                      'Subscriptions auto-renew monthly until canceled. '
+                      'Manage or cancel anytime in your App Store account. ',
+                ),
+                _link(context, 'Terms of Service', 'https://plot.day/terms'),
+                const TextSpan(text: ' · '),
+                _link(context, 'Privacy Policy', 'https://plot.day/privacy'),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// A tappable disclosure link in the accent [FColors.primary] colour, which
+  /// signals it's clickable on touch where there's no hover to reveal it. The
+  /// vertical padding widens the tap target, and the pointer cursor marks it
+  /// as a true external link on desktop.
+  WidgetSpan _link(BuildContext context, String label, String url) {
+    return WidgetSpan(
+      alignment: PlaceholderAlignment.baseline,
+      baseline: TextBaseline.alphabetic,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () =>
+              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              label,
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.primary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Surfaces a plan picker (Core vs Pro) then routes to [BuyPlanCommand].
 /// Used as the entry point for "Upgrade your plan" and the at-limit toasts.
@@ -163,18 +248,21 @@ const String _kSubscriptionDisclosure =
 /// have the subscription at construction time (e.g. twist.dart, onboarding)
 /// are automatically gated correctly.
 class ShowUpgradeOptions extends Command {
-  ShowUpgradeOptions({String? title, String? subtitle, List<String>? availablePlans})
-    : _title = title ?? 'Upgrade your plan',
-      // ignore: prefer_initializing_formals
-      _subtitle = subtitle,
-      // ignore: prefer_initializing_formals
-      _availablePlans = availablePlans,
-      super(
-        title: title ?? 'Upgrade your plan',
-        icon: PlotIcon.sparkles,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.opened,
-      );
+  ShowUpgradeOptions({
+    String? title,
+    String? subtitle,
+    List<String>? availablePlans,
+  }) : _title = title ?? 'Upgrade your plan',
+       // ignore: prefer_initializing_formals
+       _subtitle = subtitle,
+       // ignore: prefer_initializing_formals
+       _availablePlans = availablePlans,
+       super(
+         title: title ?? 'Upgrade your plan',
+         icon: PlotIcon.sparkles,
+         eventObject: EventObject.settings,
+         eventAction: EventAction.opened,
+       );
 
   final String _title;
   final String? _subtitle;
@@ -190,17 +278,6 @@ class ShowUpgradeOptions extends Command {
     if (sub.isPaidStripe || sub.canBuildTwists) return const [];
     if (sub.isAppStore && sub.isCore) return const ['pro'];
     return const ['core', 'pro'];
-  }
-
-  /// Compose the picker's subtitle. On App Store builds we always append
-  /// the subscription disclosure so the screen that triggers IAP carries
-  /// the required ToS / Privacy / auto-renew language.
-  String? _modalSubtitle() {
-    if (!UpgradeUi.isAppStoreBuild) return _subtitle;
-    if (_subtitle == null || _subtitle.isEmpty) {
-      return _kSubscriptionDisclosure;
-    }
-    return '$_subtitle\n\n$_kSubscriptionDisclosure';
   }
 
   @override
@@ -220,7 +297,10 @@ class ShowUpgradeOptions extends Command {
     // command self-gates correctly at any call site.
     final sub = SubscriptionService.instance.subscription;
     final plans =
-        _availablePlans ?? (sub != null ? ShowUpgradeOptions.plansFor(sub) : const ['core', 'pro']);
+        _availablePlans ??
+        (sub != null
+            ? ShowUpgradeOptions.plansFor(sub)
+            : const ['core', 'pro']);
 
     if (plans.isEmpty) {
       // The user is already on a paid plan with no upgradeable tiers.
@@ -239,11 +319,12 @@ class ShowUpgradeOptions extends Command {
       // in its subtitle; the single-plan upgrade path would otherwise jump
       // straight to StoreKit, so surface the disclosure in a confirmation
       // first (keeps every IAP-triggering screen compliant with 3.1.2).
-      final priceLine =
-          plan == 'pro' ? 'Pro — \$24.99/month' : 'Core — \$14.99/month';
+      final priceLine = plan == 'pro'
+          ? 'Pro — \$24.99/month'
+          : 'Core — \$14.99/month';
       final confirmed = await ConfirmModal(
         title: _title,
-        message: '$priceLine\n\n$_kSubscriptionDisclosure',
+        messageWidget: _SubscriptionDisclosure(priceLine: priceLine),
         confirmLabel: plan == 'pro' ? 'Subscribe to Pro' : 'Subscribe to Core',
       ).run(context);
       if (!context.mounted || !confirmed) return const CommandSkipped();
@@ -254,10 +335,10 @@ class ShowUpgradeOptions extends Command {
       context,
       showFilter: false,
       title: _title,
-      subtitle: _modalSubtitle(),
-      items: (_) async => [
-        SelectGroup<String>(items: plans),
-      ],
+      // Reached only on App Store builds (the web flow returns early above),
+      // so the IAP-triggering screen always carries the required disclosure.
+      subtitleWidget: _SubscriptionDisclosure(note: _subtitle),
+      items: (_) async => [SelectGroup<String>(items: plans)],
       itemBuilder: (plan, _) => Builder(
         builder: (context) {
           final isCore = plan == 'core';

@@ -23,8 +23,14 @@
         "consumers": [
           {
             "queue": "classify-thread-development",
-            "max_batch_size": 10,
-            "max_batch_timeout": 5,
+            // Larger batches let the per-(user, batch) classifier cache amortize
+            // across more of one user's swept threads: the hourly sweep enqueues
+            // a user's pending rows contiguously, so a bigger batch means each
+            // user-scoped read (training set, focuses, ...) runs once for ~25
+            // threads instead of ~10 — and fewer, fuller invocations means less
+            // churn against the Hyperdrive pool. Cloudflare caps this at 100.
+            "max_batch_size": 25,
+            "max_batch_timeout": 10,
             "max_retries": 4,
             // Bound concurrent consumer invocations. Without this, Cloudflare
             // autoscales concurrency to drain a backlog fast — so an hourly
@@ -62,8 +68,14 @@
         "consumers": [
           {
             "queue": "classify-thread-production",
-            "max_batch_size": 10,
-            "max_batch_timeout": 5,
+            // Larger batches let the per-(user, batch) classifier cache amortize
+            // across more of one user's swept threads: the hourly sweep enqueues
+            // a user's pending rows contiguously, so a bigger batch means each
+            // user-scoped read (training set, focuses, ...) runs once for ~25
+            // threads instead of ~10 — and fewer, fuller invocations means less
+            // churn against the Hyperdrive pool. Cloudflare caps this at 100.
+            "max_batch_size": 25,
+            "max_batch_timeout": 10,
             "max_retries": 4,
             // Bound concurrent consumer invocations. Without this, Cloudflare
             // autoscales concurrency to drain a backlog fast — so an hourly

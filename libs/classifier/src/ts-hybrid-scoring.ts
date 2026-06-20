@@ -15,6 +15,7 @@ import {
   type ScoredNeighbor,
 } from "./ts-hybrid-aggregate";
 import { buildAliasMap, expandWithAliasMap } from "./ts-hybrid-contacts";
+import { cachedUserRead } from "./ts-hybrid-cache";
 import {
   detectCandidateAccounts,
   fetchAccountHierarchyAffinity,
@@ -91,8 +92,14 @@ export async function scoringStage(
   candidate: Candidate,
   params: HybridParams
 ): Promise<ScoringOutcome> {
-  const res = await ctx.rawQuery(
-    `SELECT tp.priority_id,
+  // The user_moved training set is identical for every candidate in a batch
+  // (auto-classification never writes user_moved), so load it once per
+  // (user, batch) via the batch cache — this full thread_priority⋈thread scan
+  // with embeddings is the dominant per-classify query and re-running it per
+  // thread is what saturated the DB during sweep bursts (PostHog 019ed53e).
+  const rawRows = await cachedUserRead(ctx, "scoring:training", async () => {
+    const res = await ctx.rawQuery(
+      `SELECT tp.priority_id,
             tp.thread_id,
             mt.title,
             mt.topic,
@@ -106,20 +113,20 @@ export async function scoringStage(
       WHERE tp.user_id = $1::uuid
         AND tp.user_moved = TRUE
         AND mt.archived_at IS NULL`,
-    [ctx.userId]
-  );
-
-  const rawRows = res.rows as Array<{
-    priority_id: string;
-    thread_id: string;
-    title: string | null;
-    topic: string | null;
-    created_by: string | null;
-    conn_id: string | null;
-    contacts: string[] | null;
-    groups: string[] | null;
-    embedding: string | null;
-  }>;
+      [ctx.userId]
+    );
+    return res.rows as Array<{
+      priority_id: string;
+      thread_id: string;
+      title: string | null;
+      topic: string | null;
+      created_by: string | null;
+      conn_id: string | null;
+      contacts: string[] | null;
+      groups: string[] | null;
+      embedding: string | null;
+    }>;
+  });
 
   // Alias-expand every training thread's contacts (and the candidate's) so the
   // `con` overlap signal treats the same human reached via different linked
@@ -178,20 +185,25 @@ export async function scoringStage(
   // below — the mirror of the user_moved positive set.
   const negByPriority = new Map<string, number>();
   if (params.negativePenaltyWeight > 0 && candidate.embedding) {
-    const negRes = await ctx.rawQuery(
-      `SELECT n.priority_id,
+    // User-scoped like the training set: cache the negative rows once per
+    // (user, batch); only the per-candidate similarity below varies.
+    const negRows = await cachedUserRead(ctx, "scoring:negative", async () => {
+      const negRes = await ctx.rawQuery(
+        `SELECT n.priority_id,
               CASE WHEN mt.embedding IS NULL THEN NULL ELSE mt.embedding::text END AS embedding
          FROM public.thread_priority_negative n
          JOIN public.thread mt ON mt.id = n.thread_id
         WHERE n.user_id = $1::uuid
           AND mt.archived_at IS NULL
           AND mt.embedding IS NOT NULL`,
-      [ctx.userId]
-    );
-    for (const r of negRes.rows as Array<{
-      priority_id: string;
-      embedding: string | null;
-    }>) {
+        [ctx.userId]
+      );
+      return negRes.rows as Array<{
+        priority_id: string;
+        embedding: string | null;
+      }>;
+    });
+    for (const r of negRows) {
       const s = sem(parseEmbedding(r.embedding), candidate.embedding);
       const prev = negByPriority.get(r.priority_id) ?? 0;
       if (s > prev) negByPriority.set(r.priority_id, s);

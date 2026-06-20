@@ -2,6 +2,16 @@ import type { Kysely } from "kysely";
 
 export type SandboxDb = Kysely<Record<string, unknown>>;
 
+/**
+ * Per-batch memo for user-scoped, batch-stable reads, keyed by
+ * `${userId}:${readKey}` and holding the in-flight/settled load promise. One
+ * map is created per classify queue batch (and per foreground classify) and
+ * shared across every candidate processed with it, so a sweep that enqueues
+ * hundreds of one user's threads loads each user-scoped read once per batch
+ * instead of once per thread. See {@link cachedUserRead}.
+ */
+export type ClassifierBatchCache = Map<string, Promise<unknown>>;
+
 export interface ClassifierContext {
   /** Kysely handle bound to the sandbox's per-run schema (search_path set). */
   db: SandboxDb;
@@ -21,6 +31,14 @@ export interface ClassifierContext {
    * memory, channel defaults, role-Inbox fallback). Undefined ⇒ AI enabled.
    */
   aiDisabled?: boolean;
+  /**
+   * Optional per-batch memo for user-scoped, batch-stable reads. When present,
+   * {@link cachedUserRead} loads each such read once per (user, batch) and
+   * reuses it for every later candidate in the batch (and every cascade stage
+   * within one classify). Absent (eval harness, unit tests) ⇒ reads run every
+   * call, unmemoized — behaviour is identical, just not deduplicated.
+   */
+  batchCache?: ClassifierBatchCache;
 }
 
 export interface Candidate {

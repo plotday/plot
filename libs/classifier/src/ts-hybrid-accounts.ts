@@ -1,3 +1,4 @@
+import { cachedUserRead } from "./ts-hybrid-cache";
 import type { Candidate, ClassifierContext } from "./types";
 
 export type UserLinkedContact = {
@@ -32,16 +33,18 @@ export type AccountHierarchyAffinity = Map<string, Map<string, number>>;
 export async function fetchUserLinkedContacts(
   ctx: ClassifierContext
 ): Promise<UserLinkedContact[]> {
-  const res = await ctx.rawQuery(
-    `SELECT c.id, c.email, c.name
+  return cachedUserRead(ctx, "accounts:linkedContacts", async () => {
+    const res = await ctx.rawQuery(
+      `SELECT c.id, c.email, c.name
        FROM public.user_contact uc
        JOIN public.contact c ON c.id = uc.contact_id
       WHERE uc.user_id = $1::uuid
         AND uc.linked = TRUE
         AND uc.archived_at IS NULL`,
-    [ctx.userId]
-  );
-  return res.rows as UserLinkedContact[];
+      [ctx.userId]
+    );
+    return res.rows as UserLinkedContact[];
+  });
 }
 
 export async function fetchPriorityHierarchies(
@@ -50,8 +53,9 @@ export async function fetchPriorityHierarchies(
   // The "hierarchy" is now the focus's role (a flat grouping layer), not the
   // depth-2 ltree ancestor. In the flat model focuses have no nesting, so the
   // display path/breadcrumb is just the focus title.
-  const res = await ctx.rawQuery(
-    `SELECT p.id,
+  return cachedUserRead(ctx, "accounts:priorityHierarchies", async () => {
+    const res = await ctx.rawQuery(
+      `SELECT p.id,
             p.title,
             p.description,
             p.role_id AS hierarchy_id,
@@ -60,27 +64,28 @@ export async function fetchPriorityHierarchies(
        LEFT JOIN public.role r ON r.id = p.role_id
       WHERE p.user_id = $1::uuid
         AND p.archived_at IS NULL`,
-    [ctx.userId]
-  );
-  const out = new Map<string, PriorityHierarchy>();
-  for (const r of res.rows as {
-    id: string;
-    title: string;
-    description: string | null;
-    hierarchy_id: string | null;
-    hierarchy_title: string | null;
-  }[]) {
-    out.set(r.id, {
-      id: r.id,
-      title: r.title,
-      path: r.title,
-      description: r.description,
-      breadcrumb: r.title,
-      hierarchyId: r.hierarchy_id ?? r.id,
-      hierarchyTitle: r.hierarchy_title ?? r.title,
-    });
-  }
-  return out;
+      [ctx.userId]
+    );
+    const out = new Map<string, PriorityHierarchy>();
+    for (const r of res.rows as {
+      id: string;
+      title: string;
+      description: string | null;
+      hierarchy_id: string | null;
+      hierarchy_title: string | null;
+    }[]) {
+      out.set(r.id, {
+        id: r.id,
+        title: r.title,
+        path: r.title,
+        description: r.description,
+        breadcrumb: r.title,
+        hierarchyId: r.hierarchy_id ?? r.id,
+        hierarchyTitle: r.hierarchy_title ?? r.title,
+      });
+    }
+    return out;
+  });
 }
 
 /**
@@ -94,12 +99,16 @@ export async function fetchAccountHierarchyAffinity(
   linkedContactIds: string[]
 ): Promise<AccountHierarchyAffinity> {
   if (linkedContactIds.length === 0) return new Map();
-  // Count training threads per (user-linked contact, role) where the
-  // contact is EITHER the author (user-composed threads) OR appears in
-  // thread.contacts (received threads — Plot's connectors put the
-  // receiving user-linked contact into thread.contacts).
-  const res = await ctx.rawQuery(
-    `SELECT linked.cid          AS user_contact_id,
+  // User-scoped and batch-stable; key includes the (small, stable) linked-set
+  // so a future caller passing a subset can't read a wrong cached value.
+  const cacheKey = `accounts:affinity:${[...linkedContactIds].sort().join(",")}`;
+  return cachedUserRead(ctx, cacheKey, async () => {
+    // Count training threads per (user-linked contact, role) where the
+    // contact is EITHER the author (user-composed threads) OR appears in
+    // thread.contacts (received threads — Plot's connectors put the
+    // receiving user-linked contact into thread.contacts).
+    const res = await ctx.rawQuery(
+      `SELECT linked.cid          AS user_contact_id,
             p.role_id           AS hierarchy_id,
             COUNT(DISTINCT t.id)::int AS n
        FROM public.thread_priority tp
@@ -112,22 +121,23 @@ export async function fetchAccountHierarchyAffinity(
         AND p.role_id IS NOT NULL
         AND (linked.cid = t.created_by OR linked.cid = ANY(t.contacts))
       GROUP BY linked.cid, p.role_id`,
-    [ctx.userId, linkedContactIds]
-  );
-  const m: AccountHierarchyAffinity = new Map();
-  for (const r of res.rows as {
-    user_contact_id: string;
-    hierarchy_id: string;
-    n: number;
-  }[]) {
-    let inner = m.get(r.user_contact_id);
-    if (!inner) {
-      inner = new Map();
-      m.set(r.user_contact_id, inner);
+      [ctx.userId, linkedContactIds]
+    );
+    const m: AccountHierarchyAffinity = new Map();
+    for (const r of res.rows as {
+      user_contact_id: string;
+      hierarchy_id: string;
+      n: number;
+    }[]) {
+      let inner = m.get(r.user_contact_id);
+      if (!inner) {
+        inner = new Map();
+        m.set(r.user_contact_id, inner);
+      }
+      inner.set(r.hierarchy_id, r.n);
     }
-    inner.set(r.hierarchy_id, r.n);
-  }
-  return m;
+    return m;
+  });
 }
 
 /**

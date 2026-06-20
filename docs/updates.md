@@ -24,6 +24,8 @@
 
 ### Fixes
 
+- The plan-upgrade screen reads more clearly: the subscription terms are lighter and easier to scan,
+  and the Terms of Service and Privacy Policy are now tappable links instead of plain web addresses.
 - Plot no longer signs you out — or shows a "Plot signed out" notification — just because your phone
   briefly lost its connection (for example overnight or in a tunnel). It now only asks you to sign in
   again when your session is genuinely no longer valid, and stays signed in through temporary network

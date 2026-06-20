@@ -246,9 +246,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Patch iOS
         run: |
@@ -414,9 +429,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Patch Android
         run: |
@@ -610,9 +640,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Patch macOS
         run: |
@@ -751,9 +796,24 @@ jobs:
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
-          git -C "$SHOREBIRD_DIR" checkout v1.6.102
-          shorebird --version
+          # Checking out the tag re-bootstraps Shorebird's bundled Flutter, which
+          # downloads the engine from download.shorebird.dev. That download is
+          # prone to transient DNS/network failures on CI, so retry with backoff
+          # rather than failing the whole release on one hiccup. The engine is
+          # cached locally on success, so the later `shorebird release` reuses it.
+          for attempt in 1 2 3 4 5; do
+            if git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102 \
+              && git -C "$SHOREBIRD_DIR" checkout v1.6.102 \
+              && shorebird --version; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "ERROR: Failed to pin Shorebird to v1.6.102 after 5 attempts" >&2
+              exit 1
+            fi
+            echo "Pin attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
 
       - name: Patch Windows
         shell: bash

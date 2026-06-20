@@ -12,14 +12,22 @@ import 'select_modal.dart';
 class ConfirmModal {
   const ConfirmModal({
     required this.title,
-    required this.message,
+    this.message,
+    this.messageWidget,
     required this.confirmLabel,
     this.cancelLabel = 'Cancel',
     this.destructive = false,
-  });
+  }) : assert(
+         message != null || messageWidget != null,
+         'ConfirmModal needs a message or a messageWidget',
+       );
 
   final String title;
-  final String message;
+  final String? message;
+
+  /// Optional rich message rendered instead of [message] (e.g. tappable
+  /// links). Takes precedence over [message] when both are provided.
+  final Widget? messageWidget;
   final String confirmLabel;
   final String cancelLabel;
   final bool destructive;
@@ -31,7 +39,8 @@ class ConfirmModal {
       context,
       showFilter: false,
       title: title,
-      subtitle: message,
+      subtitle: messageWidget == null ? message : null,
+      subtitleWidget: messageWidget,
       selectedValue: false,
       items: (_) async => [
         SelectGroup<bool>(items: const [false, true]),

@@ -95,7 +95,10 @@ platform :mac do
   lane :metadata do
     options = {
       skip_binary_upload: true,
-      skip_screenshots: false,
+      # Honor the release workflow's update_metadata / update_screenshots flags.
+      # SKIP_* default to unset => false => upload, preserving local behavior.
+      skip_metadata: ENV["SKIP_METADATA"] == "true",
+      skip_screenshots: ENV["SKIP_SCREENSHOTS"] == "true",
       # The committed store assets are the source of truth. Use deliver's sync
       # logic (checksum-diff: upload only the missing shots, delete only the
       # extras) rather than overwrite_screenshots. overwrite uploads the whole

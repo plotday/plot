@@ -86,12 +86,15 @@ describe("classify queue consumer error handling", () => {
     expect(msg.ack).not.toHaveBeenCalled();
   });
 
-  it("defers a statement_timeout (57014) to the hourly sweep: captures once, acks (no retry)", async () => {
-    // A 57014 is transient DB saturation, not a slow query. Retrying it
-    // immediately just re-loads the overloaded backend (the storm). Ack it so
-    // the queue stops re-delivering; classify_at stays set, so the next hourly
-    // sweep re-enqueues it when contention has cleared. Still captured once for
-    // visibility (the rate naturally falls as the storm shrinks).
+  it("defers a statement_timeout (57014) to the hourly sweep: emits a counter event and acks, without capturing it as a bug", async () => {
+    // A 57014 here is transient DB saturation, not a slow query, and we
+    // deliberately DEFER it: ack so the queue stops re-delivering, leave
+    // classify_at set so the next hourly sweep re-enqueues it once contention
+    // clears. That makes it an expected, handled, self-healing condition — like
+    // the 55P03 branch above — so it must NOT be reported to error tracking.
+    // Capturing it once per thread on every hourly sweep is exactly what kept
+    // PostHog 019ed53e firing indefinitely after the deferral shipped. Emit a
+    // queryable counter event instead so saturation stays observable.
     handleMock.mockRejectedValueOnce(
       pgError("canceling statement due to statement timeout", "57014")
     );
@@ -99,7 +102,10 @@ describe("classify queue consumer error handling", () => {
 
     await runBatch([msg]);
 
-    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).not.toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "classify.deferred_timeout" })
+    );
     expect(msg.ack).toHaveBeenCalledTimes(1);
     expect(msg.retry).not.toHaveBeenCalled();
   });

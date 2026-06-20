@@ -137,7 +137,13 @@ export async function classifyThreadForUser(
     // but every LLM stage is skipped (ctx.aiDisabled), so the thread is filed
     // by the deterministic stages alone — no model call for classification.
     const aiDisabled = !(await isAiEnabled(db, args.userId));
-    const ctx = { ...classifierContextFromDb(db, args.userId), aiDisabled };
+    // Per-call memo: one classify runs several cascade stages (scoring,
+    // cold-start, tie-breaker, topic-LLM) that each re-read the same
+    // user-scoped facts (focuses, linked contacts, affinity); cache them once.
+    const ctx = {
+      ...classifierContextFromDb(db, args.userId, new Map()),
+      aiDisabled,
+    };
     const candidate = await buildCandidate(db, args);
     const result = await classifier.classify(ctx, candidate);
     // Log the decision verbatim — for stage 'none', priority_id stays NULL
@@ -181,7 +187,7 @@ export async function classifyThreadForUserExplain(
   args: ClassifyArgs
 ): Promise<ClassifyExplanation> {
   const classifier = getProductionClassifier(envWithClassifierBindings(env));
-  const ctx = classifierContextFromDb(db, args.userId);
+  const ctx = classifierContextFromDb(db, args.userId, new Map());
   const candidate = await buildCandidate(db, args);
   const result = await classifier.classify(ctx, candidate);
   return {

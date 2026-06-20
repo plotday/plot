@@ -1,10 +1,12 @@
 export type {
   Classifier,
   ClassifierContext,
+  ClassifierBatchCache,
   ClassificationResult,
   Candidate,
   SandboxDb,
 } from "./types";
+export { cachedUserRead } from "./ts-hybrid-cache";
 export type {
   HybridParams,
   SignalWeights,

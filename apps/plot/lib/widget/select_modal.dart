@@ -87,6 +87,7 @@ class SelectModal<T> extends Modal {
     this.title,
     this.prompt,
     this.subtitle,
+    this.subtitleWidget,
     this.onSelect,
     this.initialItems,
     this.emptyMessage,
@@ -111,6 +112,7 @@ class SelectModal<T> extends Modal {
            title: title,
            prompt: prompt,
            subtitle: subtitle,
+           subtitleWidget: subtitleWidget,
            onSelect: onSelect,
            initialItems: initialItems,
            emptyMessage: emptyMessage,
@@ -149,6 +151,11 @@ class SelectModal<T> extends Modal {
 
   /// Optional subtitle displayed below the search area and above the list.
   final String? subtitle;
+
+  /// Optional rich subtitle rendered in the same slot as [subtitle]. When
+  /// provided it takes precedence over [subtitle], letting callers supply
+  /// tappable links or other inline widgets instead of plain text.
+  final Widget? subtitleWidget;
 
   /// Optional callback when an item is selected.
   /// Receives the context, selected item, and current search text.
@@ -222,6 +229,7 @@ class SelectModal<T> extends Modal {
     String? title,
     String? prompt,
     String? subtitle,
+    Widget? subtitleWidget,
     Future<bool> Function(BuildContext context, T item, String searchText)?
     onSelect,
     String? emptyMessage,
@@ -260,6 +268,7 @@ class SelectModal<T> extends Modal {
       title: title,
       prompt: prompt,
       subtitle: subtitle,
+      subtitleWidget: subtitleWidget,
       onSelect: onSelect,
       initialItems: initialItems,
       emptyMessage: emptyMessage,
@@ -289,6 +298,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.title,
     this.prompt,
     this.subtitle,
+    this.subtitleWidget,
     this.onSelect,
     this.initialItems,
     this.emptyMessage,
@@ -310,6 +320,7 @@ class _SelectModal<T> extends StatefulWidget {
   final String? title;
   final String? prompt;
   final String? subtitle;
+  final Widget? subtitleWidget;
   final Future<bool> Function(BuildContext context, T item, String searchText)?
   onSelect;
   final List<SelectGroup<T>>? initialItems;
@@ -1542,7 +1553,23 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         );
                       },
                     ),
-                  if (widget.subtitle != null)
+                  if (widget.subtitleWidget != null)
+                    Padding(
+                      // Left padding = 20 so the subtitle lines up with
+                      // ListTile's default content indent (see ListTile's
+                      // leading SizedBox width default).
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        context.theme.spacing.sm,
+                        context.theme.spacing.lg,
+                        context.theme.spacing.sm,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: widget.subtitleWidget!,
+                      ),
+                    )
+                  else if (widget.subtitle != null)
                     Padding(
                       // Left padding = 20 so the subtitle lines up with
                       // ListTile's default content indent (see ListTile's
@@ -1558,9 +1585,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         child: Text(
                           widget.subtitle!,
                           textAlign: TextAlign.start,
-                          style: TextStyle(
+                          // Derive from the theme's `sm` text style so the
+                          // subtitle inherits the app's font family and
+                          // weight; a raw TextStyle that only sets color +
+                          // fontSize falls back to the platform default
+                          // weight (heavy on iOS), unlike body copy elsewhere.
+                          style: context.theme.typography.sm.copyWith(
                             color: context.theme.colors.mutedForeground,
-                            fontSize: context.theme.typography.sm.fontSize,
                           ),
                         ),
                       ),
