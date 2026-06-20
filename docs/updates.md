@@ -11,6 +11,8 @@
 - Starting a new thread by typing an email address and then picking a connection like Gmail now keeps
   that address as the recipient, sends the thread as shared rather than private, and leaves it in the
   focus you were already in instead of jumping to a different one.
+- When a focus has nothing unread, the unread-filter button in the header now shows as dimmed and
+  inactive instead of looking like a button you can press.
 
 ## 1.5.0+359 — 2026-06-19
 

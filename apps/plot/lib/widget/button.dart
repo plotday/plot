@@ -119,6 +119,11 @@ class _ButtonState extends State<Button> {
     FButtonVariant variant;
     FButtonStyleDelta styleDelta;
 
+    // Effective enabled state: the button is interactive only when both the
+    // Button widget and its command allow it. Drives onPress, hover tracking,
+    // and the dimmed disabled styling below.
+    final isEnabled = widget.enabled && widget.command.enabled(context);
+
     if (widget.selected) {
       // For selected state, we build a complete FButtonStyle and pass it as the delta
       // (FButtonStyle implements FButtonStyleDelta and returns itself)
@@ -128,19 +133,17 @@ class _ButtonState extends State<Button> {
       variant = _variant();
 
       if (widget.iconOnly) {
-        styleDelta = _buildIconOnlyStyle(context);
+        styleDelta = _buildIconOnlyStyle(context, enabled: isEnabled);
       } else {
         styleDelta = const FButtonStyleDelta.context();
       }
     }
 
-    final onPress = widget.enabled && widget.command.enabled(context)
-        ? () => context.run(widget.command)
-        : null;
+    final onPress = isEnabled ? () => context.run(widget.command) : null;
 
     final button = MouseRegion(
-      onEnter: widget.enabled ? (_) => setState(() => _isHovered = true) : null,
-      onExit: widget.enabled ? (_) => setState(() => _isHovered = false) : null,
+      onEnter: isEnabled ? (_) => setState(() => _isHovered = true) : null,
+      onExit: isEnabled ? (_) => setState(() => _isHovered = false) : null,
       child: PlatformBuilder(
         builder: (_) {
           // Priority order for icon display:
@@ -368,7 +371,16 @@ class _ButtonState extends State<Button> {
   /// Primary buttons opt out: the theme already paints the icon in the
   /// accent color over a pale tinted background, and muting it makes the
   /// button read as disabled.
-  FButtonStyleDelta _buildIconOnlyStyle(BuildContext context) {
+  ///
+  /// When [enabled] is false the icon drops to the dimmer [veryMuted] tone and
+  /// the hover variant is omitted entirely, so a disabled button reads as
+  /// greyed-out and never brightens on hover. (forui still flags an FTappable
+  /// as `.hovered` on mouse-enter even while disabled, so we must withhold the
+  /// hover colour ourselves rather than rely on the disabled state.)
+  FButtonStyleDelta _buildIconOnlyStyle(
+    BuildContext context, {
+    required bool enabled,
+  }) {
     final sizeStyles = switch (widget.style) {
       ButtonStyle.primary => context.theme.buttonStyles.primary,
       ButtonStyle.secondary => context.theme.buttonStyles.secondary,
@@ -384,6 +396,23 @@ class _ButtonState extends State<Button> {
         ),
       ]),
     );
+
+    if (!enabled) {
+      // Disabled: a single dimmed tone for every state (no hover variant), so
+      // the icon stays greyed out and inert.
+      final iconStyle = style.iconContentStyle.iconStyle;
+      return style.copyWith(
+        // ignore: unused_result
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(
+            EdgeInsets.symmetric(vertical: iconPadV),
+          ),
+          iconStyle: _iconVariants(
+            base: iconStyle.resolve({}).copyWith(color: context.colour.veryMuted),
+          ),
+        ),
+      );
+    }
 
     if (isPrimary && widget.color == null) {
       // Keep the primary theme's icon coloring; only patch padding.
