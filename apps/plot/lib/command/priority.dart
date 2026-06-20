@@ -1565,6 +1565,23 @@ class MergeFocus extends PriorityCommand {
     final source = _source;
     final target = _target;
 
+    // Hide the source focus immediately. The background merge below archives
+    // it server-side and Priority.pull() lands that — but waiting for the
+    // round-trip leaves the merged-away focus lingering in the sidebar, the
+    // noticeable delay this addresses. Archiving it in the local store now
+    // drops it from the sidebar the instant we navigate (Priority.watch
+    // filters archived focuses). This is idempotent with the server merge:
+    // merge_priority re-files the source's threads regardless of its archived
+    // state, and its own archive is a no-op once the focus is archived, so
+    // racing the optimistic archive against the merge is safe.
+    try {
+      await source.copyWith(archivedAt: Value(DateTime.now())).save();
+    } catch (e, stackTrace) {
+      // The optimistic hide is a nicety; never let a local write failure
+      // block the merge or the navigation to the destination focus.
+      Tracker.captureException(e, stackTrace);
+    }
+
     // Merge in the background so the modal closes and we navigate to the
     // destination focus immediately. The server endpoint re-files every
     // filing from the source onto the target in one statement and archives

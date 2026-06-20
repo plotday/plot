@@ -19,6 +19,9 @@
   focus you were already in instead of jumping to a different one.
 - When a focus has nothing unread, the unread-filter button in the header now shows as dimmed and
   inactive instead of looking like a button you can press.
+- Merging one focus into another is now instant — the focus you merge away disappears and Plot takes
+  you to the destination right away, instead of leaving the old focus sitting in your sidebar for a
+  moment.
 
 ## 1.5.0+359 — 2026-06-19
 
