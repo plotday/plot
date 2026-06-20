@@ -17,6 +17,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/main.dart' show instanceLock;
+import 'package:plot/widget/focus_keeper.dart';
 import 'package:plot/widget/modal.dart';
 import 'logging.dart';
 
@@ -291,6 +292,11 @@ class WindowState extends State<Window> with WindowListener {
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    // Restore keyboard focus into the app when the window regains focus.
+    // macOS parks focus on the root scope after Cmd+Tab, which silently kills
+    // every global shortcut (Cmd+K, Cmd+/, …) and leaves no editable focus
+    // owner. Self-gates to desktop. See [FocusKeeper].
+    FocusKeeper.instance.start();
     // Handle Cmd+Q and system-initiated termination (not covered by
     // onWindowClose which only fires for the window close button).
     // Closes the database before allowing exit to prevent FFI crashes

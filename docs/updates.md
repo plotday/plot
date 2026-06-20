@@ -2,6 +2,10 @@
 
 ### Fixes
 
+- Keyboard shortcuts on Mac and Windows now keep working after you switch away from Plot and back
+  (for example with ⌘-Tab). Previously the desktop app could lose its keyboard focus on return, so
+  shortcuts like ⌘K and ⌘/ did nothing and you couldn't start typing until you clicked into the
+  window. Plot now restores focus the moment its window comes forward.
 - Reordering your list, bumping a thread to the top, or marking something as active no longer makes
   Plot notify you about it again. Push notifications now reappear only when a thread has genuinely new
   activity, so tidying up stays quiet.
