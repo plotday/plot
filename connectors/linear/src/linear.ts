@@ -1,4 +1,4 @@
-import { type Attachment, type Issue, LinearClient } from "@linear/sdk";
+import { LinearClient } from "@linear/sdk";
 import type {
   EntityWebhookPayloadWithCommentData,
   EntityWebhookPayloadWithIssueData,
@@ -31,6 +31,14 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import { Files } from "@plotday/twister/tools/files";
 
+import {
+  buildIssueLink,
+  resolveAuthorContact,
+  ISSUES_PER_PAGE,
+  TEAM_ISSUES_BATCH_QUERY,
+  type TeamIssuesBatchResponse,
+} from "./linear-sync";
+
 /**
  * Map a Linear workflow-state `type` to a curated status icon.
  * Linear state types: backlog | unstarted | started | completed | cancelled.
@@ -62,14 +70,6 @@ type Project = {
 
 type ProjectSyncOptions = {
   timeMin?: Date;
-};
-
-// Cloudflare Workers provides Buffer global
-declare const Buffer: {
-  from(
-    data: string | ArrayBuffer | Uint8Array,
-    encoding?: string
-  ): Uint8Array & { toString(encoding?: string): string };
 };
 
 type SyncState = {
@@ -143,37 +143,6 @@ export class Linear extends Connector<Linear> {
       throw new Error("No Linear authentication token available");
     }
     return new LinearClient({ accessToken: token.token });
-  }
-
-  /**
-   * Resolve author contact from a Linear user object.
-   * Uses provider ID for contact resolution when available.
-   */
-  private resolveAuthorContact(
-    user: { id?: string; email?: string; name?: string; avatarUrl?: string | null } | null | undefined,
-  ): NewContact | undefined {
-    if (!user) return undefined;
-
-    // Always use provider ID for contact resolution when available
-    if (user.id) {
-      return {
-        ...(user.email ? { email: user.email } : {}),
-        name: user.name ?? "",
-        avatar: user.avatarUrl ?? undefined,
-        source: { accountId: user.id },
-      };
-    }
-
-    // Fallback: email only (no provider ID)
-    if (user.email) {
-      return {
-        email: user.email,
-        name: user.name ?? "",
-        avatar: user.avatarUrl ?? undefined,
-      };
-    }
-
-    return undefined;
   }
 
   /**
@@ -483,38 +452,56 @@ export class Linear extends Connector<Linear> {
     }
 
     const client = await this.getClient(projectId);
-    const team = await client.team(projectId);
 
-    // Build filter
-    const filter: any = {};
-    if (options?.timeMin) {
-      filter.createdAt = { gte: options.timeMin };
-    }
-
-    // Fetch batch of issues (50 at a time)
-    const issuesConnection = await team.issues({
-      first: 50,
-      after: state.after || undefined,
-      filter: Object.keys(filter).length > 0 ? filter : undefined,
+    // Fetch a page of issues WITH creator/assignee/state/comments/attachments
+    // inline in ONE GraphQL query. The SDK's lazy relations would issue a
+    // separate round-trip per field per issue (250+ sequential calls for a
+    // 50-issue batch), stretching a single execution long enough to trip the
+    // Durable Object storage timeout and reset the object — and, because the
+    // cursor only advances at the end of the batch, the retry re-ran the same
+    // batch forever (stuck sync). One nested query keeps each execution fast
+    // and bounded.
+    const response = await client.client.rawRequest<
+      TeamIssuesBatchResponse,
+      {
+        teamId: string;
+        first: number;
+        after: string | null;
+        filter: { createdAt: { gte: string } } | null;
+      }
+    >(TEAM_ISSUES_BATCH_QUERY, {
+      teamId: projectId,
+      first: ISSUES_PER_PAGE,
+      after: state.after || null,
+      filter: options?.timeMin
+        ? { createdAt: { gte: options.timeMin.toISOString() } }
+        : null,
     });
+
+    const issuesConnection = response.data?.team?.issues;
+    if (!issuesConnection) {
+      throw new Error(
+        `Linear issues query returned no data for team ${projectId}`
+      );
+    }
 
     // Process each issue
     for (const issue of issuesConnection.nodes) {
-      const link = await this.convertIssueToLink(
-        issue,
-        projectId,
-        state.initialSync
-      );
+      const link = buildIssueLink(issue, projectId, state.initialSync);
 
-      if (link) {
-        // Inject sync metadata for bulk operations (e.g. disable filtering)
-        link.channelId = projectId;
-        link.meta = {
-          ...link.meta,
-          syncProvider: "linear",
-          syncableId: projectId,
-        };
-        await this.tools.integrations.saveLink(link);
+      // Inject sync metadata for bulk operations (e.g. disable filtering)
+      link.channelId = projectId;
+      link.meta = {
+        ...link.meta,
+        syncProvider: "linear",
+        syncableId: projectId,
+      };
+      await this.tools.integrations.saveLink(link);
+
+      // Cache each attachment → projectId so downloadAttachment can fetch
+      // the right client later.
+      for (const att of issue.attachments.nodes) {
+        await this.set(`linear:att-project:${att.id}`, projectId);
       }
     }
 
@@ -536,8 +523,10 @@ export class Linear extends Connector<Linear> {
       await this.tools.tasks.runTask(nextBatch);
     } else {
       // Initial backfill finished. Signal completion so the "Syncing X"
-      // spinner clears — without this the connection shows "Syncing" forever
-      // even though every issue synced (initial_sync_completed_at stays NULL).
+      // spinner clears — without this the runtime never stamps
+      // `initial_sync_completed_at`, so the connection sits in "Syncing"
+      // until the stuck-sync watchdog gives up and flips it to "Reconnect",
+      // an endless reconnect loop even though every issue synced.
       // channelSyncCompleted is idempotent and channel-scoped, so it is safe
       // here and a no-op for incremental runs.
       if (state.initialSync) {
@@ -546,168 +535,6 @@ export class Linear extends Connector<Linear> {
       // Cleanup sync state.
       await this.clear(`sync_state_${projectId}`);
     }
-  }
-
-  /**
-   * Convert a Linear issue to a NewLinkWithNotes
-   */
-  private async convertIssueToLink(
-    issue: Issue,
-    projectId: string,
-    initialSync: boolean
-  ): Promise<NewLinkWithNotes | null> {
-    let creator, assignee, state, comments;
-    let attachmentNodes: Attachment[] = [];
-
-    try {
-      creator = await issue.creator;
-    } catch (error) {
-      console.error(
-        "Error fetching creator:",
-        error instanceof Error ? error.message : String(error)
-      );
-      creator = null;
-    }
-
-    try {
-      assignee = await issue.assignee;
-    } catch (error) {
-      console.error(
-        "Error fetching assignee:",
-        error instanceof Error ? error.message : String(error)
-      );
-      assignee = null;
-    }
-
-    try {
-      state = await issue.state;
-    } catch (error) {
-      console.error(
-        "Error fetching state:",
-        error instanceof Error ? error.message : String(error)
-      );
-      state = null;
-    }
-
-    try {
-      comments = await issue.comments();
-    } catch (error) {
-      console.error(
-        "Error fetching comments:",
-        error instanceof Error ? error.message : String(error)
-      );
-      comments = { nodes: [] };
-    }
-
-    // Fetch issue-level attachments for inbound fileRef actions
-    try {
-      const atts = await issue.attachments();
-      attachmentNodes = atts.nodes;
-    } catch (error) {
-      console.error(
-        "Error fetching attachments:",
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-
-    // Prepare author and assignee contacts - will be passed directly as NewContact
-    const authorContact = this.resolveAuthorContact(creator);
-    let assigneeContact: NewContact | undefined;
-
-    if (assignee) {
-      assigneeContact = {
-        ...(assignee.email ? { email: assignee.email } : {}),
-        name: assignee.name,
-        avatar: assignee.avatarUrl ?? undefined,
-        ...(assignee.id ? { source: { accountId: assignee.id } } : {}),
-      };
-    }
-
-    // Use state ID as status — matches dynamic linkTypes from getChannels().
-    // Falls back to state type category for the static linkTypes fallback.
-    const status = state?.id ?? (state?.type === "triage" ? "backlog" : state?.type ?? "unstarted");
-
-    // Prepare description content
-    const description = issue.description || "";
-    const hasDescription = description.trim().length > 0;
-
-    // Build thread-level actions: external link + inbound attachment fileRefs
-    const threadActions: Action[] = [];
-    if (issue.url) {
-      threadActions.push({
-        type: ActionType.external,
-        title: `Open in Linear`,
-        url: issue.url,
-      });
-    }
-
-    // Emit fileRef actions for each attachment and cache the attachment → projectId
-    // mapping so downloadAttachment can retrieve the right client.
-    for (const att of attachmentNodes) {
-      await this.set(`linear:att-project:${att.id}`, projectId);
-
-      threadActions.push({
-        type: ActionType.fileRef,
-        ref: att.id,
-        fileName: att.title ?? "attachment",
-        fileSize: null,
-        mimeType: "application/octet-stream",
-      } as any);
-    }
-
-    // Build notes array: description note + comment notes
-    const notes: any[] = [];
-
-    notes.push({
-      key: "description",
-      content: hasDescription ? description : null,
-      created: issue.createdAt,
-      author: authorContact,
-    });
-
-    // Add comments as notes (with unique IDs, not upserted)
-    for (const comment of comments.nodes) {
-      // Fetch comment author
-      let commentAuthor: NewContact | undefined;
-      try {
-        const user = await comment.user;
-        commentAuthor = this.resolveAuthorContact(user);
-      } catch (error) {
-        console.error(
-          "Error fetching comment user:",
-          error instanceof Error ? error.message : String(error)
-        );
-      }
-
-      notes.push({
-        key: `comment-${comment.id}`,
-        content: comment.body,
-        created: comment.createdAt,
-        author: commentAuthor,
-      });
-    }
-
-    const newLink: NewLinkWithNotes = {
-      source: `linear:issue:${issue.id}`,
-      type: "issue",
-      title: issue.title,
-      created: issue.createdAt,
-      author: authorContact,
-      assignee: assigneeContact ?? null,
-      status,
-      meta: {
-        linearId: issue.id,
-        projectId,
-      },
-      actions: threadActions.length > 0 ? threadActions : undefined,
-      sourceUrl: issue.url ?? null,
-      notes,
-      preview: hasDescription ? description : null,
-      ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
-      ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
-    };
-
-    return newLink;
   }
 
   /**
@@ -748,7 +575,7 @@ export class Linear extends Connector<Linear> {
     if (!issue) return null;
 
     const creator = await issue.creator;
-    const authorContact = this.resolveAuthorContact(creator ?? null);
+    const authorContact = resolveAuthorContact(creator ?? null);
 
     const threadActions: Action[] = [];
     if (issue.url) {
@@ -774,8 +601,8 @@ export class Linear extends Connector<Linear> {
       sourceUrl: issue.url ?? null,
       // Bind the opening note to the issue description (the same "description"
       // key sync-in emits) so edits to it round-trip via onNoteUpdated.
-      // externalContent is the description as Linear stored it, matching
-      // convertIssueToLink so the baseline hash lines up.
+      // externalContent is the description as Linear stored it, matching the
+      // description note buildIssueLink emits so the baseline hash lines up.
       originatingNote: {
         key: "description",
         externalContent: issue.description ?? undefined,
@@ -1087,7 +914,7 @@ export class Linear extends Connector<Linear> {
     }
 
     // Build thread update with only issue fields (no notes)
-    const authorContact = this.resolveAuthorContact(creator);
+    const authorContact = resolveAuthorContact(creator);
     let assigneeContact: NewContact | undefined;
 
     if (assignee) {
@@ -1169,7 +996,7 @@ export class Linear extends Connector<Linear> {
     const issue = await client.issue(issueId);
 
     // Extract comment author from webhook payload
-    const commentAuthor = this.resolveAuthorContact(comment.user);
+    const commentAuthor = resolveAuthorContact(comment.user);
 
     // Create thread update with single comment note
     // Type is required by NewThread, but upsert will use existing thread's type
@@ -1202,9 +1029,9 @@ export class Linear extends Connector<Linear> {
    * Downloads a Linear attachment identified by its attachment id (`ref`).
    *
    * The ref is emitted as an `ActionType.fileRef` action during inbound sync
-   * in `convertIssueToLink`. We look up the projectId from the store cache
-   * (written when the attachment was first emitted), fetch the attachment's
-   * URL via the Linear SDK, and redirect the client there.
+   * by `buildIssueLink`. We look up the projectId from the store cache
+   * (written by `syncBatch` when the attachment was first emitted), fetch the
+   * attachment's URL via the Linear SDK, and redirect the client there.
    *
    * Linear attachment URLs are long-lived CDN URLs, so a redirect is safe.
    * Refetching on every call keeps the URL fresh in case it ever expires.
