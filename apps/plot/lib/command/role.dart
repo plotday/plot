@@ -1,3 +1,4 @@
+import 'package:plot/analytics/profile.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/theme_color.dart';
@@ -55,7 +56,9 @@ class _CreateRole extends Command {
     : super(
         title: 'Create role',
         icon: PlotIcon.save,
-        eventObject: EventObject.priority,
+        // Distinct from focus (priority) create events so role vs focus
+        // creation is separable in analytics.
+        eventObject: EventObject.role,
         eventAction: EventAction.added,
       );
 
@@ -68,6 +71,8 @@ class _CreateRole extends Command {
     final role = Role.create(name: name, color: color);
     await role.save();
     onCreated?.call(role);
+    // Refresh the user's role count on the next sync.
+    markUserAnalyticsProfileStale();
     return const CommandDone();
   }
 }
@@ -129,7 +134,7 @@ class _SaveRole extends Command {
     : super(
         title: 'Save',
         icon: PlotIcon.done,
-        eventObject: EventObject.priority,
+        eventObject: EventObject.role,
         eventAction: EventAction.updated,
       );
 

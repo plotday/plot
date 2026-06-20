@@ -116,6 +116,14 @@ abstract class Command {
   /// Whether this command has unread content (e.g. unread priority).
   bool get unread => false;
 
+  /// Command-specific properties attached to this command's PostHog action
+  /// event (merged into [buildActionProperties] via `extra`). Override to
+  /// describe *what kind* of action this was — e.g. a created note reports
+  /// `is_todo` / `attachment_count` / `recipient_scope` — so toggles that feed
+  /// the action don't each need their own event. Null values are dropped.
+  /// Read once, after the command runs, by [BuildContextCommandExtension.run].
+  Map<String, Object?> get eventProperties => const {};
+
   /// Override to provide custom enabled logic based on context.
   /// Returns true by default (command is enabled).
   bool enabled(BuildContext context) => true;
@@ -196,6 +204,9 @@ class CommandWrapper extends Command {
 
   @override
   bool get unread => command.unread;
+
+  @override
+  Map<String, Object?> get eventProperties => command.eventProperties;
 
   @override
   bool enabled(BuildContext context) => command.enabled(context);
@@ -383,6 +394,7 @@ extension BuildContextCommandExtension on BuildContext {
           durationMs: durationMs,
           errorType: errorType,
           errorMessage: errorMessage,
+          extra: command.eventProperties,
         ),
       );
 

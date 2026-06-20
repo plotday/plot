@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/agenda_model.dart';
 // The store also exports a `PriorityBlock` (the Drift store wrapper for
@@ -1476,6 +1477,12 @@ class _BlockHeaderState extends State<_BlockHeader> {
             );
             return;
           }
+          // Opening an event from the agenda — answers whether users drill from
+          // the agenda into event threads. (The no-thread branch above is
+          // already tracked via ChangeCurrentPriority.)
+          Tracker.trackAction(EventObject.activity, EventAction.opened, {
+            'source': 'agenda',
+          });
           // Event-headers in the universal agenda live under the
           // default-priority PriorityBloc, so [ChangeCurrentThread]'s
           // "stay on currentPriority" navigation would yank the user
@@ -2036,6 +2043,12 @@ class _ConferencingInlineState extends State<_ConferencingInline> {
   bool _hovered = false;
 
   void _open() {
+    // Joining a meeting from Plot — answers whether/where users actually join
+    // conferencing from the app.
+    Tracker.trackAction(EventObject.activity, EventAction.joined, {
+      'provider': widget.action.provider.name,
+      'source': 'agenda',
+    });
     try {
       launchUrl(
         Uri.parse(widget.action.url),

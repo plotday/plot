@@ -93,6 +93,7 @@ enum EventObject {
   activity('activity'),
   note('note'),
   priority('priority'),
+  role('role'),
   twist('twist'),
   tag('tag'),
   filter('filter'),
@@ -132,12 +133,14 @@ enum EventAction {
   untagged('untagged'),
   unfinished('unfinished'),
   moved('moved'),
+  retried('retried'),
 
   // Navigation
   viewed('viewed'),
   opened('opened'),
   closed('closed'),
   navigated('navigated'),
+  joined('joined'),
 
   // Interaction
   clicked('clicked'),

@@ -85,7 +85,13 @@ class ActivitySource {
   static const String twist = 'twist';
 }
 
-/// Build action execution properties
+/// Build action execution properties.
+///
+/// [extra] carries command-specific properties (e.g. `is_todo`,
+/// `attachment_count`, `connector`) contributed by a [Command]'s
+/// `eventProperties` getter. They are merged after the standard keys so a
+/// command can describe *what kind* of action it was without firing a separate
+/// event.
 Map<String, dynamic> buildActionProperties({
   required String actionType,
   required bool success,
@@ -94,6 +100,7 @@ Map<String, dynamic> buildActionProperties({
   String? shortcutUsed,
   String? errorType,
   String? errorMessage,
+  Map<String, Object?>? extra,
 }) {
   final properties = <String, dynamic>{
     PropertyKey.actionType: actionType,
@@ -115,6 +122,14 @@ Map<String, dynamic> buildActionProperties({
 
   if (errorMessage != null) {
     properties[PropertyKey.errorMessage] = errorMessage;
+  }
+
+  if (extra != null) {
+    for (final entry in extra.entries) {
+      // Only attach non-null extras; a null means "not applicable" and would
+      // just add noise to the event.
+      if (entry.value != null) properties[entry.key] = entry.value;
+    }
   }
 
   return properties;

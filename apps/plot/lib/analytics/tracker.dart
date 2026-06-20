@@ -240,6 +240,11 @@ class Tracker {
   late final AnalyticsBackend _backend;
   bool _initialized = false;
 
+  /// The last user id passed to [identify], remembered so [setPersonProperties]
+  /// can update the person profile without the caller re-supplying it. Null
+  /// before the first identify (and after [reset]).
+  String? _identifiedUserId;
+
   /// Throttles exception reporting so a crash loop (e.g. the CanvasKit WASM
   /// module aborting and rethrowing on every frame) can't flood PostHog —
   /// one such loop produced 318K identical events in 3 hours.
@@ -589,6 +594,7 @@ class Tracker {
     Map<String, dynamic>? properties,
     Map<String, dynamic>? propertiesSetOnce,
   }) async {
+    _identifiedUserId = userId;
     // Stamp last-known platform/version on the person profile too, so we can
     // see what an inactive user was last running without hunting for events.
     await _backend.identify(
@@ -598,12 +604,29 @@ class Tracker {
     );
   }
 
+  /// Set person ($set) properties on the already-identified user — e.g.
+  /// `role_count`, `connector_count`. No-op before the first [identify] (an
+  /// anonymous user has no person profile to update). Unlike [identify] this
+  /// does NOT merge super-properties, so it only writes the supplied keys.
+  static Future<void> setPersonProperties(
+    Map<String, dynamic> properties,
+  ) async {
+    await _instance._setPersonProperties(properties);
+  }
+
+  Future<void> _setPersonProperties(Map<String, dynamic> properties) async {
+    final userId = _identifiedUserId;
+    if (userId == null) return;
+    await _backend.identify(userId, properties, null);
+  }
+
   /// Reset user identity (on sign out)
   static Future<void> reset() async {
     await _instance._reset();
   }
 
   Future<void> _reset() async {
+    _identifiedUserId = null;
     await _backend.reset();
   }
 

@@ -394,6 +394,10 @@ class SyncOrchestrator {
           '(pull ${pullTotalMs}ms, push ${sw.elapsedMilliseconds - pullTotalMs}ms)',
         );
       }
+
+      // Stores are now populated — set the baseline per-user analytics counts
+      // (roles/focuses/connectors) on the person profile, once per session.
+      unawaited(refreshUserAnalyticsProfileOnce());
     } finally {
       _syncAllInProgress = false;
       _pushCompleters.clear();

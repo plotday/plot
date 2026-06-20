@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
@@ -283,6 +284,15 @@ void dispatchActivityFeedThreadDrop({
       : ThreadId.fromString(target.nextBlockId!);
 
   final draggedId = ThreadId.fromString(payload.blockId);
+
+  // Drag-and-drop in the feed bypasses the Command pipeline, so emit the move
+  // event directly. `target_section` distinguishes a reorder (doing) from a
+  // reschedule (scheduled) or completion (activity). Other move entry points
+  // (menu/bulk) already fire `[Action] Activity Moved` via their commands.
+  Tracker.trackAction(EventObject.activity, EventAction.moved, {
+    'target_section': section.name,
+    'via': 'feed_drag',
+  });
 
   bloc.applyActivityFeedThreadDrop(
     draggedId: draggedId,

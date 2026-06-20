@@ -10,6 +10,7 @@ import 'command.dart';
 import 'package:plot/command/focus_suggestions.dart';
 import 'package:plot/util/priority_nav.dart';
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/analytics/profile.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/widget.dart';
@@ -384,6 +385,8 @@ class AddPriority extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     final savedPriority = await priority.save();
+    // Refresh the user's focus count on the next sync.
+    markUserAnalyticsProfileStale();
     if (suggestionKey != null) {
       await DismissedFocusSuggestions.add(suggestionKey!);
     }

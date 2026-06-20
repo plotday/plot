@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'command.dart';
+import 'event_properties.dart';
 import 'package:flutter/services.dart';
 import 'package:plot/router.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -27,6 +28,14 @@ class AddNote extends Command {
 
   final Future<Note> _note;
 
+  /// The resolved note, captured during [run] so [eventProperties] (read in the
+  /// finally of `context.run`) can describe what kind of note was sent.
+  Note? _resolved;
+
+  @override
+  Map<String, Object?> get eventProperties =>
+      _resolved == null ? const {} : noteEventProperties(_resolved!);
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     // Try to get ThreadBloc from context before any async operations
@@ -39,6 +48,7 @@ class AddNote extends Command {
     }
 
     final note = await _note;
+    _resolved = note;
 
     // Use ThreadBloc.add() if available (resets the draft), otherwise save directly
     if (activityBloc != null) {

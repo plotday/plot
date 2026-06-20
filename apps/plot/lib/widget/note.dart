@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -48,8 +49,13 @@ class _NoteReplyReferenceState extends State<_NoteReplyReference> {
         }
 
         return GestureDetector(
-          onTap: () =>
-              context.read<ThreadBloc>().setThreadFilter(widget.reNoteId),
+          onTap: () {
+            // Drilling into the replied-to note's inline thread view.
+            Tracker.trackAction(EventObject.activity, EventAction.filtered, {
+              'source': 'renote_preview',
+            });
+            context.read<ThreadBloc>().setThreadFilter(widget.reNoteId);
+          },
           child: MouseRegion(
             cursor: SystemMouseCursors.basic,
             onEnter: (_) => setState(() => _isHovered = true),
@@ -924,9 +930,22 @@ class _DeliveryErrorBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          _DeliveryErrorAction(label: 'Retry', onTap: () => note.retrySend()),
+          _DeliveryErrorAction(
+            label: 'Retry',
+            onTap: () {
+              // Delivery reliability: how often sends fail and get retried.
+              Tracker.trackAction(EventObject.note, EventAction.retried);
+              return note.retrySend();
+            },
+          ),
           const SizedBox(width: 4),
-          _DeliveryErrorAction(label: 'Discard', onTap: () => note.discard()),
+          _DeliveryErrorAction(
+            label: 'Discard',
+            onTap: () {
+              Tracker.trackAction(EventObject.note, EventAction.deleted);
+              return note.discard();
+            },
+          ),
         ],
       ),
     );

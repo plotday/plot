@@ -5,6 +5,7 @@ import 'command.dart';
 import 'upgrade.dart' show ShowUpgradeOptions;
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/analytics/profile.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/widget/auth_button.dart' show AuthButton;
 import 'package:plot/store/store.dart';
@@ -2026,6 +2027,9 @@ class AddSourceDetail extends ShowForm {
                     teamId: owner == 'personal' ? null : owner,
                     getChanges: () => refreshChanges,
                     accountLabel: label.isEmpty ? null : label,
+                    connectorCategory: twist.category,
+                    isPremium: twist.premium,
+                    connectContext: dismissable ? 'onboarding' : 'settings',
                   );
                 },
               ),
@@ -2167,6 +2171,9 @@ class AddSourceDetail extends ShowForm {
                       twistName: twist.name,
                       teamId: owner == 'personal' ? null : owner,
                       getChanges: () => refreshChanges,
+                      connectorCategory: twist.category,
+                      isPremium: twist.premium,
+                      connectContext: dismissable ? 'onboarding' : 'settings',
                     );
                   },
                 ),
@@ -2232,6 +2239,9 @@ class AddSourceDetail extends ShowForm {
                     teamId: owner == 'personal' ? null : owner,
                     getChanges: () => noProviderChanges,
                     accountLabel: label.isEmpty ? null : label,
+                    connectorCategory: twist.category,
+                    isPremium: twist.premium,
+                    connectContext: dismissable ? 'onboarding' : 'settings',
                   );
                 },
               ),
@@ -2375,6 +2385,9 @@ class AddSourceDetail extends ShowForm {
                       twistName: twist.name,
                       teamId: owner == 'personal' ? null : owner,
                       getChanges: () => noProviderChanges,
+                      connectorCategory: twist.category,
+                      isPremium: twist.premium,
+                      connectContext: dismissable ? 'onboarding' : 'settings',
                     );
                   },
                 ),
@@ -3273,6 +3286,8 @@ class SetupTwist extends ShowForm {
                       ? linkChannelSelection.entries
                       : null,
                   teamId: owner == 'personal' ? null : owner,
+                  connectorCategory: twist.category,
+                  isPremium: twist.premium,
                 );
               },
             ),
@@ -3292,6 +3307,8 @@ class ActivateTwist extends Command {
     required this.channels,
     this.linkChannels,
     this.teamId,
+    this.connectorCategory,
+    this.isPremium,
   }) : super(
          title: 'Activate twist',
          icon: PlotIcon.twist,
@@ -3305,6 +3322,19 @@ class ActivateTwist extends Command {
   final List<SelectedChannel> channels;
   final List<LinkChannelEntry>? linkChannels;
   final String? teamId;
+
+  /// Connector identity attached to the `[Action] Twist Added` event. This
+  /// path (SetupTwist) has no onboarding/settings signal in scope, so it omits
+  /// `context`; the AddSourceDetail path (_ActivateNoProviderSource) carries it.
+  final String? connectorCategory;
+  final bool? isPremium;
+
+  @override
+  Map<String, Object?> get eventProperties => {
+    'connector': name,
+    'connector_category': connectorCategory,
+    'is_premium': isPremium,
+  };
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -3336,6 +3366,10 @@ class ActivateTwist extends Command {
 
       // Sync new twist to local DB
       await TwistInstance.pull();
+
+      // A connection was added — refresh the user's connector counts on the
+      // next sync.
+      markUserAnalyticsProfileStale();
 
       // Pop all modals and reopen twist list
       if (context.mounted) {
@@ -3571,6 +3605,9 @@ class _ActivateNoProviderSource extends Command {
     required this.getChanges,
     this.teamId,
     this.accountLabel,
+    this.connectorCategory,
+    this.isPremium,
+    this.connectContext,
   }) : super(
          title: 'Save connection',
          icon: PlotIcon.save,
@@ -3582,6 +3619,21 @@ class _ActivateNoProviderSource extends Command {
   final String twistName;
   final IntegrationChanges Function() getChanges;
   final String? teamId;
+
+  /// Connector identity + add context, attached to the `[Action] Twist Added`
+  /// event so we can answer which connector was added, whether it's premium,
+  /// and whether it was added during onboarding vs. later in settings.
+  final String? connectorCategory;
+  final bool? isPremium;
+  final String? connectContext;
+
+  @override
+  Map<String, Object?> get eventProperties => {
+    'connector': twistName,
+    'connector_category': connectorCategory,
+    'is_premium': isPremium,
+    'context': connectContext,
+  };
 
   /// Per-connection disambiguator, applied via updateTwist after activation
   /// since activateDraft itself doesn't take a label argument.
@@ -3620,6 +3672,9 @@ class _ActivateNoProviderSource extends Command {
       AddSourceDetail.lastConnectedDraftId = draftId;
       AddSourceDetail.lastActivatedInSetupModal = true;
       AddSourceDetail.clearDraft();
+
+      // A connection was added — refresh connector counts on the next sync.
+      markUserAnalyticsProfileStale();
 
       return const CommandDone();
     } on ApiException catch (e) {

@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
+import 'event_properties.dart';
 import 'package:plot/command/open_thread_link.dart';
 import 'package:plot/command/page_link.dart';
 import 'package:plot/command/thread_merge.dart';
@@ -530,6 +531,10 @@ class AddThreadWithNote extends Command {
 
   final ThreadWithNote _data;
   final bool navigate;
+
+  @override
+  Map<String, Object?> get eventProperties =>
+      threadEventProperties(_data.thread, _data.note);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

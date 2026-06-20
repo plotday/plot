@@ -48,6 +48,7 @@ import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
 import 'package:plot/cli_args.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/analytics/profile.dart';
 import 'enums.dart';
 import 'attention.dart';
 import 'types.dart';
