@@ -12,19 +12,16 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/note_editor_top_bar.dart';
 import 'package:plot/widget/recipient_picker_modal.dart';
 import 'package:plot/command/command.dart';
-import 'package:plot/analytics/tracker.dart';
 import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/util/platform.dart';
-import 'package:plot/util/image_utils.dart';
 import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/shortcut.dart';
-import 'package:plot/api/api.dart' as api;
-import 'package:plot/api/network_exception.dart';
 import 'package:plot/util/url_title.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'attachment_uploader.dart';
 import 'logging.dart';
 
 /// Resolves the active reply pill for a message-sharing (e.g. Gmail) thread
@@ -339,108 +336,42 @@ class NoteEditorState extends State<NoteEditor> {
   /// `onIsEmptyChanged` callback from the underlying [Editor].
   bool get isEmpty => _isEmpty;
 
-  /// Handle an image pasted from clipboard: insert a placeholder attachment
-  /// immediately (so the preview appears without waiting on the network) and
-  /// upload in the background, swapping the placeholder for the real
-  /// attachment once the server returns the file id.
-  Future<void> _handleImagePaste(Uint8List imageBytes) async {
-    final priorityId = widget.isNewThreadMode
+  /// Coordinates optimistic uploads for pasted images and picked files: inserts
+  /// a local-data placeholder immediately (so the preview appears without
+  /// waiting on the network), uploads in the background, and swaps in the real
+  /// attachment when the server responds. Reads/writes the editor's action list
+  /// via [_currentActions]/[_setCurrentActions] so it works in every mode, and
+  /// the finalize methods [resolvePending] it before publishing so a
+  /// `__pending_` id is never persisted to a non-draft note.
+  late final AttachmentUploader _attachmentUploader = AttachmentUploader(
+    getPriorityId: () => widget.isNewThreadMode
         ? widget.thread!.priority.id.toString()
-        : context.read<ThreadBloc>().state.thread.priority.id.toString();
+        : context.read<ThreadBloc>().state.thread.priority.id.toString(),
+    getActions: () => _currentActions,
+    setActions: _setCurrentActions,
+    onError: (message) {
+      if (mounted) context.showToast(message: message, isError: true);
+    },
+    isMounted: () => mounted,
+  );
 
+  /// Attach files picked from local storage (file picker, camera). Inserts the
+  /// previews immediately and uploads in the background.
+  void attachLocalFiles(List<LocalAttachment> attachments) =>
+      _attachmentUploader.attachAll(attachments);
+
+  /// Handle an image pasted from clipboard: attach it as a local image so the
+  /// preview appears immediately and the upload runs in the background.
+  void _handleImagePaste(Uint8List imageBytes) {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final fileName = 'pasted-image-$timestamp.png';
-    final pendingFileId = '__pending_$timestamp';
-
-    final dims = await getImageDimensions(imageBytes);
-    if (!mounted) return;
-    final imageWidth = dims?.$1;
-    final imageHeight = dims?.$2;
-
-    final placeholder = FileUserAction(
-      fileId: pendingFileId,
-      fileName: fileName,
-      fileSize: imageBytes.lengthInBytes,
-      mimeType: 'image/png',
-      imageWidth: imageWidth,
-      imageHeight: imageHeight,
-    );
-
-    FilePreviewCache.put(pendingFileId, imageBytes);
-    _setCurrentActions([..._currentActions, placeholder]);
-
-    try {
-      final response = await api.uploadFile(
-        filePath: '',
-        fileName: fileName,
-        priorityId: priorityId,
+    _attachmentUploader.attachAll([
+      LocalAttachment(
+        fileName: 'pasted-image-$timestamp.png',
+        mimeType: 'image/png',
+        fileSize: imageBytes.lengthInBytes,
         bytes: imageBytes,
-      );
-
-      if (!mounted) {
-        FilePreviewCache.evict(pendingFileId);
-        return;
-      }
-
-      final realFileId = response['fileId'] as String;
-      final realAction = FileUserAction(
-        fileId: realFileId,
-        fileName: response['fileName'] as String,
-        fileSize: response['fileSize'] as int,
-        mimeType: response['mimeType'] as String,
-        imageWidth: imageWidth,
-        imageHeight: imageHeight,
-      );
-
-      FilePreviewCache.rekey(pendingFileId, realFileId);
-
-      final actions = _currentActions;
-      var replaced = false;
-      final updated = actions.map((a) {
-        if (!replaced && a is FileUserAction && a.fileId == pendingFileId) {
-          replaced = true;
-          return realAction;
-        }
-        return a;
-      }).toList();
-      if (!replaced) {
-        // The user removed the placeholder mid-upload — drop the cached bytes
-        // and the just-uploaded file is orphaned (server-side cleanup, not
-        // ours to manage here).
-        FilePreviewCache.evict(realFileId);
-        return;
-      }
-      _setCurrentActions(updated);
-    } on NetworkException {
-      _removePendingAttachment(pendingFileId);
-      if (mounted) {
-        context.showToast(
-          message: "You're offline. Please try again when connected.",
-          isError: true,
-        );
-      }
-    } catch (e, t) {
-      _removePendingAttachment(pendingFileId);
-      log.warning('Failed to upload pasted image', e, t);
-      Tracker.captureException(e, t);
-      if (mounted) {
-        context.showToast(
-          message: 'Failed to upload pasted image.',
-          isError: true,
-        );
-      }
-    }
-  }
-
-  void _removePendingAttachment(String pendingFileId) {
-    FilePreviewCache.evict(pendingFileId);
-    if (!mounted) return;
-    final actions = _currentActions;
-    final filtered = actions
-        .where((a) => !(a is FileUserAction && a.fileId == pendingFileId))
-        .toList();
-    if (filtered.length == actions.length) return;
-    _setCurrentActions(filtered);
+      ),
+    ]);
   }
 
   /// Handle a URL pasted into an otherwise empty editor: attach it as an
@@ -1527,7 +1458,6 @@ class NoteEditorState extends State<NoteEditor> {
       builder: (context, activityState) {
         final isCurrentlyEditing = activityState.editingNote != null;
         final threadState = context.read<ThreadBloc>().state;
-        final priorityId = threadState.thread.priority.id.toString();
 
         void applyActions(List<UserAction> actions) =>
             _setCurrentActions(actions);
@@ -1561,19 +1491,11 @@ class NoteEditorState extends State<NoteEditor> {
                     if (threadState.linksLoaded &&
                         _canAttachFile(threadState.primaryLinkTypeConfig))
                       Button.icon(
-                        AttachFile(
-                          priorityId: priorityId,
-                          currentLinks: _currentActions,
-                          onLinksChanged: applyActions,
-                        ),
+                        AttachFile(onAttach: attachLocalFiles),
                       ),
                     if (isMobilePlatform())
                       Button.icon(
-                        TakePhoto(
-                          priorityId: priorityId,
-                          currentLinks: _currentActions,
-                          onLinksChanged: applyActions,
-                        ),
+                        TakePhoto(onAttach: attachLocalFiles),
                       ),
                   ],
                 ),
@@ -1650,29 +1572,11 @@ class NoteEditorState extends State<NoteEditor> {
                   ),
                 if (_canAttachFile(linkType))
                   Button.icon(
-                    AttachFile(
-                      priorityId: thread.priority.id.toString(),
-                      currentLinks: draftNote.actions ?? const [],
-                      onLinksChanged: (actions) {
-                        widget.onDraftChanged!(
-                          thread,
-                          note: draftNote.copyWith(actions: actions),
-                        );
-                      },
-                    ),
+                    AttachFile(onAttach: attachLocalFiles),
                   ),
                 if (isMobilePlatform())
                   Button.icon(
-                    TakePhoto(
-                      priorityId: thread.priority.id.toString(),
-                      currentLinks: draftNote.actions ?? const [],
-                      onLinksChanged: (actions) {
-                        widget.onDraftChanged!(
-                          thread,
-                          note: draftNote.copyWith(actions: actions),
-                        );
-                      },
-                    ),
+                    TakePhoto(onAttach: attachLocalFiles),
                   ),
               ],
             ),
@@ -1791,7 +1695,11 @@ class NoteEditorState extends State<NoteEditor> {
       try {
         final updatedNote = editingNote.copyWith(
           content: body,
-          actions: _editingActions ?? editingNote.actions,
+          // Resolve any in-flight attachment uploads first so a `__pending_`
+          // file id is never persisted to the saved note.
+          actions: await _attachmentUploader.resolvePending(
+            _editingActions ?? editingNote.actions ?? const <UserAction>[],
+          ),
         );
         await activityBloc.updateNote(updatedNote);
         if (mounted) {
@@ -1969,6 +1877,11 @@ class NoteEditorState extends State<NoteEditor> {
         ? Value(draftGroups ?? readOnlyShareGroups)
         : const Value.absent();
 
+    // Resolve any in-flight attachment uploads before publishing so a
+    // `__pending_` file id is never persisted to the (non-draft) note.
+    final resolvedActions =
+        await _attachmentUploader.resolvePending(_currentActions);
+
     Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
       draft: false,
@@ -1976,6 +1889,7 @@ class NoteEditorState extends State<NoteEditor> {
       addMentions: allAddMentions.isNotEmpty ? allAddMentions : null,
       accessContacts: accessContactsValue,
       accessGroups: accessGroupsValue,
+      actions: resolvedActions,
     );
 
     // If Cmd-Enter was pressed, assign the note to current user
@@ -2072,12 +1986,20 @@ class NoteEditorState extends State<NoteEditor> {
     // Create note from draft note when there is body content OR when the draft
     // carries link actions (so the link chip is preserved on the note even
     // when the body is empty — mirrors the send-button predicate).
+    // Resolve any in-flight attachment uploads before publishing so a
+    // `__pending_` file id is never persisted to the new thread's note.
+    final resolvedActions =
+        await _attachmentUploader.resolvePending(widget.draft.actions ?? const []);
+
     Note? note;
     final hasLinkAction =
-        widget.draft.actions?.whereType<ExternalUserAction>().isNotEmpty ??
-        false;
-    if (body.trim().isNotEmpty || hasLinkAction) {
-      note = widget.draft.copyWith(content: body);
+        resolvedActions.whereType<ExternalUserAction>().isNotEmpty;
+    // Carry file attachments too: a photo/file-only new thread (empty body)
+    // must still create a note so the attachment isn't dropped on send.
+    final hasFileAttachment =
+        resolvedActions.whereType<FileUserAction>().isNotEmpty;
+    if (body.trim().isNotEmpty || hasLinkAction || hasFileAttachment) {
+      note = widget.draft.copyWith(content: body, actions: resolvedActions);
     }
 
     // Merge additional mentions (e.g. selected twist for chat mode)

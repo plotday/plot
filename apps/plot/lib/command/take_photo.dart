@@ -1,31 +1,25 @@
-import 'dart:io' show File;
-
 import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
-import 'package:plot/util/image_utils.dart';
+import 'package:plot/widget/attachment_uploader.dart';
 import 'package:plot/widget/widget.dart' hide Link;
-import 'package:plot/store/store.dart';
-import 'package:plot/api/api.dart' as api;
-import 'package:plot/api/network_exception.dart';
 import 'logging.dart';
 
+/// Captures a photo and hands it to the editor as a [LocalAttachment]. The
+/// editor shows the thumbnail immediately and uploads in the background, so this
+/// command returns as soon as the photo is taken.
 class TakePhoto extends Command {
-  TakePhoto({
-    required this.priorityId,
-    required this.currentLinks,
-    required this.onLinksChanged,
-  }) : super(
+  TakePhoto({required this.onAttach})
+      : super(
           title: 'Take photo',
           eventObject: EventObject.note,
           eventAction: EventAction.added,
           icon: PlotIcon.camera,
         );
 
-  final String priorityId;
-  final List<UserAction> currentLinks;
-  final void Function(List<UserAction> links) onLinksChanged;
+  final void Function(List<LocalAttachment> attachments) onAttach;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -46,47 +40,19 @@ class TakePhoto extends Command {
       return const CommandSkipped();
     }
 
-    try {
-      final response = await api.uploadFile(
-        filePath: photo.path,
+    final bytes = await photo.readAsBytes();
+    final mimeType = lookupMimeType(photo.name) ?? 'image/jpeg';
+
+    onAttach([
+      LocalAttachment(
         fileName: photo.name,
-        priorityId: priorityId,
-      );
-
-      int? imageWidth;
-      int? imageHeight;
-      final mimeType = response['mimeType'] as String;
-      if (mimeType.startsWith('image/')) {
-        final imageBytes = await File(photo.path).readAsBytes();
-        final dims = await getImageDimensions(imageBytes);
-        if (dims != null) {
-          imageWidth = dims.$1;
-          imageHeight = dims.$2;
-        }
-      }
-
-      final fileLink = FileUserAction(
-        fileId: response['fileId'] as String,
-        fileName: response['fileName'] as String,
-        fileSize: response['fileSize'] as int,
         mimeType: mimeType,
-        imageWidth: imageWidth,
-        imageHeight: imageHeight,
-      );
+        fileSize: bytes.lengthInBytes,
+        bytes: bytes,
+        filePath: photo.path,
+      ),
+    ]);
 
-      onLinksChanged([...currentLinks, fileLink]);
-      return const CommandDone();
-    } on NetworkException {
-      return const CommandMessage(
-        "You're offline. Please try again when connected.",
-        isError: true,
-      );
-    } catch (e, t) {
-      log.warning('Failed to upload photo', e, t);
-      return const CommandMessage(
-        'Failed to upload photo. Please try again.',
-        isError: true,
-      );
-    }
+    return const CommandDone();
   }
 }

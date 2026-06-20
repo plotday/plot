@@ -6,6 +6,13 @@
   list at the top of the new thread screen, so you can pick up right where you left off. Discard one
   with the ✕, and turn on "show archived items" to see and restore your most recently discarded drafts.
 
+### Attachments
+
+- When you attach a photo or file to a note — from the file picker, the camera, or by pasting — its
+  preview now appears instantly instead of waiting for the upload to finish. The file keeps uploading
+  in the background while you carry on typing, and sending waits just long enough for any in-progress
+  upload to complete.
+
 ### Fixes
 
 - Plot no longer signs you out — or shows a "Plot signed out" notification — just because your phone
