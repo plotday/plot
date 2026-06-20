@@ -2,6 +2,11 @@
 
 ### Fixes
 
+- Reordering your list, bumping a thread to the top, or marking something as active no longer makes
+  Plot notify you about it again. Push notifications now reappear only when a thread has genuinely new
+  activity, so tidying up stays quiet.
+- Plot's own automated emails — like "New sign-in to your Plot account" — no longer show up as items,
+  or send you notifications, when you connect the email account they were sent to.
 - Email summaries no longer arrive when you've already been using Plot. If you opened the app at any
   point after a notification came in, Plot now correctly skips the follow-up email — even if you'd
   since closed the app. Previously closing Plot could make it forget you'd been active, so the email

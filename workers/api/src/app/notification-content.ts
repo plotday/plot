@@ -12,6 +12,15 @@ import {
 
 const notificationContent = new Hono<{ Bindings: Bindings }>();
 
+// The thread's per-user CONTENT version: the latest visible note's source time,
+// falling back to thread.created_at. Both notification high-water marks compare
+// (and are stamped) against this, NOT thread_state.updated_at — a bump/reorder/
+// mark-active bumps updated_at without new content and would otherwise
+// re-announce already-seen threads. Mirrors notify-candidates.ts CONTENT_VERSION
+// and user.thread's last_note_source_created_at projection. Requires the `t`
+// (thread) and `tu` (thread_state) aliases used below.
+const contentVersion = sql`GREATEST(COALESCE(t.last_note_source_created_at, t.created_at), tu.last_note_source_created_at)`;
+
 // GET /notification-content - Fetch fresh notification content for the authenticated user.
 // Called by the device at push-receive time to get up-to-date summaries.
 notificationContent.get("/notification-content", async (c) => {
@@ -25,7 +34,7 @@ notificationContent.get("/notification-content", async (c) => {
     const threadsResult = await sql<{
       urgent: boolean;
       importance: number;
-      ts_updated_at: Date;
+      content_version: Date;
       thread_id: string;
       thread_title: string | null;
       thread_preview: string | null;
@@ -39,7 +48,7 @@ notificationContent.get("/notification-content", async (c) => {
       SELECT
         tu.urgent,
         tu.importance,
-        tu.updated_at AS ts_updated_at,
+        ${contentVersion} AS content_version,
         t.id::text AS thread_id,
         t.title AS thread_title,
         t.preview AS thread_preview,
@@ -96,20 +105,21 @@ notificationContent.get("/notification-content", async (c) => {
         AND tp.mute_by_thread_id IS NULL
         AND (
           focus.notification_cleared_at IS NULL
-          OR date_trunc('milliseconds', tu.updated_at) > focus.notification_cleared_at
+          OR date_trunc('milliseconds', ${contentVersion}) > focus.notification_cleared_at
         )
         -- Per-thread re-notify suppression. The per-focus watermark above does
         -- NOT follow a thread when the user moves it to another focus, so an
         -- already-notified, still-unread thread re-filed under an uncleared
         -- focus would be re-announced (the same email twice, in the new focus).
-        -- This mark is keyed on the thread. A real reply bumps
-        -- thread_state.updated_at past the mark and re-notifies; a pure move
-        -- touches only thread_priority (not thread_state), so it stays
-        -- suppressed. Truncate the DB value to millisecond precision to match
-        -- the JS-rounded value stamped below.
+        -- This mark is keyed on the thread. Both marks compare against the
+        -- CONTENT version (latest note source time), so only a genuine reply
+        -- re-notifies; a pure move (thread_priority only) or a bump/reorder/
+        -- mark-active (thread_state.updated_at only) leaves the content version
+        -- unchanged and stays suppressed. Truncate the DB value to millisecond
+        -- precision to match the JS-rounded value stamped below.
         AND (
           tns.notified_at IS NULL
-          OR date_trunc('milliseconds', tu.updated_at) > tns.notified_at
+          OR date_trunc('milliseconds', ${contentVersion}) > tns.notified_at
         )
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
@@ -165,7 +175,7 @@ notificationContent.get("/notification-content", async (c) => {
         unread_author_names?: string | null;
       }>;
       urgent: boolean;
-      maxUpdatedAt: Date;
+      maxContentVersion: Date;
     };
 
     // Group threads by first-level priority
@@ -174,7 +184,7 @@ notificationContent.get("/notification-content", async (c) => {
     // Per-thread notification stamps to persist below. Mirrors the per-focus
     // watermark's coverage (every batched candidate, not just the 10 shown in a
     // summary) so unshown candidates aren't re-announced on the next wake.
-    const notifiedStamps: { threadId: string; updatedAt: Date }[] = [];
+    const notifiedStamps: { threadId: string; contentVersion: Date }[] = [];
 
     for (const row of threadsResult.rows) {
       const segments = row.priority_path.split(".");
@@ -189,11 +199,11 @@ notificationContent.get("/notification-content", async (c) => {
           priorityTitle: firstLevelInfo.title,
           threads: [],
           urgent: false,
-          maxUpdatedAt: row.ts_updated_at,
+          maxContentVersion: row.content_version,
         };
         batchMap.set(firstLevelPath, batch);
-      } else if (row.ts_updated_at > batch.maxUpdatedAt) {
-        batch.maxUpdatedAt = row.ts_updated_at;
+      } else if (row.content_version > batch.maxContentVersion) {
+        batch.maxContentVersion = row.content_version;
       }
 
       batch.threads.push({
@@ -204,7 +214,7 @@ notificationContent.get("/notification-content", async (c) => {
         original_author_name: row.original_author_name,
         unread_author_names: row.unread_author_names,
       });
-      notifiedStamps.push({ threadId: row.thread_id, updatedAt: row.ts_updated_at });
+      notifiedStamps.push({ threadId: row.thread_id, contentVersion: row.content_version });
 
       if (row.urgent) batch.urgent = true;
     }
@@ -262,7 +272,7 @@ notificationContent.get("/notification-content", async (c) => {
     for (const batch of batchMap.values()) {
       await sql`
         UPDATE priority
-        SET notification_cleared_at = GREATEST(notification_cleared_at, ${batch.maxUpdatedAt.toISOString()})
+        SET notification_cleared_at = GREATEST(notification_cleared_at, ${batch.maxContentVersion.toISOString()})
         WHERE id = ${batch.firstLevelPriorityId}::uuid
           AND user_id = ${userId}::uuid
       `.execute(db);
@@ -276,7 +286,7 @@ notificationContent.get("/notification-content", async (c) => {
       const values = sql.join(
         notifiedStamps.map(
           (s) =>
-            sql`(${userId}::uuid, ${s.threadId}::uuid, ${s.updatedAt.toISOString()}::timestamptz)`
+            sql`(${userId}::uuid, ${s.threadId}::uuid, ${s.contentVersion.toISOString()}::timestamptz)`
         )
       );
       await sql`

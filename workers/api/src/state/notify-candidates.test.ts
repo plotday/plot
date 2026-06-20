@@ -17,7 +17,10 @@ const DATABASE_URL = process.env.DATABASE_URL;
 class Rollback extends Error {}
 
 // Fixed timestamps so the millisecond-truncated comparisons are deterministic.
-const T1 = "2026-01-01T00:00:00.000Z"; // thread's content version when notified
+// T0 is the thread's creation (content-version floor); T1 the content version
+// when notified; T2 a later content version (a reply).
+const T0 = "2025-06-01T00:00:00.000Z"; // thread created_at (content-version floor)
+const T1 = "2026-01-01T00:00:00.000Z"; // content version when notified
 const T2 = "2026-01-02T00:00:00.000Z"; // later content version (a reply)
 
 type SeedOpts = {
@@ -25,19 +28,31 @@ type SeedOpts = {
   notifiedAt?: string | null;
   /** Re-file the thread into the second (uncleared) focus, as a move would. */
   moveToOtherFocus?: boolean;
-  /** Bump thread_state.updated_at to this time, as a genuine reply would. */
+  /**
+   * A genuine reply: advance the CONTENT version (per-user
+   * thread_state.last_note_source_created_at) to this time. A real reply also
+   * bumps updated_at, so we advance both — but it is the content version that
+   * re-qualifies a thread for notification.
+   */
+  replyTo?: string | null;
+  /**
+   * A pure triage write (bump-to-top / drag-reorder / mark-active): advance
+   * ONLY thread_state.updated_at to this time, leaving the content version
+   * untouched. This must NOT re-notify.
+   */
   bumpStateTo?: string | null;
 };
 
 type Ids = { userId: string; threadId: string; focusA: string; focusB: string };
 
 /**
- * Seed one user with two focuses, an unread+important thread filed in focus A,
- * and (optionally) a per-thread notify stamp / a move to focus B / a content
- * bump — then run `action` against the seeded data and roll back. Seeding and
- * the opts mutations run with triggers disabled so timestamps are exactly what
- * we set (the thread_state updated_at trigger would otherwise overwrite them);
- * `action` runs with triggers back on.
+ * Seed one user with two focuses, an unread+important thread filed in focus A
+ * whose content version is T1, and (optionally) a per-thread notify stamp / a
+ * move to focus B / a content reply / a pure state bump — then run `action`
+ * against the seeded data and roll back. Seeding and the opts mutations run
+ * with triggers disabled so timestamps are exactly what we set (the
+ * thread_state updated_at trigger would otherwise overwrite them); `action`
+ * runs with triggers back on.
  */
 async function runSeeded<T>(
   opts: SeedOpts,
@@ -78,14 +93,16 @@ async function runSeeded<T>(
           (${focusB}::uuid, 'Focus B', 'focusb')
         ) AS v(id, title, path)`.execute(trx);
 
-      await sql`INSERT INTO thread (id, created_by, title, contacts)
-        VALUES (${threadId}::uuid, ${userId}::uuid, 'Test thread',
+      // created_at = T0 is the content-version floor (COALESCE fallback when no
+      // note source time is recorded). Set explicitly because triggers are off.
+      await sql`INSERT INTO thread (id, created_by, created_at, title, contacts)
+        VALUES (${threadId}::uuid, ${userId}::uuid, ${T0}::timestamptz, 'Test thread',
                 ARRAY[${contactId}::uuid]::uuid[])`.execute(trx);
       await sql`INSERT INTO thread_priority (thread_id, user_id, priority_id)
         VALUES (${threadId}::uuid, ${userId}::uuid, ${focusA}::uuid)`.execute(trx);
-      // Unread, important, content version = T1.
-      await sql`INSERT INTO thread_state (user_id, thread_id, read_at, importance, updated_at)
-        VALUES (${userId}::uuid, ${threadId}::uuid, NULL, 80, ${T1}::timestamptz)`.execute(trx);
+      // Unread, important. updated_at AND the content version both start at T1.
+      await sql`INSERT INTO thread_state (user_id, thread_id, read_at, importance, updated_at, last_note_source_created_at)
+        VALUES (${userId}::uuid, ${threadId}::uuid, NULL, 80, ${T1}::timestamptz, ${T1}::timestamptz)`.execute(trx);
 
       if (opts.notifiedAt) {
         await sql`INSERT INTO thread_notify_state (user_id, thread_id, notified_at)
@@ -96,7 +113,15 @@ async function runSeeded<T>(
         await sql`UPDATE thread_priority SET priority_id = ${focusB}::uuid
           WHERE thread_id = ${threadId}::uuid AND user_id = ${userId}::uuid`.execute(trx);
       }
+      if (opts.replyTo) {
+        // A genuine reply advances the content version (and updated_at).
+        await sql`UPDATE thread_state
+          SET last_note_source_created_at = ${opts.replyTo}::timestamptz,
+              updated_at = ${opts.replyTo}::timestamptz
+          WHERE thread_id = ${threadId}::uuid AND user_id = ${userId}::uuid`.execute(trx);
+      }
       if (opts.bumpStateTo) {
+        // A pure triage bump advances updated_at only; content version unchanged.
         await sql`UPDATE thread_state SET updated_at = ${opts.bumpStateTo}::timestamptz
           WHERE thread_id = ${threadId}::uuid AND user_id = ${userId}::uuid`.execute(trx);
       }
@@ -137,9 +162,9 @@ describe.skipIf(!DATABASE_URL)("selectNotifyCandidates", () => {
     expect(candidateIds).not.toContain(threadId);
   });
 
-  // The bug: moving an already-notified, still-unread thread to another
-  // (uncleared) focus re-announced it. The per-thread mark must follow the
-  // thread across the move, so it stays suppressed.
+  // The original bug: moving an already-notified, still-unread thread to
+  // another (uncleared) focus re-announced it. The per-thread mark must follow
+  // the thread across the move, so it stays suppressed.
   it("stays suppressed after the thread is moved to another focus", async () => {
     const { threadId, candidateIds } = await seedAndQuery({
       notifiedAt: T1,
@@ -148,10 +173,21 @@ describe.skipIf(!DATABASE_URL)("selectNotifyCandidates", () => {
     expect(candidateIds).not.toContain(threadId);
   });
 
-  it("re-notifies after a genuine reply bumps the content version", async () => {
+  // The bug this fix targets: a pure triage write (bump-to-top, drag-reorder,
+  // mark-active) advances thread_state.updated_at but NOT the content version.
+  // It must NOT re-announce an already-notified, still-unread thread.
+  it("stays suppressed after a pure bump/reorder that only advances updated_at", async () => {
     const { threadId, candidateIds } = await seedAndQuery({
       notifiedAt: T1,
       bumpStateTo: T2,
+    });
+    expect(candidateIds).not.toContain(threadId);
+  });
+
+  it("re-notifies after a genuine reply bumps the content version", async () => {
+    const { threadId, candidateIds } = await seedAndQuery({
+      notifiedAt: T1,
+      replyTo: T2,
     });
     expect(candidateIds).toContain(threadId);
   });
@@ -162,7 +198,7 @@ describe.skipIf(!DATABASE_URL)("selectNotifyCandidates", () => {
     const { threadId, candidateIds } = await seedAndQuery({
       notifiedAt: T1,
       moveToOtherFocus: true,
-      bumpStateTo: T2,
+      replyTo: T2,
     });
     expect(candidateIds).toContain(threadId);
   });
@@ -199,9 +235,21 @@ describe.skipIf(!DATABASE_URL)("selectUnsuppressedThreadIds", () => {
     expect(eligible.has(threadId)).toBe(false);
   });
 
-  it("keeps a thread eligible after a genuine reply", async () => {
+  // A pure triage bump must not re-open eligibility either.
+  it("drops an already-notified thread after a pure bump (updated_at only)", async () => {
     const { threadId, eligible } = await runSeeded(
       { notifiedAt: T1, bumpStateTo: T2 },
+      async (trx, ids) => ({
+        threadId: ids.threadId,
+        eligible: await selectUnsuppressedThreadIds(trx, ids.userId, [ids.threadId]),
+      })
+    );
+    expect(eligible.has(threadId)).toBe(false);
+  });
+
+  it("keeps a thread eligible after a genuine reply", async () => {
+    const { threadId, eligible } = await runSeeded(
+      { notifiedAt: T1, replyTo: T2 },
       async (trx, ids) => ({
         threadId: ids.threadId,
         eligible: await selectUnsuppressedThreadIds(trx, ids.userId, [ids.threadId]),
@@ -231,11 +279,27 @@ describe.skipIf(!DATABASE_URL)("stampThreadsNotified", () => {
     expect(after.has(threadId)).toBe(false);
   });
 
-  it("re-opens eligibility once content advances past the stamp", async () => {
-    // Stamp at the current version, then a reply bumps the version → eligible.
-    const { threadId, after } = await runSeeded({ bumpStateTo: null }, async (trx, ids) => {
+  it("does NOT re-open eligibility when only updated_at advances (a bump)", async () => {
+    // Stamp at the current content version, then a pure bump advances
+    // updated_at but not the content version → must stay suppressed.
+    const { threadId, after } = await runSeeded({}, async (trx, ids) => {
       await stampThreadsNotified(trx, ids.userId, [ids.threadId]);
       await sql`UPDATE thread_state SET updated_at = ${T2}::timestamptz
+        WHERE thread_id = ${ids.threadId}::uuid AND user_id = ${ids.userId}::uuid`.execute(trx);
+      return {
+        threadId: ids.threadId,
+        after: await selectUnsuppressedThreadIds(trx, ids.userId, [ids.threadId]),
+      };
+    });
+    expect(after.has(threadId)).toBe(false);
+  });
+
+  it("re-opens eligibility once the content version advances past the stamp", async () => {
+    // Stamp at the current content version, then a reply bumps the content
+    // version → eligible again.
+    const { threadId, after } = await runSeeded({}, async (trx, ids) => {
+      await stampThreadsNotified(trx, ids.userId, [ids.threadId]);
+      await sql`UPDATE thread_state SET last_note_source_created_at = ${T2}::timestamptz
         WHERE thread_id = ${ids.threadId}::uuid AND user_id = ${ids.userId}::uuid`.execute(trx);
       return {
         threadId: ids.threadId,

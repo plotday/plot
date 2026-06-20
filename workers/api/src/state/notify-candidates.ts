@@ -5,6 +5,24 @@ import type { DB } from "../db";
 /** Importance below this value never triggers a push or scheduling on its own. */
 export const IMPORTANCE_NOTIFY_THRESHOLD = 50;
 
+/**
+ * The thread's per-user CONTENT version: the source time of the latest note
+ * visible to the user, falling back to thread.created_at when no note source
+ * time is recorded. This is what the notification high-water marks compare
+ * against.
+ *
+ * Crucially, it advances ONLY when new content arrives (a note), never on a
+ * pure triage write — bump-to-top, drag-reorder and mark-active all bump
+ * thread_state.updated_at (and seq, for sync) while leaving the content version
+ * untouched. Keying suppression on updated_at instead re-announced already-seen
+ * threads whenever the user reorganized their feed.
+ *
+ * Requires `thread t` and `thread_state ts` to be in scope (those aliases).
+ * Mirrors user.thread's `last_note_source_created_at` projection
+ * (GREATEST(shared thread column, per-user thread_state column)).
+ */
+const CONTENT_VERSION = sql`GREATEST(COALESCE(t.last_note_source_created_at, t.created_at), ts.last_note_source_created_at)`;
+
 /** One unread thread eligible to wake the user's clients with a push. */
 export type NotifyCandidate = {
   thread_id: string;
@@ -23,10 +41,12 @@ export type NotifyCandidate = {
  * per-focus high-water mark (priority.notification_cleared_at) or the
  * per-thread high-water mark (thread_notify_state.notified_at).
  *
- * The per-thread mark is what makes a moved thread stay quiet: a move bumps
- * thread_priority (re-filing it under a possibly-uncleared focus) but NOT
- * thread_state, so ts.updated_at does not advance past the mark and the thread
- * is suppressed. A genuine reply bumps ts.updated_at and re-qualifies.
+ * Both high-water marks compare against the thread's CONTENT_VERSION (the
+ * latest note's source time), NOT thread_state.updated_at. A move bumps
+ * thread_priority but not the content version; a bump/reorder/mark-active bumps
+ * thread_state.updated_at but not the content version — so neither re-qualifies
+ * a thread. Only a genuine reply (new note) advances the content version and
+ * re-announces.
  *
  * `db` may be a Kysely instance or a transaction handle.
  */
@@ -55,14 +75,14 @@ export async function selectNotifyCandidates(
       -- Per-focus re-notify suppression (does NOT follow a thread across moves).
       AND (
         focus.notification_cleared_at IS NULL
-        OR date_trunc('milliseconds', ts.updated_at) > focus.notification_cleared_at
+        OR date_trunc('milliseconds', ${CONTENT_VERSION}) > focus.notification_cleared_at
       )
       -- Per-thread re-notify suppression (follows a thread across focus moves):
       -- a thread already notified at its current content version is not re-woken
-      -- just because it moved to an uncleared focus.
+      -- just because it moved to an uncleared focus or was bumped/reordered.
       AND (
         tns.notified_at IS NULL
-        OR date_trunc('milliseconds', ts.updated_at) > tns.notified_at
+        OR date_trunc('milliseconds', ${CONTENT_VERSION}) > tns.notified_at
       )
       -- FYI is a muted, low-signal focus — never wake the client for it.
       AND focus.is_fyi = FALSE
@@ -101,7 +121,7 @@ export async function selectUnsuppressedThreadIds(
       AND ts.thread_id IN (${idList})
       AND (
         tns.notified_at IS NULL
-        OR date_trunc('milliseconds', ts.updated_at) > tns.notified_at
+        OR date_trunc('milliseconds', ${CONTENT_VERSION}) > tns.notified_at
       )
   `.execute(db);
   return new Set(result.rows.map((r) => r.thread_id));
@@ -109,10 +129,11 @@ export async function selectUnsuppressedThreadIds(
 
 /**
  * Advance the per-thread notification high-water mark for the given threads to
- * their current thread_state.updated_at. Call after deciding to show a
- * notification for them, so a later wake/summary (or a move to another focus)
- * does not re-announce the same content. Stamps directly from thread_state in
- * SQL (no JS round-trip), and GREATEST-guards against an older value racing in.
+ * their current CONTENT_VERSION (the latest note's source time). Call after
+ * deciding to show a notification for them, so a later wake/summary (a move to
+ * another focus, or a bump/reorder) does not re-announce the same content.
+ * Stamps directly in SQL (no JS round-trip), and GREATEST-guards against an
+ * older value racing in.
  */
 export async function stampThreadsNotified(
   db: Kysely<DB>,
@@ -123,8 +144,9 @@ export async function stampThreadsNotified(
   const idList = sql.join(threadIds.map((id) => sql`${id}::uuid`));
   await sql`
     INSERT INTO thread_notify_state (user_id, thread_id, notified_at)
-    SELECT ts.user_id, ts.thread_id, ts.updated_at
+    SELECT ts.user_id, ts.thread_id, ${CONTENT_VERSION}
     FROM thread_state ts
+    JOIN thread t ON t.id = ts.thread_id
     WHERE ts.user_id = ${userId}::uuid
       AND ts.thread_id IN (${idList})
     ON CONFLICT (user_id, thread_id) DO UPDATE

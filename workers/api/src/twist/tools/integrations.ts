@@ -46,6 +46,7 @@ import {
   parseGrantedScopes,
 } from "./auth-scope";
 import { hashExternalContent } from "./hash-external-content";
+import { isPlotSelfMail } from "./plot-self-mail";
 import { ThreadFilingSkippedError } from "./plot/thread-helpers";
 import { deleteUnipileAccount } from "./unipile/account-cleanup";
 import { UnipileClient } from "./unipile/client";
@@ -1170,6 +1171,13 @@ export class Integrations extends Tool implements IAuth {
    * twist owner when no explicit priority is given.
    */
   async saveLink(link: NewLinkWithNotes): Promise<Uuid | null> {
+    // Drop Plot's own transactional emails that loop back in through a
+    // connected mailbox (sign-in notices, digests sent from updates.plot.day).
+    // Platform-level so it covers every email connector — see plot-self-mail.ts.
+    if (isPlotSelfMail(link)) {
+      return null;
+    }
+
     // Filter initial-sync items by plan history limit.
     // unread === false is the reliable signal for initial sync (connector convention).
     if (link.unread === false) {
