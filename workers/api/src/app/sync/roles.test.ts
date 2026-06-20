@@ -14,10 +14,13 @@
  * route through a minimal Hono app via `app.request` (mirrors topics.test.ts).
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 
+import { notifyUserSync } from "./notify";
+
 const ROLE_ID = "019ec742-cebe-7a01-af53-073791eabb83";
+const USER_ID = "test-user-id";
 
 // upsert_role RETURNS uuid → rpcUser resolves to the bare id string.
 vi.mock("../../rpc", () => ({
@@ -33,9 +36,17 @@ vi.mock("../../db", () => ({
   sql: {},
 }));
 
+// Roles are user-scoped, so the handler must notify the owner's UserSync DO
+// directly via notifyUserSync — NOT the priority-scoped notifySync (which
+// resolves recipients via get_users_with_priority_access and finds no users
+// for a role id, so the change never broadcasts to other devices).
 vi.mock("./notify", () => ({
-  notifySync: vi.fn(),
+  notifyUserSync: vi.fn(),
 }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 async function postRole(
   body: Record<string, unknown>,
@@ -43,7 +54,7 @@ async function postRole(
   const { default: roleRoutes } = await import("./roles");
   const app = new Hono<any>();
   app.use("*", async (c: any, next: any) => {
-    c.set("user", { id: "test-user-id" });
+    c.set("user", { id: USER_ID });
     c.set("db", {});
     c.set("tracker", { captureException: () => {} });
     await next();
@@ -74,5 +85,16 @@ describe("POST /sync/roles response shape", () => {
   it("carries the upserted role id under `id` (mirrors /sync/groups)", async () => {
     const { parsed } = await postRole({ name: "Work" });
     expect(parsed).toMatchObject({ id: ROLE_ID });
+  });
+});
+
+describe("POST /sync/roles broadcast routing", () => {
+  it("notifies the owner's UserSync DO so the change broadcasts to other devices", async () => {
+    await postRole({ name: "Work" });
+
+    // Must notify by user id (user-scoped entity), so UserSync's alarm picks up
+    // the 'role' user_sync row and fans a 'role' pull out over the WebSocket.
+    expect(notifyUserSync).toHaveBeenCalledTimes(1);
+    expect(notifyUserSync).toHaveBeenCalledWith(expect.anything(), USER_ID);
   });
 });

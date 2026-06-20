@@ -11,6 +11,8 @@
   point after a notification came in, Plot now correctly skips the follow-up email — even if you'd
   since closed the app. Previously closing Plot could make it forget you'd been active, so the email
   went out anyway.
+- Roles you add, rename, or reorder now appear on your other devices right away. Previously a new
+  role only showed up there after the app was restarted or reconnected.
 - A thread you'd already read from a connected account (like Gmail) no longer pops back to unread on
   its own. When the source re-synced a message you'd read, Plot could mark the thread unread again on
   every device; now reading it sticks unless genuinely new content arrives.

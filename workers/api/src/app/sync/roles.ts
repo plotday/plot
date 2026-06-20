@@ -10,7 +10,7 @@ import {
   updatedSinceCursor,
 } from "./helpers";
 import { rpcUser } from "../../rpc";
-import { notifySync } from "./notify";
+import { notifyUserSync } from "./notify";
 
 const roles = new Hono<{ Bindings: Bindings }>();
 
@@ -85,15 +85,20 @@ roles.post("/sync/roles", async (c) => {
     );
 
     // upsert_role RETURNS the role id (it generates one via uuidv7() when the
-    // client POSTs a new role without an `id`), so notify on the RPC result
-    // rather than `body.id`, which is undefined for inserts.
+    // client POSTs a new role without an `id`); we still surface it in the
+    // response below.
     const roleId =
       typeof result === "string"
         ? result
         : typeof body.id === "string"
           ? body.id
           : undefined;
-    if (roleId) notifySync(c, roleId);
+
+    // Roles are user-scoped (one owner per row), so notify the owner's
+    // UserSync DO directly. The priority-scoped `notifySync(priorityId)`
+    // resolves recipients via `get_users_with_priority_access`, which finds
+    // no users for a role id — so the broadcast never reached other devices.
+    notifyUserSync(c, userId);
 
     // Return an object, not the bare id string. The Flutter client pushes
     // roles via `api.post<Map<String, dynamic>>('/sync/roles', …)` and casts

@@ -801,3 +801,44 @@ BEGIN
     RETURN NULL;
 END;
 $function$;
+
+-- User sync trigger function for role changes. Roles are user-scoped (one
+-- owner per row via role.user_id), so unlike priorities there is no access
+-- graph to walk — mark the owning user dirty for the 'role' entity so their
+-- UserSync DO broadcasts a 'role' pull to the user's other devices.
+CREATE OR REPLACE FUNCTION public.sync_user_for_role ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_updated_at timestamptz;
+    v_max_seq xid8;
+    v_user_id uuid;
+BEGIN
+    SELECT
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
+    FROM
+        new_table;
+    -- Empty-batch / NULL-seq fallback to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
+    FOR v_user_id IN SELECT DISTINCT
+        n.user_id
+    FROM
+        new_table n
+    WHERE
+        n.user_id IS NOT NULL
+    ORDER BY
+        n.user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'role', v_max_updated_at, v_max_seq)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
+        END LOOP;
+    RETURN NULL;
+END;
+$function$;

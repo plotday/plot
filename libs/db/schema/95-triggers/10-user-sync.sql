@@ -235,3 +235,16 @@ CREATE TRIGGER user_sync_group_update
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_group();
+
+-- User sync triggers for role table (archive is an UPDATE, so no DELETE trigger)
+CREATE TRIGGER user_sync_role_insert
+  AFTER INSERT ON role
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_role();
+
+CREATE TRIGGER user_sync_role_update
+  AFTER UPDATE ON role
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_role();
