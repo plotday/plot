@@ -390,9 +390,29 @@ class NewThreadPageState extends State<NewThreadPage> {
   ///    Esc again to dismiss". Never consumes the event (other Esc handlers run).
   /// 2. **Engage**: any other real key press (not a modifier, not a ⌘/Ctrl/Alt
   ///    shortcut like ⌘N) counts as in-panel keyboard navigation and engages.
+  /// The New-thread shortcut (⌘N; ⌃⌥N on web), matched in [_onHardwareKey].
+  /// Same activator the [NewThread] command registers.
+  static final SingleActivator _newThreadActivator = platformSingleActivator(
+    LogicalKeyboardKey.keyN,
+    alt: kIsWeb,
+  );
+
   bool _onHardwareKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     if (!_pageFocused) return false;
+
+    // ⌘N on the live, focused new-thread page: reset to a fresh thread now.
+    // The [NewThread] command's shortcut is routed through the focus tree and is
+    // intermittently swallowed by the focused body editor (super_editor), so it
+    // can take two presses. This global HardwareKeyboard handler sees the key
+    // regardless of focus, making one press reliable; consume it so the ancestor
+    // CommandScope binding can't also fire (a double reset would be harmless,
+    // but this keeps it to one). Mirrors the command's live-page reset signal.
+    if (_newThreadActivator.accepts(event, HardwareKeyboard.instance)) {
+      NewThreadPageState.activateOnOpen();
+      NewThreadPageState.requestReset();
+      return true;
+    }
 
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       if (_active.value &&
