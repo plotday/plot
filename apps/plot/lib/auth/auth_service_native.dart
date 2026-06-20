@@ -13,6 +13,8 @@ import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:plot/auth/auth_error_classifier.dart';
+import 'package:plot/auth/clerk_session_ops.dart';
+import 'package:plot/auth/session_token_resolver.dart';
 import 'package:plot/logging.dart';
 
 import 'auth_service_interface.dart';
@@ -214,102 +216,25 @@ class ClerkDartAuthService implements AuthService {
   @override
   Future<TokenResult> getSessionTokenWithReason({
     bool forceRefresh = false,
-  }) async {
-    // If clerk_auth has no local session, `_auth.sessionToken()` throws a
-    // generic `noSessionTokenRetrieved` error that isn't recognised as
-    // non-recoverable (see [isNonRecoverableAuthError] doc — that code is
-    // intentionally treated as transient because outages can also surface
-    // it). Without this early-return we'd retry forever in the sync layer.
-    // The state happens whenever the SDK couldn't load or kept no usable
-    // session at startup — e.g. a build pointed at a different Clerk
-    // environment from the one that wrote the cache, or a sign-out that
-    // didn't fully tear local identity down. The web implementation
-    // already does the same null-session check.
-    if (!_auth.isSignedIn) {
-      return (token: null, failure: TokenFailureReason.sessionInvalid);
-    }
-
-    // The sync layer calls with [forceRefresh] = true after the API
-    // returns 401 — we *know* the previous token was rejected, so the
-    // locally cached JWT (which `_auth.sessionToken()` would otherwise
-    // hand right back) is suspect. Reconcile with Clerk's server first
-    // so a revoked session surfaces as `authentication_invalid` here
-    // instead of silently looping at the sync layer.
-    if (forceRefresh) {
-      try {
-        log.info('Forcing session reconciliation via refreshClient');
-        await _auth.refreshClient();
-      } on clerk.ClerkError catch (e) {
-        log.warning('Forced refreshClient failed (ClerkError): $e');
-        if (isNonRecoverableAuthError(e)) {
-          return (token: null, failure: TokenFailureReason.sessionInvalid);
-        }
-        // Transient — let the normal sessionToken() path try its luck.
-      } catch (e) {
-        log.warning('Forced refreshClient failed (network): $e');
-        // Don't return early on a generic network error — the cached
-        // token might still work for the immediate retry, and if not
-        // the sessionToken() call below will surface the real failure.
-      }
-      // After a successful refreshClient, Clerk may have learned the
-      // session is gone (`isSignedIn` flips to false). Skip the token
-      // fetch in that case and report sessionInvalid directly.
-      if (!_auth.isSignedIn) {
-        return (token: null, failure: TokenFailureReason.sessionInvalid);
-      }
-    }
-
-    try {
-      final token = await _auth.sessionToken();
-      return (token: token.jwt, failure: null);
-    } on clerk.ClerkError catch (e) {
-      log.warning('Session token request failed (ClerkError): $e');
-
-      // If the first error is already non-recoverable (server explicitly
-      // repudiated the session), don't bother attempting refresh — refresh
-      // would hit the same 401, and the longer we delay surfacing
-      // [TokenFailureReason.sessionInvalid] the longer the caller spins
-      // retrying with a token that will never come.
-      if (isNonRecoverableAuthError(e)) {
-        return (token: null, failure: TokenFailureReason.sessionInvalid);
-      }
-
-      // First error was transient-looking (timeout, parser hiccup, SDK
-      // state loss after [Auth.initialize] wiped the cached session, etc.).
-      // Try a single refresh-and-retry before giving up.
-      try {
-        log.info('Attempting session recovery via refreshClient');
-        await _auth.refreshClient();
-        // refreshClient may have reconciled to "no session" without
-        // throwing (e.g. server reports the client has no active session
-        // for this environment). Calling sessionToken() now would throw
-        // the same generic noSessionTokenRetrieved we already saw — and
-        // the caller would treat it as transient and loop. Detect the
-        // signed-out state directly and return sessionInvalid so Base
-        // forces sign-out.
-        if (!_auth.isSignedIn) {
-          return (token: null, failure: TokenFailureReason.sessionInvalid);
-        }
-        final token = await _auth.sessionToken();
-        log.info('Session recovery succeeded');
-        return (token: token.jwt, failure: null);
-      } on clerk.ClerkError catch (recoveryError) {
-        log.warning('Session recovery failed (ClerkError): $recoveryError');
-        // The recovery attempt itself surfaced an authoritative "session is
-        // dead" code — treat as definitive.
-        if (isNonRecoverableAuthError(recoveryError)) {
-          return (token: null, failure: TokenFailureReason.sessionInvalid);
-        }
-        return (token: null, failure: TokenFailureReason.networkError);
-      } catch (recoveryError) {
-        log.warning('Session recovery failed: $recoveryError');
-        return (token: null, failure: TokenFailureReason.networkError);
-      }
-    } catch (e) {
-      // SocketException, TimeoutException, DNS failures, etc.
-      log.warning('Session token request failed (network): $e');
-      return (token: null, failure: TokenFailureReason.networkError);
-    }
+  }) {
+    // Delegates to the shared resolver policy ([resolveSessionToken]). The key
+    // invariant: NEVER report [TokenFailureReason.sessionInvalid] without
+    // server confirmation. A bare `!_auth.isSignedIn` is NOT confirmation —
+    // clerk_auth reports it transiently while offline, and the previous
+    // early-return here force-signed users out during network outages even
+    // though Clerk's server never revoked the session. The resolver reconciles
+    // with the server before concluding the session is dead, and only treats a
+    // reachable-server "no session" (or a non-recoverable Clerk error) as
+    // [sessionInvalid]; an unreachable server is [networkError] (stay signed
+    // in, retry). The [onSessionInvalid] callback logs the cause at WARNING so
+    // error tracking shows *why* re-auth was forced — the old `!isSignedIn`
+    // path was silent, leaving no breadcrumb.
+    return resolveSessionToken(
+      ClerkSessionOps(_auth),
+      forceRefresh: forceRefresh,
+      onSessionInvalid: (cause) =>
+          log.warning('Forcing re-auth — session confirmed invalid: $cause'),
+    );
   }
 
   @override

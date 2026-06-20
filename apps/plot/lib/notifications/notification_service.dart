@@ -27,6 +27,13 @@ import 'package:plot/store/store.dart';
 const int _signedOutNotificationId = 999900;
 const String _lastSignedOutNotifyKey = 'last_signed_out_notify_ms';
 
+/// Breadcrumb the background isolate writes (in `background_handler.dart`) when
+/// it concludes the session is CONFIRMED invalid. The main app forwards it to
+/// PostHog on next sign-in (the background isolate has no tracker) so we can
+/// see when/how often the background path forced a re-auth signal. Must stay
+/// in sync with the copy in `background_handler.dart`.
+const String _bgSessionInvalidAtKey = 'bg_session_invalid_at_ms';
+
 /// Manages push notification token registration and message handling.
 ///
 /// On mobile (iOS/Android), uses FCM for push delivery.
@@ -172,6 +179,21 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       // the next real expiry can notify again.
       await NotificationDisplay.instance.cancel(_signedOutNotificationId);
       await prefs.remove(_lastSignedOutNotifyKey);
+      // Forward any background "session confirmed invalid" breadcrumb to
+      // PostHog. We only reach _startMobile while signed in, so if this fired
+      // it means the background isolate concluded the session was dead — seeing
+      // that here (especially if the foreground session turned out fine) is how
+      // we'd catch the background path mis-classifying transient failures.
+      final bgInvalidAt = prefs.getInt(_bgSessionInvalidAtKey);
+      if (bgInvalidAt != null) {
+        await Tracker.track('[BG] Session reported invalid', {
+          'reported_at': DateTime.fromMillisecondsSinceEpoch(bgInvalidAt)
+              .toUtc()
+              .toIso8601String(),
+          'age_ms': DateTime.now().millisecondsSinceEpoch - bgInvalidAt,
+        });
+        await prefs.remove(_bgSessionInvalidAtKey);
+      }
     } catch (e) {
       log.warning('Failed to persist notification prefs', e);
     }

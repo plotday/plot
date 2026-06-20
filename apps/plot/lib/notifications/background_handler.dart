@@ -9,6 +9,9 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:plot/auth/auth_service_interface.dart';
+import 'package:plot/auth/clerk_session_ops.dart';
+import 'package:plot/auth/session_token_resolver.dart';
 import 'package:plot/notifications/notification_display.dart';
 import 'package:plot/notifications/notification_window.dart';
 import 'package:plot/notifications/notification_service.dart';
@@ -19,6 +22,11 @@ const _threadIdsPrefsKey = 'notification_thread_ids';
 const _lastSignedOutNotifyKey = 'last_signed_out_notify_ms';
 const _signedOutNotificationId = 999900;
 const _signedOutNotifyCooldown = Duration(hours: 24);
+// Breadcrumb written when the background isolate concludes the session is
+// CONFIRMED invalid (server-reconciled). The main app reads it on next
+// sign-in and forwards it to PostHog — the background isolate has no tracker
+// of its own. Must stay in sync with the copy in notification_service.dart.
+const _bgSessionInvalidAtKey = 'bg_session_invalid_at_ms';
 
 /// Stable local notification ID reserved for OTP/confirm pushes.
 /// Distinct from the priority-hash range (0–99999) and the signed-out ID
@@ -68,15 +76,26 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
     return;
   }
 
-  // Obtain a fresh session token using Clerk's persisted cache
+  // Obtain a fresh session token using Clerk's persisted cache.
   _bgLog('getting session token...');
-  final token = await _getSessionToken(publishableKey);
-  _bgLog('token=${token != null ? 'ok' : 'null'}');
+  final tokenResult = await _getSessionToken(publishableKey);
+  final token = tokenResult.token;
+  _bgLog('token=${token != null ? 'ok' : 'null'} failure=${tokenResult.failure}');
   if (token == null) {
-    // Session is dead — user would otherwise silently miss every push until
-    // they happen to reopen the app. Surface a throttled local notification
-    // so they know they need to sign in again.
-    await _maybeShowSignedOutNotification(prefs);
+    // Only alarm the user when the session is *confirmed* dead. A transient
+    // failure (no network, a slow Doze-mode cold start that times out
+    // `initialize()`, or an unreachable server) must NOT show the "Plot
+    // signed out" notification — the foreground app is almost certainly still
+    // signed in, so we'd just be crying wolf. Prod incident: overnight network
+    // outages fired this notification while Clerk's server logs showed the
+    // session was never revoked. See [resolveSessionToken].
+    if (tokenResult.failure == TokenFailureReason.sessionInvalid) {
+      await _recordBackgroundSessionInvalid(prefs);
+      await _maybeShowSignedOutNotification(prefs);
+    } else {
+      _bgLog('token unavailable (transient: ${tokenResult.failure}) — '
+          'suppressing signed-out notification');
+    }
     return;
   }
 
@@ -148,7 +167,7 @@ Future<void> _handleOtpBackgroundMessage(RemoteMessage message) async {
   // Try to fetch the cta for rich notification content.
   _OtpContent? otp;
   if (noteId != null && apiRoot != null && publishableKey != null) {
-    final token = await _getSessionToken(publishableKey);
+    final token = (await _getSessionToken(publishableKey)).token;
     if (token != null) {
       otp = await _fetchOtpContent(apiRoot, token, noteId);
     }
@@ -260,26 +279,55 @@ Future<void> _maybeShowSignedOutNotification(SharedPreferences prefs) async {
 }
 
 /// Obtain a Clerk session token using the persisted cache from the main app.
-Future<String?> _getSessionToken(String publishableKey) async {
+///
+/// Returns a [TokenResult] (not a bare `String?`) so the caller can tell a
+/// *confirmed-dead* session ([TokenFailureReason.sessionInvalid] → safe to
+/// show the "Plot signed out" notification) apart from a *transient* failure
+/// ([TokenFailureReason.networkError] → suppress; the session is probably
+/// fine). Uses the same [resolveSessionToken] policy as the foreground auth
+/// service so the two never disagree.
+Future<TokenResult> _getSessionToken(String publishableKey) async {
+  clerk.Auth? auth;
   try {
     final cacheDir = await _getClerkCacheDirectory();
     final persistor = clerk.DefaultPersistor(
       getCacheDirectory: () async => cacheDir,
     );
-    final auth = clerk.Auth(
+    auth = clerk.Auth(
       config: clerk.AuthConfig(
         publishableKey: publishableKey,
         persistor: persistor,
       ),
     );
-    await auth.initialize().timeout(const Duration(seconds: 10));
-    final token = await auth.sessionToken();
-    auth.terminate();
-    return token.jwt;
+    try {
+      await auth.initialize().timeout(const Duration(seconds: 10));
+    } catch (e) {
+      // Init failed or timed out — transient (no network, or a slow cold start
+      // while the device is in Doze). NOT a sign-out signal.
+      _bgLog('_getSessionToken initialize failed (transient): $e');
+      return (token: null, failure: TokenFailureReason.networkError);
+    }
+    return await resolveSessionToken(
+      ClerkSessionOps(auth),
+      forceRefresh: false,
+      onSessionInvalid: (cause) => _bgLog('session confirmed invalid: $cause'),
+    );
   } catch (e) {
     _bgLog('_getSessionToken error: $e');
-    return null;
+    return (token: null, failure: TokenFailureReason.networkError);
+  } finally {
+    auth?.terminate();
   }
+}
+
+/// Record that the background isolate concluded the session is CONFIRMED
+/// invalid, so the main app can forward it to PostHog on next sign-in. Stored
+/// as a timestamp; cleared by the main app after forwarding.
+Future<void> _recordBackgroundSessionInvalid(SharedPreferences prefs) async {
+  await prefs.setInt(
+    _bgSessionInvalidAtKey,
+    DateTime.now().millisecondsSinceEpoch,
+  );
 }
 
 /// Locate the Clerk cache directory (same path as the main app uses).

@@ -2,6 +2,10 @@
 
 ### Fixes
 
+- Plot no longer signs you out — or shows a "Plot signed out" notification — just because your phone
+  briefly lost its connection (for example overnight or in a tunnel). It now only asks you to sign in
+  again when your session is genuinely no longer valid, and stays signed in through temporary network
+  drops.
 - Emoji reactions now sit centered in their pills on desktop and mobile instead of sitting a little
   low.
 - Starting a new thread by typing an email address and then picking a connection like Gmail now keeps
