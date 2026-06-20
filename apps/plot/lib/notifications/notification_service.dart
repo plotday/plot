@@ -15,6 +15,7 @@ import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/logging.dart';
+import 'package:plot/notifications/focus_label.dart';
 import 'package:plot/notifications/notification_display.dart';
 import 'package:plot/notifications/notification_window.dart';
 import 'package:plot/store/attention.dart';
@@ -880,6 +881,13 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
               ? AttentionWindow.fromJsonString(firstLevel.notifyWindow)
               : null,
           targetPriorityId: firstLevelIdStr, // Always route directly to the focus
+          // "Role › Focus" header crumb. buildFocusLabel only prepends the role
+          // when the user has more than one role (Role.cachedCount > 1).
+          focusLabel: buildFocusLabel(
+            firstLevel.title,
+            Role.fromCache(firstLevel.roleId)?.name,
+            Role.cachedCount,
+          ),
         ),
       );
 
@@ -984,6 +992,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
           priorityId: displayId,
           threadIds: orderedThreadIds,
         ).encode(),
+        focusLabel: batch.focusLabel,
         urgent: batch.highestUrgent,
       );
       _shownNotifications[displayId] = (id: notifId, threadIds: newThreadIds);
@@ -1106,6 +1115,12 @@ class NotificationBatch {
   String? targetPriorityId;
   final List<AttentionWindow>? notifyWindow;
 
+  /// The "Role › Focus" header crumb (see [buildFocusLabel]). Computed locally
+  /// when batches are built so the foreground fallback (`_showFallbackNotifications`,
+  /// used when `/notification-summary` is unreachable) can still label the
+  /// notification. The server-backed paths use the payload's `focus_label`.
+  final String? focusLabel;
+
   NotificationBatch({
     required this.firstLevelPriorityId,
     required this.priorityTitle,
@@ -1113,6 +1128,7 @@ class NotificationBatch {
     required this.highestUrgent,
     this.targetPriorityId,
     this.notifyWindow,
+    this.focusLabel,
   });
 }
 
@@ -1193,6 +1209,8 @@ Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
     final body = summary['body'] as String? ?? 'You have new updates';
     final targetPriorityId = summary['target_priority_id'] as String? ?? '';
     final urgent = summary['urgent'] as bool? ?? false;
+    // "Role › Focus" header crumb computed by the server (buildFocusLabel).
+    final focusLabel = summary['focus_label'] as String?;
     final orderedThreadIds =
         (summary['thread_ids'] as List?)?.cast<String>() ?? const <String>[];
     final threadIds = orderedThreadIds.toSet();
@@ -1216,6 +1234,7 @@ Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
         priorityId: targetPriorityId,
         threadIds: orderedThreadIds,
       ).encode(),
+      focusLabel: focusLabel,
       urgent: urgent,
     );
     if (targetPriorityId.isNotEmpty) {

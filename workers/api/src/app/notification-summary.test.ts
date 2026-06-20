@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { singleThreadPushNotification } from "./notification-summary";
+import {
+  buildFocusLabel,
+  singleThreadPushNotification,
+} from "./notification-summary";
 
 describe("singleThreadPushNotification", () => {
   it("leads with the author and uses the title as the body for a new thread", () => {
@@ -78,5 +81,31 @@ describe("singleThreadPushNotification", () => {
         unread_author_names: "Stacy Chen",
       })
     ).toEqual({ title: "Stacy Chen", body: "Running 5 min late" });
+  });
+});
+
+describe("buildFocusLabel", () => {
+  it("prefixes the role when the user has more than one role", () => {
+    // Matches the Flutter FocusLabel rule (roles.length >= 2) and uses the same
+    // ` › ` separator (Priority.separator).
+    expect(buildFocusLabel("Marketing", "Plot", 2)).toBe("Plot › Marketing");
+  });
+
+  it("shows the focus alone when the user has exactly one role", () => {
+    expect(buildFocusLabel("Marketing", "Plot", 1)).toBe("Marketing");
+  });
+
+  it("normalizes the root focus title 'Everything' to 'Inbox'", () => {
+    expect(buildFocusLabel("Everything", "Plot", 2)).toBe("Plot › Inbox");
+    expect(buildFocusLabel("Everything", "Plot", 1)).toBe("Inbox");
+  });
+
+  it("omits the role prefix when the focus has no role, even with multiple roles", () => {
+    expect(buildFocusLabel("Operations", null, 3)).toBe("Operations");
+  });
+
+  it("returns null when there is no focus title (nothing to label)", () => {
+    expect(buildFocusLabel(null, "Plot", 2)).toBeNull();
+    expect(buildFocusLabel("", "Plot", 2)).toBeNull();
   });
 });

@@ -172,11 +172,16 @@ class NotificationDisplay {
   }
 
   /// Show a notification for a batch of updates.
+  ///
+  /// [focusLabel] is the "Role › Focus" crumb (see `buildFocusLabel`); when
+  /// non-null it renders in the notification header — Android `subText`, iOS /
+  /// macOS `subtitle` — so the user can tell which focus the update belongs to.
   Future<void> showBatchNotification({
     required int id,
     required String title,
     required String body,
     required String targetPriorityId,
+    String? focusLabel,
     bool urgent = false,
   }) async {
     if (!_initialized) return;
@@ -195,12 +200,14 @@ class NotificationDisplay {
       onlyAlertOnce: true,
       icon: 'ic_stat_notification',
       color: const Color(0xFF239870),
+      subText: focusLabel,
     );
 
-    const darwinDetails = DarwinNotificationDetails(
+    final darwinDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      subtitle: focusLabel,
     );
 
     final details = NotificationDetails(
@@ -229,6 +236,7 @@ class NotificationDisplay {
     required String body,
     required String targetPriorityId,
     required DateTime scheduleAt,
+    String? focusLabel,
     bool urgent = false,
   }) async {
     if (!_initialized) return;
@@ -247,12 +255,14 @@ class NotificationDisplay {
       onlyAlertOnce: true,
       icon: 'ic_stat_notification',
       color: const Color(0xFF239870),
+      subText: focusLabel,
     );
 
-    const darwinDetails = DarwinNotificationDetails(
+    final darwinDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      subtitle: focusLabel,
     );
 
     final details = NotificationDetails(

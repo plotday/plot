@@ -35,6 +35,12 @@
   in the background while you carry on typing, and sending waits just long enough for any in-progress
   upload to complete.
 
+### Notifications
+
+- Push notifications now show which focus an update belongs to in the notification header — and, if
+  you use more than one role, the role as well (for example "Plot › Marketing"). When several updates
+  arrive at once from different focuses, you can tell at a glance where each one landed.
+
 ### Fixes
 
 - The plan-upgrade screen reads more clearly: the subscription terms are lighter and easier to scan,

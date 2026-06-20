@@ -390,6 +390,7 @@ Future<void> _scheduleNotifications(
     final body = summary['body'] as String? ?? 'You have new updates';
     final targetPriorityId = summary['target_priority_id'] as String? ?? '';
     final urgent = summary['urgent'] as bool? ?? false;
+    final focusLabel = summary['focus_label'] as String?;
     final notifId = scheduledIdOffset +
         (targetPriorityId.hashCode.abs() % 100000);
 
@@ -399,6 +400,7 @@ Future<void> _scheduleNotifications(
       body: body,
       targetPriorityId: targetPriorityId,
       scheduleAt: scheduleAt,
+      focusLabel: focusLabel,
       urgent: urgent,
     );
   }

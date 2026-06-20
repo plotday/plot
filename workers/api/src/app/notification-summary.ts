@@ -1,8 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { PostHog } from "posthog-node";
+import { sql, type Kysely } from "kysely";
 
 import type { Bindings } from "../env";
+import type { DB } from "../db";
 import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
@@ -105,6 +107,66 @@ export function singleThreadPushNotification(thread: {
   };
 }
 
+/**
+ * Build the "Role › Focus" label shown in a notification's header (Android
+ * subText / iOS subtitle) so the user can tell which focus an update belongs to.
+ *
+ * The role is prepended only when the user has more than one role — mirroring
+ * the Flutter `FocusLabel` rule (`roles.length >= 2`) and using the same ` › `
+ * separator (`Priority.separator`). A role-less focus (e.g. FYI) shows the focus
+ * alone. The root focus title "Everything" is normalized to "Inbox" to match
+ * `Priority.displayTitle`. Returns null when there is no focus title to show, so
+ * callers can omit the subtext entirely.
+ */
+export function buildFocusLabel(
+  focusTitle: string | null,
+  roleName: string | null,
+  roleCount: number
+): string | null {
+  const focus = focusTitle?.trim();
+  if (!focus) return null;
+  const normalizedFocus = focus === "Everything" ? "Inbox" : focus;
+  const role = roleName?.trim();
+  if (roleCount > 1 && role) {
+    return `${role} › ${normalizedFocus}`;
+  }
+  return normalizedFocus;
+}
+
+/**
+ * Resolve, for a set of focus (first-level priority) ids, the owning role's
+ * name, plus how many non-archived roles the user has. Feeds {@link
+ * buildFocusLabel}: the role is only prefixed when the user has more than one
+ * role, matching the Flutter `FocusLabel` rule.
+ */
+export async function loadFocusRoles(
+  db: Kysely<DB>,
+  userId: string,
+  focusIds: string[]
+): Promise<{
+  roleNameByFocusId: Map<string, string | null>;
+  roleCount: number;
+}> {
+  const roleNameByFocusId = new Map<string, string | null>();
+  if (focusIds.length > 0) {
+    const rows = await sql<{ id: string; role_name: string | null }>`
+      SELECT p.id::text AS id, r.name AS role_name
+      FROM priority p
+      LEFT JOIN role r ON r.id = p.role_id
+      WHERE p.id::text = ANY(${focusIds})
+    `.execute(db);
+    for (const row of rows.rows) {
+      roleNameByFocusId.set(row.id, row.role_name);
+    }
+  }
+  const countResult = await sql<{ n: number }>`
+    SELECT count(*)::int AS n
+    FROM role
+    WHERE user_id = ${userId}::uuid AND archived_at IS NULL
+  `.execute(db);
+  return { roleNameByFocusId, roleCount: countResult.rows[0]?.n ?? 0 };
+}
+
 const BatchSchema = z.object({
   first_level_priority_id: z.string(),
   priority_title: z.string().nullable(),
@@ -173,6 +235,14 @@ notificationSummary.post("/notification-summary", async (c) => {
       return a ? { ...t, ...a } : t;
     };
 
+    // Resolve the "Role › Focus" label for each batch so the notification can
+    // show which focus an update belongs to (header subText / subtitle).
+    const { roleNameByFocusId, roleCount } = await loadFocusRoles(
+      db,
+      userId,
+      filteredBatches.map((b) => b.first_level_priority_id)
+    );
+
     const summaries = await Promise.all(
       filteredBatches.map(async (batch) => {
         const focusTitle =
@@ -199,6 +269,11 @@ notificationSummary.post("/notification-summary", async (c) => {
           body,
           target_priority_id: batch.target_priority_id,
           thread_ids: threads.map((t) => t.id),
+          focus_label: buildFocusLabel(
+            batch.priority_title,
+            roleNameByFocusId.get(batch.first_level_priority_id) ?? null,
+            roleCount
+          ),
         };
       })
     );

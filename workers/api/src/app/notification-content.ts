@@ -5,8 +5,10 @@ import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { checkAiLimit, isAiEnabled, recordAiUsage } from "../utils/ai-limits";
 import {
+  buildFocusLabel,
   generateSummary,
   fallbackSummary,
+  loadFocusRoles,
   singleThreadPushNotification,
 } from "./notification-summary";
 
@@ -231,6 +233,14 @@ notificationContent.get("/notification-content", async (c) => {
     ]);
     const useAi = aiAllowed.allowed && aiOn;
 
+    // Resolve the "Role › Focus" label for each focus so the notification can
+    // show which focus an update belongs to (header subText / subtitle).
+    const { roleNameByFocusId, roleCount } = await loadFocusRoles(
+      db,
+      userId,
+      [...batchMap.values()].map((b) => b.firstLevelPriorityId)
+    );
+
     const summaries = await Promise.all(
       [...batchMap.values()].map(async (batch) => {
         const targetPriorityId = batch.firstLevelPriorityId;
@@ -259,6 +269,11 @@ notificationContent.get("/notification-content", async (c) => {
           target_priority_id: targetPriorityId,
           urgent: batch.urgent,
           thread_ids: threadList.map((t) => t.id),
+          focus_label: buildFocusLabel(
+            batch.priorityTitle,
+            roleNameByFocusId.get(targetPriorityId) ?? null,
+            roleCount
+          ),
         };
       })
     );
