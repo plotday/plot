@@ -206,7 +206,7 @@ export async function createThread(
   plot: Plot,
   activity: NewThread | NewThreadWithNotes,
   skipNotify = false
-): Promise<{ id: Uuid; priorityId: string; authorId: string }> {
+): Promise<{ id: Uuid; priorityId: string; authorId: string; created: boolean }> {
   try {
     // Use shared helper for all preparation logic
     const prepared = await prepareThreadForDb(plot, activity);
@@ -510,7 +510,14 @@ export async function createThread(
       await plot.notifySyncDOs(new Set([priorityId]));
     }
 
-    return { id: dbResult.id as Uuid, priorityId, authorId };
+    return {
+      id: dbResult.id as Uuid,
+      priorityId,
+      authorId,
+      // Fresh insert vs. upsert source-match — lets createLink apply forward
+      // mute only to genuinely new threads, not replies on existing ones.
+      created: isFreshlyCreated(dbResult.created_at),
+    };
   } catch (error) {
     throw await handleDbOperationError(error, "createThread", plot, {
       has_notes: "notes" in activity && !!activity.notes?.length,

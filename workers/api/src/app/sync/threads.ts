@@ -8,6 +8,7 @@ import {
   dispatchPendingForThread,
   enqueueJobs,
 } from "../../state/classify-thread";
+import { applyMuteForNewThread } from "../../state/mute";
 import { checkAiLimit, isAiEnabled, recordAiUsage } from "../../utils/ai-limits";
 import { loadBuiltinProviderConfig, summarizeWithProvider } from "../../utils/ai-provider";
 import { cleanTitle } from "../../twist/tools/plot/thread";
@@ -878,13 +879,11 @@ threads.post("/sync/threads", async (c) => {
         // active mute rules. The SQL function no-ops on threads already
         // archived/muted, so re-runs are safe.
         try {
-          const auto = await sql<{ apply_mute_for_new_thread: string | null }>`
-            SELECT "user".apply_mute_for_new_thread(
-              ${sql.val(userId)}::uuid,
-              ${sql.val(upsertResult.id)}::uuid
-            ) AS apply_mute_for_new_thread
-          `.execute(trx);
-          const matchedSeed = auto.rows[0]?.apply_mute_for_new_thread;
+          const matchedSeed = await applyMuteForNewThread(
+            trx,
+            userId,
+            upsertResult.id
+          );
           if (matchedSeed) {
             c.var.tracker.capture("mute_similar_threads_match", {
               seed_thread_id: matchedSeed,

@@ -14,6 +14,9 @@
 - A thread you'd already read from a connected account (like Gmail) no longer pops back to unread on
   its own. When the source re-synced a message you'd read, Plot could mark the thread unread again on
   every device; now reading it sticks unless genuinely new content arrives.
+- "Skip active for threads like this" now works for incoming emails, messages, and other connected
+  items — not just threads you start yourself. Once you skip a kind of recurring notification, future
+  ones like it are automatically kept out of your active list instead of resurfacing each time.
 
 ## 1.5.0+361 — 2026-06-20
 

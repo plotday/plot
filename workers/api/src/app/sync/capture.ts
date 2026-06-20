@@ -9,6 +9,7 @@ import {
 } from "../../state/classify-thread";
 import { cleanTitle } from "../../twist/tools/plot/thread";
 import { createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
+import { applyMuteForNewThread } from "../../state/mute";
 import { isAiEnabled } from "../../utils/ai-limits";
 import { notifySync } from "./notify";
 
@@ -148,6 +149,18 @@ capture.post("/sync/capture", async (c) => {
       } as any,
       p_defaults: {} as any,
     });
+
+    // Forward-mute: now that the link (channel_id + author_id) is attached,
+    // apply the user's "Skip active for threads like this" rules so a captured
+    // page matching a mute rule auto-skips — same as the /sync/threads and
+    // connector paths. This create branch only runs for brand-new threads
+    // (existing source_url returns early above). Best-effort.
+    try {
+      await applyMuteForNewThread(trx, userId, threadId);
+    } catch (error) {
+      console.error("[sync/capture] applyMuteForNewThread failed:", error);
+      c.var.tracker.captureException(error as Error);
+    }
 
     // Re-read the final priority assignment after classification ran.
     const finalPriority = await sql<{ priority_id: string }>`

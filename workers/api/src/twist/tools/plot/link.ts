@@ -5,7 +5,10 @@ import type { LinkFilter } from "@plotday/twister/tools/plot";
 import { LinkAccess } from "@plotday/twister/tools/plot";
 
 import { sql } from "kysely";
+import { PostHog } from "posthog-node";
+
 import { rpcUser } from "../../../rpc";
+import { applyMuteForNewThread } from "../../../state/mute";
 import {
   handleDbOperationError,
   processNewActor,
@@ -218,7 +221,11 @@ export async function createLink(
     // thread with no link yet and activity_at falls back to created_at=now(),
     // briefly placing the thread at the top of today before it settles to the
     // link's source_created_at.
-    let { id: threadId, priorityId: threadPriorityId, authorId } = await createThread(plot, threadData, true);
+    let { id: threadId, priorityId: threadPriorityId, authorId, created } = await createThread(plot, threadData, true);
+    // Whether this saveLink produced a genuinely new thread. Reset to false if
+    // the link turns out to belong to a pre-existing thread (race dedup below),
+    // so forward-mute only runs for fresh arrivals — not replies/updates.
+    let isNewThread = created;
 
     // Step 2: Create the link row (priority_id returned from createThread)
 
@@ -330,6 +337,8 @@ export async function createLink(
         // so there is no link cascade.
         await archiveOrDeleteOrphanThread(plot, threadId);
         threadId = linkResult.thread_id as Uuid;
+        // The link belonged to a pre-existing thread, not the one we created.
+        isNewThread = false;
       }
     } else {
       // Plain insert for links without source
@@ -385,6 +394,34 @@ export async function createLink(
         link.schedules,
         link.scheduleOccurrences
       );
+    }
+
+    // Forward-mute: apply the owner's "Skip active for threads like this" rules
+    // now that the link (channel_id + author_id) is attached, so recurring
+    // connector threads (Gmail sign-in emails, Slack notifications, …) auto-skip
+    // just like client-composed auto-filed threads. Only for genuinely new
+    // threads — replies/updates on existing threads must not re-mute. Best
+    // effort: a mute failure must never break connector ingestion.
+    if (isNewThread) {
+      try {
+        await applyMuteForNewThread(plot.db, await plot.getUserId(), threadId);
+      } catch (muteError) {
+        const postHog = new PostHog(plot.env.POSTHOG_API_KEY, {
+          host: plot.env.POSTHOG_HOST,
+          flushAt: 1,
+          flushInterval: 0,
+        });
+        postHog.captureException(
+          muteError as Error,
+          await plot.getUserId().catch(() => undefined),
+          {
+            context: "plot:applyMuteForNewThread",
+            twist_instance_id: plot.twistInstanceId,
+            thread_id: threadId,
+          },
+        );
+        await postHog.shutdown();
+      }
     }
 
     // Single notify after thread + link (+ schedules) are all written so the
