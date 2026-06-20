@@ -11,7 +11,7 @@ import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";
 import { analyzeNote } from "./note-analysis";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
-import { markThreadUnreadForOthers } from "../app/sync/notes";
+import { markChannelNoteUnreadFallback } from "./channel-note-unread";
 
 /**
  * Process a batch of twist update messages from the queue.
@@ -618,22 +618,29 @@ export async function processTwistBatch(
           }
         }
 
-        // Fallback: write default thread_state if analysis didn't handle it
-        if (!analysisHandledUnread && note.thread_id) {
-          try {
-            await markThreadUnreadForOthers(env, db, note.thread_id, ownerId);
-          } catch (error) {
-            logger.error("Failed to mark thread unread (fallback)", error as Error, {
-              note_id: note.id,
-              thread_id: note.thread_id,
-            });
-            postHog.captureException(error as Error, ownerId, {
-              context: "markThreadUnreadForOthers:channelNote",
-              note_id: note.id,
-              thread_id: note.thread_id,
-              twist_instance_id: twistInstanceId,
-            });
-          }
+        // Fallback: write default thread_state if analysis didn't handle it.
+        // Passes the note's source time as the unread race guard so a
+        // re-dispatched, already-read incoming note doesn't clobber the
+        // recipient's read (see markChannelNoteUnreadFallback).
+        try {
+          await markChannelNoteUnreadFallback(
+            env,
+            db,
+            note,
+            ownerId,
+            analysisHandledUnread,
+          );
+        } catch (error) {
+          logger.error("Failed to mark thread unread (fallback)", error as Error, {
+            note_id: note.id,
+            thread_id: note.thread_id,
+          });
+          postHog.captureException(error as Error, ownerId, {
+            context: "markThreadUnreadForOthers:channelNote",
+            note_id: note.id,
+            thread_id: note.thread_id,
+            twist_instance_id: twistInstanceId,
+          });
         }
 
         // Notify UserSync DOs so the push notification pipeline fires

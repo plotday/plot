@@ -11,6 +11,9 @@
   point after a notification came in, Plot now correctly skips the follow-up email — even if you'd
   since closed the app. Previously closing Plot could make it forget you'd been active, so the email
   went out anyway.
+- A thread you'd already read from a connected account (like Gmail) no longer pops back to unread on
+  its own. When the source re-synced a message you'd read, Plot could mark the thread unread again on
+  every device; now reading it sticks unless genuinely new content arrives.
 
 ## 1.5.0+361 — 2026-06-20
 
