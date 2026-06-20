@@ -23,6 +23,8 @@ void main() {
         body: body,
         hasActions: hasActions,
         recipientSummary: recipientSummary,
+        recipientActors: const [],
+        recipientCount: 0,
         logo: logo,
         logoDark: null,
         focus: null,

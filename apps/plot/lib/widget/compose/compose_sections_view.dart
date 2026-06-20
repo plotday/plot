@@ -342,6 +342,8 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
             logo: d.logo,
             logoDark: d.logoDark,
             focus: d.focus,
+            recipientActors: d.recipientActors,
+            recipientCount: d.recipientCount,
           ),
           onActivate: () => widget.onResumeDraft?.call(d.threadId, d.archived),
           trailing: d.archived

@@ -98,6 +98,8 @@ class DraftPillData extends ComposePillData {
     this.logo,
     this.logoDark,
     this.focus,
+    this.recipientActors = const [],
+    this.recipientCount = 0,
   });
   final String label;
   final String? detail;
@@ -110,6 +112,12 @@ class DraftPillData extends ComposePillData {
 
   /// The draft's focus, rendered as the leading icon when there is no [logo].
   final Priority? focus;
+
+  /// Recipient contact actors for a trailing avatar group; [recipientCount] is
+  /// the full roster size for the "+N" overflow. Empty ⇒ no avatars (e.g. a
+  /// private note).
+  final List<Actor> recipientActors;
+  final int recipientCount;
 }
 
 // ─── Widget ──────────────────────────────────────────────────────────────────
@@ -398,14 +406,23 @@ class ComposePill extends StatelessWidget {
           );
         }(),
 
-      DraftPillData(:final label, :final logo, :final logoDark, :final focus) =>
+      DraftPillData(
+        :final label,
+        :final logo,
+        :final logoDark,
+        :final focus,
+        :final recipientActors,
+        :final recipientCount,
+      ) =>
         () {
-          // A connection / twist / favicon logo leads when present; otherwise
-          // the focus icon (in its colour) via FocusLabel — matching the
-          // picker's Private-note rows; otherwise a plain note glyph.
+          // Leading + label: a connection / twist / favicon logo leads when
+          // present; otherwise the focus icon (in its colour) via FocusLabel —
+          // matching the picker's Private-note rows; otherwise a plain note
+          // glyph.
+          final Widget content;
           if (logo != null) {
             final url = isDark ? (logoDark ?? logo) : logo;
-            return Row(
+            content = Row(
               children: [
                 _gutter(
                   LogoImage(
@@ -428,9 +445,8 @@ class ComposePill extends StatelessWidget {
                 ),
               ],
             );
-          }
-          if (focus != null) {
-            return FocusLabel(
+          } else if (focus != null) {
+            content = FocusLabel(
               priority: focus,
               titleOverride: label,
               showRole: false,
@@ -438,18 +454,34 @@ class ComposePill extends StatelessWidget {
               iconGap: composePillIconGap,
               iconSize: composePillLogoSize,
             );
+          } else {
+            content = Row(
+              children: [
+                _gutter(const Icon(PlotIcon.note, size: composePillLogoSize)),
+                const SizedBox(width: composePillIconGap),
+                Expanded(
+                  child: _nameMetaLine(
+                    name: label,
+                    meta: null,
+                    nameStyle: nameStyle,
+                    metaStyle: metaStyle,
+                  ),
+                ),
+              ],
+            );
           }
+          // Recipients (the "who") trail the title as a compact avatar group,
+          // mirroring ThreadWidget. Omitted for drafts with no resolved contact
+          // avatars (e.g. private notes, or group/email-only rosters).
+          if (recipientActors.isEmpty) return content;
           return Row(
             children: [
-              _gutter(const Icon(PlotIcon.note, size: composePillLogoSize)),
+              Expanded(child: content),
               const SizedBox(width: composePillIconGap),
-              Expanded(
-                child: _nameMetaLine(
-                  name: label,
-                  meta: null,
-                  nameStyle: nameStyle,
-                  metaStyle: metaStyle,
-                ),
+              AvatarGroup(
+                actors: recipientActors,
+                totalCount: recipientCount,
+                size: composePillLogoSize,
               ),
             ],
           );

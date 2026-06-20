@@ -48,6 +48,8 @@ class DraftInput {
     required this.body,
     required this.hasActions,
     required this.recipientSummary,
+    required this.recipientActors,
+    required this.recipientCount,
     required this.logo,
     required this.logoDark,
     required this.focus,
@@ -65,6 +67,15 @@ class DraftInput {
   /// A pre-resolved "To: …" summary used as the label when there is no title
   /// or body. Null when the draft has no recipients.
   final String? recipientSummary;
+
+  /// Resolved recipient contact actors for the trailing avatar group (from the
+  /// warm Actor cache). Group/email recipients aren't avatared but still count
+  /// toward [recipientCount].
+  final List<Actor> recipientActors;
+
+  /// Total recipient count (contacts + groups + invite-emails), driving the
+  /// avatar group's "+N" overflow.
+  final int recipientCount;
 
   /// Leading-glyph logo URL (connection / twist / connector / favicon), or null
   /// to fall back to the [focus] icon.
@@ -88,6 +99,8 @@ class DraftSummary extends Equatable {
     required this.threadId,
     required this.label,
     required this.detail,
+    required this.recipientActors,
+    required this.recipientCount,
     required this.logo,
     required this.logoDark,
     required this.focus,
@@ -97,6 +110,11 @@ class DraftSummary extends Equatable {
   final Uuid threadId;
   final String label;
   final String? detail;
+
+  /// Recipient contact actors for the trailing avatar group; [recipientCount]
+  /// is the full roster size (contacts + groups + invite-emails) for "+N".
+  final List<Actor> recipientActors;
+  final int recipientCount;
 
   /// Leading-glyph logo URL (connection / twist / connector / favicon); when
   /// null the tile shows the [focus] icon, and failing that a note glyph.
@@ -110,8 +128,16 @@ class DraftSummary extends Equatable {
   final bool archived;
 
   @override
-  List<Object?> get props =>
-      [threadId, label, detail, logo, logoDark, focus?.id, archived];
+  List<Object?> get props => [
+        threadId,
+        label,
+        detail,
+        recipientCount,
+        logo,
+        logoDark,
+        focus?.id,
+        archived,
+      ];
 }
 
 /// Filters [active] and [archived] draft inputs to substantive drafts, orders
@@ -138,6 +164,8 @@ List<DraftSummary> buildDraftSummaries(
           recipientSummary: d.recipientSummary,
         ),
         detail: null,
+        recipientActors: d.recipientActors,
+        recipientCount: d.recipientCount,
         logo: d.logo,
         logoDark: d.logoDark,
         focus: d.focus,
@@ -1199,6 +1227,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         body: note?.content,
         hasActions: note?.actions?.isNotEmpty ?? false,
         recipientSummary: _draftRecipientSummary(t),
+        recipientActors: _draftRecipientActors(t),
+        recipientCount:
+            t.contacts.length + t.groups.length + t.inviteEmails.length,
         logo: logo,
         logoDark: logoDark,
         focus: t.priority,
@@ -1241,6 +1272,18 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     final shown = names.take(3).join(', ');
     final extra = names.length - 3;
     return extra > 0 ? 'To: $shown +$extra' : 'To: $shown';
+  }
+
+  /// The draft's recipient contact actors (from the warm Actor cache) for the
+  /// tile's trailing avatar group. Unresolved contacts are skipped; groups and
+  /// invite-emails have no avatar but are still counted in `recipientCount`.
+  List<Actor> _draftRecipientActors(Thread t) {
+    final actors = <Actor>[];
+    for (final c in t.contacts) {
+      final a = Actor.fromCache(ActorId.fromUuid(c));
+      if (a != null) actors.add(a);
+    }
+    return actors;
   }
 
   /// Build a [ComposePeopleEntry] for a formal group from an already-resolved
