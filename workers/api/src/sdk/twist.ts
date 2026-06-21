@@ -224,6 +224,10 @@ twist.post("/twist/generate", async (c) => {
     if (useSSE) {
       // Stream progress updates via SSE
       const stream = new SSEStream();
+      // Keep the connection alive during long silent phases so a slow
+      // generation doesn't trip the client's read-inactivity timeout.
+      // Stopped automatically by stream.close() below.
+      stream.startHeartbeat();
 
       // Start generation in the background
       (async () => {
@@ -475,6 +479,11 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
   if (useSSE) {
     // Stream progress updates via SSE
     const stream = new SSEStream();
+    // Keep the connection alive during long silent phases (e.g. upgrading
+    // thousands of active twist instances for high-install connectors), which
+    // can exceed the client's 300s read-inactivity timeout and surface as a
+    // generic "Network error". Stopped automatically by stream.close() below.
+    stream.startHeartbeat();
 
     // Create a separate DB connection for the background deployment.
     // The middleware-scoped `db` will be destroyed when the handler returns

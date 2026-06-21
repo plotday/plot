@@ -40,6 +40,7 @@ export class SSEStream {
   private encoder = new TextEncoder();
   private controller: ReadableStreamDefaultController | null = null;
   private closed = false;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   readonly stream: ReadableStream;
 
@@ -88,9 +89,52 @@ export class SSEStream {
   }
 
   /**
+   * Send an SSE comment line. Comments (lines starting with ":") are ignored by
+   * SSE clients but still arrive as bytes on the wire, which resets a client's
+   * read-inactivity timeout. Node's global fetch (undici) aborts a body read
+   * after 300s of silence with a generic network error, so a long server-side
+   * operation that emits no events for >300s looks like a dropped connection.
+   */
+  sendComment(text = ""): void {
+    if (this.closed || !this.controller) {
+      return;
+    }
+
+    this.controller.enqueue(this.encoder.encode(`:${text}\n\n`));
+  }
+
+  /**
+   * Begin sending periodic heartbeat comments so the connection stays alive
+   * during long operations that emit no progress (e.g. upgrading thousands of
+   * active twist instances). The interval is cleared on close() or
+   * stopHeartbeat(). Calling more than once is a no-op while one is running.
+   */
+  startHeartbeat(intervalMs = 15000): void {
+    if (this.heartbeatTimer || this.closed) {
+      return;
+    }
+
+    this.heartbeatTimer = setInterval(() => {
+      this.sendComment("heartbeat");
+    }, intervalMs);
+  }
+
+  /**
+   * Stop the periodic heartbeat started by startHeartbeat().
+   */
+  stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  /**
    * Close the stream
    */
   close(): void {
+    this.stopHeartbeat();
+
     if (this.closed || !this.controller) {
       return;
     }
