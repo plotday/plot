@@ -59,7 +59,7 @@ import type { Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
 import { rpc, rpcUser } from "../../rpc";
 import { notifyUserSyncByEnv } from "../../app/sync/notify";
-import { emitNeedsReauthEvent } from "../../utils/twist-events";
+import { flagConnectionNeedsReauth } from "./needs-reauth";
 import { getEffectivePlan } from "../../utils/plan";
 import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
 import { disposeRpc } from "../../utils/rpc";
@@ -2911,72 +2911,16 @@ export class Integrations extends Tool implements IAuth {
       status?: number | null;
     }
   ): Promise<void> {
-    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
-    try {
-      const reauthContact = await this.db
-        .selectFrom("contact")
-        .select("user_id")
-        .where("id", "=", actorId)
-        .executeTakeFirst();
-
-      if (!reauthContact?.user_id) {
-        logger.debug(
-          `Skipped needs_reauth_at: actor ${actorId} has no linked user_id`,
-          { provider, actor_id: actorId }
-        );
-        return;
-      }
-
-      const now = new Date().toISOString();
-      // Set both `needs_reauth_at` (UI prompt) and `recovery_pending`
-      // (signals the next onChannelEnabled dispatch to pass `recovering:
-      // true`). The two are linked but distinct: `needs_reauth_at` clears
-      // when the user re-authenticates; `recovery_pending` clears when the
-      // next sync dispatch consumes it. That way a user-toggle after an
-      // auth gap gets the wipe-and-rewalk semantics for free.
-      const result = await this.db
-        .insertInto("twist_instance_connection")
-        .values({
-          twist_instance_id: this.twistInstanceId,
-          user_id: reauthContact.user_id,
-          provider,
-          actor_id: actorId,
-          connected_at: now,
-          needs_reauth_at: now,
-          recovery_pending: true,
-        })
-        .onConflict((oc) =>
-          oc
-            .columns(["twist_instance_id", "user_id", "provider"])
-            .doUpdateSet({ needs_reauth_at: now, recovery_pending: true })
-            .where("twist_instance_connection.needs_reauth_at", "is", null)
-        )
-        .executeTakeFirst();
-
-      if ((result.numInsertedOrUpdatedRows ?? 0n) > 0n) {
-        await notifyUserSyncByEnv(this.env, reauthContact.user_id);
-        // Only on a *fresh* flag (not repeated retries of an already-flagged
-        // connection): preserve why this connection demanded re-auth.
-        if (details) {
-          await emitNeedsReauthEvent({
-            env: this.env,
-            userId: reauthContact.user_id,
-            twistInstanceId: this.twistInstanceId,
-            provider,
-            actorId,
-            trigger: details.trigger,
-            reason: details.reason,
-            oauthError: details.oauthError ?? null,
-            status: details.status ?? null,
-          });
-        }
-      }
-    } catch (dbError) {
-      logger.warn(
-        `Failed to set needs_reauth_at for ${provider} actor ${actorId}: ${(dbError as Error)?.message ?? String(dbError)}`,
-        { provider, actor_id: actorId }
-      );
-    }
+    // The actual write + client notify + telemetry live in the shared
+    // `flagConnectionNeedsReauth` helper so every "this connection's credential
+    // is dead" path (OAuth refresh failures here, missing Unipile credentials
+    // in the messaging tool's assertAccount) produces identical state.
+    await flagConnectionNeedsReauth(this.db, this.env, {
+      twistInstanceId: this.twistInstanceId,
+      provider,
+      actorId,
+      details,
+    });
   }
 
   /**

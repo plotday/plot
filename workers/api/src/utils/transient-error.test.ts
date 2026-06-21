@@ -75,6 +75,16 @@ describe("isAuthError", () => {
     expect(
       isAuthError(new Error("Authentication failed - token may be expired"))
     ).toBe(true);
+    // Unipile messaging tool: the stored account credential is gone, so the
+    // user must reconnect. Terminal (won't self-resolve on retry) — must be
+    // ACK'd, not retry-stormed. See assertAccount in twist/tools/unipile.
+    expect(
+      isAuthError(
+        new Error(
+          "linkedin channel WFhho1nhRX2h_MVBvedTlQ has no stored credentials — reconnect"
+        )
+      )
+    ).toBe(true);
   });
 
   it("does NOT match rate-limits, 404s, bare 401, or non-Errors", () => {

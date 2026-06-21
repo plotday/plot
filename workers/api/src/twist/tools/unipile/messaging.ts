@@ -10,6 +10,7 @@ import type {
 import type { DB } from "../../../db-types";
 import type { Bindings } from "../../../env";
 import type { StoredTokenData } from "../../../provider";
+import { flagConnectionNeedsReauth } from "../needs-reauth";
 import { Store } from "../store";
 import { Tool } from "../tool";
 import { UnipileClient } from "./client";
@@ -122,6 +123,31 @@ export abstract class UnipileMessagingTool extends Tool implements IUnipileMessa
     const cfg = await this.store.get<{ enabled?: boolean; enabledBy?: string }>(`channel_config:${this.provider}:${channelId}`);
     if (!cfg?.enabledBy) throw new Error(`${this.provider} channel ${channelId} is not enabled by any actor`);
     const token = await this.store.get<StoredTokenData>(`auth_token:${this.provider}:${cfg.enabledBy}`);
-    if (!token?.access_token) throw new Error(`${this.provider} channel ${channelId} has no stored credentials — reconnect`);
+    if (!token?.access_token) {
+      // The stored account credential is gone (lost saveAuth write, or a
+      // dev/prod Unipile pool reclaim). Flag the connection for re-auth so the
+      // app prompts "Reconnect" — otherwise the initial-sync backfill dies here
+      // before calling channelSyncCompleted and the tile spins on "Syncing"
+      // forever. Best-effort (flagConnectionNeedsReauth never throws).
+      await this.flagChannelNeedsReauth(channelId, cfg.enabledBy);
+      throw new Error(`${this.provider} channel ${channelId} has no stored credentials — reconnect`);
+    }
+  }
+
+  /**
+   * Flag this channel's connection for re-auth. Split out so the DB write lives
+   * in one shared helper ({@link flagConnectionNeedsReauth}) and so
+   * `assertAccount` stays unit-testable without a database.
+   */
+  protected async flagChannelNeedsReauth(channelId: string, actorId: string): Promise<void> {
+    await flagConnectionNeedsReauth(this.options.db, this.options.env, {
+      twistInstanceId: this.options.twistInstanceId,
+      provider: this.provider,
+      actorId,
+      details: {
+        trigger: "token_missing",
+        reason: `${this.provider} channel ${channelId} has no stored credentials`,
+      },
+    });
   }
 }

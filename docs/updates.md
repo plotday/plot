@@ -6,6 +6,9 @@
 
 ### Fixes
 
+- A connection that loses its saved sign-in — for example LinkedIn after reconnecting — no longer gets
+  stuck on "Syncing" forever. Plot now notices the credentials are gone and prompts you to reconnect,
+  and it gives up and offers "Reconnect" if a first sync simply never finishes.
 - Opening Connections is fast again. The screen could take ten seconds or more to appear — especially
   if you had access to a lot of connectors — because it was looking each one up separately. It now
   loads everything in one go and opens almost instantly.

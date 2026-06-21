@@ -27,4 +27,21 @@ describe("assertAccount provider keying", () => {
     const t = make(() => null);
     await expect((t as any).assert("acc1")).rejects.toThrow(/not enabled/);
   });
+
+  test("flags the connection for re-auth, then throws, when the stored credential is gone", async () => {
+    // channel is enabled by actor1, but there is no auth_token with an
+    // access_token — the stored Unipile credential was lost/cleared.
+    const t = make((k) =>
+      k.startsWith("channel_config:") ? { enabledBy: "actor1" } : null,
+    );
+    const flag = vi.fn(async () => {});
+    (t as any).flagChannelNeedsReauth = flag;
+
+    await expect((t as any).assert("acc1")).rejects.toThrow(
+      /no stored credentials/,
+    );
+    // The connection must be flagged for re-auth so the app shows "Reconnect"
+    // instead of an eternal "Syncing" — keyed on the responsible actor.
+    expect(flag).toHaveBeenCalledWith("acc1", "actor1");
+  });
 });

@@ -10,6 +10,8 @@ import {
   recoveryAction,
   flagForRetry,
   giveUpStuckSync,
+  isSyncStillBatching,
+  LIVENESS_HORIZON_MS,
   MAX_INITIAL_SYNC_ATTEMPTS,
   type StuckSyncCandidate,
 } from "./recover-stuck-syncs";
@@ -248,5 +250,36 @@ describe.skipIf(!DATABASE_URL)("selectStuckSyncCandidates attempt counter", () =
     });
     // seedAndAct returns the row read-back; the assertion above is the point.
     expect(captured.attempts).toBe(2);
+  });
+});
+
+describe("isSyncStillBatching", () => {
+  const now = 1_700_000_000_000;
+
+  it("treats a sync with no pending callback as orphaned (crashed)", () => {
+    // call_at NULL / nothing queued: the alarm has nothing left to fire.
+    expect(isSyncStillBatching(null, now)).toBe(false);
+  });
+
+  it("treats a sync re-arming its next batch soon as alive", () => {
+    expect(isSyncStillBatching(now + 60_000, now)).toBe(true);
+    // Boundary is inclusive: a callback due exactly at the horizon counts.
+    expect(isSyncStillBatching(now + LIVENESS_HORIZON_MS, now)).toBe(true);
+  });
+
+  it("treats a callback parked beyond the horizon as NOT the initial sync", () => {
+    // The bug: LinkedIn's relations backfill parks a self-rescheduling
+    // callback 2–8h out, which the old any-future-callback check mistook for a
+    // live initial sync — so a dead `backfill` (the task that calls
+    // channelSyncCompleted) never escalated to "Reconnect".
+    expect(isSyncStillBatching(now + LIVENESS_HORIZON_MS + 1, now)).toBe(false);
+    const threeHours = 3 * 60 * 60 * 1000;
+    expect(isSyncStillBatching(now + threeHours, now)).toBe(false);
+  });
+
+  it("keeps the horizon below the Unipile relations-crawl floor (2h)", () => {
+    // The crawl's soonest reschedule is 2h out; the horizon must sit under it
+    // so a parked crawl can never masquerade as a live initial sync.
+    expect(LIVENESS_HORIZON_MS).toBeLessThan(2 * 60 * 60 * 1000);
   });
 });

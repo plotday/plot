@@ -54,6 +54,41 @@ const STUCK_SYNC_GRACE_MS = 30 * 60 * 1000;
  */
 export const MAX_INITIAL_SYNC_ATTEMPTS = 3;
 
+/**
+ * How soon a connection's next scheduled callback must fire for the watchdog to
+ * treat its initial sync as "still batching" (alive) rather than orphaned.
+ *
+ * A healthy initial sync re-arms its next batch within seconds-to-minutes (or,
+ * when rate-limited, a few minutes). What it does NOT do is park its next step
+ * hours away — that pattern belongs to independent *background* crawls. The
+ * Unipile relations backfill, for example, reschedules itself 2–4h out (and
+ * 4–8h on error) while the initial chat sync (`backfillChats`, the task that
+ * calls `channelSyncCompleted`) runs in one pass. The old liveness check
+ * counted *any* future callback as alive, so a parked relations crawl made a
+ * dead `backfill` look alive forever — the connection spun on "Syncing" and
+ * never escalated. This horizon must stay comfortably below that 2h crawl floor
+ * so such a parked callback can never masquerade as a live sync.
+ */
+export const LIVENESS_HORIZON_MS = 90 * 60 * 1000;
+
+/**
+ * Decide whether an in-progress initial sync is still actively batching, given
+ * the timestamp (epoch ms) of its soonest pending scheduled callback (or `null`
+ * when nothing is queued). Alive iff a callback is due within
+ * {@link LIVENESS_HORIZON_MS}; a callback parked further out is a background
+ * task, not the initial sync, and a `null` means the sync was orphaned by a
+ * crash (nothing left to fire).
+ */
+export function isSyncStillBatching(
+  nextScheduledCallbackAt: number | null,
+  now: number
+): boolean {
+  return (
+    nextScheduledCallbackAt !== null &&
+    nextScheduledCallbackAt <= now + LIVENESS_HORIZON_MS
+  );
+}
+
 export type StuckSyncCandidate = {
   twistInstanceId: string;
   userId: string;
@@ -168,18 +203,21 @@ export async function recoverStuckSyncs(
 
     for (const candidate of candidates) {
       // Liveness guard. A healthy sync re-arms its next batch via
-      // Tasks.runTask({ runAt }), leaving a future-dated row in the
-      // connection's CallbacksState DO; a rate-limited sync does the same
-      // with a longer delay. If such a row exists the sync is still going (or
-      // backing off) — leave it alone. Only when nothing is queued is the
-      // sync genuinely orphaned by a crash.
-      let hasPending: boolean;
+      // Tasks.runTask({ runAt }), leaving a *near-future* row in the
+      // connection's CallbacksState DO; a rate-limited sync does the same with
+      // a slightly longer delay. If such a row is due within
+      // LIVENESS_HORIZON_MS the sync is still going — leave it alone. A
+      // callback parked hours out is NOT the initial sync (e.g. the Unipile
+      // relations crawl, 2–8h), and nothing queued means the sync was orphaned
+      // by a crash; both are recovery candidates.
+      let stillBatching: boolean;
       try {
         const id = env.CALLBACKS.idFromName(candidate.twistInstanceId);
         const stub = env.CALLBACKS.get(id);
-        hasPending = await stub.hasPendingScheduledCallback(
+        const nextAt = await stub.nextScheduledCallbackAt(
           candidate.twistInstanceId
         );
+        stillBatching = isSyncStillBatching(nextAt, Date.now());
       } catch (error) {
         // Can't determine liveness — fail safe by NOT flagging, so we never
         // re-dispatch a sync that might still be running. Report and skip.
@@ -192,7 +230,7 @@ export async function recoverStuckSyncs(
         continue;
       }
 
-      if (hasPending) {
+      if (stillBatching) {
         alive++;
         continue;
       }

@@ -754,34 +754,36 @@ export class CallbacksState extends DurableObject<Bindings> {
   }
 
   /**
-   * True if this twist_instance has at least one *scheduled* callback whose
-   * `call_at` is still in the future — i.e. a pending `Tasks.runTask({ runAt })`
-   * batch that the alarm will fire to resume work. The stuck-sync watchdog
-   * (workers/api/src/scheduled/recover-stuck-syncs.ts) uses this to tell a
-   * healthy long-running / rate-limited sync (has a future batch queued)
-   * apart from one orphaned by a worker crash (nothing left to fire).
+   * The epoch-ms `call_at` of this twist_instance's soonest *future* scheduled
+   * callback (a pending `Tasks.runTask({ runAt })` batch the alarm will fire to
+   * resume work), or `null` when none is queued. The stuck-sync watchdog
+   * (workers/api/src/scheduled/recover-stuck-syncs.ts) compares this against a
+   * near-term horizon to tell a sync that's actively re-arming its next batch
+   * apart from one orphaned by a crash (nothing queued) or whose only pending
+   * callback is a far-future *background* task (e.g. the Unipile relations
+   * crawl, 2–8h out) rather than the initial sync itself.
    *
-   * Only future scheduled rows count as "alive": an immediate (`call_at IS
-   * NULL`) task row can linger after the run queue exhausts its retries, so
-   * it is NOT a reliable liveness signal; a past-due scheduled row is
-   * consumed-and-deleted by the alarm, so it never lingers either.
+   * Only future scheduled rows count: an immediate (`call_at IS NULL`) task row
+   * can linger after the run queue exhausts its retries, so it is NOT a
+   * reliable liveness signal; a past-due scheduled row is consumed-and-deleted
+   * by the alarm, so it never lingers either.
    */
-  hasPendingScheduledCallback(twistInstanceId: string): boolean {
+  nextScheduledCallbackAt(twistInstanceId: string): number | null {
     const result = this.sql
       .exec(
         `
-        SELECT 1
+        SELECT MIN(call_at) AS next_at
         FROM callbacks
         WHERE twist_instance_id = ?
           AND call_at IS NOT NULL
           AND call_at > ?
-        LIMIT 1
         `,
         twistInstanceId,
         Date.now()
       )
       .next();
-    return !result.done;
+    const nextAt = result.value?.next_at;
+    return typeof nextAt === "number" ? nextAt : null;
   }
 
   delete(token: string): void {

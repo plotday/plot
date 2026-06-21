@@ -91,6 +91,13 @@ export function isAuthError(error: unknown): boolean {
     msg.includes("invalid_grant") ||
     msg.includes("InvalidAuthenticationToken") ||
     msg.includes("401 Unauthorized") ||
-    msg.includes("Authentication failed")
+    msg.includes("Authentication failed") ||
+    // Unipile messaging tools (LinkedIn/Instagram/WhatsApp): the stored
+    // account credential is missing/cleared, so the user must reconnect.
+    // `assertAccount` throws "<provider> channel <id> has no stored
+    // credentials — reconnect" and also flags needs_reauth, so retrying only
+    // re-throws the same terminal error until the queue cap (the LinkedIn
+    // stuck-"Syncing" storm). ACK it like the other credential rejections.
+    msg.includes("no stored credentials")
   );
 }
