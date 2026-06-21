@@ -1,3 +1,11 @@
+## Next release
+
+### Fixes
+
+- Signing in is more reliable, especially the first time on a new device. If the server is briefly
+  slow during sign-in, Plot now keeps trying for a few moments instead of immediately giving up with
+  a "taking too long" error.
+
 ## 1.5.0+362 — 2026-06-20
 
 ### Fixes

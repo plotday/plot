@@ -14,6 +14,8 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/auth/sign_in_retry.dart'
+    show IdentityResolutionException, isTransientSignInError, retryAsync;
 import 'env.dart';
 import 'cli_args.dart';
 import 'logging.dart';
@@ -457,11 +459,30 @@ class Base {
       return;
     }
 
-    // Neither /activate nor JWT worked
-    throw Exception(
-      'Unable to resolve identity: /activate failed and JWT has no identity',
+    // Neither /activate nor JWT worked. Use a typed exception so the
+    // first-time sign-in retry loop treats this as transient — a stalled or
+    // mid-deploy /activate may well succeed on the next attempt.
+    throw const IdentityResolutionException(
+      '/activate failed and JWT has no identity',
     );
   }
+
+  /// Resolve identity via [resolveIdentity], retrying transient backend
+  /// stalls. A *fresh install* (App Store reviewer, new device) has no
+  /// restored identity to fall back on, so this leg must succeed during
+  /// sign-in. `/activate` is idempotent, so re-issuing it across a brief
+  /// backend burst is safe — this turns a one-shot timeout into resilience.
+  ///
+  /// [attemptTimeout] is kept below the API client's own 30s request timeout
+  /// so a stalled attempt is abandoned and retried while the burst clears.
+  static Future<void> resolveIdentityResilient({
+    Duration attemptTimeout = const Duration(seconds: 15),
+    int maxAttempts = 3,
+  }) => retryAsync(
+    () => resolveIdentity().timeout(attemptTimeout),
+    maxAttempts: maxAttempts,
+    isRetryable: isTransientSignInError,
+  );
 
   /// Signs out the current user explicitly.
   /// This is the only place that clears _userId - auth events like token
@@ -589,10 +610,7 @@ class Base {
     // Identify user in PostHog
     await Tracker.identify(
       userId,
-      properties: {
-        "email": ?email,
-        "name": ?name,
-      },
+      properties: {"email": ?email, "name": ?name},
       propertiesSetOnce: {
         "signed_up_time": DateTime.now().toUtc().toIso8601String(),
       },

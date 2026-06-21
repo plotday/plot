@@ -78,10 +78,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
         // Clerk's instance treated the email code alone as sufficient to
         // create the session, so the user is signed in but has no name or
         // password set. Apply both directly to the existing user.
-        await Base.auth.updateUser(
-          firstName: firstName,
-          lastName: lastName,
-        );
+        await Base.auth.updateUser(firstName: firstName, lastName: lastName);
         await Base.auth.setUserPassword(password: password);
       } else {
         // Update the pending sign-up with password and name.
@@ -102,8 +99,9 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
         }
       }
 
-      // Call /activate to get user identity
-      await Base.resolveIdentity();
+      // Call /activate to get user identity, retrying transient backend
+      // stalls so a first-time sign-up isn't failed by a brief burst.
+      await Base.resolveIdentityResilient();
       // UserBloc will pick up the emission and transition to UserReady
     } on AuthError catch (e, t) {
       log.warning('Error completing sign-up', e, t);

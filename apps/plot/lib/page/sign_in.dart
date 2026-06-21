@@ -94,28 +94,22 @@ class _SignInPageState extends State<SignInPage> {
     }
 
     try {
+      // Establish the Clerk session. This leg is normally fast; give it its
+      // own budget so a slow /activate can't eat into it.
       await Future(() async {
-        try {
-          await Base.auth.signInWithIdToken(
-            provider: provider,
-            idToken: idToken,
-          );
-        } catch (e) {
-          rethrow;
-        }
-        try {
-          // If Clerk indicates this should become a sign-up, transfer the flow.
-          await Base.auth.transfer();
-        } catch (e) {
-          log.warning('transfer failed', e);
-          rethrow;
-        }
+        await Base.auth.signInWithIdToken(provider: provider, idToken: idToken);
+        // If Clerk indicates this should become a sign-up, transfer the flow.
+        await Base.auth.transfer();
+      }).timeout(const Duration(seconds: 20));
 
-        // Call /activate to get user identity
-        await Base.resolveIdentity();
-        // UserBloc will pick up the emission and transition to UserReady
-      }).timeout(const Duration(seconds: 15));
-    } on TimeoutException {
+      // Resolve identity via /activate, retrying transient backend stalls.
+      await Base.resolveIdentityResilient();
+      // UserBloc will pick up the emission and transition to UserReady
+    } on TimeoutException catch (e, t) {
+      // Reached here only after the resolve retries were exhausted (or Clerk
+      // itself stalled). Capture it — the prior code swallowed this path,
+      // which is exactly why a reviewer's timed-out sign-in was invisible.
+      Tracker.captureException(e, t);
       if (!mounted) return;
       context.showToast(
         message: 'Sign-in is taking too long. Please try again.',
@@ -127,9 +121,10 @@ class _SignInPageState extends State<SignInPage> {
     } on AuthError catch (e, t) {
       AuthError errorToShow = e;
       if (_isAlreadySignedIn(e)) {
-        // Clerk already has a session — just activate to set up identity
+        // Clerk already has a session (e.g. a prior attempt timed out after
+        // sign-in succeeded) — just resolve identity, with the same retries.
         try {
-          await Base.resolveIdentity();
+          await Base.resolveIdentityResilient();
           return;
         } catch (activateError) {
           log.warning('Failed to activate existing session', activateError);
@@ -150,10 +145,11 @@ class _SignInPageState extends State<SignInPage> {
               idToken: idToken,
             );
             await Base.auth.transfer();
-            await Base.resolveIdentity();
-          }).timeout(const Duration(seconds: 15));
+          }).timeout(const Duration(seconds: 20));
+          await Base.resolveIdentityResilient();
           return;
-        } on TimeoutException {
+        } on TimeoutException catch (timeoutError, timeoutTrace) {
+          Tracker.captureException(timeoutError, timeoutTrace);
           if (!mounted) return;
           context.showToast(
             message: 'Sign-in is taking too long. Please try again.',

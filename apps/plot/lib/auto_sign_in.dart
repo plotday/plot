@@ -77,7 +77,7 @@ class AutoSignIn {
             strategy: AuthStrategy.password,
             password: password,
           );
-          await Base.resolveIdentity();
+          await Base.resolveIdentityResilient();
           _log.info('Auto sign-in successful');
         } catch (e) {
           _log.warning('Auto sign-in failed: $e');

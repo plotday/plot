@@ -29,16 +29,18 @@ Future<String?> _fetchTestSignInTicket({
   required String email,
   required String password,
 }) async {
-  final response = await http.post(
-    Uri.parse('${Env.apiRoot}/auth/test-signin'),
-    headers: {
-      'Content-Type': 'application/json; charset=UTF-8',
-      'X-Plot-Client':
-          '${AppInfo.version}/${AppInfo.buildNumber} (${AppInfo.platform})',
-      'X-Plot-API-Version': '3',
-    },
-    body: jsonEncode({'email': email, 'password': password}),
-  ).timeout(const Duration(seconds: 15));
+  final response = await http
+      .post(
+        Uri.parse('${Env.apiRoot}/auth/test-signin'),
+        headers: {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Plot-Client':
+              '${AppInfo.version}/${AppInfo.buildNumber} (${AppInfo.platform})',
+          'X-Plot-API-Version': '3',
+        },
+        body: jsonEncode({'email': email, 'password': password}),
+      )
+      .timeout(const Duration(seconds: 15));
   if (response.statusCode == 401) return null;
   if (response.statusCode != 200) {
     throw HttpException(
@@ -139,10 +141,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     }
 
     if (password.isEmpty) {
-      context.showToast(
-        message: 'Please enter your password',
-        isError: true,
-      );
+      context.showToast(message: 'Please enter your password', isError: true);
       return;
     }
 
@@ -151,12 +150,15 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     });
 
     try {
-      await Future(() async {
+      // Establish the Clerk session under its own budget, then resolve
+      // identity separately with retries (the /activate leg is what stalls
+      // under backend load). Returns whether identity still needs resolving —
+      // false when a second factor is now required and the UI has handed off.
+      final needsResolve = await Future<bool>(() async {
         if (Base.auth.isSignedIn) {
           // Already signed in (e.g. from a previous attempt that completed
           // Clerk auth but failed during /activate). Just resolve identity.
-          await Base.resolveIdentity();
-          return;
+          return true;
         }
 
         // Drop any stale SignIn/SignUp resource left over from a previous
@@ -177,8 +179,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
           );
           if (ticket != null) {
             await Base.auth.signInWithTicket(ticket: ticket);
-            await Base.resolveIdentity();
-            return;
+            return true;
           }
           // Server rejected the credentials (or address not allowlisted).
           // Fall through to the normal flow so the user gets the standard
@@ -200,19 +201,27 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         // Check if second factor is required (e.g. untrusted device)
         if (Base.auth.needsSecondFactor) {
           await Base.auth.prepareSecondFactor();
-          if (!mounted) return;
+          if (!mounted) return false;
           setState(() {
             _mode = _AuthMode.secondFactor;
             _isLoading = false;
           });
-          return;
+          return false;
         }
 
-        // Call /activate to get user identity
-        await Base.resolveIdentity();
-        // UserBloc will pick up the emission and transition to UserReady
-      }).timeout(const Duration(seconds: 15));
-    } on TimeoutException {
+        return true;
+      }).timeout(const Duration(seconds: 20));
+
+      // Resolve identity via /activate, retrying transient backend stalls so a
+      // fresh install isn't failed by a brief burst. UserBloc picks up the
+      // emission and transitions to UserReady.
+      if (needsResolve) {
+        await Base.resolveIdentityResilient();
+      }
+    } on TimeoutException catch (e, t) {
+      // Reached only after the resolve retries were exhausted (or Clerk
+      // stalled) — capture it so repeat failures are visible.
+      Tracker.captureException(e, t);
       if (!mounted) return;
       context.showToast(
         message: 'Sign-in is taking too long. Please try again.',
@@ -260,10 +269,9 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
 
     try {
       // Start sign-up flow — Clerk sends the email code
-      await Base.auth.attemptSignUp(
-        strategy: AuthStrategy.emailCode,
-        emailAddress: email,
-      ).timeout(const Duration(seconds: 15));
+      await Base.auth
+          .attemptSignUp(strategy: AuthStrategy.emailCode, emailAddress: email)
+          .timeout(const Duration(seconds: 15));
       setState(() {
         _mode = _AuthMode.otpSent;
         _isLoading = false;
@@ -389,16 +397,18 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     try {
       await Future(() async {
         await Base.auth.resetPassword(code: code, password: password);
-        // resetPassword leaves the user signed in on success — pull identity.
-        if (Base.auth.isSignedIn) {
-          await Base.resolveIdentity();
-        } else {
+        // resetPassword leaves the user signed in on success.
+        if (!Base.auth.isSignedIn) {
           throw const AuthError(
             message: 'Password reset did not complete sign-in.',
           );
         }
-      }).timeout(const Duration(seconds: 15));
-    } on TimeoutException {
+      }).timeout(const Duration(seconds: 20));
+      // Pull identity with retries so a transient backend stall doesn't fail
+      // an otherwise-successful reset.
+      await Base.resolveIdentityResilient();
+    } on TimeoutException catch (e, t) {
+      Tracker.captureException(e, t);
       if (!mounted) return;
       context.showToast(
         message: 'Password reset is taking too long. Please try again.',
@@ -534,12 +544,12 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     try {
       await Future(() async {
         await Base.auth.attemptSecondFactor(code: code);
-
-        // Call /activate to get user identity
-        await Base.resolveIdentity();
-        // UserBloc will pick up the emission and transition to UserReady
-      }).timeout(const Duration(seconds: 15));
-    } on TimeoutException {
+      }).timeout(const Duration(seconds: 20));
+      // Resolve identity with retries. UserBloc picks up the emission and
+      // transitions to UserReady.
+      await Base.resolveIdentityResilient();
+    } on TimeoutException catch (e, t) {
+      Tracker.captureException(e, t);
       if (!mounted) return;
       context.showToast(
         message: 'Verification is taking too long. Please try again.',
@@ -672,8 +682,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                               controller: _otpController,
                               onChange: (value) {
                                 if (value.text.length == 6) {
-                                  FocusManager.instance.primaryFocus
-                                      ?.unfocus();
+                                  FocusManager.instance.primaryFocus?.unfocus();
                                   _handleVerifySecondFactor();
                                 }
                               },
@@ -694,8 +703,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     FButton(
-                      onPress:
-                          _isLoading ? null : _handleResendSecondFactor,
+                      onPress: _isLoading ? null : _handleResendSecondFactor,
                       variant: FButtonVariant.ghost,
                       child: const Text('Resend code'),
                     ),
@@ -715,7 +723,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                   ],
                 ),
 
-              // OTP sent confirmation with code entry (sign-up flow)
+                // OTP sent confirmation with code entry (sign-up flow)
               ] else if (_mode == _AuthMode.otpSent) ...[
                 FAlert(
                   title: const Text(
@@ -748,8 +756,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                               controller: _otpController,
                               onChange: (value) {
                                 if (value.text.length == 6) {
-                                  FocusManager.instance.primaryFocus
-                                      ?.unfocus();
+                                  FocusManager.instance.primaryFocus?.unfocus();
                                   _handleVerifyOtp();
                                 }
                               },
@@ -790,7 +797,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                   ],
                 ),
 
-              // Password reset: OTP + new password entry
+                // Password reset: OTP + new password entry
               ] else if (_mode == _AuthMode.resetVerify) ...[
                 FAlert(
                   title: const Text(
@@ -838,7 +845,8 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                               builder: fieldSelectionBuilder,
                               focusNode: _newPasswordFocusNode,
                               control: .managed(
-                                  controller: _newPasswordController),
+                                controller: _newPasswordController,
+                              ),
                               hint: 'New password (8+ characters)',
                               label: const Text('New password'),
                               obscureText: true,
@@ -858,8 +866,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                 SizedBox(
                   height: 44,
                   child: FButton(
-                    onPress:
-                        _isLoading ? null : _handleVerifyResetPassword,
+                    onPress: _isLoading ? null : _handleVerifyResetPassword,
                     variant: FButtonVariant.primary,
                     child: _isLoading
                         ? const Spinner()
@@ -871,8 +878,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     FButton(
-                      onPress:
-                          _isLoading ? null : _handleResendResetCode,
+                      onPress: _isLoading ? null : _handleResendResetCode,
                       variant: FButtonVariant.ghost,
                       child: const Text('Resend code'),
                     ),
