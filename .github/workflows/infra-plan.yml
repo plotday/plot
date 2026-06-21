@@ -1,0 +1,86 @@
+name: Infra Plan
+
+# Read-only `terraform plan` for the infra/ modules:
+#   - on PRs that touch infra/** -> preview the change (posted to the run summary)
+#   - daily on a schedule       -> drift check against production (alerts on drift)
+#
+# Uses READ-ONLY credentials resolved live from 1Password (service-account token),
+# so it can never modify infrastructure regardless of what a PR changes.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-plan.yml"
+      - "scripts/terraform"
+  schedule:
+    - cron: "0 13 * * *" # 13:00 UTC daily drift check
+  workflow_dispatch:
+
+concurrency:
+  group: infra-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: terraform plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install 1Password CLI
+        uses: 1password/install-cli-action@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.0"
+          terraform_wrapper: false
+
+      - name: terraform plan
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          # Read-only GCP SA key; CF token defaults to the read-scoped item.
+          GOOGLE_IMPERSONATE_SERVICE_ACCOUNT: ""
+        run: |
+          set -euo pipefail
+          op read "op://Production/GCP Terraform Readonly/credential" > "$RUNNER_TEMP/gcp-ro.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/gcp-ro.json"
+          trap 'rm -f "$RUNNER_TEMP/gcp-ro.json"' EXIT
+
+          drift=0
+          for m in cloud-sql hyperdrive cloudflare-dns; do
+            echo "::group::terraform plan $m"
+            bash scripts/terraform "$m" init -reconfigure -input=false
+            set +e
+            bash scripts/terraform "$m" plan -input=false -lock-timeout=120s -no-color -detailed-exitcode | tee "$RUNNER_TEMP/$m.plan.txt"
+            rc=${PIPESTATUS[0]}
+            set -e
+            case "$rc" in
+              0) ;;                                   # no changes
+              2) echo "changes/drift in $m"; drift=1 ;;
+              *) echo "::error::plan failed for $m"; exit 1 ;;
+            esac
+            echo "::endgroup::"
+          done
+
+          {
+            echo "## Terraform plan"
+            for m in cloud-sql hyperdrive cloudflare-dns; do
+              echo "### $m"
+              echo '```'
+              tail -n 25 "$RUNNER_TEMP/$m.plan.txt"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # On the scheduled drift check, fail if production has drifted from code.
+          # On PRs, changes are expected (that's the preview), so don't fail.
+          if [ "$drift" = "1" ] && [ "$EVENT_NAME" = "schedule" ]; then
+            echo "::error::Terraform drift detected between production and code"
+            exit 1
+          fi
+          if [ "$drift" = "1" ]; then
+            echo "::warning::terraform plan shows changes (expected on a PR that edits infra/)"
+          fi

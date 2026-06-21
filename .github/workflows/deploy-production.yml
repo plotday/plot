@@ -20,6 +20,10 @@ name: Deploy Production
 on:
   workflow_dispatch:
     inputs:
+      infra:
+        description: "Apply infrastructure (Terraform: Cloud SQL, Hyperdrive, DNS)"
+        type: boolean
+        default: true
       workers:
         description: "Deploy workers (api/beat/mailer) + run migrations"
         type: boolean
@@ -51,10 +55,25 @@ jobs:
     steps:
       - run: echo "Approved production deploy of ${GITHUB_SHA} (run ${GITHUB_RUN_ID})"
 
+  # Infrastructure applies FIRST (after approval, before migrations/workers) so the
+  # DB instance, Hyperdrive pool, and DNS reflect the change before code ships.
+  # If it fails, every downstream deploy job is blocked.
+  infra:
+    name: Apply infrastructure
+    needs: gate
+    if: ${{ inputs.infra }}
+    uses: ./.github/workflows/deploy-infra.yml
+    secrets: inherit
+
   workers:
     name: Deploy workers
-    needs: gate
-    if: ${{ inputs.workers }}
+    needs: [gate, infra]
+    if: >-
+      ${{ always()
+        && needs.gate.result == 'success'
+        && inputs.workers
+        && needs.infra.result != 'failure'
+        && needs.infra.result != 'cancelled' }}
     uses: ./.github/workflows/deploy-workers.yml
     secrets: inherit
     with:
@@ -70,11 +89,13 @@ jobs:
   # `twists` job below.
   app:
     name: Deploy web app
-    needs: [gate, workers]
+    needs: [gate, infra, workers]
     if: >-
       ${{ always()
         && needs.gate.result == 'success'
         && inputs.app
+        && needs.infra.result != 'failure'
+        && needs.infra.result != 'cancelled'
         && needs.workers.result != 'failure'
         && needs.workers.result != 'cancelled' }}
     uses: ./.github/workflows/deploy-app.yml
@@ -82,8 +103,13 @@ jobs:
 
   site:
     name: Deploy site
-    needs: gate
-    if: ${{ inputs.site }}
+    needs: [gate, infra]
+    if: >-
+      ${{ always()
+        && needs.gate.result == 'success'
+        && inputs.site
+        && needs.infra.result != 'failure'
+        && needs.infra.result != 'cancelled' }}
     uses: ./.github/workflows/deploy-site.yml
     secrets: inherit
 
@@ -92,11 +118,13 @@ jobs:
   # (i.e. the workers checkbox was unticked); it only blocks if workers failed.
   twists:
     name: Deploy twists & connectors
-    needs: [gate, workers]
+    needs: [gate, infra, workers]
     if: >-
       ${{ always()
         && needs.gate.result == 'success'
         && inputs.twists
+        && needs.infra.result != 'failure'
+        && needs.infra.result != 'cancelled'
         && needs.workers.result != 'failure'
         && needs.workers.result != 'cancelled' }}
     uses: ./.github/workflows/deploy-twists.yml
@@ -110,7 +138,7 @@ jobs:
   #   git checkout -b hotfix/x deploy/<timestamp>
   tag:
     name: Tag deployed commit
-    needs: [gate, workers, app, site, twists]
+    needs: [gate, infra, workers, app, site, twists]
     if: >-
       ${{ always()
         && needs.gate.result == 'success'
@@ -162,6 +190,7 @@ jobs:
             echo ""
             echo "| Target | Result |"
             echo "| --- | --- |"
+            echo "| Infra | ${{ needs.infra.result }} |"
             echo "| Workers | ${{ needs.workers.result }} |"
             echo "| Web app | ${{ needs.app.result }} |"
             echo "| Site | ${{ needs.site.result }} |"

@@ -1,0 +1,80 @@
+name: Deploy Infra (Terraform)
+
+# Reusable workflow: applies the Terraform modules under infra/ as an ordered
+# stage of the production deploy (called FIRST by deploy-production.yml, before
+# migrations/workers). Read/WRITE — uses writable credentials resolved live from
+# 1Password via the service-account token. Always gated behind the `production`
+# environment in deploy-production.yml.
+#
+# Credentials (provisioned in 1Password; the op service account must read them):
+#   - op://Production/GCP Terraform/credential        — writable SA key (JSON) for cloud-sql
+#   - op://Production/Cloudflare Terraform Edit/...    — edit-scoped CF token for hyperdrive/dns
+#   - op://Production/R2 Terraform State/...           — R2 state creds (read/write)
+
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: "Space-separated infra modules to apply, in order"
+        type: string
+        default: "cloud-sql hyperdrive cloudflare-dns"
+
+concurrency:
+  group: deploy-infra
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: terraform apply
+    runs-on: ubuntu-latest
+    # Pass the (trusted, internal) input through env rather than interpolating it
+    # directly into run: blocks.
+    env:
+      MODULES: ${{ inputs.modules }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install 1Password CLI
+        uses: 1password/install-cli-action@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.0"
+          terraform_wrapper: false
+
+      - name: terraform apply
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # Writable Cloudflare token (Hyperdrive + DNS edit) for the cloudflare modules.
+          TF_CF_OP_ITEM: "op://Production/Cloudflare Terraform Edit"
+          # Use ADC (the writable SA key below) directly, no readonly impersonation.
+          GOOGLE_IMPERSONATE_SERVICE_ACCOUNT: ""
+        run: |
+          set -euo pipefail
+          # Writable GCP SA key from 1Password -> ADC for the cloud-sql module.
+          op read "op://Production/GCP Terraform/credential" > "$RUNNER_TEMP/gcp-tf.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/gcp-tf.json"
+          trap 'rm -f "$RUNNER_TEMP/gcp-tf.json"' EXIT
+
+          for m in $MODULES; do
+            echo "::group::terraform apply $m"
+            bash scripts/terraform "$m" init -reconfigure -input=false
+            # plan -> saved file -> apply exactly that plan (no drift between the two).
+            bash scripts/terraform "$m" plan -input=false -lock-timeout=120s -no-color -out="$RUNNER_TEMP/$m.tfplan" | tee "$RUNNER_TEMP/$m.plan.txt"
+            bash scripts/terraform "$m" apply -input=false -lock-timeout=120s -no-color "$RUNNER_TEMP/$m.tfplan"
+            echo "::endgroup::"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Terraform apply"
+            for m in $MODULES; do
+              echo "### $m"
+              echo '```'
+              tail -n 25 "$RUNNER_TEMP/$m.plan.txt" 2>/dev/null || echo "(no plan captured)"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

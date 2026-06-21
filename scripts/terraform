@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+#
+# Run Terraform against an infra/ module with credentials resolved at runtime.
+# Works both locally (interactive 1Password) and in CI (OP_SERVICE_ACCOUNT_TOKEN).
+#
+#   - R2 (S3-compatible) state-backend creds from 1Password -> AWS_* (all modules)
+#   - GCP: readonly impersonated SA by default (cloud-sql module)
+#   - Cloudflare API token from 1Password (hyperdrive / cloudflare-dns modules)
+#
+# Read-only by default: `plan`/`import` work; a real `apply` fails unless writable
+# credentials are supplied via the overrides below.
+#
+# Usage:
+#   scripts/terraform <module> <terraform-args...>
+#     e.g.  scripts/terraform cloud-sql plan
+#
+# Overrides (used by CI deploy-infra.yml for a deliberate apply):
+#   GOOGLE_APPLICATION_CREDENTIALS=<key file> + GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=""
+#       -> authenticate directly as a writable SA, no impersonation
+#   CLOUDFLARE_API_TOKEN=<edit token>  (or TF_CF_OP_ITEM=<op path to an edit token>)
+#   TF_STATE_OP_ITEM=<op path>         (R2 state creds)
+#
+# In CI set OP_SERVICE_ACCOUNT_TOKEN; `op read` then runs without --account.
+
+set -euo pipefail
+
+MODULE="${1:?usage: scripts/terraform <module> <terraform-args...>}"
+shift || true
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MODULE_DIR="$ROOT/infra/$MODULE"
+[ -d "$MODULE_DIR" ] || {
+  echo "No such infra module: infra/$MODULE" >&2
+  exit 1
+}
+
+OP_ACCOUNT="plotco.1password.com"
+
+# `op read` that works with a local user session (--account) and a CI service
+# account token (OP_SERVICE_ACCOUNT_TOKEN, which doesn't take --account).
+op_read() {
+  if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
+    op read "$1"
+  else
+    op read --account "$OP_ACCOUNT" "$1"
+  fi
+}
+
+# R2 state-backend S3 credentials (all modules).
+OP_R2_ITEM="${TF_STATE_OP_ITEM:-op://Production/R2 Terraform State}"
+AWS_ACCESS_KEY_ID="$(op_read "$OP_R2_ITEM/username")"
+AWS_SECRET_ACCESS_KEY="$(op_read "$OP_R2_ITEM/credential")"
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+# GCP identity: default to the readonly SA via impersonation. Set
+# GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="" (empty but set) to DISABLE impersonation
+# and use ADC directly — e.g. CI authenticating as a writable SA key.
+if [ "${GOOGLE_IMPERSONATE_SERVICE_ACCOUNT-__UNSET__}" = "__UNSET__" ]; then
+  export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="claude-readonly@plot-core.iam.gserviceaccount.com"
+elif [ -z "$GOOGLE_IMPERSONATE_SERVICE_ACCOUNT" ]; then
+  unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
+fi
+
+# Cloudflare API token (hyperdrive / cloudflare-dns). Read-scoped by default;
+# pre-export CLOUDFLARE_API_TOKEN or point TF_CF_OP_ITEM at an edit-scoped token.
+case "$MODULE" in
+hyperdrive | cloudflare-dns)
+  if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+    OP_CF_ITEM="${TF_CF_OP_ITEM:-op://Production/Cloudflare Terraform}"
+    export CLOUDFLARE_API_TOKEN="$(op_read "$OP_CF_ITEM/credential")"
+  fi
+  ;;
+esac
+
+cd "$MODULE_DIR"
+exec terraform "$@"

@@ -13,6 +13,7 @@
 1. Install [Rust](https://rustup.rs/) (required by `super_clipboard` native extensions): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 1. Install [Atlas](https://atlasgo.io/getting-started#installation) for database migrations: `brew install ariga/tap/atlas`
 1. Install [Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy) for connecting to the remote database: `brew install cloud-sql-proxy`
+1. Install [Terraform](https://developer.hashicorp.com/terraform) (≥ 1.11, pinned in `.tool-versions`) for cloud infrastructure: `asdf plugin add terraform && asdf install` (or `brew install terraform`)
 1. Authenticate with Google Cloud: `gcloud auth login && gcloud auth application-default login`
 1. Get the public repo submodule: `git submodule update --init --recursive`
 1. `pnpm install`
@@ -49,6 +50,20 @@ After making local changes to the DB, run `pnpm types`. This generates
 Migrations are generated with Atlas and applied by GitHub Actions. Generate a
 migration using `pnpm gen-migration -- MIGRATION_NAME` and include it with the
 relevant change. Apply locally with `pnpm apply-migrations`.
+
+### Infrastructure (Terraform)
+
+Cloud resources that `wrangler` doesn't manage (the production Cloud SQL
+instance, and over time the Hyperdrive config, DNS, etc.) are defined as
+Terraform under `infra/` — see [`infra/README.md`](infra/README.md). Terraform
+owns the *instance*; Atlas owns the *schema*; `wrangler` owns the Workers.
+
+```bash
+# Resolves R2 state-backend creds from 1Password and defaults GCP access to a
+# read-only service account (plan/import work; real applies need a writable SA).
+pnpm tf cloud-sql init
+pnpm tf cloud-sql plan   # imported faithfully — should report "No changes."
+```
 
 ### Working with Twister types
 

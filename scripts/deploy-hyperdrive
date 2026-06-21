@@ -30,6 +30,10 @@ set -euo pipefail
 HYPERDRIVE_ID="831ea7d10ef54346b084baaa1a46dfa6"
 ORIGIN_CONNECTION_LIMIT="${ORIGIN_CONNECTION_LIMIT:-80}"
 # ----------------------------------------------------------------------------
+# This config is also recorded in Terraform at infra/hyperdrive/ (a faithful,
+# read-only baseline). This script remains the safe way to CHANGE the pool size:
+# it's a partial update that never touches the origin password. If you change the
+# value above, update infra/hyperdrive/hyperdrive.tf to match so they don't drift.
 
 # Run from the api worker dir so the workspace-pinned wrangler binary is used
 # and its Cloudflare auth context (CLOUDFLARE_API_TOKEN or `wrangler login`)
