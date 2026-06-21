@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  DEFAULTS_LLM,
+  makeHybridLlmClassifier,
+  type LLMClient,
+} from "../src";
 import { fyiFallback, isFyiFormat } from "../src/ts-hybrid-stages";
 import type { Candidate, ClassifierContext } from "../src/types";
 
@@ -86,6 +91,108 @@ describe("fyiFallback (per-role)", () => {
     expect(
       await fyiFallback(ctx, candidate({ facets: { format: "message" } }))
     ).toBeNull();
+  });
+});
+
+/**
+ * Integration guard for the cascade production actually runs
+ * (`ts:hybrid-llm:production`, built from ts-hybrid-llm.ts). The fyiFallback
+ * stage must be wired into THIS cascade, not just the non-LLM ts-hybrid.ts —
+ * otherwise low-signal mail never reaches FYI in production (it falls through
+ * to scoring and lands in a topical focus).
+ */
+describe("makeHybridLlmClassifier — FYI routing in the production cascade", () => {
+  function cascadeCtx(opts: {
+    trained?: boolean;
+    fyiRow?: { priority_id: string; role_id: string; n: number } | null;
+  }): ClassifierContext {
+    return {
+      db: {} as never,
+      userId: "00000000-0000-0000-0000-000000000001",
+      schemaName: "public",
+      corpusName: "test",
+      async rawQuery(text: string) {
+        if (text.includes("author_has_real_focus_home")) {
+          return { rows: [{ trained: opts.trained ?? false }] };
+        }
+        // fyiFallback's role-affinity lookup is the only query that joins
+        // `fyi.is_fyi`. Every other stage query (prefix, keyed, title,
+        // scoring, role-Inbox, cold-start tree, ...) returns nothing so the
+        // only stage that *can* fire is fyiFallback.
+        if (text.includes("is_fyi")) {
+          return { rows: opts.fyiRow ? [opts.fyiRow] : [] };
+        }
+        return { rows: [] };
+      },
+    };
+  }
+
+  function spyLlm(): { client: LLMClient; calls: unknown[] } {
+    const calls: unknown[] = [];
+    const client: LLMClient = {
+      id: "stub:never-needed",
+      async classify(inputs) {
+        calls.push(inputs);
+        return {
+          priorityId: inputs.allowedPriorityIds[0] ?? null,
+          rationale: "stub",
+        };
+      },
+    };
+    return { client, calls };
+  }
+
+  // A low-signal connector email (e.g. the "[GitHub] Annual Billing Alert"
+  // that prompted this fix): facet format "reading", no topic.
+  const fyiCandidate: Candidate = {
+    threadId: "",
+    title: "[GitHub] Annual Billing Alert",
+    topic: null,
+    contacts: ["00000000-0000-0000-0000-0000000000c1"],
+    groups: [],
+    embedding: null,
+    author: "00000000-0000-0000-0000-0000000000a1",
+    facets: { format: "reading", reach: "list", automation: "automated" },
+    authorContactId: "00000000-0000-0000-0000-0000000000ac",
+    connectionId: null,
+  };
+
+  it("routes an FYI-format thread to the role's FYI focus (deterministic, no LLM)", async () => {
+    const { client, calls } = spyLlm();
+    const classifier = makeHybridLlmClassifier("test:fyi-cascade", {
+      params: DEFAULTS_LLM,
+      llmClientFor: () => client,
+    });
+
+    const result = await classifier.classify(
+      cascadeCtx({
+        trained: false,
+        fyiRow: { priority_id: "fyi-work", role_id: "role-work", n: 3 },
+      }),
+      fyiCandidate
+    );
+
+    expect(result.stage).toBe("fyi_fallback");
+    expect(result.priorityId).toBe("fyi-work");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("yields FYI to the sender's learned real-focus home (gate honored in-cascade)", async () => {
+    const { client } = spyLlm();
+    const classifier = makeHybridLlmClassifier("test:fyi-cascade-trained", {
+      params: DEFAULTS_LLM,
+      llmClientFor: () => client,
+    });
+
+    const result = await classifier.classify(
+      cascadeCtx({
+        trained: true,
+        fyiRow: { priority_id: "fyi-work", role_id: "role-work", n: 3 },
+      }),
+      fyiCandidate
+    );
+
+    expect(result.stage).not.toBe("fyi_fallback");
   });
 });
 

@@ -6,6 +6,9 @@
 
 ### Fixes
 
+- Low-signal mail — newsletters, receipts, promotions, and automated notifications — now lands in
+  your FYI focus automatically. Previously it only went to FYI if you moved it there yourself, so new
+  items ended up scattered across your other focuses; now Plot files them in FYI as they arrive.
 - A connection that loses its saved sign-in — for example LinkedIn after reconnecting — no longer gets
   stuck on "Syncing" forever. Plot now notices the credentials are gone and prompts you to reconnect,
   and it gives up and offers "Reconnect" if a first sync simply never finishes.

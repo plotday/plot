@@ -15,6 +15,7 @@ import { runColdStart } from "./ts-hybrid-coldstart";
 import { scoringStage, type ScoringOutcome } from "./ts-hybrid-scoring";
 import {
   channelDefault,
+  fyiFallback,
   keyedPriority,
   priorityPrefix,
   priorityTitleOverride,
@@ -308,6 +309,13 @@ export function makeHybridLlmClassifier(
         }
         return finish(cd);
       }
+
+      // Low-signal mail (by facet format) routes to the role's FYI focus,
+      // beating soft scoring and the role-Inbox fallback — unless the sender
+      // already has a learned home in a real focus (the gate yields). Mirrors
+      // ts-hybrid.ts: fyiFallback sits between channelDefault and scoring.
+      const fyi = await fyiFallback(ctx, candidate);
+      if (fyi) return finish(fyi);
 
       const score = scoreResult ?? (await scoringStage(ctx, candidate, opts.params));
 
