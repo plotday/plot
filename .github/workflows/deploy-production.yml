@@ -25,7 +25,7 @@ on:
         type: boolean
         default: true
       workers:
-        description: "Deploy workers (api/beat/mailer) + run migrations"
+        description: "Deploy workers (api/beat/mailer/classify) + run migrations"
         type: boolean
         default: true
       app:
@@ -80,6 +80,7 @@ jobs:
       api: true
       beat: true
       mailer: true
+      classify: true
 
   # The web app talks to the API, so it must not go live before the workers
   # (which include migrations) finish — we design the API to be backward

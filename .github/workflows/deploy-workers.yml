@@ -19,6 +19,10 @@ on:
         description: 'Deploy Mailer'
         type: boolean
         default: true
+      classify:
+        description: 'Deploy Classify'
+        type: boolean
+        default: true
       migrate_only:
         description: "Only run migrations, skip worker deployment"
         required: false
@@ -36,6 +40,10 @@ on:
         default: true
       mailer:
         description: 'Deploy Mailer'
+        type: boolean
+        default: true
+      classify:
+        description: 'Deploy Classify'
         type: boolean
         default: true
       migrate_only:
@@ -93,6 +101,7 @@ jobs:
           INPUT_API: ${{ inputs.api }}
           INPUT_BEAT: ${{ inputs.beat }}
           INPUT_MAILER: ${{ inputs.mailer }}
+          INPUT_CLASSIFY: ${{ inputs.classify }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
           WORKERS=()
@@ -103,6 +112,7 @@ jobs:
             if [ "$INPUT_API" = "true" ]; then WORKERS+=("\"api\""); fi
             if [ "$INPUT_BEAT" = "true" ]; then WORKERS+=("\"beat\""); fi
             if [ "$INPUT_MAILER" = "true" ]; then WORKERS+=("\"mailer\""); fi
+            if [ "$INPUT_CLASSIFY" = "true" ]; then WORKERS+=("\"classify\""); fi
           else
             # Automatic deployment: only deploy changed workers.
             #
