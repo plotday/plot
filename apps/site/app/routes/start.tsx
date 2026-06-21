@@ -51,8 +51,7 @@ const PLATFORMS: PlatformInfo[] = [
     label: "Android",
     icon: IconBrandAndroid,
     available: true,
-    href: "https://play.google.com/apps/testing/day.plot.app",
-    note: "Open testing",
+    href: "https://play.google.com/store/apps/details?id=day.plot.app",
   },
   {
     key: "unknown",
@@ -85,7 +84,7 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Download Plot for your platform. Available for Mac and Windows, with iOS and Android coming soon.",
+        "Download Plot for your platform. Available for Mac, Windows, iOS, and Android.",
     },
     { property: "og:title", content: "Get Plot" },
     { property: "og:description", content: "Download Plot for your platform." },
