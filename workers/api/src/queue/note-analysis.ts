@@ -5,6 +5,23 @@ import type { DB } from "../db";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { rpcUser } from "../rpc";
+import {
+  bandToImportance,
+  fallbackBand,
+  type FallbackSignals,
+  IMPORTANCE_RUBRIC,
+  parseBand,
+} from "../state/importance/band";
+import {
+  getSenderEngagement,
+  type SenderEngagement,
+} from "../state/importance/engagement";
+import {
+  formatImportanceFeatureBlock,
+  isAutomatedSenderEmail,
+  type MemberFeature,
+  type ThreadFacetsLike,
+} from "../state/importance/features";
 import { isAiEnabled } from "../utils/ai-limits";
 
 /**
@@ -26,7 +43,7 @@ export async function analyzeNote(
     // the thread still marks unread normally without an importance score.
     if (!(await isAiEnabled(db, userId))) return false;
 
-    const context = await gatherContext(db, noteId, threadId);
+    const context = await gatherContext(env, db, noteId, threadId);
     if (!context) return false;
 
     const result = await classifyNote(env, context);
@@ -54,6 +71,10 @@ interface NoteContext {
   noteContent: string;
   noteAuthorId: string;
   noteAuthorName: string | null;
+  noteAuthorEmail: string | null;
+  senderIsLinkedUser: boolean;
+  facets: ThreadFacetsLike;
+  memberEngagement: Map<string, SenderEngagement>; // keyed by member.id
   threadTitle: string | null;
   links: Array<{
     title: string | null;
@@ -95,6 +116,7 @@ interface AnalysisResult {
 }
 
 async function gatherContext(
+  env: Bindings,
   db: Kysely<DB>,
   noteId: string,
   threadId: string
@@ -108,7 +130,7 @@ async function gatherContext(
       .executeTakeFirst(),
     db
       .selectFrom("thread")
-      .select(["title", "contacts", "groups"])
+      .select(["title", "contacts", "groups", "facets"])
       .where("id", "=", threadId)
       .executeTakeFirst(),
   ]);
@@ -161,10 +183,10 @@ async function gatherContext(
           .where("primary", "=", true)
           .execute();
       })(),
-      // Note author name
+      // Note author name and email
       db
         .selectFrom("contact")
-        .select("name")
+        .select(["name", "email"])
         .where("id", "=", note.author_id)
         .executeTakeFirst(),
       // Existing active todos on this thread's notes
@@ -217,6 +239,37 @@ async function gatherContext(
 
   const memberIds = new Set(members.map((m) => m.id));
 
+  // Is the sender a real, linked person in the system (vs a synthetic source)?
+  const senderLinked = await db
+    .selectFrom("user_contact")
+    .select("contact_id")
+    .where("contact_id", "=", note.author_id)
+    .where("linked", "=", true)
+    .where("archived_at", "is", null)
+    .executeTakeFirst();
+  const senderIsLinkedUser = !!senderLinked;
+
+  // How each recipient has historically treated this sender. Best-effort;
+  // getSenderEngagement degrades to zero-history on failure. One cache for the
+  // call dedupes repeated (recipient, sender) lookups.
+  const engagementCache = new Map<string, Promise<SenderEngagement>>();
+  const memberEngagement = new Map<string, SenderEngagement>();
+  await Promise.all(
+    members
+      .filter((m) => m.userId && m.userId !== note.author_id)
+      .map(async (m) => {
+        const eng = await getSenderEngagement(
+          db,
+          m.userId as string,
+          note.author_id as string,
+          threadId,
+          env,
+          engagementCache,
+        );
+        memberEngagement.set(m.id, eng);
+      }),
+  );
+
   // Build a member name lookup for resolving mentions
   const memberNameMap = new Map(members.map((m) => [m.id, m.name ?? "Unknown"]));
 
@@ -248,6 +301,10 @@ async function gatherContext(
     noteContent: note.content,
     noteAuthorId: note.author_id,
     noteAuthorName: author?.name ?? null,
+    noteAuthorEmail: author?.email ?? null,
+    senderIsLinkedUser,
+    facets: (thread.facets as ThreadFacetsLike) ?? null,
+    memberEngagement,
     threadTitle: thread.title,
     links,
     members: members.map((m) => ({
@@ -263,7 +320,7 @@ async function gatherContext(
   };
 }
 
-async function classifyNote(
+export async function classifyNote(
   env: Bindings,
   context: NoteContext
 ): Promise<AnalysisResult> {
@@ -305,6 +362,19 @@ async function classifyNote(
 
   const authorNum = memberIdToNum.get(context.noteAuthorId);
 
+  const importanceFeatures = formatImportanceFeatureBlock({
+    facets: context.facets,
+    senderEmailAutomated: isAutomatedSenderEmail(context.noteAuthorEmail),
+    senderIsLinkedUser: context.senderIsLinkedUser,
+    members: context.members
+      .map((m): MemberFeature | null => {
+        const num = memberIdToNum.get(m.id);
+        const engagement = context.memberEngagement.get(m.id);
+        return num && engagement ? { memberNum: num, engagement } : null;
+      })
+      .filter((x): x is MemberFeature => x !== null),
+  });
+
   const messages = [
     {
       role: "system" as const,
@@ -315,7 +385,7 @@ All members are identified by sequential numbers (e.g. member #1).
 For each member, return four fields:
 - active — does the recipient need to act on this NOW? (Doing section.)
 - urgent — should we notify BEFORE their next scheduled response window?
-- importance — 0-100, drives whether the thread shows up proactively at all.
+- importance — an importance band (suppress/low/normal/elevated); drives whether the thread surfaces proactively at all.
 - skip — clearly passive material no thread_state row should be created for.
 
 Return a "default" plus per-member "overrides" where needed (use member numbers as keys). NEVER include the note author (skip=true for them; they are added automatically).
@@ -334,17 +404,12 @@ skip = true:
 
 urgent (boolean): true only when the recipient should be notified BEFORE their next scheduled response window — time-sensitive items or messages clearly requiring a quick response. Most notes are not urgent.
 
-importance (0-100):
-- 50-100 means "this should surface to the recipient proactively" (drives push, email digest, priority unread indicators)
-- 0-49 means "this exists but won't push or trigger early response scheduling"
-- Score promotional / unsolicited / mass-distribution material BELOW 50 even when active is false — typically 5-30. Cold outreach with no relational signal: 10-25. Skipped material (skip=true) is ignored regardless of importance.
-- Personal direct messages between people who clearly know each other: 60-90.
-- Anything you flag urgent should also be >= 50.
+${IMPORTANCE_RUBRIC}
 
 Respond with JSON only. No explanation.
 
 Output schema:
-{"state": {"default": {"active": false, "urgent": false, "importance": 50, "skip": false}, "overrides": {"1": {"active": true, "urgent": false, "importance": 75}}}}`,
+{"state": {"default": {"active": false, "urgent": false, "importance": "normal", "skip": false}, "overrides": {"1": {"active": true, "urgent": false, "importance": "elevated"}}}}`,
     },
     {
       role: "user" as const,
@@ -354,6 +419,7 @@ Priority members:
 ${membersStr}
 Recent notes:
 ${recentStr}
+${importanceFeatures}
 
 New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${authorNum})` : ""}: ${context.noteContent.slice(0, 1000)}`,
     },
@@ -368,10 +434,22 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
     throw new Error("Unexpected stream response from AI");
   }
 
+  const fallback: FallbackSignals = {
+    facetAutomation: context.facets?.automation ?? null,
+    facetReach: context.facets?.reach ?? null,
+    facetFormat: context.facets?.format ?? null,
+    senderEmailAutomated: isAutomatedSenderEmail(context.noteAuthorEmail),
+    // "known" at the thread level = any recipient has prior history. Used only
+    // when the model failed; a conservative OR keeps a sender that ANY recipient
+    // engages with out of the suppressed bucket.
+    senderKnown: [...context.memberEngagement.values()].some((e) => e.priorThreads > 0),
+  };
+  const defaultBand = fallbackBand(fallback);
+
   const defaultClassification: ThreadStateClassification = {
     active: false,
     urgent: false,
-    importance: 50,
+    importance: bandToImportance(defaultBand),
     skip: false,
   };
 
@@ -424,10 +502,10 @@ function parseClassification(
   return {
     active: typeof raw.active === "boolean" ? raw.active : fallback.active,
     urgent: typeof raw.urgent === "boolean" ? raw.urgent : fallback.urgent,
-    importance:
-      typeof raw.importance === "number"
-        ? Math.max(0, Math.min(100, Math.round(raw.importance)))
-        : fallback.importance,
+    importance: ((): number => {
+      const band = parseBand(raw.importance);
+      return band ? bandToImportance(band) : fallback.importance;
+    })(),
     skip: typeof raw.skip === "boolean" ? raw.skip : fallback.skip,
   };
 }
@@ -439,9 +517,8 @@ function parseClassificationOverride(
   const result: Partial<ThreadStateClassification> = {};
   if (typeof raw.active === "boolean") result.active = raw.active;
   if (typeof raw.urgent === "boolean") result.urgent = raw.urgent;
-  if (typeof raw.importance === "number") {
-    result.importance = Math.max(0, Math.min(100, Math.round(raw.importance)));
-  }
+  const band = parseBand(raw.importance);
+  if (band) result.importance = bandToImportance(band);
   if (typeof raw.skip === "boolean") result.skip = raw.skip;
   return Object.keys(result).length > 0 ? result : null;
 }

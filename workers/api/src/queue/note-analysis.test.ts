@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeNote, applyThreadState } from "./note-analysis";
+import { analyzeNote, applyThreadState, classifyNote } from "./note-analysis";
+import { bandToImportance } from "../state/importance/band";
 
 // analyzeNote opens its own connection and resolves the opt-out via isAiEnabled
 // before any LLM work; stub both so the early-return path runs without a DB.
@@ -24,6 +25,19 @@ vi.mock("../rpc", () => ({
     return {};
   }),
 }));
+
+// The engagement aggregate needs a DB; mock it so classifyNote tests run without
+// one. Each test sets the engagement it wants the prompt/scorer to see.
+const senderEngagementMock = vi.fn(async () => ({
+  priorThreads: 0,
+  readRate: null as number | null,
+  archivedUnreadRate: null as number | null,
+  replyRate: null as number | null,
+}));
+vi.mock("../state/importance/engagement", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, getSenderEngagement: (...a: unknown[]) => senderEngagementMock(...(a as [])) };
+});
 
 const NOTE_SOURCE_CREATED_AT = new Date("2026-06-11T20:11:07.862Z");
 
@@ -124,5 +138,62 @@ describe("analyzeNote built-in AI opt-out", () => {
     );
     expect(handled).toBe(false);
     expect(upsertCalls).toHaveLength(0);
+  });
+});
+
+// A minimal AI stub: returns whatever band/json we hand it.
+function aiReturning(json: string) {
+  return { run: vi.fn(async () => ({ response: json })) };
+}
+
+const baseContext = {
+  noteId: "n1",
+  noteCreatedAt: NOTE_SOURCE_CREATED_AT,
+  noteSourceCreatedAt: NOTE_SOURCE_CREATED_AT,
+  noteContent: "Big sale this week!",
+  noteAuthorId: "c-sender",
+  noteAuthorName: "Acme",
+  noteAuthorEmail: "no-reply@acme.com",
+  senderIsLinkedUser: false,
+  threadTitle: "Acme deals",
+  facets: { format: "promotion", automation: "automated", reach: "list" },
+  links: [],
+  members: [{ id: "c-r", name: "R", userId: "user-r" }],
+  memberIds: new Set(["c-r"]),
+  existingTodos: [],
+  clearedTodos: [],
+  existingReplies: [],
+  recentNotes: [],
+  memberEngagement: new Map(),
+} as any;
+
+describe("classifyNote suppression", () => {
+  it("maps an elevated band to bandToImportance('elevated') > bandToImportance('normal')", async () => {
+    const env = { AI: aiReturning('{"state":{"default":{"active":false,"urgent":false,"importance":"elevated","skip":false},"overrides":{}}}') } as any;
+    const result = await classifyNote(env, baseContext);
+    expect(result.state.default.importance).toBe(bandToImportance("elevated"));
+    expect(result.state.default.importance).toBeGreaterThan(bandToImportance("normal"));
+  });
+
+  it("maps a suppress band below the gate", async () => {
+    const env = { AI: aiReturning('{"state":{"default":{"active":false,"urgent":false,"importance":"suppress","skip":false},"overrides":{}}}') } as any;
+    const result = await classifyNote(env, baseContext);
+    expect(result.state.default.importance).toBeLessThan(50);
+  });
+
+  it("falls back to a sub-gate band on unparseable AI output for automated list mail", async () => {
+    const env = { AI: aiReturning("not json at all") } as any;
+    const result = await classifyNote(env, baseContext);
+    expect(result.state.default.importance).toBeLessThan(50);
+  });
+
+  it("falls back to normal (surfaces) for ordinary mail when AI output is unparseable", async () => {
+    const env = { AI: aiReturning("not json at all") } as any;
+    const result = await classifyNote(env, {
+      ...baseContext,
+      noteAuthorEmail: "jane@gmail.com",
+      facets: { format: "message", automation: "human", reach: "direct" },
+    });
+    expect(result.state.default.importance).toBeGreaterThanOrEqual(50);
   });
 });

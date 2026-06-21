@@ -1,5 +1,9 @@
 ## Next release
 
+### Notifications
+
+- Plot is better at telling promotional and automated mail apart from messages that actually matter, so you get fewer pointless notifications while real conversations still come through.
+
 ### Fixes
 
 - Opening Connections is fast again. The screen could take ten seconds or more to appear — especially
