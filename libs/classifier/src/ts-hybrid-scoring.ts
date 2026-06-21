@@ -16,6 +16,7 @@ import {
 } from "./ts-hybrid-aggregate";
 import { buildAliasMap, expandWithAliasMap } from "./ts-hybrid-contacts";
 import { cachedUserRead } from "./ts-hybrid-cache";
+import { fetchTrainingRows, TRAINING_READ_KEY } from "./ts-hybrid-training";
 import {
   detectCandidateAccounts,
   fetchAccountHierarchyAffinity,
@@ -96,37 +97,13 @@ export async function scoringStage(
   // (auto-classification never writes user_moved), so load it once per
   // (user, batch) via the batch cache — this full thread_priority⋈thread scan
   // with embeddings is the dominant per-classify query and re-running it per
-  // thread is what saturated the DB during sweep bursts (PostHog 019ed53e).
-  const rawRows = await cachedUserRead(ctx, "scoring:training", async () => {
-    const res = await ctx.rawQuery(
-      `SELECT tp.priority_id,
-            tp.thread_id,
-            mt.title,
-            mt.topic,
-            mt.created_by,
-            CASE WHEN mt.twist_id IS NOT NULL THEN mt.created_by ELSE NULL END AS conn_id,
-            mt.contacts,
-            mt.groups,
-            CASE WHEN mt.embedding IS NULL THEN NULL ELSE mt.embedding::text END AS embedding
-       FROM public.thread_priority tp
-       JOIN public.thread mt ON mt.id = tp.thread_id
-      WHERE tp.user_id = $1::uuid
-        AND tp.user_moved = TRUE
-        AND mt.archived_at IS NULL`,
-      [ctx.userId]
-    );
-    return res.rows as Array<{
-      priority_id: string;
-      thread_id: string;
-      title: string | null;
-      topic: string | null;
-      created_by: string | null;
-      conn_id: string | null;
-      contacts: string[] | null;
-      groups: string[] | null;
-      embedding: string | null;
-    }>;
-  });
+  // thread is what saturated the DB during sweep bursts (PostHog 019ed53e). The
+  // classify queue consumer layers a short-TTL cross-batch cache over the SAME
+  // fetch (see fetchTrainingRows) and seeds this very `cachedUserRead` slot, so
+  // a sweep's consecutive batches share one fetch instead of one per batch.
+  const rawRows = await cachedUserRead(ctx, TRAINING_READ_KEY, () =>
+    fetchTrainingRows(ctx.rawQuery, ctx.userId)
+  );
 
   // Alias-expand every training thread's contacts (and the candidate's) so the
   // `con` overlap signal treats the same human reached via different linked

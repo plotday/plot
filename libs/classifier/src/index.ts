@@ -6,7 +6,13 @@ export type {
   Candidate,
   SandboxDb,
 } from "./types";
-export { cachedUserRead } from "./ts-hybrid-cache";
+export { cachedUserRead, userReadCacheKey } from "./ts-hybrid-cache";
+export {
+  fetchTrainingRows,
+  TRAINING_READ_KEY,
+  type RawQuery,
+  type TrainingRow,
+} from "./ts-hybrid-training";
 export type {
   HybridParams,
   SignalWeights,

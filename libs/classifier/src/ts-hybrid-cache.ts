@@ -1,6 +1,16 @@
 import type { ClassifierContext } from "./types";
 
 /**
+ * The composite key under which {@link cachedUserRead} stores a read: the user
+ * id scopes every batch-stable read so two users in one batch never collide.
+ * Exported so an out-of-band primer (the classify worker's cross-batch training
+ * cache) can seed `batchCache` under the exact key scoringStage will look up.
+ */
+export function userReadCacheKey(userId: string, readKey: string): string {
+  return `${userId}:${readKey}`;
+}
+
+/**
  * Memoize a user-scoped, batch-stable read for the life of a classify batch.
  *
  * The cascade re-derives several user-scoped facts on every thread it
@@ -32,7 +42,7 @@ export function cachedUserRead<T>(
 ): Promise<T> {
   const cache = ctx.batchCache;
   if (!cache) return loader();
-  const fullKey = `${ctx.userId}:${key}`;
+  const fullKey = userReadCacheKey(ctx.userId, key);
   const existing = cache.get(fullKey) as Promise<T> | undefined;
   if (existing) return existing;
   const pending = loader();

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { TRAINING_READ_KEY, userReadCacheKey } from "@plotday/classifier";
+
 import worker from "./index";
+import { withDb } from "./db";
+import { resetTrainingCacheForTests } from "./training-cache";
 import { handleClassifyJob, parkUnclassifiable } from "./handler";
 
 // Hoisted PostHog spies shared with the module mock below.
@@ -69,6 +73,7 @@ function runBatch(messages: ReturnType<typeof makeMessage>[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetTrainingCacheForTests();
   parkMock.mockResolvedValue(true);
 });
 
@@ -187,6 +192,33 @@ describe("classify queue consumer error handling", () => {
 
     expect(msg.retry).toHaveBeenCalledTimes(1);
     expect(msg.ack).not.toHaveBeenCalled();
+  });
+
+  it("seeds each job's batch cache with the user's training set via one fetch", async () => {
+    // The training set is fetched once and seeded into the shared batchCache
+    // under scoringStage's `scoring:training` slot, so the per-thread scoring
+    // reads it from memory instead of re-fetching.
+    const executeQuery = vi.fn(async () => ({
+      rows: [{ priority_id: "p1", thread_id: "tA", embedding: null }],
+    }));
+    vi.mocked(withDb).mockImplementationOnce((async (
+      _env: unknown,
+      fn: (db: unknown) => Promise<unknown>
+    ) => fn({ executeQuery })) as typeof withDb);
+    handleMock.mockResolvedValue({ status: "same", stage: "test" });
+    const msg = makeMessage("t-ok");
+
+    await runBatch([msg]);
+
+    expect(executeQuery).toHaveBeenCalledTimes(1);
+    const batchCache = handleMock.mock.calls[0]![4] as Map<
+      string,
+      Promise<unknown>
+    >;
+    const primed = (await batchCache.get(
+      userReadCacheKey("u1", TRAINING_READ_KEY)
+    )) as { thread_id: string }[];
+    expect(primed[0]!.thread_id).toBe("tA");
   });
 
   it("isolates failures per message within a batch", async () => {

@@ -1,10 +1,12 @@
+import { CompiledQuery } from "kysely";
 import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
-import type { ClassifierBatchCache } from "@plotday/classifier";
+import type { ClassifierBatchCache, RawQuery } from "@plotday/classifier";
 
 import { withDb, isLockTimeoutError, isStatementTimeoutError } from "./db";
+import { primeTrainingCache } from "./training-cache";
 import {
   handleClassifyJob,
   parkUnclassifiable,
@@ -54,6 +56,24 @@ export default {
 
     try {
       await withDb(env, async (db) => {
+        // Seed batchCache with each user's training set from a short-TTL
+        // cross-batch cache, so a sweep's consecutive batches share ONE heavy
+        // thread_priority⋈thread fetch instead of re-issuing it per batch. That
+        // per-batch re-fetch, under saturation, is what tripped the 30s
+        // statement_timeout for the mega-user (PostHog 019ed53e). scoringStage
+        // reads from this seeded slot and computes cosine in the worker as
+        // before; on a fetch failure its threads defer this batch, unchanged.
+        const rawQuery: RawQuery = (text, values) =>
+          db
+            .executeQuery(CompiledQuery.raw(text, values ?? []))
+            .then((r) => ({ rows: r.rows }));
+        primeTrainingCache(
+          rawQuery,
+          batchCache,
+          batch.messages.map((m) => m.body),
+          Date.now()
+        );
+
         for (const message of batch.messages) {
           const job = message.body;
           try {
