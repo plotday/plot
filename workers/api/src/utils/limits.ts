@@ -816,27 +816,102 @@ async function personalPremiumUsage(
   return { policy: "weighted", count, weight: policy.weightAsRegular };
 }
 
-async function teamPremiumUsage(
+/**
+ * Batched form of {@link getTeamConnectionCount} for many teams at once. Returns
+ * a map keyed by team id; teams with no qualifying connections are absent
+ * (treat as 0). Used by getUsage so the Connections modal issues a single
+ * grouped query instead of one per team.
+ */
+async function getTeamConnectionCounts(
   db: Kysely<DB>,
-  teamId: string,
-  plan: PlanKey
-): Promise<PremiumUsage> {
+  teamIds: string[]
+): Promise<Map<string, number>> {
+  if (teamIds.length === 0) return new Map();
+  const teamPolicy = PLAN_LIMITS.team.premium;
+  const weight =
+    teamPolicy.type === "weighted" ? teamPolicy.weightAsRegular : 1;
+  const rows = await db
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select([
+      "pt.team_id",
+      sql<string>`COALESCE(SUM(CASE WHEN tw.premium THEN ${weight} ELSE 1 END), 0)`.as(
+        "count"
+      ),
+    ])
+    .where("pt.team_id", "in", teamIds)
+    .where("pt.archived_at", "is", null)
+    .where("tw.is_source", "=", true)
+    .where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom("channel as sc")
+          .whereRef("sc.twist_instance_id", "=", "pt.id")
+          .where("sc.enabled", "=", true)
+          .select(sql`1`.as("x"))
+      )
+    )
+    .groupBy("pt.team_id")
+    .execute();
+  return new Map(rows.map((r) => [String(r.team_id), Number(r.count)]));
+}
+
+/**
+ * Batched form of {@link getTeamPremiumConnectionCount} for many teams at once.
+ * Returns a map keyed by team id; teams with no premium connections are absent
+ * (treat as 0).
+ */
+async function getTeamPremiumConnectionCounts(
+  db: Kysely<DB>,
+  teamIds: string[]
+): Promise<Map<string, number>> {
+  if (teamIds.length === 0) return new Map();
+  const rows = await db
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select(["pt.team_id", sql<string>`count(*)`.as("count")])
+    .where("pt.team_id", "in", teamIds)
+    .where("pt.archived_at", "is", null)
+    .where("tw.is_source", "=", true)
+    .where("tw.premium", "=", true)
+    .where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom("channel as sc")
+          .whereRef("sc.twist_instance_id", "=", "pt.id")
+          .where("sc.enabled", "=", true)
+          .select(sql`1`.as("x"))
+      )
+    )
+    .groupBy("pt.team_id")
+    .execute();
+  return new Map(rows.map((r) => [String(r.team_id), Number(r.count)]));
+}
+
+/**
+ * Shape a team's premium-usage payload from pre-fetched counts (no DB access),
+ * mirroring {@link personalPremiumUsage}'s policy branches, so getUsage can
+ * resolve every team from batched aggregates instead of per-team queries.
+ */
+function shapeTeamPremiumUsage(
+  plan: PlanKey,
+  premiumCount: number,
+  addons: number
+): PremiumUsage {
   const policy = PLAN_LIMITS[plan].premium;
   if (policy.type === "blocked") return { policy: "blocked" };
   if (policy.type === "credits") {
-    const count = await getTeamPremiumConnectionCount(db, teamId);
-    const addons = await getTeamPremiumAddons(db, teamId);
     return {
       policy: "credits",
-      count,
+      count: premiumCount,
       included: policy.included,
       addons,
       limit: policy.included + addons,
     };
   }
-  // weighted (default team plan)
-  const count = await getTeamPremiumConnectionCount(db, teamId);
-  return { policy: "weighted", count, weight: policy.weightAsRegular };
+  return {
+    policy: "weighted",
+    count: premiumCount,
+    weight: policy.weightAsRegular,
+  };
 }
 
 /**
@@ -854,7 +929,9 @@ export async function getUsage(
   const twistCount = await getPersonalTwistCount(db, userId);
   const premium = await personalPremiumUsage(db, userId, plan);
 
-  // Get team memberships with connection counts
+  // Get team memberships with connection counts. `premium_connection_addons`
+  // is pulled in via the existing subscription join so the per-team add-on
+  // lookup is free.
   const teamMemberships = await db
     .selectFrom("team_user as tu")
     .innerJoin("team as t", "t.id", "tu.team_id")
@@ -865,47 +942,59 @@ export async function getUsage(
       "tu.role",
       "ts.plan as team_plan",
       "ts.connection_group_quantity",
+      "ts.premium_connection_addons",
     ])
     .where("tu.user_id", "=", userId)
     .execute();
 
-  const teams = await Promise.all(
-    teamMemberships.map(async (team) => {
-      const teamId = String(team.team_id);
-      const teamConnectionCount = await getTeamConnectionCount(db, teamId);
-      // Free team plans (no active subscription) reject every connection in
-      // checkChannelConnectionLimit regardless of connection_group_quantity,
-      // so surface limit=0 here so the client's isAtLimit check matches the
-      // server policy. Without this, EditSource pre-checks would say "ok"
-      // and Save would 403 with plan_limit_exceeded.
-      const teamPlan = (team.team_plan as
-        | "free"
-        | "core"
-        | "pro"
-        | "team"
-        | null
-        | undefined) ?? "free";
-      const teamConnectionLimit =
-        teamPlan === "pro" || teamPlan === "core"
-          ? null
-          : teamPlan === "team"
-            ? team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP
-            : 0;
-      const teamPremium = await teamPremiumUsage(db, teamId, teamPlan);
-
-      return {
-        id: teamId,
-        name: team.team_name,
-        plan: teamPlan,
-        connections: {
-          count: teamConnectionCount,
-          limit: teamConnectionLimit,
-        },
-        premium: teamPremium,
-        is_admin: team.role === "admin",
-      };
-    })
+  // Resolve every team's connection/premium counts in batched grouped queries
+  // rather than two queries per team. The premium aggregate is only needed when
+  // at least one team is on a plan whose premium policy isn't "blocked".
+  const teamIds = teamMemberships.map((team) => String(team.team_id));
+  const teamPlanOf = (team: (typeof teamMemberships)[number]): PlanKey =>
+    (team.team_plan as PlanKey | null | undefined) ?? "free";
+  const anyPremiumTeam = teamMemberships.some(
+    (team) => PLAN_LIMITS[teamPlanOf(team)].premium.type !== "blocked"
   );
+  const [teamConnectionCounts, teamPremiumCounts] = await Promise.all([
+    getTeamConnectionCounts(db, teamIds),
+    anyPremiumTeam
+      ? getTeamPremiumConnectionCounts(db, teamIds)
+      : Promise.resolve(new Map<string, number>()),
+  ]);
+
+  const teams = teamMemberships.map((team) => {
+    const teamId = String(team.team_id);
+    // Free team plans (no active subscription) reject every connection in
+    // checkChannelConnectionLimit regardless of connection_group_quantity,
+    // so surface limit=0 here so the client's isAtLimit check matches the
+    // server policy. Without this, EditSource pre-checks would say "ok"
+    // and Save would 403 with plan_limit_exceeded.
+    const teamPlan = teamPlanOf(team);
+    const teamConnectionLimit =
+      teamPlan === "pro" || teamPlan === "core"
+        ? null
+        : teamPlan === "team"
+          ? team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP
+          : 0;
+    const teamPremium = shapeTeamPremiumUsage(
+      teamPlan,
+      teamPremiumCounts.get(teamId) ?? 0,
+      team.premium_connection_addons ?? 0
+    );
+
+    return {
+      id: teamId,
+      name: team.team_name,
+      plan: teamPlan,
+      connections: {
+        count: teamConnectionCounts.get(teamId) ?? 0,
+        limit: teamConnectionLimit,
+      },
+      premium: teamPremium,
+      is_admin: team.role === "admin",
+    };
+  });
 
   // Get AI usage for free plan users
   let ai = undefined;

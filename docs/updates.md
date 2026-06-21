@@ -2,6 +2,9 @@
 
 ### Fixes
 
+- Opening Connections is fast again. The screen could take ten seconds or more to appear — especially
+  if you had access to a lot of connectors — because it was looking each one up separately. It now
+  loads everything in one go and opens almost instantly.
 - Signing in is more reliable, especially the first time on a new device. If the server is briefly
   slow during sign-in, Plot now keeps trying for a few moments instead of immediately giving up with
   a "taking too long" error.

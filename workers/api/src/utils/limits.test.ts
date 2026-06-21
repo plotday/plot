@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { sql, type Kysely } from "kysely";
+import { Kysely, PostgresDialect, sql } from "kysely";
+import pg from "pg";
 import { describe, expect, it } from "vitest";
 
 import { createDb, type DB } from "../db";
@@ -8,6 +9,7 @@ import type { Bindings } from "../env";
 import {
   getPersonalConnectionCount,
   getTeamConnectionCount,
+  getUsage,
   selectConnectionsToTrim,
   type TrimmableConnection,
 } from "./limits";
@@ -233,5 +235,102 @@ describe("selectConnectionsToTrim", () => {
         premium: { type: "blocked" },
       })
     ).toEqual([]);
+  });
+});
+
+// getUsage drives the Connections modal's quota display. It loops over every
+// team the user belongs to; the per-team connection/premium lookups must be
+// batched so the query count stays flat as team membership grows.
+describe.skipIf(!DATABASE_URL)("getUsage batches per-team queries", () => {
+  function makeCountingDb() {
+    let count = 0;
+    const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 1 });
+    const db = new Kysely<DB>({
+      dialect: new PostgresDialect({ pool }),
+      log(event) {
+        if (event.level === "query") count++;
+      },
+    });
+    return { db, getCount: () => count, reset: () => (count = 0) };
+  }
+
+  /** Insert a team and add `userId` as a member; return the new team id. */
+  async function seedTeam(trx: Kysely<DB>, userId: string): Promise<number> {
+    const team = await sql<{ id: string }>`
+      INSERT INTO team (name) VALUES (${"Team " + randomUUID()})
+      RETURNING id`.execute(trx);
+    const teamId = Number(team.rows[0].id);
+    await sql`INSERT INTO team_user (team_id, user_id, role)
+      VALUES (${teamId}, ${userId}::uuid, 'member')`.execute(trx);
+    return teamId;
+  }
+
+  /** Run getUsage for a fresh user seeded into `teamCount` teams and return the
+   *  number of queries getUsage itself issued (seeding is excluded). */
+  async function usageQueryCount(teamCount: number): Promise<number> {
+    const { db, getCount, reset } = makeCountingDb();
+    const userId = randomUUID();
+    let queries = 0;
+    try {
+      await db.transaction().execute(async (trx) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        for (let i = 0; i < teamCount; i++) await seedTeam(trx, userId);
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        reset();
+        await getUsage(trx, userId);
+        queries = getCount();
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    return queries;
+  }
+
+  it("query count does not grow with the number of teams", async () => {
+    const oneTeam = await usageQueryCount(1);
+    const fourTeams = await usageQueryCount(4);
+    // Batched aggregates mean extra teams add no extra round trips.
+    expect(fourTeams).toBeLessThanOrEqual(oneTeam);
+  });
+
+  it("reports the correct per-team connection count", async () => {
+    const { db } = makeCountingDb();
+    const userId = randomUUID();
+    let usage: any;
+    let teamId = 0;
+    try {
+      await db.transaction().execute(async (trx) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        teamId = await seedTeam(trx, userId);
+        // A source twist_instance with an enabled channel = one team connection.
+        const twist = await sql<{ id: string }>`
+          INSERT INTO twist
+            (twist_package_id, environment, user_id, name, handle, version,
+             is_source, premium)
+          VALUES (${randomUUID()}::uuid, 'personal', ${userId}::uuid,
+            'LinkedIn', 'linkedin', '1.0.0', true, false)
+          RETURNING id`.execute(trx);
+        const tiId = randomUUID();
+        await sql`INSERT INTO twist_instance (id, twist_id, owner_id, name, team_id)
+          VALUES (${tiId}::uuid, ${twist.rows[0].id}, ${userId}::uuid,
+            'LinkedIn', ${teamId})`.execute(trx);
+        await sql`INSERT INTO channel (twist_instance_id, channel_id, title, enabled)
+          VALUES (${tiId}::uuid, 'linkedin', 'LinkedIn', true)`.execute(trx);
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        usage = await getUsage(trx, userId);
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+
+    const team = usage.teams.find((t: any) => Number(t.id) === teamId);
+    expect(team).toBeDefined();
+    expect(team.connections.count).toBe(1);
   });
 });

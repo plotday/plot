@@ -333,41 +333,54 @@ export async function getAll(
       p_user_id: userId,
     });
 
-    // Enrich twist data with publisher information
+    // Enrich twist data with publisher information.
     const twistArray = Array.isArray(data) ? data : data ? [data] : [];
-    const enrichedData = await Promise.all(
-      twistArray.map(async (twist: any) => {
-        // For personal twists, author is the user themselves
-        if (twist.environment === "personal") {
-          return {
-            ...twist,
-            author_name: "You",
-            author_email: null,
-            author_url: null,
-          };
-        }
 
-        // For other environments, get publisher info directly from twist.
-        const publisherData = await db
-          .selectFrom("twist")
-          .leftJoin("publisher", "publisher.id", "twist.publisher_id")
-          .select([
-            "publisher.name as publisher_name",
-            "publisher.email as publisher_email",
-            "publisher.url as publisher_url",
-          ])
-          .where("twist.id", "=", String(twist.id))
-          .executeTakeFirst();
+    // get_accessible_twists already returns each twist's publisher_id, so fetch
+    // every publisher in a single batched query rather than one lookup per
+    // twist. The old N+1 issued one query per accessible twist — hundreds of
+    // serial round trips for reviewers/admins who can see the whole public
+    // catalog, which made opening Connections take 10s+.
+    const publisherIds = [
+      ...new Set(
+        twistArray
+          .filter(
+            (twist: any) => twist.environment !== "personal" && twist.publisher_id
+          )
+          .map((twist: any) => String(twist.publisher_id))
+      ),
+    ];
+    const publishers = publisherIds.length
+      ? await db
+          .selectFrom("publisher")
+          .select(["id", "name", "email", "url"])
+          .where("id", "in", publisherIds)
+          .execute()
+      : [];
+    const publisherById = new Map(publishers.map((p) => [String(p.id), p]));
 
-        // Always return author fields, even if null
+    const enrichedData = twistArray.map((twist: any) => {
+      // For personal twists, author is the user themselves.
+      if (twist.environment === "personal") {
         return {
           ...twist,
-          author_name: publisherData?.publisher_name || null,
-          author_email: publisherData?.publisher_email || null,
-          author_url: publisherData?.publisher_url || null,
+          author_name: "You",
+          author_email: null,
+          author_url: null,
         };
-      })
-    );
+      }
+
+      // Always return author fields, even if the publisher is missing.
+      const publisher = twist.publisher_id
+        ? publisherById.get(String(twist.publisher_id))
+        : undefined;
+      return {
+        ...twist,
+        author_name: publisher?.name || null,
+        author_email: publisher?.email || null,
+        author_url: publisher?.url || null,
+      };
+    });
 
     return enrichedData;
   } catch (error) {
