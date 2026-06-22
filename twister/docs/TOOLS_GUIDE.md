@@ -764,29 +764,35 @@ await this.cancelAllTasks();
 
 Immediate (non-scheduled) tasks cannot be cancelled.
 
-### Recurring / self-renewing tasks → `scheduleTask`
+### Recurring / self-renewing tasks → `scheduleRecurring`
 
 The `runTask` + store-token + `cancelTask` pattern above is fine for a **one-off**
 scheduled task. For anything **recurring or self-renewing** (watch/webhook
-renewals, periodic polling, deferred cleanup), use `scheduleTask` instead — it
-manages a **singleton** task per key, atomically replacing any pending task when
-you re-schedule:
+renewals, periodic polling, daily syncs, self-heal loops), use `scheduleRecurring`
+instead — it manages a **durable singleton** per key that the platform re-arms
+automatically every `intervalMs`:
 
 ```typescript
 const renewal = await this.callback(this.renewWatch, resourceId);
-// Re-scheduling under the same key cancels-and-replaces the pending task.
-await this.scheduleTask(`watch-renewal:${resourceId}`, renewal, { runAt });
+// The platform fires this every intervalMs. firstRunAt sets a precise earlier
+// next fire (e.g. renew 24 h before expiry rather than waiting the full interval).
+await this.scheduleRecurring(`watch-renewal:${resourceId}`, renewal, {
+  intervalMs: 24 * 60 * 60 * 1000, // safety ceiling: re-arm every 24 h
+  firstRunAt: new Date(expiresAt.getTime() - 24 * 60 * 60 * 1000),
+});
 
 // Teardown:
 await this.cancelScheduledTask(`watch-renewal:${resourceId}`);
 ```
 
-**Why it matters:** a renewal that re-schedules itself is a self-sustaining
-loop. Hand-managing the token (store it, cancel before re-scheduling) is
-error-prone — forget the cancel, or let two setups race, and you leak parallel
-chains that run forever and trip the runtime's execution quota. `scheduleTask`
-keys the task so only one chain per key is ever live, with the dedup done
-atomically on the server.
+**Why it matters:** `scheduleRecurring` survives dropped queue messages, worker
+restarts, and deploys — the platform re-arms the chain even if a callback throws
+before it can reschedule itself. The callback does **not** need to call
+`scheduleRecurring` again on each run; the platform owns the cadence. To tighten
+timing (e.g. re-arm at expiry-minus-24h rather than waiting the full ceiling),
+re-calling under the same key is fine and atomic — it replaces the pending run
+without forking. Use `scheduleTask(key, cb, { runAt })` only for **one-shot**
+keyed deferred work (a single future task, atomically replaced if re-keyed).
 
 ### Batch Processing Pattern
 

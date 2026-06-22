@@ -64,9 +64,10 @@ const SELF_HEAL_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * If a watch is within this window of expiry, `selfHealCheck` re-establishes
- * it preemptively rather than relying on `mailbox_renewal_task` (which can
- * fail to fire if the Durable Object alarm is dropped on deploy/eviction).
- * 36h gives the renewal task its scheduled run plus a safety margin.
+ * it preemptively rather than relying solely on the scheduled renewal task
+ * (which can fail to fire if the Durable Object alarm is dropped on
+ * deploy/eviction). 36h gives the renewal task its scheduled run plus a
+ * safety margin.
  */
 const WATCH_PREEMPTIVE_RENEW_MS = 36 * 60 * 60 * 1000;
 
@@ -263,8 +264,9 @@ export class Gmail extends Connector<Gmail> {
    *   - `channel_webhook_${id}`, `watch_renewal_task_${id}`, `sync_state_${id}`,
    *     `sync_enabled_${id}`
    * New layout (per-twist-instance):
-   *   - `mailbox_webhook`, `mailbox_renewal_task`, `incremental_state`,
-   *     `enabled_channels`, plus `initial_state_${id}` for in-flight backfills
+   *   - `mailbox_webhook`, `incremental_state`, `enabled_channels`, plus
+   *     `initial_state_${id}` for in-flight backfills; recurring tasks are
+   *     keyed "mailbox-watch-renewal" and "mailbox-self-heal"
    *
    * The Twist runtime API doesn't let connectors enumerate stored keys, so we
    * probe the system labels we know users can enable. Users with custom
@@ -275,20 +277,17 @@ export class Gmail extends Connector<Gmail> {
     // Already migrated? `mailbox_webhook` is the canonical sentinel.
     const already = await this.get<MailboxWebhookState>("mailbox_webhook");
     if (already) {
-      // Self-heal bootstrap for instances that migrated to mailbox-wide
-      // before self-heal existed. Idempotent: skipped if already scheduled.
-      const existingSelfHeal = await this.get<string>(
-        "mailbox_self_heal_task"
-      );
-      if (!existingSelfHeal) {
-        try {
-          await this.scheduleSelfHealCheck();
-        } catch (error) {
-          console.error(
-            `Gmail upgrade [${this.id}]: failed to bootstrap self-heal`,
-            error
-          );
-        }
+      // Re-assert durable recurring maintenance for any instance that had an
+      // active mailbox watch but whose pre-recurring self-heal/renewal chain
+      // died. scheduleRecurring is idempotent (keyed replace).
+      try {
+        await this.scheduleSelfHealCheck();
+        await this.scheduleMailboxRenewal(new Date(already.expiration));
+      } catch (error) {
+        console.error(
+          `Gmail upgrade [${this.id}]: failed to re-assert recurring tasks`,
+          error
+        );
       }
       return;
     }
@@ -644,12 +643,10 @@ export class Gmail extends Connector<Gmail> {
       await this.setupMailboxWebhook();
       return;
     }
-    // Watch already established — make sure the self-heal cycle is running.
-    // This handles upgrades from versions that didn't schedule self-heal.
-    const existingSelfHeal = await this.get<string>("mailbox_self_heal_task");
-    if (!existingSelfHeal) {
-      await this.scheduleSelfHealCheck();
-    }
+    // Watch already established — re-assert the self-heal recurring task.
+    // scheduleRecurring is idempotent (keyed replace), so this is safe to
+    // call even if the task is already scheduled.
+    await this.scheduleSelfHealCheck();
   }
 
   private async setupMailboxWebhook(): Promise<void> {
@@ -749,25 +746,8 @@ export class Gmail extends Connector<Gmail> {
    * (and from preUpgrade for stale per-channel state).
    */
   private async teardownMailboxWebhook(): Promise<void> {
-    const renewalTaskToken = await this.get<string>("mailbox_renewal_task");
-    if (renewalTaskToken) {
-      try {
-        await this.cancelTask(renewalTaskToken);
-      } catch {
-        // Task may have already executed
-      }
-      await this.clear("mailbox_renewal_task");
-    }
-
-    const selfHealTaskToken = await this.get<string>("mailbox_self_heal_task");
-    if (selfHealTaskToken) {
-      try {
-        await this.cancelTask(selfHealTaskToken);
-      } catch {
-        // Task may have already executed
-      }
-      await this.clear("mailbox_self_heal_task");
-    }
+    await this.cancelScheduledTask("mailbox-watch-renewal");
+    await this.cancelScheduledTask("mailbox-self-heal");
 
     const api = await this.getApiAny();
     if (api) {
@@ -792,35 +772,22 @@ export class Gmail extends Connector<Gmail> {
   }
 
   /**
-   * Schedules a task to renew the Gmail watch before its 7-day expiry.
-   * Renews 1 day before expiration.
+   * Schedules a durable recurring task to renew the Gmail watch before its
+   * 7-day expiry. The ceiling (3.5 days) ensures the watch is renewed even
+   * if a precise renewal beat is missed. firstRunAt tightens the next run to
+   * 1 day before the current expiration. Idempotent — keyed replace.
    */
   private async scheduleMailboxRenewal(expiration: Date): Promise<void> {
-    const existingTask = await this.get<string>("mailbox_renewal_task");
-    if (existingTask) {
-      try {
-        await this.cancelTask(existingTask);
-      } catch {
-        // Task may have already executed
-      }
-      await this.clear("mailbox_renewal_task");
-    }
-
     const renewalTime = new Date(expiration.getTime() - 24 * 60 * 60 * 1000);
-
-    if (renewalTime <= new Date()) {
-      // Already past renewal window, renew immediately
-      await this.renewMailboxWatch();
-      return;
-    }
-
     const renewalCallback = await this.callback(this.renewMailboxWatch);
-    const taskToken = await this.runTask(renewalCallback, {
-      runAt: renewalTime,
+    // Ceiling = 3.5 days (half the 7-day Gmail watch): even if a precise
+    // renewal beat is lost, the watch is renewed well before it expires.
+    // The platform clamps a past firstRunAt to now, so no immediate-renew
+    // branch is needed.
+    await this.scheduleRecurring("mailbox-watch-renewal", renewalCallback, {
+      intervalMs: 3.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
-    if (taskToken) {
-      await this.set("mailbox_renewal_task", taskToken);
-    }
   }
 
   /**
@@ -893,15 +860,16 @@ export class Gmail extends Connector<Gmail> {
    * {@link SELF_HEAL_INTERVAL_MS} while at least one channel is enabled.
    *
    * The Gmail watch + Pub/Sub push pipeline can silently break in ways the
-   * `mailbox_renewal_task` won't catch:
+   * scheduled renewal task won't catch:
    *
    * - the renewal Durable-Object alarm gets dropped on a deploy or DO eviction,
    * - `users.watch()` succeeded but the Pub/Sub push subscription got
    *   tombstoned or tore itself down on consecutive delivery failures,
    * - notifications stopped arriving for an unrelated GCP-side reason.
    *
-   * Each run does three things and always reschedules itself, so a single
-   * failed run never permanently breaks the cycle:
+   * Each run does three things. The platform re-arms the recurring task after
+   * every `intervalMs`, so a single failed run never permanently breaks the
+   * cycle — the callback does NOT reschedule itself:
    *
    * 1. Calls `users.history.list` against the stored
    *    `incremental_state.historyId`. If history is non-empty, push delivery
@@ -912,17 +880,17 @@ export class Gmail extends Connector<Gmail> {
    *    state, time since last push, action taken).
    *
    * Throws on unrecoverable failures (e.g. the recreate retry exhausted) so
-   * the runtime captures the exception in PostHog. Rescheduling happens
-   * before the rethrow, so the next run still fires.
+   * the runtime captures the exception in PostHog. The platform re-arms the
+   * next run regardless of whether the callback throws.
    */
   async selfHealCheck(): Promise<void> {
     const now = new Date();
 
     const enabled = await this.getEnabledChannels();
     if (enabled.size === 0) {
-      // No channels enabled — let the cycle die. onChannelEnabled will
-      // bootstrap a fresh self-heal next time a channel is enabled.
-      await this.clear("mailbox_self_heal_task");
+      // No channels enabled — cancel the recurring task so it stops firing.
+      // onChannelEnabled will re-assert it next time a channel is enabled.
+      await this.cancelScheduledTask("mailbox-self-heal");
       console.log(
         `Gmail selfHealCheck [${this.id}]: no enabled channels, ending cycle`
       );
@@ -1051,21 +1019,9 @@ export class Gmail extends Connector<Gmail> {
       now: now.toISOString(),
     });
 
-    // 3. Always reschedule next run, even on failure, so a single error
-    //    doesn't break the cycle. setupMailboxWebhook also schedules
-    //    self-heal on success; scheduleSelfHealCheck cancels-and-replaces,
-    //    so the duplicate scheduling is harmless.
-    try {
-      await this.scheduleSelfHealCheck();
-    } catch (rescheduleError) {
-      console.error(
-        `Gmail selfHealCheck [${this.id}]: reschedule failed`,
-        rescheduleError
-      );
-      if (!unrecoverableError) {
-        unrecoverableError = rescheduleError;
-      }
-    }
+    // The platform re-arms this recurring task automatically — no manual
+    // reschedule needed. setupMailboxWebhook may call scheduleSelfHealCheck()
+    // above; that's a keyed replace and is harmless.
 
     if (unrecoverableError) {
       throw unrecoverableError instanceof Error
@@ -1075,28 +1031,16 @@ export class Gmail extends Connector<Gmail> {
   }
 
   /**
-   * (Re)schedules the next self-heal check. Cancels any existing task so
-   * there's at most one outstanding self-heal task at a time. Idempotent:
-   * safe to call from multiple bootstrap paths.
+   * (Re)schedules the next self-heal check as a durable recurring task.
+   * The platform re-arms it every SELF_HEAL_INTERVAL_MS — the callback no
+   * longer reschedules itself. Idempotent: keyed replace, so concurrent
+   * calls replace rather than leak.
    */
   private async scheduleSelfHealCheck(): Promise<void> {
-    const existing = await this.get<string>("mailbox_self_heal_task");
-    if (existing) {
-      try {
-        await this.cancelTask(existing);
-      } catch {
-        // Task may have already executed.
-      }
-      await this.clear("mailbox_self_heal_task");
-    }
-
     const callback = await this.callback(this.selfHealCheck);
-    const taskToken = await this.runTask(callback, {
-      runAt: new Date(Date.now() + SELF_HEAL_INTERVAL_MS),
+    await this.scheduleRecurring("mailbox-self-heal", callback, {
+      intervalMs: SELF_HEAL_INTERVAL_MS,
     });
-    if (taskToken) {
-      await this.set("mailbox_self_heal_task", taskToken);
-    }
   }
 
   /**
@@ -1927,19 +1871,16 @@ export class Gmail extends Connector<Gmail> {
     // that push delivery is working.
     await this.set("last_webhook_received_at", new Date().toISOString());
 
-    // Self-heal bootstrap: ensures upgrades from versions without self-heal
-    // start the cycle on the first push after deploy. Idempotent — skipped
-    // if a task is already scheduled.
-    const selfHealTask = await this.get<string>("mailbox_self_heal_task");
-    if (!selfHealTask) {
-      try {
-        await this.scheduleSelfHealCheck();
-      } catch (error) {
-        console.error(
-          `Gmail onGmailWebhook [${this.id}]: failed to bootstrap self-heal`,
-          error
-        );
-      }
+    // Self-heal bootstrap: re-asserts the durable recurring task on every
+    // webhook delivery. scheduleRecurring is idempotent (keyed replace), so
+    // this is safe to call even when the task is already scheduled.
+    try {
+      await this.scheduleSelfHealCheck();
+    } catch (error) {
+      console.error(
+        `Gmail onGmailWebhook [${this.id}]: failed to bootstrap self-heal`,
+        error
+      );
     }
 
     const body = request.body as { message?: { data: string } };

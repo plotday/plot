@@ -134,18 +134,19 @@ export abstract class Tasks extends ITool {
   abstract cancelAllTasks(): Promise<void>;
 
   /**
-   * Schedules a **singleton** task identified by `key`: scheduling under a key
-   * that already has a pending task atomically cancels the existing one and
-   * replaces it. At most one scheduled task per `key` is ever live.
+   * Schedules a **one-shot singleton** task identified by `key`: scheduling
+   * under a key that already has a pending task atomically cancels the existing
+   * one and replaces it. At most one scheduled task per `key` is ever live.
    *
-   * Use this for any recurring/self-renewing job — webhook/watch renewals,
-   * periodic polling, deferred cleanup — instead of hand-managing tokens with
-   * `runTask()` + `cancelTask()`. The manual pattern (store the token, cancel
-   * it before re-scheduling) is easy to get wrong: a renewal callback that
-   * re-schedules itself, combined with any *extra* scheduling call (a
-   * re-dispatched `onChannelEnabled`, a re-init), leaks parallel self-
-   * perpetuating chains that accumulate forever and can trip the runtime's
-   * execution quota. Keying makes that leak impossible by construction.
+   * Use this for **one-shot keyed deferred work** — a single future task whose
+   * pending occurrence should be atomically replaced if re-scheduled (e.g.
+   * a deferred cleanup, a one-time expiry action, a single future send).
+   *
+   * For **recurring/self-renewing jobs** (watch renewals, polling loops,
+   * periodic syncs, self-heal checks), use {@link scheduleRecurring} instead.
+   * It owns the cadence on the platform side, so the chain survives dropped
+   * runs, suspensions, and deploys without the callback needing to reschedule
+   * itself.
    *
    * Replacement is atomic on the server, so concurrent executions racing to
    * schedule the same key converge on a single task rather than leaking.
@@ -184,4 +185,52 @@ export abstract class Tasks extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract cancelScheduledTask(key: string): Promise<void>;
+
+  /**
+   * Schedules a **durable recurring** task identified by `key`. Unlike
+   * {@link scheduleTask} (one-shot, deleted when it fires), a recurring task's
+   * next occurrence is owned by the platform: the runtime re-arms it every
+   * `intervalMs` automatically, so the chain survives a dropped queue message,
+   * a suspension, a deploy/eviction, or a callback that throws before it could
+   * reschedule. The callback just does the work, idempotently — it does NOT
+   * need to reschedule itself.
+   *
+   * `intervalMs` is a **safety ceiling** (the maximum gap between fires). For
+   * data-dependent cadence (e.g. renew 24h before a provider-returned expiry),
+   * pass `firstRunAt` for the precise next fire and re-call `scheduleRecurring`
+   * with the same key on each run to keep tightening it; the ceiling guarantees
+   * the chain still fires if a run is lost. `firstRunAt` can pull the next fire
+   * earlier than the ceiling but never later.
+   *
+   * Recurring tasks are keyed/singleton: re-scheduling under the same key
+   * atomically replaces the pending occurrence (one live task per key). Tear
+   * down with {@link cancelScheduledTask}.
+   *
+   * @param key - Stable identifier, scoped to what it maintains, e.g.
+   *   `` `watch-renewal:${folderId}` `` or `"mailbox-self-heal"`.
+   * @param callback - Callback created with `this.callback()`.
+   * @param options.intervalMs - Safety-ceiling cadence in milliseconds.
+   * @param options.firstRunAt - Optional precise time for the next fire
+   *   (clamped to no later than now + intervalMs).
+   *
+   * @example
+   * ```typescript
+   * // Fixed cadence (self-heal, polling): register once, never reschedule.
+   * const cb = await this.callback(this.selfHealCheck);
+   * await this.scheduleRecurring("mailbox-self-heal", cb, { intervalMs: 60 * 60 * 1000 });
+   *
+   * // Variable cadence (watch renewal): precise firstRunAt + safety ceiling.
+   * const renew = await this.callback(this.renewWatch, folderId);
+   * await this.scheduleRecurring(`watch-renewal:${folderId}`, renew, {
+   *   intervalMs: 3.5 * 24 * 60 * 60 * 1000,   // ceiling: half the 7-day watch
+   *   firstRunAt: new Date(expiry.getTime() - 24 * 60 * 60 * 1000),
+   * });
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract scheduleRecurring(
+    key: string,
+    callback: Callback,
+    options: { intervalMs: number; firstRunAt?: Date }
+  ): Promise<void>;
 }

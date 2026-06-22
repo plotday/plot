@@ -280,8 +280,9 @@ export class Airtable extends Connector<Airtable> {
    */
   private async schedulePoll(baseId: string): Promise<void> {
     const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
-    await this.scheduleTask(`poll:${baseId}`, pollCb, {
-      runAt: new Date(Date.now() + POLL_INTERVAL_MS),
+    await this.scheduleRecurring(`poll:${baseId}`, pollCb, {
+      intervalMs: POLL_INTERVAL_MS,
+      firstRunAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
   }
 
@@ -804,7 +805,10 @@ export class Airtable extends Connector<Airtable> {
     // replaces any pending renewal (proactive renewal or 1h transient retry),
     // so the self-renewing chain can never fork into parallel chains even if a
     // redundant setupWebhook runs.
-    await this.scheduleTask(`webhook-renewal:${baseId}`, cb, { runAt });
+    await this.scheduleRecurring(`webhook-renewal:${baseId}`, cb, {
+      intervalMs: 3.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: runAt,
+    });
   }
 
   /**
@@ -868,8 +872,9 @@ export class Airtable extends Connector<Airtable> {
       const cb = await this.callback(this.renewWebhook, baseId);
       // Same key as scheduleNextRenewal: the 1h retry IS the next link in the
       // self-renewing chain, so keep one pending renewal per base.
-      await this.scheduleTask(`webhook-renewal:${baseId}`, cb, {
-        runAt: new Date(Date.now() + 60 * 60 * 1000),
+      await this.scheduleRecurring(`webhook-renewal:${baseId}`, cb, {
+        intervalMs: 3.5 * 24 * 60 * 60 * 1000,
+        firstRunAt: new Date(Date.now() + 60 * 60 * 1000),
       });
     }
   }

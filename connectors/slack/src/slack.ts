@@ -1303,7 +1303,10 @@ export class Slack extends Connector<Slack> {
         // and the normal daily run are the one logical members-sync chain, so
         // keying them together guarantees they can never run in parallel.
         console.log(`Slack: rescheduling syncMembers (${error.method}) at ${runAt.toISOString()}`);
-        await this.scheduleTask(`members-sync:${channelId}`, retry, { runAt });
+        await this.scheduleRecurring(`members-sync:${channelId}`, retry, {
+          intervalMs: 24 * 60 * 60 * 1000,
+          firstRunAt: runAt,
+        });
         return;
       }
       if (error instanceof SlackPermanentError) {
@@ -1328,8 +1331,9 @@ export class Slack extends Connector<Slack> {
         // atomically replaces any pending members sync, so the daily chain
         // can never accumulate parallel copies even if syncMembers is entered
         // again (onChannelEnabled re-dispatch, recovery).
-        await this.scheduleTask(`members-sync:${channelId}`, dailyCallback, {
-          runAt: nextRunAt,
+        await this.scheduleRecurring(`members-sync:${channelId}`, dailyCallback, {
+          intervalMs: 24 * 60 * 60 * 1000,
+          firstRunAt: nextRunAt,
         });
       }
     }
@@ -1377,7 +1381,10 @@ export class Slack extends Connector<Slack> {
         // and the normal daily run are the one logical custom-emoji-sync
         // chain, so keying them together prevents parallel chains.
         console.log(`Slack: rescheduling syncCustomEmoji ${channelId} at ${runAt.toISOString()}`);
-        await this.scheduleTask(`custom-emoji-sync:${channelId}`, retry, { runAt });
+        await this.scheduleRecurring(`custom-emoji-sync:${channelId}`, retry, {
+          intervalMs: 24 * 60 * 60 * 1000,
+          firstRunAt: runAt,
+        });
         return;
       }
       if (error instanceof SlackPermanentError) {
@@ -1418,8 +1425,9 @@ export class Slack extends Connector<Slack> {
     // the daily chain can never accumulate parallel copies even if
     // syncCustomEmoji is entered again (onChannelEnabled re-dispatch, recovery).
     const next = await this.callback(this.syncCustomEmoji, channelId);
-    await this.scheduleTask(`custom-emoji-sync:${channelId}`, next, {
-      runAt: new Date(now + ONE_DAY_MS),
+    await this.scheduleRecurring(`custom-emoji-sync:${channelId}`, next, {
+      intervalMs: 24 * 60 * 60 * 1000,
+      firstRunAt: new Date(now + ONE_DAY_MS),
     });
   }
 

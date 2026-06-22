@@ -92,16 +92,15 @@ async reconcileComments() {
   }
 }
 
-// ✅ CORRECT — periodic background work uses scheduleTask, not a self-chain
+// ✅ CORRECT — periodic background work uses scheduleRecurring, not a self-chain
 async pollForChanges() {
   await this.processBatch();
   const callback = await this.callback(this.pollForChanges);
-  // Singleton: re-scheduling under the same key atomically replaces the
-  // pending run, so the poll can never fork into parallel chains even if
-  // pollForChanges is entered more than once. Cloudflare's queue stays out
-  // of the loop entirely between runs.
-  await this.scheduleTask("poll-for-changes", callback, {
-    runAt: new Date(Date.now() + 5 * 60 * 1000),
+  // scheduleRecurring re-arms automatically every intervalMs — the platform
+  // owns the cadence, so this callback does NOT need to reschedule itself.
+  // The chain survives dropped messages, deploys, and thrown exceptions.
+  await this.scheduleRecurring("poll-for-changes", callback, {
+    intervalMs: 5 * 60 * 1000,
   });
 }
 ```
@@ -109,14 +108,16 @@ async pollForChanges() {
 > ⚠️ A self-rescheduling `runTask({ runAt })` (not keyed) is a hidden trap: if
 > the method is entered twice — a re-dispatched lifecycle hook, a re-init, two
 > racing triggers — you get **two** independent chains, then four, accumulating
-> forever and tripping the execution quota. `scheduleTask(key, …)` keys the task
-> so re-scheduling replaces rather than forks. This is the single most common
-> source of slow-burn auto-suspensions.
+> forever and tripping the execution quota. `scheduleRecurring(key, …)` keys the
+> recurring run so re-registering replaces rather than forks, and the platform
+> re-arms it even if a run is dropped. This is the single most common source of
+> slow-burn auto-suspensions.
 
 **Guidelines:**
 
 - Every `runTask` self-chain must have an explicit exit condition (a cursor that ends, a counter that reaches a limit, a `hasMore` flag).
-- For periodic/self-renewing work (polling, watch renewals), use **`scheduleTask(key, callback, { runAt })`** — it guarantees a single live chain per key. Plain `runTask({ runAt })` forks if its method ever runs twice; `cancelScheduledTask(key)` tears it down.
+- For periodic/self-renewing work (polling, watch renewals), use **`scheduleRecurring(key, callback, { intervalMs, firstRunAt? })`** — the platform re-arms the chain every `intervalMs` and it survives drops/deploys. Use `firstRunAt` to fire earlier than the ceiling (e.g. renew 24 h before expiry). Teardown: `cancelScheduledTask(key)`.
+- Use `scheduleTask(key, callback, { runAt })` only for **one-shot** keyed deferred work. Plain `runTask({ runAt })` forks if its method ever runs twice.
 - Cap recursion depth: store a counter in `this.set` and stop after a sane bound (e.g., 100 batches).
 - For sync flows, paginate with `runTask` per page rather than fanning out hundreds of tasks at once.
 

@@ -223,9 +223,10 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       // until expiry to a connector that no longer recognises them).
       //
       // The pending renewal task needs no explicit cancel here: the
-      // singleton `scheduleTask(\`watch-renewal:${calendarId}\`, …)` that
-      // setupOutlookWatch schedules atomically replaces any pending
-      // renewal for this calendar, so a stale chain can't accumulate.
+      // durable recurring task keyed `watch-renewal:${calendarId}` that
+      // setupOutlookWatch registers via `scheduleRecurring` atomically
+      // replaces any pending occurrence for this calendar, so a stale
+      // chain can't accumulate.
       const oldWatchData = await this.get<WatchState>(
         `outlook_watch_${channel.id}`
       );
@@ -572,8 +573,9 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     // Singleton scheduled task: re-scheduling under this key atomically
     // replaces any pending renewal, so renewal chains can never accumulate —
     // even if setupOutlookWatch runs again (re-dispatch, re-init).
-    await this.scheduleTask(`watch-renewal:${calendarId}`, renewalCallback, {
-      runAt: renewalTime,
+    await this.scheduleRecurring(`watch-renewal:${calendarId}`, renewalCallback, {
+      intervalMs: 1.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
   }
 

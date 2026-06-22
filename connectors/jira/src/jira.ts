@@ -448,8 +448,9 @@ export class Jira extends Connector<Jira> {
     // Singleton scheduled task: re-scheduling under this key atomically
     // replaces any pending renewal, so renewal chains can never accumulate —
     // even if setupJiraWebhook runs again (onChannelEnabled re-dispatch, re-init).
-    await this.scheduleTask(`webhook-renewal:${projectId}`, renewalCallback, {
-      runAt: renewalTime,
+    await this.scheduleRecurring(`webhook-renewal:${projectId}`, renewalCallback, {
+      intervalMs: 2.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
   }
 
