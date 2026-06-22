@@ -328,6 +328,26 @@ export abstract class Twist<TSelf> {
   }
 
   /**
+   * Schedules a durable recurring task under a stable key. The platform
+   * re-arms the task every `intervalMs` automatically — the callback does NOT
+   * need to reschedule itself. Re-scheduling under the same key atomically
+   * replaces the pending occurrence (at most one live task per key). Tear down
+   * with {@link cancelScheduledTask}. See {@link Tasks.scheduleRecurring}.
+   *
+   * @param key - Stable identifier, e.g. `"mailbox-self-heal"`
+   * @param callback - Callback token created with `this.callback()`
+   * @param options.intervalMs - Safety-ceiling cadence in milliseconds
+   * @param options.firstRunAt - Optional precise time for the next fire
+   */
+  protected async scheduleRecurring(
+    key: string,
+    callback: Callback,
+    options: { intervalMs: number; firstRunAt?: Date }
+  ): Promise<void> {
+    return this.tools.tasks.scheduleRecurring(key, callback, options);
+  }
+
+  /**
    * Called when the twist is installed by a user.
    *
    * This method should contain initialization logic such as seeding
