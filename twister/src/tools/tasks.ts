@@ -134,18 +134,19 @@ export abstract class Tasks extends ITool {
   abstract cancelAllTasks(): Promise<void>;
 
   /**
-   * Schedules a **singleton** task identified by `key`: scheduling under a key
-   * that already has a pending task atomically cancels the existing one and
-   * replaces it. At most one scheduled task per `key` is ever live.
+   * Schedules a **one-shot singleton** task identified by `key`: scheduling
+   * under a key that already has a pending task atomically cancels the existing
+   * one and replaces it. At most one scheduled task per `key` is ever live.
    *
-   * Use this for any recurring/self-renewing job — webhook/watch renewals,
-   * periodic polling, deferred cleanup — instead of hand-managing tokens with
-   * `runTask()` + `cancelTask()`. The manual pattern (store the token, cancel
-   * it before re-scheduling) is easy to get wrong: a renewal callback that
-   * re-schedules itself, combined with any *extra* scheduling call (a
-   * re-dispatched `onChannelEnabled`, a re-init), leaks parallel self-
-   * perpetuating chains that accumulate forever and can trip the runtime's
-   * execution quota. Keying makes that leak impossible by construction.
+   * Use this for **one-shot keyed deferred work** — a single future task whose
+   * pending occurrence should be atomically replaced if re-scheduled (e.g.
+   * a deferred cleanup, a one-time expiry action, a single future send).
+   *
+   * For **recurring/self-renewing jobs** (watch renewals, polling loops,
+   * periodic syncs, self-heal checks), use {@link scheduleRecurring} instead.
+   * It owns the cadence on the platform side, so the chain survives dropped
+   * runs, suspensions, and deploys without the callback needing to reschedule
+   * itself.
    *
    * Replacement is atomic on the server, so concurrent executions racing to
    * schedule the same key converge on a single task rather than leaking.

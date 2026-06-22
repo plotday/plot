@@ -867,8 +867,9 @@ export class Gmail extends Connector<Gmail> {
    *   tombstoned or tore itself down on consecutive delivery failures,
    * - notifications stopped arriving for an unrelated GCP-side reason.
    *
-   * Each run does three things and always reschedules itself, so a single
-   * failed run never permanently breaks the cycle:
+   * Each run does three things. The platform re-arms the recurring task after
+   * every `intervalMs`, so a single failed run never permanently breaks the
+   * cycle — the callback does NOT reschedule itself:
    *
    * 1. Calls `users.history.list` against the stored
    *    `incremental_state.historyId`. If history is non-empty, push delivery
@@ -879,8 +880,8 @@ export class Gmail extends Connector<Gmail> {
    *    state, time since last push, action taken).
    *
    * Throws on unrecoverable failures (e.g. the recreate retry exhausted) so
-   * the runtime captures the exception in PostHog. Rescheduling happens
-   * before the rethrow, so the next run still fires.
+   * the runtime captures the exception in PostHog. The platform re-arms the
+   * next run regardless of whether the callback throws.
    */
   async selfHealCheck(): Promise<void> {
     const now = new Date();
