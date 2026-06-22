@@ -222,6 +222,16 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     for (const key of keys) {
       await this.clear(key);
     }
+
+    // Re-assert durable watch-renewal chains for all watched calendars so that
+    // any dead chains (e.g. from a missed beat before this migration) are
+    // resurrected on deploy. scheduleWatchRenewal is idempotent — re-scheduling
+    // under the same key atomically replaces any pending task.
+    const watchKeys = await this.tools.store.list("calendar_watch_");
+    for (const key of watchKeys) {
+      const calendarId = key.slice("calendar_watch_".length);
+      await this.scheduleWatchRenewal(calendarId);
+    }
   }
 
   /**
@@ -689,11 +699,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       calendarId
     );
 
-    // Singleton scheduled task: re-scheduling under this key atomically
-    // replaces any pending renewal, so renewal chains can never accumulate —
-    // even if setupCalendarWatch runs again (re-dispatch, re-init).
-    await this.scheduleTask(`watch-renewal:${calendarId}`, renewalCallback, {
-      runAt: renewalTime,
+    // Durable recurring: ceiling 3.5 days (half the ~7-day watch) guarantees a
+    // renewal fires even if a precise beat is lost; firstRunAt keeps the precise
+    // expiry-24h timing. renewCalendarWatch re-registers on success (the tighten path).
+    await this.scheduleRecurring(`watch-renewal:${calendarId}`, renewalCallback, {
+      intervalMs: 3.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
   }
 
