@@ -284,6 +284,21 @@ export class OutlookMail extends Connector<OutlookMail> {
     };
   }
 
+  override async upgrade(): Promise<void> {
+    const existing = await this.get<SubscriptionState>("mailbox_subscription");
+    if (existing?.subscriptionId) {
+      try {
+        await this.scheduleSelfHealCheck();
+        await this.scheduleMailboxRenewal(new Date(existing.expiration));
+      } catch (error) {
+        console.error(
+          `OutlookMail upgrade [${this.id}]: failed to re-assert recurring tasks`,
+          error
+        );
+      }
+    }
+  }
+
   override async activate(context: {
     auth: Authorization;
     actor: Actor;
