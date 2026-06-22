@@ -13,6 +13,9 @@
 
 ### Fixes
 
+- The back arrow in the header is easier to tap. Its touch area now fills the full height of the
+  header and stretches from the screen edge across to the title beside it, so you no longer have to
+  land precisely on the small chevron.
 - Fixed Android not asking for permission to send notifications on a fresh install. Notifications now
   work out of the box instead of staying silent until you enabled them in system settings yourself.
 - Background syncing keeps itself healthy. The periodic checks that keep your connected mail,

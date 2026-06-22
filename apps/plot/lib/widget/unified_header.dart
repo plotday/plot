@@ -29,6 +29,7 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/fading_underline.dart';
+import 'package:plot/widget/header_back_button.dart';
 import 'package:plot/widget/pomodoro_ring.dart';
 import 'package:plot/widget/primary_link_header_actions.dart';
 import 'package:plot/widget/thread_assignee.dart';
@@ -57,6 +58,39 @@ enum HeaderVariant { single, sidebar, main }
 /// header-less tab pages stays the same height (and the traffic lights stay
 /// put as the user moves between a tab root and a thread).
 const double _kHeaderHeight = kAppHeaderHeight;
+
+/// Horizontal gap between items in the header title row. A leading back chevron
+/// folds this gap into its own hit area (see [HeaderBackButton.endInset]) and
+/// then sits flush against the title, so the spacing reads identically but is
+/// tappable rather than inert.
+const double _kHeaderItemSpacing = 8;
+
+/// Horizontal padding inside the header band, between its edges and the title
+/// row content.
+const double _kHeaderContentPadding = 12;
+
+/// Splits the single-panel header's leading inset between the header's content
+/// padding (outside the back chevron — inert) and the chevron's own
+/// [HeaderBackButton.startInset] (inside it — tappable), so the leading padding
+/// becomes part of the back target instead of a dead zone.
+///
+/// With a chevron the whole inset moves inside it; without one it stays as
+/// content padding. The two always sum to [_kHeaderContentPadding], so the
+/// glyph never moves — only the hit area grows.
+///
+/// This applies on desktop too: the macOS traffic lights are reserved by a
+/// *separate* leading toolbar gutter ([Window.toolbarPadding]), so the chevron
+/// always sits after that gutter. Absorbing the content padding only grows the
+/// chevron's hit area down to the gutter — never over the window buttons.
+@visibleForTesting
+({double contentPadLeft, double backStartInset}) headerLeadingPadding({
+  required bool hasBack,
+}) {
+  return (
+    contentPadLeft: hasBack ? 0 : _kHeaderContentPadding,
+    backStartInset: hasBack ? _kHeaderContentPadding : 0,
+  );
+}
 
 /// A single header spanning the full window width, placed above all panels.
 ///
@@ -444,7 +478,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     List<Widget> titleChildren, {
     List<Widget> suffixes = const <Widget>[],
     BoxDecoration? decoration,
-    EdgeInsets contentPadding = const EdgeInsets.symmetric(horizontal: 12),
+    EdgeInsets contentPadding = const EdgeInsets.symmetric(
+      horizontal: _kHeaderContentPadding,
+    ),
   }) {
     Widget header = ClipRect(
       key: _headerKey,
@@ -463,7 +499,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
               // band; horizontal page padding is preserved.
               padding: EdgeInsetsGeometryDelta.value(contentPadding),
             ),
-            title: Row(spacing: 8, children: titleChildren),
+            title: Row(spacing: _kHeaderItemSpacing, children: titleChildren),
             suffixes: suffixes,
           ),
         ),
@@ -527,6 +563,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
           resolvedToolbarPadding.right == 0) {
         return const SizedBox.shrink();
       }
+      final newThreadLeadingPad = headerLeadingPadding(
+        hasBack: newThreadBack != null,
+      );
       return _wrapHeader(
         context,
         layoutState,
@@ -534,17 +573,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
           if (resolvedToolbarPadding.left != 0)
             SizedBox(width: resolvedToolbarPadding.left),
           if (newThreadBack != null)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
+            HeaderBackButton(
               onTap: newThreadBack,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                child: Icon(
-                  PlotIcon.left,
-                  size: 18,
-                  color: context.theme.colors.mutedForeground,
-                ),
-              ),
+              startInset: newThreadLeadingPad.backStartInset,
+              endInset: _kHeaderItemSpacing,
             ),
           const Expanded(child: SizedBox.shrink()),
         ],
@@ -553,6 +585,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
             SizedBox(width: resolvedToolbarPadding.right),
         ],
         decoration: BoxDecoration(color: context.colour.background),
+        contentPadding: EdgeInsets.only(
+          left: newThreadLeadingPad.contentPadLeft,
+          right: _kHeaderContentPadding,
+        ),
       );
     }
 
@@ -584,45 +620,20 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     // [returnFromPriorityToSourceTab]). Shown only on the bare `/p/:id`
     // priority page in single-panel mode. Threads have their own back
     // button (the [ChangeCurrentThread] arrow below); the new-thread page
-    // carries its own affordance. Styled like the new-thread / connection
-    // picker back chevron (PlotIcon.left, ~18px, muted). A GestureDetector
-    // (not a hover button) keeps the default desktop arrow cursor.
+    // carries its own affordance. All three render via [HeaderBackButton]
+    // (PlotIcon.left, ~18px, muted → hover foreground), which keeps the
+    // default desktop arrow cursor.
     final bool showPriorityBack =
         widget.onBack != null &&
         !layoutState.multiPanel &&
         !hasActivity &&
         _isBarePriorityRoute;
 
-    final List<Widget> leading = [
-      if (resolvedToolbarPadding.left != 0)
-        SizedBox(width: resolvedToolbarPadding.left),
-      if (showPriorityBack)
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onBack,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-            child: Icon(
-              PlotIcon.left,
-              size: 18,
-              color: context.theme.colors.mutedForeground,
-            ),
-          ),
-        ),
-      if (hasActivity)
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => context.run(ChangeCurrentThread(null)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-            child: Icon(
-              PlotIcon.left,
-              size: 18,
-              color: context.theme.colors.mutedForeground,
-            ),
-          ),
-        ),
-    ];
+    final VoidCallback? backTap = showPriorityBack
+        ? widget.onBack
+        : hasActivity
+        ? () => context.run(ChangeCurrentThread(null))
+        : null;
 
     final Widget titleSection;
     if (thread != null) {
@@ -635,6 +646,39 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
         alignLeft: true,
       );
     }
+
+    // When a back chevron leads the header, every bit of space around it is
+    // tappable rather than inert:
+    //  * The leading content padding (edge → chevron) is absorbed into the
+    //    chevron's [HeaderBackButton.startInset] (see [headerLeadingPadding],
+    //    which drops the header's left content padding by the same amount so the
+    //    glyph stays put). On desktop the macOS traffic lights sit in a separate
+    //    leading toolbar gutter, so this only grows the hit area down to that
+    //    gutter, never over the window buttons.
+    //  * The inter-item spacing (chevron → title) is folded into the chevron's
+    //    [HeaderBackButton.endInset]; the chevron and title share an inner row
+    //    with NO spacing so the title keeps its exact position. ([titleSection]
+    //    is already an [Expanded], so it fills the remaining width.)
+    final leadingPad = headerLeadingPadding(hasBack: backTap != null);
+    final Widget titleArea = backTap == null
+        ? titleSection
+        : Expanded(
+            child: Row(
+              children: [
+                HeaderBackButton(
+                  onTap: backTap,
+                  startInset: leadingPad.backStartInset,
+                  endInset: _kHeaderItemSpacing,
+                ),
+                titleSection,
+              ],
+            ),
+          );
+
+    final List<Widget> leading = [
+      if (resolvedToolbarPadding.left != 0)
+        SizedBox(width: resolvedToolbarPadding.left),
+    ];
 
     // Single-panel: thread actions live in the header (no squircle).
     final trailing = <Widget>[
@@ -659,9 +703,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
     return _wrapHeader(
       context,
       layoutState,
-      [...leading, titleSection],
+      [...leading, titleArea],
       suffixes: trailing,
       decoration: decoration,
+      contentPadding: EdgeInsets.only(
+        left: leadingPad.contentPadLeft,
+        right: _kHeaderContentPadding,
+      ),
     );
   }
 
@@ -860,9 +908,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
               ),
             Button.icon(ClearSelection()),
           ],
-          suffixes: <Widget>[
-            if (rightPad != 0) SizedBox(width: rightPad),
-          ],
+          suffixes: <Widget>[if (rightPad != 0) SizedBox(width: rightPad)],
         );
       },
     );
@@ -1140,13 +1186,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
           // the field with `editableBackground` on focus; without this override
           // the borderless prompt would grow a focus background.
           color: FVariantsValueDelta.delta([
-            FVariantValueDeltaOperation.all(
-              const Color(0x00000000),
-            ),
-            FVariantValueDeltaOperation.exact(
-              {FTextFieldVariantConstraint.focused},
-              const Color(0x00000000),
-            ),
+            FVariantValueDeltaOperation.all(const Color(0x00000000)),
+            FVariantValueDeltaOperation.exact({
+              FTextFieldVariantConstraint.focused,
+            }, const Color(0x00000000)),
           ]),
           contentTextStyle: FVariantsDelta.delta([
             FVariantOperation.all(
@@ -1346,9 +1389,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
           groups: [
             StaticCommandGroup(
               title: 'View',
-              commands: [
-                ToggleArchived(showingArchived: showAll),
-              ],
+              commands: [ToggleArchived(showingArchived: showAll)],
             ),
           ],
         );
