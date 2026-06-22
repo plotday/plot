@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb, createDb } from "../../db";
+import { sql, withUserDb, createFrontendDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { twistFactory } from "../../twist/factory";
@@ -239,7 +239,7 @@ schedules.post("/sync/schedules", async (c) => {
         };
         c.executionCtx.waitUntil(
           (async () => {
-            const db = createDb(c.env);
+            const db = createFrontendDb(c.env);
             try {
               // Check if created_by is a connector (has channel rows)
               const isConnector = await (db as any)

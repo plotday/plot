@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { createLogger } from "@plotday/worker-util";
 
-import { sql, withDb, withUserDb } from "../../db";
+import { sql, withFrontendDb, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import {
   enqueueJobs,
@@ -75,7 +75,7 @@ priorityMoves.post("/sync/priority-moves", async (c) => {
       try {
         // c.var.db is destroyed by dbMiddleware once the response returns, so
         // post-response work must spin up its own short-lived Kysely.
-        await withDb(c.env, async (db) => {
+        await withFrontendDb(c.env, async (db) => {
           const marked = await sql<{ user_id: string; thread_id: string }>`
             SELECT user_id::text AS user_id, thread_id::text AS thread_id
               FROM public.mark_reclassify_candidates(

@@ -1,9 +1,10 @@
-# Shared Hyperdrive config fronting Cloud SQL plot-prod (used by the api +
+# Shared Hyperdrive configs fronting Cloud SQL plot-prod (used by the api +
 # classify workers). Imported faithfully — no behavior change.
 #
-# `origin_connection_limit` (80) is the connection-pool knob also managed today
-# by scripts/deploy-hyperdrive. Capacity changes are OUT OF SCOPE here (separate
-# effort) — this only records the current value.
+# `origin_connection_limit` — 50 (frontend) + 30 (background) = 80 total — is
+# the connection-pool knob also managed today by scripts/deploy-hyperdrive.
+# Capacity changes are OUT OF SCOPE here (separate effort) — this only records
+# the current values.
 #
 # `origin.password` is a write-only secret the Cloudflare API never returns, so
 # it can't be read on import. It's set to a placeholder and ignored via
@@ -40,7 +41,42 @@ resource "cloudflare_hyperdrive_config" "plot_prod" {
     sslmode             = null
   }
 
-  origin_connection_limit = 80
+  origin_connection_limit = 50
+
+  lifecycle {
+    ignore_changes = [origin.password]
+  }
+}
+
+resource "cloudflare_hyperdrive_config" "plot_prod_bg" {
+  account_id = "34ceb662899230b63c7e8114eaf9277c"
+  name       = "plot-prod-bg"
+
+  origin = {
+    scheme               = "postgres"
+    host                 = "34.130.85.92"
+    port                 = 5432
+    database             = "plot"
+    user                 = "api"
+    password             = "MANAGED_OUTSIDE_TERRAFORM" # ignored (see header)
+    access_client_id     = null
+    access_client_secret = null
+    service_id           = null
+  }
+
+  caching = {
+    disabled               = true
+    max_age                = null
+    stale_while_revalidate = null
+  }
+
+  mtls = {
+    ca_certificate_id   = null
+    mtls_certificate_id = null
+    sslmode             = null
+  }
+
+  origin_connection_limit = 30
 
   lifecycle {
     ignore_changes = [origin.password]

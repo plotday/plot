@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 
 import type { Bindings } from "../env";
-import { withDb } from "../db";
+import { withFrontendDb } from "../db";
 import { sendDataMessage } from "../utils/fcm";
 
 // ENV is defined as a global string literal in wrangler.jsonc
@@ -20,7 +20,7 @@ testRoutes.post("/test/trigger-push", async (c) => {
 
   const userId = c.var.user.id;
 
-  const result = await withDb(c.env, async (db) => {
+  const result = await withFrontendDb(c.env, async (db) => {
     const devices = await db
       .selectFrom("device")
       .select(["id", "push_token"])

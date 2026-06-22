@@ -1,7 +1,13 @@
 import { CompiledQuery } from "kysely";
 import { PostHog } from "posthog-node";
 
-import { createLogger } from "@plotday/worker-util";
+import {
+  createLogger,
+  backgroundPressure,
+  recordTimeout,
+  shouldDefer,
+  backoffDelaySeconds,
+} from "@plotday/worker-util";
 
 import type { ClassifierBatchCache, RawQuery } from "@plotday/classifier";
 
@@ -28,6 +34,7 @@ const MAX_CLASSIFY_ATTEMPTS = 4;
 export interface Env extends ClassifyEnv {
   readonly DATABASE_URL?: string;
   readonly HYPERDRIVE?: { connectionString: string };
+  readonly HYPERDRIVE_BG?: { connectionString: string };
   readonly POSTHOG_API_KEY: string;
   readonly POSTHOG_HOST: string;
 }
@@ -53,6 +60,23 @@ export default {
     // the DB during sweep bursts (PostHog 019ed53e). Lives only for this
     // invocation, so it can never serve stale data to a later batch.
     const batchCache: ClassifierBatchCache = new Map();
+
+    const decision = shouldDefer(backgroundPressure, Date.now());
+    if (decision.defer) {
+      for (const message of batch.messages) {
+        message.retry({ delaySeconds: backoffDelaySeconds(message.attempts) });
+      }
+      posthog.capture({
+        distinctId: "system",
+        event: "bg.deferred",
+        properties: { queue: "classify-thread", reason: decision.reason },
+      });
+      logger.warn("deferred classify batch under DB pressure", {
+        reason: decision.reason,
+      });
+      ctx.waitUntil(posthog.shutdown());
+      return;
+    }
 
     try {
       await withDb(env, async (db) => {
@@ -186,6 +210,7 @@ export default {
               // tracking. The real remedy for the saturation itself is the
               // Hyperdrive origin-connection-limit lever (scripts/deploy-
               // hyperdrive), not more error capture here.
+              recordTimeout(backgroundPressure, Date.now());
               posthog.capture({
                 distinctId: job.userId,
                 event: "classify.deferred_timeout",
@@ -205,6 +230,23 @@ export default {
                 }
               );
               message.ack();
+              // Mid-batch saturation: stop hammering. Re-queue the rest of this
+              // batch with a backoff and break — the hourly sweep + these delayed
+              // retries pick them up once contention clears.
+              const idx = batch.messages.indexOf(message);
+              const remaining = batch.messages.slice(idx + 1);
+              for (const m of remaining) {
+                m.retry({ delaySeconds: backoffDelaySeconds(m.attempts) });
+              }
+              posthog.capture({
+                distinctId: job.userId,
+                event: "bg.timeout_abort",
+                properties: {
+                  threadId: job.threadId,
+                  remaining: remaining.length,
+                },
+              });
+              return; // exit the withDb callback; finally shuts posthog down
             } else {
               // Surface every other consumer-throwing failure to PostHog so we
               // notice deployed bugs / chronic issues; classify_at stays set so

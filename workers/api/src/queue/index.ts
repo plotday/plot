@@ -15,6 +15,7 @@ import { processLogs } from "./logs";
 import { processMail } from "./mail";
 import { processUpdates } from "./updates";
 import { processWebhooks } from "./webhook";
+import { shedBatchIfHot } from "./shed";
 
 /**
  * Queue consumer handler for run callbacks, updates, and logs
@@ -39,6 +40,12 @@ export async function queue(
     queue: batch.queue,
     batch_size: batch.messages.length,
   });
+
+  if (shedBatchIfHot(batch, postHog, batch.queue)) {
+    logger.warn("deferred queue batch under DB pressure", { queue: batch.queue });
+    ctx.waitUntil(postHog.shutdown());
+    return;
+  }
 
   try {
     // Use batch.queue to distinguish between queues

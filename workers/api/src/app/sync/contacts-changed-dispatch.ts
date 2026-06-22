@@ -12,7 +12,7 @@
 
 import type { Context } from "hono";
 
-import { createDb, type DB, type Kysely } from "../../db";
+import { createFrontendDb, type DB, type Kysely } from "../../db";
 import type { Bindings } from "../../env";
 import { twistFactory } from "../../twist/factory";
 import { computeContactsDiff, type ContactsSnapshot } from "./contacts-diff";
@@ -87,7 +87,7 @@ export async function dispatchContactsChangedIfNeeded(
 
   c.executionCtx.waitUntil(
     (async () => {
-      const db = createDb(c.env);
+      const db = createFrontendDb(c.env);
       try {
         const factory = twistFactory({
           env: c.env,

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { createDb, mapPgError } from "../../db";
+import { createFrontendDb, mapPgError } from "../../db";
 import type { Bindings } from "../../env";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync, getPriorityForThread } from "./notify";
@@ -134,7 +134,7 @@ noteRetrySend.post("/sync/note-retry-send", async (c) => {
 
   c.executionCtx.waitUntil(
     (async () => {
-      const db = createDb(c.env);
+      const db = createFrontendDb(c.env);
       try {
         const contacts = await resolveCreateLinkContacts(
           db,

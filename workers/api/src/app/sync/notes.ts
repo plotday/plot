@@ -3,7 +3,7 @@ import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
-import { type DB, type Kysely, createDb, sql, withUserDb } from "../../db";
+import { type DB, type Kysely, createFrontendDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { analyzeNote } from "../../queue/note-analysis";
 import { rpcUser } from "../../rpc";
@@ -358,7 +358,7 @@ notes.post("/sync/notes", async (c) => {
   if (noteId && !body.draft && !body.archived_at && !isUpdate) {
     c.executionCtx.waitUntil(
       (async () => {
-        const db = createDb(c.env);
+        const db = createFrontendDb(c.env);
         try {
           // 1. Generate embedding (independent of notification pipeline)
           let aiAllowed: {

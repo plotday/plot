@@ -165,6 +165,10 @@ export type MailRequest = {
 
 export type Bindings = {
   readonly HYPERDRIVE?: Hyperdrive;
+  // Background-lane Hyperdrive config (separate origin_connection_limit) so
+  // queue/scheduled/DO work can't starve the frontend's reserved connections.
+  // Absent in local dev/tests → factories fall back to DATABASE_URL.
+  readonly HYPERDRIVE_BG?: Hyperdrive;
   readonly DATABASE_URL?: string;
   readonly POSTHOG_API_KEY: string;
   readonly POSTHOG_HOST: string;

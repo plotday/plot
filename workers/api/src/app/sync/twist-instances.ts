@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { createDb, sql, withUserDb } from "../../db";
+import { createFrontendDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { twistFactory } from "../../twist";
 import { resolveOptions } from "../../twist/tools/factory";
@@ -152,7 +152,7 @@ twistInstances.post("/sync/twist-instances", async (c) => {
   const tracker = c.var.tracker;
   c.executionCtx.waitUntil(
     (async () => {
-      const db = createDb(c.env);
+      const db = createFrontendDb(c.env);
       try {
         await syncUserTwistStats(db, tracker, userId);
       } catch (error) {

@@ -1,14 +1,20 @@
 import { describe, it, expect, vi } from "vitest";
 
+import { backgroundPressure } from "@plotday/worker-util";
+
 import {
   withUserDb,
+  withDb,
+  withFrontendDb,
   isTransientDbError,
   isPoolExhaustedError,
   isLockContentionError,
   maxRetriesFor,
   transientRetryDelayMs,
   createDb,
+  createFrontendDb,
   sql,
+  resolveConnectionString,
 } from "./db";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -317,6 +323,67 @@ describe("transientRetryDelayMs", () => {
   });
 });
 
+describe("resolveConnectionString", () => {
+  const FE = "postgres://fe";
+  const BG = "postgres://bg";
+  const DIRECT = "postgres://direct";
+
+  it("background lane prefers HYPERDRIVE_BG", () => {
+    const env = {
+      HYPERDRIVE: { connectionString: FE },
+      HYPERDRIVE_BG: { connectionString: BG },
+      DATABASE_URL: DIRECT,
+    } as any;
+    expect(resolveConnectionString(env, "background")).toBe(BG);
+  });
+
+  it("frontend lane prefers HYPERDRIVE and ignores HYPERDRIVE_BG", () => {
+    const env = {
+      HYPERDRIVE: { connectionString: FE },
+      HYPERDRIVE_BG: { connectionString: BG },
+      DATABASE_URL: DIRECT,
+    } as any;
+    expect(resolveConnectionString(env, "frontend")).toBe(FE);
+  });
+
+  it("background falls back to HYPERDRIVE then DATABASE_URL (local dev)", () => {
+    expect(
+      resolveConnectionString({ HYPERDRIVE: { connectionString: FE } } as any, "background")
+    ).toBe(FE);
+    expect(
+      resolveConnectionString({ DATABASE_URL: DIRECT } as any, "background")
+    ).toBe(DIRECT);
+  });
+
+  it("frontend falls back to DATABASE_URL", () => {
+    expect(
+      resolveConnectionString({ DATABASE_URL: DIRECT } as any, "frontend")
+    ).toBe(DIRECT);
+  });
+
+  it("throws when nothing is configured", () => {
+    expect(() => resolveConnectionString({} as any, "background")).toThrow();
+  });
+});
+
+describe.skipIf(!DATABASE_URL)("withDb records background pressure", () => {
+  it("background withDb folds a latency sample into backgroundPressure", async () => {
+    const before = backgroundPressure.samples;
+    await withDb({ DATABASE_URL } as any, async (db) => {
+      await db.selectFrom("priority").select("id").limit(1).execute();
+    });
+    expect(backgroundPressure.samples).toBeGreaterThan(before);
+  });
+
+  it("frontend withFrontendDb does NOT record background pressure", async () => {
+    const before = backgroundPressure.samples;
+    await withFrontendDb({ DATABASE_URL } as any, async (db) => {
+      await db.selectFrom("priority").select("id").limit(1).execute();
+    });
+    expect(backgroundPressure.samples).toBe(before);
+  });
+});
+
 describe.skipIf(!DATABASE_URL)("createDb connection GUCs", () => {
   // Every worker connection must carry bounded timeouts so a worker that stalls
   // mid-transaction (e.g. reloaded by `wrangler dev`, or awaiting a slow
@@ -325,7 +392,7 @@ describe.skipIf(!DATABASE_URL)("createDb connection GUCs", () => {
   // survive Hyperdrive connection pooling (a plain SET can be routed to a
   // different backend). See the 27-minute orphaned `idle in transaction`
   // backend that blocked every upsert_thread retry.
-  it("sets idle_in_transaction_session_timeout and lock_timeout (not 0)", async () => {
+  it("background lane: sets idle_in_transaction_session_timeout to a bounded value and lock_timeout to 5s", async () => {
     const db = createDb({ DATABASE_URL } as any);
     try {
       const idle = await sql<{ v: string }>`
@@ -339,10 +406,27 @@ describe.skipIf(!DATABASE_URL)("createDb connection GUCs", () => {
       `.execute(db);
       // Disabled GUCs read as '0'; a bounded value is anything else.
       expect(idle.rows[0]?.v).not.toBe("0");
-      expect(lock.rows[0]?.v).not.toBe("0");
+      // Background lane uses 5s lock_timeout.
+      expect(lock.rows[0]?.v).toBe("5s");
       // Sanity-anchor on the pre-existing statement_timeout so a misconfigured
       // harness fails loudly rather than silently passing the two above.
       expect(stmt.rows[0]?.v).toBe("30s");
+    } finally {
+      await db.destroy();
+    }
+  });
+
+  it("frontend lane: uses 10s lock_timeout (longer than background for interactive requests)", async () => {
+    // The frontend lane is intentionally given a wider lock_timeout (10s vs 5s)
+    // to accommodate longer-running interactive user requests. Verify this is set
+    // correctly by createFrontendDb so a misconfiguration (e.g. accidentally
+    // inheriting the background 5s) fails loudly.
+    const db = createFrontendDb({ DATABASE_URL } as any);
+    try {
+      const lock = await sql<{ v: string }>`
+        SELECT current_setting('lock_timeout') AS v
+      `.execute(db);
+      expect(lock.rows[0]?.v).toBe("10s");
     } finally {
       await db.destroy();
     }

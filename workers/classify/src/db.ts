@@ -1,6 +1,8 @@
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 
+import { backgroundPressure, recordLatency } from "@plotday/worker-util";
+
 /**
  * Minimal DB type for the classify worker. The cascade calls all of its
  * SQL through ctx.rawQuery (untyped), and the consumer handler only
@@ -30,35 +32,38 @@ export { sql };
 // returns it directly to JS code.
 pg.types.setTypeParser(20, (val: string) => parseInt(val, 10));
 
-export function createDb(env: { DATABASE_URL?: string; HYPERDRIVE?: { connectionString: string } }): ClassifyDb {
-  const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+export function createDb(env: {
+  DATABASE_URL?: string;
+  HYPERDRIVE?: { connectionString: string };
+  HYPERDRIVE_BG?: { connectionString: string };
+}): ClassifyDb {
+  const connectionString =
+    env.HYPERDRIVE_BG?.connectionString ??
+    env.HYPERDRIVE?.connectionString ??
+    env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("classify-worker: DATABASE_URL or HYPERDRIVE binding required");
   }
   const pool = new pg.Pool({
     connectionString,
     max: 1,
-    // statement_timeout caps total query time; lock_timeout caps time spent
-    // *waiting for a row lock*. The settle/same UPDATE on thread_priority is a
-    // keyed single-row write with no computational path to 30s, so without a
-    // lock_timeout it would block the full statement_timeout when a concurrent
-    // per-user writer (reclassify_user_threads, a connector sync, or a sibling
-    // settle) holds the thread_priority or per-user user_sync row lock — pinning
-    // the (single) pooled connection for 30s and surfacing as a captured
-    // "canceling statement due to statement timeout" (PostHog 019ed55a). The
-    // short lock_timeout fast-fails contention (55P03) so the job is retried on
-    // a later sweep when the lock is free; see isLockTimeoutError + index.ts.
-    // -c sets these as connection-time GUCs so they survive Hyperdrive pooling.
-    options: "-c statement_timeout=30000 -c lock_timeout=5000",
+    // Background lane: tight lock_timeout (5s) fast-fails thread_priority /
+    // user_sync contention; idle_in_transaction reap matches the api worker so a
+    // worker reloaded mid-transaction can't pin a backend for the full
+    // statement_timeout.
+    options:
+      "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=120000 -c lock_timeout=5000",
   });
-  pool.on("error", () => {
-    // Swallow pool-level errors; query errors propagate via promise rejection.
-  });
+  pool.on("error", () => {});
   return new Kysely<DB>({ dialect: new PostgresDialect({ pool }) });
 }
 
 export async function withDb<T>(
-  env: { DATABASE_URL?: string; HYPERDRIVE?: { connectionString: string } },
+  env: {
+    DATABASE_URL?: string;
+    HYPERDRIVE?: { connectionString: string };
+    HYPERDRIVE_BG?: { connectionString: string };
+  },
   fn: (db: ClassifyDb) => Promise<T>
 ): Promise<T> {
   const db = createDb(env);
@@ -67,8 +72,14 @@ export async function withDb<T>(
     // startup phase (mirrors workers/api/src/db.ts). lock_timeout bounds the
     // wait for a contended row lock so the settle/same UPDATE fast-fails
     // instead of pinning this connection for the full statement_timeout.
+    // Time both SETs together as a connection-acquire + backend-responsiveness
+    // probe and fold into the shared EWMA. No timeout catch here: 57014 is
+    // caught inside the per-message handler loop (never propagates to this
+    // level) and will be recorded there in Task 8.
+    const startedAt = Date.now();
     await sql`SET statement_timeout = 30000`.execute(db);
     await sql`SET lock_timeout = 5000`.execute(db);
+    recordLatency(backgroundPressure, Date.now() - startedAt);
     return await fn(db);
   } finally {
     await db.destroy();

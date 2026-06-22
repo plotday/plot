@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { createDb, sql, withUserDb } from "../../db";
+import { createFrontendDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import {
@@ -192,7 +192,7 @@ capture.post("/sync/capture", async (c) => {
     const threadId = result.thread_id;
     c.executionCtx.waitUntil(
       (async () => {
-        const db = createDb(c.env);
+        const db = createFrontendDb(c.env);
         try {
           await dispatchPendingForThread(db, c.env, threadId);
         } finally {

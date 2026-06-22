@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { mapPgError, sql, withUserDb, createDb } from "../../db";
+import { mapPgError, sql, withUserDb, createFrontendDb } from "../../db";
 import type { Bindings } from "../../env";
 import {
   parseReadParams,
@@ -142,7 +142,7 @@ priorities.post("/sync/priorities", async (c) => {
     const tracker = c.var.tracker;
     c.executionCtx.waitUntil(
       (async () => {
-        const db = createDb(c.env);
+        const db = createFrontendDb(c.env);
         try {
           // Facet filters for a focus are LLM-derived; skip when the user has
           // disabled built-in AI (the focus simply gets no auto filters).

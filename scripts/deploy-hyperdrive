@@ -17,7 +17,7 @@
 #     usable; leave headroom for migrations/admin/psql/cloudsqladmin.
 #   - Hyperdrive paid per-config cap ≈ 100 (soft).
 #   - The limit is SOFT (can transiently overshoot), so keep it BELOW the
-#     origin's max_connections, not at it. Safe immediate value: 80.
+#     origin's max_connections, not at it. Safe split: 50 (frontend) + 30 (background) = 80 total.
 #   - True 10x (≈600) is gated on raising the origin's max_connections first
 #     (Cloud SQL resize + RAM), then a Cloudflare limit-increase request.
 #
@@ -27,37 +27,57 @@
 set -euo pipefail
 
 # --- Versioned source of truth ----------------------------------------------
-HYPERDRIVE_ID="831ea7d10ef54346b084baaa1a46dfa6"
-ORIGIN_CONNECTION_LIMIT="${ORIGIN_CONNECTION_LIMIT:-80}"
+FRONTEND_HYPERDRIVE_ID="831ea7d10ef54346b084baaa1a46dfa6"
+FRONTEND_CONNECTION_LIMIT="${FRONTEND_CONNECTION_LIMIT:-50}"
+BG_HYPERDRIVE_ID="${BG_HYPERDRIVE_ID:-REPLACE_WITH_HYPERDRIVE_BG_ID}"
+BG_CONNECTION_LIMIT="${BG_CONNECTION_LIMIT:-30}"
 # ----------------------------------------------------------------------------
-# This config is also recorded in Terraform at infra/hyperdrive/ (a faithful,
-# read-only baseline). This script remains the safe way to CHANGE the pool size:
+# Both configs are also recorded in Terraform at infra/hyperdrive/ (a faithful,
+# read-only baseline). This script remains the safe way to CHANGE pool sizes:
 # it's a partial update that never touches the origin password. If you change the
-# value above, update infra/hyperdrive/hyperdrive.tf to match so they don't drift.
+# values above, update infra/hyperdrive/hyperdrive.tf to match so they don't drift.
 
 # Run from the api worker dir so the workspace-pinned wrangler binary is used
 # and its Cloudflare auth context (CLOUDFLARE_API_TOKEN or `wrangler login`)
 # applies.
 cd "$(dirname "$0")/../workers/api"
 
-echo "==> Current Hyperdrive config ($HYPERDRIVE_ID):"
-if ! wrangler hyperdrive get "$HYPERDRIVE_ID"; then
-  echo "Could not read the Hyperdrive config. Ensure wrangler is authenticated" >&2
-  echo "(CLOUDFLARE_API_TOKEN env var, or run 'wrangler login')." >&2
-  exit 1
-fi
-
-echo
-echo "==> Setting origin_connection_limit = $ORIGIN_CONNECTION_LIMIT ..."
 # --origin-connection-limit is a standalone option (separate from the
 # connection-string / individual-origin-parameter groups in `wrangler hyperdrive
 # update --help`), so this is a partial update and does NOT re-supply origin
 # host/credentials. If a future wrangler requires them, the update will error
 # loudly (set -e) before changing anything — at that point resolve them from
 # 1Password via scripts/gen-env, like the worker secret-deploy scripts do.
-wrangler hyperdrive update "$HYPERDRIVE_ID" \
-  --origin-connection-limit "$ORIGIN_CONNECTION_LIMIT"
+
+echo "==> Current frontend Hyperdrive config ($FRONTEND_HYPERDRIVE_ID):"
+if ! wrangler hyperdrive get "$FRONTEND_HYPERDRIVE_ID"; then
+  echo "Could not read the frontend Hyperdrive config. Ensure wrangler is authenticated" >&2
+  echo "(CLOUDFLARE_API_TOKEN env var, or run 'wrangler login')." >&2
+  exit 1
+fi
 
 echo
-echo "==> Updated Hyperdrive config (verify only the connection limit changed):"
-wrangler hyperdrive get "$HYPERDRIVE_ID"
+echo "==> Setting frontend origin_connection_limit = $FRONTEND_CONNECTION_LIMIT ..."
+wrangler hyperdrive update "$FRONTEND_HYPERDRIVE_ID" \
+  --origin-connection-limit "$FRONTEND_CONNECTION_LIMIT"
+
+echo
+echo "==> Updated frontend Hyperdrive config (verify only the connection limit changed):"
+wrangler hyperdrive get "$FRONTEND_HYPERDRIVE_ID"
+
+echo
+echo "==> Current background Hyperdrive config ($BG_HYPERDRIVE_ID):"
+if ! wrangler hyperdrive get "$BG_HYPERDRIVE_ID"; then
+  echo "Could not read the background Hyperdrive config. Ensure wrangler is authenticated" >&2
+  echo "and BG_HYPERDRIVE_ID is set (run the create runbook in infra/hyperdrive/README-bg-lane.md)." >&2
+  exit 1
+fi
+
+echo
+echo "==> Setting background origin_connection_limit = $BG_CONNECTION_LIMIT ..."
+wrangler hyperdrive update "$BG_HYPERDRIVE_ID" \
+  --origin-connection-limit "$BG_CONNECTION_LIMIT"
+
+echo
+echo "==> Updated background Hyperdrive config (verify only the connection limit changed):"
+wrangler hyperdrive get "$BG_HYPERDRIVE_ID"

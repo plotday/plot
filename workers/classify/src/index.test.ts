@@ -6,6 +6,7 @@ import worker from "./index";
 import { withDb } from "./db";
 import { resetTrainingCacheForTests } from "./training-cache";
 import { handleClassifyJob, parkUnclassifiable } from "./handler";
+import { backgroundPressure } from "@plotday/worker-util";
 
 // Hoisted PostHog spies shared with the module mock below.
 const { captureException, capture, shutdown } = vi.hoisted(() => ({
@@ -22,9 +23,13 @@ vi.mock("posthog-node", () => ({
   })),
 }));
 
-vi.mock("@plotday/worker-util", () => ({
-  createLogger: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn() }),
-}));
+vi.mock("@plotday/worker-util", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@plotday/worker-util")>();
+  return {
+    ...actual,
+    createLogger: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  };
+});
 
 // Keep the real isLockTimeoutError; stub withDb to run the callback with a
 // dummy db handle so the queue handler exercises its per-message try/catch.
@@ -75,6 +80,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetTrainingCacheForTests();
   parkMock.mockResolvedValue(true);
+  // Ensure background pressure is healthy so the shed guard does not defer
+  // batches in tests that are not testing the shedding path.
+  backgroundPressure.samples = 0;
+  backgroundPressure.ewmaMs = 0;
+  backgroundPressure.lastTimeoutAtMs = 0;
 });
 
 describe("classify queue consumer error handling", () => {
@@ -234,6 +244,41 @@ describe("classify queue consumer error handling", () => {
 
     expect(contended.retry).toHaveBeenCalledTimes(1);
     expect(ok.ack).toHaveBeenCalledTimes(1);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("aborts the rest of the batch mid-flight on a 57014 (statement_timeout): acks the failing message, retries remaining messages with a delay, emits bg.timeout_abort", async () => {
+    // The 57014 branch changed behavior: it acks the current message then
+    // re-queues every REMAINING message with a backoff and breaks. Prior tests
+    // only cover the single-message case; this covers the multi-message abort.
+    // If the abort loop were removed (regression), msg2 would be handled/processed
+    // instead of retried, so the assertions below are real and not tautological.
+    handleMock.mockRejectedValueOnce(
+      pgError("canceling statement due to statement timeout", "57014")
+    );
+    const msg1 = makeMessage("t-abort-first");
+    const msg2 = makeMessage("t-abort-second");
+
+    await runBatch([msg1, msg2]);
+
+    // First message: acked (deferred to hourly sweep), not retried.
+    expect(msg1.ack).toHaveBeenCalledTimes(1);
+    expect(msg1.retry).not.toHaveBeenCalled();
+
+    // Second (remaining) message: retried with a delay, NOT processed.
+    expect(msg2.retry).toHaveBeenCalledWith(
+      expect.objectContaining({ delaySeconds: expect.any(Number) })
+    );
+    expect(msg2.ack).not.toHaveBeenCalled();
+    // handleClassifyJob must NOT have been called for msg2 (the abort fires
+    // before the loop reaches it).
+    expect(handleMock).toHaveBeenCalledTimes(1);
+
+    // Abort counter event emitted so saturation is observable.
+    expect(capture).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "bg.timeout_abort" })
+    );
+    // No bug report — this is an expected, handled, self-healing condition.
     expect(captureException).not.toHaveBeenCalled();
   });
 });

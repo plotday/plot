@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 
-import { createDb } from "../db";
+import { createFrontendDb } from "../db";
 import type { Bindings } from "../env";
 
 /**
@@ -11,7 +11,7 @@ export const dbMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   c,
   next
 ) => {
-  const db = createDb(c.env);
+  const db = createFrontendDb(c.env);
   c.set("db", db);
   try {
     await next();

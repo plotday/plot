@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb, createDb } from "../../db";
+import { sql, withUserDb, createFrontendDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import {
@@ -189,7 +189,7 @@ links.post("/sync/links", async (c) => {
   if (linkThreadId && linkData.status !== undefined) {
     c.executionCtx.waitUntil(
       (async () => {
-        const db = createDb(c.env);
+        const db = createFrontendDb(c.env);
         try {
           const isDone = await isLinkStatusDone(db, result);
           if (!isDone) return;
@@ -248,7 +248,7 @@ links.post("/sync/links", async (c) => {
   if (result.created_by) {
     c.executionCtx.waitUntil(
       (async () => {
-        const db = createDb(c.env);
+        const db = createFrontendDb(c.env);
         try {
           // Check if created_by is a connector (has channel rows)
           const isConnector = await db

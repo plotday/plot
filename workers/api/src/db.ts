@@ -1,7 +1,13 @@
 import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 
-import { createLogger, retryOnTxnConflict } from "@plotday/worker-util";
+import {
+  createLogger,
+  retryOnTxnConflict,
+  backgroundPressure,
+  recordLatency,
+  recordTimeout,
+} from "@plotday/worker-util";
 
 import type { DB } from "./db-types";
 import type { Bindings } from "./env";
@@ -16,13 +22,29 @@ export type { Kysely };
 // returns them as strings, which breaks Dart's Drift ORM deserialization.
 pg.types.setTypeParser(20, (val: string) => parseInt(val, 10));
 
-/** Create a Kysely instance from Hyperdrive or direct connection. Call once per request. */
-export function createDb(env: Bindings) {
-  const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("No database connection: set HYPERDRIVE or DATABASE_URL");
-  }
+export type DbLane = "frontend" | "background";
 
+/** Resolve the connection string for a lane. Background prefers the capped
+ *  HYPERDRIVE_BG pool; frontend prefers the reserved HYPERDRIVE pool. Both fall
+ *  back to DATABASE_URL in local dev/tests (where neither binding exists). */
+export function resolveConnectionString(env: Bindings, lane: DbLane): string {
+  const cs =
+    lane === "frontend"
+      ? env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL
+      : env.HYPERDRIVE_BG?.connectionString ??
+        env.HYPERDRIVE?.connectionString ??
+        env.DATABASE_URL;
+  if (!cs) {
+    throw new Error(
+      `No database connection for ${lane} lane: set HYPERDRIVE/HYPERDRIVE_BG or DATABASE_URL`
+    );
+  }
+  return cs;
+}
+
+function createDbForLane(env: Bindings, lane: DbLane) {
+  const connectionString = resolveConnectionString(env, lane);
+  const lockTimeoutMs = lane === "frontend" ? 10000 : 5000;
   const pool = new pg.Pool({
     connectionString,
     max: 1,
@@ -39,10 +61,10 @@ export function createDb(env: Bindings) {
     //     synced and its connector link never sent. 120s is comfortably above
     //     any legitimate in-transaction await (e.g. inline classify).
     //   lock_timeout                        — a statement waiting on a row lock
-    //     fails fast (10s) and the caller retries, rather than blocking the
-    //     whole request behind a wedged holder.
-    options:
-      "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=120000 -c lock_timeout=10000",
+    //     fails fast and the caller retries, rather than blocking behind a
+    //     wedged holder. Background uses the tighter 5s to fast-fail contention;
+    //     frontend keeps 10s for longer-running interactive requests.
+    options: `-c statement_timeout=30000 -c idle_in_transaction_session_timeout=120000 -c lock_timeout=${lockTimeoutMs}`,
   });
 
   // Prevent pool-level errors from crashing the worker.
@@ -59,12 +81,21 @@ export function createDb(env: Bindings) {
   });
 }
 
+/** Background-lane Kysely instance (HYPERDRIVE_BG). DEFAULT for queue/scheduled/DO
+ *  work. Call once per unit of work; always destroy it. */
+export function createDb(env: Bindings) {
+  return createDbForLane(env, "background");
+}
 
-/** Run `fn` with a short-lived Kysely instance that is always destroyed.
- *  Retries on transient connection errors (e.g. Hyperdrive recycling or
- *  pool exhaustion); see maxRetriesFor for the per-error retry budget. */
-export async function withDb<T>(
+/** Frontend-lane Kysely instance (HYPERDRIVE, reserved). Use ONLY from HTTP
+ *  request handlers (sites that have `c.env`). */
+export function createFrontendDb(env: Bindings) {
+  return createDbForLane(env, "frontend");
+}
+
+async function withDbForLane<T>(
   env: Bindings,
+  lane: DbLane,
   fn: (db: Kysely<DB>) => Promise<T>
 ): Promise<T> {
   let lastError: unknown;
@@ -78,19 +109,29 @@ export async function withDb<T>(
     if (attempt > 0) {
       const delayMs = transientRetryDelayMs(lastError, attempt);
       if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await new Promise((r) => setTimeout(r, delayMs));
       }
     }
-    const db = createDb(env);
+    const db = createDbForLane(env, lane);
     try {
       // Also set statement_timeout via explicit SET as a fallback.
-      // The connection-level `options` parameter in createDb should handle this,
-      // but if Hyperdrive reuses a pooled connection that already completed
+      // The connection-level `options` parameter in createDbForLane should handle
+      // this, but if Hyperdrive reuses a pooled connection that already completed
       // its startup phase, this SET ensures the timeout is applied.
+      // Time the round-trip as a free connection-acquire + backend-responsiveness
+      // probe. Only the background lane records — the frontend lane is the thing
+      // being protected and must never be slowed by pressure bookkeeping.
+      const startedAt = Date.now();
       await sql`SET statement_timeout = 30000`.execute(db);
+      if (lane === "background") {
+        recordLatency(backgroundPressure, Date.now() - startedAt);
+      }
       return await fn(db);
     } catch (error) {
       lastError = error;
+      if (lane === "background" && isPoolExhaustedError(error)) {
+        recordTimeout(backgroundPressure, Date.now());
+      }
       if (attempt < maxRetriesFor(error)) {
         continue;
       }
@@ -99,6 +140,22 @@ export async function withDb<T>(
       await db.destroy();
     }
   }
+}
+
+/** Background-lane withDb (DEFAULT). */
+export async function withDb<T>(
+  env: Bindings,
+  fn: (db: Kysely<DB>) => Promise<T>
+): Promise<T> {
+  return withDbForLane(env, "background", fn);
+}
+
+/** Frontend-lane withDb. Use ONLY from HTTP request handlers. */
+export async function withFrontendDb<T>(
+  env: Bindings,
+  fn: (db: Kysely<DB>) => Promise<T>
+): Promise<T> {
+  return withDbForLane(env, "frontend", fn);
 }
 
 export function isTransientDbError(error: unknown): boolean {

@@ -56,6 +56,11 @@
           "binding": "HYPERDRIVE",
           "id": "831ea7d10ef54346b084baaa1a46dfa6",
           "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres"
+        },
+        {
+          "binding": "HYPERDRIVE_BG",
+          "id": "REPLACE_WITH_HYPERDRIVE_BG_ID",
+          "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres"
         }
       ],
       "kv_namespaces": [

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import type { Bindings } from "../env";
-import { createDb } from "../db";
+import { createFrontendDb } from "../db";
 import { deployTwist } from "../twist/deployment";
 import { checkPublicDeployAllowed } from "../twist/public-deploy-auth";
 import {
@@ -488,7 +488,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     // Create a separate DB connection for the background deployment.
     // The middleware-scoped `db` will be destroyed when the handler returns
     // the streaming response, but deployment continues via waitUntil.
-    const sseDb = createDb(c.env);
+    const sseDb = createFrontendDb(c.env);
 
     // Start deployment in the background
     const deploymentPromise = (async () => {

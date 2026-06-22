@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 
 import type { Bindings } from "../env";
-import { withDb } from "../db";
+import { withFrontendDb } from "../db";
 import { refreshAllChannels } from "../scheduled/refresh-channels";
 import { runSweep } from "../state/classify-thread";
 import { createLogger } from "@plotday/worker-util";
@@ -71,7 +71,7 @@ admin.post("/admin/classify/sweep", async (c) => {
   const logger = createLogger({ operation: "adminClassifySweep" });
   const startedAt = Date.now();
   try {
-    const result = await withDb(c.env, (db) => runSweep(db, c.env));
+    const result = await withFrontendDb(c.env, (db) => runSweep(db, c.env));
     return c.json({
       ok: true,
       enqueued: result.enqueued,

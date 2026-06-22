@@ -13,7 +13,7 @@ import {
   type JwsRenewalInfoPayload,
   type JwsTransactionPayload,
 } from "./apple/iap";
-import { createDb } from "./db";
+import { createFrontendDb } from "./db";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "./utils/log-context";
 import { dbMiddleware } from "./middleware/db";
@@ -1017,7 +1017,7 @@ webhook.post(
     // via the originalTransactionId we stored during the initial purchase.
     // Open a fresh DB connection because this isn't routed through the
     // request-scoped middleware.
-    const db = createDb(c.env);
+    const db = createFrontendDb(c.env);
     try {
       const userId = await findUserByOriginalTransactionId(
         db,

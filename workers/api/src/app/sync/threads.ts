@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withDb, withUserDb, createDb, type DB, type Kysely } from "../../db";
+import { sql, withUserDb, createFrontendDb, withFrontendDb, type DB, type Kysely } from "../../db";
 import type { Bindings } from "../../env";
 import { rpc, rpcUser } from "../../rpc";
 import {
@@ -943,7 +943,7 @@ threads.post("/sync/threads", async (c) => {
     const threadId = result.id as string;
     c.executionCtx.waitUntil(
       (async () => {
-        const db = createDb(c.env);
+        const db = createFrontendDb(c.env);
         try {
           await dispatchPendingForThread(db, c.env, threadId);
         } finally {
@@ -964,7 +964,7 @@ threads.post("/sync/threads", async (c) => {
       (async () => {
         const logger = createLogger({ component: "sync-threads-reclassify" });
         try {
-          await withDb(c.env, async (db) => {
+          await withFrontendDb(c.env, async (db) => {
             const marked = await sql<{ user_id: string; thread_id: string }>`
               SELECT user_id::text AS user_id, thread_id::text AS thread_id
                 FROM public.mark_reclassify_candidates(
@@ -1087,7 +1087,7 @@ threads.post("/sync/threads", async (c) => {
 
     c.executionCtx.waitUntil(
       (async () => {
-        const db = createDb(c.env);
+        const db = createFrontendDb(c.env);
         try {
           // Resolve the thread's contacts into Actor rows for the connector,
           // excluding every contact linked to the creating user so the author
