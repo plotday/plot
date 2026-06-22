@@ -281,7 +281,7 @@ export class Airtable extends Connector<Airtable> {
   private async schedulePoll(baseId: string): Promise<void> {
     const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
     await this.scheduleRecurring(`poll:${baseId}`, pollCb, {
-      intervalMs: 60 * 1000,
+      intervalMs: POLL_INTERVAL_MS,
       firstRunAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
   }

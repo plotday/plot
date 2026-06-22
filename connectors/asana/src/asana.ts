@@ -989,7 +989,7 @@ export class Asana extends Connector<Asana> {
   private async schedulePoll(projectId: string): Promise<void> {
     const callback = await this.callback(this.pollChanges, projectId);
     await this.scheduleRecurring(`change-poll:${projectId}`, callback, {
-      intervalMs: 60 * 1000,
+      intervalMs: POLL_INTERVAL_MS,
       firstRunAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
   }
