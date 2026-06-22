@@ -1066,8 +1066,9 @@ export class GoogleChat extends Connector<GoogleChat> {
       this.renewSubscription,
       channelId
     );
-    await this.scheduleTask(`ws-renewal:${channelId}`, renewalCallback, {
-      runAt: renewalTime,
+    await this.scheduleRecurring(`ws-renewal:${channelId}`, renewalCallback, {
+      intervalMs: 3.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
   }
 
@@ -1618,8 +1619,9 @@ export class GoogleChat extends Connector<GoogleChat> {
       // never accumulate — even if syncMembers is dispatched again (each
       // enabled channel queues a syncMembers task in onChannelEnabled).
       if (scheduleDaily) {
-        await this.scheduleTask(`daily-members-sync:${channelId}`, dailyCallback, {
-          runAt: nextRunAt,
+        await this.scheduleRecurring(`daily-members-sync:${channelId}`, dailyCallback, {
+          intervalMs: 24 * 60 * 60 * 1000,
+          firstRunAt: nextRunAt,
         });
       }
     }
