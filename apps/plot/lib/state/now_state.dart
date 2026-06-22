@@ -63,6 +63,7 @@ final class NowLoaded extends NowState {
     this.previewPomodoro,
     this.pausedFocus,
     this.everything = false,
+    this.lastOpenFocusId,
   }) : now = Time.now(),
        // ignore: prefer_initializing_formals
        _day = day;
@@ -72,6 +73,14 @@ final class NowLoaded extends NowState {
   final ScheduledDay _day;
   final Priority defaultPriority;
   final Priority? context;
+
+  /// Device-local "last open focus": the id of the focus the user most
+  /// recently *picked* (sidebar/header/command/agenda tap), persisted across
+  /// launches by `ChangeCurrentPriority` and read once at `NowBloc.start`.
+  /// Resolved against [priorities] in [priority]; a since-archived/deleted
+  /// focus falls through to [defaultPriority]. Null until the user has ever
+  /// picked a focus on this device. See `lib/state/last_open_focus.dart`.
+  final PriorityId? lastOpenFocusId;
 
   /// User's global tracking-pause state from `user_settings`. When
   /// non-null and not the epoch sentinel, the [NowBloc] driver leaves the
@@ -243,6 +252,7 @@ final class NowLoaded extends NowState {
     previewPomodoro,
     pausedFocus,
     everything,
+    lastOpenFocusId,
   ];
 
   /// The "current priority" — what the user should be working on right
@@ -257,7 +267,10 @@ final class NowLoaded extends NowState {
   ///      (see [activeFocusBlockPriorityAt]).
   ///   4. [session] — the active focus session's priority (a timer the
   ///      user explicitly started).
-  ///   5. [defaultPriority] — the root priority, last-resort fallback.
+  ///   5. [lastOpenFocusId] — the focus the user last deliberately opened
+  ///      on this device (see [_lastOpenFocusPriority]); the common
+  ///      cold-start landing.
+  ///   6. [defaultPriority] — the root priority, last-resort fallback.
   ///
   /// Events and focus blocks happening *right now* take precedence over an
   /// active session, and when nothing is scheduled or running we fall
@@ -267,6 +280,7 @@ final class NowLoaded extends NowState {
       scheduled.firstOrNull?.priority ??
       _activeFocusBlockPriority() ??
       session?.priority ??
+      _lastOpenFocusPriority() ??
       defaultPriority;
 
   /// The priority whose user-scheduled focus block covers [now], resolved
@@ -283,6 +297,19 @@ final class NowLoaded extends NowState {
     }
     return null;
   }
+
+  /// The persisted [lastOpenFocusId] resolved to a [Priority] from
+  /// [priorities]. Null when nothing is stored or the stored focus is no
+  /// longer in the list (archived/deleted). Mirrors [_activeFocusBlockPriority].
+  Priority? _lastOpenFocusPriority() {
+    final id = lastOpenFocusId;
+    if (id == null) return null;
+    for (final p in priorities) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
   Thread get current =>
       scheduled.firstOrNull ??
       Thread(
@@ -461,6 +488,7 @@ final class NowLoaded extends NowState {
     Object? previewPomodoro = _sentinel,
     Object? pausedFocus = _sentinel,
     bool? everything,
+    PriorityId? lastOpenFocusId,
   }) {
     return NowLoaded(
       session: session ?? this.session,
@@ -486,6 +514,7 @@ final class NowLoaded extends NowState {
           ? this.pausedFocus
           : pausedFocus as PausedFocus?,
       everything: everything ?? this.everything,
+      lastOpenFocusId: lastOpenFocusId ?? this.lastOpenFocusId,
     );
   }
 }

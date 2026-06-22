@@ -11,6 +11,12 @@
   springing the system prompt on you. If notifications later get switched off, Plot offers to turn
   them back on — and you can always say no.
 
+### Opening the app
+
+- The app now reopens the focus you last had open, instead of always starting on your Personal
+  inbox. A scheduled event or focus block happening right now still takes you straight there.
+- Opening a role now reopens the focus you last had open in that role, instead of always its first.
+
 ### Fixes
 
 - The back arrow in the header is easier to tap. Its touch area now fills the full height of the

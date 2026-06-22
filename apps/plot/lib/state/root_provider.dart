@@ -212,13 +212,18 @@ class RootProviderState extends State<RootProvider> {
                 if (context.mounted) _setupReAuthListener(context);
 
                 // On a re-sign-in (user signed out and back in while the app
-                // was running) jump to the default priority. NOT on cold start
-                // / web refresh: there the router has already resolved the real
-                // browser URL (a deep link to a focus or thread) and clobbering
-                // it bounces the user to their Inbox. See
-                // [PostAuthNavigationGate].
+                // was running) jump to the current-priority cascade. NOT on
+                // cold start / web refresh: there the router has already
+                // resolved the real browser URL (a deep link to a focus or
+                // thread) and clobbering it bounces the user to their Inbox.
+                // See [PostAuthNavigationGate].
                 if (navigateToDefault && context.mounted) {
-                  final priorityId = nowBloc.loadedState.defaultPriority.id;
+                  // Use the current-priority cascade (active event/block,
+                  // running session, or last-open focus, else Inbox) so a
+                  // re-sign-in lands where a cold start would. Cold start /
+                  // deep-link refresh is still gated out by
+                  // PostAuthNavigationGate above.
+                  final priorityId = nowBloc.loadedState.priority.id;
                   router.replaceAll([
                     PriorityRoute(
                       priorityIdString: priorityId.toShortString(),

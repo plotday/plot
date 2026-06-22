@@ -8,6 +8,7 @@ import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:plot/state/last_open_focus.dart';
 import 'package:plot/store/store.dart';
 
 part 'now_state.dart';
@@ -56,6 +57,10 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
   StreamSubscription<void>? _subscription;
   Timer? _trackTick;
 
+  /// Loaded once at [start] from device-local prefs; seeds the "last open
+  /// focus" rung of `NowLoaded.priority`. See [loadLastOpenFocusId].
+  PriorityId? _lastOpenFocusId;
+
   /// Local date at which the current `_subscription` was started. When
   /// the local date changes (across midnight), the priority_block watch
   /// is re-issued so its bounded UNION query re-narrows.
@@ -95,6 +100,7 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
   }
 
   Future<void> start() {
+    _lastOpenFocusId = loadLastOpenFocusId();
     final nowSubscriptionStart = Time.now();
     _subscriptionLocalDate = DateTime(
       nowSubscriptionStart.year,
@@ -134,6 +140,7 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
               // default (false), silently dropping the user from Everything
               // back to Inbox. Mirrors the other prior-forwarded fields above.
               everything: prior?.everything ?? false,
+              lastOpenFocusId: _lastOpenFocusId,
             );
           },
         ).listen(

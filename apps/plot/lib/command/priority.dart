@@ -20,6 +20,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/thread.dart';
+import 'package:plot/state/last_open_focus.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
@@ -160,6 +161,16 @@ class ChangeCurrentPriority extends PriorityCommand {
         everything: everything,
       );
     }
+
+    // Remember this deliberate pick as the device-local "last open focus" so
+    // the next cold start reopens here instead of the Inbox. Null for the
+    // synthetic "Everything" feed (the helper no-ops). Fire-and-forget — a
+    // missed pref write is harmless and must not delay navigation.
+    unawaited(recordLastOpenFocus(priority));
+    // Also remember it as this role's most-recent focus, so opening the role on
+    // desktop reopens here. No-op for the "Everything" feed and role-less
+    // focuses (the helper guards both).
+    unawaited(recordLastOpenFocusForRole(priority));
 
     final tabsRouter = _tabsRouterOrNull(context);
     PrioritiesShell.sourceTab = computeSourceTabAfterPriorityTap(

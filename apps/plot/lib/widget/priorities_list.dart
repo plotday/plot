@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/state/last_open_focus.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
@@ -389,12 +390,17 @@ class _PrioritiesListState extends State<PrioritiesList> {
                       setState(() => _manualExpandedRoleId = role.id);
                       return;
                     }
-                    // Left panel: selecting the role's first focus expands it and
-                    // shows its feed alongside the still-visible sidebar. Roles
-                    // always have at least their Inbox, so the list is non-empty
-                    // in practice; guard anyway.
+                    // Left panel: open the role's most-recently-opened focus
+                    // (falling back to its first) and show its feed alongside
+                    // the still-visible sidebar. `childFocuses` is already this
+                    // role's ordered, non-archived focuses, so a since-removed
+                    // remembered focus falls through to the first. Roles always
+                    // have at least their Inbox, so the list is non-empty in
+                    // practice; guard anyway.
                     if (childFocuses.isNotEmpty) {
-                      context.run(ChangeCurrentPriority(childFocuses.first));
+                      final remembered = loadLastOpenFocusIdForRole(role.id);
+                      context.run(ChangeCurrentPriority(
+                          pickRoleOpenFocus(childFocuses, remembered)));
                     }
                   },
                 ),
