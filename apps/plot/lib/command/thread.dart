@@ -2126,16 +2126,16 @@ class BulkMove extends ShowCommands {
     PriorityBloc? bloc,
   ) async {
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
-    // Same tiered ordering as the single-thread Move modal: Tier 1 recently
-    // moved-into (this session), Tier 2 the selection's role, Tier 3 the
-    // getRaw base order. Inbox/FYI participate like any focus (no longer
-    // pinned). A bulk selection can span focuses, so — unlike the single-
-    // thread modal — no current focus is filtered out. Same-role affinity
-    // applies only when the whole selection shares one role; otherwise it
-    // spans roles and there is no single role to favor.
-    final ordered = orderMoveTargets(
+    // Same tiered ordering as the single-thread Move modal: Tier 1 destinations
+    // recently moved into from the current focus; Tier 2 the selection's role;
+    // Tier 3 the getRaw base order. Inbox/FYI participate like any focus (no
+    // longer pinned). A bulk selection can span focuses, so — unlike the
+    // single-thread modal — no current focus is filtered out. Same-role
+    // affinity applies only when the whole selection shares one role; otherwise
+    // it spans roles and there is no single role to favor.
+    final ordered = await orderedMoveTargets(
       focuses: priorities,
-      recentMoves: MoveRecency.instance.recent,
+      sourceId: sharedSourceFocusId(threads.map((t) => t.priority.id)),
       currentRoleId: sharedRoleId(threads.map((t) => t.priority.roleId)),
     );
     final commands = <Command>[
@@ -2174,6 +2174,9 @@ class _BulkMoveToPriority extends PriorityCommand {
       if (!context.mounted) break;
       await _applyPriorityMove(context, bloc, t, priority!);
     }
+    unawaited(
+      recordMoveAffinity(movePairs(threads.map((t) => t.priority.id), priority!.id)),
+    );
     bloc?.clearSelection();
     return const CommandDone();
   }
@@ -2253,6 +2256,7 @@ class MoveToPriority extends PriorityCommand {
       thread,
       priority!,
     );
+    unawaited(recordMoveAffinity([(thread.priority.id, priority!.id)]));
     return const CommandDone();
   }
 }
@@ -2287,8 +2291,6 @@ Future<void> _applyPriorityMove(
         )
       : null;
   final updated = thread.copyWith(priority: priority);
-  // Remember this destination so the next Move opens with it on top (Tier 1).
-  MoveRecency.instance.record(priority.id);
   priorityBloc?.markFeedMove(thread.id);
   if (leavesContext) {
     // Collapse the row out of this focus immediately; the stream stops
@@ -2397,15 +2399,15 @@ class MoveThreadToPriority extends ShowCommands {
     // enrichment round-trip.
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
     // Every non-current focus participates in the tiered ordering — Inbox and
-    // FYI focuses included (no longer pinned). Tier 1: focuses moved-into this
-    // session (MRU); Tier 2: focuses in the moved thread's current role; Tier 3:
-    // the getRaw base order (visit-recency, then alphabetical). FocusLabel still
-    // brands the Inbox via `isInbox`.
+    // FYI focuses included (no longer pinned). Tier 1: destinations recently
+    // moved into from the current focus; Tier 2: same-role focuses; Tier 3:
+    // the getRaw base order (visit-recency, then alphabetical). FocusLabel
+    // still brands the Inbox via `isInbox`.
     final focuses =
         priorities.where((p) => p.id != thread.priority.id).toList();
-    final ordered = orderMoveTargets(
+    final ordered = await orderedMoveTargets(
       focuses: focuses,
-      recentMoves: MoveRecency.instance.recent,
+      sourceId: thread.priority.id,
       currentRoleId: thread.priority.roleId,
     );
     final commands = <Command>[
@@ -2446,6 +2448,7 @@ class _CreateAndMoveToNewPriority extends Command {
     if (priority == null) return const CommandSkipped();
     if (!context.mounted) return const CommandDone();
     await _applyPriorityMove(context, priorityBloc, thread, priority);
+    unawaited(recordMoveAffinity([(thread.priority.id, priority.id)]));
     return const CommandDone();
   }
 }

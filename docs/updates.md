@@ -4,6 +4,9 @@
 
 - On your phone or tablet, swipe left or right while reading a thread to jump to the next or previous
   one in your list — like flipping through email.
+- When you move a thread to another focus, Plot now puts the focuses you usually send threads to from
+  its current focus at the top of the list — and remembers that across your devices, so the focus you
+  reach for most is right there.
 
 ### Notifications
 

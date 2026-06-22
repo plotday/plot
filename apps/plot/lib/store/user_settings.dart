@@ -20,6 +20,13 @@ class UserSettings extends Table with SyncableTable {
   DateTimeColumn get trackingPausedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
 
+  /// Cross-device per-source-focus move affinity. JSON map
+  /// `{ sourceFocusId: { destFocusId: epochMillis } }`. The server deep-merges
+  /// per cell keeping the max timestamp; the client caps each source to its 8
+  /// most-recent destinations. Drives the Move modal's recency tier.
+  TextColumn get moveAffinity =>
+      text().map(const JsonMapConverter()).withDefault(const Constant('{}'))();
+
   @override
   Set<Column> get primaryKey => {userId};
 }

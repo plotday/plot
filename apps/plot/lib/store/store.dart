@@ -30,6 +30,7 @@ import 'package:rxdart/rxdart.dart';
 import 'package:change_case/change_case.dart';
 
 import 'package:plot/util/string.dart';
+import 'package:plot/util/json_map_converter.dart';
 import 'package:plot/util/string_list_converter.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
@@ -2659,7 +2660,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 374;
+  int get schemaVersion => 375;
 
   /// Schema-drift probes run in `beforeOpen` (one column-set per
   /// recently-changed table). A stale on-disk schema — e.g. web OPFS surviving
@@ -4316,6 +4317,12 @@ class Store extends _$Store {
       // Runtime-only "Failed to send" marker. NULL everywhere on upgrade; only
       // the server ever sets it (synced in like cta).
       await _safeAddColumn(m, notes, notes.deliveryError);
+    }
+
+    if (from < 375) {
+      // Cross-device per-source-focus move affinity (Move modal recency tier).
+      // Non-null TEXT with a '{}' default; existing rows get the empty map.
+      await _safeAddColumn(m, userSettings, userSettings.moveAffinity);
     }
   }
 

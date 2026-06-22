@@ -3571,6 +3571,7 @@ export type Database = {
           email_token: string | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
           event_sessions_finalized_through: string | null
+          move_affinity: Json
           onboarding_completed: boolean | null
           seq: unknown
           tracking_paused_at: string | null
@@ -3586,6 +3587,7 @@ export type Database = {
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
           event_sessions_finalized_through?: string | null
+          move_affinity?: Json
           onboarding_completed?: boolean | null
           seq?: unknown
           tracking_paused_at?: string | null
@@ -3601,6 +3603,7 @@ export type Database = {
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
           event_sessions_finalized_through?: string | null
+          move_affinity?: Json
           onboarding_completed?: boolean | null
           seq?: unknown
           tracking_paused_at?: string | null
@@ -5190,6 +5193,10 @@ export type Database = {
           query_embedding?: string
         }
         Returns: string
+      }
+      merge_move_affinity: {
+        Args: { existing: Json; incoming: Json }
+        Returns: Json
       }
       move_priority: {
         Args: { p_new_parent_path: unknown; p_priority_id: string }
@@ -7139,6 +7146,7 @@ export type Database = {
           p_ai_enabled?: boolean
           p_dismissed_focus_suggestions?: Json
           p_enter_behavior: Database["public"]["Enums"]["enter_behavior"]
+          p_move_affinity?: Json
           p_onboarding_completed?: boolean
           p_tracking_paused_at?: string
           user_id: string

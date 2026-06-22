@@ -770,7 +770,10 @@ CREATE OR REPLACE FUNCTION "user".upsert_user_settings (
     p_tracking_paused_at timestamptz DEFAULT NULL,
     -- jsonb array of suggestion keys to mark dismissed. NULL = no change.
     -- Merged as a union with the existing set (dismissals are monotonic).
-    p_dismissed_focus_suggestions jsonb DEFAULT NULL
+    p_dismissed_focus_suggestions jsonb DEFAULT NULL,
+    -- jsonb move-affinity map to merge. NULL = no change (old clients never
+    -- wipe it). Non-null is deep-merged per cell keeping the max timestamp.
+    p_move_affinity jsonb DEFAULT NULL
 )
     RETURNS user_settings
     LANGUAGE plpgsql
@@ -780,7 +783,7 @@ CREATE OR REPLACE FUNCTION "user".upsert_user_settings (
 DECLARE
     v_row user_settings;
 BEGIN
-    INSERT INTO user_settings (user_id, enter_behavior, ai_enabled, onboarding_completed, tracking_paused_at, dismissed_focus_suggestions)
+    INSERT INTO user_settings (user_id, enter_behavior, ai_enabled, onboarding_completed, tracking_paused_at, dismissed_focus_suggestions, move_affinity)
         VALUES (
             upsert_user_settings.user_id,
             p_enter_behavior,
@@ -790,7 +793,8 @@ BEGIN
                 WHEN p_tracking_paused_at = '1970-01-01T00:00:00Z'::timestamptz THEN NULL
                 ELSE p_tracking_paused_at
             END,
-            COALESCE(p_dismissed_focus_suggestions, '[]'::jsonb)
+            COALESCE(p_dismissed_focus_suggestions, '[]'::jsonb),
+            COALESCE(p_move_affinity, '{}'::jsonb)
         )
     ON CONFLICT (user_id)
         DO UPDATE SET
@@ -815,6 +819,12 @@ BEGIN
                     || COALESCE(EXCLUDED.dismissed_focus_suggestions, '[]'::jsonb)
                 ) AS e
             ),
+            -- Deep-merge per cell, keeping the newest timestamp. NULL incoming
+            -- preserves the stored map (old clients never wipe it).
+            move_affinity = CASE
+                WHEN p_move_affinity IS NULL THEN user_settings.move_affinity
+                ELSE public.merge_move_affinity(user_settings.move_affinity, p_move_affinity)
+            END,
             updated_at = now()
     RETURNING * INTO v_row;
 

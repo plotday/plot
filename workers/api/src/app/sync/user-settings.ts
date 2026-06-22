@@ -65,6 +65,8 @@ userSettings.post("/sync/user-settings", async (c) => {
       p_tracking_paused_at: body.tracking_paused_at ?? null,
       // Union-merged server-side; null = no change.
       p_dismissed_focus_suggestions: body.dismissed_focus_suggestions ?? null,
+      // Deep-merged server-side per (source,dest) cell; null = no change.
+      p_move_affinity: body.move_affinity ?? null,
     });
   });
 

@@ -24,6 +24,13 @@ CREATE TABLE "public"."user_settings" (
     --   * the retroactive reconciler (archive `source='event'` rows whose
     --     `at.start >= tracking_paused_at` when the flag is set or moved earlier).
     "tracking_paused_at" timestamp with time zone,
+    -- Cross-device per-source-focus move affinity. JSON map
+    -- `{ "<source_focus_id>": { "<dest_focus_id>": <epoch_ms> } }`. Drives the
+    -- Move modal's recency tier (destinations recently moved into from the
+    -- current focus). Deep-merged per cell keeping the max timestamp in
+    -- upsert_user_settings so two devices' concurrent offline moves both
+    -- survive; NULL incoming = no change (old clients never wipe it).
+    "move_affinity" jsonb NOT NULL DEFAULT '{}'::jsonb,
     -- Watermark for the event-session finalizer cron. NULL means this user
     -- has never been finalized; the cron will pick them up in a bounded
     -- backfill phase (90-day lookback) and then set this column. Once set,
