@@ -165,6 +165,33 @@ void main() {
     });
   });
 
+  group('Thread.copyWith reorder push path (stateDirty)', () {
+    test('reordering a thread WITH a shared schedule still applies the order',
+        () {
+      // A thread can have a shared schedule (event/dated todo) AND a per-user
+      // state_order for its Doing/Scheduled position. `order` lives on
+      // thread_state, independent of the shared schedule. The copyWith
+      // schedule-update branch only touched at/on/duration/recurrence and
+      // silently swallowed `order` — so reordering a scheduled thread changed
+      // nothing and never pushed.
+      final scheduled = Thread(
+        priority: _priority(),
+        active: true,
+        on: CustomDateRange(Date(2026, 1, 1), null), // materializes a schedule
+        stateOrder: Order.first(),
+      );
+
+      final reordered = scheduled.copyWith(order: const Order(42));
+
+      expect(reordered.order.value, 42,
+          reason: 'the new order must land, not be swallowed by the '
+              'schedule-update branch');
+      expect(reordered.stateDirty, isTrue,
+          reason: 'a reorder is a per-user state change and must push via '
+              '/sync/thread-state');
+    });
+  });
+
   group('Thread.copyWith read-receipt push path (stateDirty)', () {
     // Reads on active (Doing) threads must push via /sync/thread-state, not
     // /sync/thread-read (Thread.push deliberately excludes active threads —

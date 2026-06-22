@@ -1,3 +1,12 @@
+## Next release
+
+### Fixes
+
+- Reading or reordering a thread on one device now reliably shows up on your other devices. Previously
+  a thread you'd read could keep showing as unread elsewhere, and dragging a to-do to a new spot
+  sometimes didn't carry over — now both sync across your devices, and threads that had got out of
+  sync this way fix themselves.
+
 ## 1.5.0+364 — 2026-06-22
 
 ### Notifications

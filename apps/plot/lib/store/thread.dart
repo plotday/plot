@@ -516,7 +516,25 @@ class ThreadsBase extends BaseTable {
           // through the merge — without this, insertOrReplace
           // (store.dart:1381) overwrites local read_at with the server's
           // null and the thread re-appears in Doing.
-          merged = merged.copyWith(readAt: Value(local.readAt));
+          final serverContent =
+              activityRow.lastNoteSourceCreatedAt ?? activityRow.createdAt;
+          if (activityRow.unread && !serverContent.isAfter(local.readAt!)) {
+            // Heal a stranded read: we read this locally and pushed it, but the
+            // server lost read_at (a connector re-sync clobber) and there's no
+            // newer content. /sync/thread-read excludes active threads and
+            // /sync/thread-state only drains state_pending rows, so the read
+            // can never re-reach the server on its own. Re-assert it — keep it
+            // read locally and set the marker so the durable drain re-pushes
+            // and other devices catch up. Self-terminating: once the server
+            // accepts it (unread = false), this branch no longer fires.
+            merged = merged.copyWith(
+              unread: false,
+              readAt: Value(local.readAt),
+              statePending: true,
+            );
+          } else {
+            merged = merged.copyWith(readAt: Value(local.readAt));
+          }
         } else {
           final serverContent =
               activityRow.lastNoteSourceCreatedAt ?? activityRow.createdAt;
@@ -6251,6 +6269,15 @@ SELECT
             );
           }
         }
+
+        // `order` is a per-user thread_state field (state_order) — independent
+        // of the shared schedule updated above. Handle it here too, else a
+        // reorder of a scheduled thread is silently dropped: the new order
+        // never lands and no /sync/thread-state push fires.
+        if (order != null) {
+          tsStateOrder = Value(order);
+          stateDirty = true;
+        }
       } else if (at.present || on.present) {
         // Per-user "do at this date / time" intent moves onto thread_state.
         // Per-user state has no end_on / end_at / duration / recurrence —
@@ -6713,33 +6740,6 @@ SELECT
     );
   }
 
-  /// Save only the per-user state fields changed by [reorder]. Writes
-  /// the thread row locally without setting `pending` (the remote push
-  /// happens via /sync/thread-state, not /sync/threads) and posts the
-  /// new state to the server.
-  Future<void> saveOrder() async {
-    if (!_thread.active) {
-      log.warning(
-        '[saveOrder] "$title" has no per-user state — nothing to save',
-      );
-      return;
-    }
-    log.info(
-      '[saveOrder] "$title" saving state_order=${_thread.stateOrder?.value}',
-    );
-    await (Store.get.update(
-      Store.get.threads,
-    )..where((a) => a.id.equalsValue(id))).write(
-      ThreadsCompanion(
-        stateOrder: Value(_thread.stateOrder),
-        statePending: const Value(true),
-        updatedAt: Value(_thread.updatedAt),
-      ),
-    );
-    // Durable drain runs on the next push cycle; schedule it now.
-    _deferIdle(Thread.push, debugLabel: 'thread push');
-  }
-
   /// Insert this thread's row into the local DB if it doesn't already
   /// exist. Used for new in-memory drafts on first content edit, where
   /// only the note has changed and a regular [save] would skip the row
@@ -6785,7 +6785,14 @@ SELECT
             // Mark dirty when this save carries a state change; never write
             // `false` here — only the durable drain clears the marker, so a
             // stale in-memory copy can't resurrect or erase a pending push.
-            statePending: _thread.statePending
+            // Key off `_stateDirty` (the accurate "this save changed per-user
+            // state" signal), not just the persisted column: paths that route
+            // through `_withThreadState` (reorderTo, reorderToAfterEvent,
+            // withScheduleArchived/Restored) set the flag but never stamp the
+            // column, so checking the column alone strands their change —
+            // state_order/active updates locally but `state_pending` stays
+            // false and the /sync/thread-state drain never pushes it.
+            statePending: (_stateDirty || _thread.statePending)
                 ? const Value(true)
                 : const Value.absent(),
             updatedAt: Value(_thread.updatedAt),
