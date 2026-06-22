@@ -188,8 +188,9 @@ export class GoogleTasks extends Connector<GoogleTasks> {
    */
   private async schedulePeriodicSync(listId: string): Promise<void> {
     const syncCallback = await this.callback(this.periodicSync, listId);
-    await this.tools.tasks.scheduleTask(`poll:${listId}`, syncCallback, {
-      runAt: new Date(Date.now() + POLL_INTERVAL_MS),
+    await this.tools.tasks.scheduleRecurring(`poll:${listId}`, syncCallback, {
+      intervalMs: 60 * 60 * 1000,
+      firstRunAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
   }
 
