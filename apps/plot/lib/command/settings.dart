@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:plot/util/developer_mode.dart';
@@ -708,8 +706,8 @@ class EnableNotifications extends Command {
     : super(
         title: 'Notifications',
         subtitle: NotificationService.instance.isPermissionDenied
-            ? 'Permission denied — tap to fix'
-            : 'Not yet registered',
+            ? 'Off — enable in device settings'
+            : 'Off — tap to turn on',
         icon: FontAwesomeIcons.bell,
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
@@ -740,12 +738,7 @@ class EnableNotifications extends Command {
   }
 
   CommandReturn _openSystemSettings() {
-    if (Platform.isMacOS) {
-      // Open macOS System Settings → Notifications for this app
-      launchUrl(
-        Uri.parse('x-apple.systempreferences:com.apple.Notifications-Settings'),
-      );
-    }
+    NotificationService.instance.openSystemNotificationSettings();
     return CommandMessage(
       'Please enable notifications in your device settings, then return to Plot.',
     );

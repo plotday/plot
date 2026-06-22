@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/global.dart';
+import 'package:plot/notifications/notification_prompt_coordinator.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/note_viewer.dart';
@@ -74,6 +75,7 @@ class _AppShellState extends State<AppShell> {
                       AutoRouter(
                         placeholder: (context) => const LoadingPage(),
                       ),
+                      const NotificationPromptCoordinator(),
                       // OTP / confirm-account toast — declarative overlay
                       // driven by OtpPromptController.current. Sits above the
                       // router content but below forui toasts (which use the

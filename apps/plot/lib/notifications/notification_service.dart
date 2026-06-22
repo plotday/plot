@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:plot/analytics/tracker.dart';
@@ -17,6 +18,8 @@ import 'package:plot/app_info.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/notifications/focus_label.dart';
 import 'package:plot/notifications/notification_display.dart';
+import 'package:plot/notifications/notification_prompt.dart';
+import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/notifications/notification_window.dart';
 import 'package:plot/store/attention.dart';
 import 'package:plot/store/store.dart';
@@ -58,6 +61,10 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   /// The current user's display name, sent to the notification summary API
   /// so the LLM avoids referring to the recipient by name.
   String? _userName;
+
+  /// The current user's id, captured in [start]. Keys the per-device opt-in
+  /// state pref.
+  String? _userId;
 
   /// Whether the user denied notification permission.
   bool _permissionDenied = false;
@@ -138,6 +145,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     if (Scenes.active) return;
 
     _started = true;
+    _userId = userId;
     _userName = userName;
 
     // Initialize local notification display.
@@ -202,7 +210,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     // Register for app lifecycle events to re-register on resume
     WidgetsBinding.instance.addObserver(this);
 
-    await _requestPermissionAndRegister();
+    await _reconcileIfGranted();
 
     // Data message handler — triggers sync and local notification display
     _foregroundSubscription ??=
@@ -237,13 +245,9 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       _windowFocused = true;
     }
 
-    // Check macOS notification permission on startup
-    if (Platform.isMacOS) {
-      final settings = await NotificationDisplay.instance.getNotificationSettings();
-      final isEnabled = settings?['enabled'] == 'true';
-      _permissionDenied = !isEnabled;
-      log.info('macOS notification permission: enabled=$isEnabled');
-    }
+    // Reconcile opt-in state from the current OS permission (no prompt).
+    _permissionDenied = !await _isOsGranted();
+    await _reconcileIfGranted();
 
     // Listen for sync completions from the WebSocket broadcast
     Store.get.onSyncBatchComplete = _handleDesktopSyncComplete;
@@ -351,48 +355,61 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     BroadcastClient.instance.setActive(false);
   }
 
-  /// Request permission and register the FCM token.
-  /// Called on start and can be re-called to retry after permission denial.
-  Future<void> _requestPermissionAndRegister() async {
-    final messaging = FirebaseMessaging.instance;
+  /// Read the per-device opt-in state for the current user.
+  NotificationPromptState _loadPromptState() {
+    final userId = _userId;
+    if (userId == null) return NotificationPromptState.unset;
+    return parseNotificationPromptState(
+      ProfilePreferences.instance.getString(
+        notificationPromptStateKey(userId),
+      ),
+    );
+  }
 
-    // Check current permission status first (doesn't prompt)
-    final currentSettings = await messaging.getNotificationSettings();
-    log.info('Push notification permission: ${currentSettings.authorizationStatus}');
+  /// Persist the per-device opt-in state for the current user.
+  Future<void> _savePromptState(NotificationPromptState state) async {
+    final userId = _userId;
+    if (userId == null) return;
+    await ProfilePreferences.instance.setString(
+      notificationPromptStateKey(userId),
+      serializeNotificationPromptState(state),
+    );
+  }
 
-    if (currentSettings.authorizationStatus == AuthorizationStatus.denied) {
-      // On Android, denied means explicitly denied — requestPermission won't
-      // re-prompt. On iOS, it means not yet decided or denied.
-      if (Platform.isAndroid) {
-        _permissionDenied = true;
-        log.info('Push notifications denied — user must enable in system settings');
-        return;
-      }
+  /// Whether the OS currently grants notifications on this platform.
+  Future<bool> _isOsGranted() async {
+    if (!kIsWeb && Platform.isWindows) return true; // no OS permission needed
+    if (!kIsWeb && Platform.isMacOS) {
+      final settings =
+          await NotificationDisplay.instance.getNotificationSettings();
+      return settings?['enabled'] == 'true';
     }
+    // iOS / Android
+    final settings =
+        await FirebaseMessaging.instance.getNotificationSettings();
+    final status = settings.authorizationStatus;
+    return status == AuthorizationStatus.authorized ||
+        status == AuthorizationStatus.provisional;
+  }
 
-    if (currentSettings.authorizationStatus == AuthorizationStatus.notDetermined) {
-      // First time — show the permission dialog
-      try {
-        final settings = await messaging.requestPermission();
-        if (settings.authorizationStatus == AuthorizationStatus.denied) {
-          _permissionDenied = true;
-          log.info('Push notification permission denied by user');
-          return;
-        }
-      } catch (e) {
-        log.warning('Failed to request notification permission', e);
-        return;
-      }
-    }
-
+  /// When the OS already grants notifications, register the token (mobile) and
+  /// mark the device opted-in. Never prompts — the OS prompt is user-driven via
+  /// [requestPermission]. Called on start and on resume.
+  Future<void> _reconcileIfGranted() async {
+    if (!await _isOsGranted()) return;
     _permissionDenied = false;
+    if (_isMobile) {
+      await _ensureTokenListenerAndRegister();
+    }
+    await _savePromptState(NotificationPromptState.optedIn);
+  }
 
-    // Subscribe to token refresh BEFORE the initial getToken() attempt. On
-    // iOS the first FCM token is delivered via this stream once APNS is
-    // ready, so subscribing first avoids missing it if APNS arrives between
-    // our wait loop and the listener being set up.
-    _tokenRefreshSubscription ??=
-        messaging.onTokenRefresh.listen((token) async {
+  /// Subscribe to FCM token refresh (once) then fetch + register the token.
+  /// On iOS the first token arrives via this stream after APNS is ready, so the
+  /// subscription must exist before the initial [_getTokenAndRegister].
+  Future<void> _ensureTokenListenerAndRegister() async {
+    final messaging = FirebaseMessaging.instance;
+    _tokenRefreshSubscription ??= messaging.onTokenRefresh.listen((token) async {
       _currentToken = token;
       try {
         await _registerToken(token);
@@ -403,8 +420,39 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
         _scheduleRetry();
       }
     });
-
     await _getTokenAndRegister();
+  }
+
+  /// Decide what (if anything) to prompt the user about notifications now.
+  /// Pure read: the grant-reconcile side effects live in [_reconcileIfGranted]
+  /// (start/resume), so this only reads OS status + stored state.
+  Future<NotificationPromptAction> evaluate() async {
+    if (!isSupported || _userId == null) {
+      return NotificationPromptAction.none;
+    }
+    if (await _isOsGranted()) return NotificationPromptAction.none;
+    return decidePromptAction(osGranted: false, state: _loadPromptState());
+  }
+
+  /// Record that the user opted out (tapped "Not now"). Stops auto-prompts on
+  /// this device; the Settings tile remains available to enable later.
+  Future<void> declineFromUser() async {
+    // A user-driven "Not now" is not an OS-level denial — the system dialog was
+    // never shown and may still be askable. Record the opt-out state only; do
+    // not flip _permissionDenied (which drives the "enable in device settings"
+    // Settings-tile subtitle). An actual OS denial is recorded in
+    // requestPermission().
+    await _savePromptState(NotificationPromptState.declined);
+  }
+
+  /// Open the OS notification settings for this app (macOS). No-op elsewhere;
+  /// callers pair this with a toast telling the user to enable in settings.
+  void openSystemNotificationSettings() {
+    if (!kIsWeb && Platform.isMacOS) {
+      launchUrl(
+        Uri.parse('x-apple.systempreferences:com.apple.Notifications-Settings'),
+      );
+    }
   }
 
   /// Get the FCM token and register it with the API, with retry on failure.
@@ -502,46 +550,18 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     return false;
   }
 
-  /// Re-register on app resume (mobile only). Handles cases where:
-  /// - Initial registration failed (network was down at startup)
-  /// - Token became stale while app was backgrounded
-  /// - User granted permission in system settings after previously denying
+  /// Re-register on app resume (mobile only): reconcile token registration with
+  /// the current OS permission. The re-enable *prompt* is driven by
+  /// [NotificationPromptCoordinator], which also re-evaluates on resume.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!_isMobile) return;
     if (state != AppLifecycleState.resumed || !_started) return;
-
-    // If permission was previously denied, re-check — user may have
-    // enabled notifications in system settings
-    if (_permissionDenied) {
-      _recheckPermission();
-      return;
-    }
-
-    // If token was never registered, try again
-    if (!_tokenRegistered) {
-      _retryCount = 0; // Reset retries on resume
-      _getTokenAndRegister();
-    }
+    unawaited(_reconcileIfGranted());
   }
 
-  /// Re-check permission status after returning from system settings.
-  Future<void> _recheckPermission() async {
-    try {
-      final settings = await FirebaseMessaging.instance.getNotificationSettings();
-      if (settings.authorizationStatus != AuthorizationStatus.denied) {
-        log.info('Notification permission now granted — registering token');
-        _permissionDenied = false;
-        _retryCount = 0;
-        await _requestPermissionAndRegister();
-      }
-    } catch (e) {
-      log.warning('Failed to re-check notification permission', e);
-    }
-  }
-
-  /// Re-request notification permission and register.
-  /// Call from settings UI when user wants to enable notifications.
+  /// Request notification permission as a direct result of a user action
+  /// (priming/re-enable modal, or the Settings tile). Writes per-device state.
   Future<NotificationPermissionResult> requestPermission() async {
     if (!isSupported) return NotificationPermissionResult.unsupported;
 
@@ -549,25 +569,27 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       try {
         await NotificationDisplay.instance.initialize();
         if (Platform.isMacOS) {
-          // Check current permission state
-          final settings = await NotificationDisplay.instance.getNotificationSettings();
-          final isEnabled = settings?['enabled'] == 'true';
-          if (isEnabled) {
+          if (await _isOsGranted()) {
             _permissionDenied = false;
+            await _savePromptState(NotificationPromptState.optedIn);
             return NotificationPermissionResult.granted;
           }
-          // Try requesting — this only works if status is notDetermined
-          final granted = await NotificationDisplay.instance.requestMacOSPermission();
+          // Only works while status is notDetermined; otherwise macOS won't
+          // re-prompt and the user must use System Settings.
+          final granted =
+              await NotificationDisplay.instance.requestMacOSPermission();
           if (granted) {
             _permissionDenied = false;
+            await _savePromptState(NotificationPromptState.optedIn);
             return NotificationPermissionResult.granted;
           }
-          // macOS won't re-prompt — user must go to System Settings
           _permissionDenied = true;
+          await _savePromptState(NotificationPromptState.declined);
           return NotificationPermissionResult.deniedPermanently;
         }
-        // Windows doesn't need permission
+        // Windows: no permission required.
         _permissionDenied = false;
+        await _savePromptState(NotificationPromptState.optedIn);
         return NotificationPermissionResult.granted;
       } catch (e) {
         log.warning('Failed to initialize desktop notifications', e);
@@ -580,35 +602,39 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized ||
         settings.authorizationStatus == AuthorizationStatus.provisional) {
-      // Already authorized — just ensure token is registered
       _permissionDenied = false;
       if (!_tokenRegistered) {
         _retryCount = 0;
-        await _getTokenAndRegister();
+        await _ensureTokenListenerAndRegister();
       }
+      await _savePromptState(NotificationPromptState.optedIn);
       return NotificationPermissionResult.granted;
     }
 
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      // On Android, once denied, the OS won't show the dialog again.
-      // User must go to system settings.
-      if (Platform.isAndroid) {
-        return NotificationPermissionResult.deniedPermanently;
-      }
-    }
-
-    // Try requesting (works on iOS for notDetermined, or Android first-time)
+    // NOT granted (Android: also the fresh-install state; iOS: notDetermined or
+    // denied). Always ask — the OS shows the dialog only when askable.
+    final wasFirstAsk = _loadPromptState() == NotificationPromptState.unset;
     try {
       final result = await messaging.requestPermission();
-      if (result.authorizationStatus == AuthorizationStatus.denied) {
-        _permissionDenied = true;
-        return NotificationPermissionResult.denied;
+      final granted =
+          result.authorizationStatus == AuthorizationStatus.authorized ||
+          result.authorizationStatus == AuthorizationStatus.provisional;
+      switch (mapRequestOutcome(granted: granted, wasFirstAsk: wasFirstAsk)) {
+        case NotificationPromptOutcome.granted:
+          _permissionDenied = false;
+          _retryCount = 0;
+          await _ensureTokenListenerAndRegister();
+          await _savePromptState(NotificationPromptState.optedIn);
+          return NotificationPermissionResult.granted;
+        case NotificationPromptOutcome.declined:
+          _permissionDenied = true;
+          await _savePromptState(NotificationPromptState.declined);
+          return NotificationPermissionResult.denied;
+        case NotificationPromptOutcome.openSettings:
+          _permissionDenied = true;
+          await _savePromptState(NotificationPromptState.declined);
+          return NotificationPermissionResult.deniedPermanently;
       }
-
-      _permissionDenied = false;
-      _retryCount = 0;
-      await _getTokenAndRegister();
-      return NotificationPermissionResult.granted;
     } catch (e) {
       log.warning('Failed to request notification permission', e);
       return NotificationPermissionResult.error;
@@ -622,6 +648,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
     _started = false;
     _permissionDenied = false;
+    _userId = null;
 
     // Cancel shown notifications
     await NotificationDisplay.instance.cancelAll();

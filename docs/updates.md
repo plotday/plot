@@ -1,7 +1,15 @@
 ## Next release
 
+### Notifications
+
+- Plot now explains how notifications help and asks to turn them on once you're set up, instead of
+  springing the system prompt on you. If notifications later get switched off, Plot offers to turn
+  them back on — and you can always say no.
+
 ### Fixes
 
+- Fixed Android not asking for permission to send notifications on a fresh install. Notifications now
+  work out of the box instead of staying silent until you enabled them in system settings yourself.
 - Background syncing keeps itself healthy. The periodic checks that keep your connected mail,
   calendars, drive, and chat up to date now recover on their own if one ever stalls — previously a
   single hiccup could quietly stop a connection from updating until you reconnected it.
