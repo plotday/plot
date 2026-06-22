@@ -776,8 +776,9 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // stack — even if onChannelEnabled is re-dispatched (auto-enable /
     // recovery) or multiple sync paths each (re)schedule a poll.
     const pollCallback = await this.callback(this.pollForChanges, calendarHref);
-    await this.scheduleTask(`poll:${calendarHref}`, pollCallback, {
-      runAt: new Date(Date.now() + 15 * 60 * 1000),
+    await this.scheduleRecurring(`poll:${calendarHref}`, pollCallback, {
+      intervalMs: 15 * 60 * 1000,
+      firstRunAt: new Date(Date.now() + 15 * 60 * 1000),
     });
   }
 
