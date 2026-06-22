@@ -1,4 +1,4 @@
-## Next release
+## 1.5.0+364 — 2026-06-22
 
 ### Notifications
 
