@@ -285,18 +285,84 @@ export class OutlookMail extends Connector<OutlookMail> {
   }
 
   override async upgrade(): Promise<void> {
-    const existing = await this.get<SubscriptionState>("mailbox_subscription");
-    if (existing?.subscriptionId) {
+    // Durable recovery backstop, run on every deploy. Re-asserts recurring
+    // maintenance for a healthy mailbox and re-establishes (plus backfills) a
+    // stranded one. See recoverMailboxDelivery for the stranded cases.
+    await this.recoverMailboxDelivery();
+  }
+
+  /**
+   * Ensure live push delivery + recurring maintenance for any instance with
+   * enabled channels. Runs from upgrade() on every deploy.
+   *
+   * Two stranded states were previously unrecoverable — neither the old
+   * `if (mailbox_subscription) re-assert` upgrade path nor the cron
+   * maintenance sweep could heal them, so the connection stayed silently dead
+   * until the user manually re-enabled a channel:
+   *
+   *   1. `mailbox_subscription` never persisted — a prior
+   *      `setupMailboxSubscription()` threw before its `set()`. With no
+   *      sentinel there was nothing to re-assert, and because
+   *      `scheduleRecurring` never ran the maintenance sweep's `ever` marker
+   *      was never set either; and
+   *   2. the subscription expired while the self-heal/renewal chain was dead.
+   *
+   * A healthy subscription (present and unexpired) only re-asserts the
+   * recurring tasks. A missing or expired one is re-established AND every
+   * enabled folder is re-walked, so mail that accumulated while delivery was
+   * dead is backfilled. The backfill upserts by `source` (no duplicates) and
+   * uses initial-sync semantics (read/unarchived), so it never spams
+   * notifications.
+   */
+  private async recoverMailboxDelivery(): Promise<void> {
+    const enabled = await this.getEnabledChannels();
+    if (enabled.size === 0) return;
+
+    const subscription = await this.get<SubscriptionState>(
+      "mailbox_subscription"
+    );
+    if (
+      subscription?.subscriptionId &&
+      new Date(subscription.expiration).getTime() > Date.now()
+    ) {
+      // Healthy subscription — re-assert durable maintenance (idempotent).
       try {
         await this.scheduleSelfHealCheck();
-        await this.scheduleMailboxRenewal(new Date(existing.expiration));
+        await this.scheduleMailboxRenewal(new Date(subscription.expiration));
       } catch (error) {
         console.error(
           `OutlookMail upgrade [${this.id}]: failed to re-assert recurring tasks`,
           error
         );
       }
+      return;
     }
+
+    // Stranded: subscription missing or expired with nothing live renewing it.
+    try {
+      for (const channelId of enabled) {
+        await this.requeueInitialSync(channelId);
+      }
+      await this.setupMailboxSubscription();
+    } catch (error) {
+      console.error(
+        `OutlookMail upgrade [${this.id}]: stranded-mailbox recovery failed`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Re-queue a fresh full backfill of one folder, dropping any stale cursors
+   * (initial + delta) so the walk restarts and the delta baseline reseeds.
+   * Used by recovery to re-import mail that arrived while push delivery was
+   * dead.
+   */
+  private async requeueInitialSync(channelId: string): Promise<void> {
+    await this.set<InitialSyncState>(`initial_state_${channelId}`, {});
+    await this.clear(`delta_${channelId}`);
+    const initial = await this.callback(this.initialSyncBatch, channelId, 1);
+    await this.runTask(initial);
   }
 
   override async activate(context: {

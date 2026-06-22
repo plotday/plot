@@ -473,3 +473,92 @@ describe("processEmailThreads — no status set", () => {
     });
   });
 });
+
+describe("recoverMailboxDelivery — durable recovery on upgrade", () => {
+  function setup(entries: Array<[string, unknown]>) {
+    const storeMap = new Map<string, unknown>(entries);
+    const store = {
+      get: vi.fn(async (k: string) =>
+        storeMap.has(k) ? storeMap.get(k) : null
+      ),
+      set: vi.fn(async (k: string, v: unknown) => {
+        storeMap.set(k, v);
+      }),
+      clear: vi.fn(async (k: string) => {
+        storeMap.delete(k);
+      }),
+      list: vi.fn(async (p: string) =>
+        [...storeMap.keys()].filter((k) => k.startsWith(p))
+      ),
+    };
+    const tools = { store, integrations: {}, network: {}, files: {} };
+    const gmail = new Gmail(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    ) as any;
+    const spies = {
+      setupMailboxWebhook: vi
+        .spyOn(gmail, "setupMailboxWebhook")
+        .mockResolvedValue(undefined),
+      scheduleSelfHealCheck: vi
+        .spyOn(gmail, "scheduleSelfHealCheck")
+        .mockResolvedValue(undefined),
+      scheduleMailboxRenewal: vi
+        .spyOn(gmail, "scheduleMailboxRenewal")
+        .mockResolvedValue(undefined),
+      requeueInitialSync: vi
+        .spyOn(gmail, "requeueInitialSync")
+        .mockResolvedValue(undefined),
+    };
+    return { gmail, spies };
+  }
+
+  const webhook = (expiration: Date) => ({
+    topicName: "topic",
+    historyId: "1",
+    expiration,
+    created: "2026-01-01T00:00:00.000Z",
+  });
+  const FUTURE = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+  const PAST = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  it("stranded (no mailbox_webhook): re-establishes the watch and backfills every enabled label", async () => {
+    const { gmail, spies } = setup([["enabled_channels", ["INBOX", "SENT"]]]);
+    await gmail.recoverMailboxDelivery();
+    expect(spies.requeueInitialSync).toHaveBeenCalledWith("INBOX");
+    expect(spies.requeueInitialSync).toHaveBeenCalledWith("SENT");
+    expect(spies.setupMailboxWebhook).toHaveBeenCalledTimes(1);
+    expect(spies.scheduleSelfHealCheck).not.toHaveBeenCalled();
+  });
+
+  it("expired watch: treated as stranded — re-establishes and backfills", async () => {
+    const { gmail, spies } = setup([
+      ["enabled_channels", ["INBOX"]],
+      ["mailbox_webhook", webhook(PAST)],
+    ]);
+    await gmail.recoverMailboxDelivery();
+    expect(spies.requeueInitialSync).toHaveBeenCalledWith("INBOX");
+    expect(spies.setupMailboxWebhook).toHaveBeenCalledTimes(1);
+    expect(spies.scheduleMailboxRenewal).not.toHaveBeenCalled();
+  });
+
+  it("healthy watch: only re-asserts recurring tasks (no re-setup, no backfill)", async () => {
+    const { gmail, spies } = setup([
+      ["enabled_channels", ["INBOX"]],
+      ["mailbox_webhook", webhook(FUTURE)],
+    ]);
+    await gmail.recoverMailboxDelivery();
+    expect(spies.scheduleSelfHealCheck).toHaveBeenCalledTimes(1);
+    expect(spies.scheduleMailboxRenewal).toHaveBeenCalledTimes(1);
+    expect(spies.setupMailboxWebhook).not.toHaveBeenCalled();
+    expect(spies.requeueInitialSync).not.toHaveBeenCalled();
+  });
+
+  it("no enabled channels: does nothing", async () => {
+    const { gmail, spies } = setup([["enabled_channels", []]]);
+    await gmail.recoverMailboxDelivery();
+    expect(spies.setupMailboxWebhook).not.toHaveBeenCalled();
+    expect(spies.scheduleSelfHealCheck).not.toHaveBeenCalled();
+    expect(spies.requeueInitialSync).not.toHaveBeenCalled();
+  });
+});

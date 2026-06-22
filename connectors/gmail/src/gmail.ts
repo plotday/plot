@@ -257,8 +257,89 @@ export class Gmail extends Connector<Gmail> {
     await this.set("auth_actor_id", context.actor.id);
   }
 
+  override async upgrade(): Promise<void> {
+    // `mailbox_webhook` is the canonical "already on the mailbox-wide watch
+    // model" sentinel. Instances that predate that change still carry old
+    // per-channel keys and need a one-time migration before recovery runs.
+    const migrated = await this.get<MailboxWebhookState>("mailbox_webhook");
+    if (!migrated) {
+      await this.migrateLegacyPerChannelState();
+    }
+
+    // Durable recovery backstop, run on every deploy. Re-asserts recurring
+    // maintenance for a healthy mailbox and re-establishes (plus backfills) a
+    // stranded one. See recoverMailboxDelivery for the stranded cases.
+    await this.recoverMailboxDelivery();
+  }
+
   /**
-   * Migration from per-channel watches to a single mailbox-wide watch.
+   * Ensure live push delivery + recurring maintenance for any instance with
+   * enabled channels. Runs from upgrade() on every deploy.
+   *
+   * Two stranded states were previously unrecoverable — neither the old
+   * `if (mailbox_webhook) re-assert` upgrade path nor the cron maintenance
+   * sweep could heal them, so the connection stayed silently dead until the
+   * user manually re-enabled a channel:
+   *
+   *   1. `mailbox_webhook` never persisted — a prior `setupWatch()` threw
+   *      before its `set()` (e.g. the Gmail "Only one user push notification
+   *      client allowed per developer" 400). With no sentinel there was
+   *      nothing to re-assert, and because `scheduleRecurring` never ran the
+   *      maintenance sweep's `ever` marker was never set either; and
+   *   2. the watch expired while the self-heal/renewal chain was dead.
+   *
+   * A healthy watch (present and unexpired) only re-asserts the recurring
+   * tasks. A missing or expired watch is re-established AND every enabled label
+   * is re-walked, so mail that accumulated while delivery was dead is
+   * backfilled. The backfill upserts by `source` (no duplicates) and uses
+   * initial-sync semantics (read/unarchived), so it never spams notifications.
+   */
+  private async recoverMailboxDelivery(): Promise<void> {
+    const enabled = await this.getEnabledChannels();
+    if (enabled.size === 0) return;
+
+    const webhook = await this.get<MailboxWebhookState>("mailbox_webhook");
+    if (webhook && new Date(webhook.expiration).getTime() > Date.now()) {
+      // Healthy watch — re-assert durable maintenance (idempotent, keyed).
+      try {
+        await this.scheduleSelfHealCheck();
+        await this.scheduleMailboxRenewal(new Date(webhook.expiration));
+      } catch (error) {
+        console.error(
+          `Gmail upgrade [${this.id}]: failed to re-assert recurring tasks`,
+          error
+        );
+      }
+      return;
+    }
+
+    // Stranded: watch missing or expired with nothing live renewing it.
+    try {
+      for (const channelId of enabled) {
+        await this.requeueInitialSync(channelId);
+      }
+      await this.setupMailboxWebhook();
+    } catch (error) {
+      console.error(
+        `Gmail upgrade [${this.id}]: stranded-mailbox recovery failed`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Re-queue a fresh full backfill of one label, dropping any stale cursor so
+   * the walk restarts from the newest thread. Used by recovery to re-import
+   * mail that arrived while push delivery was dead.
+   */
+  private async requeueInitialSync(channelId: string): Promise<void> {
+    await this.set<InitialSyncState>(`initial_state_${channelId}`, {});
+    const initial = await this.callback(this.initialSyncBatch, channelId, 1);
+    await this.runTask(initial);
+  }
+
+  /**
+   * One-time migration from per-channel watches to a single mailbox-wide watch.
    *
    * Old layout (per-channel):
    *   - `channel_webhook_${id}`, `watch_renewal_task_${id}`, `sync_state_${id}`,
@@ -271,27 +352,10 @@ export class Gmail extends Connector<Gmail> {
    * The Twist runtime API doesn't let connectors enumerate stored keys, so we
    * probe the system labels we know users can enable. Users with custom
    * Gmail labels enabled (e.g. `Label_14`) will need to re-toggle them after
-   * this upgrade — without `list()` we can't discover their IDs.
+   * this upgrade — without `list()` we can't discover their IDs. The mailbox
+   * watch itself is (re-)established afterward by recoverMailboxDelivery().
    */
-  override async upgrade(): Promise<void> {
-    // Already migrated? `mailbox_webhook` is the canonical sentinel.
-    const already = await this.get<MailboxWebhookState>("mailbox_webhook");
-    if (already) {
-      // Re-assert durable recurring maintenance for any instance that had an
-      // active mailbox watch but whose pre-recurring self-heal/renewal chain
-      // died. scheduleRecurring is idempotent (keyed replace).
-      try {
-        await this.scheduleSelfHealCheck();
-        await this.scheduleMailboxRenewal(new Date(already.expiration));
-      } catch (error) {
-        console.error(
-          `Gmail upgrade [${this.id}]: failed to re-assert recurring tasks`,
-          error
-        );
-      }
-      return;
-    }
-
+  private async migrateLegacyPerChannelState(): Promise<void> {
     // Stop whatever per-channel watch was last active. Gmail allows only
     // one watch per mailbox, so a single stopWatch() call covers all of
     // them — but the call needs an authed API client.
@@ -305,7 +369,6 @@ export class Gmail extends Connector<Gmail> {
     }
 
     // Probe known system labels for old per-channel state and migrate.
-    let migratedAny = false;
     for (const labelId of SYSTEM_LABEL_ORDER) {
       const oldWebhook = await this.get<{ topicName?: string }>(
         `channel_webhook_${labelId}`
@@ -328,7 +391,6 @@ export class Gmail extends Connector<Gmail> {
       // Channel was enabled (presence of any old per-channel key counts).
       if (oldEnabled || oldWebhook) {
         await this.addEnabledChannel(labelId);
-        migratedAny = true;
       }
 
       // Carry over any in-flight initial-backfill cursor.
@@ -368,10 +430,6 @@ export class Gmail extends Connector<Gmail> {
       await this.clear(`channel_webhook_${labelId}`);
       await this.clear(`sync_state_${labelId}`);
       await this.clear(`sync_enabled_${labelId}`);
-    }
-
-    if (migratedAny) {
-      await this.setupMailboxWebhook();
     }
   }
 
