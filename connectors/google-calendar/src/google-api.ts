@@ -130,9 +130,15 @@ export class GoogleApi {
         throw new Error("Authentication failed - token may be expired");
       case 410:
         return null;
-      case 200:
-        return await response.json();
       default:
+        if (response.ok) {
+          // 204 No Content / 205 Reset Content carry no body — e.g.
+          // channels/stop returns 204 on success. Don't try to parse JSON.
+          if (response.status === 204 || response.status === 205) {
+            return null;
+          }
+          return await response.json();
+        }
         throw new Error(`HTTP ${response.status}: ${await response.text()}`);
     }
   }
