@@ -116,6 +116,26 @@ export class Tasks extends Tool implements IRun {
     await this.callbacks.deleteByTaskKey(this.twistInstanceId, key);
   }
 
+  async scheduleRecurring(
+    key: string,
+    callback: Callback,
+    options: { intervalMs: number; firstRunAt?: Date }
+  ): Promise<void> {
+    // Durable recurring wrapper: same scheduledSend shape as scheduleTask, but
+    // tagged with recurringIntervalMs so the DO alarm advances the row at fire
+    // time (owning the cadence) instead of deleting it. Keyed, so re-scheduling
+    // atomically replaces the pending occurrence.
+    await this.callbacks.create({
+      twistInstanceId: this.twistInstanceId,
+      path: this.selfPath,
+      functionName: "scheduledSend",
+      extraArgs: [callback],
+      callAt: options.firstRunAt,
+      taskKey: key,
+      recurringIntervalMs: options.intervalMs,
+    });
+  }
+
   private async send(token: string) {
     const message: RunMessage = {
       twistInstanceId: this.twistInstanceId,

@@ -219,6 +219,29 @@ export class CallbacksState extends DurableObject<Bindings> {
         CREATE INDEX IF NOT EXISTS idx_callbacks_task_key
         ON callbacks(twist_instance_id, task_key) WHERE task_key IS NOT NULL
       `);
+
+    // Recurring tasks: when non-null, the alarm advances call_at by this
+    // interval instead of deleting the row, so the chain's continuation lives
+    // in the durable DO, not a transient queue message. Always paired with a
+    // task_key (recurring is keyed/singleton).
+    try {
+      this.sql.exec("ALTER TABLE callbacks ADD COLUMN recurring_interval_ms INTEGER");
+    } catch (e) {
+      // Column already exists
+    }
+
+    // Durable "this twist_instance has ever registered a recurring task"
+    // marker. Set on the first recurring create(); never cleared. Drives the
+    // backstop sweep's needsRecurringRecovery(): a marked instance with no live
+    // recurring row had its chain die and should be re-asserted. Pre-migration
+    // dead chains have no marker — those are resurrected by the connector's
+    // upgrade() re-assert instead.
+    this.sql.exec(`
+        CREATE TABLE IF NOT EXISTS recurring_meta (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          ever INTEGER NOT NULL DEFAULT 0
+        )
+      `);
   }
 
   async create({
@@ -233,6 +256,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     key,
     meta,
     taskKey,
+    recurringIntervalMs,
   }: {
     twistInstanceId: string;
     path: string[]; // tool hierarchy only
@@ -248,6 +272,10 @@ export class CallbacksState extends DurableObject<Bindings> {
     // (twist_instance_id, task_key) is atomically deleted before insert, so
     // at most one live scheduled task exists per key. See Tasks.scheduleTask.
     taskKey?: string;
+    // When set, this is a recurring task. The alarm will advance call_at by
+    // this interval instead of deleting the row. Requires taskKey. Forces
+    // call_once = false. call_at is clamped to min(callAt ?? now, now + intervalMs).
+    recurringIntervalMs?: number;
   }): Promise<string> {
     // Validate extra args if provided
     // Note: SuperJSON handles undefined values, so no need to clean them
@@ -290,8 +318,18 @@ export class CallbacksState extends DurableObject<Bindings> {
 
     const token = this.generateToken();
 
-    // Default callOnce to true if callAt is specified, false otherwise
+    // Default callOnce to true if callAt is specified, false otherwise.
+    // Recurring tasks are never callOnce — the alarm advances them instead.
     callOnce ??= callAt !== undefined;
+    if (recurringIntervalMs !== undefined) {
+      callOnce = false;
+      // Safety-ceiling clamp: the next fire may be pulled earlier than the
+      // ceiling but never later, so liveness is guaranteed even when a
+      // connector forgets (or fails) to re-register a precise next time.
+      const ceiling = Date.now() + recurringIntervalMs;
+      const requested = callAt ? callAt.getTime() : ceiling;
+      callAt = new Date(Math.min(requested, ceiling));
+    }
 
     // Singleton replace: drop any existing task with this key for this
     // instance before inserting the new one. Atomic within the DO's
@@ -308,8 +346,8 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(
       `
         INSERT INTO callbacks (
-          token, twist_instance_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta, task_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          token, twist_instance_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta, task_key, recurring_interval_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       token,
       twistInstanceId,
@@ -322,8 +360,15 @@ export class CallbacksState extends DurableObject<Bindings> {
       expires ? expires.getTime() : null,
       key ?? null,
       meta ? superjson.stringify(meta) : null,
-      taskKey ?? null
+      taskKey ?? null,
+      recurringIntervalMs ?? null
     );
+
+    if (recurringIntervalMs !== undefined) {
+      this.sql.exec(
+        "INSERT OR REPLACE INTO recurring_meta (id, ever) VALUES (1, 1)"
+      );
+    }
 
     // Update alarm if this is a scheduled callback
     if (callAt) {
@@ -786,6 +831,43 @@ export class CallbacksState extends DurableObject<Bindings> {
     return typeof nextAt === "number" ? nextAt : null;
   }
 
+  /**
+   * Returns true if this DO has at least one live row with a non-null
+   * `recurring_interval_ms` for the given twist_instance. Used by the
+   * backstop sweep's reconcile logic to determine whether a recurring chain
+   * is still alive (Task 3 adds `needsRecurringRecovery` on top of this).
+   */
+  hasLiveRecurringTask(twistInstanceId: string): boolean {
+    const result = this.sql
+      .exec(
+        `
+        SELECT 1
+        FROM callbacks
+        WHERE twist_instance_id = ?
+          AND recurring_interval_ms IS NOT NULL
+        LIMIT 1
+        `,
+        twistInstanceId
+      )
+      .next();
+    return !result.done;
+  }
+
+  /**
+   * True iff this instance has EVER registered a recurring task but has none
+   * live now — i.e. a periodic maintenance chain that died and should be
+   * re-asserted by the backstop sweep. Instances that never registered one
+   * (webhook-only connectors) return false, so they are never falsely flagged.
+   */
+  needsRecurringRecovery(twistInstanceId: string): boolean {
+    const meta = this.sql
+      .exec("SELECT ever FROM recurring_meta WHERE id = 1")
+      .next();
+    const ever = !meta.done && Number((meta.value as any).ever) === 1;
+    if (!ever) return false;
+    return !this.hasLiveRecurringTask(twistInstanceId);
+  }
+
   delete(token: string): void {
     [, token] = token.split(":");
     this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
@@ -885,7 +967,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const now = Date.now();
     const callbackResults = this.sql.exec(
       `
-        SELECT token, twist_instance_id, path, function_name, extra_args, call_once
+        SELECT token, twist_instance_id, path, function_name, extra_args, call_once, recurring_interval_ms
         FROM callbacks
         WHERE call_at IS NOT NULL
           AND call_at <= ?
@@ -929,8 +1011,18 @@ export class CallbacksState extends DurableObject<Bindings> {
             token: token.substring(0, 8) + "...",
           });
         } finally {
-          // callOnce defaults to true for scheduled callbacks (see create()).
-          if (Number(row.call_once) === 1) {
+          const recurringIntervalMs = row.recurring_interval_ms as number | null;
+          if (recurringIntervalMs != null) {
+            // Recurring: advance the SAME row so the next occurrence is durably
+            // persisted regardless of whether the enqueue above succeeded. This
+            // is the whole fix — the continuation lives here, not in the queue
+            // message. Runs in finally so a failed enqueue still re-arms.
+            this.sql.exec(
+              "UPDATE callbacks SET call_at = ? WHERE token = ?",
+              Date.now() + recurringIntervalMs,
+              token
+            );
+          } else if (Number(row.call_once) === 1) {
             this.sql.exec(
               "DELETE FROM callbacks WHERE token = ?",
               token

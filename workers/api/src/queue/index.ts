@@ -1,6 +1,7 @@
 import { PostHog } from "posthog-node";
 
 import { type RunMessage, Tasks } from "../twist/tools/tasks";
+import { handleRunDlq } from "../twist/run-dlq";
 import {
   type Bindings,
   type ExtractMessage,
@@ -50,6 +51,12 @@ export async function queue(
   try {
     // Use batch.queue to distinguish between queues
     switch (batch.queue) {
+      case "run-dlq-development":
+      case "run-dlq-production":
+      case "run-dlq-test":
+        await handleRunDlq(env, batch as MessageBatch<RunMessage>, postHog);
+        break;
+
       case "run-development":
       case "run-production":
         await Tasks.processQueue(

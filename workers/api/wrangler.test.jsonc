@@ -54,6 +54,22 @@
         "queue": "agent-logs-test",
         "binding": "TWIST_LOGS_QUEUE"
       }
+    ],
+    "consumers": [
+      {
+        "queue": "run-test",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_concurrency": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "run-dlq-test"
+      },
+      {
+        "queue": "run-dlq-test",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_concurrency": 1
+      }
     ]
   },
   "durable_objects": {

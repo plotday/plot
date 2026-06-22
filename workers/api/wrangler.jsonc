@@ -217,7 +217,15 @@
             "queue": "run-development",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
-            "max_concurrency": 5
+            "max_concurrency": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "run-dlq-development"
+          },
+          {
+            "queue": "run-dlq-development",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_concurrency": 1
           },
           {
             "queue": "updates-development",
@@ -511,7 +519,15 @@
             // + requests + DO alarms comes from raising the Hyperdrive
             // origin-connection-limit to 80 (scripts/deploy-hyperdrive); raise
             // these together.
-            "max_concurrency": 15
+            "max_concurrency": 15,
+            "max_retries": 3,
+            "dead_letter_queue": "run-dlq-production"
+          },
+          {
+            "queue": "run-dlq-production",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_concurrency": 1
           },
           {
             "queue": "updates-production-v2",

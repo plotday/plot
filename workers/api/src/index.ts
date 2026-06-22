@@ -56,6 +56,7 @@ import { withDb } from "./db";
 import { syncUserTwistStats } from "./utils/twist-stats";
 import { refreshAllChannels } from "./scheduled/refresh-channels";
 import { recoverPendingConnections } from "./scheduled/recover-pending-connections";
+import { recoverRecurringMaintenance } from "./scheduled/recover-recurring-maintenance";
 import { recoverStuckSyncs } from "./scheduled/recover-stuck-syncs";
 import { clearStaleSuspensions } from "./scheduled/clear-stale-suspensions";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
@@ -372,6 +373,11 @@ async function scheduled(
       await recoverPendingConnections(env, _ctx);
     } catch (error) {
       logger.error("Error in recovery sweep", error as Error);
+    }
+    try {
+      await recoverRecurringMaintenance(env, _ctx);
+    } catch (error) {
+      logger.error("Error in recurring-maintenance watchdog", error as Error);
     }
   }
 

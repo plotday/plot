@@ -2,6 +2,9 @@
 
 ### Fixes
 
+- Background syncing keeps itself healthy. The periodic checks that keep your connected mail,
+  calendars, drive, and chat up to date now recover on their own if one ever stalls — previously a
+  single hiccup could quietly stop a connection from updating until you reconnected it.
 - Reading or reordering a thread on one device now reliably shows up on your other devices. Previously
   a thread you'd read could keep showing as unread elsewhere, and dragging a to-do to a new spot
   sometimes didn't carry over — now both sync across your devices, and threads that had got out of
