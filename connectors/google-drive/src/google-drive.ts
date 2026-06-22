@@ -804,8 +804,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     // replaces any pending renewal, so renewal chains can never accumulate —
     // even if setupDriveWatch runs again (onChannelEnabled re-dispatch, re-init).
     const renewalCallback = await this.callback(this.renewDriveWatch, folderId);
-    await this.scheduleTask(`watch-renewal:${folderId}`, renewalCallback, {
-      runAt: renewalTime,
+    await this.scheduleRecurring(`watch-renewal:${folderId}`, renewalCallback, {
+      intervalMs: 3.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
   }
 
