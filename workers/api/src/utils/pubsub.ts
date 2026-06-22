@@ -24,6 +24,55 @@ interface PushSubscriptionConfig {
 
 const PUBSUB_SCOPE = "https://www.googleapis.com/auth/pubsub";
 
+// The Pub/Sub control plane occasionally returns a transient 5xx (and rarely a
+// 429) on topic/subscription mutations — pubsub.googleapis.com answered a bare
+// `error code: 500` on topic creation, which propagated up through the Gmail
+// connector as "Failed to create Gmail webhook: ..." and was captured as a
+// PostHog exception (issue 019ed581) even though the next attempt would have
+// succeeded. These blips self-resolve within seconds, so retry a small,
+// bounded number of times with backoff before surfacing the failure. Non-
+// transient responses (4xx, including 409 ALREADY_EXISTS) are returned
+// immediately for the caller to handle — retrying them would only delay a
+// permanent outcome.
+const PUBSUB_RETRY_ATTEMPTS = 3; // 1 initial attempt + 2 retries
+const PUBSUB_RETRY_BASE_DELAY_MS = 250;
+
+function isTransientPubSubStatus(status: number): boolean {
+  return status >= 500 || status === 429;
+}
+
+/**
+ * `fetch` wrapper that retries transient Pub/Sub API failures (HTTP 5xx / 429
+ * and network-level throws) with exponential backoff. On a non-transient
+ * response, or once retries are exhausted, the (possibly still-failing)
+ * Response is returned so the caller's existing `!response.ok` handling reports
+ * the original error message unchanged.
+ */
+async function pubsubFetch(url: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < PUBSUB_RETRY_ATTEMPTS; attempt++) {
+    const isLastAttempt = attempt === PUBSUB_RETRY_ATTEMPTS - 1;
+    try {
+      const response = await fetch(url, init);
+      if (!isTransientPubSubStatus(response.status) || isLastAttempt) {
+        return response;
+      }
+    } catch (error) {
+      // Network-level failure (connection lost, DNS) — retry like a 5xx.
+      lastError = error;
+      if (isLastAttempt) throw error;
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, PUBSUB_RETRY_BASE_DELAY_MS * 2 ** attempt)
+    );
+  }
+  // Unreachable: the final iteration always returns or throws. Present only to
+  // satisfy the type checker.
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("pubsubFetch: retries exhausted");
+}
+
 /**
  * Gets an access token for Pub/Sub API calls.
  */
@@ -53,7 +102,7 @@ export async function createTopic(
   const topicName = `projects/${config.projectId}/topics/${topicId}`;
   const url = `https://pubsub.googleapis.com/v1/${topicName}`;
 
-  const response = await fetch(url, {
+  const response = await pubsubFetch(url, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -88,7 +137,7 @@ export async function createPushSubscription(
   const subscriptionName = `projects/${config.projectId}/subscriptions/${subscriptionConfig.subscriptionName}`;
   const url = `https://pubsub.googleapis.com/v1/${subscriptionName}`;
 
-  const response = await fetch(url, {
+  const response = await pubsubFetch(url, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -134,7 +183,7 @@ export async function deleteTopic(
 
   const url = `https://pubsub.googleapis.com/v1/${topicName}`;
 
-  const response = await fetch(url, {
+  const response = await pubsubFetch(url, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -164,7 +213,7 @@ export async function deleteSubscription(
 
   const url = `https://pubsub.googleapis.com/v1/${subscriptionName}`;
 
-  const response = await fetch(url, {
+  const response = await pubsubFetch(url, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -199,7 +248,7 @@ export async function grantTopicPublisher(
   );
 
   const url = `https://pubsub.googleapis.com/v1/${topicName}:getIamPolicy`;
-  const policyResponse = await fetch(url, {
+  const policyResponse = await pubsubFetch(url, {
     method: "GET",
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -230,7 +279,7 @@ export async function grantTopicPublisher(
   }
 
   const setUrl = `https://pubsub.googleapis.com/v1/${topicName}:setIamPolicy`;
-  const setResponse = await fetch(setUrl, {
+  const setResponse = await pubsubFetch(setUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,

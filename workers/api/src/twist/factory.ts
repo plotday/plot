@@ -108,6 +108,11 @@ export function twistFactory({
     // Load twist_instance config for Options resolution at runtime
     let twistInstanceConfig: Record<string, unknown> | undefined;
 
+    // Owning user (twist_instance.owner_id) — passed to handleTwistOperation so
+    // PostHog captures are attributed to a real person instead of a random
+    // per-event distinct_id. Matches the queue consumer's twistOwnerId convention.
+    let ownerId: string | null = null;
+
     if (checkPermissions) {
       const config = await env.TWIST_CONFIG.get(`${id}:${version}`);
       if (!config) {
@@ -124,7 +129,7 @@ export function twistFactory({
       if (twistInstanceId && twistInstanceId !== "__deployment__") {
         const pt = await db
           .selectFrom("twist_instance")
-          .select("options")
+          .select(["options", "owner_id"])
           .where("id", "=", twistInstanceId)
           .executeTakeFirst();
         if (pt?.options) {
@@ -133,6 +138,7 @@ export function twistFactory({
               ? JSON.parse(pt.options)
               : (pt.options as Record<string, unknown>);
         }
+        ownerId = pt?.owner_id ?? null;
       }
     }
 
@@ -613,7 +619,7 @@ export function twistFactory({
         await handleTwistOperation(
           "activate",
           () => twist.activate(twistInit, context),
-          { env, id, version, environment, ctx: operationCtx }
+          { env, id, version, environment, userId: ownerId, ctx: operationCtx }
         );
       },
 
@@ -623,6 +629,7 @@ export function twistFactory({
           id,
           version,
           environment,
+          userId: ownerId,
           ctx: operationCtx,
         });
       },
@@ -639,7 +646,7 @@ export function twistFactory({
         await handleTwistOperation(
           "deactivate",
           () => twist.deactivate(twistInit),
-          { env, id, version, environment, ctx: operationCtx }
+          { env, id, version, environment, userId: ownerId, ctx: operationCtx }
         );
       },
 
@@ -691,7 +698,7 @@ export function twistFactory({
           functionName,
           // @ts-ignore - Type instantiation is excessively deep and possibly infinite
           () => twist.callCallback(twistInit, path, functionName, ...args),
-          { env, id, version, environment, ctx: operationCtx }
+          { env, id, version, environment, userId: ownerId, ctx: operationCtx }
         );
       },
 
@@ -715,7 +722,7 @@ export function twistFactory({
           methodName,
           // @ts-ignore - Type instantiation is excessively deep and possibly infinite
           () => twist.callCallback(twistInit, [], methodName, ...args),
-          { env, id, version, environment, ctx: operationCtx }
+          { env, id, version, environment, userId: ownerId, ctx: operationCtx }
         );
       },
     };

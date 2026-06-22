@@ -2,6 +2,7 @@ import { PostHog } from "posthog-node";
 
 import { type TwistEnvironment, type Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
+import { exceptionFingerprint } from "../utils/exception-fingerprint";
 import { processStackTrace } from "../utils/stacktrace";
 import { Tracker } from "../utils/tracker";
 import { isTransientError } from "../utils/transient-error";
@@ -59,6 +60,15 @@ export async function handleTwistOperation<T>(
     id: string;
     version: string;
     environment: TwistEnvironment;
+    /**
+     * The owning user (`twist_instance.owner_id`) so the PostHog capture is
+     * attributed to a real person — matching the worker-wide distinctId
+     * convention (user UUID, with email resolved as a person property). When
+     * absent we fall back to a STABLE `twist:<id>` distinctId rather than
+     * letting posthog-node mint a random per-event UUID, which would surface a
+     * fresh phantom "user" on every error and inflate "users affected".
+     */
+    userId?: string | null;
     /**
      * Used for `waitUntil(tracker.shutdown(...))` so the PostHog escalation
      * for unhandled twist exceptions can flush after the response is sent.
@@ -182,8 +192,17 @@ export async function handleTwistOperation<T>(
           flushAt: 1,
           flushInterval: 0,
         });
-        const tracker = new Tracker(postHog);
+        const tracker = new Tracker(
+          postHog,
+          context.userId ?? `twist:${context.id}`
+        );
         tracker.captureException(surfacedError, {
+          // Every twist/connector throw shares the generic queue →
+          // handleTwistOperation → callCallback stack, so PostHog's default
+          // (stack-based) fingerprint collapses unrelated errors into one
+          // issue. Key on the error type + normalized message instead so
+          // distinct errors form distinct issues (see exception-fingerprint).
+          $exception_fingerprint: exceptionFingerprint(errorName, errorMessage),
           twist_id: context.id,
           twist_version: context.version,
           environment: context.environment,
