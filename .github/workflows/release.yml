@@ -965,7 +965,13 @@ jobs:
         run: |
           cd apps/plot
           FLUTTER_VERSION=$(jq -r .flutter ../../.fvmrc)
-          shorebird release macos --flutter-version="$FLUTTER_VERSION"
+          # APP_STORE_BUILD=true makes the Mac App Store binary route purchases
+          # through StoreKit IAP (UpgradeUi.isAppStoreBuild). Without it the
+          # macOS build falls back to the external web/Stripe upgrade flow,
+          # which Apple rejects under guideline 3.1.1. iOS doesn't need this
+          # flag (isAppStoreBuild short-circuits on Platform.isIOS); the DMG
+          # build omits it so direct-distribution users keep the web flow.
+          shorebird release macos --flutter-version="$FLUTTER_VERSION" -- --dart-define=APP_STORE_BUILD=true
 
       - name: Verify app.env in macOS app bundle
         run: |

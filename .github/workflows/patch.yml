@@ -662,9 +662,14 @@ jobs:
       - name: Patch macOS
         run: |
           cd apps/plot
+          # Must carry the same --dart-define=APP_STORE_BUILD=true as the macOS
+          # release (release.yml). APP_STORE_BUILD is a compile-time const, so a
+          # patch built without it would flip isAppStoreBuild back to false over
+          # the air and reintroduce the external web upgrade flow (Apple 3.1.1).
           shorebird patch macos \
             --release-version="${{ steps.version.outputs.version }}" \
-            --allow-asset-diffs
+            --allow-asset-diffs \
+            -- --dart-define=APP_STORE_BUILD=true
 
       - name: Tag successful patch
         run: |
