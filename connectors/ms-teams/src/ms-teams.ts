@@ -495,10 +495,10 @@ export class MsTeams extends Connector<MsTeams> {
       this.renewSubscription,
       channelId
     );
-    await this.scheduleTask(
+    await this.scheduleRecurring(
       `subscription-renewal:${channelId}`,
       renewalCallback,
-      { runAt: renewalTime }
+      { intervalMs: 1.5 * 24 * 60 * 60 * 1000, firstRunAt: renewalTime }
     );
   }
 
@@ -909,10 +909,10 @@ export class MsTeams extends Connector<MsTeams> {
         // Singleton daily digest keyed per channel: re-scheduling atomically
         // replaces any pending run, so repeated onChannelEnabled dispatches
         // never leak parallel self-perpetuating daily chains.
-        await this.scheduleTask(
+        await this.scheduleRecurring(
           `members-sync:${channelId}`,
           dailyCallback,
-          { runAt: nextRunAt }
+          { intervalMs: 24 * 60 * 60 * 1000, firstRunAt: nextRunAt }
         );
       }
     }
