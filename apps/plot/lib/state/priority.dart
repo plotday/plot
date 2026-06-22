@@ -3904,8 +3904,18 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// AI title generation is handled by Thread.save().
   /// Returns the saved thread.
   Future<Thread> add(Thread thread, {Note? note}) async {
-    // Convert the draft to a non-draft
-    final savedThread = thread.copyWith(draft: false);
+    // Convert the draft to a non-draft. When the first note is one the author
+    // flagged as their own task (Tag.todo via the editor's "To do" toggle),
+    // activate the whole thread ATOMICALLY here — the same copyWith(todo: true)
+    // path the thread-level toggle uses — so the new thread is born in Active at
+    // the BOTTOM (Order.last) with durable per-user state. Otherwise the thread
+    // is published inactive (briefly visible under Done) and only flipped to
+    // Active afterward by Note.save() -> Note.ensureTodoForUser, which appended
+    // at the TOP and left the order unpushed. With this, that propagation
+    // becomes a no-op (its guard sees the thread already active).
+    final isSelfTodo = note?.hasTag(Tag.todo, Base.actorId) ?? false;
+    final savedThread =
+        thread.copyWith(draft: false, todo: isSelfTodo ? true : null);
 
     // If the draft note carries a CreateLinkUserAction, stash a pending
     // create_link payload so ThreadsBase.toBase spreads it into the thread

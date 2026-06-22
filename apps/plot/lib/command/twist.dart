@@ -145,26 +145,10 @@ class ManageConnections extends Command {
   /// the active list below (`enabledCount == 0`) and from quota counts, so it
   /// must not light up the reconnect affordances. See [TwistConnection.active].
   Widget _activeReauthBuilder(Widget Function(bool needsReauth) build) {
-    return StreamBuilder<List<TwistConnectionRow>>(
-      stream: TwistConnection.watchAll(),
-      initialData: const [],
-      builder: (context, connSnap) {
-        return StreamBuilder<List<Channel>>(
-          stream: Channel.watchAllEnabled(),
-          initialData: const [],
-          builder: (context, chanSnap) {
-            final enabledIds = {
-              for (final c in chanSnap.data ?? const <Channel>[])
-                c.twistInstanceId,
-            };
-            final needsReauth = TwistConnection.active(
-              connSnap.data ?? const [],
-              enabledIds,
-            ).any((c) => c.needsReauth);
-            return build(needsReauth);
-          },
-        );
-      },
+    return StreamBuilder<bool>(
+      stream: TwistConnection.watchActiveNeedsReauth(),
+      initialData: false,
+      builder: (context, snap) => build(snap.data ?? false),
     );
   }
 

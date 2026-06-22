@@ -56,4 +56,45 @@ void main() {
         reason: 'a connection whose channels are all disabled must not drive '
             'the reconnect prompt');
   });
+
+  group('anyActiveNeedsReauth', () {
+    test('true when an active (enabled-channel) connection needs re-auth', () {
+      final connections = [_conn(live, needsReauth: true)];
+
+      expect(TwistConnection.anyActiveNeedsReauth(connections, {live}), isTrue);
+    });
+
+    test('false when the only connection needing re-auth is dormant', () {
+      // Regression for the More-tab badge: a connection with `needs_reauth_at`
+      // set but all channels disabled (e.g. a stale LinkedIn instance left
+      // behind by a reconnect-without-archive) is hidden from the connections
+      // list, so it must not light the red badge — there is no row to act on.
+      final connections = [_conn(stuck, needsReauth: true)];
+
+      expect(
+        TwistConnection.anyActiveNeedsReauth(connections, {live}),
+        isFalse,
+        reason: 'a dormant connection (no enabled channel) must not light the '
+            'reconnect badge',
+      );
+    });
+
+    test('false when active connections are all healthy', () {
+      final connections = [_conn(live, needsReauth: false)];
+
+      expect(TwistConnection.anyActiveNeedsReauth(connections, {live}), isFalse);
+    });
+
+    test('ignores a stuck dormant connection alongside a healthy active one', () {
+      final connections = [
+        _conn(stuck, needsReauth: true), // dormant — must be ignored
+        _conn(live, needsReauth: false), // active and healthy
+      ];
+
+      expect(
+        TwistConnection.anyActiveNeedsReauth(connections, {live}),
+        isFalse,
+      );
+    });
+  });
 }

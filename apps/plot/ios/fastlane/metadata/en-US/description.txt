@@ -25,3 +25,8 @@ WORK YOUR WAY
 Use AI as much or as little as you want — bring your own key, point it at your own model, or turn it off entirely. Your data stays yours: you connect each account securely without handing Plot your passwords, your data is encrypted in transit, and only you and the people you share with can see it.
 
 Plot has a free plan. Get back to your best work.
+
+Plot Core and Plot Pro are optional auto-renewing subscriptions billed monthly through your App Store account. Subscriptions auto-renew until canceled; manage or cancel anytime in your App Store account.
+
+Terms of Use (EULA): https://plot.day/terms
+Privacy Policy: https://plot.day/privacy

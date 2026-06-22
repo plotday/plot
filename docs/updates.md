@@ -1,5 +1,10 @@
 ## Next release
 
+### Threads
+
+- On your phone or tablet, swipe left or right while reading a thread to jump to the next or previous
+  one in your list — like flipping through email.
+
 ### Notifications
 
 - Plot now explains how notifications help and asks to turn them on once you're set up, instead of
@@ -17,6 +22,17 @@
   a thread you'd read could keep showing as unread elsewhere, and dragging a to-do to a new spot
   sometimes didn't carry over — now both sync across your devices, and threads that had got out of
   sync this way fix themselves.
+- Marking a new thread "To do" now drops it neatly at the bottom of your Active list, right above your
+  unread items — instead of jumping to the very top. It also no longer flickers through the Done
+  section on its way there; it lands in Active straight away.
+- Adding a connection now shows a spinner on the connector you tapped while it sets up, so it's clear
+  Plot is working during the second or two before the setup screen appears. Previously the tapped
+  connector gave no feedback (or the spinner landed on the wrong row), making it look like nothing
+  had happened.
+- The red "reconnect" dot on the More tab no longer sticks around when there's nothing to reconnect.
+  Previously a connection you'd already replaced — for example LinkedIn after reconnecting it — could
+  keep the badge lit even though the Connections screen showed everything as fine, with no way to
+  clear it.
 
 ## 1.5.0+364 — 2026-06-22
 

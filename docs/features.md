@@ -267,8 +267,9 @@ yours.
   when you're back online, across all your devices, with cloud backup.
 - Web, macOS, Windows, iOS, and Android — a consistent experience with platform-native touches.
 - Share into Plot from other apps via the system share sheet (iOS, Android).
-- Fast, calm UI: keyboard-driven command modal, swipe actions on mobile, drag-and-drop everywhere,
-  light/dark/system themes that follow you across devices.
+- Fast, calm UI: keyboard-driven command modal, swipe actions on mobile (including swiping between
+  threads, like flipping through email), drag-and-drop everywhere, light/dark/system themes that
+  follow you across devices.
 
 ### Bulk operations
 

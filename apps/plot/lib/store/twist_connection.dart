@@ -89,6 +89,33 @@ class TwistConnection {
   ) =>
       connections.where((c) => enabledInstanceIds.contains(c.twistInstanceId));
 
+  /// Whether any *active* connection needs re-auth — the single predicate that
+  /// drives every "Reconnect" affordance (the More-tab badge, the
+  /// manage-connections command icon, the sidebar status tile).
+  ///
+  /// Only [active] connections count: a connection with `needs_reauth_at` set
+  /// but all channels disabled is dormant and hidden from the connections
+  /// list, so flagging it would nag with no row to act on. Keep all surfaces
+  /// routed through this so they can't drift apart again.
+  static bool anyActiveNeedsReauth(
+    Iterable<TwistConnectionRow> connections,
+    Set<TwistInstanceId> enabledInstanceIds,
+  ) =>
+      active(connections, enabledInstanceIds).any((c) => c.needsReauth);
+
+  /// Reactive form of [anyActiveNeedsReauth]: emits whenever connections sync
+  /// or channels are enabled/disabled. Combines the connection rows with the
+  /// set of instances that still have an enabled channel.
+  static Stream<bool> watchActiveNeedsReauth() => Rx.combineLatest2(
+        watchAll(),
+        Channel.watchAllEnabled(),
+        (List<TwistConnectionRow> conns, List<Channel> channels) =>
+            anyActiveNeedsReauth(
+          conns,
+          {for (final ch in channels) ch.twistInstanceId},
+        ),
+      );
+
   static Stream<List<TwistConnectionRow>> watchForInstance(
     TwistInstanceId twistInstanceId,
   ) {

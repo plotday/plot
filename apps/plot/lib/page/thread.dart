@@ -1,11 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/util/thread_carousel_nav.dart';
+import 'package:plot/widget/thread_carousel.dart';
+import 'package:plot/widget/thread_preview.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
 
@@ -40,8 +44,48 @@ class ThreadPage implements AutoRouteWrapper {
       });
       return const SizedBox.shrink();
     }
+
+    if (!shouldUseThreadCarousel(
+      isWeb: kIsWeb,
+      platform: defaultTargetPlatform,
+    )) {
+      return _buildLiveThread(threadId);
+    }
+
+    // iOS / Android: page through the feed's threads in a swipe carousel. The
+    // thread list comes from the same feed the thread was opened from, so the
+    // swipe order matches the keyboard up/down arrows. Swiping promotes a
+    // thread via setThread only (no route push), so the back stack stays a
+    // single ThreadRoute and Back returns to the list. When the thread is not
+    // in the feed (deep link / search-filtered), the carousel renders a single
+    // inert page — today's behavior, no swipe.
+    return BlocBuilder<PriorityBloc, PriorityState>(
+      builder: (context, state) {
+        final centerId = state.thread?.id ?? threadId;
+        final threads = feedThreads(state.activityFeedItems);
+        final index = threads.indexWhere((t) => t.id == centerId);
+        return ThreadCarousel(
+          centerThreadId: centerId,
+          threads: threads,
+          initialIndex: index,
+          centerBuilder: _buildLiveThread,
+          previewBuilder: (thread) => ThreadPreview(thread: thread),
+          onThreadChanged: (thread) =>
+              context.read<PriorityBloc>().setThread(thread),
+          reserveLeftEdgeBackZone:
+              !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS,
+        );
+      },
+    );
+  }
+
+  /// Builds the single live thread view for [id] — the existing thread page,
+  /// unchanged. Used directly on desktop/web and as the carousel center on
+  /// mobile. Keyed by id at the call site (see [ThreadCarousel]) so only one
+  /// ThreadBloc is ever mounted and it is preserved across feed rebuilds.
+  Widget _buildLiveThread(ThreadId id) {
     return ThreadBlocProvider(
-      threadId: threadId,
+      threadId: id,
       thread: null, // Let the bloc load the thread
       child: BlocConsumer<ThreadBloc, ThreadState>(
         listener: (context, state) {
@@ -109,6 +153,17 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   // (offset 0), which needs no repositioning and so no gating.
   bool _initialScrollSettled = false;
 
+  // Swipe carousel: preserve the note-scroll position across swipe-away/back.
+  // When this page sits inside a ThreadCarousel, [_scrollCache] carries the
+  // per-thread saved offset; we restore it on first layout (instead of the
+  // scroll-to-unread target) and save the latest offset on dispose.
+  // [_restoringCachedOffset] gates the list hidden until the restore lands, so
+  // the bottom frame doesn't flash. All null/false off-carousel (desktop/web),
+  // so the normal scroll-to-unread behavior is unchanged there.
+  CarouselScrollCache? _scrollCache;
+  double? _lastNoteScrollOffset;
+  bool _restoringCachedOffset = false;
+
   // While true, the scroll target is re-pinned to the viewport top whenever
   // the list's scroll metrics change — e.g. async network images below the
   // target finish loading and grow their notes, which would otherwise push
@@ -121,12 +176,29 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   bool _hasSetInitialActivity = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Track the latest note-scroll offset so it can be saved (for the swipe
+    // carousel) in dispose, after the Scrollable has already detached.
+    _scrollController.addListener(_recordScrollOffset);
+  }
+
+  void _recordScrollOffset() {
+    if (_scrollController.hasClients) {
+      _lastNoteScrollOffset = _scrollController.offset;
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Save references during a safe lifecycle method
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
     _priorityBloc = context.read<PriorityBloc>();
+    // Carousel scroll-offset cache (null off-carousel). Registers a dependency
+    // but the cache never notifies, so this resolves once.
+    _scrollCache = CarouselScrollCache.maybeOf(context);
     final thread = context.read<ThreadBloc>().state.thread;
     _threadId = thread.id;
     // Snapshot read state once, before _scheduleMarkAsRead's timer resets it.
@@ -188,6 +260,14 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     // Cancel the mark-as-read timer if still pending
     _markReadTimer?.cancel();
     _repinTimer?.cancel();
+    // Save the note-scroll position so swiping back to this thread (in the
+    // carousel) restores where the user was reading. No-op off-carousel.
+    if (_scrollCache != null &&
+        _threadId != null &&
+        _lastNoteScrollOffset != null) {
+      _scrollCache!.save(_threadId!, _lastNoteScrollOffset!);
+    }
+    _scrollController.removeListener(_recordScrollOffset);
     _scrollController.dispose();
     // Unregister from the focus coordination provider
     // Use saved reference instead of looking up during dispose()
@@ -378,15 +458,34 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     // first build.
     if (!_initialScrollScheduled && state.notes.isNotEmpty) {
       _initialScrollScheduled = true;
-      _scrollTargetIndex = initialScrollTargetIndex(
-        state.notes,
-        threadUnread: _initialThreadUnread,
-        readAt: _initialReadAt,
-      );
-      if (_scrollTargetIndex != null) {
+      // In the swipe carousel, restore the saved offset for a thread the user
+      // is swiping back to, instead of the scroll-to-unread target.
+      final cachedOffset =
+          _threadId == null ? null : _scrollCache?.offsetFor(_threadId!);
+      if (cachedOffset != null) {
+        _restoringCachedOffset = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _revealScrollTarget(attempt: 0);
+          if (!mounted) return;
+          if (_scrollController.hasClients) {
+            final pos = _scrollController.position;
+            _scrollController.jumpTo(
+              cachedOffset.clamp(pos.minScrollExtent, pos.maxScrollExtent),
+            );
+          }
+          // Reveal the list (it was gated hidden); no re-pin for a restore.
+          _finishInitialScroll(success: false);
         });
+      } else {
+        _scrollTargetIndex = initialScrollTargetIndex(
+          state.notes,
+          threadUnread: _initialThreadUnread,
+          readAt: _initialReadAt,
+        );
+        if (_scrollTargetIndex != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _revealScrollTarget(attempt: 0);
+          });
+        }
       }
     }
 
@@ -763,10 +862,13 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     );
 
     // Hide the list until the target is first revealed so the pre-scroll
-    // bottom frame never flashes. Only gate when there is a target to reveal.
-    final gateOpacity = _scrollTargetIndex != null && !_initialScrollSettled
-        ? 0.0
-        : 1.0;
+    // bottom frame never flashes. Gate when there is a target to reveal, or a
+    // cached carousel offset still being restored.
+    final gateOpacity =
+        (_scrollTargetIndex != null || _restoringCachedOffset) &&
+                !_initialScrollSettled
+            ? 0.0
+            : 1.0;
     return Opacity(opacity: gateOpacity, child: gated);
   }
 

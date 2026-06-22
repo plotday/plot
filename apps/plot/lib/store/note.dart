@@ -911,7 +911,7 @@ class Note extends Equatable implements Comparable<Note> {
       // per-user state exists on the thread (makes the thread appear on
       // the user's todo list).
       if (hasTag(Tag.todo, Base.actorId)) {
-        await _ensureTodoForUser(threadId);
+        await ensureTodoForUser(threadId);
       }
 
       // Reply tag propagation: note → thread
@@ -949,28 +949,52 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   /// Ensures per-user thread-state exists on the thread for the current
-  /// user — sets active=true, state_on = todoNowDate, clears read_at —
-  /// then pushes via POST /sync/thread-state.
-  static Future<void> _ensureTodoForUser(ThreadId threadId) async {
+  /// user — sets active=true, state_on = todoNowDate, clears read_at,
+  /// appends the thread at the BOTTOM of Active — then pushes via
+  /// POST /sync/thread-state.
+  ///
+  /// A newly-activated to-do appends at the BOTTOM of the Active section
+  /// (above the inactive-unread cluster), matching the thread-level "To do"
+  /// toggle ([Thread.copyWith] with `todo: true`) and every other activation
+  /// path, all of which use [Order.last]. An existing [Order] is preserved.
+  ///
+  /// The per-user state is marked [statePending] and the order is sent in the
+  /// push body so the position is durable: without it the server keeps
+  /// `state_order` NULL and [Thread.order] falls back to [Order.lowerBound],
+  /// which would snap the row to the TOP of Active after the next sync.
+  ///
+  /// [post] is a test seam defaulting to `api.post` (mirrors
+  /// [Thread.pushPendingThreadState]).
+  @visibleForTesting
+  static Future<void> ensureTodoForUser(
+    ThreadId threadId, {
+    Future<dynamic> Function(String url, {Object body})? post,
+  }) async {
     final row = await (Store.get.select(Store.get.threads)
           ..where((t) => t.id.equalsValue(threadId)))
         .getSingleOrNull();
     if (row == null) return;
     if (row.active && row.readAt == null) return;
     final now = DateTime.now();
+    final stateOrder = row.stateOrder ?? Order.last();
     await (Store.get.update(Store.get.threads)
           ..where((t) => t.id.equalsValue(threadId)))
         .write(ThreadsCompanion(
           active: const Value(true),
-          stateOrder: Value(row.stateOrder ?? Order.first()),
+          stateOrder: Value(stateOrder),
           stateOn: Value(row.stateOn ?? Thread.todoNowDate),
           readAt: const Value(null),
+          statePending: const Value(true),
           updatedAt: Value(now),
         ));
+    final poster = post ??
+        (String url, {Object body = const <String, dynamic>{}}) =>
+            api.post<dynamic>(url, body: body);
     try {
-      await api.post<Map<String, dynamic>>('/sync/thread-state', body: {
+      await poster('/sync/thread-state', body: {
         'thread_id': threadId.toString(),
         'active': true,
+        'order': stateOrder.value,
         'on': '[${row.stateOn ?? Thread.todoNowDate},)',
         'read_at': null,
       });

@@ -803,13 +803,15 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         );
       case NavSlot.more:
         return FBottomNavigationBarItem(
-          icon: StreamBuilder<List<TwistConnectionRow>>(
-            stream: TwistConnection.watchAll(),
-            initialData: const [],
+          // Only an *active* connection (one with an enabled channel) needing
+          // re-auth lights the badge — a dormant connection is hidden from the
+          // connections list, so flagging it would nag with no row to act on.
+          // See [TwistConnection.anyActiveNeedsReauth].
+          icon: StreamBuilder<bool>(
+            stream: TwistConnection.watchActiveNeedsReauth(),
+            initialData: false,
             builder: (context, snap) {
-              final needsReauth =
-                  (snap.data ?? const []).any((c) => c.needsReauth);
-              if (needsReauth) {
+              if (snap.data ?? false) {
                 return Icon(
                   PlotIcon.plugCircleExclamation,
                   color: context.theme.colors.destructive,

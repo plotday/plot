@@ -29,7 +29,7 @@ set -euo pipefail
 # --- Versioned source of truth ----------------------------------------------
 FRONTEND_HYPERDRIVE_ID="831ea7d10ef54346b084baaa1a46dfa6"
 FRONTEND_CONNECTION_LIMIT="${FRONTEND_CONNECTION_LIMIT:-50}"
-BG_HYPERDRIVE_ID="${BG_HYPERDRIVE_ID:-REPLACE_WITH_HYPERDRIVE_BG_ID}"
+BG_HYPERDRIVE_ID="${BG_HYPERDRIVE_ID:-31f7c542dd084ca8bbe0e08e209fc102}"
 BG_CONNECTION_LIMIT="${BG_CONNECTION_LIMIT:-30}"
 # ----------------------------------------------------------------------------
 # Both configs are also recorded in Terraform at infra/hyperdrive/ (a faithful,

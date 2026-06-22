@@ -53,7 +53,10 @@ resource "cloudflare_hyperdrive_config" "plot_prod_bg" {
   name       = "plot-prod-bg"
 
   origin = {
-    scheme               = "postgres"
+    # Live config was created with the "postgresql" scheme (vs "postgres" on the
+    # frontend). They're equivalent Postgres URI aliases; recorded as-is to keep
+    # this a faithful, zero-diff baseline.
+    scheme               = "postgresql"
     host                 = "34.130.85.92"
     port                 = 5432
     database             = "plot"

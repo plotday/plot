@@ -1004,7 +1004,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       final group = _getGroupAtIndex(_highlightedIndex);
       group?.onActivate?.call(context);
     } else {
-      _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
+      _selectItem(_getItemAtIndexUnsafe(_highlightedIndex), _highlightedIndex);
     }
   }
 
@@ -1202,7 +1202,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: isItemLoading ? null : () => _selectItem(item),
+        onTap: isItemLoading ? null : () => _selectItem(item, flatIndex),
         child: Container(
           width: cellSize,
           height: cellSize,
@@ -1217,10 +1217,16 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     );
   }
 
-  Future<void> _selectItem(T item) async {
+  /// Selects [item], which is displayed at [displayIndex] in the flat item
+  /// list. The loading spinner is keyed on [displayIndex] (the actually
+  /// tapped/activated row) rather than [_highlightedIndex], so it lands on the
+  /// right row even when the pointer never hovered first — e.g. a touch tap or
+  /// the modal opening directly under the cursor (no hover means
+  /// [_highlightedIndex] is still its initial 0).
+  Future<void> _selectItem(T item, int displayIndex) async {
     if (_loadingIndex != null) return; // Already loading
     if (widget.onSelect != null) {
-      setState(() => _loadingIndex = _highlightedIndex);
+      setState(() => _loadingIndex = displayIndex);
       try {
         final shouldClose = await widget.onSelect!(
           context,
@@ -1295,7 +1301,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       estimatedItemHeight: 50.0,
       onActivate: (index) {
         if (index >= 0 && index < displayCount && !_isInfoOnlySlot(index)) {
-          _selectItem(_getItemAtIndexUnsafe(index));
+          _selectItem(_getItemAtIndexUnsafe(index), index);
         }
       },
       builder: (context, listController) {
@@ -1801,7 +1807,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                 behavior: HitTestBehavior.opaque,
                                 onTap: isItemLoading
                                     ? null
-                                    : () => _selectItem(item),
+                                    : () => _selectItem(item, index),
                                 child: itemWidget,
                               );
 

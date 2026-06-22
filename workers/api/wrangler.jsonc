@@ -396,7 +396,7 @@
         },
         {
           "binding": "HYPERDRIVE_BG",
-          "id": "REPLACE_WITH_HYPERDRIVE_BG_ID",
+          "id": "31f7c542dd084ca8bbe0e08e209fc102",
           "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres"
         }
       ],
