@@ -572,8 +572,9 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     // Singleton scheduled task: re-scheduling under this key atomically
     // replaces any pending renewal, so renewal chains can never accumulate —
     // even if setupOutlookWatch runs again (re-dispatch, re-init).
-    await this.scheduleTask(`watch-renewal:${calendarId}`, renewalCallback, {
-      runAt: renewalTime,
+    await this.scheduleRecurring(`watch-renewal:${calendarId}`, renewalCallback, {
+      intervalMs: 1.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
   }
 
