@@ -19,8 +19,14 @@ Terraform owns the *instance*; Atlas owns what's *inside* it. No overlap.
 - [`hyperdrive/`](./hyperdrive) — the shared Cloudflare Hyperdrive config that
   fronts `plot-prod` for the api + classify workers (records `origin_connection_limit`).
 - [`cloudflare-dns/`](./cloudflare-dns) — the `plot.day` zone DNS records.
+- [`posthog/`](./posthog) — PostHog **capacity-pressure alerting**: a trends
+  insight on the `bg.deferred` counter + a threshold alert that emails when the
+  background DB lane sheds in a *sustained* way (the push signal for "rebalance
+  the 50/30 split or scale Cloud SQL" — see PR #400). Not yet wired into CI; see
+  "Activating the posthog alerts" below.
 
-All imported faithfully — `terraform plan` reports **no changes** for each.
+The first three were imported faithfully — `terraform plan` reports **no changes**
+for each. The `posthog/` module *creates* new resources (it's not an import).
 
 ## Prerequisites
 
@@ -39,13 +45,17 @@ All imported faithfully — `terraform plan` reports **no changes** for each.
 - **Cloudflare API token**, read-scoped (Hyperdrive Read + DNS Read + Zone Read),
   at `op://Production/Cloudflare Terraform` — for the `hyperdrive` and
   `cloudflare-dns` modules.
+- **PostHog personal API key**, read-scoped, at `op://Production/PostHog Terraform`
+  — for the `posthog` module (an `apply` needs a write-scoped key; see "Activating
+  the posthog alerts"). These items don't exist yet — provision before first use.
 
 ## State
 
 State lives in **Cloudflare R2** (S3-compatible backend), bucket `plot-tf-state`,
 one key per module (`cloud-sql/plot-prod.tfstate`, `hyperdrive/plot.tfstate`,
-`cloudflare-dns/plot-day.tfstate`). Never committed. Locking via S3 object
-lockfile (`use_lockfile`). Enable object versioning on the bucket for recovery.
+`cloudflare-dns/plot-day.tfstate`, `posthog/plot.tfstate`). Never committed.
+Locking via S3 object lockfile (`use_lockfile`). Enable object versioning on the
+bucket for recovery.
 
 ## Running
 
@@ -57,12 +67,13 @@ pnpm tf cloud-sql init        # one-time per checkout, per module
 pnpm tf cloud-sql plan        # must print: No changes.
 pnpm tf hyperdrive plan
 pnpm tf cloudflare-dns plan
+pnpm tf posthog plan          # once the PostHog key item exists
 ```
 
 Equivalently: `bash scripts/terraform <module> <args...>` from the repo root. The
 wrapper resolves R2 state creds plus the right cloud credential per module (the
 readonly GCP SA for `cloud-sql`, a read-scoped `CLOUDFLARE_API_TOKEN` for the
-Cloudflare modules).
+Cloudflare modules, a read-scoped `POSTHOG_API_KEY` for `posthog`).
 
 ### Read-only by default
 
@@ -94,6 +105,14 @@ Because apply runs every deploy, a change made by hand in the Cloudflare/GCP
 console will be **reverted** on the next deploy unless it's also in code — that's
 the IaC contract; use a PR (the `infra-plan` preview shows the diff).
 
+> **`posthog` is intentionally NOT in either workflow's module list yet.** The
+> wrapper hard-fails if the PostHog key item is absent, so adding `posthog` to the
+> loops *before* the 1Password items exist would fail the `infra-plan` check on
+> every infra PR and break every production deploy at the infra stage. The module
+> files + wrapper case ship inert (CI never invokes `posthog`); the loops are
+> flipped on as the last step of "Activating the posthog alerts" once the keys
+> are provisioned.
+
 ### Credentials to provision (CI write path)
 
 `apply` needs writable identities; provision these in 1Password (the op service
@@ -105,7 +124,45 @@ account must be able to read them). These are also what the capacity work needs:
   (e.g. a key for `claude-readonly@plot-core`), used by the plan/drift workflow.
 - `op://Production/Cloudflare Terraform Edit/credential` — edit-scoped CF token
   (Hyperdrive Edit + DNS Edit + Zone Read).
+- `op://Production/PostHog Terraform/credential` — **read-scoped** PostHog personal
+  API key (scopes `insight:read`, `alert:read`), used by the plan/drift workflow.
+- `op://Production/PostHog Terraform Edit/credential` — **write-scoped** PostHog
+  personal API key (scopes `insight:read`, `insight:write`, `alert:read`,
+  `alert:write`), scoped to the Plot org/project, used by `apply`.
 
 (The read-scoped CF token at `op://Production/Cloudflare Terraform`, the R2 state
-token, and `OP_SERVICE_ACCOUNT_TOKEN` already exist.) Prefer Workload Identity
-Federation over long-lived GCP keys if you want to avoid storing keys at all.
+token, and `OP_SERVICE_ACCOUNT_TOKEN` already exist; the two PostHog items do not
+yet — see below.) Prefer Workload Identity Federation over long-lived GCP keys if
+you want to avoid storing keys at all.
+
+## Activating the posthog alerts
+
+The `posthog/` module is committed but inert until its credentials exist and it's
+wired into CI. One-time, by a human with PostHog org access:
+
+1. **Create two PostHog personal API keys** (PostHog → Settings → Personal API
+   keys), both scoped to the Plot organization/project:
+   - read key → `op://Production/PostHog Terraform/credential` (`insight:read`,
+     `alert:read`).
+   - write key → `op://Production/PostHog Terraform Edit/credential`
+     (`insight:read`+`write`, `alert:read`+`write`).
+   The op service account must be able to read both items.
+2. **Apply once, manually**, with the write key, to create the insight + alert:
+   ```bash
+   TF_POSTHOG_OP_ITEM="op://Production/PostHog Terraform Edit" \
+     pnpm tf posthog init
+   TF_POSTHOG_OP_ITEM="op://Production/PostHog Terraform Edit" \
+     pnpm tf posthog apply
+   ```
+   (Plain `pnpm tf posthog plan` uses the read key and previews without changes.)
+3. **Wire it into CI** so drift is caught and future changes auto-apply: add
+   `posthog` to the module loops in `.github/workflows/infra-plan.yml` (both the
+   `plan` and summary `for m in …` loops) and to the default `modules` input in
+   `.github/workflows/deploy-infra.yml`, and add
+   `TF_POSTHOG_OP_ITEM: "op://Production/PostHog Terraform Edit"` to the
+   `deploy-infra.yml` apply step's `env:` (mirroring `TF_CF_OP_ITEM`). Do this
+   **only after** step 1 — the wrapper hard-fails without the key.
+4. **Tune the threshold.** `threshold_upper` in `infra/posthog/alerts.tf` is a
+   conservative first cut; once PR #400's counters have a few days of baseline,
+   set it just above a normal busy hour (a reviewed, plan-previewed edit).
+   Verify recipients: the alert emails PostHog user id `157794` (kris@plot.day).
