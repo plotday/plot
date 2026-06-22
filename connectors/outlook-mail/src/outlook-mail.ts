@@ -52,10 +52,9 @@ const SELF_HEAL_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * If the subscription is within this window of expiry, `selfHealCheck`
- * re-establishes it preemptively rather than relying on
- * `mailbox_renewal_task` (which can fail to fire if the Durable Object
- * alarm is dropped on deploy/eviction). 36h gives the renewal task its
- * scheduled run plus a safety margin.
+ * re-establishes it preemptively rather than relying on the durable
+ * renewal task alone (which can be delayed by deploy/eviction). 36h gives
+ * the renewal task its scheduled run plus a safety margin.
  */
 const SUB_PREEMPTIVE_RENEW_MS = 36 * 60 * 60 * 1000;
 
@@ -490,10 +489,7 @@ export class OutlookMail extends Connector<OutlookMail> {
       await this.setupMailboxSubscription();
       return;
     }
-    const existingSelfHeal = await this.get<string>("mailbox_self_heal_task");
-    if (!existingSelfHeal) {
-      await this.scheduleSelfHealCheck();
-    }
+    await this.scheduleSelfHealCheck();
   }
 
   private async setupMailboxSubscription(): Promise<void> {
@@ -580,25 +576,8 @@ export class OutlookMail extends Connector<OutlookMail> {
    * channel is disabled.
    */
   private async teardownMailboxSubscription(): Promise<void> {
-    const renewalTaskToken = await this.get<string>("mailbox_renewal_task");
-    if (renewalTaskToken) {
-      try {
-        await this.cancelTask(renewalTaskToken);
-      } catch {
-        // Task may have already executed
-      }
-      await this.clear("mailbox_renewal_task");
-    }
-
-    const selfHealTaskToken = await this.get<string>("mailbox_self_heal_task");
-    if (selfHealTaskToken) {
-      try {
-        await this.cancelTask(selfHealTaskToken);
-      } catch {
-        // Task may have already executed
-      }
-      await this.clear("mailbox_self_heal_task");
-    }
+    await this.cancelScheduledTask("mailbox-subscription-renewal");
+    await this.cancelScheduledTask("mailbox-self-heal");
 
     const subscription = await this.get<SubscriptionState>(
       "mailbox_subscription"
@@ -633,29 +612,12 @@ export class OutlookMail extends Connector<OutlookMail> {
 
   /** Schedules subscription renewal RENEWAL_LEAD_MS before expiry. */
   private async scheduleMailboxRenewal(expiration: Date): Promise<void> {
-    const existingTask = await this.get<string>("mailbox_renewal_task");
-    if (existingTask) {
-      try {
-        await this.cancelTask(existingTask);
-      } catch {
-        // Task may have already executed
-      }
-      await this.clear("mailbox_renewal_task");
-    }
-
     const renewalTime = new Date(expiration.getTime() - RENEWAL_LEAD_MS);
-    if (renewalTime <= new Date()) {
-      await this.renewMailboxSubscription();
-      return;
-    }
-
     const renewalCallback = await this.callback(this.renewMailboxSubscription);
-    const taskToken = await this.runTask(renewalCallback, {
-      runAt: renewalTime,
+    await this.scheduleRecurring("mailbox-subscription-renewal", renewalCallback, {
+      intervalMs: 1.5 * 24 * 60 * 60 * 1000,
+      firstRunAt: renewalTime,
     });
-    if (taskToken) {
-      await this.set("mailbox_renewal_task", taskToken);
-    }
   }
 
   /**
@@ -720,27 +682,12 @@ export class OutlookMail extends Connector<OutlookMail> {
   }
 
   /**
-   * (Re)schedules the next self-heal check. Cancels any existing task so
-   * there's at most one outstanding self-heal task at a time.
+   * (Re)schedules the self-heal check as a durable recurring task.
+   * Idempotent: scheduling under the same key replaces any existing task.
    */
   private async scheduleSelfHealCheck(): Promise<void> {
-    const existing = await this.get<string>("mailbox_self_heal_task");
-    if (existing) {
-      try {
-        await this.cancelTask(existing);
-      } catch {
-        // Task may have already executed.
-      }
-      await this.clear("mailbox_self_heal_task");
-    }
-
     const callback = await this.callback(this.selfHealCheck);
-    const taskToken = await this.runTask(callback, {
-      runAt: new Date(Date.now() + SELF_HEAL_INTERVAL_MS),
-    });
-    if (taskToken) {
-      await this.set("mailbox_self_heal_task", taskToken);
-    }
+    await this.scheduleRecurring("mailbox-self-heal", callback, { intervalMs: SELF_HEAL_INTERVAL_MS });
   }
 
   /**
@@ -762,7 +709,7 @@ export class OutlookMail extends Connector<OutlookMail> {
 
     const enabled = await this.getEnabledChannels();
     if (enabled.size === 0) {
-      await this.clear("mailbox_self_heal_task");
+      await this.cancelScheduledTask("mailbox-self-heal");
       console.log(
         `OutlookMail selfHealCheck [${this.id}]: no enabled channels, ending cycle`
       );
@@ -860,19 +807,6 @@ export class OutlookMail extends Connector<OutlookMail> {
         : null,
       now: now.toISOString(),
     });
-
-    // 3. Always reschedule next run, even on failure.
-    try {
-      await this.scheduleSelfHealCheck();
-    } catch (rescheduleError) {
-      console.error(
-        `OutlookMail selfHealCheck [${this.id}]: reschedule failed`,
-        rescheduleError
-      );
-      if (!unrecoverableError) {
-        unrecoverableError = rescheduleError;
-      }
-    }
 
     if (unrecoverableError) {
       throw unrecoverableError instanceof Error
@@ -1080,16 +1014,13 @@ export class OutlookMail extends Connector<OutlookMail> {
     await this.set("last_webhook_received_at", new Date().toISOString());
 
     // Self-heal bootstrap for instances whose cycle died. Idempotent.
-    const selfHealTask = await this.get<string>("mailbox_self_heal_task");
-    if (!selfHealTask) {
-      try {
-        await this.scheduleSelfHealCheck();
-      } catch (error) {
-        console.error(
-          `OutlookMail webhook [${this.id}]: self-heal bootstrap failed`,
-          error
-        );
-      }
+    try {
+      await this.scheduleSelfHealCheck();
+    } catch (error) {
+      console.error(
+        `OutlookMail webhook [${this.id}]: self-heal bootstrap failed`,
+        error
+      );
     }
 
     const body = request.body as {
