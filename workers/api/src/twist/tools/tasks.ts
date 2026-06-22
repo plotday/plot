@@ -5,6 +5,7 @@ import type { Tasks as IRun } from "@plotday/twister/tools/tasks";
 
 import { type Bindings, type TwistEnvironment } from "../../env";
 import { isCallbackError } from "../../errors";
+import { isQueueRetryExhausted } from "../../queue/retry";
 import { type CallbacksState } from "../../state/callbacks";
 import { extractRunQueueContext } from "../../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
@@ -227,11 +228,41 @@ export class Tasks extends Tool implements IRun {
       } catch (error) {
         const durationMs = Date.now() - startedAt;
 
+        // Cloudflare infra blips — including an isolate OOM ("Worker exceeded
+        // memory limit.", PostHog 019ed581). isTransientError covers the OOM so
+        // a single isolate kill (which rejects every in-flight promise at once)
+        // is retried here rather than fanning out into dozens of captures.
         if (isTransientError(error)) {
+          // Persistent failure guard: the run queue has no DLQ, so once retries
+          // are exhausted Cloudflare drops the message silently. If a transient
+          // error keeps failing to the attempt cap (e.g. an isolate that OOMs
+          // every time, not just a one-off spike), report it ONCE before giving
+          // up — otherwise a real infra/memory regression would vanish. A blip
+          // that recovers on attempts 1-2 never reaches this and stays quiet.
+          if (isQueueRetryExhausted(message.attempts)) {
+            logger.error("RunMessage invocation finished", error as Error, {
+              duration_ms: durationMs,
+              outcome: "transient_exhausted",
+              attempts: message.attempts,
+            });
+            const ownerId = (error as ErrorWithTwistOwner)?.twistOwnerId;
+            postHog.captureException(error as Error, ownerId, {
+              twist_instance_id: message.body.twistInstanceId,
+              path: message.body.path.join("/"),
+              queue: batch.queue,
+              attempts: message.attempts,
+              duration_ms: durationMs,
+              outcome: "transient_exhausted",
+            });
+            message.ack();
+            return;
+          }
+
           logger.warn("RunMessage invocation finished", {
             duration_ms: durationMs,
             outcome: "transient_retry",
             error: String(error),
+            attempts: message.attempts,
           });
           message.retry();
           return;

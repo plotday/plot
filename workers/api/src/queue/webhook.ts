@@ -6,6 +6,7 @@ import { type Bindings, type WebhookMessage } from "../env";
 import { isCallbackError, getCallbackErrorType } from "../errors";
 import { invokeWebhookCallback } from "../twist/invoke-webhook";
 import { disposeRpc } from "../utils/rpc";
+import { isQueueRetryExhausted } from "./retry";
 import { isTransientError } from "../utils/transient-error";
 import { parseBodyFromRaw } from "../webhook";
 
@@ -107,9 +108,35 @@ export async function processWebhooks(
       }
 
       if (isTransientError(error)) {
+        // Persistent failure guard (mirrors Tasks.processQueue): the webhook
+        // queue has no DLQ, so once retries are exhausted Cloudflare drops the
+        // message silently. If a transient error keeps failing to the attempt
+        // cap (e.g. an isolate that OOMs every attempt, not just a one-off
+        // spike), report it ONCE before giving up — otherwise a real
+        // infra/memory regression would vanish. A blip that recovers on
+        // attempts 1-2 never reaches this and stays quiet.
+        if (isQueueRetryExhausted(message.attempts)) {
+          logger.error(
+            "Transient error processing webhook exhausted retries",
+            error as Error,
+            {
+              token: token.substring(0, 8) + "...",
+              attempts: message.attempts,
+            }
+          );
+          postHog.captureException(error as Error, undefined, {
+            queue: batch.queue,
+            token: token.substring(0, 8) + "...",
+            attempts: message.attempts,
+            outcome: "transient_exhausted",
+          });
+          message.ack();
+          return;
+        }
         logger.warn("Transient error processing webhook, retrying", {
           token: token.substring(0, 8) + "...",
           error: String(error),
+          attempts: message.attempts,
         });
         message.retry();
         return;

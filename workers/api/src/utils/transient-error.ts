@@ -26,7 +26,19 @@ export function isTransientError(error: unknown): boolean {
     // Queues producer 5xx is well-defined and the only producer-side
     // path that's worth a silent retry. Anything more generic ("Bad
     // Gateway", "internal error") could be a real downstream failure.
-    msg.includes("Queue send failed: Internal Server Error")
+    msg.includes("Queue send failed: Internal Server Error") ||
+    // Cloudflare isolate OOM: the runtime throws this verbatim string when an
+    // isolate exceeds its 128 MB ceiling, then kills it — rejecting EVERY
+    // in-flight promise at once. In the queue consumers that fans one OOM out
+    // into dozens of captures across both this path AND
+    // handleTwistOperation's escalation (which mints a random per-event
+    // distinct_id, so each becomes a phantom "user"). PostHog issue 019ed581
+    // saw 107 captures across 62 distinct_ids from a single 2026-06-21
+    // incident. It self-resolves like the blips above — the retried message
+    // reprocesses cleanly on a fresh / less-loaded isolate — and the marker is
+    // platform-emitted and unambiguous (never produced by user/connector
+    // code), so it clears the bar for a silent retry.
+    msg.includes("Worker exceeded memory limit")
   );
 }
 

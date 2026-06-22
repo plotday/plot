@@ -20,10 +20,29 @@ describe("isTransientError", () => {
     ).toBe(true);
   });
 
+  it("matches a Cloudflare isolate OOM (self-resolves on retry)", () => {
+    // Verbatim Workers runtime string when an isolate exceeds its 128 MB
+    // ceiling; one OOM rejects every in-flight promise at once (PostHog issue
+    // 019ed581: 107 captures / 62 phantom distinct_ids from one 2026-06-21
+    // incident). Classified transient so both queue consumers AND
+    // handleTwistOperation retry it instead of paging Error Tracking.
+    expect(
+      isTransientError(new Error("Worker exceeded memory limit."))
+    ).toBe(true);
+    // PostHog also ingests the variant prefixed with the Error name.
+    expect(
+      isTransientError(new Error("Error: Worker exceeded memory limit."))
+    ).toBe(true);
+  });
+
   it("does NOT match downstream API errors or non-Errors", () => {
     expect(isTransientError(new Error("Gmail API error: 500"))).toBe(false);
     expect(isTransientError("Network connection lost")).toBe(false);
     expect(isTransientError(undefined)).toBe(false);
+    // A connector log mentioning memory but not the runtime kill must not trip.
+    expect(
+      isTransientError(new Error("loaded 5000 messages into memory"))
+    ).toBe(false);
   });
 });
 
