@@ -6,3 +6,4 @@ export {
   lookupGooglePeople,
 } from "./people-api";
 export { default } from "./google-contacts";
+export { getContactsChannels, CONTACTS_SCOPES } from "./channels";
