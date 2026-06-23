@@ -398,6 +398,21 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   readonly reactionCapabilities?: ReactionCapabilities;
 
   /**
+   * When true, this connector's effective link types are computed dynamically
+   * from its enabled channels' per-channel link types (each channel carries the
+   * link types for whatever product/resource it represents), rather than the
+   * static union of all declared providers' link types. Lets one connection
+   * surface different link types depending on what the user has enabled — e.g.
+   * a combined Google connection shows calendar/event link types (and thus the
+   * agenda) only when a calendar channel is enabled.
+   *
+   * Defaults to false (static link types — the behavior for every connector
+   * that doesn't set this). Requires the connector to attach per-channel
+   * `linkTypes` on the channels returned by `getChannels`.
+   */
+  readonly dynamicLinkTypes?: boolean;
+
+  /**
    * When true, this connector is mentioned by default on replies to threads it created.
    * When false (default), this connector cannot be mentioned at all.
    *
