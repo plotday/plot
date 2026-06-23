@@ -44,7 +44,6 @@ import {
   CALENDAR_LINK_TYPES,
   type Calendar,
   getCalendarChannels,
-  listCalendars,
 } from "./channels";
 
 /**
@@ -380,10 +379,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     }
 
     return new GoogleApi(token.token);
-  }
-
-  private async listCalendarsWithApi(api: GoogleApi): Promise<Calendar[]> {
-    return listCalendars(api);
   }
 
   private async getUserEmail(calendarId: string): Promise<string> {
