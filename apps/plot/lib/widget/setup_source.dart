@@ -10,7 +10,10 @@ import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/channel_defaults.dart';
+import 'package:plot/util/product_channel.dart';
+import 'package:plot/widget/auth_button.dart' show AuthButton;
 import 'package:plot/widget/form.dart';
+import 'package:plot/widget/form_modal.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
@@ -41,9 +44,14 @@ class IntegrationChanges {
   final Set<String> selectedChannels; // "provider:channelId" keys
   final Set<String> removedAccounts; // "provider:actorId" keys
 
+  /// Product keys staged for re-auth (composite connections only).
+  /// Task 4 reads this to drive the "Continue with Google" re-auth flow.
+  final Set<String> stagedProducts;
+
   const IntegrationChanges({
     this.selectedChannels = const {},
     this.removedAccounts = const {},
+    this.stagedProducts = const {},
   });
 }
 
@@ -117,6 +125,12 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   /// Soft-removed account keys ("provider:actorId") — edit mode only.
   final Set<String> _removedAccounts = {};
 
+  /// Product keys the user has staged for re-auth (composite connections only).
+  /// Populated when the user taps an off-toggle in the "Not enabled" section.
+  /// Task 4 reads this via [IntegrationChanges.stagedProducts] to drive
+  /// the "Continue with Google" re-auth flow.
+  final Set<String> _stagedProducts = {};
+
   /// Tracks expanded state for nested channels in the tree view.
   final Set<String> _expandedChannels = {};
 
@@ -178,6 +192,18 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         key,
         () => account.autoThreadingEnabled,
       );
+    }
+
+    // M2 fix: on every reload of composite data, clear any staged product
+    // keys whose status has flipped to enabled. This prevents stale staged
+    // keys persisting after a successful re-auth (where the product's
+    // productStatus transitions from scopeMissing → granted).
+    if (data.isComposite && _stagedProducts.isNotEmpty) {
+      final nowEnabled = {
+        for (final s in data.productStatus ?? <ProductStatus>[])
+          if (s.enabled) s.key,
+      };
+      _stagedProducts.removeWhere(nowEnabled.contains);
     }
 
     if (_initializedFromServer) return;
@@ -438,6 +464,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       IntegrationChanges(
         selectedChannels: Set.of(_localSelectedChannels),
         removedAccounts: Set.of(_removedAccounts),
+        stagedProducts: Set.of(_stagedProducts),
       ),
     );
     // Notify form that validation state may have changed
@@ -477,9 +504,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     bool ancestorEnabled = false,
     required List<int> focusCounter,
     required bool reserveDisclosure,
+    FormChannelListController? controller,
+    void Function()? onAfterTap,
   }) {
     final widgets = <Widget>[];
-    final controller = widget.channelListController;
+    // Drill-down modals pass their OWN controller so the channel rows read that
+    // modal's keyboard focus state (highlight + focus nodes), not the parent's.
+    final ctrl = controller ?? widget.channelListController;
     for (final channel in channels) {
       final key = '${channel.providerKey}:${channel.id}';
       final isExplicitlyEnabled = _localSelectedChannels.contains(key);
@@ -492,14 +523,14 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       // Determine highlight and focus node for toggleable rows
       final int subIndex = canToggle ? focusCounter[0] : -1;
       final bool highlighted =
-          controller != null &&
+          ctrl != null &&
           canToggle &&
-          controller.highlightedSubIndex == subIndex;
+          ctrl.highlightedSubIndex == subIndex;
       final FocusNode? focusNode =
-          controller != null &&
+          ctrl != null &&
               canToggle &&
-              subIndex < controller.focusNodes.length
-          ? controller.focusNodes[subIndex]
+              subIndex < ctrl.focusNodes.length
+          ? ctrl.focusNodes[subIndex]
           : null;
 
       if (canToggle) {
@@ -511,8 +542,17 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           channel: channel,
           isChecked: isOn,
           canToggle: canToggle,
-          onToggle: () => _handleChannelTap(channel),
-          onQuickToggle: () => _quickToggleChannel(channel),
+          // _handleChannelTap setStates the parent; in a drill-down modal that
+          // doesn't rebuild this subtree, so onAfterTap fires the modal's local
+          // rebuild (mirrors the keyboard activator). Null on the main form.
+          onToggle: () {
+            _handleChannelTap(channel);
+            onAfterTap?.call();
+          },
+          onQuickToggle: () {
+            _quickToggleChannel(channel);
+            onAfterTap?.call();
+          },
           depth: depth,
           reserveDisclosure: reserveDisclosure,
           hasChildren: channel.hasChildren,
@@ -526,6 +566,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
                       _expandedChannels.add(key);
                     }
                   });
+                  onAfterTap?.call();
                 }
               : null,
           isForceEnabled: isForceEnabled,
@@ -542,6 +583,8 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
             ancestorEnabled: isOn,
             focusCounter: focusCounter,
             reserveDisclosure: reserveDisclosure,
+            controller: controller,
+            onAfterTap: onAfterTap,
           ),
         );
       }
@@ -576,6 +619,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     // Single-channel mode: show inline config instead of channel list
     if (data.singleChannel && data.channels.length == 1) {
       return _buildSingleChannelConfig(context, data);
+    }
+
+    // Composite mode: render ENABLED / NOT-ENABLED product sections.
+    // GATED: only when products list is non-empty. The non-composite path
+    // below is byte-unchanged — this guard is a clean early return.
+    if (data.isComposite) {
+      return _buildCompositeView(context, data);
     }
 
     // Compute providers where ALL accounts are soft-removed
@@ -718,6 +768,320 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           SizedBox(height: context.theme.spacing.md),
       ],
     );
+  }
+
+  /// Builds the composite product-status view.
+  ///
+  /// Renders a **single flat product list** — no "Enabled"/"Not enabled"
+  /// section headers. Each product occupies one focusable row: icon + label +
+  /// short summary + optional `›` drill-in chevron + trailing toggle.
+  ///
+  /// - For products **with channels** (`channelsByProduct[key]` non-empty or
+  ///   the product is enabled), tapping the row or pressing Enter opens a
+  ///   channel drill-down modal ([_openProductChannels]).
+  /// - For **channelless** products (Contacts — no channels after grouping),
+  ///   tapping the row / Enter **toggles** the product status instead.
+  /// - The **trailing toggle** is always directly tappable (quick enable/
+  ///   disable), decoupled from the row tap via a separate GestureDetector.
+  ///
+  /// Toggling a not-yet-granted product ON stages it in [_stagedProducts];
+  /// toggling an enabled product OFF turns all its channels off locally.
+  ///
+  /// Every product row is registered as a focusable sub-item of the
+  /// [FormChannelListController] so it integrates with the form's Tab / ↑↓
+  /// keyboard navigation and Enter activation.
+  ///
+  /// Channels whose product key is not in [TwistIntegrations.products] fall
+  /// through to a defensive flat-rendered group after the product list.
+  ///
+  /// The existing [_localSelectedChannels] key format is preserved unchanged.
+  Widget _buildCompositeView(BuildContext context, TwistIntegrations data) {
+    final theme = context.theme;
+    final products = data.products!;
+    final statusByKey = {
+      for (final s in data.productStatus ?? <ProductStatus>[]) s.key: s,
+    };
+
+    // Group channels by product key (first colon segment of channel.id).
+    final channelsByProduct = <String, List<TwistChannel>>{};
+    final orphanChannels = <TwistChannel>[];
+    for (final channel in data.channels) {
+      final pk = productKeyOf(channel.id);
+      if (pk != null && products.any((p) => p.key == pk)) {
+        channelsByProduct.putIfAbsent(pk, () => []).add(channel);
+      } else {
+        orphanChannels.add(channel);
+      }
+    }
+
+    // Build account rows (same as flat path).
+    final accountRows = <Widget>[];
+    if (widget.showAccounts) {
+      for (final account in data.accounts) {
+        final accountKey = '${account.provider.name}:${account.actorId}';
+        final isRemoved = _removedAccounts.contains(accountKey);
+        accountRows.add(
+          SourceAccountRow(
+            account: account,
+            isRemoved: isRemoved,
+            logoUrl: widget.logoUrl,
+            logoUrlDark: widget.logoUrlDark,
+          ),
+        );
+      }
+    }
+
+    // Register every product row as a focusable sub-item (one per product).
+    // The activator opens the drill-down for products with channels, or
+    // toggles the product for channelless ones.
+    final focusCounter = [0];
+    final controller = widget.channelListController;
+
+    // Build product rows — flat, in products order.
+    final rows = <Widget>[];
+
+    for (final product in products) {
+      final status = statusByKey[product.key];
+      final isEnabled = status?.enabled == true;
+      final productChannels = channelsByProduct[product.key] ?? [];
+      // Drill only when there's an actual choice of channels (>1). Single- or
+      // zero-channel products (e.g. Contacts) are a plain toggle — no drill.
+      final canDrill = isEnabled && productChannels.length > 1;
+      final anyChannelOn = productChannels.any(
+        (c) => _localSelectedChannels.contains('${c.providerKey}:${c.id}'),
+      );
+      final isStaged = _stagedProducts.contains(product.key);
+
+      // The trailing toggle IS the status: scope granted AND (no channels, or a
+      // channel on); a not-enabled product reflects whether it's staged.
+      final bool toggleOn = isEnabled
+          ? (productChannels.isEmpty ? true : anyChannelOn)
+          : isStaged;
+
+      // "Not synced" reflects the product's CURRENT server sync state — whether
+      // it's actively syncing right now — NOT the staged toggle. A synced
+      // product the user has toggled off (a pending disable) keeps a synced
+      // summary until saved; a not-yet-synced product the user toggled on still
+      // reads "Not synced" until the re-auth lands. When synced: multi-channel
+      // shows the staged enabled count; single/channelless shows nothing (the
+      // on-toggle conveys it).
+      final bool isSynced = isEnabled;
+      String summary;
+      if (!isSynced) {
+        summary = 'Not synced';
+      } else if (productChannels.length > 1) {
+        final n = productChannels
+            .where(
+              (c) => _localSelectedChannels.contains('${c.providerKey}:${c.id}'),
+            )
+            .length;
+        summary = n == 0
+            ? ''
+            : n == 1
+                ? '1 ${data.channelNoun.singular}'
+                : '$n ${data.channelNoun.plural}';
+      } else {
+        summary = '';
+      }
+
+      // Toggle = status. Enabled→off clears the product's channel(s) locally,
+      // off→on re-selects them; not-enabled→on stages a re-auth (Task 4 CTA).
+      void toggleProduct() {
+        setState(() {
+          if (isEnabled) {
+            for (final ch in productChannels) {
+              final key = '${ch.providerKey}:${ch.id}';
+              if (anyChannelOn) {
+                _localSelectedChannels.remove(key);
+              } else {
+                _localSelectedChannels.add(key);
+              }
+            }
+          } else if (isStaged) {
+            _stagedProducts.remove(product.key);
+          } else {
+            _stagedProducts.add(product.key);
+          }
+        });
+        _notifyChanged();
+      }
+
+      // Row / Enter activation: drill into channels when there's a choice,
+      // otherwise toggle status.
+      final void Function() onRowTap = canDrill
+          ? () => _openProductChannels(context, product, productChannels, data)
+          : toggleProduct;
+
+      final int subIndex = focusCounter[0];
+      focusCounter[0]++;
+
+      final bool highlighted =
+          controller != null && controller.highlightedSubIndex == subIndex;
+      final FocusNode? focusNode =
+          controller != null && subIndex < controller.focusNodes.length
+              ? controller.focusNodes[subIndex]
+              : null;
+
+      rows.add(
+        _CompositeProductRow(
+          label: product.label,
+          summary: summary,
+          isOn: toggleOn,
+          hasChannels: canDrill,
+          onRowTap: onRowTap,
+          onToggleTap: toggleProduct,
+          highlighted: highlighted,
+          focusNode: focusNode,
+        ),
+      );
+    }
+
+    // Register the product count with the controller so the form's keyboard
+    // navigation knows how many sub-items to step through.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.channelListController?.update(products.length, (
+        context,
+        subIndex,
+      ) async {
+        if (subIndex >= products.length) return;
+        final product = products[subIndex];
+        final isEnabled = statusByKey[product.key]?.enabled == true;
+        final productChannels = channelsByProduct[product.key] ?? [];
+        if (isEnabled && productChannels.length > 1) {
+          _openProductChannels(context, product, productChannels, data);
+          return;
+        }
+        // Single-/zero-channel or not-enabled: Enter toggles status.
+        final anyOn = productChannels.any(
+          (c) => _localSelectedChannels.contains('${c.providerKey}:${c.id}'),
+        );
+        setState(() {
+          if (isEnabled) {
+            for (final ch in productChannels) {
+              final key = '${ch.providerKey}:${ch.id}';
+              if (anyOn) {
+                _localSelectedChannels.remove(key);
+              } else {
+                _localSelectedChannels.add(key);
+              }
+            }
+          } else if (_stagedProducts.contains(product.key)) {
+            _stagedProducts.remove(product.key);
+          } else {
+            _stagedProducts.add(product.key);
+          }
+        });
+        _notifyChanged();
+      });
+    });
+
+    // ── Defensive orphan channels (no matching product key) ─────────────────
+    final orphanRows = <Widget>[];
+    if (orphanChannels.isNotEmpty) {
+      orphanRows.addAll(
+        _buildChannelTree(
+          orphanChannels,
+          focusCounter: focusCounter,
+          reserveDisclosure: data.channels.any((c) => c.hasChildren),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...accountRows,
+        ...rows,
+        ...orphanRows,
+        if (rows.isNotEmpty || accountRows.isNotEmpty || orphanRows.isNotEmpty)
+          SizedBox(height: theme.spacing.md),
+      ],
+    );
+  }
+
+  /// Opens a drill-down [FormModal] scoped to [product]'s channels.
+  ///
+  /// The drill-down renders the same [_buildChannelTree] / [_ChannelRow] rows
+  /// but constrained to [productChannels]. Changes mutate [_localSelectedChannels]
+  /// directly and call [_notifyChanged], so no result-return is needed.
+  Future<void> _openProductChannels(
+    BuildContext context,
+    ProductInfo product,
+    List<TwistChannel> productChannels,
+    TwistIntegrations data,
+  ) async {
+    if (!context.mounted) return;
+
+    final drillController = FormChannelListController();
+
+    // Build the drill-down's items — mirrors _buildChannelTree but uses its
+    // own focusCounter scoped to this modal's controller.
+    Widget buildChannelList(BuildContext ctx) {
+      // StatefulBuilder lets the channel list rebuild when a channel is toggled
+      // (because _handleChannelTap calls setState on the parent widget, but the
+      // drill-down modal has its own subtree; we trigger a local rebuild here
+      // via innerSetState to keep the controller count current).
+      return StatefulBuilder(
+        builder: (ctx, innerSetState) {
+          final drillFocusCounter = [0];
+          final channelWidgets = _buildChannelTree(
+            productChannels,
+            focusCounter: drillFocusCounter,
+            reserveDisclosure: productChannels.any((c) => c.hasChildren),
+            controller: drillController,
+            // A mouse tap mutates _localSelectedChannels via the parent's
+            // setState, which doesn't rebuild this modal subtree; rebuild it
+            // locally so the row's checked state updates immediately.
+            onAfterTap: () {
+              if (ctx.mounted) innerSetState(() {});
+            },
+          );
+
+          // Update the drill controller count each build.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!ctx.mounted) return;
+            final toggleable = _collectToggleableChannels(productChannels);
+            drillController.update(toggleable.length, (
+              innerCtx,
+              subIdx,
+            ) async {
+              final toggleableNow = _collectToggleableChannels(productChannels);
+              if (subIdx < toggleableNow.length) {
+                _handleChannelTap(toggleableNow[subIdx]);
+                innerSetState(() {});
+              }
+            });
+          });
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: channelWidgets,
+          );
+        },
+      );
+    }
+
+    final formData = FormData(
+      title: product.label,
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormChannelList(
+              key: 'channels',
+              controller: drillController,
+              builder: buildChannelList,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final groups = await formData.list();
+    if (!context.mounted) return;
+    await FormModal(formData, groups: groups, rootContext: context).run(context);
   }
 
   /// Builds inline display for single-channel connectors.
@@ -1179,6 +1543,165 @@ class ProviderIcon extends StatelessWidget {
   }
 }
 
+/// A product-level row used in composite connections.
+///
+/// Renders: label + short summary on the left; optional `›` chevron for
+/// products with channels; trailing toggle on the right.
+///
+/// The row is registered as a focusable sub-item of the enclosing
+/// [FormChannelListController] and mirrors [_ChannelRow]'s focus/hover
+/// mechanism exactly: [Focus] wrapping [MouseRegion] with highlight logic
+/// driven by [highlighted] (keyboard) OR hover (mouse).
+///
+/// **Old `_CompositeProductRow`** was a [StatelessWidget] with [IgnorePointer]
+/// on the toggle and no [Focus]/[MouseRegion] — it was not keyboard-focusable
+/// and had no hover. Replaced by this stateful implementation.
+///
+/// **Enabled** products: label on the left, summary ("N labels") in muted
+/// style, optional `›` chevron, and an on-switch on the right. Tapping the
+/// row (or Enter) opens the channel drill-down when the product has channels.
+///
+/// **Not-enabled** products: label + "Not connected" summary, and an
+/// off-switch that stages the product for re-auth on tap/Enter.
+class _CompositeProductRow extends StatefulWidget {
+  const _CompositeProductRow({
+    required this.label,
+    required this.summary,
+    required this.isOn,
+    required this.hasChannels,
+    required this.onRowTap,
+    required this.onToggleTap,
+    this.highlighted = false,
+    this.focusNode,
+  });
+
+  final String label;
+  final String summary;
+  final bool isOn;
+
+  /// Whether this product has channels — controls rendering of the `›` chevron.
+  final bool hasChannels;
+
+  /// Called when the user taps the row body or presses Enter. May be null for
+  /// products whose row tap is a no-op (e.g. enabled channelless products).
+  final VoidCallback? onRowTap;
+
+  /// Called when the user taps the trailing toggle directly.
+  final VoidCallback onToggleTap;
+
+  /// True when the form's keyboard navigator has highlighted this row.
+  final bool highlighted;
+
+  /// Focus node assigned by the [FormChannelListController]. Null when the
+  /// row is not registered with a controller (e.g. in tests).
+  final FocusNode? focusNode;
+
+  @override
+  State<_CompositeProductRow> createState() => _CompositeProductRowState();
+}
+
+class _CompositeProductRowState extends State<_CompositeProductRow> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final isTappable = widget.onRowTap != null;
+    final isHighlighted = widget.highlighted || (_isHovered && isTappable);
+
+    return Focus(
+      focusNode: widget.focusNode,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: isHighlighted
+                ? theme.colors.foreground.withValues(alpha: 0.05)
+                : null,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onRowTap,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: theme.spacing.xl,
+                right: theme.spacing.xl,
+                top: theme.spacing.xs,
+                bottom: theme.spacing.xs,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Text(
+                          widget.label,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: theme.typography.sm.fontSize,
+                            color: theme.colors.foreground,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (widget.summary.isNotEmpty) ...[
+                          SizedBox(width: theme.spacing.sm),
+                          Flexible(
+                            child: Text(
+                              widget.summary,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: theme.typography.sm.fontSize,
+                                color: theme.colors.mutedForeground,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (widget.hasChannels) ...[
+                    SizedBox(width: theme.spacing.xs),
+                    Icon(
+                      FontAwesomeIcons.chevronRight,
+                      size: 10,
+                      color: theme.colors.mutedForeground,
+                    ),
+                  ],
+                  SizedBox(width: theme.spacing.md),
+                  // The toggle is wrapped in its own GestureDetector so
+                  // a direct tap toggles independently of the row-body tap
+                  // (drill-in vs. quick toggle). IgnorePointer inside so the
+                  // FSwitch itself does not intercept events.
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.onToggleTap,
+                    child: IgnorePointer(
+                      child: SizedBox(
+                        width: 32,
+                        height: 20,
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: FSwitch(
+                            value: widget.isOn,
+                            onChange: (_) {},
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Per-account toggle for sequential auto-threading ("Group related messages
 /// into conversations"). Mirrors {@link _AutoEnableNewChannelsRow}'s layout.
 class _AutoThreadingRow extends StatefulWidget {
@@ -1395,6 +1918,118 @@ class _AutoEnableNewChannelsRowState extends State<_AutoEnableNewChannelsRow> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ============================================================================
+// Composite re-auth CTA
+// ============================================================================
+
+/// Renders a single "Continue with Google" [AuthButton] for composite
+/// connections that have one or more products staged for re-auth.
+///
+/// When [stagedGroupIds] is non-empty, the widget shows a reconnect prompt
+/// and an [AuthButton.connect] whose [enabledScopeGroups] is the union of
+/// [grantedGroupIds] ∪ [stagedGroupIds], so the OAuth consent screen
+/// requests all currently-granted permissions plus the new ones in one shot.
+///
+/// When [stagedGroupIds] is empty the widget renders nothing — used by
+/// [EditSource._buildForm] to hide the reauth CTA when no products are staged.
+///
+/// This widget is kept in `setup_source.dart` (rather than `twist.dart`) so
+/// it can be unit-tested without pulling in the full EditSource command
+/// infrastructure.
+class CompositeReauthWidget extends StatefulWidget {
+  const CompositeReauthWidget({
+    required this.provider,
+    required this.twistInstanceId,
+    required this.grantedGroupIds,
+    required this.stagedGroupIds,
+    required this.onSuccess,
+    this.accountHint,
+    super.key,
+  });
+
+  final TwistProvider provider;
+  final String twistInstanceId;
+
+  /// Scope group ids for products already granted (enabled) — derived from
+  /// the current [productStatus] entries whose [enabled] flag is true.
+  final Set<String> grantedGroupIds;
+
+  /// Scope group ids for products the user has staged for re-auth — derived
+  /// from [IntegrationChanges.stagedProducts] mapped through
+  /// [TwistIntegrations.products].
+  final Set<String> stagedGroupIds;
+
+  /// Passed to [AuthButton.connect] as the login_hint so Google can skip the
+  /// account-chooser when possible.
+  final String? accountHint;
+
+  /// Called after a successful OAuth flow — the caller should pull fresh
+  /// connection state and refresh the form.
+  final Future<void> Function() onSuccess;
+
+  @override
+  State<CompositeReauthWidget> createState() => CompositeReauthWidgetState();
+}
+
+class CompositeReauthWidgetState extends State<CompositeReauthWidget> {
+  /// The union of granted and staged scope group ids — passed to
+  /// [AuthButton.connect] as [enabledScopeGroups]. Exposed for testing.
+  Set<String> get computedScopeGroupIds => {
+        ...widget.grantedGroupIds,
+        ...widget.stagedGroupIds,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.stagedGroupIds.isEmpty) return const SizedBox.shrink();
+
+    final theme = context.theme;
+    final union = computedScopeGroupIds;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(
+            left: theme.spacing.xl,
+            right: theme.spacing.xl,
+            top: theme.spacing.md,
+            bottom: theme.spacing.sm,
+          ),
+          child: Text(
+            widget.accountHint != null
+                ? 'Reconnect to enable new products. Sign in as ${widget.accountHint}.'
+                : 'Reconnect to enable new products.',
+            style: theme.typography.sm.copyWith(
+              color: theme.colors.mutedForeground,
+            ),
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.only(
+            left: theme.spacing.xl,
+            right: theme.spacing.xl,
+            bottom: theme.spacing.lg,
+          ),
+          // SizedBox(width: double.infinity) forces the button to fill the
+          // available horizontal space, matching product_setup.dart's pattern.
+          child: SizedBox(
+            width: double.infinity,
+            child: AuthButton.connect(
+              provider: widget.provider.provider,
+              scopes: widget.provider.scopes,
+              twistInstanceId: widget.twistInstanceId,
+              enabledScopeGroups: union.isNotEmpty ? union.toList() : null,
+              accountHint: widget.accountHint,
+              onSuccess: widget.onSuccess,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

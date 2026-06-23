@@ -686,6 +686,51 @@ class TwistAuthUrl {
   }
 }
 
+/// One product within a composite connection (spec Part 4.2).
+class ProductInfo extends Equatable {
+  final String key;
+  final String label;
+  final String description;
+  final String icon;
+  final String scopeGroupId;
+  const ProductInfo({required this.key, required this.label, required this.description,
+      required this.icon, required this.scopeGroupId});
+  factory ProductInfo.fromJson(Map<String, dynamic> json) => ProductInfo(
+        key: json['key'] as String,
+        label: json['label'] as String,
+        description: json['description'] as String? ?? '',
+        icon: json['icon'] as String? ?? '',
+        scopeGroupId: json['scopeGroupId'] as String? ?? json['key'] as String,
+      );
+  @override
+  List<Object?> get props => [key, label, description, icon, scopeGroupId];
+}
+
+enum ProductStatusReason {
+  granted, scopeMissing, locallyOff, noChannels, other;
+  static ProductStatusReason parse(String? s) => switch (s) {
+        'granted' => granted,
+        'scope-missing' => scopeMissing,
+        'locally-off' => locallyOff,
+        'no-channels' => noChannels,
+        _ => other,
+      };
+}
+
+class ProductStatus extends Equatable {
+  final String key;
+  final bool enabled;
+  final ProductStatusReason reason;
+  const ProductStatus({required this.key, required this.enabled, required this.reason});
+  factory ProductStatus.fromJson(Map<String, dynamic> json) => ProductStatus(
+        key: json['key'] as String,
+        enabled: json['enabled'] as bool? ?? false,
+        reason: ProductStatusReason.parse(json['reason'] as String?),
+      );
+  @override
+  List<Object?> get props => [key, enabled, reason];
+}
+
 /// An optional scope group that users can toggle before OAuth.
 class OptionalScopeGroup extends Equatable {
   final String id;
@@ -803,6 +848,12 @@ class TwistIntegrations {
   /// EditSource form can route to a premium-specific upgrade prompt on save.
   final bool premium;
 
+  /// Products available in a composite connection (null for standard connectors).
+  final List<ProductInfo>? products;
+
+  /// Status of each product in a composite connection (null for standard connectors).
+  final List<ProductStatus>? productStatus;
+
   const TwistIntegrations({
     required this.providers,
     required this.accounts,
@@ -819,6 +870,8 @@ class TwistIntegrations {
     this.accountLabel,
     this.teamName,
     this.premium = false,
+    this.products,
+    this.productStatus,
   });
 
   factory TwistIntegrations.fromJson(Map<String, dynamic> json) {
@@ -848,10 +901,19 @@ class TwistIntegrations {
       accountLabel: json['accountLabel'] as String?,
       teamName: json['teamName'] as String?,
       premium: json['premium'] as bool? ?? false,
+      products: (json['products'] as List<dynamic>?)
+          ?.map((p) => ProductInfo.fromJson(p as Map<String, dynamic>))
+          .toList(),
+      productStatus: (json['productStatus'] as List<dynamic>?)
+          ?.map((s) => ProductStatus.fromJson(s as Map<String, dynamic>))
+          .toList(),
     );
   }
 
   bool get isEmpty => providers.isEmpty && channels.isEmpty;
+
+  /// True when this connector exposes multiple named products (composite connection).
+  bool get isComposite => products != null && products!.isNotEmpty;
 
   static Map<int, List<String>>? _parseTeamDomains(dynamic raw) {
     if (raw is! Map) return null;

@@ -47,6 +47,7 @@ export 'priority_selector.dart';
 export 'priority.dart';
 export 'priority_notification.dart';
 export 'pro_badge.dart';
+export 'product_setup.dart';
 export 'pulsing_color_button.dart';
 export 'reorderable_list_view.dart';
 export 'reschedule_event_modal.dart';

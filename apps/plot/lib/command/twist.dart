@@ -1376,6 +1376,13 @@ class EditSource extends ShowForm {
         selectedChannels: Set.of(initialEnabled),
       );
 
+      // Composite connections: track changes via a notifier so the reauth
+      // CTA FormInfo can rebuild reactively without a full form refresh.
+      // Non-composite connections: notifier is unused.
+      final changesNotifier = ValueNotifier<IntegrationChanges>(
+        integrationChanges,
+      );
+
       return [
         StaticFormGroup(
           items: _buildStandardSourceItems(
@@ -1390,6 +1397,9 @@ class EditSource extends ShowForm {
             channelListController: channelListController,
             onChannelChanges: (changes) {
               integrationChanges = changes;
+              if (integrations.isComposite) {
+                changesNotifier.value = changes;
+              }
             },
             channelsValidator: () =>
                 integrationChanges.selectedChannels.isNotEmpty,
@@ -1401,10 +1411,79 @@ class EditSource extends ShowForm {
         ),
         StaticFormGroup(
           items: [
+            // ── Composite re-auth CTA (gated) ────────────────────────────────
+            // For composite connections, when ≥1 products are staged for
+            // re-auth the form's primary action switches from Save to a single
+            // "Continue with Google" that requests the union of granted +
+            // staged scope groups. A ListenableBuilder drives the reactive
+            // swap so it shows/hides without a full form refresh.
+            // Non-composite connections take the else-branch (no FormInfo
+            // emitted) — zero behavioural change.
+            if (integrations.isComposite) ...[
+              FormInfo(
+                key: 'composite_reauth',
+                divider: false,
+                builder: (formContext) {
+                  // Derive the existing account hint for the auth button.
+                  final existingAccount =
+                      integrations.accounts.firstOrNull;
+
+                  // Compute granted scope group ids: products currently
+                  // enabled map to their scopeGroupId.
+                  final grantedGroupIds = <String>{
+                    for (final s in integrations.productStatus ?? <ProductStatus>[])
+                      if (s.enabled)
+                        integrations.products!
+                                .firstWhereOrNull((p) => p.key == s.key)
+                                ?.scopeGroupId ??
+                            '',
+                  }..remove('');
+
+                  // The provider for the composite connection (always the
+                  // first — composite connections have exactly one provider).
+                  final provider = integrations.providers.first;
+
+                  return ListenableBuilder(
+                    listenable: changesNotifier,
+                    builder: (ctx, _) {
+                      final stagedGroupIds = <String>{
+                        for (final key in changesNotifier.value.stagedProducts)
+                          integrations.products!
+                                  .firstWhereOrNull((p) => p.key == key)
+                                  ?.scopeGroupId ??
+                              '',
+                      }..remove('');
+
+                      return CompositeReauthWidget(
+                        provider: provider,
+                        twistInstanceId: twistInstanceId,
+                        grantedGroupIds: grantedGroupIds,
+                        stagedGroupIds: stagedGroupIds,
+                        accountHint: existingAccount?.email,
+                        onSuccess: () async {
+                          await TwistConnection.pull();
+                          if (formContext.mounted) {
+                            await FormScope.of(formContext)?.refresh?.call();
+                          }
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
             FormButton(
               key: 'save',
               isPrimary: true,
               buildCommand: (values) {
+                // Composite + staged: the reauth CTA above is the primary
+                // action — Save must not proceed until the user reconnects.
+                // Return a no-op command that surfaces a guidance message.
+                if (integrations.isComposite &&
+                    integrationChanges.stagedProducts.isNotEmpty) {
+                  return _CompositeReauthRequired();
+                }
+
                 final owner = values['team_id'] as String? ?? initialTeamId;
 
                 // Enforce the limit on newly-connected sources (saving here
@@ -1521,6 +1600,69 @@ class EditSource extends ShowForm {
 
     List<StaticFormGroup> buildAllGroups() {
       if (reauthProviderNames().isNotEmpty) {
+        // Composite connections: funnel through the single composite reauth
+        // CTA instead of the per-provider _AuthWithScopeToggles loop.
+        // GATED: only when integrations.isComposite.
+        if (integrations.isComposite) {
+          final provider = integrations.providers.first;
+          final existingAccount = integrations.accounts.firstOrNull;
+
+          // For a needs-reauth composite connection, grant ALL product scope
+          // group ids so the consent screen re-authorises the full set.
+          final allGroupIds = <String>{
+            for (final p in integrations.products ?? <ProductInfo>[])
+              p.scopeGroupId,
+          };
+
+          return [
+            StaticFormGroup(
+              items: [
+                FormInfo(
+                  key: 'reauth_message',
+                  text: 'Reconnect $name to resume syncing.',
+                ),
+                FormInfo(
+                  key: 'composite_reauth_button',
+                  divider: false,
+                  builder: (formContext) => Padding(
+                    padding: EdgeInsets.only(
+                      left: formContext.theme.spacing.xl,
+                      right: formContext.theme.spacing.xl,
+                      bottom: formContext.theme.spacing.lg,
+                    ),
+                    child: CompositeReauthWidget(
+                      provider: provider,
+                      twistInstanceId: twistInstanceId,
+                      grantedGroupIds: allGroupIds,
+                      stagedGroupIds: allGroupIds, // force CTA visible
+                      accountHint: existingAccount?.email,
+                      onSuccess: () async {
+                        await TwistConnection.pull();
+                        if (formContext.mounted) {
+                          await FormScope.of(formContext)?.refresh?.call();
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (!isNewlyActivated)
+              StaticFormGroup(
+                items: [
+                  FormButton(
+                    key: 'archive',
+                    skipValidation: true,
+                    buildCommand: (_) => PromptToArchiveSource(
+                      twistInstanceId: twistInstanceId,
+                      name: name,
+                    ),
+                  ),
+                ],
+              ),
+          ];
+        }
+
         return [
           buildReauthGroup(),
           if (!isNewlyActivated)
@@ -2053,6 +2195,37 @@ class AddSourceDetail extends ShowForm {
                   );
                 }
 
+                if (refreshed.isComposite &&
+                    refreshed.providers.isNotEmpty) {
+                  return FormInfo(
+                    key: 'product_setup',
+                    divider: false,
+                    builder: (formContext) {
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          left: formContext.theme.spacing.xl,
+                          right: formContext.theme.spacing.xl,
+                          bottom: formContext.theme.spacing.lg,
+                        ),
+                        child: ProductSetupWidget(
+                          provider: provider,
+                          products: refreshed.products!,
+                          twistInstanceId: draftId,
+                          onSuccess: () async {
+                            await _connectedAfterOAuth(
+                              formContext,
+                              draftId,
+                              twist.name,
+                              teams,
+                              fallbackOwner: initialOwner,
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  );
+                }
+
                 return FormInfo(
                   key: 'auth_${provider.provider.name}',
                   divider: false,
@@ -2260,6 +2433,37 @@ class AddSourceDetail extends ShowForm {
                     key: 'upgrade_${provider.provider.name}',
                     isPrimary: true,
                     buildCommand: (_) => _connectionAtLimitCommand(),
+                  );
+                }
+
+                if (integrations.isComposite &&
+                    integrations.providers.isNotEmpty) {
+                  return FormInfo(
+                    key: 'product_setup',
+                    divider: false,
+                    builder: (formContext) {
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          left: formContext.theme.spacing.xl,
+                          right: formContext.theme.spacing.xl,
+                          bottom: formContext.theme.spacing.lg,
+                        ),
+                        child: ProductSetupWidget(
+                          provider: provider,
+                          products: integrations.products!,
+                          twistInstanceId: draftId,
+                          onSuccess: () async {
+                            await _connectedAfterOAuth(
+                              formContext,
+                              draftId,
+                              twist.name,
+                              teams,
+                              fallbackOwner: initialOwner,
+                            );
+                          },
+                        ),
+                      );
+                    },
                   );
                 }
 
@@ -3931,6 +4135,29 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
 // ============================================================================
 // Edit/Update/Remove commands
 // ============================================================================
+
+/// Returned by the Save button when a composite connection has staged products
+/// that need re-auth. The actual action is the [CompositeReauthWidget] CTA —
+/// this command is a safety guard that surfaces if the user bypasses the CTA
+/// (e.g. via keyboard Enter) and prevents an accidental save without the new
+/// scopes.
+class _CompositeReauthRequired extends Command {
+  _CompositeReauthRequired()
+    : super(
+        title: 'Save',
+        icon: FontAwesomeIcons.check,
+        eventObject: EventObject.twist,
+        eventAction: EventAction.updated,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // No-op: the "Continue with Google" CTA above is the primary action.
+    // This command is only reached if the user presses Enter / Save while
+    // staged products are pending — simply skip so nothing is lost.
+    return const CommandSkipped();
+  }
+}
 
 /// Saves source integration changes: channel toggles and account removals.
 class SaveSource extends Command {
