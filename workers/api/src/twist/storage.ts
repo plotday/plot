@@ -27,7 +27,7 @@ export async function storeTwistModule({
   const version = dryRun ? "dry-run" : Date.now().toString();
 
   // Initialize twist to collect permissions, provider declarations, and options schema
-  const { permissions, toolPermissions, providers, integrationsMap, optionsSchema, sourceProvider, aiRequired, defaultMentionCreated, defaultMentionMentioned, multipleInstances, reactionCapabilities } = await twistFactory({
+  const { permissions, toolPermissions, providers, integrationsMap, optionsSchema, sourceProvider, aiRequired, defaultMentionCreated, defaultMentionMentioned, multipleInstances, reactionCapabilities, dynamicLinkTypes } = await twistFactory({
     env,
     ctx,
     db,
@@ -68,5 +68,6 @@ export async function storeTwistModule({
     defaultMentionMentioned,
     multipleInstances,
     reactionCapabilities,
+    dynamicLinkTypes,
   };
 }

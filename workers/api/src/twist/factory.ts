@@ -442,6 +442,7 @@ export function twistFactory({
     let defaultMentionMentioned = false;
     let multipleInstances = false;
     let reactionCapabilities: unknown = null;
+    let dynamicLinkTypes = false;
 
     if (!checkPermissions) {
       // DEPLOYMENT: Initialize twist to build tools and collect permissions
@@ -582,6 +583,10 @@ export function twistFactory({
       // Read reactionCapabilities instance property from the connector
       reactionCapabilities =
         (twist as { reactionCapabilities?: unknown }).reactionCapabilities ?? null;
+
+      // Read dynamicLinkTypes instance property from the connector
+      dynamicLinkTypes =
+        (twist as { dynamicLinkTypes?: boolean }).dynamicLinkTypes ?? false;
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
       // Use stored permissions without rebuilding twist
@@ -600,6 +605,7 @@ export function twistFactory({
       defaultMentionMentioned,
       multipleInstances,
       reactionCapabilities,
+      dynamicLinkTypes,
       activate: async (
         context?: {
           actor: { id: string; type: number };

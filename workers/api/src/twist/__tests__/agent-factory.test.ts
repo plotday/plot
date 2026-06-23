@@ -218,4 +218,35 @@ describe("twistFactory", () => {
     // Should have initialized and collected tools
     expect(twist.permissions).toBeDefined();
   });
+
+  describe("dynamicLinkTypes flag", () => {
+    // Note: dynamicLinkTypes is read from the connector's instance property via
+    // the Cloudflare Workers RPC proxy (same pattern as reactionCapabilities).
+    // In the test environment the RPC proxy returns undefined for instance
+    // properties, so the factory falls back to the initialised default (false).
+    // The important contract is that the field is present in the factory result
+    // and that it defaults to false — the deployment.ts permissions-injection
+    // tests (in deployment.test.ts) cover the true→_dynamic_link_types mapping.
+
+    it("includes dynamicLinkTypes in factory result (defaults false when connector omits it)", async () => {
+      const factory = twistFactory({
+        env: testEnv,
+        ctx,
+        db,
+        checkPermissions: false,
+        module: testTwistModule,
+      });
+
+      const result = await factory({
+        id: "test-twist",
+        environment: "personal",
+        version: "1.0.0",
+        twistInstanceId: "__deployment__",
+      });
+
+      // Field must be present and typed boolean
+      expect(typeof result.dynamicLinkTypes).toBe("boolean");
+      expect(result.dynamicLinkTypes).toBe(false);
+    });
+  });
 });

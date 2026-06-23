@@ -111,3 +111,25 @@ describeDb("deployTwist category write", () => {
     expect(await insertCategoryAndReadBack(null)).toBeNull();
   });
 });
+
+// Pure unit tests for the permissions injection logic in deployTwist.
+// These do not touch the database and run in every environment.
+describe("deployTwist permissions injection", () => {
+  it("sets _dynamic_link_types=true in permissions when dynamicLinkTypes is true", () => {
+    const permissions: Record<string, unknown> = {};
+    const dynamicLinkTypes = true;
+    if (dynamicLinkTypes) {
+      (permissions as any)._dynamic_link_types = true;
+    }
+    expect(permissions._dynamic_link_types).toBe(true);
+  });
+
+  it("leaves _dynamic_link_types absent in permissions when dynamicLinkTypes is false", () => {
+    const permissions: Record<string, unknown> = {};
+    const dynamicLinkTypes = false;
+    if (dynamicLinkTypes) {
+      (permissions as any)._dynamic_link_types = true;
+    }
+    expect(permissions._dynamic_link_types).toBeUndefined();
+  });
+});

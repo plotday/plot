@@ -199,6 +199,11 @@ export async function deployTwist({
       (permissions as any)._default_mention_mentioned = true;
     }
 
+    // Store dynamic-link-types flag in permissions for the user.twist view.
+    if (storeResult.dynamicLinkTypes) {
+      (permissions as any)._dynamic_link_types = true;
+    }
+
     // Enrich providers with linkTypes from sourceProvider
     sourceProvider = storeResult.sourceProvider ?? null;
     providers = sourceProvider?.provider
