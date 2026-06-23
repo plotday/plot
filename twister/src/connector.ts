@@ -221,6 +221,36 @@ export type ScopeConfig = {
 };
 
 /**
+ * Per-instance product metadata for combined (multi-product) connectors — one
+ * ordinary `Connector` that bundles several user-facing products (e.g. the
+ * combined Google connector covering Mail, Calendar, Tasks, and Contacts) under
+ * a single OAuth grant and one charge.
+ *
+ * The app's combined-connection setup/status UX renders one row per entry. Each
+ * product maps to exactly one optional scope group: `scopeGroupId` MUST equal an
+ * {@link OptionalScopeGroup.id} declared in the connector's {@link ScopeConfig}
+ * `optional` groups, so the API can derive per-product enablement
+ * (`granted | scope-missing | no-channels | locally-off`) from the connection's
+ * granted scopes plus its enabled channels.
+ *
+ * Plain (single-product) connectors leave {@link Connector.products} undefined;
+ * the API then omits the `products`/`productStatus` fields and the app falls
+ * back to the standard per-connector flow.
+ */
+export type ProductInfo = {
+  /** Stable product id. Also the channel-id namespace prefix (`"<key>:<rawId>"`). */
+  key: string;
+  /** Setup/status row title (e.g. "Gmail"). */
+  label: string;
+  /** Short summary shown under the label on the setup/status row. */
+  description: string;
+  /** Icon URL rendered on the row. */
+  icon: string;
+  /** Matches an {@link OptionalScopeGroup.id} in this connector's scopes. */
+  scopeGroupId: string;
+};
+
+/**
  * Base class for connectors — twists that sync data from external services.
  *
  * Connectors declare a single OAuth provider and scopes, and implement channel
@@ -411,6 +441,23 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * `linkTypes` on the channels returned by `getChannels`.
    */
   readonly dynamicLinkTypes?: boolean;
+
+  /**
+   * Per-instance product metadata for combined (multi-product) connectors —
+   * one connection bundling several user-facing products under a single OAuth
+   * grant (e.g. the combined Google connector: Mail, Calendar, Tasks,
+   * Contacts).
+   *
+   * Each {@link ProductInfo.scopeGroupId} must match an
+   * {@link OptionalScopeGroup.id} declared in this connector's {@link scopes}
+   * so the API can derive per-product enablement from granted scopes + enabled
+   * channels.
+   *
+   * Leave undefined for plain (single-product) connectors — the API then omits
+   * the `products`/`productStatus` response fields and the app uses the
+   * standard per-connector flow.
+   */
+  readonly products?: ProductInfo[];
 
   /**
    * When true, this connector is mentioned by default on replies to threads it created.
