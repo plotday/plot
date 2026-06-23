@@ -1,0 +1,1012 @@
+/**
+ * Reusable calendar sync functions extracted from GoogleCalendar.
+ *
+ * These functions implement the initial backfill state machine (quick pass +
+ * full pass) without any connector-level scheduling. They accept a
+ * CalendarSyncHost instead of `this` so they can be invoked from both the
+ * standalone GoogleCalendar connector and the combined Google connector
+ * (which wraps `this` in a key-namespaced proxy).
+ *
+ * Scheduling (this.callback / this.runTask) is intentionally absent here.
+ * Each function returns a descriptor that tells the caller what to do next;
+ * the caller owns the scheduling.
+ */
+
+import GoogleContacts, {
+  enrichLinkContactsFromGoogle,
+} from "@plotday/connector-google-contacts";
+import {
+  type Action,
+  ActionType,
+  type NewContact,
+  type NewLinkWithNotes,
+  ConferencingProvider,
+} from "@plotday/twister";
+import type { NewScheduleContact, NewScheduleOccurrence } from "@plotday/twister/schedule";
+
+import {
+  GoogleApi,
+  type GoogleEvent,
+  type SyncState,
+  containsHtml,
+  extractConferencingLinks,
+  hashContent,
+  syncGoogleCalendar,
+  transformGoogleEvent,
+} from "./google-api";
+
+// ---------------------------------------------------------------------------
+// Host interface
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal interface that a sync host must satisfy. Both GoogleCalendar (using
+ * `this` directly) and Google (using a key-namespaced proxy) implement this.
+ */
+export interface CalendarSyncHost {
+  /** Persist a value under a connector-scoped key. */
+  set(key: string, value: unknown): Promise<void>;
+  /** Retrieve a previously persisted value. Returns null if absent. */
+  get<T>(key: string): Promise<T | null>;
+  /** Delete a persisted value. */
+  clear(key: string): Promise<void>;
+
+  tools: {
+    integrations: {
+      /** Read the OAuth token for a channel. */
+      get(
+        channelId: string
+      ): Promise<{ token: string; scopes: string[] } | null>;
+      /** Persist a batch of links (upsert by source). */
+      saveLinks(links: NewLinkWithNotes[]): Promise<void>;
+      /** Signal that the initial backfill for a channel has finished. */
+      channelSyncCompleted(channelId: string): Promise<void>;
+    };
+    googleContacts: GoogleContacts;
+    store: {
+      /** Try to acquire a named lock. Returns true if acquired. */
+      acquireLock(key: string, ttlMs: number): Promise<boolean>;
+      /** Release a named lock. */
+      releaseLock(key: string): Promise<void>;
+      /** List all persisted keys that start with the given prefix. */
+      list(prefix: string): Promise<string[]>;
+    };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Return types (descriptors — no scheduling inside the functions)
+// ---------------------------------------------------------------------------
+
+/**
+ * Return type for {@link runSyncBatch}.
+ *
+ * - `next`: schedule another batch with these parameters.
+ * - `done`: no more batches; the caller should release any held resources.
+ */
+export type SyncBatchResult =
+  | { next: { batchNumber: number; mode: "full" | "incremental" } }
+  | { done: true };
+
+/**
+ * Return type for {@link runCalendarInit}.
+ *
+ * - `next`: set up the watch (optional) and then schedule the first batch.
+ * - `done`: skip — token missing or lock not acquired.
+ */
+export type CalendarInitResult =
+  | {
+      next: {
+        batchNumber: number;
+        mode: "full" | "incremental";
+        initialSync: boolean;
+        /** The resolved (non-"primary") calendar id to use for subsequent callbacks. */
+        resolvedCalendarId: string;
+      };
+    }
+  | { done: true };
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Lock TTL covering the worst-case full backfill (quick + full pass).
+ * The framework releases the lock automatically after this window even
+ * if a worker crashes, so no stuck-sync recovery is needed.
+ */
+export const SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// Pure helpers (no host state)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the canonical identifiers for a calendar event. The first element is
+ * the connector-native source (preserves existing thread.key dedup across
+ * users). Additional elements are cross-vendor aliases that let other
+ * connectors (e.g. meeting-notes apps) bundle into this thread by referencing
+ * the same canonical identifier.
+ */
+export function buildEventSources(opts: {
+  iCalUID?: string | null;
+  eventId?: string | null;
+  fallbackId?: string | null;
+}): string[] {
+  const { iCalUID, eventId, fallbackId } = opts;
+  const sources: string[] = [];
+  const primaryId = iCalUID ?? eventId ?? fallbackId;
+  if (primaryId) sources.push(`google-calendar:${primaryId}`);
+  if (iCalUID) sources.push(`icaluid:${iCalUID}`);
+  if (eventId) sources.push(`google-event:${eventId}`);
+  return sources;
+}
+
+// ---------------------------------------------------------------------------
+// Extracted helper functions (mechanical this.X → host.X)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a GoogleApi instance authenticated for the given calendar channel.
+ * Throws "Authorization no longer available" if the token is absent.
+ */
+export async function getApiFn(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<GoogleApi> {
+  const token = await host.tools.integrations.get(calendarId);
+  if (!token) {
+    throw new Error("Authorization no longer available");
+  }
+  return new GoogleApi(token.token);
+}
+
+/**
+ * Returns the user's primary Google email by calling the Calendar API.
+ */
+export async function getUserEmailFn(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<string> {
+  const api = await getApiFn(host, calendarId);
+  const calendarList = (await api.call(
+    "GET",
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary"
+  )) as { id: string };
+  return calendarList.id;
+}
+
+/**
+ * Ensures the user's email is stored in connector state (fetches once, then
+ * returns the cached value). Used for RSVP tagging on batch 1.
+ */
+export async function ensureUserIdentityFn(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<string> {
+  const stored = await host.get<string>("user_email");
+  if (stored) return stored;
+  const email = await getUserEmailFn(host, calendarId);
+  await host.set("user_email", email);
+  return email;
+}
+
+/**
+ * Resolves "primary" to the actual calendar id (user's email).
+ * Returns the calendarId unchanged if it's already resolved.
+ */
+export async function resolveCalendarIdFn(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<string> {
+  if (calendarId !== "primary") return calendarId;
+  const api = await getApiFn(host, calendarId);
+  const calendar = (await api.call(
+    "GET",
+    "https://www.googleapis.com/calendar/v3/calendars/primary"
+  )) as { id: string };
+  return calendar.id;
+}
+
+/**
+ * Stamp the first time the connector observes some opaque key, reusing that
+ * timestamp on every subsequent observation. Prevents re-syncs from bumping
+ * notes forward in the activity feed.
+ */
+export async function firstSeenAtFn(
+  host: CalendarSyncHost,
+  storeKey: string,
+  seed?: Date
+): Promise<Date> {
+  const existing = await host.get<string>(storeKey);
+  if (existing) return new Date(existing);
+  const initial = seed ?? new Date();
+  await host.set(storeKey, initial.toISOString());
+  return initial;
+}
+
+/**
+ * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
+ * Used on recovery, stopSync, and sync-error paths.
+ */
+export async function clearBuffersFn(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<void> {
+  const pendingKeys = await host.tools.store.list(`pending_occ:${calendarId}:`);
+  for (const key of pendingKeys) {
+    await host.clear(key);
+  }
+  const seenMasterKeys = await host.tools.store.list(
+    `seen_master:${calendarId}:`
+  );
+  for (const key of seenMasterKeys) {
+    await host.clear(key);
+  }
+}
+
+/**
+ * Transform a recurring event instance (occurrence) into either an
+ * occurrence-only NewLinkWithNotes (for the caller's batched saveLinks),
+ * or `null` when the occurrence is buffered to `pending_occ:` storage for
+ * cross-batch merging during initial sync. Never saves directly.
+ */
+export async function prepareEventInstanceFn(
+  host: CalendarSyncHost,
+  event: GoogleEvent,
+  calendarId: string,
+  initialSync: boolean
+): Promise<NewLinkWithNotes | null> {
+  const originalStartTime =
+    event.originalStartTime?.dateTime || event.originalStartTime?.date;
+  if (!originalStartTime) {
+    console.warn(`No original start time for instance: ${event.id}`);
+    return null;
+  }
+
+  if (!event.recurringEventId) {
+    console.warn(`No recurring event ID for instance: ${event.id}`);
+    return null;
+  }
+
+  const masterCanonicalUrl = `google-calendar:${event.iCalUID ?? event.recurringEventId}`;
+  const instanceData = transformGoogleEvent(event, calendarId);
+
+  if (event.status === "cancelled") {
+    const start = event.start?.dateTime
+      ? new Date(event.start.dateTime)
+      : event.start?.date
+      ? event.start.date
+      : new Date(originalStartTime);
+
+    const end = event.end?.dateTime
+      ? new Date(event.end.dateTime)
+      : event.end?.date
+      ? event.end.date
+      : null;
+
+    const cancelledOccurrence: NewScheduleOccurrence = {
+      occurrence: new Date(originalStartTime),
+      start,
+      end,
+      cancelled: true,
+    };
+
+    if (initialSync) {
+      const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
+        originalStartTime
+      ).toISOString()}`;
+      await host.set(pendingKey, cancelledOccurrence);
+      console.log(
+        `[GoogleCalendar] buffered cancelled instance: ` +
+          `master=${masterCanonicalUrl} ` +
+          `originalStart=${new Date(originalStartTime).toISOString()} ` +
+          `(calendar=${calendarId})`
+      );
+      return null;
+    }
+
+    const isAllDay = !event.originalStartTime?.dateTime;
+    const formattedDate = new Date(originalStartTime).toLocaleDateString(
+      "en-US",
+      {
+        dateStyle: "long",
+        ...(isAllDay ? { timeZone: "UTC" } : {}),
+      }
+    );
+    const occurrenceIso = new Date(originalStartTime).toISOString();
+    const cancelFirstSeen = await firstSeenAtFn(
+      host,
+      `cancel_seen:${masterCanonicalUrl}:${occurrenceIso}`,
+      event.updated ? new Date(event.updated) : undefined
+    );
+    const cancelNote = {
+      key: `cancellation-${occurrenceIso}`,
+      content: `The ${formattedDate} occurrence was cancelled.`,
+      contentType: "text" as const,
+      created: cancelFirstSeen,
+    };
+
+    return {
+      type: "event",
+      title: undefined,
+      source: masterCanonicalUrl,
+      sources: buildEventSources({
+        iCalUID: event.iCalUID,
+        fallbackId: event.recurringEventId,
+      }),
+      channelId: calendarId,
+      meta: { syncProvider: "google", syncableId: calendarId },
+      scheduleOccurrences: [cancelledOccurrence],
+      notes: [cancelNote],
+    };
+  }
+
+  const validAttendees =
+    event.attendees?.filter((att) => att.email && !att.resource) || [];
+
+  const contacts: NewScheduleContact[] | undefined =
+    validAttendees.length > 0
+      ? validAttendees.map((attendee) => ({
+          contact: {
+            email: attendee.email!,
+            name: attendee.displayName,
+          },
+          status:
+            attendee.responseStatus === "accepted"
+              ? ("attend" as const)
+              : attendee.responseStatus === "declined"
+              ? ("skip" as const)
+              : null,
+          role: attendee.organizer
+            ? ("organizer" as const)
+            : attendee.optional
+            ? ("optional" as const)
+            : ("required" as const),
+        }))
+      : undefined;
+
+  const instanceSchedule = instanceData.schedules?.[0];
+  const occurrenceStart =
+    instanceSchedule?.start ?? new Date(originalStartTime);
+
+  const occurrence: NewScheduleOccurrence = {
+    occurrence: new Date(originalStartTime),
+    start: occurrenceStart,
+    contacts,
+    ...(initialSync ? { unread: false } : {}),
+  };
+
+  if (instanceSchedule?.end !== undefined && instanceSchedule?.end !== null) {
+    occurrence.end = instanceSchedule.end;
+  }
+
+  if (initialSync) {
+    const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
+      originalStartTime
+    ).toISOString()}`;
+    await host.set(pendingKey, occurrence);
+    console.log(
+      `[GoogleCalendar] buffered exception instance: ` +
+        `master=${masterCanonicalUrl} ` +
+        `originalStart=${new Date(originalStartTime).toISOString()} ` +
+        `(calendar=${calendarId})`
+    );
+    return null;
+  }
+
+  return {
+    type: "event",
+    title: undefined,
+    source: masterCanonicalUrl,
+    sources: buildEventSources({
+      iCalUID: event.iCalUID,
+      fallbackId: event.recurringEventId,
+    }),
+    channelId: calendarId,
+    meta: { syncProvider: "google", syncableId: calendarId },
+    scheduleOccurrences: [occurrence],
+    notes: [],
+  };
+}
+
+/**
+ * Process a page of Google Calendar events: transforms them, coalesces by
+ * canonical source (so master + exception instances collapse into one
+ * NewLinkWithNotes), drains pending_occ buffers for any masters present, and
+ * saves the batch via integrations.saveLinks.
+ */
+export async function processCalendarEventsFn(
+  host: CalendarSyncHost,
+  events: GoogleEvent[],
+  calendarId: string,
+  initialSync: boolean
+): Promise<void> {
+  const linksBySource = new Map<string, NewLinkWithNotes>();
+  type LinkWithSource = NewLinkWithNotes & { source: string };
+  const addLink = (link: LinkWithSource) => {
+    const existing = linksBySource.get(link.source) as
+      | LinkWithSource
+      | undefined;
+    if (!existing) {
+      linksBySource.set(link.source, link);
+      return;
+    }
+    existing.scheduleOccurrences = [
+      ...(existing.scheduleOccurrences || []),
+      ...(link.scheduleOccurrences || []),
+    ];
+    if (link.notes?.length) {
+      existing.notes = [...(existing.notes || []), ...link.notes];
+    }
+    if (link.schedules && !existing.schedules) {
+      existing.schedules = link.schedules;
+      existing.title = link.title ?? existing.title;
+      existing.type = link.type ?? existing.type;
+      existing.status = link.status ?? existing.status;
+      existing.actions = link.actions ?? existing.actions;
+      existing.sourceUrl = link.sourceUrl ?? existing.sourceUrl;
+      existing.preview = link.preview ?? existing.preview;
+      existing.access = link.access ?? existing.access;
+      existing.accessContacts = link.accessContacts ?? existing.accessContacts;
+      existing.author = link.author ?? existing.author;
+      existing.created = link.created ?? existing.created;
+      existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
+      if (link.unread !== undefined) existing.unread = link.unread;
+      if (link.archived !== undefined) existing.archived = link.archived;
+    }
+  };
+
+  for (const event of events) {
+    try {
+      let validAttendees: typeof event.attendees = [];
+      let authorContact: NewContact | undefined = undefined;
+      if (event.organizer?.email) {
+        authorContact = {
+          email: event.organizer.email,
+          name: event.organizer.displayName,
+        };
+      }
+
+      if (event.attendees && event.attendees.length > 0) {
+        validAttendees = event.attendees.filter(
+          (att) => att.email && !att.resource
+        );
+      }
+
+      if (event.recurringEventId && event.originalStartTime) {
+        if (initialSync) {
+          const canonical = `google-calendar:${
+            event.iCalUID ?? event.recurringEventId
+          }`;
+          console.log(
+            `[GoogleCalendar] instance: master=${canonical} ` +
+              `status=${event.status ?? "n/a"} ` +
+              `originalStart=${
+                event.originalStartTime?.dateTime ??
+                event.originalStartTime?.date ??
+                "n/a"
+              } ` +
+              `masterAlreadyInBatch=${linksBySource.has(canonical)} ` +
+              `(calendar=${calendarId})`
+          );
+        }
+        const instanceLink = await prepareEventInstanceFn(
+          host,
+          event,
+          calendarId,
+          initialSync
+        );
+        if (instanceLink) addLink(instanceLink as LinkWithSource);
+      } else {
+        const activityData = transformGoogleEvent(event, calendarId);
+
+        if (event.status === "cancelled") {
+          if (initialSync) continue;
+
+          const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
+          const cancelFirstSeen = await firstSeenAtFn(
+            host,
+            `cancel_seen:${canonicalUrl}`,
+            event.updated ? new Date(event.updated) : undefined
+          );
+          const cancelNote = {
+            key: "cancellation" as const,
+            content: "This event was cancelled.",
+            contentType: "text" as const,
+            created: cancelFirstSeen,
+          };
+
+          const link: NewLinkWithNotes = {
+            source: canonicalUrl,
+            sources: buildEventSources({
+              iCalUID: event.iCalUID,
+              eventId: event.id,
+            }),
+            created: event.created ? new Date(event.created) : undefined,
+            type: "event",
+            title: activityData.title || undefined,
+            status: "Cancelled",
+            preview: "Cancelled",
+            priority: event.organizer?.self
+              ? 100
+              : event.attendees?.some((a) => a.self)
+              ? 50
+              : 0,
+            meta: activityData.meta ?? null,
+            notes: [cancelNote],
+            schedules: [
+              {
+                start: event.start?.dateTime
+                  ? new Date(event.start.dateTime)
+                  : event.start?.date
+                  ? event.start.date
+                  : new Date(),
+                archived: true,
+              },
+            ],
+            ...(initialSync ? { unread: false } : {}),
+            ...(initialSync ? { archived: false } : {}),
+          };
+
+          link.channelId = calendarId;
+          link.meta = {
+            ...link.meta,
+            syncProvider: "google",
+            syncableId: calendarId,
+          };
+
+          addLink(link as LinkWithSource);
+          continue;
+        }
+
+        if (
+          validAttendees.length > 0 &&
+          activityData.schedules?.[0]
+        ) {
+          const contacts: NewScheduleContact[] = validAttendees.map(
+            (attendee) => ({
+              contact: {
+                email: attendee.email!,
+                name: attendee.displayName,
+              },
+              status:
+                attendee.responseStatus === "accepted"
+                  ? ("attend" as const)
+                  : attendee.responseStatus === "declined"
+                  ? ("skip" as const)
+                  : null,
+              role: attendee.organizer
+                ? ("organizer" as const)
+                : attendee.optional
+                ? ("optional" as const)
+                : ("required" as const),
+            })
+          );
+          activityData.schedules[0].contacts = contacts;
+        }
+
+        const actions: Action[] = [];
+        const seenUrls = new Set<string>();
+
+        const conferencingLinks = extractConferencingLinks(event);
+        for (const link of conferencingLinks) {
+          if (!seenUrls.has(link.url)) {
+            seenUrls.add(link.url);
+            actions.push({
+              type: ActionType.conferencing,
+              url: link.url,
+              provider: link.provider,
+            });
+          }
+        }
+
+        if (event.hangoutLink && !seenUrls.has(event.hangoutLink)) {
+          seenUrls.add(event.hangoutLink);
+          actions.push({
+            type: ActionType.conferencing,
+            url: event.hangoutLink,
+            provider: ConferencingProvider.googleMeet,
+          });
+        }
+
+        if (event.htmlLink) {
+          actions.push({
+            type: ActionType.external,
+            title: "View in Calendar",
+            url: event.htmlLink,
+          });
+        }
+
+        const descriptionValue =
+          activityData.meta?.description || event.description;
+        const description =
+          typeof descriptionValue === "string" ? descriptionValue : null;
+        const hasDescription = description && description.trim().length > 0;
+        const hasActions = actions.length > 0;
+
+        if (!activityData.type) {
+          continue;
+        }
+
+        const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
+
+        const descHash = hasDescription
+          ? await hashContent(description)
+          : null;
+        const descFirstSeen = descHash
+          ? await firstSeenAtFn(
+              host,
+              `desc_seen:${canonicalUrl}:${descHash}`,
+              event.created ? new Date(event.created) : undefined
+            )
+          : undefined;
+        const descriptionNote =
+          hasDescription && descHash
+            ? {
+                key: `description-${descHash}`,
+                content: description,
+                contentType:
+                  description && containsHtml(description)
+                    ? ("html" as const)
+                    : ("text" as const),
+                created: descFirstSeen,
+                ...(authorContact ? { author: authorContact } : {}),
+              }
+            : null;
+
+        const attendeeMentions: NewContact[] = [];
+        if (authorContact) attendeeMentions.push(authorContact);
+        for (const att of validAttendees) {
+          if (att.email) {
+            attendeeMentions.push({
+              email: att.email,
+              name: att.displayName,
+            });
+          }
+        }
+
+        const notes = descriptionNote ? [descriptionNote] : [];
+
+        const link: NewLinkWithNotes = {
+          source: canonicalUrl,
+          sources: buildEventSources({
+            iCalUID: event.iCalUID,
+            eventId: event.id,
+          }),
+          created: event.created ? new Date(event.created) : undefined,
+          type: "event",
+          status:
+            event.status === "confirmed"
+              ? "Confirmed"
+              : event.status === "tentative"
+              ? "Tentative"
+              : undefined,
+          title: activityData.title || "",
+          priority: event.organizer?.self
+            ? 100
+            : event.attendees?.some((a) => a.self)
+            ? 50
+            : 0,
+          access: "private",
+          accessContacts: attendeeMentions,
+          author: authorContact,
+          meta: activityData.meta ?? null,
+          actions: hasActions ? actions : undefined,
+          sourceUrl: event.htmlLink ?? null,
+          notes,
+          preview: hasDescription ? description : null,
+          schedules: activityData.schedules,
+          scheduleOccurrences: activityData.scheduleOccurrences,
+          ...(initialSync ? { unread: false } : {}),
+          ...(initialSync ? { archived: false } : {}),
+        };
+
+        link.channelId = calendarId;
+        link.meta = {
+          ...link.meta,
+          syncProvider: "google",
+          syncableId: calendarId,
+        };
+
+        addLink(link as LinkWithSource);
+      }
+    } catch (error) {
+      console.error(`Failed to process event ${event.id}:`, error);
+    }
+  }
+
+  // Drain pending_occ buffers for any masters present in this batch.
+  let drainedTotal = 0;
+  for (const [source, link] of linksBySource.entries()) {
+    const pendingPrefix = `pending_occ:${calendarId}:${source}:`;
+    const pendingKeys = await host.tools.store.list(pendingPrefix);
+    if (pendingKeys.length === 0) continue;
+    const merged: NewScheduleOccurrence[] = [
+      ...(link.scheduleOccurrences || []),
+    ];
+    for (const key of pendingKeys) {
+      const pending = await host.get<NewScheduleOccurrence>(key);
+      if (pending) {
+        merged.push(pending);
+        drainedTotal += 1;
+      }
+      await host.clear(key);
+    }
+    link.scheduleOccurrences = merged;
+    console.log(
+      `[GoogleCalendar] drain: master=${source} ` +
+        `merged=${pendingKeys.length} (calendar=${calendarId})`
+    );
+  }
+  if (initialSync) {
+    console.log(
+      `[GoogleCalendar] processCalendarEvents end: calendar=${calendarId} ` +
+        `events=${events.length} masters=${linksBySource.size} ` +
+        `drained=${drainedTotal}`
+    );
+
+    for (const source of linksBySource.keys()) {
+      await host.set(`seen_master:${calendarId}:${source}`, true);
+    }
+  }
+
+  const batch = Array.from(linksBySource.values());
+  if (batch.length > 0) {
+    try {
+      const token = await host.tools.integrations.get(calendarId);
+      if (token) {
+        await enrichLinkContactsFromGoogle(batch, token.token, token.scopes);
+      }
+    } catch (err) {
+      console.warn(
+        "Failed to enrich Google Calendar contacts (non-blocking):",
+        err
+      );
+    }
+
+    await host.tools.integrations.saveLinks(batch);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main extracted sync functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Extracted backfill state machine. Processes one batch of calendar events and
+ * returns a descriptor for the next action.
+ *
+ * - Returns `{ next }` when more batches are required (caller schedules them).
+ * - Returns `{ done: true }` when the full backfill is complete.
+ * - Throws on unexpected errors (after performing cleanup internally).
+ *
+ * The function still calls `host.tools.integrations.channelSyncCompleted`
+ * directly because that is a data-plane signal, not a scheduling operation.
+ */
+export async function runSyncBatch(
+  host: CalendarSyncHost,
+  batchNumber: number,
+  mode: "full" | "incremental",
+  calendarId: string,
+  initialSync: boolean
+): Promise<SyncBatchResult> {
+  try {
+    const token = await host.tools.integrations.get(calendarId);
+    if (!token) {
+      console.warn(
+        `Auth token missing for calendar ${calendarId} at batch ${batchNumber}, skipping`
+      );
+      await host.clear(`sync_state_${calendarId}`);
+      await host.tools.store.releaseLock(`sync_${calendarId}`);
+      return { done: true };
+    }
+
+    if (batchNumber === 1) {
+      await ensureUserIdentityFn(host, calendarId);
+    }
+
+    const state = await host.get<SyncState>(`sync_state_${calendarId}`);
+    if (!state) {
+      await host.tools.store.releaseLock(`sync_${calendarId}`);
+      return { done: true };
+    }
+
+    // Convert date strings back to Date objects after deserialization.
+    if (state.min && typeof state.min === "string") {
+      state.min = new Date(state.min);
+    }
+    if (state.max && typeof state.max === "string") {
+      state.max = new Date(state.max);
+    }
+
+    const api = new GoogleApi(token.token);
+    const result = await syncGoogleCalendar(api, calendarId, state);
+
+    if (result.events.length > 0) {
+      await processCalendarEventsFn(host, result.events, calendarId, initialSync);
+    }
+
+    await host.set(`sync_state_${calendarId}`, result.state);
+
+    if (result.state.more) {
+      // More pages in this pass — schedule the next batch.
+      return { next: { batchNumber: batchNumber + 1, mode } };
+    }
+
+    // Persist sync token for future incremental syncs.
+    if (result.state.state) {
+      await host.set(`last_sync_token_${calendarId}`, result.state.state);
+    }
+
+    // Quick pass done: transition to full pass without releasing the lock.
+    if (state.phase === "quick") {
+      const historyMin = new Date();
+      historyMin.setFullYear(historyMin.getFullYear() - 2);
+      historyMin.setMonth(0, 1);
+      historyMin.setHours(0, 0, 0, 0);
+      const fullState: SyncState = {
+        calendarId,
+        min: historyMin,
+        max: null,
+        sequence: 1,
+        phase: "full",
+      };
+      await host.set(`sync_state_${calendarId}`, fullState);
+      return { next: { batchNumber: 1, mode } };
+    }
+
+    // Full pass (or incremental pass) done.
+    if (mode === "full") {
+      // Flush leftover pending_occ buffers whose master was seen this pass.
+      const seenMasterPrefix = `seen_master:${calendarId}:`;
+      const pendingPrefix = `pending_occ:${calendarId}:`;
+      const seenMasterKeys = await host.tools.store.list(seenMasterPrefix);
+      const seenMasters = new Set(
+        seenMasterKeys.map((k) => k.slice(seenMasterPrefix.length))
+      );
+      const pendingKeys = await host.tools.store.list(pendingPrefix);
+      const flushLinks: NewLinkWithNotes[] = [];
+      let droppedOrphans = 0;
+      for (const key of pendingKeys) {
+        const pending = await host.get<NewScheduleOccurrence>(key);
+        if (!pending) {
+          await host.clear(key);
+          continue;
+        }
+        const occurrenceDate =
+          pending.occurrence instanceof Date
+            ? pending.occurrence
+            : new Date(pending.occurrence);
+        const suffix = `:${occurrenceDate.toISOString()}`;
+        if (!key.startsWith(pendingPrefix) || !key.endsWith(suffix)) {
+          await host.clear(key);
+          continue;
+        }
+        const canonical = key.slice(
+          pendingPrefix.length,
+          key.length - suffix.length
+        );
+        if (!seenMasters.has(canonical)) {
+          droppedOrphans += 1;
+          await host.clear(key);
+          continue;
+        }
+        flushLinks.push({
+          type: "event",
+          title: undefined,
+          source: canonical,
+          channelId: calendarId,
+          meta: { syncProvider: "google", syncableId: calendarId },
+          scheduleOccurrences: [pending],
+          notes: [],
+        });
+        await host.clear(key);
+      }
+      if (flushLinks.length > 0 || droppedOrphans > 0) {
+        console.log(
+          `[GoogleCalendar] full-pass flush: calendar=${calendarId} ` +
+            `flushedLinks=${flushLinks.length} ` +
+            `droppedOrphans=${droppedOrphans}`
+        );
+      }
+      if (flushLinks.length > 0) {
+        await host.tools.integrations.saveLinks(flushLinks);
+      }
+
+      for (const key of seenMasterKeys) {
+        await host.clear(key);
+      }
+
+      await host.clear(`sync_state_${calendarId}`);
+    }
+
+    if (initialSync) {
+      await host.tools.integrations.channelSyncCompleted(calendarId);
+    }
+    await host.tools.store.releaseLock(`sync_${calendarId}`);
+    return { done: true };
+  } catch (error) {
+    console.error(
+      `Error in sync batch ${batchNumber} for calendar ${calendarId}:`,
+      error
+    );
+
+    await host.tools.store.releaseLock(`sync_${calendarId}`);
+    await host.clear(`sync_state_${calendarId}`);
+
+    try {
+      await clearBuffersFn(host, calendarId);
+    } catch (cleanupError) {
+      console.error(
+        `Failed to clear pending buffers after sync error for ${calendarId}:`,
+        cleanupError
+      );
+    }
+
+    if (initialSync) {
+      try {
+        await host.tools.integrations.channelSyncCompleted(calendarId);
+      } catch (signalError) {
+        console.error(
+          "Failed to signal sync completion on error path:",
+          signalError
+        );
+      }
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Extracted calendar initialization: resolves the calendar id, acquires the
+ * sync lock, and sets the initial SyncState for the quick pass.
+ *
+ * Does NOT set up the push webhook (watch setup stays on the concrete
+ * connector so it can reference its own callback methods).
+ *
+ * Returns `{ done: true }` when token is missing or lock is not acquired.
+ * Otherwise returns `{ next }` with the parameters for the first syncBatch.
+ */
+export async function runCalendarInit(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<CalendarInitResult> {
+  const token = await host.tools.integrations.get(calendarId);
+  if (!token) {
+    console.warn(
+      `Auth token missing for calendar ${calendarId} during initCalendar, skipping`
+    );
+    return { done: true };
+  }
+
+  const resolvedCalendarId = await resolveCalendarIdFn(host, calendarId);
+
+  const acquired = await host.tools.store.acquireLock(
+    `sync_${resolvedCalendarId}`,
+    SYNC_LOCK_TTL_MS
+  );
+  if (!acquired) {
+    return { done: true };
+  }
+
+  const initialState: SyncState = {
+    calendarId: resolvedCalendarId,
+    min: new Date(),
+    max: null,
+    sequence: 1,
+    phase: "quick",
+  };
+
+  await host.set(`sync_state_${resolvedCalendarId}`, initialState);
+
+  return {
+    next: {
+      batchNumber: 1,
+      mode: "full",
+      initialSync: true,
+      resolvedCalendarId,
+    },
+  };
+}
