@@ -182,4 +182,105 @@ describe.skipIf(!DATABASE_URL)("createLink unread on arrival", () => {
     expect(row).toBeDefined();
     expect(row.unread).toBe(false);
   });
+
+  it("does NOT mark unread for the owner when they authored the LATEST message in a multi-message sync", async () => {
+    // The common full-thread ingest: a connector first sees a pre-existing
+    // conversation only when the owner replies, so the whole thread — the
+    // other party's earlier message AND the owner's newer reply — lands in one
+    // sync batch. The owner sent the most recent message (and has, by
+    // definition, read everything before it), so the thread must NOT resurface
+    // as unread to them, even though an other-authored note is in the batch.
+    const row = await withConnectorPlot(async (plot, db, { userId }) => {
+      const ownerContact = await sql<{ id: string }>`
+        SELECT contact_id AS id FROM user_contact
+        WHERE user_id = ${userId}::uuid AND linked = TRUE
+        ORDER BY "primary" DESC NULLS LAST LIMIT 1
+      `.execute(db);
+      const ownerContactId = ownerContact.rows[0].id;
+
+      const senderId = randomUUID();
+      await sql`
+        INSERT INTO contact (id, name, email)
+        VALUES (${senderId}::uuid, 'External Sender', ${`sender-${senderId}@example.test`})
+      `.execute(db);
+
+      const threadId = await plot.createLink({
+        title: "Conversation I replied to",
+        source: `gmail:${randomUUID()}`,
+        author: { id: senderId },
+        preview: "My reply",
+        notes: [
+          {
+            content: "Their earlier message",
+            author: { id: senderId },
+            created: new Date("2026-06-22T13:00:00.000Z"),
+          },
+          {
+            content: "My reply",
+            author: { id: ownerContactId },
+            created: new Date("2026-06-22T21:00:00.000Z"),
+          },
+        ],
+      } as any);
+
+      const res = await sql<{ unread: boolean }>`
+        SELECT unread
+        FROM "user".thread
+        WHERE id = ${threadId}::uuid AND user_id = ${userId}::uuid
+      `.execute(db);
+      return res.rows[0];
+    });
+
+    expect(row).toBeDefined();
+    expect(row.unread).toBe(false);
+  });
+
+  it("marks unread for the owner when someone else authored the LATEST message in a multi-message sync", async () => {
+    // Mirror of the above: the owner spoke earlier but the other party's reply
+    // is the most recent message. The owner has unseen content, so the thread
+    // must surface as unread.
+    const row = await withConnectorPlot(async (plot, db, { userId }) => {
+      const ownerContact = await sql<{ id: string }>`
+        SELECT contact_id AS id FROM user_contact
+        WHERE user_id = ${userId}::uuid AND linked = TRUE
+        ORDER BY "primary" DESC NULLS LAST LIMIT 1
+      `.execute(db);
+      const ownerContactId = ownerContact.rows[0].id;
+
+      const senderId = randomUUID();
+      await sql`
+        INSERT INTO contact (id, name, email)
+        VALUES (${senderId}::uuid, 'External Sender', ${`sender-${senderId}@example.test`})
+      `.execute(db);
+
+      const threadId = await plot.createLink({
+        title: "Conversation they replied to",
+        source: `gmail:${randomUUID()}`,
+        author: { id: ownerContactId },
+        preview: "Their reply",
+        notes: [
+          {
+            content: "My earlier message",
+            author: { id: ownerContactId },
+            created: new Date("2026-06-22T13:00:00.000Z"),
+          },
+          {
+            content: "Their reply",
+            author: { id: senderId },
+            created: new Date("2026-06-22T21:00:00.000Z"),
+          },
+        ],
+      } as any);
+
+      const res = await sql<{ unread: boolean }>`
+        SELECT unread
+        FROM "user".thread
+        WHERE id = ${threadId}::uuid AND user_id = ${userId}::uuid
+      `.execute(db);
+      return res.rows[0];
+    });
+
+    expect(row).toBeDefined();
+    expect(row.unread).toBe(true);
+  });
 });

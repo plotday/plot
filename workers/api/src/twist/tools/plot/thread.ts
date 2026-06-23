@@ -143,8 +143,42 @@ export async function markThreadUnreadForUsers(
   const noteCreatedAt = new Date().toISOString();
   const syncStartedAtIso = syncStartedAt.toISOString();
 
+  // The user (if any) who authored the most recent message in the thread, by
+  // source time. Whoever wrote the latest message has necessarily seen
+  // everything before it, so the thread is read for them — even when an
+  // earlier message from someone else lands in the same sync batch. This is the
+  // common full-thread ingest: a connector first sees a conversation only when
+  // the owner replies, so the entire prior exchange (the other party's older
+  // messages included) arrives in one batch. Without this guard the
+  // "non-authors" check below would flag the author of the latest reply unread,
+  // because the batch also contains others' older notes. NULL when the latest
+  // message's author isn't a linked user (e.g. an external sender), which
+  // correctly leaves the thread unread for everyone else.
+  let latestAuthorUserId: string | null = null;
+  if (mode === "non-authors") {
+    const latest = await sql<{ user_id: string | null }>`
+      SELECT uc.user_id
+      FROM note n
+      LEFT JOIN user_contact uc
+        ON uc.contact_id = n.author_id
+        AND uc.linked = TRUE
+        AND uc.archived_at IS NULL
+      WHERE n.thread_id = ${threadId}::uuid
+        AND n.draft = FALSE
+        AND n.archived_at IS NULL
+        AND n.author_id IS NOT NULL
+      ORDER BY n.source_created_at DESC, n.created_at DESC
+      LIMIT 1
+    `.execute(plot.db);
+    latestAuthorUserId = latest.rows[0]?.user_id ?? null;
+  }
+
   for (const { user_id } of priorityUsers) {
     if (mode === "non-authors") {
+      // The user authored the most recent message → it's read for them, so
+      // don't resurface it as unread (see latestAuthorUserId above).
+      if (latestAuthorUserId && user_id === latestAuthorUserId) continue;
+
       // Look only at notes created in this sync. Skip if every such note was
       // authored by one of this user's linked contacts (i.e. they wrote
       // everything that just landed). A single non-self-authored note in the

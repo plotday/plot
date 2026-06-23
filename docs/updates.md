@@ -22,6 +22,9 @@
 
 ### Fixes
 
+- A conversation you've already replied to no longer shows up as unread when it first arrives in
+  Plot. If yours was the most recent message, the thread now correctly appears as read, even when the
+  other person's earlier messages sync in alongside your reply.
 - The back arrow in the header is easier to tap. Its touch area now fills the full height of the
   header and stretches from the screen edge across to the title beside it, so you no longer have to
   land precisely on the small chevron.
