@@ -15,7 +15,6 @@ import {
   type Authorization,
   Integrations,
   type Channel,
-  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
@@ -23,11 +22,11 @@ import { Tasks } from "@plotday/twister/tools/tasks";
 
 import {
   createTask,
-  listTaskLists,
   listTasks,
   updateTask,
   type GoogleTask,
 } from "./api";
+import { TASKS_LINK_TYPES, getTasksChannels } from "./channels";
 
 /** 5 minutes in milliseconds */
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
@@ -67,23 +66,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
     "Reads and updates your Google Tasks so they stay in sync with Plot",
     "Creates and completes tasks you change in Plot",
   ];
-  readonly linkTypes = [
-    {
-      type: "task",
-      label: "Task",
-      sharingModel: "none" as const,
-      // Logo: full-color SVG from static assets (iconify has no logos/google-tasks)
-      // logoMono: monochrome version from simple-icons (works fine on iconify)
-      logo: "https://plot.day/assets/logo-google-tasks.svg",
-      logoMono: "https://api.iconify.design/simple-icons/googletasks.svg",
-      statuses: [
-        { status: "open", label: "Open", icon: "todo" as StatusIcon },
-        { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
-      ],
-      supportsAssignee: false,
-      compose: { status: "open" },
-    },
-  ];
+  readonly linkTypes = TASKS_LINK_TYPES;
 
   build(build: ToolBuilder) {
     return {
@@ -120,8 +103,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
-    const lists = await listTaskLists(token.token);
-    return lists.map((list) => ({ id: list.id, title: list.title }));
+    return getTasksChannels(token);
   }
 
   /**
