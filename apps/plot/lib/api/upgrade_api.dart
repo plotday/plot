@@ -17,9 +17,11 @@ import 'api.dart' as api;
 /// The flag is driven by:
 ///   - `Platform.isIOS` at runtime (the Flutter iOS target is App-Store-
 ///     only — there's no non-store iOS distribution channel).
-///   - `--dart-define=APP_STORE_BUILD=true` for macOS, set by Fastlane's
-///     `:build_mas` lane. The DMG / direct distribution build omits the
-///     flag so direct-distribution users keep the web purchase flow.
+///   - `--dart-define=APP_STORE_BUILD=true` for macOS, passed to the
+///     `shorebird release macos` / `shorebird patch macos` builds in
+///     `release.yml` / `patch.yml` (the Mac App Store binary). The DMG /
+///     direct distribution build omits the flag so direct-distribution
+///     users keep the web purchase flow.
 ///
 /// Web is never an App Store build, and must not touch `dart:io`'s
 /// `Platform` (which throws on web).

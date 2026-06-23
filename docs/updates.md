@@ -20,6 +20,11 @@
   inbox. A scheduled event or focus block happening right now still takes you straight there.
 - Opening a role now reopens the focus you last had open in that role, instead of always its first.
 
+### Saving files
+
+- On Mac, saving a file or image now lets you choose where it goes with a standard save dialog,
+  instead of always dropping it straight into Downloads.
+
 ### Sending notes
 
 - Just sent a note and want it back? For five seconds after you send, the note shows a **SENDING** button where the author and time normally appear — click it, or press Esc, to pull the message back into the editor. Works for replies and for the first note of a new thread. If you close the app or sign out during those five seconds, the note sends right away.

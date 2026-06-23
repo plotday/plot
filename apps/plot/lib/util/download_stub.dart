@@ -29,8 +29,13 @@ class DownloadResult {
 
 /// Saves [bytes] with [fileName] as the proposed name.
 ///
-/// On macOS / Windows / Linux: writes directly to the user's Downloads folder
-/// without prompting, suffixing the filename if one already exists.
+/// On Windows / Linux: writes directly to the user's Downloads folder without
+/// prompting, suffixing the filename if one already exists.
+/// On macOS: shows the native save panel. The macOS App Store build is
+/// sandboxed, and saving via the panel grants write access to the chosen
+/// location through the powerbox — so we don't need the broad
+/// `com.apple.security.files.downloads.read-write` entitlement (removed per
+/// App Review guideline 2.4.5: minimum entitlements only).
 /// On iOS / Android: shows the native save picker (no shared "Downloads"
 /// concept on iOS, and Android Downloads requires MediaStore).
 Future<DownloadResult> downloadFile({
@@ -47,7 +52,17 @@ Future<DownloadResult> downloadFile({
     return DownloadResult(success: true, savedPath: path);
   }
 
-  // Desktop: save directly to ~/Downloads.
+  if (Platform.isMacOS) {
+    // Sandboxed: let the user pick the destination via the save panel. The
+    // panel returns a path we're granted write access to; we write the bytes
+    // ourselves. No destinationLabel — the user chose where it went.
+    final path = await FilePicker.saveFile(fileName: fileName);
+    if (path == null) return DownloadResult.cancelled;
+    await File(path).writeAsBytes(bytes);
+    return DownloadResult(success: true, savedPath: path);
+  }
+
+  // Windows / Linux: not sandboxed — save directly to ~/Downloads.
   final dir = await getDownloadsDirectory();
   if (dir == null) {
     // Fall back to a save dialog if the platform doesn't expose Downloads.

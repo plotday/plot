@@ -98,9 +98,18 @@ class IapService {
   /// (so the user is known when receipts arrive). Safe to call on
   /// non-App-Store platforms — it short-circuits to a no-op.
   Future<void> init() async {
-    if (_initialized) return;
     if (!isSupported) {
       _initialized = true;
+      return;
+    }
+
+    // Already set up the purchase stream on a prior call. If product loading
+    // came back empty earlier (a transient query failure, or the App Store
+    // catalogue not yet propagated at first launch), retry it now so a later
+    // upgrade tap can recover without an app restart. Without this the
+    // `_runIap` lazy-retry was a no-op and the upgrade button stayed wedged.
+    if (_initialized) {
+      if (_available && _products.isEmpty) await _loadProducts();
       return;
     }
 
@@ -118,6 +127,19 @@ class IapService {
       },
     );
 
+    await _loadProducts();
+    _initialized = true;
+    log.info(
+      'IAP: ready (products=${_products.keys.join(",")}, '
+      'platform=${Platform.operatingSystem})',
+    );
+  }
+
+  /// Query the StoreKit catalogue for our subscription products. Safe to call
+  /// repeatedly — each call replaces [_products] with the latest response.
+  /// Empty [notFoundIDs]-only responses are the usual symptom of a missing
+  /// Paid Apps Agreement or unconfigured products in App Store Connect.
+  Future<void> _loadProducts() async {
     final response = await _iap.queryProductDetails(_kAllProductIds);
     if (response.error != null) {
       log.warning(
@@ -131,11 +153,6 @@ class IapService {
       );
     }
     _products = {for (final p in response.productDetails) p.id: p};
-    _initialized = true;
-    log.info(
-      'IAP: ready (products=${_products.keys.join(",")}, '
-      'platform=${Platform.operatingSystem})',
-    );
   }
 
   /// Begin a purchase for [productId]. Returns when the transaction has
