@@ -103,7 +103,9 @@ export const PRODUCTS: ProductInfo[] = [
     key: "contacts",
     label: "Google Contacts",
     description: "Recognizes people by name and photo on your threads.",
-    icon: "https://api.iconify.design/material-symbols/contacts-product.svg",
+    // TODO: mirror to plot.day/assets (like logo-google-tasks.svg) for
+    // production robustness — this is a third-party hotlink.
+    icon: "https://images.seeklogo.com/logo-png/45/1/google-contacts-logo-png_seeklogo-456656.png",
     scopeGroupId: "contacts",
   },
 ];
