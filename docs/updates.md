@@ -37,6 +37,9 @@
 - Marking a new thread "To do" now drops it neatly at the bottom of your Active list, right above your
   unread items — instead of jumping to the very top. It also no longer flickers through the Done
   section on its way there; it lands in Active straight away.
+- New threads arriving from your connected accounts (email, chat, and the like) now appear in the
+  right place straight away. Previously a freshly arrived message could briefly show in Done before
+  jumping up to your Active list a moment later.
 - Adding a connection now shows a spinner on the connector you tapped while it sets up, so it's clear
   Plot is working during the second or two before the setup screen appears. Previously the tapped
   connector gave no feedback (or the spinner landed on the wrong row), making it look like nothing

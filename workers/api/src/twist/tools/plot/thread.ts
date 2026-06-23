@@ -113,8 +113,17 @@ export type { PreparedThread as PreparedActivity } from "./thread-helpers";
  * Uses upsert_thread_state with read_at unset (defaults to NULL = unread).
  * The function preserves an existing read_at if the user has read past the
  * latest note (race-guard via p_note_created_at).
+ *
+ * Exported so `createLink` can re-run it AFTER it has created the link's notes:
+ * `createThread`'s own call fires before those notes exist (the connector
+ * creates notes against the link, not the thread), so in "non-authors" mode it
+ * sees no notes and skips — leaving the thread with no `thread_state` row, which
+ * `user.thread` reports as read (`unread = false`). The thread would then render
+ * in Done until the deferred unread-marking queue task fills the row in, flashing
+ * to Active. Re-running here once the notes exist establishes unread state
+ * synchronously.
  */
-async function markThreadUnreadForUsers(
+export async function markThreadUnreadForUsers(
   plot: Plot,
   threadId: string,
   mode: "all" | "non-authors",

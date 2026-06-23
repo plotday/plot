@@ -15,7 +15,7 @@ import {
   createPreviewFromMarkdown,
   convertNoteToMarkdown,
 } from "./thread-helpers";
-import { createThread } from "./thread";
+import { createThread, markThreadUnreadForUsers } from "./thread";
 import { createNotes } from "./note";
 import { normalizeConferencingLink } from "./conferencing";
 import { createLinkSchedules } from "./schedule";
@@ -367,6 +367,11 @@ export async function createLink(
       linkId = linkResult.id;
     }
 
+    // Boundary captured just before createNotes so the unread-marking below
+    // scopes its "any other-authored note?" check to the notes created by THIS
+    // saveLink (mirrors createThread's own syncStartedAt).
+    const syncStartedAt = new Date();
+
     // Create notes against the resolved linkId so note.link_id is set on
     // the first write — keeps the FK valid and lets the partial unique
     // index (thread_id, link_id, key) deduplicate connector keys per link.
@@ -394,6 +399,47 @@ export async function createLink(
         link.schedules,
         link.scheduleOccurrences
       );
+    }
+
+    // Establish per-user unread state now that the link's notes exist.
+    // createThread already ran its own unread-marking, but that fired before
+    // these notes were created (connectors attach notes to the link, AFTER the
+    // thread), so in "non-authors" mode it saw no notes and skipped — leaving
+    // the thread with no thread_state row, which user.thread reports as read
+    // (unread = false). The thread then renders in Done until the deferred
+    // unread queue task fills the row in, flashing to Active. Re-running here
+    // makes the thread unread synchronously, before the first sync push.
+    //
+    // Runs BEFORE applyMuteForNewThread so a matching mute can still override it
+    // to read + inactive (Done). Honors link.unread: false → leave read; true →
+    // unread for all; omitted → unread for non-authors. Best effort: the
+    // deferred queue task is a fallback, so a failure here must never break
+    // connector ingestion.
+    if (link.unread !== false) {
+      try {
+        await markThreadUnreadForUsers(
+          plot,
+          threadId,
+          link.unread === true ? "all" : "non-authors",
+          syncStartedAt
+        );
+      } catch (unreadError) {
+        const postHog = new PostHog(plot.env.POSTHOG_API_KEY, {
+          host: plot.env.POSTHOG_HOST,
+          flushAt: 1,
+          flushInterval: 0,
+        });
+        postHog.captureException(
+          unreadError as Error,
+          await plot.getUserId().catch(() => undefined),
+          {
+            context: "plot:createLink:markThreadUnreadForUsers",
+            twist_instance_id: plot.twistInstanceId,
+            thread_id: threadId,
+          },
+        );
+        await postHog.shutdown();
+      }
     }
 
     // Forward-mute: apply the owner's "Skip active for threads like this" rules
