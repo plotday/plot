@@ -111,9 +111,18 @@ importers:
 
   connectors/google:
     dependencies:
+      '@plotday/connector-gmail':
+        specifier: workspace:^
+        version: link:../gmail
       '@plotday/connector-google-calendar':
         specifier: workspace:^
         version: link:../google-calendar
+      '@plotday/connector-google-contacts':
+        specifier: workspace:^
+        version: link:../google-contacts
+      '@plotday/connector-google-tasks':
+        specifier: workspace:^
+        version: link:../google-tasks
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
