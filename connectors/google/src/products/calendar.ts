@@ -11,9 +11,16 @@ export const calendarProduct: Product = {
   linkTypes: CALENDAR_LINK_TYPES,
   getRawChannels: (token) => getCalendarChannels(token),
   onEnable: async () => {
-    throw new Error("Phase 3: calendar sync not yet re-homed");
+    // Calendar enable is handled directly by Google.onChannelEnabled
+    // (it needs access to the connector instance for callback scheduling).
+    // This path should never be reached — Google.onChannelEnabled detects
+    // the "calendar:" prefix and calls onCalendarChannelEnabled directly.
+    throw new Error(
+      "Calendar onEnable must be handled directly by Google.onChannelEnabled"
+    );
   },
   onDisable: async () => {
-    throw new Error("Phase 3: calendar sync not yet re-homed");
+    // Placeholder — calendar disable not yet re-homed.
+    throw new Error("Phase 3: calendar disable not yet re-homed");
   },
 };
