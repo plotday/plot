@@ -7,6 +7,7 @@ import 'package:collection/collection.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/state/pending_send.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/command/command.dart';
@@ -268,28 +269,7 @@ class ThreadBloc extends Cubit<ThreadState> {
     // Also update thread contacts if there are new user/contact mentions.
     // Done BEFORE converting to non-draft so the mentions are correctly
     // attributed to the original draft content if copyWith was just called.
-    if (note.mentions != null && note.mentions!.isNotEmpty) {
-      final newContacts = {...currentThread.contacts};
-      bool changed = false;
-      for (final mention in note.mentions!) {
-        if (!mention.isTwist) {
-          if (newContacts.add(mention.toUuid())) {
-            changed = true;
-          }
-        }
-      }
-
-      if (changed) {
-        final updatedThread = currentThread.copyWith(
-          contacts: Value(newContacts.toList()),
-        );
-        // Save the thread to persist the contacts. This will trigger a
-        // DB change and we update our local state too.
-        await updatedThread.save();
-        emit(state.copyWith(thread: updatedThread));
-        currentThread = updatedThread;
-      }
-    }
+    currentThread = await _mergeNoteMentionsIntoContacts(note, currentThread);
 
     // Convert the draft to a non-draft.
     note = note.copyWith(draft: false);
@@ -315,6 +295,83 @@ class ThreadBloc extends Cubit<ThreadState> {
     // is hidden (BCC) from thread.contacts after the message is sent.
     // This prevents BCC recipients from being visible to future senders.
     _dropHiddenRoleContactsAfterSend(currentThread, currentLinks);
+  }
+
+  /// Merges any non-twist note mentions into [currentThread.contacts], saving
+  /// the thread and emitting updated state when the contact list changes.
+  /// Returns the (possibly updated) thread.
+  Future<Thread> _mergeNoteMentionsIntoContacts(
+    Note note,
+    Thread currentThread,
+  ) async {
+    if (note.mentions == null || note.mentions!.isEmpty) return currentThread;
+    final newContacts = {...currentThread.contacts};
+    bool changed = false;
+    for (final mention in note.mentions!) {
+      if (!mention.isTwist) {
+        if (newContacts.add(mention.toUuid())) changed = true;
+      }
+    }
+    if (!changed) return currentThread;
+    final updatedThread = currentThread.copyWith(
+      contacts: Value(newContacts.toList()),
+    );
+    await updatedThread.save();
+    emit(state.copyWith(thread: updatedThread));
+    return updatedThread;
+  }
+
+  /// Like [add], but defers the actual publish/push for 5 seconds so the user
+  /// can undo. Does everything [add] does EXCEPT saving the note: it merges
+  /// note mentions into thread contacts, emits a fresh draft, clears
+  /// reply/editing state, drops hidden-role (BCC) contacts, and registers the
+  /// publish-ready note with [PendingSend]. The note is published by
+  /// PendingSend.commit() when the window elapses (or on app-close/sign-out).
+  Future<void> sendWithUndo(Note note) async {
+    var currentThread = state.thread;
+    final currentLinks = state.links;
+
+    // Merge new non-twist mentions into thread.contacts (mirrors add()).
+    currentThread = await _mergeNoteMentionsIntoContacts(note, currentThread);
+
+    // The publish version. PendingSend.commit() will save this (draft=false).
+    final publishNote = note.copyWith(draft: false);
+
+    // Reset the composer to a fresh draft and clear reply/editing — same UI
+    // reset add() performs so the editor clears immediately on send.
+    emit(
+      state.copyWith(
+        draft: Note.draft(threadId: currentThread.id),
+        clearReplyTo: true,
+        clearEditingNote: true,
+      ),
+    );
+    _defaultDraftToPrivateIfViewers();
+
+    PendingSend.instance.start(note: publishNote);
+
+    // BCC auto-drop (mirrors add()); runs async.
+    _dropHiddenRoleContactsAfterSend(currentThread, currentLinks);
+  }
+
+  /// Moves an un-sent (undone) note's content back into the composer. Restores
+  /// content + actions and re-enters reply mode if the note was a reply.
+  void restoreDraft(Note? note) {
+    if (note == null) return;
+    final restored = Note.draft(threadId: state.thread.id)
+        .copyWith(content: note.content, actions: note.actions);
+    Note? replyTarget;
+    if (note.reNoteId != null) {
+      replyTarget =
+          state.notes.where((n) => n.id == note.reNoteId).firstOrNull;
+    }
+    emit(
+      state.copyWith(
+        draft: restored,
+        replyTo: replyTarget,
+        clearReplyTo: replyTarget == null,
+      ),
+    );
   }
 
   /// After a note is sent on a message-mode thread, drop any contacts whose

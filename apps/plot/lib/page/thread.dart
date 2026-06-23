@@ -11,6 +11,7 @@ import 'package:plot/util/thread_carousel_nav.dart';
 import 'package:plot/widget/thread_carousel.dart';
 import 'package:plot/widget/thread_preview.dart';
 import 'package:plot/widget/widget.dart' hide Link;
+import 'package:plot/state/pending_send.dart';
 import 'package:plot/state/priority.dart';
 
 import 'package:plot/state/thread.dart';
@@ -187,6 +188,16 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     if (_scrollController.hasClients) {
       _lastNoteScrollOffset = _scrollController.offset;
     }
+  }
+
+  /// Undoes the pending send for this thread: cancels the timer, restores the
+  /// note content into the composer, and refocuses the editor.
+  void _undoPendingSend() {
+    final note = PendingSend.instance.pendingNote;
+    unawaited(PendingSend.instance.undo());
+    if (!mounted) return;
+    context.read<ThreadBloc>().restoreDraft(note);
+    _noteEditorKey.currentState?.focus();
   }
 
   @override
@@ -666,8 +677,16 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       }
                     }
                     if (event.logicalKey == LogicalKeyboardKey.escape) {
-                      // Cancel editing if active
                       final threadBloc = context.read<ThreadBloc>();
+                      // Undo a SENDING note for this thread before any other
+                      // Escape behavior.
+                      if (PendingSend.instance.isPending &&
+                          PendingSend.instance.pendingThreadId ==
+                              threadBloc.state.thread.id) {
+                        _undoPendingSend();
+                        return KeyEventResult.handled;
+                      }
+                      // Cancel editing if active
                       if (threadBloc.state.editingNote != null) {
                         threadBloc.setEditingNote(null);
                         _noteEditorKey.currentState?.focus();
@@ -746,29 +765,35 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                                 ),
                               ),
                             ),
-                            ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxHeight: panelConstraints.maxHeight * 0.4,
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  left: context.isMultiPanel ? 20.0 : 0,
-                                  right: context.isMultiPanel ? 20.0 : 0,
-                                  top: 8,
-                                  // NoteEditor's `flushToBottom` already absorbs
-                                  // the bottom safe-area inset. Adding it here
-                                  // too produced a doubled gap below the action
-                                  // buttons on iOS.
-                                  bottom: context.isMultiPanel ? 20.0 : 0,
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildPendingSendRow(state),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxHeight: panelConstraints.maxHeight * 0.4,
+                                  ),
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      left: context.isMultiPanel ? 20.0 : 0,
+                                      right: context.isMultiPanel ? 20.0 : 0,
+                                      top: 8,
+                                      // NoteEditor's `flushToBottom` already
+                                      // absorbs the bottom safe-area inset.
+                                      // Adding it here too produced a doubled
+                                      // gap below the action buttons on iOS.
+                                      bottom: context.isMultiPanel ? 20.0 : 0,
+                                    ),
+                                    child: NoteEditor(
+                                      key: _noteEditorKey,
+                                      draft: state.draft,
+                                      flushToBottom:
+                                          !layoutStateForPanels.multiPanel,
+                                      viewerMode: state.thread.isReadOnly,
+                                    ),
+                                  ),
                                 ),
-                                child: NoteEditor(
-                                  key: _noteEditorKey,
-                                  draft: state.draft,
-                                  flushToBottom:
-                                      !layoutStateForPanels.multiPanel,
-                                  viewerMode: state.thread.isReadOnly,
-                                ),
-                              ),
+                              ],
                             ),
                           ],
                         );
@@ -779,6 +804,27 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
               );
             },
           ),
+        );
+      },
+    );
+  }
+
+  /// Builds the in-flight "SENDING" note row shown just above the composer.
+  /// Returns [SizedBox.shrink] when no send is pending for this thread.
+  Widget _buildPendingSendRow(ThreadState state) {
+    return ListenableBuilder(
+      listenable: PendingSend.instance,
+      builder: (context, _) {
+        final pending = PendingSend.instance;
+        if (!pending.isPending ||
+            pending.pendingThreadId != state.thread.id) {
+          return const SizedBox.shrink();
+        }
+        return NoteWidget(
+          note: pending.pendingNote!,
+          showAuthor: false,
+          sending: true,
+          onUndoSend: _undoPendingSend,
         );
       },
     );

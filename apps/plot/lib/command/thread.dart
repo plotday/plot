@@ -540,21 +540,18 @@ class AddThreadWithNote extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
 
-    // Persist the thread + first note before navigating. Running these in
-    // parallel with the route flip let a late `_saveDraft` from the
-    // disposing NewThreadPage NoteEditor flip the just-published note row
-    // back to draft=true, which the sync push filter excludes — the note
-    // would then never reach the server.
-    final savedThread = await priorityBloc.add(_data.thread, note: _data.note);
+    // Defer publishing through PendingSend so the 5-second undo window can
+    // fire before the thread/note reach the server. Returns the still-draft
+    // thread for the undo case (or the published thread when note == null).
+    final savedOrDraft = await priorityBloc.sendThreadWithUndo(
+      _data.thread,
+      note: _data.note,
+    );
 
-    if (!navigate) {
-      return const CommandDone();
-    }
-
-    if (context.mounted) {
+    if (navigate && context.mounted) {
       // Prime the cache so ThreadBlocProvider builds synchronously, skipping
       // a redundant Thread.getOne and the LoadingPage flash.
-      priorityBloc.setThread(savedThread);
+      priorityBloc.setThread(savedOrDraft);
       // Reset the new-thread flow to step 1 for next time. In single-panel the
       // replace below disposes NewThreadPage so this is a harmless no-op (the
       // next New tap pushes a fresh mount). In multi-panel the page can be
@@ -562,7 +559,7 @@ class AddThreadWithNote extends Command {
       // starts clean rather than re-showing the just-sent compose state.
       NewThreadPageState.requestReset();
       await context.router.replace(
-        ThreadRoute(threadIdString: savedThread.id.toShortString()),
+        ThreadRoute(threadIdString: savedOrDraft.id.toShortString()),
       );
     }
 

@@ -34,6 +34,7 @@ import 'package:plot/util/draft.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/pending_send.dart';
 import 'package:plot/router.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/widget.dart';
@@ -3920,21 +3921,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // If the draft note carries a CreateLinkUserAction, stash a pending
     // create_link payload so ThreadsBase.toBase spreads it into the thread
     // push body. The server dispatches to the connector's onCreateLink once
-    // the thread is titled and persisted.
-    final createAction = note?.actions
-        ?.whereType<CreateLinkUserAction>()
-        .firstOrNull;
-    if (createAction != null) {
-      ThreadsBase.pendingCreateLinks[savedThread.id.toString()] = {
-        'create_link': {
-          'twist_instance_id': createAction.twistInstanceId,
-          'channel_id': createAction.channelId,
-          'type': createAction.linkType,
-          'status': createAction.status,
-        },
-        if (note?.content != null) 'note_content': note!.content,
-      };
-    }
+    // the thread is titled and persisted. (savedThread.id == thread.id since
+    // copyWith only flips draft/todo.)
+    _stashPendingCreateLink(savedThread.id, note);
 
     await savedThread.save();
 
@@ -3958,8 +3947,17 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     // Create fresh draft for the priority (use remembered default if set)
+    resetDraftAfterSend(thread.priority);
+
+    return savedThread;
+  }
+
+  /// Emits a fresh draft thread + draft note for the priority so the compose
+  /// surface is clean for the next new thread. Extracted from [add] so the
+  /// deferred (undoable) new-thread path can reuse it without publishing.
+  void resetDraftAfterSend(Priority priority) {
     final newDraft = Thread(
-      priority: _newThreadDefaultPriority ?? thread.priority,
+      priority: _newThreadDefaultPriority ?? priority,
       draft: true,
     );
     emit(
@@ -3968,8 +3966,56 @@ class PriorityBloc extends Cubit<PriorityState> {
         draftNote: Note.draft(threadId: newDraft.id),
       ),
     );
+  }
 
-    return savedThread;
+  /// Stashes a pending create_link payload keyed by thread id so
+  /// [ThreadsBase.toBase] spreads it into the thread push body when the
+  /// thread is saved. Mirrors the inline block in [add] lines 3920–3937.
+  void _stashPendingCreateLink(ThreadId threadId, Note? note) {
+    final createAction = note?.actions
+        ?.whereType<CreateLinkUserAction>()
+        .firstOrNull;
+    if (createAction != null) {
+      ThreadsBase.pendingCreateLinks[threadId.toString()] = {
+        'create_link': {
+          'twist_instance_id': createAction.twistInstanceId,
+          'channel_id': createAction.channelId,
+          'type': createAction.linkType,
+          'status': createAction.status,
+        },
+        if (note?.content != null) 'note_content': note!.content,
+      };
+    }
+  }
+
+  /// Defers publishing a brand-new thread so the 5-second undo window can
+  /// fire. The draft thread row stays `draft=true` in the DB; [PendingSend]
+  /// holds the promote-ready thread + publish-ready note. When the window
+  /// elapses (or the app closes), [PendingSend.commit] promotes the thread
+  /// and publishes the note atomically.
+  ///
+  /// Falls back to the immediate [add] path when [note] is null (nothing
+  /// to undo — an empty-body thread with no link action).
+  Future<Thread> sendThreadWithUndo(Thread draftThread, {Note? note}) async {
+    // No note → nothing to undo; use the existing immediate publish path.
+    if (note == null) {
+      return add(draftThread, note: null);
+    }
+
+    _stashPendingCreateLink(draftThread.id, note);
+
+    final isSelfTodo = note.hasTag(Tag.todo, Base.actorId);
+    final promoteThread =
+        draftThread.copyWith(draft: false, todo: isSelfTodo ? true : null);
+    final publishNote = note.copyWith(threadId: draftThread.id, draft: false);
+
+    // Reset the compose surface WITHOUT publishing — the draft thread row
+    // stays `draft=true` in the DB until PendingSend.commit() fires.
+    resetDraftAfterSend(draftThread.priority);
+
+    PendingSend.instance.start(note: publishNote, newThread: promoteThread);
+
+    return draftThread;
   }
 
   void _loadAgenda({bool triggerSync = true, _PriorityLoadProfile? profile}) {

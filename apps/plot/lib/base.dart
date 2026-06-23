@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:injector/injector.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -16,6 +17,7 @@ import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/auth/sign_in_retry.dart'
     show IdentityResolutionException, isTransientSignInError, retryAsync;
+import 'package:plot/state/pending_send.dart';
 import 'env.dart';
 import 'cli_args.dart';
 import 'logging.dart';
@@ -73,6 +75,22 @@ class Base {
   /// that access actorId during cleanup.
   static void clearActorId() {
     Injector.appInstance.get<Base>()._actorId = null;
+  }
+
+  /// Registers a minimal [Base] instance suitable for unit tests that need
+  /// [Base.actorId] to resolve (e.g. [Note.draft] or [ThreadBloc.sendWithUndo]).
+  /// Must be paired with a [tearDown] that calls [removeForTesting].
+  @visibleForTesting
+  static void initForTesting(ActorId actorId) {
+    final base = Base._();
+    base._actorId = actorId;
+    Injector.appInstance.registerSingleton<Base>(() => base, override: true);
+  }
+
+  /// Removes the [Base] singleton registered by [initForTesting].
+  @visibleForTesting
+  static void removeForTesting() {
+    Injector.appInstance.removeByKey<Base>();
   }
 
   /// In-flight token fetch completer — serializes concurrent requests so
@@ -492,6 +510,14 @@ class Base {
     final currentUser = base._currentUserController.valueOrNull;
 
     log.info('Processing explicit sign out (user: ${currentUser?.id})');
+
+    // Send any in-flight "SENDING" note under the still-authenticated session
+    // before clearing identity.
+    try {
+      await PendingSend.instance.flush();
+    } catch (e, t) {
+      log.warning('Failed to flush pending send on sign-out', e, t);
+    }
 
     // Clear userId
     base._userId = null;

@@ -50,9 +50,10 @@ class AddNote extends Command {
     final note = await _note;
     _resolved = note;
 
-    // Use ThreadBloc.add() if available (resets the draft), otherwise save directly
+    // Use ThreadBloc.sendWithUndo() (deferred, undoable) when a ThreadBloc is
+    // available; otherwise save directly (no undo window outside a thread view).
     if (activityBloc != null) {
-      await activityBloc.add(note);
+      await activityBloc.sendWithUndo(note);
     } else {
       await note.save();
     }

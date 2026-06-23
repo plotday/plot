@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/recipient_change_line.dart';
@@ -101,6 +102,8 @@ class NoteWidget extends StatefulWidget {
     this.showAuthor = true,
     this.searchHighlight,
     this.initiallyExpanded = false,
+    this.sending = false,
+    this.onUndoSend,
     super.key,
   });
 
@@ -117,6 +120,12 @@ class NoteWidget extends StatefulWidget {
   /// instead of height-truncated with the "View all" fade. Set by ThreadPage
   /// for a lone note or for unread notes. See `util/note_initial_view.dart`.
   final bool initiallyExpanded;
+
+  /// When true, this note is in its post-send "SENDING" undo window: the
+  /// footer shows a `SENDING ✕` ghost button instead of author/timestamp and
+  /// commands, and tapping it calls [onUndoSend].
+  final bool sending;
+  final VoidCallback? onUndoSend;
 
   @override
   State<NoteWidget> createState() => _NoteWidgetState();
@@ -235,115 +244,139 @@ class _NoteWidgetState extends State<NoteWidget> {
             _DeliveryErrorBanner(note: widget.note),
           SizedBox(
             height: 30,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Author/timestamp positioned on the right, overlapping if needed
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Builder(
-                    builder: (context) {
-                      final mutedXs = context.theme.typography.xs.copyWith(
-                        color: context.colour.muted,
-                      );
-                      final timeAgo = FTooltip(
-                        tipBuilder: (context, controller) => Text(
-                          widget.note.sourceCreatedAt.toLocal().format(
-                            'MMM d, yyyy, h:mm a',
+            child: widget.sending
+                ? Align(
+                    alignment: Alignment.centerRight,
+                    child: FButton(
+                      onPress: widget.onUndoSend,
+                      variant: FButtonVariant.ghost,
+                      style: ghostSizedStyleDelta(
+                        context,
+                        textStyle: context.theme.typography.xs,
+                      ),
+                      mainAxisSize: MainAxisSize.min,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 4,
+                        children: [
+                          const Text('SENDING'),
+                          Icon(
+                            FontAwesomeIcons.xmark,
+                            size: context.theme.iconSizes.xs,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Author/timestamp positioned on the right, overlapping if needed
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        child: Builder(
+                          builder: (context) {
+                            final mutedXs = context.theme.typography.xs.copyWith(
+                              color: context.colour.muted,
+                            );
+                            final timeAgo = FTooltip(
+                              tipBuilder: (context, controller) => Text(
+                                widget.note.sourceCreatedAt.toLocal().format(
+                                  'MMM d, yyyy, h:mm a',
+                                ),
+                              ),
+                              child: Text(
+                                widget.note.sourceCreatedAt.toTimeAgo(),
+                                style: mutedXs,
+                              ),
+                            );
+                            Widget withPending(Widget child) => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _PendingSyncIndicator(note: widget.note),
+                                child,
+                              ],
+                            );
+                            if (!widget.showAuthor) return withPending(timeAgo);
+                            return FutureBuilder<Actor?>(
+                              future: widget.note.getAuthor(),
+                              builder: (context, snapshot) {
+                                final actor = snapshot.data;
+                                final authorName = actor == null
+                                    ? null
+                                    : (widget.note.authorId.isCurrentUser
+                                          ? 'You'
+                                          : actor.nameOrEmail);
+                                if (authorName == null || authorName.isEmpty) {
+                                  return withPending(timeAgo);
+                                }
+                                Widget authorText = Text(authorName, style: mutedXs);
+                                if (actor?.email != null &&
+                                    actor!.email != authorName) {
+                                  authorText = FTooltip(
+                                    tipBuilder: (context, controller) =>
+                                        Text(actor.email!),
+                                    child: authorText,
+                                  );
+                                }
+                                return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _PendingSyncIndicator(note: widget.note),
+                                    if (actor != null) ...[
+                                      Avatar(actor: actor, tooltip: false),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    authorText,
+                                    const SizedBox(width: 4),
+                                    Text('•', style: mutedXs),
+                                    const SizedBox(width: 4),
+                                    timeAgo,
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      // NoteCommands overlays the author row with a solid
+                      // background and gradient fade so the author/timestamp
+                      // truncates cleanly rather than bleeding through the
+                      // icons. Mirrors the ThreadCommands treatment.
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Transform.translate(
+                          offset: Offset(
+                            6 -
+                                context
+                                    .theme
+                                    .buttonStyles
+                                    .ghost
+                                    .md
+                                    .iconContentStyle
+                                    .padding
+                                    .resolve(TextDirection.ltr)
+                                    .left,
+                            0,
+                          ),
+                          child: NoteCommands(
+                            note: widget.note,
+                            showCommands: _hovered,
+                            tileBg: widget.selected
+                                ? context.theme.colors.primaryForeground
+                                : hasFocus
+                                ? Color.alphaBlend(
+                                    context.theme.plotColors.highlight,
+                                    context.theme.colors.background,
+                                  )
+                                : context.theme.colors.background,
                           ),
                         ),
-                        child: Text(
-                          widget.note.sourceCreatedAt.toTimeAgo(),
-                          style: mutedXs,
-                        ),
-                      );
-                      Widget withPending(Widget child) => Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _PendingSyncIndicator(note: widget.note),
-                          child,
-                        ],
-                      );
-                      if (!widget.showAuthor) return withPending(timeAgo);
-                      return FutureBuilder<Actor?>(
-                        future: widget.note.getAuthor(),
-                        builder: (context, snapshot) {
-                          final actor = snapshot.data;
-                          final authorName = actor == null
-                              ? null
-                              : (widget.note.authorId.isCurrentUser
-                                    ? 'You'
-                                    : actor.nameOrEmail);
-                          if (authorName == null || authorName.isEmpty) {
-                            return withPending(timeAgo);
-                          }
-                          Widget authorText = Text(authorName, style: mutedXs);
-                          if (actor?.email != null &&
-                              actor!.email != authorName) {
-                            authorText = FTooltip(
-                              tipBuilder: (context, controller) =>
-                                  Text(actor.email!),
-                              child: authorText,
-                            );
-                          }
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _PendingSyncIndicator(note: widget.note),
-                              if (actor != null) ...[
-                                Avatar(actor: actor, tooltip: false),
-                                const SizedBox(width: 4),
-                              ],
-                              authorText,
-                              const SizedBox(width: 4),
-                              Text('•', style: mutedXs),
-                              const SizedBox(width: 4),
-                              timeAgo,
-                            ],
-                          );
-                        },
-                      );
-                    },
+                      ),
+                    ],
                   ),
-                ),
-                // NoteCommands overlays the author row with a solid
-                // background and gradient fade so the author/timestamp
-                // truncates cleanly rather than bleeding through the
-                // icons. Mirrors the ThreadCommands treatment.
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Transform.translate(
-                    offset: Offset(
-                      6 -
-                          context
-                              .theme
-                              .buttonStyles
-                              .ghost
-                              .md
-                              .iconContentStyle
-                              .padding
-                              .resolve(TextDirection.ltr)
-                              .left,
-                      0,
-                    ),
-                    child: NoteCommands(
-                      note: widget.note,
-                      showCommands: _hovered,
-                      tileBg: widget.selected
-                          ? context.theme.colors.primaryForeground
-                          : hasFocus
-                          ? Color.alphaBlend(
-                              context.theme.plotColors.highlight,
-                              context.theme.colors.background,
-                            )
-                          : context.theme.colors.background,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),

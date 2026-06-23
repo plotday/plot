@@ -117,6 +117,9 @@ original app when you need to.
   to the sender, plus per-message recipient editing.
 - React from Plot and it syncs both ways — the full standard emoji set with skin tones, plus Slack
   workspace custom emoji.
+- Changed your mind right after hitting send? For five seconds after sending a note, a **SENDING**
+  button appears in place of the author line — click it (or press Esc) to pull the message back into
+  the editor. Works for replies and for the opening note of a new thread.
 - Sends that can't be delivered never fail silently: Plot retries brief network hiccups
   automatically, and if a message still can't be sent it marks the thread unread and flags the
   message **Failed to send** (with the reason when available) so you can **Retry** or **Discard** it.

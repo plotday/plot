@@ -13,6 +13,7 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 
+import 'package:plot/state/pending_send.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/util/profile_preferences.dart';
@@ -327,6 +328,14 @@ class WindowState extends State<Window> with WindowListener {
   Future<AppExitResponse> _onExitRequested() async {
     _saveDebounce?.cancel();
     await Window._saveWindowState();
+    // Commit any in-flight "SENDING" note so a quit during the undo window
+    // still sends it. flush() awaits the local save and enqueues the push;
+    // Store.stop()'s drain (below) waits for the push to complete.
+    try {
+      await PendingSend.instance.flush();
+    } catch (e, t) {
+      log.warning('Failed to flush pending send on shutdown', e, t);
+    }
     // Hide the window before the (potentially slow) shutdown work so the
     // user perceives an instant quit. `Store.stop()` can take up to ~5s
     // draining in-flight sync operations before closing SQLite; without
