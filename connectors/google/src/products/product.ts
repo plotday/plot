@@ -1,4 +1,5 @@
 import type { AuthToken, Channel, LinkTypeConfig, SyncContext } from "@plotday/twister/tools/integrations";
+import { calendarProduct } from "./calendar";
 
 /**
  * Interface that each product module (mail, calendar, tasks, contacts) must implement.
@@ -48,6 +49,7 @@ export interface Product {
 /**
  * Registry of product modules by product key.
  * Populated as product modules are implemented (Tasks 7–9).
- * Currently empty — the core composition/demux logic is fully tested with fake products.
  */
-export const PRODUCTS_BY_KEY: Record<string, Product> = {};
+export const PRODUCTS_BY_KEY: Record<string, Product> = {
+  calendar: calendarProduct,
+};
