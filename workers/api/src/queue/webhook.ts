@@ -7,7 +7,11 @@ import { isCallbackError, getCallbackErrorType } from "../errors";
 import { invokeWebhookCallback } from "../twist/invoke-webhook";
 import { disposeRpc } from "../utils/rpc";
 import { isQueueRetryExhausted } from "./retry";
-import { isTransientError } from "../utils/transient-error";
+import {
+  isAuthError,
+  isRateLimitError,
+  isTransientError,
+} from "../utils/transient-error";
 import { parseBodyFromRaw } from "../webhook";
 
 // Cloudflare resets a Durable Object when an in-flight call holds its
@@ -139,6 +143,34 @@ export async function processWebhooks(
           attempts: message.attempts,
         });
         message.retry();
+        return;
+      }
+
+      // Downstream provider rate-limit / quota errors (Gmail/Google 403
+      // rateLimitExceeded, HTTP 429). Expected under load and self-resolving, so
+      // retry without paging PostHog Error Tracking — mirrors Tasks.processQueue.
+      // Retrying (not acking) lets the message process once the provider's rate
+      // window clears.
+      if (isRateLimitError(error)) {
+        logger.warn("Rate-limited processing webhook, retrying", {
+          token: token.substring(0, 8) + "...",
+          error: String(error),
+        });
+        message.retry();
+        return;
+      }
+
+      // Terminal auth errors (revoked/expired-unrefreshable OAuth token, invalid
+      // credentials). Retrying loops the same 401 until the queue cap. ACK to
+      // drop it; the token is dead until re-auth, and getActorToken already flags
+      // needs_reauth_at, which drives the app's re-auth prompt. Do not page
+      // PostHog (expected condition, user re-auths) — mirrors Tasks.processQueue.
+      if (isAuthError(error)) {
+        logger.warn("Auth error processing webhook, dropping", {
+          token: token.substring(0, 8) + "...",
+          error: String(error),
+        });
+        message.ack();
         return;
       }
 

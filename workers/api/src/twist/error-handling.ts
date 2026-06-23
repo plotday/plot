@@ -5,7 +5,11 @@ import { createLogger } from "@plotday/worker-util";
 import { exceptionFingerprint } from "../utils/exception-fingerprint";
 import { processStackTrace } from "../utils/stacktrace";
 import { Tracker } from "../utils/tracker";
-import { isTransientError } from "../utils/transient-error";
+import {
+  isAuthError,
+  isRateLimitError,
+  isTransientError,
+} from "../utils/transient-error";
 import { ThreadFilingSkippedError } from "./tools/plot/thread-helpers";
 
 /**
@@ -89,6 +93,19 @@ export async function handleTwistOperation<T>(
     // these silently — escalating them to TWIST_LOGS_QUEUE or PostHog
     // would just add noise to the user-facing twist log on every retry.
     if (isTransientError(error)) {
+      throw error;
+    }
+
+    // Downstream provider rate-limit / quota errors (Gmail/Google 403
+    // rateLimitExceeded, HTTP 429) and terminal auth errors (revoked/expired
+    // OAuth token). The queue consumers (`Tasks.processQueue`, `processWebhooks`)
+    // deliberately handle these without paging — rate-limits retry until the
+    // provider's window clears, auth errors ack and drive the app's re-auth
+    // prompt. Escalating them here to TWIST_LOGS_QUEUE or PostHog Error Tracking
+    // just adds noise on every retry — a single Gmail sync burst hitting the
+    // per-user-per-minute quota produced 62 captures in one minute (PostHog
+    // 019ef5be). Rethrow so the queue consumer's classification still runs.
+    if (isRateLimitError(error) || isAuthError(error)) {
       throw error;
     }
 

@@ -117,3 +117,55 @@ describe("handleTwistOperation exception fingerprint", () => {
     expect(captureException.mock.calls[0][1]).toBe("twist:twist-1");
   });
 });
+
+describe("handleTwistOperation suppresses expected provider errors", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("does not capture or log a downstream rate-limit error, but still rethrows", async () => {
+    // The exact Gmail per-user-per-minute quota body that floods PostHog
+    // (issue 019ef5be): a 403 whose message carries `rateLimitExceeded` /
+    // `RATE_LIMIT_EXCEEDED` / `Quota exceeded`. The queue consumer
+    // (Tasks.processQueue) already retries these via isRateLimitError without
+    // paging, so handleTwistOperation must not capture them first.
+    const message =
+      'GmailApiError: Gmail API error: 403 Forbidden - {"error":{"code":403,' +
+      '"message":"Quota exceeded for quota metric \'Queries\'","errors":' +
+      '[{"reason":"rateLimitExceeded"}],"status":"PERMISSION_DENIED"}}';
+    const context = makeContext();
+
+    await expect(
+      handleTwistOperation(
+        "op",
+        async () => {
+          throw new Error(message);
+        },
+        context
+      )
+    ).rejects.toThrow(message);
+
+    expect(captureException).not.toHaveBeenCalled();
+    expect(context.env.TWIST_LOGS_QUEUE.send).not.toHaveBeenCalled();
+  });
+
+  it("does not capture or log a terminal auth error, but still rethrows", async () => {
+    // Revoked/expired OAuth token. Tasks.processQueue ACKs these via
+    // isAuthError (the user re-auths); paging PostHog is noise.
+    const message = "Gmail API error: 401 Unauthorized - Invalid Credentials";
+    const context = makeContext();
+
+    await expect(
+      handleTwistOperation(
+        "op",
+        async () => {
+          throw new Error(message);
+        },
+        context
+      )
+    ).rejects.toThrow(message);
+
+    expect(captureException).not.toHaveBeenCalled();
+    expect(context.env.TWIST_LOGS_QUEUE.send).not.toHaveBeenCalled();
+  });
+});
