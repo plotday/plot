@@ -69,33 +69,41 @@ export interface ProductInfo {
   scopeGroupId: string;
 }
 
+// Descriptions intentionally fold each product's scope-reason (what access is
+// requested and why) into one short line, rather than listing scopes/access
+// separately. Keep them brief.
+//
+// Icons: Gmail/Calendar use the iconify multicolor brand marks; Tasks uses
+// Plot's hosted brand asset (no iconify `logos:google-tasks`); Contacts uses a
+// Material contacts glyph (no Google Contacts brand mark exists on iconify —
+// swap for a hosted brand asset if one is added, like Tasks).
 export const PRODUCTS: ProductInfo[] = [
   {
     key: "mail",
     label: "Gmail",
-    description: "Send and receive email, track threads for follow-up.",
+    description: "Turns email into threads; sends replies and updates labels from Plot.",
     icon: "https://api.iconify.design/logos/google-gmail.svg",
     scopeGroupId: "mail",
   },
   {
     key: "calendar",
     label: "Google Calendar",
-    description: "See your calendar events and respond to invitations.",
+    description: "Adds your events to your agenda and writes your RSVPs.",
     icon: "https://api.iconify.design/logos/google-calendar.svg",
     scopeGroupId: "calendar",
   },
   {
     key: "tasks",
     label: "Google Tasks",
-    description: "Manage your Google Tasks to-do items in Plot.",
-    icon: "https://api.iconify.design/logos/google-tasks.svg",
+    description: "Syncs your to-do lists — reads, creates, and completes tasks.",
+    icon: "https://plot.day/assets/logo-google-tasks.svg",
     scopeGroupId: "tasks",
   },
   {
     key: "contacts",
     label: "Google Contacts",
-    description: "Enrich threads with contact names and photos from your Google contacts.",
-    icon: "https://api.iconify.design/logos/google-contacts.svg",
+    description: "Recognizes people by name and photo on your threads.",
+    icon: "https://api.iconify.design/material-symbols/contacts-product.svg",
     scopeGroupId: "contacts",
   },
 ];
