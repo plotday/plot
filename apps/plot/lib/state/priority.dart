@@ -4849,6 +4849,17 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
           });
         }
 
+        // When the user asked for a specific focus (priorityId/threadId) that
+        // couldn't be loaded, tell them why they landed on the default one
+        // instead. (The `useDefault` path loads the default directly without
+        // tripping this fallback, so it never toasts.)
+        if (widget.priorityId != null || widget.threadId != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (myGen != _switchGen) return;
+            _notifyLinkUnavailable();
+          });
+        }
+
         return _LoadResult.success(
           PriorityBloc(
             priority: defaultPriority,
@@ -4897,17 +4908,43 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       log.info('[PriorityProfile][didUpdate:${widget.priorityId}] start');
       _bloc.then((result) async {
         if (result.bloc == null) return;
-        final priority = await Priority.getOne(widget.priorityId!);
+        // Resolve with a graceful fallback: a deep link (e.g. from an update
+        // email) can target a focus this device hasn't synced, in which case
+        // a bare `Priority.getOne` would throw an uncaught "Priority not
+        // found" and strand the feed on a spinner. resolvePriorityWithFallback
+        // never throws — it falls back to the default focus and flags it.
+        final resolved = await resolvePriorityWithFallback(widget.priorityId!);
         log.info(
           '[PriorityProfile][didUpdate:${widget.priorityId}] '
-          'Priority.getOne done @ ${didUpdateSw.elapsedMilliseconds}ms',
+          'resolve done @ ${didUpdateSw.elapsedMilliseconds}ms',
         );
         // Drop this switch if a newer one has been requested since.
         if (myGen != _switchGen || !mounted) return;
-        result.bloc!.setPriority(priority);
-        // Theme will be updated when new agenda loads (in _loadAgenda)
+        final priority = resolved.priority;
+        if (priority != null) {
+          result.bloc!.setPriority(priority);
+          // Theme will be updated when new agenda loads (in _loadAgenda)
+        }
+        if (resolved.fellBack) {
+          _notifyLinkUnavailable();
+        }
       });
     }
+  }
+
+  /// Surfaces an error toast when a requested priority deep link couldn't be
+  /// opened and we fell back to (or stayed on) another focus. Keeps the
+  /// silent fallback visible so the user understands why the link didn't take
+  /// them where they expected, instead of an uncaught error + endless spinner.
+  void _notifyLinkUnavailable() {
+    if (!mounted) return;
+    context.showToast(
+      title: 'Link unavailable',
+      message:
+          "Couldn't open that link. It may point to a focus that isn't "
+          "available on this device.",
+      isError: true,
+    );
   }
 
   @override
@@ -5011,6 +5048,41 @@ class _ErrorPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Resolves the priority to display for [id], gracefully falling back to the
+/// user's default focus when it can't be loaded locally.
+///
+/// Update-email links (and other deep links) can point at a priority this
+/// device hasn't synced yet — or no longer has. [Priority.getOne] throws
+/// `StateError('Priority not found')` in that case, so a caller that doesn't
+/// catch it leaks an uncaught error and strands the UI on a spinner (the
+/// digest-link bug). This helper never throws:
+///
+///   • returns the requested priority with `fellBack: false`, or
+///   • the user's default focus with `fellBack: true`, or
+///   • `(priority: null, fellBack: true)` when even the default is missing.
+///
+/// A `fellBack: true` result means the caller should tell the user the link
+/// couldn't be opened (e.g. via an error toast). The not-found case is an
+/// expected outcome for a stale/foreign link, so it is logged at `warning`
+/// and NOT reported to error tracking.
+Future<({Priority? priority, bool fellBack})> resolvePriorityWithFallback(
+  PriorityId id,
+) async {
+  try {
+    return (priority: await Priority.getOne(id), fellBack: false);
+  } catch (e, stackTrace) {
+    log.warning(
+      'Priority $id not available locally; falling back to default focus',
+      e,
+      stackTrace,
+    );
+    if (!await Priority.hasDefault()) {
+      return (priority: null, fellBack: true);
+    }
+    return (priority: await Priority.getDefault(), fellBack: true);
   }
 }
 

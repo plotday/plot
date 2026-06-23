@@ -1,3 +1,11 @@
+## Next release
+
+### Fixes
+
+- Links in Plot's update emails now open reliably. Before, tapping one could leave the app stuck on a
+  loading spinner; now it opens the right focus — or, if that focus isn't available on your device,
+  tells you so instead of spinning forever.
+
 ## 1.5.0+365 — 2026-06-23
 
 ### Threads

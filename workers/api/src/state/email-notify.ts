@@ -33,6 +33,21 @@ function uuidToBase58(uuid: string): string {
   return result;
 }
 
+/**
+ * Canonical app deep link for a priority's feed.
+ *
+ * Returns `${appUrl}/p/{base58}` — the current `/p/:priorityId` route form.
+ * The old digest link was the bare-segment legacy form `/{base58}?tab=activity`;
+ * the `?tab=activity` query param is a vestige of a removed tabbed UI and is
+ * ignored by the router, so we drop it and emit the canonical path directly.
+ */
+export function priorityDeepLinkUrl(
+  appUrl: string,
+  priorityId: string
+): string {
+  return `${appUrl}/p/${uuidToBase58(priorityId)}`;
+}
+
 export class EmailNotify extends DurableObject<Bindings> {
   private userId: string | null = null;
 
@@ -291,11 +306,10 @@ export class EmailNotify extends DurableObject<Bindings> {
               this.userId ?? undefined
             ).catch(() => fallbackSummary(threadList));
 
-            const shortId = uuidToBase58(group.priorityId);
             return {
               title: group.title,
               summary,
-              url: `${appUrl}/${shortId}?tab=activity`,
+              url: priorityDeepLinkUrl(appUrl, group.priorityId),
             };
           })
         );
