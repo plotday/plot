@@ -3,7 +3,6 @@ import {
   type Actor,
   type ActorId,
   Connector,
-  type NewLinkWithNotes,
   type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -29,12 +28,7 @@ import {
 import {
   SYNC_LOCK_TTL_MS,
   clearBuffersFn,
-  ensureUserIdentityFn,
-  firstSeenAtFn,
   getApiFn,
-  getUserEmailFn,
-  prepareEventInstanceFn,
-  processCalendarEventsFn,
   resolveCalendarIdFn,
   runCalendarInit,
   runSyncBatch,
@@ -324,24 +318,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     };
   }
 
-  /**
-   * Stamp the first time the connector observes some opaque key, and
-   * reuse that timestamp on every subsequent observation.
-   */
-  private async firstSeenAt(storeKey: string, seed?: Date): Promise<Date> {
-    return firstSeenAtFn(this.makeHost(), storeKey, seed);
-  }
-
   private async getApi(calendarId: string): Promise<GoogleApi> {
     return getApiFn(this.makeHost(), calendarId);
-  }
-
-  private async getUserEmail(calendarId: string): Promise<string> {
-    return getUserEmailFn(this.makeHost(), calendarId);
-  }
-
-  private async ensureUserIdentity(calendarId: string): Promise<string> {
-    return ensureUserIdentityFn(this.makeHost(), calendarId);
   }
 
   /**
@@ -661,28 +639,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     await this.runTask(nextCallback);
   }
 
-  /**
-   * Process a page of calendar events — delegates to {@link processCalendarEventsFn}.
-   */
-  private async processCalendarEvents(
-    events: GoogleEvent[],
-    calendarId: string,
-    initialSync: boolean
-  ): Promise<void> {
-    return processCalendarEventsFn(this.makeHost(), events, calendarId, initialSync);
-  }
-
-  /**
-   * Transform a recurring event instance — delegates to {@link prepareEventInstanceFn}.
-   */
-  private async prepareEventInstance(
-    event: GoogleEvent,
-    calendarId: string,
-    initialSync: boolean
-  ): Promise<import("@plotday/twister").NewLinkWithNotes | null> {
-    return prepareEventInstanceFn(this.makeHost(), event, calendarId, initialSync);
-  }
-
   async onCalendarWebhook(
     request: WebhookRequest,
     calendarId: string
@@ -768,35 +724,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       false
     );
     await this.runTask(syncCallback);
-  }
-
-  /**
-   * Constructs a Google Calendar instance ID for a recurring event occurrence.
-   * @param baseEventId - The recurring event ID
-   * @param occurrence - The occurrence date (Date or ISO string)
-   * @returns Instance ID in format: {baseEventId}_{YYYYMMDDTHHMMSSZ}
-   */
-  private constructInstanceId(
-    baseEventId: string,
-    occurrence: Date | string
-  ): string {
-    let occurrenceDate: Date;
-
-    if (occurrence instanceof Date) {
-      occurrenceDate = occurrence;
-    } else if (typeof occurrence === "string") {
-      occurrenceDate = new Date(occurrence);
-    } else {
-      throw new Error(`Invalid occurrence type: ${typeof occurrence}`);
-    }
-
-    // Format as YYYYMMDDTHHMMSSZ (Google Calendar instance ID format)
-    const instanceDateStr = occurrenceDate
-      .toISOString()
-      .replace(/[-:]/g, "") // Remove dashes and colons
-      .replace(/\.\d{3}/, ""); // Remove milliseconds
-
-    return `${baseEventId}_${instanceDateStr}`;
   }
 
   /**

@@ -5,9 +5,9 @@
  * network or storage is needed. Fetch is stubbed for GoogleApi calls.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NewLinkWithNotes } from "@plotday/twister";
-import type { CalendarSyncHost, SyncBatchResult } from "./sync";
+import type { CalendarSyncHost } from "./sync";
 import { runCalendarInit, runSyncBatch } from "./sync";
 import type { SyncState } from "./google-api";
 
