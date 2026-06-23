@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.62.0
+
+### Added
+
+- Tasks.scheduleRecurring(key, callback, { intervalMs, firstRunAt }) — a durable recurring task whose cadence is owned by the platform, so periodic chains (watch renewals, self-heal, polling) survive dropped runs, suspensions, and deploys instead of dying silently. ([#215](https://github.com/plotday/plot/pull/215) [`166afba`](https://github.com/plotday/plot/commit/166afba7d74ea29bb7d491de87fbae6ef03a562d))
+- Connector.dynamicLinkTypes — opt a connector into per-instance link types computed from its enabled channels' link types (instead of the static union of all declared providers), so one connection can surface link types (and gate features like the agenda) based on what the user has enabled. ([#218](https://github.com/plotday/plot/pull/218) [`d5d1c99`](https://github.com/plotday/plot/commit/d5d1c99076a3d519f6e9af43379f001cdb5728a7))
+
 ## 0.61.0
 
 ### Added
