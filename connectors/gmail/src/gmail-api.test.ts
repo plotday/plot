@@ -1,11 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildNewEmailMessage,
+  buildReplyMessage,
   stripQuotedReply,
   transformGmailThread,
+  type AttachmentData,
   type GmailMessage,
   type GmailMessagePart,
   type GmailThread,
 } from "./gmail-api";
+
+/** Decode the base64url raw message the Gmail send API would receive. */
+function decodeRawMessage(b64url: string): string {
+  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(b64, "base64").toString("utf8");
+}
+
+/** Decode the base64 body of the first MIME part declaring `mimeType`. */
+function decodeMimePart(raw: string, mimeType: string): string {
+  const segments = raw.split(/\r\n--[^\r\n]+(?:--)?\r\n?/);
+  for (const seg of segments) {
+    if (!seg.includes(`Content-Type: ${mimeType}`)) continue;
+    const blank = seg.indexOf("\r\n\r\n");
+    if (blank === -1) continue;
+    const b64 = seg.slice(blank + 4).replace(/\r\n/g, "").trim();
+    return Buffer.from(b64, "base64").toString("utf8");
+  }
+  return "";
+}
 
 // Gmail API returns part bodies as base64url. Encode fixtures the same way the
 // real API does so `extractBody`'s atob/replace decode path is exercised.
@@ -169,5 +191,91 @@ describe("forwarded email body extraction", () => {
     );
     expect(reply).toContain("My answer is yes.");
     expect(reply).not.toContain("old message text");
+  });
+});
+
+describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
+  const markdownBody =
+    "**Exploring burnout**\n\n" +
+    "Is burnout caused by too much work? I think either could work, " +
+    "and the key will be positioning and messaging for our first session.";
+
+  it("buildReplyMessage emits multipart/alternative with text and html parts", () => {
+    const raw = decodeRawMessage(
+      buildReplyMessage({
+        to: ["phil467@gmail.com"],
+        cc: ["kris@plot.day"],
+        from: "beth@plot.day",
+        subject: "Workshop ideas",
+        body: markdownBody,
+        messageId: "<abc@mail.gmail.com>",
+        references: "<root@mail.gmail.com>",
+      })
+    );
+
+    expect(raw).toContain("Content-Type: multipart/alternative");
+    expect(raw).toContain('Content-Type: text/plain; charset="UTF-8"');
+    expect(raw).toContain('Content-Type: text/html; charset="UTF-8"');
+
+    // HTML part renders markdown (no literal ** asterisks reach the reader).
+    const html = decodeMimePart(raw, "text/html");
+    expect(html).toContain("<strong>Exploring burnout</strong>");
+    expect(html).not.toContain("**Exploring burnout**");
+
+    // Plain part is clean text — markdown syntax stripped, sentence intact on
+    // one logical line (no hard mid-sentence wrap that the recipient would see).
+    const text = decodeMimePart(raw, "text/plain");
+    expect(text).toContain("Exploring burnout");
+    expect(text).not.toContain("**");
+    expect(text).toContain(
+      "Is burnout caused by too much work? I think either could work, and the key will be positioning and messaging for our first session."
+    );
+  });
+
+  it("buildReplyMessage with attachments nests alternative inside multipart/mixed", () => {
+    const attachments: AttachmentData[] = [
+      {
+        fileName: "notes.txt",
+        mimeType: "text/plain",
+        data: new TextEncoder().encode("hello"),
+      },
+    ];
+    const raw = decodeRawMessage(
+      buildReplyMessage({
+        to: ["phil467@gmail.com"],
+        cc: [],
+        from: "beth@plot.day",
+        subject: "Workshop ideas",
+        body: markdownBody,
+        messageId: "<abc@mail.gmail.com>",
+        references: "",
+        attachments,
+      })
+    );
+
+    expect(raw).toContain("Content-Type: multipart/mixed");
+    expect(raw).toContain("Content-Type: multipart/alternative");
+    expect(raw).toContain('Content-Type: text/html; charset="UTF-8"');
+    expect(raw).toContain('Content-Disposition: attachment; filename="notes.txt"');
+    expect(decodeMimePart(raw, "text/html")).toContain(
+      "<strong>Exploring burnout</strong>"
+    );
+  });
+
+  it("buildNewEmailMessage emits multipart/alternative with text and html parts", () => {
+    const raw = decodeRawMessage(
+      buildNewEmailMessage({
+        to: ["phil467@gmail.com"],
+        from: "beth@plot.day",
+        subject: "Workshop ideas",
+        body: markdownBody,
+      })
+    );
+
+    expect(raw).toContain("Content-Type: multipart/alternative");
+    expect(decodeMimePart(raw, "text/html")).toContain(
+      "<strong>Exploring burnout</strong>"
+    );
+    expect(decodeMimePart(raw, "text/plain")).not.toContain("**");
   });
 });

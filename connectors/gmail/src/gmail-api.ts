@@ -5,6 +5,8 @@ import type {
   NewContact,
   Action,
 } from "@plotday/twister/plot";
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
+import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
 
 
 export type GmailLabel = {
@@ -1135,19 +1137,17 @@ export function buildNewEmailMessage(options: {
   }
 
   lines.push(`Subject: ${sanitizeHeaderValue(subject)}`);
-  lines.push(`Content-Type: text/plain; charset="UTF-8"`);
-  lines.push(""); // Empty line separates headers from body
-  lines.push(body);
+  lines.push(`MIME-Version: 1.0`);
 
-  const rawMessage = lines.join("\r\n");
+  // Body is a multipart/alternative (plain text + rendered HTML) so recipients
+  // get clean formatting instead of raw Markdown wrapped by their mail server.
+  const altBoundary = mimeBoundary("alt");
+  const rawMessage = [
+    ...lines,
+    ...buildAlternativeBlock(altBoundary, body),
+  ].join("\r\n");
 
-  // Base64url encode
-  return btoa(
-    String.fromCharCode(...new TextEncoder().encode(rawMessage))
-  )
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  return base64UrlEncodeMessage(rawMessage);
 }
 
 /**
@@ -1171,6 +1171,67 @@ function uint8ArrayToBase64Lines(bytes: Uint8Array): string {
     lines.push(b64.slice(i, i + 76));
   }
   return lines.join("\r\n");
+}
+
+/** Generate a unique MIME multipart boundary with the given role suffix. */
+function mimeBoundary(role: string): string {
+  return `----=_PlotBoundary_${role}_${Date.now().toString(16)}`;
+}
+
+/** base64url-encode an RFC 2822 raw message for the Gmail send API. Chunked to
+ * avoid `String.fromCharCode(...bytes)` stack overflow on large bodies. */
+function base64UrlEncodeMessage(rawMessage: string): string {
+  const msgBytes = new TextEncoder().encode(rawMessage);
+  const CHUNK = 32768;
+  let binary = "";
+  for (let i = 0; i < msgBytes.length; i += CHUNK) {
+    const slice = msgBytes.subarray(i, i + CHUNK);
+    for (let j = 0; j < slice.length; j++) {
+      binary += String.fromCharCode(slice[j]);
+    }
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Build the lines of a `multipart/alternative` MIME entity (including its own
+ * `Content-Type` header) carrying the note body as two parts: a clean
+ * `text/plain` fallback (Markdown stripped to plain text, no hard column
+ * wrapping) and a rendered `text/html` part.
+ *
+ * Sending both — instead of raw Markdown as a bare `text/plain` body — stops
+ * the recipient's mail server from hard-wrapping prose mid-sentence and lets
+ * formatting (bold, links, lists) render. Both parts are base64-encoded so the
+ * declared `Content-Transfer-Encoding` matches the emitted bytes.
+ *
+ * The returned lines begin with the `Content-Type: multipart/alternative`
+ * header, so the caller can place them directly after the message headers (as
+ * the top-level body) or after a `multipart/mixed` boundary (nested alongside
+ * attachments).
+ */
+function buildAlternativeBlock(altBoundary: string, body: string): string[] {
+  const text = markdownToPlainText(body);
+  const htmlFragment = markdownToHtml(body);
+  const html = `<!DOCTYPE html>\r\n<html><body>\r\n${htmlFragment}\r\n</body></html>`;
+  const enc = new TextEncoder();
+  return [
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    "",
+    `--${altBoundary}`,
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(text)),
+    `--${altBoundary}`,
+    `Content-Type: text/html; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(html)),
+    `--${altBoundary}--`,
+  ];
 }
 
 /**
@@ -1211,47 +1272,35 @@ export function buildReplyMessage(options: {
     subject.startsWith("Re:") ? subject : `Re: ${subject}`
   );
 
+  // Shared headers for both the attachment and no-attachment paths.
+  const headerLines: string[] = [`From: ${fromHeader}`, `To: ${toHeader}`];
+  if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
+  headerLines.push(`Subject: ${reSubject}`);
+  headerLines.push(`In-Reply-To: ${safeMessageId}`);
+  const refChain = safeReferences
+    ? `${safeReferences} ${safeMessageId}`
+    : safeMessageId;
+  headerLines.push(`References: ${refChain}`);
+  headerLines.push(`MIME-Version: 1.0`);
+
+  // The body is always a multipart/alternative (plain text + rendered HTML) so
+  // recipients get clean formatting and MTAs don't hard-wrap raw Markdown.
+  const altBoundary = mimeBoundary("alt");
+  const altBlock = buildAlternativeBlock(altBoundary, body);
+
   let rawMessage: string;
 
   if (attachments && attachments.length > 0) {
-    // Build multipart/mixed message with text body + attachment parts
-    const boundary = `----=_PlotBoundary_${Date.now().toString(16)}`;
+    // Wrap the alternative body and the attachments in a multipart/mixed.
+    const mixBoundary = mimeBoundary("mix");
 
-    const headerLines: string[] = [
-      `From: ${fromHeader}`,
-      `To: ${toHeader}`,
-    ];
-    if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
-    headerLines.push(`Subject: ${reSubject}`);
-    headerLines.push(`In-Reply-To: ${safeMessageId}`);
-    const refChain = safeReferences
-      ? `${safeReferences} ${safeMessageId}`
-      : safeMessageId;
-    headerLines.push(`References: ${refChain}`);
-    headerLines.push(`MIME-Version: 1.0`);
-    headerLines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-    headerLines.push(""); // end of headers
-
-    // Text body part. Base64-encode the UTF-8 body so the declared
-    // Content-Transfer-Encoding matches the bytes we emit — inserting a raw
-    // 8-bit body under a `quoted-printable` (or any non-identity) declaration
-    // corrupts non-ASCII content and breaks strict MIME parsers.
-    const bodyPart = [
-      `--${boundary}`,
-      `Content-Type: text/plain; charset="UTF-8"`,
-      `Content-Transfer-Encoding: base64`,
-      "",
-      uint8ArrayToBase64Lines(new TextEncoder().encode(body)),
-    ];
-
-    // Attachment parts
     const attachmentParts: string[] = [];
     for (const att of attachments) {
       const b64Lines = uint8ArrayToBase64Lines(att.data);
       // Encode filename for Content-Disposition
       const safeFileName = att.fileName.replace(/[\r\n"]/g, "_");
       attachmentParts.push(
-        `--${boundary}`,
+        `--${mixBoundary}`,
         `Content-Type: ${att.mimeType}; name="${safeFileName}"`,
         `Content-Transfer-Encoding: base64`,
         `Content-Disposition: attachment; filename="${safeFileName}"`,
@@ -1261,52 +1310,18 @@ export function buildReplyMessage(options: {
     }
 
     rawMessage = [
-      headerLines.join("\r\n"),
-      bodyPart.join("\r\n"),
-      ...attachmentParts.map((p) => p),
-      `--${boundary}--`,
+      ...headerLines,
+      `Content-Type: multipart/mixed; boundary="${mixBoundary}"`,
+      "", // end of message headers
+      `--${mixBoundary}`,
+      ...altBlock,
+      ...attachmentParts,
+      `--${mixBoundary}--`,
     ].join("\r\n");
   } else {
-    // Simple text-only message (existing path)
-    const lines: string[] = [
-      `From: ${fromHeader}`,
-      `To: ${toHeader}`,
-    ];
-
-    if (cc.length > 0) {
-      lines.push(`Cc: ${ccHeader}`);
-    }
-
-    lines.push(`Subject: ${reSubject}`);
-    lines.push(`In-Reply-To: ${safeMessageId}`);
-
-    // Build References chain
-    const refChain = safeReferences
-      ? `${safeReferences} ${safeMessageId}`
-      : safeMessageId;
-    lines.push(`References: ${refChain}`);
-
-    lines.push(`Content-Type: text/plain; charset="UTF-8"`);
-    lines.push(""); // Empty line separates headers from body
-    lines.push(body);
-
-    rawMessage = lines.join("\r\n");
+    // Top-level body is the multipart/alternative entity itself.
+    rawMessage = [...headerLines, ...altBlock].join("\r\n");
   }
 
-  // Base64url encode the entire raw message
-  const msgBytes = new TextEncoder().encode(rawMessage);
-  const CHUNK = 32768;
-  let binary = "";
-  for (let i = 0; i < msgBytes.length; i += CHUNK) {
-    const slice = msgBytes.subarray(i, i + CHUNK);
-    for (let j = 0; j < slice.length; j++) {
-      binary += String.fromCharCode(slice[j]);
-    }
-  }
-  const encoded = btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-  return encoded;
+  return base64UrlEncodeMessage(rawMessage);
 }
