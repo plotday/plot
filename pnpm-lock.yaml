@@ -111,6 +111,9 @@ importers:
 
   connectors/google:
     dependencies:
+      '@plotday/connector-google-calendar':
+        specifier: workspace:^
+        version: link:../google-calendar
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
