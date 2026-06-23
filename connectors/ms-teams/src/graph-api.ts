@@ -4,6 +4,7 @@ import type {
   NewLinkWithNotes,
   NewReactions,
 } from "@plotday/twister/plot";
+import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
 
 // ---- Microsoft Graph API types ----
 
@@ -218,6 +219,17 @@ export class GraphApi {
     return data?.value ?? [];
   }
 
+  /**
+   * Build a Graph message `body` from a Plot note. The note content is
+   * Markdown; Teams renders an HTML `body`, so we convert it — sending raw
+   * Markdown as `contentType: "html"` would show literal `**asterisks**` and
+   * collapse paragraph breaks. The sync baseline is taken from Graph's echoed
+   * `result.body.content`, so this send-side change doesn't affect round-trips.
+   */
+  private htmlBody(markdown: string): { contentType: "html"; content: string } {
+    return { contentType: "html", content: markdownToHtml(markdown) };
+  }
+
   async sendChannelMessage(
     teamId: string,
     channelId: string,
@@ -226,7 +238,7 @@ export class GraphApi {
     return this.call<TeamsMessage>(
       "POST",
       `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages`,
-      { body: { contentType: "html", content } }
+      { body: this.htmlBody(content) }
     );
   }
 
@@ -239,7 +251,7 @@ export class GraphApi {
     return this.call<TeamsMessage>(
       "POST",
       `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages/${messageId}/replies`,
-      { body: { contentType: "html", content } }
+      { body: this.htmlBody(content) }
     );
   }
 
@@ -256,7 +268,7 @@ export class GraphApi {
     return this.call<TeamsMessage>(
       "PATCH",
       `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages/${messageId}`,
-      { body: { contentType: "html", content } }
+      { body: this.htmlBody(content) }
     );
   }
 
@@ -381,7 +393,7 @@ export class GraphApi {
     return this.call<TeamsMessage>(
       "POST",
       `${this.baseUrl}/chats/${chatId}/messages`,
-      { body: { contentType: "html", content } }
+      { body: this.htmlBody(content) }
     );
   }
 
@@ -396,7 +408,7 @@ export class GraphApi {
     return this.call<TeamsMessage>(
       "PATCH",
       `${this.baseUrl}/chats/${chatId}/messages/${messageId}`,
-      { body: { contentType: "html", content } }
+      { body: this.htmlBody(content) }
     );
   }
 

@@ -22,6 +22,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Files } from "@plotday/twister/tools/files";
+import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
 
 import { enrichLinkContactsFromOutlook, OUTLOOK_PEOPLE_SCOPES } from "./enrich";
 import {
@@ -1602,7 +1603,9 @@ export class OutlookMail extends Connector<OutlookMail> {
     // unquoted.
     const addr = (address: string) => ({ emailAddress: { address } });
     await api.updateMessage(draft.id, {
-      body: { contentType: "text", content: note.content ?? "" },
+      // Send rendered HTML rather than raw Markdown as plain text, so the
+      // recipient sees clean formatting and Outlook doesn't hard-wrap prose.
+      body: { contentType: "html", content: markdownToHtml(note.content ?? "") },
       toRecipients: to.map(addr),
       ccRecipients: cc.map(addr),
     });
@@ -1761,7 +1764,9 @@ export class OutlookMail extends Connector<OutlookMail> {
     const addr = (address: string) => ({ emailAddress: { address } });
     const created = await api.createDraft({
       subject,
-      body: { contentType: "text", content: body },
+      // Send rendered HTML rather than raw Markdown as plain text, so the
+      // recipient sees clean formatting and Outlook doesn't hard-wrap prose.
+      body: { contentType: "html", content: markdownToHtml(body) },
       toRecipients: toEmails.map(addr),
       ccRecipients: ccEmails.map(addr),
       bccRecipients: bccEmails.map(addr),
