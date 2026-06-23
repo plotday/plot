@@ -18,7 +18,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 
-import { GOOGLE_SCOPES } from "./scopes";
+import { GOOGLE_SCOPES, PRODUCTS } from "./scopes";
 import { composeChannels, resolveProductForChannelId } from "./compose";
 import { parse } from "./product-channel";
 import { PRODUCTS_BY_KEY } from "./products/product";
@@ -35,6 +35,14 @@ export class Google extends Connector<Google> {
   readonly dynamicLinkTypes = true;
 
   readonly scopes = GOOGLE_SCOPES;
+
+  /**
+   * Per-product metadata for the combined-connection setup/status UX. Each
+   * entry's `scopeGroupId` matches an `OptionalScopeGroup.id` in GOOGLE_SCOPES,
+   * so the API can derive per-product enablement from granted scopes +
+   * enabled channels.
+   */
+  readonly products = PRODUCTS;
 
   readonly channelNoun = { singular: "channel", plural: "channels" };
 
