@@ -24,7 +24,6 @@ import {
   type Authorization,
   type Channel,
   Integrations,
-  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -39,21 +38,14 @@ import {
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
-
-type Calendar = {
-  id: string;
-  name: string;
-  description: string | null;
-  primary: boolean;
-  /**
-   * The user's access level on this calendar: "owner", "writer", "reader",
-   * or "freeBusyReader". Calendars the user owns (their primary + any
-   * secondary calendars they created) are "owner"; subscribed holiday/
-   * birthday calendars and someone-else's shared calendars are "reader"/
-   * "writer". Drives the default-enable decision in getChannels.
-   */
-  accessRole: string | null;
-};
+import {
+  CALENDAR_EVENTS_SCOPE,
+  CALENDAR_LIST_SCOPE,
+  CALENDAR_LINK_TYPES,
+  type Calendar,
+  getCalendarChannels,
+  listCalendars,
+} from "./channels";
 
 /**
  * Build the canonical identifiers for a calendar event. The first element is
@@ -148,10 +140,8 @@ type SyncOptions = {
  */
 export class GoogleCalendar extends Connector<GoogleCalendar> {
   static readonly PROVIDER = AuthProvider.Google;
-  static readonly EVENTS_SCOPE =
-    "https://www.googleapis.com/auth/calendar.events";
-  static readonly CALENDAR_LIST_SCOPE =
-    "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+  static readonly EVENTS_SCOPE = CALENDAR_EVENTS_SCOPE;
+  static readonly CALENDAR_LIST_SCOPE = CALENDAR_LIST_SCOPE;
 
   readonly provider = AuthProvider.Google;
   readonly channelNoun = { singular: "calendar", plural: "calendars" };
@@ -178,27 +168,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     "Reads your events to add them to your agenda",
     "Writes your event RSVPs",
   ];
-  readonly linkTypes = [
-    {
-      type: "event",
-      label: "Event",
-      sharingModel: "thread" as const,
-      includesSchedules: true,
-      logo: "https://api.iconify.design/logos/google-calendar.svg",
-      logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg",
-      statuses: [
-        { status: "Confirmed", label: "Confirmed", icon: "confirmed" as StatusIcon, hiddenDefault: true },
-        { status: "Tentative", label: "Tentative", icon: "tentative" as StatusIcon },
-        { status: "Cancelled", label: "Cancelled", icon: "cancelled" as StatusIcon },
-      ],
-      // Attendee participation. Organizer membership is tracked separately
-      // on schedule_contact.role and isn't exposed as a thread-level role.
-      contactRoles: [
-        { id: "required", label: "Required", default: true },
-        { id: "optional", label: "Optional" },
-      ],
-    },
-  ];
+  readonly linkTypes = CALENDAR_LINK_TYPES;
 
   build(build: ToolBuilder) {
     return {
@@ -241,26 +211,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
-    // Listing the user's calendars needs the (optional) calendar-list scope.
-    // If the user didn't grant it, sync only the primary calendar — calling
-    // calendarList without the scope 403s and would wrongly flag the
-    // connection for re-auth.
-    if (!token.scopes.includes(GoogleCalendar.CALENDAR_LIST_SCOPE)) {
-      return [{ id: "primary", title: "Calendar", enabledByDefault: true }];
-    }
-    const api = new GoogleApi(token.token);
-    const calendars = await this.listCalendarsWithApi(api);
-    // Default to syncing the user's OWN calendars (their primary + any
-    // secondary calendars they created — accessRole "owner"). Calendars the
-    // user merely subscribes to (holidays, birthdays) or that are shared with
-    // them by someone else are "reader"/"writer"; exclude those from the
-    // default selection so they don't crowd the user's view. The user can
-    // still enable any of them manually.
-    return calendars.map((c) => ({
-      id: c.id,
-      title: c.name,
-      enabledByDefault: c.accessRole === "owner",
-    }));
+    return getCalendarChannels(token);
   }
 
   /**
@@ -432,26 +383,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   }
 
   private async listCalendarsWithApi(api: GoogleApi): Promise<Calendar[]> {
-    const data = (await api.call(
-      "GET",
-      "https://www.googleapis.com/calendar/v3/users/me/calendarList"
-    )) as {
-      items: Array<{
-        id: string;
-        summary: string;
-        description?: string;
-        primary?: boolean;
-        accessRole?: string;
-      }>;
-    };
-
-    return data.items.map((item) => ({
-      id: item.id,
-      name: item.summary,
-      description: item.description || null,
-      accessRole: item.accessRole ?? null,
-      primary: item.primary || false,
-    }));
+    return listCalendars(api);
   }
 
   private async getUserEmail(calendarId: string): Promise<string> {
