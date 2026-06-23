@@ -1,0 +1,58 @@
+{
+  "name": "@plotday/connector-google",
+  "plotTwistId": "6e9e441f-aeee-4142-a37b-62cfe79ac16d",
+  "displayName": "Google Mail, Calendar, and Tasks",
+  "description": "Connect your Google account to sync Gmail, Google Calendar, Google Tasks, and Google Contacts in one place.",
+  "category": "messaging",
+  "logoUrl": "https://api.iconify.design/logos/google-icon.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "connectors/google"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "connector",
+    "google",
+    "gmail",
+    "calendar",
+    "tasks",
+    "contacts",
+    "messaging"
+  ]
+}
