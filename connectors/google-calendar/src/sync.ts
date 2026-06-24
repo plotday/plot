@@ -22,7 +22,10 @@ import {
   type NewLinkWithNotes,
   ConferencingProvider,
 } from "@plotday/twister";
+import type { ScheduleContactStatus } from "@plotday/twister/schedule";
 import type { NewScheduleContact, NewScheduleOccurrence } from "@plotday/twister/schedule";
+import type { Thread } from "@plotday/twister";
+import type { WebhookRequest } from "@plotday/twister/tools/network";
 
 import {
   GoogleApi,
@@ -1009,4 +1012,387 @@ export async function runCalendarInit(
       resolvedCalendarId,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Live-update (watch/webhook) + RSVP extracted functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Return type for {@link setupCalendarWatchFn}.
+ *
+ * - `skipped`: webhook URL is localhost — watch was not registered.
+ * - `ok`: watch registered successfully; caller should schedule renewal at `expiry`.
+ */
+export type SetupCalendarWatchResult =
+  | { skipped: true }
+  | { ok: true; expiry: Date };
+
+/**
+ * Registers a Google Calendar watch (push-notification subscription) for the
+ * given calendar using a pre-created webhook URL.
+ *
+ * Idempotent: stops any existing watch for this calendar before creating a new
+ * one (so a re-dispatch or re-init doesn't orphan the previous subscription).
+ *
+ * Does NOT schedule watch renewal — the caller is responsible for that after
+ * this function returns `{ ok: true, expiry }`.
+ *
+ * @param host      CalendarSyncHost (for state get/set and integrations access).
+ * @param webhookUrl Already-created webhook URL (returned by network.createWebhook).
+ * @param calendarId The resolved (non-"primary") calendar id.
+ */
+export async function setupCalendarWatchFn(
+  host: CalendarSyncHost,
+  webhookUrl: string,
+  calendarId: string
+): Promise<SetupCalendarWatchResult> {
+  // Idempotent: stop any watch already registered for this calendar.
+  try {
+    await stopCalendarWatchFn(host, calendarId);
+  } catch (error) {
+    console.warn(`Failed to stop old watch for ${calendarId}:`, error);
+  }
+
+  // Skip watch registration when running locally (no public HTTPS endpoint).
+  if (URL.parse(webhookUrl)?.hostname === "localhost") {
+    return { skipped: true };
+  }
+
+  const api = await getApiFn(host, calendarId);
+
+  const watchId = crypto.randomUUID();
+  const secret = crypto.randomUUID();
+
+  const watchData = (await api.call(
+    "POST",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/watch`,
+    undefined,
+    {
+      id: watchId,
+      type: "web_hook",
+      address: webhookUrl,
+      token: new URLSearchParams({ secret }).toString(),
+    }
+  )) as { expiration: string; resourceId: string };
+
+  const expiry = new Date(parseInt(watchData.expiration));
+  await host.set(`calendar_watch_${calendarId}`, {
+    watchId,
+    resourceId: watchData.resourceId,
+    secret,
+    calendarId,
+    expiry,
+  });
+
+  return { ok: true, expiry };
+}
+
+/**
+ * Stop a Google Calendar watch by calling the Google Calendar API (channels/stop).
+ * No-op if no watch data is stored for this calendar.
+ *
+ * @param host       CalendarSyncHost for state get and API access.
+ * @param calendarId The resolved calendar id.
+ * @param api        Optional pre-created GoogleApi instance (avoids a redundant fetch).
+ */
+export async function stopCalendarWatchFn(
+  host: CalendarSyncHost,
+  calendarId: string,
+  api?: GoogleApi
+): Promise<void> {
+  const watchData = await host.get<Record<string, unknown>>(`calendar_watch_${calendarId}`);
+  if (!watchData) return;
+
+  const resolvedApi = api ?? (await getApiFn(host, calendarId));
+
+  // https://developers.google.com/calendar/api/v3/reference/channels/stop
+  await resolvedApi.call(
+    "POST",
+    "https://www.googleapis.com/calendar/v3/channels/stop",
+    undefined,
+    {
+      id: watchData.watchId,
+      resourceId: watchData.resourceId,
+    }
+  );
+}
+
+/**
+ * Return type for {@link getWatchRenewalScheduleFn}.
+ *
+ * - `immediate`: the renewal window has already passed; the caller should
+ *   renew the watch immediately instead of scheduling.
+ * - `scheduled`: the caller should schedule a recurring renewal with the
+ *   given `firstRunAt` and `intervalMs`.
+ */
+export type WatchRenewalSchedule =
+  | { immediate: true }
+  | { firstRunAt: Date; intervalMs: number };
+
+/**
+ * Computes the renewal schedule for a calendar watch.
+ *
+ * Reads the stored watch data and returns:
+ * - `{ immediate: true }` when the 24-hour pre-expiry window has already
+ *   passed (the caller should renew synchronously).
+ * - `{ firstRunAt, intervalMs }` when a future renewal should be scheduled
+ *   with `scheduleRecurring`.
+ *
+ * Returns `null` when no watch data is found (nothing to schedule).
+ *
+ * @param host       CalendarSyncHost for state get.
+ * @param calendarId The resolved calendar id.
+ */
+export async function getWatchRenewalScheduleFn(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<WatchRenewalSchedule | null> {
+  const watchData = await host.get<Record<string, unknown>>(`calendar_watch_${calendarId}`);
+  if (!watchData?.expiry) {
+    console.warn(`No watch data found for calendar ${calendarId}`);
+    return null;
+  }
+
+  const expiry = new Date(watchData.expiry as string);
+  const renewalTime = new Date(expiry.getTime() - 24 * 60 * 60 * 1000);
+
+  if (renewalTime <= new Date()) {
+    return { immediate: true };
+  }
+
+  // Ceiling: half the ~7-day watch lifetime guarantees renewal fires even if
+  // a single beat is missed; firstRunAt keeps the precise expiry-24h timing.
+  return {
+    firstRunAt: renewalTime,
+    intervalMs: 3.5 * 24 * 60 * 60 * 1000,
+  };
+}
+
+/**
+ * Return type for {@link validateCalendarWebhookFn}.
+ *
+ * - `invalid`: the request should be silently ignored (missing headers,
+ *   unknown watch id, or invalid secret).
+ * - `valid`: the request is authentic; `needsRenewal` indicates the watch
+ *   is within 24h of expiry and should be proactively renewed.
+ */
+export type CalendarWebhookValidation =
+  | { invalid: true }
+  | { valid: true; needsRenewal: boolean };
+
+/**
+ * Validates an incoming Google Calendar webhook push notification.
+ *
+ * Checks that the required `x-goog-channel-id` and `x-goog-channel-token`
+ * headers are present, that the channel id matches the stored watch, and that
+ * the secret in the token matches. Returns a validation result the caller acts
+ * on (see {@link CalendarWebhookValidation}).
+ *
+ * @param host       CalendarSyncHost for watch data get.
+ * @param request    Incoming webhook request object.
+ * @param calendarId The resolved calendar id (encoded in the webhook URL by the caller).
+ */
+export async function validateCalendarWebhookFn(
+  host: CalendarSyncHost,
+  request: WebhookRequest,
+  calendarId: string
+): Promise<CalendarWebhookValidation> {
+  const channelId = request.headers["x-goog-channel-id"];
+  const channelToken = request.headers["x-goog-channel-token"];
+
+  if (!channelId || !channelToken) {
+    console.warn("Google Calendar webhook missing required headers", { calendarId });
+    return { invalid: true };
+  }
+
+  const watchData = await host.get<Record<string, unknown>>(`calendar_watch_${calendarId}`);
+
+  if (!watchData || watchData.watchId !== channelId) {
+    console.warn("Unknown or expired webhook notification");
+    return { invalid: true };
+  }
+
+  const params = new URLSearchParams(channelToken);
+  const secret = params.get("secret");
+
+  if (watchData.secret !== secret) {
+    console.warn("Invalid webhook secret");
+    return { invalid: true };
+  }
+
+  // Reactive expiry check: flag for proactive renewal when close to expiry.
+  const expiration = new Date(watchData.expiry as string);
+  const hoursUntilExpiry =
+    (expiration.getTime() - new Date().getTime()) / (1000 * 60 * 60);
+
+  return { valid: true, needsRenewal: hoursUntilExpiry < 24 };
+}
+
+/**
+ * Return type for {@link startIncrementalSyncFn}.
+ *
+ * - `done`: lock not acquired or watch data missing; no batch to schedule.
+ * - `next`: batch should be scheduled with mode "incremental".
+ */
+export type StartIncrementalSyncResult =
+  | { done: true }
+  | { next: true };
+
+/**
+ * Acquires the sync lock and prepares the incremental SyncState for the given
+ * calendar. Returns a descriptor the caller uses to schedule the first batch.
+ *
+ * Does NOT create or enqueue the syncBatch callback — the caller is
+ * responsible for that after this function returns `{ next: true }`.
+ *
+ * @param host       CalendarSyncHost for state get/set and lock management.
+ * @param calendarId The resolved calendar id.
+ */
+export async function startIncrementalSyncFn(
+  host: CalendarSyncHost,
+  calendarId: string
+): Promise<StartIncrementalSyncResult> {
+  const acquired = await host.tools.store.acquireLock(
+    `sync_${calendarId}`,
+    SYNC_LOCK_TTL_MS
+  );
+  if (!acquired) {
+    return { done: true };
+  }
+
+  const watchData = await host.get<Record<string, unknown>>(`calendar_watch_${calendarId}`);
+  if (!watchData) {
+    console.error("No calendar watch data found");
+    await host.tools.store.releaseLock(`sync_${calendarId}`);
+    return { done: true };
+  }
+
+  const syncToken = await host.get<string>(`last_sync_token_${calendarId}`);
+
+  const incrementalState: SyncState = syncToken
+    ? {
+        calendarId: watchData.calendarId as string,
+        state: syncToken,
+      }
+    : {
+        calendarId: watchData.calendarId as string,
+        min: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        sequence: 1,
+      };
+
+  await host.set(`sync_state_${calendarId}`, incrementalState);
+  return { next: true };
+}
+
+/**
+ * Update the RSVP (attendee response status) for the authenticated user on a
+ * Google Calendar event via the Calendar API.
+ *
+ * Fetches the current event to find the actor's attendee entry (matching by
+ * `self === true` or by email from the primary calendarList), then patches the
+ * attendees array with the new status.
+ *
+ * No-op if the actor is not an attendee, or if their status already matches.
+ *
+ * @param api        Authenticated GoogleApi instance.
+ * @param calendarId The calendar id (used for the events API path).
+ * @param eventId    The per-calendar event id (from `meta.id`).
+ * @param status     The new Google-side RSVP status.
+ */
+export async function updateEventRSVPWithApiFn(
+  api: GoogleApi,
+  calendarId: string,
+  eventId: string,
+  status: "accepted" | "declined" | "needsAction" | "tentative"
+): Promise<void> {
+  // Fetch the current event to get the attendees list.
+  const event = (await api.call(
+    "GET",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`
+  )) as GoogleEvent | null;
+
+  if (!event) {
+    throw new Error(`Event ${eventId} not found`);
+  }
+
+  // Resolve the actor's email from their primary calendar.
+  const calendarList = (await api.call(
+    "GET",
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary"
+  )) as { id: string };
+  const actorEmail = calendarList.id;
+
+  // Find and update the actor's attendee status.
+  const attendees = event.attendees || [];
+  const actorAttendeeIndex = attendees.findIndex(
+    (att) =>
+      att.self === true ||
+      att.email?.toLowerCase() === actorEmail.toLowerCase()
+  );
+
+  if (actorAttendeeIndex === -1) {
+    console.warn("[RSVP Sync] Actor is not an attendee of this event", {
+      event_id: eventId,
+    });
+    return;
+  }
+
+  // No-op if status already matches (prevents infinite loop).
+  if (attendees[actorAttendeeIndex].responseStatus === status) {
+    return;
+  }
+
+  attendees[actorAttendeeIndex].responseStatus = status;
+
+  await api.call(
+    "PATCH",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`,
+    undefined,
+    { attendees }
+  );
+}
+
+/**
+ * Parameters extracted from a thread for an RSVP write-back.
+ *
+ * `null` when the thread lacks the required calendar metadata.
+ */
+export type RSVPParams = {
+  calendarId: string;
+  eventId: string;
+  googleStatus: "accepted" | "declined" | "needsAction";
+} | null;
+
+/**
+ * Extracts the calendar id, event id, and mapped Google RSVP status from a
+ * Plot thread's metadata. Returns `null` when the required fields are absent
+ * (no-op case).
+ *
+ * This is a pure helper — no async operations or side effects.
+ *
+ * @param thread  The Plot thread for the RSVP'd event.
+ * @param status  The Plot-side RSVP status set by the user.
+ */
+export function extractRSVPParamsFn(
+  thread: Thread,
+  status: ScheduleContactStatus | null
+): RSVPParams {
+  const meta = thread.meta as Record<string, unknown> | null;
+  // meta.syncableId is the calendar id (set by transformGoogleEvent).
+  const calendarId = meta?.syncableId as string | null;
+  // meta.id is the per-calendar event id (set by transformGoogleEvent).
+  // We use meta.id (not source) because source uses iCalUID for cross-user dedup.
+  const eventId = meta?.id as string | null;
+
+  if (!eventId || !calendarId) return null;
+
+  const googleStatus =
+    status === "attend"
+      ? ("accepted" as const)
+      : status === "skip"
+      ? ("declined" as const)
+      : ("needsAction" as const);
+
+  return { calendarId, eventId, googleStatus };
 }

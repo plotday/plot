@@ -20,7 +20,12 @@ export const calendarProduct: Product = {
     );
   },
   onDisable: async () => {
-    // Placeholder — calendar disable not yet re-homed.
-    throw new Error("Phase 3: calendar disable not yet re-homed");
+    // Calendar disable is handled directly by Google.onChannelDisabled
+    // (it needs access to the connector instance for callback scheduling and
+    // state teardown). This path should never be reached — Google.onChannelDisabled
+    // detects the "calendar:" prefix and calls stopCalendarSync directly.
+    throw new Error(
+      "Calendar onDisable must be handled directly by Google.onChannelDisabled"
+    );
   },
 };
