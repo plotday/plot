@@ -26,6 +26,13 @@ CREATE TABLE "public"."twist_instance_connection" (
     -- and automatically passes `recovering: true` in the SyncContext, then
     -- clears the flag. Connectors do not need to read or write this.
     "recovery_pending" boolean NOT NULL DEFAULT false,
+    -- One-shot directive set by the Google composite bankruptcy provisioning:
+    -- when true, the next `setChannels` for this connection enables the
+    -- connector's owned/default (`enabledByDefault`) channels — the set a fresh
+    -- user gets — then sets this back to false. Lets a freshly-provisioned,
+    -- never-authed connection resume syncing on one re-auth without the client
+    -- setup screen. Connectors do not read or write this.
+    "seed_default_channels" boolean NOT NULL DEFAULT false,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     PRIMARY KEY ("twist_instance_id", "user_id", "provider")
 );

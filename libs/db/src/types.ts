@@ -3259,6 +3259,7 @@ export type Database = {
           needs_reauth_at: string | null
           provider: string
           recovery_pending: boolean
+          seed_default_channels: boolean
           seq: unknown
           twist_instance_id: string
           user_id: string
@@ -3272,6 +3273,7 @@ export type Database = {
           needs_reauth_at?: string | null
           provider: string
           recovery_pending?: boolean
+          seed_default_channels?: boolean
           seq?: unknown
           twist_instance_id: string
           user_id: string
@@ -3285,6 +3287,7 @@ export type Database = {
           needs_reauth_at?: string | null
           provider?: string
           recovery_pending?: boolean
+          seed_default_channels?: boolean
           seq?: unknown
           twist_instance_id?: string
           user_id?: string

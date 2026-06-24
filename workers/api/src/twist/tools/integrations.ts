@@ -252,6 +252,24 @@ function buildManageAccessUrl(
   }
 }
 
+/**
+ * The channels a connector marks as owned/default (`enabledByDefault === true`),
+ * flattened from the channel tree. This is the set a brand-new connection
+ * enables; the composite bankruptcy reuses it so a reconnect resumes the same
+ * channels a fresh connect would.
+ */
+export function selectOwnedDefaultChannels(channels: Channel[]): Channel[] {
+  const out: Channel[] = [];
+  const walk = (nodes: Channel[]) => {
+    for (const c of nodes) {
+      if (c.enabledByDefault === true) out.push(c);
+      if (c.children?.length) walk(c.children);
+    }
+  };
+  walk(channels);
+  return out;
+}
+
 // @ts-ignore - class correctly implements IAuth but TS can't verify due to Kysely type differences
 export class Integrations extends Tool implements IAuth {
   private store: Store;
@@ -642,30 +660,97 @@ export class Integrations extends Tool implements IAuth {
     await this.store.set(`channel_access:${provider}:${actorId}`, channels);
     await this.mirrorChannelsToDb(channels);
 
+    const dispatches: any[] = [];
+
     // Auto-enable newly-discovered channels when the per-connection flag is on.
     const autoEnable = await this.store.get<boolean>(
       `auto_enable_new_channels:${provider}:${actorId}`
     );
-    if (!autoEnable) return;
-
-    const newChannels = flat.filter((c) => !knownIds.has(c.id));
-    if (newChannels.length === 0) return;
-
-    const syncContext = await this.buildSyncContext({
-      forActor: actorId,
-      provider,
-    });
-    const dispatches: any[] = [];
-    for (const channel of newChannels) {
-      const entry = await this.applyChannelEnabled(
+    const newChannels = autoEnable
+      ? flat.filter((c) => !knownIds.has(c.id))
+      : [];
+    if (newChannels.length > 0) {
+      const syncContext = await this.buildSyncContext({
+        forActor: actorId,
         provider,
-        actorId,
-        channel,
-        syncContext
-      );
-      if (entry) dispatches.push(entry);
+      });
+      for (const channel of newChannels) {
+        const entry = await this.applyChannelEnabled(
+          provider,
+          actorId,
+          channel,
+          syncContext
+        );
+        if (entry) dispatches.push(entry);
+      }
     }
+
+    // One-shot seed of owned defaults for a bankruptcy-provisioned connection.
+    dispatches.push(
+      ...(await this.seedDefaultChannelsIfFlagged(provider, actorId, channels))
+    );
+
     if (dispatches.length > 0) return { __dispatch: dispatches } as any;
+  }
+
+  /**
+   * One-shot: when this connection's `seed_default_channels` flag is set and it
+   * has no enabled channels yet, enable the connector's owned/default channels
+   * (the set a fresh user gets), then clear the flag. Returns the
+   * `onChannelEnabled` dispatch entries for the seeded channels (possibly empty).
+   *
+   * Set only by the Google composite bankruptcy provisioning, so this is inert
+   * for every other connection. The "no enabled channels" guard means it never
+   * overrides a user's own channel selection.
+   */
+  private async seedDefaultChannelsIfFlagged(
+    provider: AuthProvider,
+    actorId: ActorId,
+    channels: Channel[]
+  ): Promise<any[]> {
+    const conn = await this.db
+      .selectFrom("twist_instance_connection")
+      .select(["seed_default_channels"])
+      .where("twist_instance_id", "=", this.twistInstanceId)
+      .where("provider", "=", provider)
+      .where("actor_id", "=", actorId as string)
+      .executeTakeFirst();
+    if (!conn?.seed_default_channels) return [];
+
+    // Scope is per twist_instance: the `channel` table has no actor column, and
+    // a connection that carries the seed flag is a single-account connection
+    // (one twist_instance_connection), so "this instance has no enabled channel"
+    // is the correct guard — it never spans actors.
+    const enabledRow = await this.db
+      .selectFrom("channel")
+      .select("channel_id")
+      .where("twist_instance_id", "=", this.twistInstanceId)
+      .where("enabled", "=", true)
+      .limit(1)
+      .executeTakeFirst();
+
+    const dispatches: any[] = [];
+    if (!enabledRow) {
+      const owned = selectOwnedDefaultChannels(channels);
+      if (owned.length > 0) {
+        const syncContext = await this.buildSyncContext({ forActor: actorId, provider });
+        for (const channel of owned) {
+          const entry = await this.applyChannelEnabled(provider, actorId, channel, syncContext);
+          if (entry) dispatches.push(entry);
+        }
+      }
+    }
+
+    // One-shot: clear regardless, so this never re-seeds (or fights a later disable).
+    await this.db
+      .updateTable("twist_instance_connection")
+      .set({ seed_default_channels: false })
+      .where("twist_instance_id", "=", this.twistInstanceId)
+      .where("provider", "=", provider)
+      .where("actor_id", "=", actorId as string)
+      .execute();
+
+    return dispatches;
   }
 
   /**

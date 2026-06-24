@@ -1247,6 +1247,7 @@ export interface TwistInstanceConnection {
   needs_reauth_at: Timestamp | null;
   provider: string;
   recovery_pending: Generated<boolean>;
+  seed_default_channels: Generated<boolean>;
   seq: Generated<string>;
   twist_instance_id: string;
   user_id: string;
