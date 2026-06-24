@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.63.0
+
+### Added
+
+- `markdownToHtml` (`@plotday/twister/utils/markdown-html`) — renders Plot Markdown note content to an HTML email fragment (mentions become `@Name`, GFM with `breaks`). Used by email connectors to send rich HTML bodies instead of raw Markdown as `text/plain`. ([#219](https://github.com/plotday/plot/pull/219) [`5b86390`](https://github.com/plotday/plot/commit/5b86390bca97eea9d6ed97ebb8d694c39af818f1))
+
 ## 0.62.0
 
 ### Added
