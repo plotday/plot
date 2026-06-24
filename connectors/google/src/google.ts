@@ -14,8 +14,38 @@ import {
   validateCalendarWebhookFn,
   getApiFn,
 } from "@plotday/connector-google-calendar";
+import {
+  type GmailSyncHost,
+  type InitialSyncState,
+  ensureMailboxWebhookFn,
+  setupMailboxWebhookFn,
+  teardownMailboxWebhookFn,
+  renewMailboxWatchFn,
+  selfHealCheckFn,
+  getMailboxRenewalSchedule,
+  initialSyncBatchFn,
+  incrementalSyncBatchFn,
+  onNoteCreatedFn,
+  onThreadReadFn,
+  onThreadToDoFn,
+  onCreateLinkFn,
+  onGmailWebhookFn,
+  downloadAttachmentFn,
+  getEnabledChannelsFn,
+  addEnabledChannelFn,
+  removeEnabledChannelFn,
+  SELF_HEAL_INTERVAL_MS,
+} from "@plotday/connector-gmail";
 import { Connector } from "@plotday/twister";
-import type { Actor, ActorId, Thread, ToolBuilder } from "@plotday/twister";
+import type {
+  Actor,
+  ActorId,
+  CreateLinkDraft,
+  NoteWriteBackResult,
+  Thread,
+  ToolBuilder,
+} from "@plotday/twister";
+import type { NewLinkWithNotes, Note } from "@plotday/twister/plot";
 import type { ScheduleContactStatus } from "@plotday/twister/schedule";
 import {
   AuthProvider,
@@ -26,6 +56,7 @@ import {
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { Files } from "@plotday/twister/tools/files";
 
 import { GOOGLE_SCOPES, PRODUCTS } from "./scopes";
 import { composeChannels, resolveProductForChannelId } from "./compose";
@@ -59,10 +90,27 @@ export class Google extends Connector<Google> {
     return {
       integrations: build(Integrations),
       network: build(Network, {
-        urls: ["https://www.googleapis.com/calendar/*"],
+        urls: [
+          "https://www.googleapis.com/calendar/*",
+          "https://gmail.googleapis.com/gmail/v1/*",
+          "https://people.googleapis.com/v1/*",
+        ],
       }),
       googleContacts: build(GoogleContacts),
+      files: build(Files),
     };
+  }
+
+  /**
+   * Records the connecting user's actor id so Mail sync can attribute synced
+   * threads to the account owner. Stored under the `mail:` namespace, matching
+   * what the extracted Gmail sync reads via the mail host.
+   */
+  override async activate(context: {
+    auth: Authorization;
+    actor: Actor;
+  }): Promise<void> {
+    await this.makeMailHost().set("auth_actor_id", context.actor.id);
   }
 
   async getChannels(
@@ -84,6 +132,11 @@ export class Google extends Connector<Google> {
       return;
     }
 
+    if (productKey === "mail") {
+      await this.onMailChannelEnabled(rawId, context);
+      return;
+    }
+
     const product = resolveProductForChannelId(
       Object.values(PRODUCTS_BY_KEY),
       channel.id
@@ -97,6 +150,11 @@ export class Google extends Connector<Google> {
 
     if (productKey === "calendar") {
       await this.stopCalendarSync(rawId);
+      return;
+    }
+
+    if (productKey === "mail") {
+      await this.stopMailSync(rawId);
       return;
     }
 
@@ -473,6 +531,251 @@ export class Google extends Connector<Google> {
 
     // 4. Clear pending_occ / seen_master buffers from any crashed run.
     await clearBuffersFn(host, calendarId);
+  }
+
+  // ===========================================================================
+  // Mail (Gmail) — mirrors @plotday/connector-gmail. All storage keys + locks
+  // are namespaced under "mail:"; scheduling (callback/scheduleRecurring/
+  // cancelScheduledTask) is owned here, like the Calendar section above.
+  // ===========================================================================
+
+  /** Public set proxy so makeMailHost() can wrap `this` (host needs public). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _mailHostSet(key: string, value: any): Promise<void> {
+    return this.set(`mail:${key}`, value);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _mailHostGet<T = any>(key: string): Promise<T | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.get<any>(`mail:${key}`);
+  }
+  _mailHostClear(key: string): Promise<void> {
+    return this.clear(`mail:${key}`);
+  }
+
+  /**
+   * Returns a GmailSyncHost that namespaces every storage key + lock under
+   * "mail:" and routes the scheduler section back to this connector's own
+   * mail* methods (which own this.callback / scheduleRecurring /
+   * cancelScheduledTask). Watch-renewal + self-heal task keys are NOT
+   * prefixed — they're per-instance task keys (one mailbox per connection)
+   * and the extracted functions pass those raw keys to cancelScheduledTask.
+   */
+  private makeMailHost(): GmailSyncHost {
+    const self = this;
+    return {
+      id: self.id,
+      set: (key, value) => self._mailHostSet(key, value),
+      get: <T>(key: string) => self._mailHostGet<T>(key),
+      clear: (key) => self._mailHostClear(key),
+      tools: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        integrations: self.tools.integrations as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        files: self.tools.files as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        network: self.tools.network as any,
+        store: {
+          acquireLock: (key, ttlMs) =>
+            self.tools.store.acquireLock(`mail:${key}`, ttlMs),
+          releaseLock: (key) => self.tools.store.releaseLock(`mail:${key}`),
+          list: async (prefix) => {
+            const keys = await self.tools.store.list(`mail:${prefix}`);
+            return keys.map((k) =>
+              k.startsWith("mail:") ? k.slice("mail:".length) : k
+            );
+          },
+        },
+      },
+      scheduler: {
+        onGmailWebhook: self.onGmailWebhook,
+        setupMailboxWebhook: () => self.mailSetupWebhook(),
+        renewMailboxWatch: () => self.mailRenewWatch(),
+        scheduleMailboxRenewal: (expiration) =>
+          self.mailScheduleRenewal(expiration),
+        scheduleSelfHealCheck: () => self.mailScheduleSelfHeal(),
+        cancelScheduledTask: (key) => self.cancelScheduledTask(key),
+        queueIncrementalSync: () => self.mailQueueIncrementalSync(),
+      },
+    };
+  }
+
+  /**
+   * Pre-init for a mail channel (raw Gmail label id): recovery / history-min
+   * handling, register the channel, then queue the per-channel initial backfill
+   * + the idempotent mailbox-wide webhook setup. Mirrors Gmail.onChannelEnabled.
+   */
+  private async onMailChannelEnabled(
+    rawId: string,
+    context?: SyncContext
+  ): Promise<void> {
+    const host = this.makeMailHost();
+    const syncHistoryMin = context?.syncHistoryMin;
+
+    if (context?.recovering) {
+      await host.clear(`initial_state_${rawId}`);
+    } else if (syncHistoryMin) {
+      const storedMin = await host.get<string>(`sync_history_min_${rawId}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return;
+      }
+      await host.set(`sync_history_min_${rawId}`, syncHistoryMin.toISOString());
+    }
+
+    await addEnabledChannelFn(host, rawId);
+
+    // observeOnly: auto-observed (a Plot thread was composed into this label),
+    // not explicitly enabled — register the watch but skip historical backfill.
+    if (!context?.observeOnly) {
+      const initialState: InitialSyncState = {
+        lastSyncTime: syncHistoryMin ?? undefined,
+      };
+      await host.set(`initial_state_${rawId}`, initialState);
+      const initialCallback = await this.callback(
+        this.mailInitialSyncBatch,
+        rawId,
+        1
+      );
+      await this.runTask(initialCallback);
+    }
+
+    const webhookCallback = await this.callback(this.mailEnsureWebhook);
+    await this.runTask(webhookCallback);
+  }
+
+  /** Teardown for a mail channel; mirrors Gmail.onChannelDisabled. */
+  private async stopMailSync(rawId: string): Promise<void> {
+    const host = this.makeMailHost();
+    await removeEnabledChannelFn(host, rawId);
+    await host.clear(`initial_state_${rawId}`);
+    await host.clear(`sync_history_min_${rawId}`);
+
+    // Tear the mailbox watch down only if this was the last enabled label.
+    const enabled = await getEnabledChannelsFn(host);
+    if (enabled.size === 0) {
+      await this.mailTeardownWebhook();
+    }
+  }
+
+  // --- Mail dispatched callbacks (must live on this class) -------------------
+
+  /** Per-channel initial backfill; schedules the next batch when more remain. */
+  async mailInitialSyncBatch(
+    channelId: string,
+    batchNumber: number
+  ): Promise<void> {
+    const result = await initialSyncBatchFn(
+      this.makeMailHost(),
+      channelId,
+      batchNumber
+    );
+    if ("done" in result) return;
+    const next = await this.callback(
+      this.mailInitialSyncBatch,
+      channelId,
+      result.next.batchNumber
+    );
+    await this.runTask(next);
+  }
+
+  /** Mailbox-wide incremental sync (one pass drains the history window). */
+  async mailIncrementalSyncBatch(): Promise<void> {
+    await incrementalSyncBatchFn(this.makeMailHost());
+  }
+
+  /** Idempotently (re)establish the mailbox watch + Pub/Sub topic. */
+  async mailEnsureWebhook(): Promise<void> {
+    await ensureMailboxWebhookFn(this.makeMailHost());
+  }
+
+  private async mailSetupWebhook(): Promise<void> {
+    await setupMailboxWebhookFn(this.makeMailHost());
+  }
+
+  private async mailTeardownWebhook(): Promise<void> {
+    await teardownMailboxWebhookFn(this.makeMailHost());
+  }
+
+  private async mailScheduleRenewal(expiration: Date): Promise<void> {
+    const renewalCallback = await this.callback(this.mailRenewWatch);
+    await this.scheduleRecurring(
+      "mailbox-watch-renewal",
+      renewalCallback,
+      getMailboxRenewalSchedule(expiration)
+    );
+  }
+
+  async mailRenewWatch(): Promise<void> {
+    await renewMailboxWatchFn(this.makeMailHost());
+  }
+
+  async mailSelfHealCheck(): Promise<void> {
+    await selfHealCheckFn(this.makeMailHost());
+  }
+
+  private async mailScheduleSelfHeal(): Promise<void> {
+    const callback = await this.callback(this.mailSelfHealCheck);
+    await this.scheduleRecurring("mailbox-self-heal", callback, {
+      intervalMs: SELF_HEAL_INTERVAL_MS,
+    });
+  }
+
+  private async mailQueueIncrementalSync(): Promise<void> {
+    const callback = await this.callback(this.mailIncrementalSyncBatch);
+    await this.runTask(callback);
+  }
+
+  // --- Mail framework callbacks: webhook + outbound write-back ---------------
+  // The runtime dispatches these by their framework names. Each delegates to
+  // the extracted Gmail function, which no-ops for non-mail threads (the
+  // write-backs gate on meta.threadId, which only Gmail threads carry, and
+  // onCreateLink gates on draft.type === "email").
+
+  /** Pub/Sub webhook handler (single mailbox-wide watch → single handler). */
+  async onGmailWebhook(
+    request: WebhookRequest,
+    _channelId?: string
+  ): Promise<void> {
+    const result = await onGmailWebhookFn(this.makeMailHost(), request);
+    if ("done" in result) return;
+    await this.mailQueueIncrementalSync();
+  }
+
+  async onNoteCreated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
+    return onNoteCreatedFn(this.makeMailHost(), note, thread);
+  }
+
+  async onThreadRead(
+    thread: Thread,
+    actor: Actor,
+    unread: boolean
+  ): Promise<void> {
+    await onThreadReadFn(this.makeMailHost(), thread, actor, unread);
+  }
+
+  async onThreadToDo(
+    thread: Thread,
+    actor: Actor,
+    todo: boolean,
+    options: { date?: Date }
+  ): Promise<void> {
+    await onThreadToDoFn(this.makeMailHost(), thread, actor, todo, options);
+  }
+
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    return onCreateLinkFn(this.makeMailHost(), draft);
+  }
+
+  override async downloadAttachment(ref: string): Promise<
+    | { redirectUrl: string }
+    | { body: Uint8Array; mimeType: string; fileName?: string }
+  > {
+    return downloadAttachmentFn(this.makeMailHost(), ref);
   }
 }
 
