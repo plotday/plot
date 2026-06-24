@@ -3997,11 +3997,18 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Returns the now-non-draft thread to navigate to.
   ///
   /// Falls back to the immediate [add] path when [note] is null (nothing to
-  /// undo — an empty-body thread with no link action).
+  /// undo), or when the note is unshared — a private note, or a solo thread
+  /// with no other people — since only the user would ever see it.
   Future<Thread> sendThreadWithUndo(Thread draftThread, {Note? note}) async {
     // No note → nothing to undo; use the existing immediate publish path.
     if (note == null) {
       return add(draftThread, note: null);
+    }
+
+    // Unshared notes are seen only by the user → send immediately, no window.
+    if (note.isPrivate || !draftThread.isShared) {
+      unawaited(PendingSend.instance.commit());
+      return add(draftThread, note: note);
     }
 
     _stashPendingCreateLink(draftThread.id, note);

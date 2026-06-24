@@ -5076,6 +5076,18 @@ SELECT
     return true;
   }
 
+  /// True when this thread is shared with anyone other than the current user —
+  /// it has a contact that isn't one of the user's own, or any group. An
+  /// unshared (solo) thread's notes are seen only by the user, so they can skip
+  /// the send-undo window.
+  bool get isShared {
+    final selfIds = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    if (activeContacts.any((c) => !selfIds.contains(c))) return true;
+    return groups.isNotEmpty;
+  }
+
   /// Resolves a thread icon identifier to a logo URL and fallback icon.
   static ({String? logoUrl, String? logoDarkUrl, IconData fallbackIcon})
   resolveIcon(String? icon) {

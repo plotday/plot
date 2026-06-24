@@ -23,6 +23,9 @@ import 'package:plot/util/profile_preferences.dart';
 final _selfId = ActorId.fromString('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 final _priorityId = Uuid.fromString('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 final _threadId = ThreadId.fromString('cccccccc-cccc-cccc-cccc-cccccccccccc');
+// A contact who is NOT the current user — makes a thread "shared" so sends get
+// the undo window (unshared/solo threads skip it).
+final _otherId = ActorId.fromString('ffffffff-ffff-ffff-ffff-ffffffffffff');
 
 String _hex(Uuid id) =>
     id.toBytes().map((b) => b.toRadixString(16).padLeft(2, '0')).join();
@@ -56,12 +59,18 @@ Future<void> _insertPriority(Store store, Uuid id) async {
       );
 }
 
-Future<Thread> _insertThread(Store store, {bool draft = false}) async {
+Future<Thread> _insertThread(
+  Store store, {
+  bool draft = false,
+  bool shared = true,
+}) async {
   await store.into(store.threads).insert(
         ThreadsCompanion(
           id: Value(_threadId),
           priorityId: Value(_priorityId),
-          contacts: Value([_selfId.value]),
+          contacts: Value(
+            shared ? [_selfId.value, _otherId.value] : [_selfId.value],
+          ),
           groups: const Value([]),
           draft: Value(draft),
         ),
@@ -69,12 +78,14 @@ Future<Thread> _insertThread(Store store, {bool draft = false}) async {
   return Thread.getOne(_threadId);
 }
 
-Note _note({String content = 'hello'}) => Note(
+Note _note({String content = 'hello', bool private = false}) => Note(
       id: NoteId.generate(),
       threadId: _threadId,
       authorId: _selfId,
       draft: false,
       content: content,
+      // A private note's accessContacts is just the author.
+      accessContacts: private ? [_selfId] : null,
       createdAt: DateTime(2026),
       sourceCreatedAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -191,6 +202,39 @@ void main() {
 
     // Release now so the real 5s timer never fires a network commit.
     await PendingSend.instance.undo();
+    await bloc.close();
+  });
+
+  test('skips the undo window for a note on a solo (unshared) thread',
+      () async {
+    final thread = await _insertThread(store, shared: false);
+    final bloc = ThreadBloc(thread: thread, localPreferences: localPreferences);
+    final note = _note();
+
+    await bloc.sendWithUndo(note);
+
+    // No undo window: nothing held, and the note is already a real non-draft
+    // row (it sent immediately).
+    expect(PendingSend.instance.isPending, isFalse);
+    expect(Store.pushHeldNoteIds, isEmpty);
+    final row = await (store.select(store.notes)
+          ..where((n) => n.id.equals(note.id.toBytes())))
+        .getSingle();
+    expect(row.draft, isFalse);
+
+    await bloc.close();
+  });
+
+  test('skips the undo window for a private note on a shared thread', () async {
+    final thread = await _insertThread(store); // shared
+    final bloc = ThreadBloc(thread: thread, localPreferences: localPreferences);
+    final note = _note(private: true);
+
+    await bloc.sendWithUndo(note);
+
+    expect(PendingSend.instance.isPending, isFalse);
+    expect(Store.pushHeldNoteIds, isEmpty);
+
     await bloc.close();
   });
 }

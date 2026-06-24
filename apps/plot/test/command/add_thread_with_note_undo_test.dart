@@ -24,6 +24,9 @@ import 'package:plot/util/profile_preferences.dart';
 
 final _selfId = ActorId.fromString('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 final _priorityId = Uuid.fromString('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+// A contact who is NOT the current user — makes the new thread "shared" so the
+// send gets the undo window (unshared/solo threads skip it).
+final _otherId = ActorId.fromString('ffffffff-ffff-ffff-ffff-ffffffffffff');
 
 String _hex(Uuid id) =>
     id.toBytes().map((b) => b.toRadixString(16).padLeft(2, '0')).join();
@@ -167,7 +170,9 @@ void main() {
       );
       addTearDown(bloc.close);
 
-      final draftThread = Thread(priority: priority, draft: true);
+      // Shared (another contact) so the send gets the undo window.
+      final draftThread = Thread(priority: priority, draft: true)
+          .copyWith(contacts: Value([_selfId.value, _otherId.value]));
       final note = Note(
         id: NoteId.generate(),
         threadId: draftThread.id,

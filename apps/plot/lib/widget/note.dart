@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -13,6 +14,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/shortcut.dart' show formatShortcut;
 
 class _NoteReplyReference extends StatefulWidget {
   const _NoteReplyReference({required this.reNoteId});
@@ -247,24 +249,58 @@ class _NoteWidgetState extends State<NoteWidget> {
             child: widget.sending
                 ? Align(
                     alignment: Alignment.centerRight,
-                    child: FButton(
-                      onPress: widget.onUndoSend,
-                      variant: FButtonVariant.ghost,
-                      style: ghostSizedStyleDelta(
-                        context,
-                        textStyle: context.theme.typography.xs,
+                    // Ghost buttons inset their content by the button's
+                    // padding, so the label would sit left of the author /
+                    // timestamp (which is flush at `right: 0`). Shift the button
+                    // right by that padding so `sending` lines up with the
+                    // timestamps. Mirrors NoteCommands' left-edge compensation.
+                    child: Transform.translate(
+                      offset: Offset(
+                        context.theme.buttonStyles.ghost.md.iconContentStyle
+                            .padding
+                            .resolve(TextDirection.ltr)
+                            .right,
+                        0,
                       ),
-                      mainAxisSize: MainAxisSize.min,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: 4,
-                        children: [
-                          const Text('SENDING'),
-                          Icon(
-                            FontAwesomeIcons.xmark,
-                            size: context.theme.iconSizes.xs,
+                      child: FTooltip(
+                        tipBuilder: (context, controller) => Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Cancel'),
+                            Text(
+                              formatShortcut(
+                                const SingleActivator(
+                                  LogicalKeyboardKey.escape,
+                                ),
+                              ),
+                              style: context.theme.typography.xs.copyWith(
+                                color: context.theme.colors.mutedForeground,
+                              ),
+                            ),
+                          ],
+                        ),
+                        child: FButton(
+                          onPress: widget.onUndoSend,
+                          variant: FButtonVariant.ghost,
+                          style: ghostSizedStyleDelta(
+                            context,
+                            textStyle: context.theme.typography.xs,
                           ),
-                        ],
+                          mainAxisSize: MainAxisSize.min,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: .center,
+                            spacing: 4,
+                            children: [
+                              const Text('sending'),
+                              Icon(
+                                FontAwesomeIcons.xmark,
+                                size: context.theme.iconSizes.xs,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   )
@@ -278,9 +314,8 @@ class _NoteWidgetState extends State<NoteWidget> {
                         bottom: 0,
                         child: Builder(
                           builder: (context) {
-                            final mutedXs = context.theme.typography.xs.copyWith(
-                              color: context.colour.muted,
-                            );
+                            final mutedXs = context.theme.typography.xs
+                                .copyWith(color: context.colour.muted);
                             final timeAgo = FTooltip(
                               tipBuilder: (context, controller) => Text(
                                 widget.note.sourceCreatedAt.toLocal().format(
@@ -312,7 +347,10 @@ class _NoteWidgetState extends State<NoteWidget> {
                                 if (authorName == null || authorName.isEmpty) {
                                   return withPending(timeAgo);
                                 }
-                                Widget authorText = Text(authorName, style: mutedXs);
+                                Widget authorText = Text(
+                                  authorName,
+                                  style: mutedXs,
+                                );
                                 if (actor?.email != null &&
                                     actor!.email != authorName) {
                                   authorText = FTooltip(

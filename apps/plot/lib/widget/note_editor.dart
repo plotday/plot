@@ -229,6 +229,14 @@ class NoteEditorState extends State<NoteEditor> {
     }
   }
 
+  /// Focuses the editor and places the caret at the end of its content. Used
+  /// when an un-sent note is restored into the composer (Esc / undo send), so
+  /// focus stays on the editor with the cursor after the restored text.
+  void focusAtEnd() {
+    focus();
+    _editorKey.currentState?.placeCaretAtEnd();
+  }
+
   /// Drops focus from the editor when it currently holds it, returning whether
   /// it did. The new-thread compose surface calls this from its Escape handler:
   /// SuperEditor lets Escape bubble unhandled and the page's global Escape

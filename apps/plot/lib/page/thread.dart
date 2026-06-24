@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -200,7 +201,12 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       final note = await PendingSend.instance.undo();
       if (!mounted) return;
       threadBloc.restoreDraft(note);
-      _noteEditorKey.currentState?.focus();
+      // Keep focus on the composer with the caret at the end of the restored
+      // note. Deferred to after the frame so it runs after the editor resets
+      // to the restored draft (the reset clears the selection and focus).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _noteEditorKey.currentState?.focusAtEnd();
+      });
     }());
   }
 
@@ -475,8 +481,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       _initialScrollScheduled = true;
       // In the swipe carousel, restore the saved offset for a thread the user
       // is swiping back to, instead of the scroll-to-unread target.
-      final cachedOffset =
-          _threadId == null ? null : _scrollCache?.offsetFor(_threadId!);
+      final cachedOffset = _threadId == null
+          ? null
+          : _scrollCache?.offsetFor(_threadId!);
       if (cachedOffset != null) {
         _restoringCachedOffset = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -896,9 +903,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     // cached carousel offset still being restored.
     final gateOpacity =
         (_scrollTargetIndex != null || _restoringCachedOffset) &&
-                !_initialScrollSettled
-            ? 0.0
-            : 1.0;
+            !_initialScrollSettled
+        ? 0.0
+        : 1.0;
     return Opacity(opacity: gateOpacity, child: gated);
   }
 
@@ -913,7 +920,8 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       // While its push is held, this row shows `SENDING ✕` in the footer slot
       // instead of the author/timestamp. It's the same keyed row before and
       // after the window, so the transition is just the footer subtree.
-      final sending = PendingSend.instance.isPending &&
+      final sending =
+          PendingSend.instance.isPending &&
           PendingSend.instance.pendingNoteId == note.id;
       return NoteWidget(
         note: note,

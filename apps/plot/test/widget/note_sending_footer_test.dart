@@ -169,14 +169,14 @@ void main() {
         ),
       ));
 
-      expect(find.text('SENDING'), findsOneWidget);
+      expect(find.text('sending'), findsOneWidget);
       expect(find.byIcon(FontAwesomeIcons.xmark), findsOneWidget);
       // NoteWidget renders content via SuperText (RichText-based), not Text widgets.
       expect(find.text('draft text', findRichText: true), findsWidgets);
       // The core requirement: the sending footer hides the commands overlay.
       expect(find.byType(NoteCommands), findsNothing);
 
-      await tester.tap(find.text('SENDING'));
+      await tester.tap(find.text('sending'));
       // Drain FTappable press-state timers before the test ends.
       await tester.pumpAndSettle();
       expect(undone, isTrue);
@@ -195,7 +195,7 @@ void main() {
         ),
       ));
 
-      expect(find.text('SENDING'), findsNothing);
+      expect(find.text('sending'), findsNothing);
       // NoteWidget renders content via SuperText (RichText-based), not Text widgets.
       expect(find.text('draft text', findRichText: true), findsWidgets);
       // The normal footer still renders the commands overlay.

@@ -330,12 +330,20 @@ class ThreadBloc extends Cubit<ThreadState> {
   /// held — so it appears in the feed and is never stranded. [PendingSend.commit]
   /// releases the hold and pushes when the window elapses (or on app-close /
   /// sign-out); [PendingSend.undo] hides the note again and demotes the thread.
+  ///
+  /// Unshared notes (a private note, or any note on a solo thread) are seen
+  /// only by the user, so they skip the window and push immediately.
   Future<void> sendWithUndo(Note note) async {
     var currentThread = state.thread;
     final currentLinks = state.links;
 
     // Merge new non-twist mentions into thread.contacts (mirrors add()).
     currentThread = await _mergeNoteMentionsIntoContacts(note, currentThread);
+
+    // Unshared notes — a private note, or any note on a solo thread — are seen
+    // only by the user, so there's nothing to "unsend": send immediately with
+    // no undo window (push right away instead of holding it).
+    final immediate = note.isPrivate || !currentThread.isShared;
 
     // A still-draft thread means this is the first note of a brand-new thread
     // (typically a re-send after undo). Promote it alongside the note.
@@ -346,21 +354,26 @@ class ThreadBloc extends Cubit<ThreadState> {
         ? currentThread.copyWith(draft: false, todo: isSelfTodo ? true : null)
         : currentThread;
 
-    // Register the hold + 5s timer BEFORE saving so a save-triggered push can't
-    // claim the rows before the hold is in place.
-    PendingSend.instance.start(
-      noteId: publishNote.id,
-      threadId: currentThread.id,
-      promotedThreadFromDraft: promoting,
-    );
+    if (immediate) {
+      // Finalize any prior held send first (one at a time).
+      unawaited(PendingSend.instance.commit());
+    } else {
+      // Register the hold + 5s timer BEFORE saving so a save-triggered push
+      // can't claim the rows before the hold is in place.
+      PendingSend.instance.start(
+        noteId: publishNote.id,
+        threadId: currentThread.id,
+        promotedThreadFromDraft: promoting,
+      );
+    }
 
     if (promoting) {
       await promoteThread.save();
       emit(state.copyWith(thread: promoteThread));
     }
-    // Save the note as a real (non-draft) note WITHOUT pushing — it appears in
-    // the list immediately; PendingSend holds its push for the undo window.
-    await publishNote.save(pushToRemote: false);
+    // Held sends save WITHOUT pushing (PendingSend holds the push until the
+    // window elapses); immediate sends push right away.
+    await publishNote.save(pushToRemote: immediate);
 
     // Reset the composer to a fresh draft and clear reply/editing — same UI
     // reset add() performs so the editor clears immediately on send.

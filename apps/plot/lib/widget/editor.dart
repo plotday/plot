@@ -579,6 +579,28 @@ class EditorState extends State<Editor> {
     });
   }
 
+  /// Focuses the editor and moves the caret to the end of the document. Used
+  /// when an un-sent note is restored into the composer (Esc / undo send) so
+  /// focus stays on the editor with the cursor after the restored text.
+  void placeCaretAtEnd() {
+    final lastNode = _document.getNodeAt(_document.nodeCount - 1);
+    if (lastNode != null) {
+      _editor.execute([
+        ChangeSelectionRequest(
+          DocumentSelection.collapsed(
+            position: DocumentPosition(
+              nodeId: lastNode.id,
+              nodePosition: lastNode.endPosition,
+            ),
+          ),
+          SelectionChangeType.placeCaret,
+          SelectionReason.userInteraction,
+        ),
+      ]);
+    }
+    _editorFocusNode.requestFocus();
+  }
+
   /// Inserts text at the current cursor position
   void insertTextAtCursor(String text) {
     log.info("Inserting text at cursor: $text");
