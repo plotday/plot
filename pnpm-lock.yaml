@@ -109,6 +109,31 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.0.3)
 
+  connectors/google:
+    dependencies:
+      '@plotday/connector-gmail':
+        specifier: workspace:^
+        version: link:../gmail
+      '@plotday/connector-google-calendar':
+        specifier: workspace:^
+        version: link:../google-calendar
+      '@plotday/connector-google-contacts':
+        specifier: workspace:^
+        version: link:../google-contacts
+      '@plotday/connector-google-tasks':
+        specifier: workspace:^
+        version: link:../google-tasks
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.0.3)
+
   connectors/google-calendar:
     dependencies:
       '@plotday/connector-google-contacts':

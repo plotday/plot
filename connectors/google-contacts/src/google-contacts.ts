@@ -12,13 +12,33 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 
+import { GOOGLE_PEOPLE_SCOPES } from "./people-api";
 import {
-  type ContactSyncState,
-  GOOGLE_PEOPLE_SCOPES,
-  GoogleApi,
-  getGoogleContacts,
-} from "./people-api";
+  type ContactsSyncHost,
+  getContactsFn,
+  onChannelDisabledFn,
+  onChannelEnabledFn,
+  startSyncFn,
+  stopSyncFn,
+  syncBatchFn,
+} from "./sync";
 
+/**
+ * Google Contacts connector
+ *
+ * Imports the user's Google Contacts (saved contacts + "other contacts") as
+ * Plot contacts. Read-only — there is no outbound write-back. Walks the People
+ * API in pages using sync tokens; no webhooks.
+ *
+ * The channel/sync lifecycle lives in `./sync` as standalone functions over a
+ * {@link ContactsSyncHost}; this class is a thin connector that builds a host
+ * from `this`, owns all scheduling, and delegates the rest.
+ *
+ * GoogleContacts is also consumed as a built-in TOOL by other Google
+ * connectors (`this.tools.googleContacts`), so the public `getContacts` /
+ * `startSync` / `stopSync` methods keep their exact names, signatures, and
+ * behavior — they delegate to the extracted functions.
+ */
 export default class GoogleContacts
   extends Connector<GoogleContacts>
 {
@@ -42,133 +62,127 @@ export default class GoogleContacts
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Host wrapper + public state delegators
+  //
+  // The Connector base class exposes set/get/clear as `protected`, but
+  // ContactsSyncHost requires them as public. We bridge this via a host object
+  // that delegates through the public wrapper methods below. The host's
+  // `scheduler` section routes back to this connector's own scheduling method
+  // (which remains here so it references `this.callback`/`this.runTask`).
+  // ---------------------------------------------------------------------------
+
+  /** Public set wrapper so the host object can expose it. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _hostSet(key: string, value: any): Promise<void> {
+    return this.set(key, value);
+  }
+  /** Public get wrapper so the host object can expose it. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _hostGet<T = any>(key: string): Promise<T | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.get<any>(key);
+  }
+  /** Public clear wrapper so the host object can expose it. */
+  _hostClear(key: string): Promise<void> {
+    return this.clear(key);
+  }
+
+  /**
+   * Returns a ContactsSyncHost backed by this connector instance.
+   * Passes through all tool access, exposes set/get/clear as public members,
+   * and binds the scheduler section to this connector's own method.
+   */
+  private makeHost(): ContactsSyncHost {
+    const self = this;
+    return {
+      set: (key, value) => self._hostSet(key, value),
+      get: <T>(key: string) => self._hostGet<T>(key),
+      clear: (key) => self._hostClear(key),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: self.tools as any,
+      scheduler: {
+        queueSyncBatch: (batchNumber, syncableId) =>
+          self.queueSyncBatch(batchNumber, syncableId),
+      },
+    };
+  }
+
   async getChannels(_auth: Authorization, _token: AuthToken): Promise<Channel[]> {
     return [{ id: "contacts", title: "Contacts" }];
   }
 
+  /**
+   * Called when a channel is enabled. Seeds sync state and kicks off the
+   * initial backfill. Delegates to {@link onChannelEnabledFn}.
+   */
   async onChannelEnabled(channel: Channel): Promise<void> {
-    const token = await this.tools.integrations.get(channel.id);
-    if (!token) {
-      // Auth token not available — abort instead of throwing so the
-      // recovery dispatch doesn't surface as a failed connection. Same
-      // pattern as syncBatch below. Common for the merged-scopes pattern
-      // (parent connector owns the OAuth, GoogleContacts inherits via
-      // MergeScopes) where channel.id="contacts" never has its own
-      // dedicated token registered.
-      console.warn(
-        `Auth token missing for ${channel.id} during onChannelEnabled, skipping`
-      );
-      return;
-    }
-
-    const initialState: ContactSyncState = {
-      more: false,
-    };
-
-    await this.set(`sync_state:${channel.id}`, initialState);
-
-    const syncCallback = await this.callback(this.syncBatch, 1, channel.id);
-    await this.runTask(syncCallback);
+    const start = await onChannelEnabledFn(this.makeHost(), channel.id);
+    if (!start) return;
+    await this.queueSyncBatch(1, channel.id);
   }
 
+  /**
+   * Called when a channel is disabled. Removes state. Delegates to
+   * {@link onChannelDisabledFn}.
+   */
   async onChannelDisabled(channel: Channel): Promise<void> {
-    await this.stopSync(channel.id);
+    await onChannelDisabledFn(this.makeHost(), channel.id);
   }
 
+  /**
+   * Fetch a single page of the user's Google Contacts. Public TOOL API —
+   * consumed by other Google connectors. Delegates to {@link getContactsFn}.
+   */
   async getContacts(syncableId: string): Promise<NewContact[]> {
-    const token = await this.tools.integrations.get(syncableId);
-    if (!token) {
-      console.warn(
-        `Auth token missing for syncableId ${syncableId} during getContacts, returning empty list`
-      );
-      return [];
-    }
-
-    const api = new GoogleApi(token.token);
-    const result = await getGoogleContacts(api, token.scopes, {
-      more: false,
-    });
-
-    return result.contacts;
+    return getContactsFn(this.makeHost(), syncableId);
   }
 
+  /**
+   * Seed sync state and kick off the initial backfill. Public TOOL API —
+   * consumed by other Google connectors. Delegates to {@link startSyncFn}.
+   */
   async startSync(syncableId: string): Promise<void> {
-    const token = await this.tools.integrations.get(syncableId);
-    if (!token) {
-      console.warn(
-        `Auth token missing for syncableId ${syncableId} during startSync, skipping`
-      );
-      return;
-    }
-
-    const initialState: ContactSyncState = {
-      more: false,
-    };
-
-    await this.set(`sync_state:${syncableId}`, initialState);
-
-    const syncCallback = await this.callback(this.syncBatch, 1, syncableId);
-    await this.runTask(syncCallback);
+    const start = await startSyncFn(this.makeHost(), syncableId);
+    if (!start) return;
+    await this.queueSyncBatch(1, syncableId);
   }
 
+  /**
+   * Clear the persisted backfill cursor. Public TOOL API — consumed by other
+   * Google connectors. Delegates to {@link stopSyncFn}.
+   */
   async stopSync(syncableId: string): Promise<void> {
-    await this.clear(`sync_state:${syncableId}`);
+    await stopSyncFn(this.makeHost(), syncableId);
   }
 
-  async syncBatch(batchNumber: number, syncableId: string): Promise<void> {
-    try {
-      const token = await this.tools.integrations.get(syncableId);
-      if (!token) {
-        // Auth token was cleared (channel disabled, OAuth revoked,
-        // integration deleted) — abort instead of throwing to prevent
-        // infinite queue retries.
-        console.warn(
-          `Auth token missing for syncableId ${syncableId} at batch ${batchNumber}, skipping`
-        );
-        await this.clear(`sync_state:${syncableId}`);
-        return;
-      }
+  // ---------------------------------------------------------------------------
+  // Scheduling — stays on the connector
+  // ---------------------------------------------------------------------------
 
-      const state = await this.get<ContactSyncState>(`sync_state:${syncableId}`);
-      if (!state) {
-        throw new Error("No sync state found");
-      }
-
-      const api = new GoogleApi(token.token);
-      const result = await getGoogleContacts(
-        api,
-        token.scopes,
-        state
-      );
-
-      if (result.contacts.length > 0) {
-        await this.processContacts(result.contacts);
-      }
-
-      await this.set(`sync_state:${syncableId}`, result.state);
-
-      if (result.state.more) {
-        const nextCallback = await this.callback(
-          this.syncBatch,
-          batchNumber + 1,
-          syncableId
-        );
-        await this.runTask(nextCallback);
-      } else {
-        await this.clear(`sync_state:${syncableId}`);
-        // No further pages — initial backfill is complete.
-        await this.tools.integrations.channelSyncCompleted(syncableId);
-      }
-    } catch (error) {
-      console.error(`Error in sync batch ${batchNumber}:`, error);
-
-      throw error;
-    }
-  }
-
-  private async processContacts(
-    contacts: NewContact[],
+  /** Queue the next contact-import batch as a fresh task. */
+  private async queueSyncBatch(
+    batchNumber: number,
+    syncableId: string
   ): Promise<void> {
-    await this.tools.integrations.saveContacts(contacts);
+    const callback = await this.callback(
+      this.syncBatch,
+      batchNumber,
+      syncableId
+    );
+    await this.runTask(callback);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sync batch — delegate to extracted state machine, own the scheduling
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Process a batch of contacts. Delegates to {@link syncBatchFn}, which
+   * schedules the next page (when more remain) through the host scheduler back
+   * to {@link queueSyncBatch}.
+   */
+  async syncBatch(batchNumber: number, syncableId: string): Promise<void> {
+    await syncBatchFn(this.makeHost(), batchNumber, syncableId);
   }
 }

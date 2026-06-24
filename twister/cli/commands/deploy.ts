@@ -759,6 +759,11 @@ export async function deployCommand(options: DeployOptions) {
       if (permissions && Object.keys(permissions).length > 0) {
         out.info("Permissions:", []);
         for (const [toolName, toolPermissions] of Object.entries(permissions)) {
+          // Underscore-prefixed keys (_providers, _dynamic_link_types,
+          // _products, _ai_required, _default_mention_*, …) are internal
+          // runtime markers, not user-facing tool permissions — don't print
+          // them in the deploy summary.
+          if (toolName.startsWith("_")) continue;
           console.log(`  ${toolName}:`);
 
           // Display each permission property
