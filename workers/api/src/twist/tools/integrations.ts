@@ -3910,6 +3910,10 @@ export class Integrations extends Tool implements IAuth {
         children?: any[];
       }>;
     }>;
+    // OAuth scopes actually granted to this connection, unioned across every
+    // connected account/actor. Used by the combined-connector productStatus
+    // computation to tell which products' scopes the user consented to.
+    grantedScopes: string[];
   }> {
     const providers = this.providerConfigs.map(p => ({
       provider: p.provider,
@@ -3957,6 +3961,9 @@ export class Integrations extends Tool implements IAuth {
 
     // Track which channel IDs have access from any current-user contact
     const channelAccessByCurrentUser = new Set<string>();
+
+    // Union of OAuth scopes granted across every connected account/actor.
+    const grantedScopesSet = new Set<string>();
 
     // Collect channel trees per provider (merged across actors)
     type AnnotatedChannel = {
@@ -4037,6 +4044,12 @@ export class Integrations extends Tool implements IAuth {
           tokenData
         );
         const effectiveTokenData = refreshedTokenData ?? tokenData;
+
+        // Accumulate granted scopes (combined-connector productStatus reads
+        // this union to decide which products' scopes were consented to).
+        for (const s of effectiveTokenData?.scopes ?? []) {
+          grantedScopesSet.add(s);
+        }
 
         const email = effectiveTokenData
           ? this.extractEmail(effectiveTokenData.providerData)
@@ -4232,7 +4245,12 @@ export class Integrations extends Tool implements IAuth {
       allChannels.push(...visible);
     }
 
-    return { providers, accounts, syncables: allChannels };
+    return {
+      providers,
+      accounts,
+      syncables: allChannels,
+      grantedScopes: Array.from(grantedScopesSet),
+    };
   }
 
   /**

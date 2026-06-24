@@ -17,6 +17,12 @@ import { handleValidationError } from "../utils/validation";
 import type { OptionsSchema } from "@plotday/twister/options";
 import { saveSecureOptions } from "../utils/secure-options";
 import { resolveRequestedScopes } from "../twist/tools/auth-scope";
+import {
+  type OptionalScopeGroup as ProductScopeGroup,
+  type ProductInfo,
+  type ProductStatus,
+  computeProductStatus,
+} from "./product-status";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
@@ -127,6 +133,8 @@ async function loadTwistConfig(
   autoThreading: boolean;
   access: string[] | null;
   connectorLinkTypes?: any[];
+  /** Per-product metadata for combined connectors; null for plain connectors. */
+  products: ProductInfo[] | null;
 } | null> {
   const config = await env.TWIST_CONFIG.get(`${twistPackageId}:${version}`);
   if (!config) return null;
@@ -142,6 +150,10 @@ async function loadTwistConfig(
     autoThreading: parsed.sourceProvider?.autoThreading === true,
     access: parsed.sourceProvider?.access ?? null,
     connectorLinkTypes: parsed.sourceProvider?.linkTypes ?? undefined,
+    // Mirrors how _providers/linkTypes are read: prefer the sourceProvider
+    // metadata in KV; fall back to the _products mirror in permissions.
+    products:
+      parsed.sourceProvider?.products ?? parsed.permissions?._products ?? null,
   };
 }
 
@@ -205,6 +217,66 @@ function createReadOnlyIntegrations(
     environment: environment as any,
     integrationOptions: { providers: providerConfigs },
   });
+}
+
+/**
+ * Flattens a (possibly nested) syncables tree to the ids of channels that are
+ * currently enabled. Used to count a combined connector's enabled channels per
+ * product (the namespaced id prefix identifies the product).
+ */
+function collectEnabledChannelIds(syncables: any[]): string[] {
+  const ids: string[] = [];
+  const walk = (nodes: any[]) => {
+    for (const node of nodes ?? []) {
+      if (node?.enabled && typeof node.id === "string") ids.push(node.id);
+      if (Array.isArray(node?.children)) walk(node.children);
+    }
+  };
+  walk(syncables);
+  return ids;
+}
+
+/**
+ * Builds the combined-connector `products` + `productStatus` response fields.
+ * Returns an empty object when the connector declares no products, so plain
+ * connectors are unchanged (the app's `isComposite` stays false).
+ *
+ * `optionalScopeGroups` are gathered from the providers surfaced to the modal
+ * (each `provider.optionalScopes` entry, `{ id, scopes }`). `grantedScopes` is
+ * the union of scopes granted across the connection's accounts. `syncables` is
+ * the channel tree; its enabled leaves drive the no-channels reason.
+ */
+function buildProductFields(
+  products: ProductInfo[] | null,
+  optionalScopeGroups: ProductScopeGroup[],
+  grantedScopes: string[],
+  syncables: any[],
+): { products: ProductInfo[]; productStatus: ProductStatus[] } | Record<string, never> {
+  if (!products || products.length === 0) return {};
+  const enabledChannelIds = collectEnabledChannelIds(syncables);
+  const productStatus = computeProductStatus(
+    products,
+    optionalScopeGroups,
+    grantedScopes,
+    enabledChannelIds,
+  );
+  return { products, productStatus };
+}
+
+/**
+ * Gathers the optional scope groups declared by the modal's providers, in the
+ * `{ id, scopes }` shape computeProductStatus expects.
+ */
+function collectOptionalScopeGroups(providers: any[]): ProductScopeGroup[] {
+  const groups: ProductScopeGroup[] = [];
+  for (const p of providers ?? []) {
+    for (const g of p?.optionalScopes ?? []) {
+      if (g?.id && Array.isArray(g.scopes)) {
+        groups.push({ id: g.id, scopes: g.scopes });
+      }
+    }
+  }
+  return groups;
 }
 
 // ============================================================================
@@ -371,6 +443,16 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
 
     const teamDomains = await getTeamDomains(c.var.db);
 
+    // No-provider connectors carry no OAuth scopes; productStatus therefore
+    // reduces to channel-based enablement. Omitted entirely for connectors
+    // without products (the common case here).
+    const productFields = buildProductFields(
+      config.products,
+      [],
+      [],
+      syncables,
+    );
+
     return c.json({
       providers: [], accounts, syncables, optionsSchema, optionsConfig,
       access: config.access ?? null,
@@ -383,6 +465,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       teamDomains,
       accountLabel: twistInfo.accountLabel ?? null,
       teamName: twistInfo.teamName ?? null,
+      ...productFields,
     });
   }
 
@@ -405,6 +488,9 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
   const allProviders: any[] = [];
   const allAccounts: any[] = [];
   const allChannels: any[] = [];
+  // Union of OAuth scopes granted across every Integrations instance — feeds
+  // the combined-connector productStatus computation below.
+  const grantedScopesSet = new Set<string>();
 
   for (const [pathStr, providers] of pathToProviders) {
     const path = pathStr.split(":");
@@ -489,6 +575,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     allProviders.push(...data.providers);
     allAccounts.push(...data.accounts);
     allChannels.push(...data.syncables);
+    for (const s of data.grantedScopes ?? []) grantedScopesSet.add(s);
   }
 
   const teamDomains = await getTeamDomains(c.var.db);
@@ -516,6 +603,16 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     optionsConfig = masked;
   }
 
+  // Combined (multi-product) connectors: surface the declared products and the
+  // derived per-product status. Omitted entirely for plain connectors, so the
+  // app's `isComposite` gate stays false and the legacy flow is unaffected.
+  const productFields = buildProductFields(
+    config.products,
+    collectOptionalScopeGroups(allProviders),
+    Array.from(grantedScopesSet),
+    allChannels,
+  );
+
   return c.json({
     providers: allProviders,
     accounts: allAccounts,
@@ -531,6 +628,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     teamDomains,
     accountLabel: twistInfo.accountLabel ?? null,
     teamName: twistInfo.teamName ?? null,
+    ...productFields,
   });
 });
 

@@ -478,6 +478,7 @@ export default class extends WorkerEntrypoint {
         ...(twist.access ? { access: twist.access } : {}),
         ...(twist.shared ? { shared: true } : {}),
         ...(twist.keyOption ? { keyOption: twist.keyOption } : {}),
+        ...(twist.products ? { products: twist.products } : {}),
       };
     } finally {
       tools?.disposeAll();

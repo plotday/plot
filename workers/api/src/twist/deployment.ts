@@ -161,7 +161,7 @@ export async function deployTwist({
   let isNoProviderConnector = false;
   let multipleInstances = false;
   let reactionCapabilities: unknown = null;
-  let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
+  let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string; products?: Array<{ key: string; label: string; description: string; icon: string; scopeGroupId: string }> } | null = null;
   try {
     if (dryRun) {
       onProgress?.("Analyzing permissions");
@@ -206,6 +206,14 @@ export async function deployTwist({
 
     // Enrich providers with linkTypes from sourceProvider
     sourceProvider = storeResult.sourceProvider ?? null;
+
+    // Store the combined-connector product metadata in permissions for the
+    // user.twist view / Flutter app (mirrors _providers, _dynamic_link_types).
+    // Absent for plain connectors — keeps isComposite false for them.
+    if (sourceProvider?.products) {
+      (permissions as any)._products = sourceProvider.products;
+    }
+
     providers = sourceProvider?.provider
       ? storeResult.providers.map(p => p.provider === sourceProvider!.provider
           ? { ...p, linkTypes: sourceProvider!.linkTypes }

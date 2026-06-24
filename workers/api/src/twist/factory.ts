@@ -103,6 +103,16 @@ export function twistFactory({
       autoThreading?: boolean;
       autoThreadingByDefault?: boolean;
       access?: string[];
+      // Per-product metadata for combined (multi-product) connectors. Absent
+      // for plain connectors. Each entry's scopeGroupId matches an optional
+      // scope group id; the integrations endpoint derives productStatus from it.
+      products?: Array<{
+        key: string;
+        label: string;
+        description: string;
+        icon: string;
+        scopeGroupId: string;
+      }>;
     } | null = null;
 
     // Load twist_instance config for Options resolution at runtime
