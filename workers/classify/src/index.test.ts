@@ -7,6 +7,7 @@ import { withDb } from "./db";
 import { resetTrainingCacheForTests } from "./training-cache";
 import { handleClassifyJob, parkUnclassifiable } from "./handler";
 import { backgroundPressure } from "@plotday/worker-util";
+import type * as workerUtil from "@plotday/worker-util";
 
 // Hoisted PostHog spies shared with the module mock below.
 const { captureException, capture, shutdown } = vi.hoisted(() => ({
@@ -24,7 +25,7 @@ vi.mock("posthog-node", () => ({
 }));
 
 vi.mock("@plotday/worker-util", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@plotday/worker-util")>();
+  const actual = await importOriginal<typeof workerUtil>();
   return {
     ...actual,
     createLogger: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn() }),

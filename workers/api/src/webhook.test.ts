@@ -23,6 +23,7 @@ import { createDb, type DB } from "./db";
 import type { Bindings } from "./env";
 import type { JwsNotificationPayload, JwsTransactionPayload } from "./apple/iap";
 import { handleAppStoreTransaction } from "./apple/handle-appstore";
+import type * as stripeUtils from "./stripe/utils";
 
 /** Sentinel thrown to force the seeding transaction to roll back. */
 class Rollback extends Error {}
@@ -35,7 +36,7 @@ class Rollback extends Error {}
 // createFreeSubscription returns a stub sub; getBillingCycleDates (actual
 // implementation) converts current_period_start/end × 1000 → Date objects.
 vi.mock("./stripe/utils", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./stripe/utils")>();
+  const actual = await importOriginal<typeof stripeUtils>();
   return {
     ...actual,
     createStripeClient: () => ({

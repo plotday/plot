@@ -22,6 +22,7 @@ import {
   handleSubscriptionUpdate,
   hasActiveAppStoreEntitlement,
 } from "./stripe";
+import type * as stripeUtils from "./utils";
 
 // ---------------------------------------------------------------------------
 // Module-level mock: intercept createStripeClient so the handler never hits
@@ -30,7 +31,7 @@ import {
 // ---------------------------------------------------------------------------
 
 vi.mock("./utils", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./utils")>();
+  const actual = await importOriginal<typeof stripeUtils>();
   return {
     ...actual,
     createStripeClient: () => ({

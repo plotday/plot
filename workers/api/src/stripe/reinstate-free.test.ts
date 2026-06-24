@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createDb, type DB } from "../db";
 import type { Bindings } from "../env";
 import { reinstateFreeSubscription } from "./reinstate-free";
+import type * as stripeUtils from "./utils";
 
 // ---------------------------------------------------------------------------
 // Module-level mock: intercept createFreeSubscription so tests never hit
@@ -25,7 +26,7 @@ import { reinstateFreeSubscription } from "./reinstate-free";
 const stripeMockCreate = vi.fn();
 
 vi.mock("./utils", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./utils")>();
+  const actual = await importOriginal<typeof stripeUtils>();
   return {
     ...actual,
     createStripeClient: () => ({
