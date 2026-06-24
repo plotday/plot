@@ -1,8 +1,8 @@
 {
   "name": "@plotday/connector-google",
   "plotTwistId": "6e9e441f-aeee-4142-a37b-62cfe79ac16d",
-  "displayName": "Google Mail, Calendar, and Tasks",
-  "description": "Connect your Google account to sync Gmail, Google Calendar, Google Tasks, and Google Contacts in one place.",
+  "displayName": "Gmail & Calendar",
+  "description": "Email, calendar, tasks, and contacts from your Google account.",
   "category": "messaging",
   "logoUrl": "https://api.iconify.design/logos/google-icon.svg",
   "publisher": "Plot",
