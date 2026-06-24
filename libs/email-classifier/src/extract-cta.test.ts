@@ -138,6 +138,61 @@ describe("extractCta — confirm link", () => {
   });
 });
 
+describe("extractCta — promotional false positives", () => {
+  // Real samples mined from prod (martha.braun@gmail.com): bulk marketing mail
+  // that the old detector mis-read as an OTP because a 4-8 digit number sat near
+  // the bare word "code". A genuine one-time code is transactional and direct —
+  // never a bulk mailing-list blast — so reach=list / promotion must suppress it.
+  it("does NOT treat a bulk-list promo with a 'code' number as an OTP", () => {
+    expect(extractCta(signals({
+      fromAddress: "sale@l904gw.fi86.fdske.com", fromName: "Ashley Rose Reeves",
+      listUnsubscribe: "<https://l904gw.fi86.fdske.com/u>",
+      subject: "Hydrojugs are 50% OFF!! 💥",
+      bodyText: "Summer blowout! Use code 8558 at checkout for an extra discount.",
+    }))).toBeNull();
+  });
+  it("does NOT treat a Gmail CATEGORY_PROMOTIONS mail (reach=direct) as an OTP", () => {
+    expect(extractCta(signals({
+      fromAddress: "deals@modlily.com", fromName: "Modlily",
+      gmailCategories: ["CATEGORY_PROMOTIONS"],
+      subject: "Fresh Dress Arrivals Just For You 🎁",
+      bodyText: "Shop now with code 4070 for free shipping.",
+    }))).toBeNull();
+  });
+  it("does NOT treat a promo-context 'promo code' line as an OTP", () => {
+    expect(extractCta(signals({
+      fromAddress: "hello@store.com", fromName: "Store",
+      subject: "20% off everything",
+      bodyText: "Enter promo code 5678 for 20% off your order.",
+    }))).toBeNull();
+  });
+  it("does NOT treat an all-same-digit placeholder as an OTP", () => {
+    expect(extractCta(signals({
+      fromAddress: "no-reply@penningtons.com", fromName: "Penningtons",
+      subject: "Ends Tonight: 40% Off",
+      bodyText: "Your code: 000000. Shop the sale now!",
+    }))).toBeNull();
+  });
+  it("does NOT extract a confirm CTA from a bulk-list mailing", () => {
+    const dmarcPass = "spf=pass; dkim=pass; dmarc=pass header.from=shop.com";
+    expect(extractCta(signals({
+      fromAddress: "news@shop.com", fromName: "Shop",
+      listUnsubscribe: "<https://shop.com/u>",
+      subject: "Confirm you still want our deals",
+      authResults: dmarcPass,
+      links: [{ text: "Confirm preferences", href: "https://shop.com/confirm" }],
+    }))).toBeNull();
+  });
+  it("STILL extracts a genuine OTP from a direct transactional mail", () => {
+    const cta = extractCta(signals({
+      fromAddress: "no-reply@acme.com", fromName: "Acme",
+      subject: "Your verification code",
+      bodyText: "Your verification code is 482913. It expires in 10 minutes.",
+    }));
+    expect(cta).toEqual({ kind: "otp", service: "Acme", code: "482913", url: null });
+  });
+});
+
 describe("extractCta — none", () => {
   it("returns null for ordinary mail", () => {
     expect(extractCta(signals({

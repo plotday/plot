@@ -1,5 +1,5 @@
 import type { Cta } from "@plotday/twister/facets";
-import type { EmailSignals } from "./classify-email";
+import { classifyEmail, type EmailSignals } from "./classify-email";
 
 // ---- domains ---------------------------------------------------------------
 // Minimal multi-label public suffixes for registrable-domain comparison.
@@ -56,6 +56,13 @@ function looksLikeYear(t: string): boolean {
   return /^\d{4}$/.test(t) && Number(t) >= 1900 && Number(t) <= 2100;
 }
 
+// All-same-digit numeric tokens (0000, 9999, 000000, …) are promo placeholders,
+// never real one-time codes. Cheap, high-precision FP filter for marketing mail
+// that survives the reach/promotion gate (e.g. a direct "Your code: 000000").
+function looksLikePlaceholder(t: string): boolean {
+  return /^(\d)\1{3,}$/.test(t);
+}
+
 function extractOtp(s: EmailSignals): string | null {
   const hay = `${s.subject ?? ""}\n${s.bodyText ?? ""}`;
   if (!hay.trim()) return null;
@@ -67,6 +74,7 @@ function extractOtp(s: EmailSignals): string | null {
     if (!m) continue;
     const tok = m[1];
     if (looksLikeYear(tok)) continue;
+    if (looksLikePlaceholder(tok)) continue;
     return tok;
   }
   return null;
@@ -136,8 +144,18 @@ function extractConfirmUrl(s: EmailSignals): string | null {
  * sender's domain, an http(s) scheme, and the link host on the verified
  * registrable domain. Returns null unless a high-confidence detection is made
  * (bias to false-negative).
+ *
+ * Bulk/promotional mail is suppressed up front: a genuine one-time code or
+ * account-confirmation link is transactional and directly addressed — never a
+ * mailing-list blast. Gating on reach=list / format=promotion eliminates the
+ * dominant false-positive class (a 4-8 digit discount code, price, or SKU
+ * sitting near the word "code" in a marketing email) that otherwise fires an
+ * immediate, gate-bypassing OTP push for every promo the user receives.
  */
 export function extractCta(s: EmailSignals): Cta | null {
+  const { reach, format } = classifyEmail(s);
+  if (reach === "list" || format === "promotion") return null;
+
   const service = serviceName(s);
   const code = extractOtp(s);
   if (code) return { kind: "otp", service, code, url: extractConfirmUrl(s) };
