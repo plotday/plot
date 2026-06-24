@@ -1446,10 +1446,20 @@ class EditSource extends ShowForm {
             FormButton(
               key: 'save',
               isPrimary: true,
+              // Composite: hide Save while ≥1 product is staged for re-auth —
+              // the "Continue with Google" CTA above is the action then, so a
+              // visible Save would be a no-op trap. Reactive via changesNotifier
+              // so it toggles without a full refresh (which would reset staged
+              // state). Non-composite: no listenable → always visible.
+              visibilityListenable:
+                  integrations.isComposite ? changesNotifier : null,
+              isVisible: integrations.isComposite
+                  ? () => changesNotifier.value.stagedProducts.isEmpty
+                  : null,
               buildCommand: (values) {
-                // Composite + staged: the reauth CTA above is the primary
-                // action — Save must not proceed until the user reconnects.
-                // Return a no-op command that surfaces a guidance message.
+                // Composite + staged: defense-in-depth — the button is hidden
+                // in this state, but if Enter reaches the (still-primary) Save
+                // while staged, no-op with a guidance message rather than save.
                 if (integrations.isComposite &&
                     integrationChanges.stagedProducts.isNotEmpty) {
                   return _CompositeReauthRequired();

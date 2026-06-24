@@ -653,9 +653,25 @@ class FormButton extends FormItem {
     this.skipValidation = false,
     this.isPrimary = false,
     this.destructive = false,
-  }) : super(required: false, label: '');
+    this.visibilityListenable,
+    this.isVisible,
+  }) : assert(
+         (visibilityListenable == null) == (isVisible == null),
+         'visibilityListenable and isVisible must be provided together',
+       ),
+       super(required: false, label: '');
 
   final Command Function(Map<String, dynamic> values) buildCommand;
+
+  /// Optional reactive visibility. When both [visibilityListenable] and
+  /// [isVisible] are provided, the button rebuilds whenever the listenable
+  /// fires and renders nothing while [isVisible] returns false — hiding a
+  /// primary action that's momentarily inapplicable (e.g. a composite
+  /// connection's Save while re-auth is pending) without a full form refresh,
+  /// which would otherwise reset in-progress local state. The item stays in the
+  /// list (focus/primary wiring intact); only its rendered widget collapses.
+  final Listenable? visibilityListenable;
+  final bool Function()? isVisible;
 
   /// When true, this button remains enabled even when form validation fails.
   final bool skipValidation;
@@ -690,7 +706,7 @@ class FormButton extends FormItem {
     List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
-    return _FormButtonWidget(
+    final widget = _FormButtonWidget(
       buildCommand: buildCommand,
       controller: controller,
       highlighted: highlightedSubIndex >= 0,
@@ -698,6 +714,14 @@ class FormButton extends FormItem {
       skipValidation: skipValidation,
       focusNode: focusNodes.firstOrNull,
       isPrimary: isPrimary,
+    );
+    final listenable = visibilityListenable;
+    final visible = isVisible;
+    if (listenable == null || visible == null) return widget;
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (context, _) =>
+          visible() ? widget : const SizedBox.shrink(),
     );
   }
 }
