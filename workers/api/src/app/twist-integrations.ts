@@ -755,7 +755,13 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
     );
   }
 
-  return c.json({ ...result, callback: String(callback) });
+  // Echo the resolved scopes alongside the auth URL. The browser flow uses the
+  // URL directly, but the native Google Sign-In path (macOS/iOS/Android) drives
+  // consent through the GoogleSignIn SDK and cannot read scopes out of the URL —
+  // it needs the resolved list here so it requests exactly the enabled scope
+  // groups (e.g. the combined Google connector's tasks/contacts) rather than
+  // falling back to the connector's required scopes.
+  return c.json({ ...result, callback: String(callback), scopes: finalScopes });
 });
 
 // POST /twist/:id/integrations/connect

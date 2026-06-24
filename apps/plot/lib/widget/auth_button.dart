@@ -896,11 +896,20 @@ class _AuthButtonState extends State<AuthButton>
   }
 
   Future<void> _startTwistNativeGoogle(TwistAuthUrl authUrl) async {
+    // Request the scopes the server resolved from the enabled scope groups, not
+    // the connector's static [widget.scopes]. For combined connectors the
+    // required scopes are empty and the products live in optional scope groups,
+    // so [widget.scopes] alone would drop every product scope (e.g. Tasks)
+    // from the native consent screen. The browser flow already uses the
+    // server-built URL; this keeps native consistent. Fall back to
+    // [widget.scopes] only if an older server omitted the resolved list.
+    final resolved =
+        authUrl.scopes.isNotEmpty ? authUrl.scopes : widget.scopes;
     // Merge openid and email scopes so the server auth code includes an
     // id_token with email claim. Android GIS only grants explicitly requested
     // scopes; without these the token exchange returns no id_token and the
     // account shows a UUID instead of the user's email.
-    final scopes = {...widget.scopes, 'openid', 'email'}.toList();
+    final scopes = {...resolved, 'openid', 'email'}.toList();
 
     await GoogleSignIn.instance.signOut();
 

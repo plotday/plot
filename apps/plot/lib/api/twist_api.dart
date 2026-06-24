@@ -669,11 +669,19 @@ class TwistAuthUrl {
   final String state;
   final String callback;
 
+  /// Scopes the server resolved for this auth request (required scopes unioned
+  /// with the enabled optional scope groups). The browser flow consumes [url]
+  /// directly, but the native Google Sign-In path drives consent through the
+  /// GoogleSignIn SDK and cannot read scopes out of the URL — it requests these
+  /// instead. Empty when an older server omits the field (back-compat).
+  final List<String> scopes;
+
   const TwistAuthUrl({
     required this.url,
     required this.clientId,
     required this.state,
     required this.callback,
+    this.scopes = const [],
   });
 
   factory TwistAuthUrl.fromJson(Map<String, dynamic> json) {
@@ -682,6 +690,9 @@ class TwistAuthUrl {
       clientId: json['clientId'] as String,
       state: json['state'] as String,
       callback: json['callback'] as String,
+      scopes:
+          (json['scopes'] as List<dynamic>?)?.map((s) => s as String).toList() ??
+              const [],
     );
   }
 }

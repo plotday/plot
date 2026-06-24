@@ -150,9 +150,15 @@ describe("POST /twist/:id/integrations/auth", () => {
     const json = (await res.json()) as {
       url: string;
       callback: string;
+      scopes: string[];
     };
     expect(json.url).toBe("https://provider.test/oauth");
     expect(json.callback).toBe("callback-token");
+    // The server must echo the resolved scopes so the native Google Sign-In
+    // path (which can't read the embedded auth URL) requests exactly the scope
+    // groups the user enabled. Without this, native consent falls back to the
+    // connector's required scopes and silently drops optional product scopes.
+    expect(json.scopes).toEqual(["messaging"]);
     expect(captureExceptionMock).not.toHaveBeenCalled();
   });
 });

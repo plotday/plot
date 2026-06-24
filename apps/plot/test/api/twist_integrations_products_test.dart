@@ -28,4 +28,31 @@ void main() {
     // unknown reason falls back to .other (forward-compat)
     expect(ti.productStatus!.firstWhere((s) => s.key == 'x').reason, ProductStatusReason.other);
   });
+
+  test('TwistAuthUrl: parses server-resolved scopes', () {
+    final a = TwistAuthUrl.fromJson({
+      'url': 'https://accounts.google.com/o/oauth2/auth',
+      'clientId': 'cid',
+      'state': 'st',
+      'callback': 'cb',
+      'scopes': [
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/tasks',
+      ],
+    });
+    expect(a.scopes, [
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/tasks',
+    ]);
+  });
+
+  test('TwistAuthUrl: missing scopes => empty list (back-compat)', () {
+    final a = TwistAuthUrl.fromJson({
+      'url': 'https://accounts.google.com/o/oauth2/auth',
+      'clientId': 'cid',
+      'state': 'st',
+      'callback': 'cb',
+    });
+    expect(a.scopes, isEmpty);
+  });
 }
