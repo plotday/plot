@@ -7,6 +7,7 @@ import {
   type ReactionCapabilities,
   type ToolBuilder,
 } from "@plotday/twister";
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import type { Action, Actor, Note, Thread } from "@plotday/twister/plot";
 import { ActionType } from "@plotday/twister/plot";
 import { Callbacks } from "@plotday/twister/tools/callbacks";
@@ -353,7 +354,9 @@ export class Instagram extends Connector<Instagram> {
     const sent = await this.tools.instagram.sendMessage({
       channelId,
       chatId,
-      text: note.content ?? "",
+      // Instagram DMs are plain text — strip Markdown so the recipient sees
+      // clean text (e.g. "bold", not "**bold**") instead of literal syntax.
+      text: markdownToPlainText(note.content ?? ""),
       attachments: attachments.length > 0 ? attachments : undefined,
     });
     return { key: `message-${sent.id}`, externalContent: sent.text };

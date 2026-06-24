@@ -2,6 +2,12 @@
 
 ### Fixes
 
+- Messages you send out to email and chat now arrive cleanly formatted, instead of showing odd
+  mid-sentence line breaks or raw formatting marks like `**`. Bold text, links, and lists render
+  properly in email (Gmail and Outlook) and on Microsoft Teams, and come through as tidy plain text
+  on LinkedIn, Instagram, and WhatsApp.
+- Emails that arrive wrapped to a narrow width are no longer chopped into broken-up paragraphs in
+  Plot — the text reflows into the paragraphs the sender intended.
 - Links in Plot's update emails now open reliably. Before, tapping one could leave the app stuck on a
   loading spinner; now it opens the right focus — or, if that focus isn't available on your device,
   tells you so instead of spinning forever.

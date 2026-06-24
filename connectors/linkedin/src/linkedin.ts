@@ -7,6 +7,7 @@ import {
   type ReactionCapabilities,
   type ToolBuilder,
 } from "@plotday/twister";
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import type {
   Action,
   Actor,
@@ -480,7 +481,9 @@ export class LinkedIn extends Connector<LinkedIn> {
     const sent = await this.tools.linkedin.sendMessage({
       channelId,
       chatId,
-      text: note.content ?? "",
+      // LinkedIn DMs are plain text — strip Markdown so the recipient sees
+      // clean text (e.g. "bold", not "**bold**") instead of literal syntax.
+      text: markdownToPlainText(note.content ?? ""),
       attachments: attachments.length > 0 ? attachments : undefined,
     });
     return {

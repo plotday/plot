@@ -741,6 +741,9 @@ importers:
       esbuild:
         specifier: ^0.24.0
         version: 0.24.2
+      marked:
+        specifier: ^18.0.5
+        version: 18.0.5
       prompts:
         specifier: ^2.4.2
         version: 2.4.2

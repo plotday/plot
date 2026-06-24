@@ -110,6 +110,38 @@ describe("plainTextToMarkdown", () => {
     expect(plainTextToMarkdown(input)).toBe("para 1\n\npara 2\n\npara 3");
   });
 
+  it("reflows a column-wrapped prose paragraph into one line", () => {
+    // A text/plain email body hard-wrapped by the sending MTA at ~70 cols.
+    // The single newlines are soft wraps, not paragraph breaks, so they must
+    // reflow rather than become mid-sentence paragraph breaks.
+    const input =
+      "That sounds great to me! Unless Kris has other input, I'll look\n" +
+      "forward to getting to see what you put together later in the week!";
+    expect(plainTextToMarkdown(input)).toBe(
+      "That sounds great to me! Unless Kris has other input, I'll look forward to getting to see what you put together later in the week!"
+    );
+  });
+
+  it("reflows wrapped prose but keeps real paragraph breaks (blank lines)", () => {
+    const input =
+      "That sounds great to me! Unless Kris has other input, I'll look\n" +
+      "forward to getting to see what you put together later in the week!\n" +
+      "\n" +
+      "Thanks for all your work on this Phil! I'm really excited for how it\n" +
+      "will all come together!";
+    expect(plainTextToMarkdown(input)).toBe(
+      "That sounds great to me! Unless Kris has other input, I'll look forward to getting to see what you put together later in the week!\n\n" +
+        "Thanks for all your work on this Phil! I'm really excited for how it will all come together!"
+    );
+  });
+
+  it("does not reflow short deliberate line breaks", () => {
+    // Short lines are deliberate breaks (signature, address) — keep them as
+    // separate paragraphs rather than gluing them together.
+    const input = "Thanks,\nBeth";
+    expect(plainTextToMarkdown(input)).toBe("Thanks,\n\nBeth");
+  });
+
   it("decodes common HTML entities", () => {
     expect(plainTextToMarkdown("a &amp; b")).toBe("a & b");
     expect(plainTextToMarkdown("&lt;tag&gt;")).toBe("<tag>");

@@ -545,39 +545,89 @@ function isListLine(line: string): boolean {
 }
 
 /**
- * Insert paragraph breaks between adjacent non-blank lines that aren't part
- * of the same tight list block, and collapse runs of blank lines to one.
+ * Minimum length for a line to look like it was wrapped at a column limit
+ * (rather than being a deliberately short line such as a signature, address,
+ * or `key: value`). Email MTAs/clients wrap `text/plain` bodies at ~70–78
+ * columns, so a continued line is almost always at least this long.
+ */
+const WRAP_REFLOW_MIN = 56;
+
+/** Lines that introduce structural Markdown (heading, blockquote, HR, table)
+ * and must never be reflowed into a neighbour. */
+const STRUCTURAL_LINE = /^\s*(?:#{1,6}\s|>|---|\|)/;
+
+/**
+ * Is the newline between `prev` and `next` a soft column-wrap — an MTA/editor
+ * wrapping one long paragraph across lines — rather than a deliberate break?
  *
- * Preserves list structure — consecutive `- `/`* `/`1. ` lines stay
- * separated by a single newline so Markdown renders them as a tight list —
- * while giving plain-text prose the double-newline separator it needs for
- * Markdown paragraph rendering.
+ * Tuned for precision over recall: only reflow when `prev` is a clearly
+ * "full" wrapped line (long, ending mid-prose on a word/comma) and `next`
+ * continues prose. Lists, headings, blockquotes, HRs, tables, `key: value`
+ * lines, URL-terminated lines, and short deliberate lines are left split.
+ * Under-joining merely preserves today's behaviour for a line; over-joining
+ * would glue genuinely separate lines together, so we err toward the former.
+ */
+function isSoftWrapContinuation(prev: string, next: string): boolean {
+  // An explicit Markdown hard break (two trailing spaces) is deliberate.
+  if (/ {2,}$/.test(prev)) return false;
+  const a = prev.trimEnd();
+  const b = next.trimStart();
+  if (a.length < WRAP_REFLOW_MIN) return false;
+  if (isListLine(prev) || isListLine(next)) return false;
+  if (STRUCTURAL_LINE.test(prev) || STRUCTURAL_LINE.test(next)) return false;
+  // `prev` must end mid-prose — on a lowercase letter or comma. Wrapped prose
+  // breaks after an ordinary word; a line ending in sentence punctuation, a
+  // digit, a closing paren/URL, or an UPPERCASE token (acronym, initial,
+  // "Apt B") is a deliberate stop or structured content, not a soft wrap.
+  if (!/[a-z,]$/.test(a)) return false;
+  // `next` must begin with prose, not a marker or number.
+  if (!/^[A-Za-z]/.test(b)) return false;
+  return true;
+}
+
+/**
+ * Normalise plain-text-derived Markdown into clean paragraphs:
+ *
+ * - Reflow soft column-wraps (a long line continued on the next) back into a
+ *   single line, so MTA/client-wrapped `text/plain` email bodies don't render
+ *   as mid-sentence paragraph breaks.
+ * - Insert a paragraph break (blank line) between adjacent lines that are a
+ *   deliberate break rather than a soft wrap.
+ * - Keep tight list blocks (`- `/`* `/`1. `) on consecutive lines.
+ * - Collapse runs of blank lines to a single paragraph break.
  */
 function normalizeMarkdownParagraphs(text: string): string {
   const lines = text.split("\n");
-  const expanded: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    expanded.push(lines[i]);
-    if (i === lines.length - 1) break;
-    const cur = lines[i];
-    const next = lines[i + 1];
-    if (cur.trim() === "" || next.trim() === "") continue;
-    if (isListLine(cur) && isListLine(next)) continue;
-    expanded.push("");
-  }
-
   const out: string[] = [];
-  let prevBlank = false;
-  for (const line of expanded) {
-    if (line === "") {
-      if (!prevBlank) out.push("");
-      prevBlank = true;
-    } else {
-      out.push(line);
-      prevBlank = false;
+
+  for (const line of lines) {
+    if (line.trim() === "") {
+      if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+      continue;
     }
+
+    const prev = out.length > 0 ? out[out.length - 1] : null;
+    if (prev !== null && prev !== "") {
+      if (isSoftWrapContinuation(prev, line)) {
+        // Soft column-wrap — reflow onto the previous line.
+        out[out.length - 1] = `${prev.trimEnd()} ${line.trimStart()}`;
+        continue;
+      }
+      if (isListLine(prev) && isListLine(line)) {
+        // Tight list — adjacent items stay on consecutive lines.
+        out.push(line);
+        continue;
+      }
+      // Deliberate adjacent lines → paragraph break.
+      out.push("");
+    }
+    out.push(line);
   }
+
+  // Drop any leading/trailing blank lines the logic above may have produced.
+  while (out.length > 0 && out[0] === "") out.shift();
+  while (out.length > 0 && out[out.length - 1] === "") out.pop();
+
   return out.join("\n");
 }
 
