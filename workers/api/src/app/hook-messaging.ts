@@ -9,6 +9,7 @@ import { invokeWebhookCallback } from "../twist/invoke-webhook";
 import { disposeRpc } from "../utils/rpc";
 import { notifyUserSyncByEnv } from "./sync/notify";
 import { captureServerError } from "../utils/error-capture";
+import { classifyEvent, type HostedWebhookEvent } from "./hook-messaging-classify";
 
 const hookMessaging = new Hono<{ Bindings: Bindings }>();
 
@@ -20,10 +21,19 @@ const hookMessaging = new Hono<{ Bindings: Bindings }>();
 hookMessaging.post("/hook/messaging", async (c) => {
   const logger = createLogger({ route: "hook/messaging" });
 
-  // Unipile does not sign webhook payloads. Our auth model: when the webhook
-  // is registered with Unipile, we attach a custom request header
-  // `X-Plot-Webhook-Token: <UNIPILE_WEBHOOK_SECRET>`. Receivers compare the
-  // header to the configured secret in constant time.
+  // LIVE-CONFIRM (webhook auth): v2 webhook endpoints return their own signing
+  // `secret` (wes_…) and may not forward the custom `headers` we register. Log
+  // the incoming header NAMES (never values) on every delivery so the first
+  // real v2 delivery reveals whether our `X-Plot-Webhook-Token` arrives, or
+  // which Unipile signature header to verify against the endpoint secret.
+  logger.info("hook/messaging headers", {
+    header_names: Object.keys(c.req.header()),
+  });
+
+  // Auth model (v1 + during cutover): we attach a custom request header
+  // `X-Plot-Webhook-Token: <UNIPILE_WEBHOOK_SECRET>` when registering the
+  // webhook and compare it in constant time. If v2 does not forward custom
+  // headers, switch this to signature verification against the wes_ secret.
   const presented = c.req.header("x-plot-webhook-token");
   const bodyText = await c.req.text();
   if (!presented || !constantTimeEquals(presented, c.env.UNIPILE_WEBHOOK_SECRET)) {
@@ -46,6 +56,7 @@ hookMessaging.post("/hook/messaging", async (c) => {
   // beats guessing.
   logger.info("hook/messaging received", {
     keys: Object.keys(event),
+    type: event.type ?? null,
     event_type: event.event_type ?? null,
     status: event.status ?? null,
     account_id: event.account_id ?? event.AccountId ?? null,
@@ -85,64 +96,6 @@ hookMessaging.post("/hook/messaging", async (c) => {
   }
   return c.json({ ok: true });
 });
-
-type HostedWebhookEvent = {
-  event_type?: string;
-  /** Hosted-auth notify_url shape: "CREATION_SUCCESS" / "CREATION_ERROR" /
-   * "RECONNECTED" / "CHECKPOINT" / "CREDENTIALS". */
-  status?: string;
-  /** Some Unipile shapes use snake_case, others use PascalCase. */
-  account_id?: string;
-  AccountId?: string;
-  /** Hosted-auth notify_url echoes the `name` we set when creating the link
-   * — we use this as our state token. */
-  name?: string;
-  payload?: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/**
- * Map an inbound payload to one of our dispatch kinds. Tolerates both the
- * hosted-auth notify_url shape (`status`-driven) and the regular workspace
- * webhook shape (`event_type`-driven).
- */
-function classifyEvent(
-  event: HostedWebhookEvent
-):
-  | "account.connected"
-  | "account.needs_reauth"
-  | "messaging.new_message"
-  | "users.invitation.received"
-  | "users.new_relation"
-  | null {
-  if (event.event_type === "account.connected") return "account.connected";
-  if (
-    event.event_type === "account.disconnected" ||
-    event.event_type === "account.error" ||
-    event.event_type === "account.credentials"
-  ) {
-    return "account.needs_reauth";
-  }
-  if (event.event_type === "messaging.new_message") return "messaging.new_message";
-  if (event.event_type === "users.invitation.received") {
-    return "users.invitation.received";
-  }
-  if (event.event_type === "users.new_relation") {
-    return "users.new_relation";
-  }
-  // Hosted-auth notify_url shape:
-  if (event.status === "CREATION_SUCCESS" || event.status === "RECONNECTED") {
-    return "account.connected";
-  }
-  if (
-    event.status === "CREATION_ERROR" ||
-    event.status === "CHECKPOINT" ||
-    event.status === "CREDENTIALS"
-  ) {
-    return "account.needs_reauth";
-  }
-  return null;
-}
 
 function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

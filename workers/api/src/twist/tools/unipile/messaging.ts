@@ -40,44 +40,47 @@ export abstract class UnipileMessagingTool extends Tool implements IUnipileMessa
 
   async listChats(params: { channelId: string; cursor?: string | null; limit?: number; since?: Date }): Promise<ChatThreadPage> {
     await this.assertAccount(params.channelId);
-    const result = await this.client.listChats({ accountId: params.channelId, cursor: params.cursor ?? null, limit: params.limit });
+    // v2 paginates by offset; we carry it through the wrapper's string cursor.
+    const offset = params.cursor ? Number(params.cursor) : 0;
+    const result = await this.client.listChats({ accountId: params.channelId, offset, limit: params.limit });
     const chats: ChatThread[] = [];
-    for (const raw of result.items) {
-      const attendees = await this.client.listChatAttendees({ chatId: raw.id });
-      const chat = normalizeChat(raw, attendees.items, this.provider);
+    for (const raw of result.data) {
+      const chat = normalizeChat(raw, this.provider);
       if (params.since && chat.lastActivityAt < params.since) continue;
       chats.push(chat);
     }
-    return { chats, nextCursor: result.cursor };
+    const nextCursor = result.has_more ? String(offset + result.data.length) : null;
+    return { chats, nextCursor };
   }
 
   async getChat(params: { channelId: string; chatId: string }): Promise<ChatThread> {
     await this.assertAccount(params.channelId);
-    const [raw, attendees] = await Promise.all([
-      this.client.getChat({ chatId: params.chatId }),
-      this.client.listChatAttendees({ chatId: params.chatId }),
-    ]);
-    return normalizeChat(raw, attendees.items, this.provider);
+    // v2 embeds participants in the chat payload — no separate attendees call.
+    const raw = await this.client.getChat({ accountId: params.channelId, chatId: params.chatId });
+    return normalizeChat(raw, this.provider);
   }
 
   async listMessages(params: { channelId: string; chatId: string; cursor?: string | null; limit?: number; since?: Date }): Promise<ChatMessagePage> {
     await this.assertAccount(params.channelId);
-    const result = await this.client.listMessages({ chatId: params.chatId, cursor: params.cursor ?? null, limit: params.limit });
-    const messages = result.items.map(normalizeMessage).filter((m) => !params.since || m.sentAt >= params.since);
-    return { messages, nextCursor: result.cursor };
+    const offset = params.cursor ? Number(params.cursor) : 0;
+    const result = await this.client.listMessages({ accountId: params.channelId, chatId: params.chatId, offset, limit: params.limit });
+    const messages = result.data.map(normalizeMessage).filter((m) => !params.since || m.sentAt >= params.since);
+    const nextCursor = result.has_more ? String(offset + result.data.length) : null;
+    return { messages, nextCursor };
   }
 
   async sendMessage(params: { channelId: string; chatId: string; text: string; attachments?: Array<{ buffer: Uint8Array; filename: string; mimeType: string }> }): Promise<ChatMessage> {
     await this.assertAccount(params.channelId);
-    const raw = params.attachments && params.attachments.length > 0
-      ? await this.client.sendMessageMultipart({ chatId: params.chatId, text: params.text, attachments: params.attachments })
-      : await this.client.sendMessage({ chatId: params.chatId, text: params.text });
-    return normalizeMessage(raw);
+    const result = params.attachments && params.attachments.length > 0
+      ? await this.client.sendMessageMultipart({ accountId: params.channelId, chatId: params.chatId, text: params.text, attachments: params.attachments })
+      : await this.client.sendMessage({ accountId: params.channelId, chatId: params.chatId, text: params.text });
+    // v2 send echoes only { message_id }; synthesize the sent ChatMessage.
+    return this.sentMessage(result.message_id, params.chatId, params.text);
   }
 
   async downloadAttachment(params: { channelId: string; messageId: string; attachmentId: string }): Promise<{ body: ReadableStream; mimeType: string; fileName?: string }> {
     await this.assertAccount(params.channelId);
-    const response = await this.client.downloadAttachmentRaw({ messageId: params.messageId, attachmentId: params.attachmentId });
+    const response = await this.client.downloadAttachmentRaw({ accountId: params.channelId, messageId: params.messageId, attachmentId: params.attachmentId });
     const contentType = response.headers.get("content-type") ?? "application/octet-stream";
     const mimeType = contentType.split(";")[0]?.trim() ?? "application/octet-stream";
     const disposition = response.headers.get("content-disposition") ?? "";
@@ -88,29 +91,45 @@ export abstract class UnipileMessagingTool extends Tool implements IUnipileMessa
 
   async setChatRead(params: { channelId: string; chatId: string; read: boolean }): Promise<void> {
     await this.assertAccount(params.channelId);
-    await this.client.setChatRead({ chatId: params.chatId, read: params.read });
+    await this.client.setChatRead({ accountId: params.channelId, chatId: params.chatId, read: params.read });
   }
 
-  async setMessageReaction(params: { channelId: string; messageId: string; reaction: string }): Promise<void> {
+  async setMessageReaction(params: { channelId: string; chatId: string; messageId: string; reaction: string }): Promise<void> {
     await this.assertAccount(params.channelId);
-    await this.client.addMessageReaction({ messageId: params.messageId, reaction: params.reaction });
+    await this.client.addMessageReaction({ accountId: params.channelId, chatId: params.chatId, messageId: params.messageId, reaction: params.reaction });
   }
 
-  async clearMessageReaction(params: { channelId: string; messageId: string }): Promise<void> {
+  async clearMessageReaction(params: { channelId: string; chatId: string; messageId: string }): Promise<void> {
     await this.assertAccount(params.channelId);
-    await this.client.removeMessageReaction({ messageId: params.messageId });
+    await this.client.removeMessageReaction({ accountId: params.channelId, chatId: params.chatId, messageId: params.messageId });
   }
 
   async startChat(params: { channelId: string; recipientIds: string[]; text: string; title?: string | null }): Promise<{ chatId: string; message: ChatMessage }> {
     await this.assertAccount(params.channelId);
-    const raw = await this.client.startChat({ accountId: params.channelId, attendeeProviderIds: params.recipientIds, text: params.text, title: params.title ?? null });
-    const message = normalizeMessage(raw);
-    return { chatId: message.chatId, message };
+    // v2 chats/send echoes { chat_id, message_id }; synthesize the sent message.
+    const result = await this.client.startChat({ accountId: params.channelId, attendeeProviderIds: params.recipientIds, text: params.text, title: params.title ?? null });
+    return { chatId: result.chat_id, message: this.sentMessage(result.message_id, result.chat_id, params.text) };
+  }
+
+  /** Build the ChatMessage a connector records after sending, from the v2 send
+   * echo (which carries only ids) plus the text we just sent. */
+  private sentMessage(id: string, chatId: string, text: string): ChatMessage {
+    return {
+      id,
+      chatId,
+      senderId: "",
+      sentByMe: true,
+      eventType: null,
+      sentAt: new Date(),
+      text,
+      attachments: [],
+      reactions: [],
+    };
   }
 
   async getProfile(params: { channelId: string; profileId: string }): Promise<ChatProfile> {
     await this.assertAccount(params.channelId);
-    const raw = await this.client.getAttendee({ providerId: params.profileId });
+    const raw = await this.client.getAttendee({ accountId: params.channelId, providerId: params.profileId });
     return normalizeProfile(raw, this.provider);
   }
 

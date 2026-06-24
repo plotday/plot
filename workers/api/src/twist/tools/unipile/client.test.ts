@@ -3,9 +3,10 @@ import { UnipileClient, UnipileApiError } from "./client";
 
 const env = {
   UNIPILE_API_KEY: "test-key",
-  UNIPILE_DSN: "api7.unipile.com:13441",
   UNIPILE_WEBHOOK_SECRET: "test-secret",
 };
+
+const BASE = "https://api.unipile.com";
 
 /**
  * Create a UnipileClient whose fetch is replaced with a recording stub.
@@ -25,11 +26,11 @@ function recordingClient(response: () => Response): {
   return { client: new UnipileClient(env, fetchImpl), calls };
 }
 
-describe("UnipileClient", () => {
-  it("sends the API key header and uses the configured DSN", async () => {
+describe("UnipileClient (v2)", () => {
+  it("sends the API key header and uses the v2 host + account-in-path", async () => {
     const { client, calls } = recordingClient(
       () =>
-        new Response(JSON.stringify({ object: "ChatList", items: [], cursor: null }), {
+        new Response(JSON.stringify({ object: "ChatList", data: [], has_more: false }), {
           status: 200,
           headers: { "content-type": "application/json" },
         })
@@ -38,10 +39,7 @@ describe("UnipileClient", () => {
     await client.listChats({ accountId: "acct-1" });
 
     expect(calls).toHaveLength(1);
-    // (DSN is used verbatim — full host:port — not a region shortcode.)
-    expect(calls[0]!.url).toBe(
-      "https://api7.unipile.com:13441/api/v1/chats?account_id=acct-1"
-    );
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acct-1/chats`);
     const headers = calls[0]!.init.headers as Record<string, string>;
     expect(headers["X-API-KEY"]).toBe("test-key");
     expect(headers.accept).toBe("application/json");
@@ -63,9 +61,19 @@ describe("UnipileClient", () => {
     expect((err as UnipileApiError).status).toBe(401);
   });
 
-  test("startChat posts /chats with attendees and optional title", async () => {
+  test("sendMessage posts to the v2 send path", async () => {
     const { client, calls } = recordingClient(
-      () => new Response(JSON.stringify({ id: "msg1", chat_id: "chat1" }), { status: 200 })
+      () => new Response(JSON.stringify({ object: "Message", id: "m" }), { status: 200 })
+    );
+    await client.sendMessage({ accountId: "acc1", chatId: "c1", text: "hi" });
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/chats/c1/messages/send`);
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ text: "hi" });
+  });
+
+  test("startChat posts /v2/:account/chats/send with users_ids and name", async () => {
+    const { client, calls } = recordingClient(
+      () => new Response(JSON.stringify({ object: "Message", id: "msg1", chat_id: "chat1" }), { status: 200 })
     );
     await client.startChat({
       accountId: "acc1",
@@ -73,13 +81,36 @@ describe("UnipileClient", () => {
       text: "hi",
       title: "Crew",
     });
-    expect(calls[0]!.url).toMatch(/\/chats$/);
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/chats/send`);
     expect(calls[0]!.init.method).toBe("POST");
-    const form = calls[0]!.init.body as FormData;
-    expect(form.get("account_id")).toBe("acc1");
-    expect(form.getAll("attendees_ids")).toEqual(["a", "b"]);
-    expect(form.get("text")).toBe("hi");
-    expect(form.get("title")).toBe("Crew");
+    const body = JSON.parse(String(calls[0]!.init.body));
+    expect(body.users_ids).toEqual(["a", "b"]);
+    expect(body.text).toBe("hi");
+    expect(body.name).toBe("Crew");
+  });
+
+  test("getOwnProfile targets /v2/:account/users/me", async () => {
+    const { client, calls } = recordingClient(
+      () => new Response(JSON.stringify({ object: "UserProfile", id: "me" }), { status: 200 })
+    );
+    await client.getOwnProfile({ accountId: "acc1" });
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/users/me`);
+  });
+
+  test("createHostedAuthLink posts the v2 hosted auth path", async () => {
+    const { client, calls } = recordingClient(
+      () => new Response(JSON.stringify({ object: "HostedAuthURL", url: "https://x" }), { status: 200 })
+    );
+    await client.createHostedAuthLink({
+      providers: ["LINKEDIN"],
+      name: "state1",
+      successRedirectUrl: "s",
+      failureRedirectUrl: "f",
+      notifyUrl: "n",
+      expiresAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    expect(calls[0]!.url).toBe(`${BASE}/v2/auth/link`);
+    expect(calls[0]!.init.method).toBe("POST");
   });
 
   describe("removeMessageReaction", () => {
@@ -87,10 +118,11 @@ describe("UnipileClient", () => {
       const { client, calls } = recordingClient(
         () => new Response(JSON.stringify({}), { status: 200 })
       );
-      await client.removeMessageReaction({ messageId: "msg1" });
+      await client.removeMessageReaction({ accountId: "acc1", chatId: "c1", messageId: "msg1" });
       expect(calls).toHaveLength(1);
-      expect(calls[0]!.url).toMatch(/\/messages\/msg1\/reactions$/);
+      expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/chats/c1/messages/msg1/reactions`);
       expect(calls[0]!.init.method).toBe("POST");
+      expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ reaction: "" });
     });
 
     it("falls back to DELETE when POST returns 400", async () => {
@@ -102,7 +134,7 @@ describe("UnipileClient", () => {
         }
         return new Response(null, { status: 204 });
       });
-      await client.removeMessageReaction({ messageId: "msg2" });
+      await client.removeMessageReaction({ accountId: "acc1", chatId: "c1", messageId: "msg2" });
       expect(calls).toHaveLength(2);
       expect(calls[1]!.init.method).toBe("DELETE");
     });
@@ -114,21 +146,23 @@ describe("UnipileClient", () => {
         const status = callCount === 1 ? 405 : 404;
         return new Response(JSON.stringify({ error: "not found" }), { status });
       });
-      await expect(client.removeMessageReaction({ messageId: "msg3" })).resolves.toBeUndefined();
+      await expect(
+        client.removeMessageReaction({ accountId: "acc1", chatId: "c1", messageId: "msg3" })
+      ).resolves.toBeUndefined();
     });
   });
 
-  it("listAccounts walks pages and concatenates items", async () => {
+  it("listAccounts walks offset pages until has_more is false", async () => {
     const pages = [
       JSON.stringify({
-        object: "AccountList",
-        items: [{ object: "Account", id: "acct-1", type: "LINKEDIN", created_at: "2026-01-01T00:00:00Z", sources: [] }],
-        cursor: "page-2",
+        object: "Accounts",
+        data: [{ object: "Account", id: "acc-1", user_id: "u1", provider: "LINKEDIN", status: "running", created_at: "2026-01-01T00:00:00Z" }],
+        has_more: true,
       }),
       JSON.stringify({
-        object: "AccountList",
-        items: [{ object: "Account", id: "acct-2", type: "LINKEDIN", created_at: "2026-01-02T00:00:00Z", sources: [] }],
-        cursor: null,
+        object: "Accounts",
+        data: [{ object: "Account", id: "acc-2", user_id: "u2", provider: "LINKEDIN", status: "running", created_at: "2026-01-02T00:00:00Z" }],
+        has_more: false,
       }),
     ];
     let page = 0;
@@ -143,54 +177,29 @@ describe("UnipileClient", () => {
     const accounts = await client.listAccounts();
 
     expect(calls).toHaveLength(2);
-    expect(calls[0]!.url).toBe(
-      "https://api7.unipile.com:13441/api/v1/accounts"
-    );
-    expect(calls[1]!.url).toBe(
-      "https://api7.unipile.com:13441/api/v1/accounts?cursor=page-2"
-    );
-    expect(accounts.map((a) => a.id)).toEqual(["acct-1", "acct-2"]);
+    expect(calls[0]!.url).toBe(`${BASE}/v2/accounts?limit=100`);
+    expect(calls[1]!.url).toBe(`${BASE}/v2/accounts?limit=100&offset=1`);
+    expect(accounts.map((a) => a.id)).toEqual(["acc-1", "acc-2"]);
   });
 
-  it("listRelations sends account_id and parses the relations list", async () => {
+  it("listRelations puts account in the path and uses offset/limit", async () => {
     const { client, calls } = recordingClient(
       () =>
         new Response(
           JSON.stringify({
             object: "UserRelationsList",
-            items: [
-              {
-                object: "UserRelation",
-                member_id: "ACoAA123",
-                member_urn: "urn:li:member:123",
-                connection_urn: "urn:li:fs_miniProfile:123",
-                first_name: "Ada",
-                last_name: "Lovelace",
-                headline: "Computing pioneer",
-                public_identifier: "adalovelace",
-                public_profile_url: "https://www.linkedin.com/in/adalovelace",
-                profile_picture_url: "https://media.licdn.com/ada.jpg",
-                created_at: 1700000000,
-              },
-            ],
-            cursor: "next-page-token",
+            data: [{ object: "UserRelation", member_id: "ACoAA123", display_name: "Ada Lovelace", public_identifier: "adalovelace" }],
+            has_more: false,
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         )
     );
 
-    const result = await client.listRelations({
-      accountId: "acct-1",
-      cursor: "prev-cursor",
-      limit: 50,
-    });
+    const result = await client.listRelations({ accountId: "acct-1", limit: 50 });
 
-    expect(calls[0]!.url).toBe(
-      "https://api7.unipile.com:13441/api/v1/users/relations?account_id=acct-1&cursor=prev-cursor&limit=50"
-    );
-    expect(result.object).toBe("UserRelationsList");
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]!.member_id).toBe("ACoAA123");
-    expect(result.cursor).toBe("next-page-token");
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acct-1/users/relations?limit=50`);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]!.member_id).toBe("ACoAA123");
+    expect(result.has_more).toBe(false);
   });
 });

@@ -1,10 +1,8 @@
 #!/usr/bin/env tsx
 /**
- * Idempotently register the three Unipile workspace webhooks for one env.
- *
- *   messaging       → new chat messages
- *   account_status  → account connected / disconnected / error / credentials
- *   users           → connection-request events (LinkedIn invitations)
+ * Idempotently register the single Unipile v2 webhook endpoint for one env.
+ * v2 uses one endpoint per URL subscribing to many `trigger_events` (see
+ * EVENTS below): new messages, account status, and new relations.
  *
  * Run twice — once per env:
  *
@@ -12,11 +10,12 @@
  *   tsx scripts/bootstrap-unipile-webhooks.ts production
  *
  * The env arg selects which generated env file to source. The script
- * pulls UNIPILE_API_KEY, UNIPILE_DSN, UNIPILE_WEBHOOK_SECRET, and
- * API_ROOT from workers/api/.dev.vars.<env>.
+ * pulls UNIPILE_API_KEY, UNIPILE_WEBHOOK_SECRET, and API_ROOT from
+ * workers/api/.dev.vars.<env>. (v2 uses a single host — no DSN.)
  *
- * Existing webhooks pointing at our `${API_ROOT}/hook/messaging` URL
- * with the matching source are reused; the script never deletes.
+ * v2 has ONE unified webhook endpoint per URL. An existing endpoint at our
+ * `${API_ROOT}/hook/messaging` URL is deleted and recreated so the event list
+ * and header stay current.
  * It does, however, refresh the X-Plot-Webhook-Token header on existing
  * webhooks by deleting-and-recreating when the stored secret differs
  * (Unipile has no PATCH for webhook headers).
@@ -29,15 +28,25 @@ import {
   UnipileApiError,
   UnipileClient,
 } from "../workers/api/src/twist/tools/unipile/client";
-import type { UnipileWebhookSource } from "../workers/api/src/twist/tools/unipile/types";
 
-const SOURCES: UnipileWebhookSource[] = [
-  "messaging",
-  "account_status",
-  "users",
+/**
+ * v2 trigger events Plot subscribes to on the single unified webhook endpoint.
+ * Every name here was validated against the live v2 API (creation rejects an
+ * unknown index). v2 has no "invitation received" event — received invitations
+ * are pulled via the invitations API, not pushed.
+ */
+const EVENTS = [
+  "message.new",
+  "account.add",
+  "account.reconnect",
+  "account.status.disconnected",
+  "account.status.errored",
+  "relation.new",
+  "relation.request.accept",
 ];
 const HEADER_NAME = "X-Plot-Webhook-Token";
 const WEBHOOK_PATH = "/hook/messaging";
+const WEBHOOK_NAME = "plot";
 
 async function main(): Promise<void> {
   const envArg = process.argv[2];
@@ -53,7 +62,6 @@ async function main(): Promise<void> {
 
   const required = [
     "UNIPILE_API_KEY",
-    "UNIPILE_DSN",
     "UNIPILE_WEBHOOK_SECRET",
     "API_ROOT",
   ] as const;
@@ -71,44 +79,28 @@ async function main(): Promise<void> {
 
   const client = new UnipileClient({
     UNIPILE_API_KEY: env.UNIPILE_API_KEY!,
-    UNIPILE_DSN: env.UNIPILE_DSN!,
     UNIPILE_WEBHOOK_SECRET: env.UNIPILE_WEBHOOK_SECRET!,
   });
 
-  log(`Bootstrapping Unipile webhooks for ${envArg} (${requestUrl})`);
+  log(`Bootstrapping Unipile v2 webhook for ${envArg} (${requestUrl})`);
 
-  const existing = (await client.listWebhooks()).items;
-  for (const source of SOURCES) {
-    const match = existing.find(
-      (w) => w.source === source && w.request_url === requestUrl
-    );
-    const desiredHeader = {
-      key: HEADER_NAME,
-      value: env.UNIPILE_WEBHOOK_SECRET!,
-    };
-    const headerMatches = match?.headers?.some(
-      (h) => h.key === HEADER_NAME && h.value === desiredHeader.value
-    );
-
-    if (match && headerMatches) {
-      log(`  ${source}: already registered (${match.id}) — no change`);
-      continue;
-    }
-
-    if (match) {
-      log(
-        `  ${source}: secret drifted on ${match.id}; deleting and recreating`
-      );
-      await client.deleteWebhook(match.id);
-    }
-
-    const created = await client.createWebhook({
-      source,
-      requestUrl,
-      headers: [desiredHeader],
-    });
-    log(`  ${source}: created (${created.id})`);
+  // v2 uses ONE unified endpoint per URL subscribing to all events. We also
+  // attach our shared token as a delivery header; the endpoint additionally
+  // returns its own signing `secret` (verification is finalized in live test).
+  const existing = (await client.listWebhooks()).data;
+  const match = existing.find((w) => w.url === requestUrl);
+  if (match) {
+    log(`  endpoint exists (${match.id}); recreating to refresh events/header`);
+    await client.deleteWebhook(match.id);
   }
+  const created = await client.createWebhook({
+    name: WEBHOOK_NAME,
+    url: requestUrl,
+    triggerEvents: EVENTS,
+    headers: [{ key: HEADER_NAME, value: env.UNIPILE_WEBHOOK_SECRET! }],
+  });
+  log(`  created (${created.id})`);
+  if (created.secret) log(`  signing secret: ${created.secret}`);
 
   log("Done.");
 }

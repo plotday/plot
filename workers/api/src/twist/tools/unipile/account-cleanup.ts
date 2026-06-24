@@ -66,23 +66,11 @@ export function selectOrphanAccountIds(
 }
 
 /**
- * Resolve a Unipile account's LinkedIn identity (member id). It is usually on
- * the list payload as `connection_params.im.id`; if a leaner list shape omits
- * it, fall back to a per-account GET (cheap — workspaces hold only a handful of
- * accounts).
+ * Resolve a Unipile account's provider identity (member id). In v2 this is the
+ * account's `user_id`, present directly on the list payload.
  */
-async function accountIdentity(
-  client: UnipileClient,
-  account: UnipileAccount
-): Promise<string | null> {
-  const fromList = account.connection_params?.im?.id ?? null;
-  if (fromList) return fromList;
-  try {
-    const full = await client.getAccount(account.id);
-    return full.connection_params?.im?.id ?? null;
-  } catch {
-    return null;
-  }
+function accountIdentity(account: UnipileAccount): string | null {
+  return account.user_id ?? null;
 }
 
 /**
@@ -132,10 +120,7 @@ export async function sweepOrphanAccountsForIdentity(
     return;
   }
 
-  const client = new UnipileClient(env);
-  const reduced = await Promise.all(
-    accounts.map(async (a) => ({ id: a.id, identity: await accountIdentity(client, a) }))
-  );
+  const reduced = accounts.map((a) => ({ id: a.id, identity: accountIdentity(a) }));
 
   const sameIdentity = reduced
     .filter((a) => a.id !== params.newAccountId && a.identity === params.identityId)

@@ -1,17 +1,17 @@
 import type {
   UnipileAccount,
   UnipileAccountList,
-  UnipileAttendee,
-  UnipileAttendeeList,
   UnipileChat,
   UnipileChatList,
+  UnipileChatStarted,
   UnipileHostedAuthLink,
   UnipileInvitationList,
-  UnipileMessage,
   UnipileMessageList,
   UnipileRelationList,
+  UnipileSendResult,
+  UnipileUser,
   UnipileWebhook,
-  UnipileWebhookSource,
+  UnipileWebhookList,
 } from "./types";
 
 /** Thrown on non-2xx Unipile responses. */
@@ -28,26 +28,29 @@ export class UnipileApiError extends Error {
 
 type Env = {
   UNIPILE_API_KEY: string;
-  UNIPILE_DSN: string;
   UNIPILE_WEBHOOK_SECRET: string;
 };
 
+/** Unipile v2 is a single global host — no per-workspace DSN. */
+export const UNIPILE_BASE = "https://api.unipile.com";
+
+/** Default page size for offset/limit-paginated v2 list endpoints. */
+const PAGE = 100;
+
 /**
- * Thin HTTP client for Unipile's REST API. This is the only file in the
+ * Thin HTTP client for Unipile's REST API **v2**. This is the only file in the
  * codebase that knows Unipile's URL shape, header set, or API key — every
  * other caller works against Plot-shaped wrappers.
  *
- * The DSN selects the region (`api6`, `api7`, …); Unipile assigns one per
- * workspace.
+ * v2 uses a single host (`https://api.unipile.com`) with a `/v2` prefix and
+ * carries `account_id` in the path for messaging/users routes.
  */
 export class UnipileClient {
   private readonly base: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly env: Env, fetchImpl?: typeof fetch) {
-    // Unipile assigns a per-workspace DSN as a full `host:port`
-    // (e.g. `api40.unipile.com:17020`). Use it verbatim.
-    this.base = `https://${env.UNIPILE_DSN}/api/v1`;
+    this.base = UNIPILE_BASE;
     // `globalThis.fetch` must keep `globalThis` as its `this` — calling it as
     // `this.fetchImpl(...)` rebinds `this` to the client instance, which the
     // Workers runtime rejects with "Illegal invocation". Bind it explicitly.
@@ -56,6 +59,11 @@ export class UnipileClient {
 
   // ---------- Account lifecycle ----------
 
+  /**
+   * Create a hosted-auth link. v2: `POST /v2/auth/link` (confirmed live; the
+   * route exists and requires `expires_on`). Full body/flow against a real
+   * LinkedIn account is verified in live testing.
+   */
   async createHostedAuthLink(input: {
     providers: ("LINKEDIN" | "WHATSAPP" | "INSTAGRAM")[];
     name: string;
@@ -64,11 +72,10 @@ export class UnipileClient {
     notifyUrl: string;
     expiresAt: Date;
   }): Promise<UnipileHostedAuthLink> {
-    return this.post<UnipileHostedAuthLink>("/hosted/accounts/link", {
+    return this.post<UnipileHostedAuthLink>("/v2/auth/link", {
       type: "create",
       providers: input.providers,
-      api_url: this.base,
-      expiresOn: input.expiresAt.toISOString(),
+      expires_on: input.expiresAt.toISOString(),
       name: input.name,
       success_redirect_url: input.successRedirectUrl,
       failure_redirect_url: input.failureRedirectUrl,
@@ -78,72 +85,64 @@ export class UnipileClient {
 
   getAccount(accountId: string): Promise<UnipileAccount> {
     return this.get<UnipileAccount>(
-      `/accounts/${encodeURIComponent(accountId)}`
+      `/v2/accounts/${encodeURIComponent(accountId)}`
     );
   }
 
   async deleteAccount(accountId: string): Promise<void> {
-    await this.request(`/accounts/${encodeURIComponent(accountId)}`, {
+    await this.request(`/v2/accounts/${encodeURIComponent(accountId)}`, {
       method: "DELETE",
     });
   }
 
   /**
-   * List every account in the Unipile workspace. The workspace holds at most a
-   * handful of accounts, but the endpoint is cursor-paginated so we walk all
-   * pages. Used by account-cleanup to find orphaned accounts to delete.
+   * List every account in the Unipile workspace. v2 lists are offset/limit
+   * paginated and report `has_more`. Used by account-cleanup to find orphans.
    */
   async listAccounts(): Promise<UnipileAccount[]> {
     const out: UnipileAccount[] = [];
-    let cursor: string | null = null;
-    do {
-      const page: UnipileAccountList = await this.get<UnipileAccountList>(
-        "/accounts",
-        cursor ? { cursor } : undefined
+    let offset = 0;
+    for (;;) {
+      const page = await this.get<UnipileAccountList>(
+        "/v2/accounts",
+        offset === 0
+          ? { limit: String(PAGE) }
+          : { limit: String(PAGE), offset: String(offset) }
       );
-      out.push(...page.items);
-      cursor = page.cursor ?? null;
-    } while (cursor);
+      out.push(...page.data);
+      if (!page.has_more || page.data.length === 0) break;
+      offset += page.data.length;
+    }
     return out;
   }
 
   // ---------- Webhooks ----------
 
-  /**
-   * Webhook `source` selects which event family fires:
-   *   - `messaging`       → messaging.new_message (and the rest of the chat events)
-   *   - `account_status`  → account.connected / .disconnected / .error / .credentials
-   *   - `users`           → users.invitation.received (LinkedIn connection requests)
-   */
-  listWebhooks(): Promise<{
-    object: "WebhookList";
-    items: UnipileWebhook[];
-  }> {
-    return this.get<{ object: "WebhookList"; items: UnipileWebhook[] }>(
-      "/webhooks"
-    );
+  listWebhooks(): Promise<UnipileWebhookList> {
+    return this.get<UnipileWebhookList>("/v2/webhooks/endpoints");
   }
 
+  /**
+   * Create a unified webhook endpoint. v2 has one endpoint per URL that
+   * subscribes to many `trigger_events`. The response carries a per-endpoint
+   * signing `secret` (wes_…) used to verify deliveries.
+   */
   createWebhook(input: {
-    source: UnipileWebhookSource;
-    requestUrl: string;
-    /** Custom request headers Unipile attaches to every delivery. The
-     * workspace bootstrap uses this to carry a shared token the receiver
-     * verifies (Unipile itself does not sign payloads). */
+    name: string;
+    url: string;
+    triggerEvents: string[];
     headers?: { key: string; value: string }[];
-    /** Optional event filter; omitted = all events for the source. */
-    events?: string[];
   }): Promise<UnipileWebhook> {
-    return this.post<UnipileWebhook>("/webhooks", {
-      source: input.source,
-      request_url: input.requestUrl,
+    return this.post<UnipileWebhook>("/v2/webhooks/endpoints", {
+      name: input.name,
+      url: input.url,
+      trigger_events: input.triggerEvents,
       ...(input.headers ? { headers: input.headers } : {}),
-      ...(input.events ? { events: input.events } : {}),
     });
   }
 
   async deleteWebhook(id: string): Promise<void> {
-    await this.request(`/webhooks/${encodeURIComponent(id)}`, {
+    await this.request(`/v2/webhooks/endpoints/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   }
@@ -152,105 +151,104 @@ export class UnipileClient {
 
   listChats(input: {
     accountId: string;
-    cursor?: string | null;
+    offset?: number;
     limit?: number;
     folder?: string | null;
   }): Promise<UnipileChatList> {
-    return this.get<UnipileChatList>("/chats", {
-      account_id: input.accountId,
-      ...(input.cursor ? { cursor: input.cursor } : {}),
-      ...(input.limit ? { limit: String(input.limit) } : {}),
-      ...(input.folder ? { folder: input.folder } : {}),
-    });
-  }
-
-  /**
-   * Resolve a provider identifier (username, public id, or phone) to an
-   * attendee. Used by compose to turn a typed @username / phone into a
-   * provider attendee id. Unipile: GET /users/{identifier}?account_id=...
-   * LIVE-CONFIRM (§13): exact path/param for Instagram username resolution.
-   */
-  getUser(input: { accountId: string; identifier: string }): Promise<UnipileAttendee> {
-    return this.get<UnipileAttendee>(`/users/${encodeURIComponent(input.identifier)}`, {
-      account_id: input.accountId,
-    });
-  }
-
-  getChat(input: { chatId: string }): Promise<UnipileChat> {
-    return this.get<UnipileChat>(
-      `/chats/${encodeURIComponent(input.chatId)}`
-    );
-  }
-
-  listChatAttendees(input: { chatId: string }): Promise<UnipileAttendeeList> {
-    return this.get<UnipileAttendeeList>(
-      `/chats/${encodeURIComponent(input.chatId)}/attendees`
-    );
-  }
-
-  listMessages(input: {
-    chatId: string;
-    cursor?: string | null;
-    limit?: number;
-  }): Promise<UnipileMessageList> {
-    return this.get<UnipileMessageList>(
-      `/chats/${encodeURIComponent(input.chatId)}/messages`,
+    return this.get<UnipileChatList>(
+      `/v2/${encodeURIComponent(input.accountId)}/chats`,
       {
-        ...(input.cursor ? { cursor: input.cursor } : {}),
         ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.offset ? { offset: String(input.offset) } : {}),
+        ...(input.folder ? { folder: input.folder } : {}),
       }
     );
   }
 
-  sendMessage(input: { chatId: string; text: string }): Promise<UnipileMessage> {
-    return this.post<UnipileMessage>(
-      `/chats/${encodeURIComponent(input.chatId)}/messages`,
+  /**
+   * Resolve a provider identifier (username, public id, or phone) to a user.
+   * v2: `GET /v2/:account_id/users/:identifier`.
+   */
+  getUser(input: {
+    accountId: string;
+    identifier: string;
+  }): Promise<UnipileUser> {
+    return this.get<UnipileUser>(
+      `/v2/${encodeURIComponent(input.accountId)}/users/${encodeURIComponent(input.identifier)}`
+    );
+  }
+
+  getChat(input: { accountId: string; chatId: string }): Promise<UnipileChat> {
+    return this.get<UnipileChat>(
+      `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}`
+    );
+  }
+
+  listMessages(input: {
+    accountId: string;
+    chatId: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<UnipileMessageList> {
+    return this.get<UnipileMessageList>(
+      `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}/messages`,
+      {
+        ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.offset ? { offset: String(input.offset) } : {}),
+      }
+    );
+  }
+
+  /** Send a text message. v2 echoes `{ object: "MessageSent", message_id }`. */
+  sendMessage(input: {
+    accountId: string;
+    chatId: string;
+    text: string;
+  }): Promise<UnipileSendResult> {
+    return this.post<UnipileSendResult>(
+      `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}/messages/send`,
       { text: input.text }
     );
   }
 
   /**
-   * Send a message with file attachments via multipart/form-data.
-   * Used when the caller has one or more files to attach alongside the text.
+   * Send a message with file attachments. v2 takes base64 JSON attachments
+   * (`{ filename, content_type, data }`), not multipart. Echoes `MessageSent`.
    */
   async sendMessageMultipart(input: {
+    accountId: string;
     chatId: string;
     text: string;
-    attachments: Array<{ buffer: Uint8Array; filename: string; mimeType: string }>;
-  }): Promise<UnipileMessage> {
-    const form = new FormData();
-    form.append("text", input.text);
-    for (const att of input.attachments) {
-      form.append(
-        "files[]",
-        // att.buffer is ArrayBuffer-backed at runtime; the cast satisfies
-        // BlobPart, which TS's generic Uint8Array<ArrayBufferLike> (admitting
-        // SharedArrayBuffer) doesn't match directly.
-        new Blob([att.buffer as BlobPart], { type: att.mimeType }),
-        att.filename
-      );
-    }
-    return this.requestFormData<UnipileMessage>(
-      `/chats/${encodeURIComponent(input.chatId)}/messages`,
-      form
+    attachments: Array<{
+      buffer: Uint8Array;
+      filename: string;
+      mimeType: string;
+    }>;
+  }): Promise<UnipileSendResult> {
+    const attachments = input.attachments.map((a) => ({
+      filename: a.filename,
+      content_type: a.mimeType,
+      data: base64FromBytes(a.buffer),
+    }));
+    return this.post<UnipileSendResult>(
+      `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}/messages/send`,
+      { text: input.text, attachments }
     );
   }
 
   /**
-   * Download an attachment from a message by its Unipile attachment id.
-   * Returns the raw Response so the caller can stream bytes or redirect.
+   * Download an attachment by message + attachment id.
+   * LIVE-CONFIRM: exact v2 attachment path (account-scoped here).
    */
   async downloadAttachmentRaw(input: {
+    accountId: string;
     messageId: string;
     attachmentId: string;
   }): Promise<Response> {
-    const url = `${this.base}/messages/${encodeURIComponent(input.messageId)}/attachments/${encodeURIComponent(input.attachmentId)}`;
+    const url = `${this.base}/v2/${encodeURIComponent(input.accountId)}/messages/${encodeURIComponent(input.messageId)}/attachments/${encodeURIComponent(input.attachmentId)}`;
     const response = await this.fetchImpl(url, {
       method: "GET",
-      headers: {
-        "X-API-KEY": this.env.UNIPILE_API_KEY,
-        accept: "*/*",
-      },
+      headers: { "X-API-KEY": this.env.UNIPILE_API_KEY, accept: "*/*" },
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
@@ -264,131 +262,166 @@ export class UnipileClient {
   }
 
   /**
-   * Start a new chat (1:1 or group) and send the first message. Unipile's
-   * `POST /chats` (multipart) creates the chat if needed and returns the first
-   * message. For 1:1 it reuses an existing conversation.
-   *
-   * @param attendeeProviderIds Provider attendee ids: LinkedIn URN, WhatsApp JID
-   *   (`<digits>@s.whatsapp.net`), or Instagram user id.
-   * @param title Optional group name (ignored for 1:1).
+   * Start a new chat (1:1 or group) and send the first message.
+   * v2: `POST /v2/:account_id/chats/send` with `users_ids` (renamed from
+   * `attendees_ids`) and base64 attachments.
    */
   async startChat(input: {
     accountId: string;
     attendeeProviderIds: string[];
     text: string;
     title?: string | null;
-  }): Promise<UnipileMessage> {
-    const form = new FormData();
-    form.append("account_id", input.accountId);
-    for (const id of input.attendeeProviderIds) form.append("attendees_ids", id);
-    form.append("text", input.text);
-    if (input.title) form.append("title", input.title);
-    return this.requestFormData<UnipileMessage>("/chats", form);
-  }
-
-  /**
-   * Add (or replace) the connected account's reaction on a LinkedIn message.
-   * LinkedIn DMs allow at most one reaction per member per message — posting
-   * a new value replaces any prior reaction the account had on that message.
-   *
-   * Endpoint: `POST /messages/{id}/reactions` with body `{ reaction: "👍" }`.
-   * See <https://developer.unipile.com/reference/messagescontroller_addreaction>.
-   */
-  async addMessageReaction(input: {
-    messageId: string;
-    reaction: string;
-  }): Promise<void> {
-    await this.post<unknown>(
-      `/messages/${encodeURIComponent(input.messageId)}/reactions`,
-      { reaction: input.reaction }
+  }): Promise<UnipileChatStarted> {
+    return this.post<UnipileChatStarted>(
+      `/v2/${encodeURIComponent(input.accountId)}/chats/send`,
+      {
+        users_ids: input.attendeeProviderIds,
+        text: input.text,
+        ...(input.title ? { name: input.title } : {}),
+      }
     );
   }
 
   /**
-   * Remove the connected account's reaction from a message.
-   * LIVE-CONFIRM (§13): preferred clear is POST reactions with empty value;
-   * some providers only honor DELETE. Try POST-empty, fall back to DELETE,
-   * swallow 404/405 so an unsupported clear doesn't break note write-back.
+   * Add (or replace) the connected account's reaction on a message.
+   * v2: `POST /v2/:account_id/chats/:chat_id/messages/:message_id/reactions`
+   * with body `{ reaction }` (confirmed live: route is plural, field is
+   * `reaction`, and chat_id is required in the path).
    */
-  async removeMessageReaction(input: { messageId: string }): Promise<void> {
-    // LIVE-CONFIRM (§13): preferred clear is POST reactions with empty value;
-    // some providers only honor DELETE. Try POST-empty, fall back to DELETE,
-    // swallow 404/405 so an unsupported clear doesn't break note write-back.
+  async addMessageReaction(input: {
+    accountId: string;
+    chatId: string;
+    messageId: string;
+    reaction: string;
+  }): Promise<void> {
+    await this.post<unknown>(this.reactionPath(input), {
+      reaction: input.reaction,
+    });
+  }
+
+  /**
+   * Remove the connected account's reaction from a message. Confirmed live:
+   * an empty `{ reaction: "" }` POST clears it. The DELETE fallback + swallowed
+   * 400/404/405 stay as defense so an unsupported clear never breaks write-back.
+   */
+  async removeMessageReaction(input: {
+    accountId: string;
+    chatId: string;
+    messageId: string;
+  }): Promise<void> {
+    const path = this.reactionPath(input);
     try {
-      await this.post<unknown>(`/messages/${encodeURIComponent(input.messageId)}/reactions`, { reaction: "" });
+      await this.post<unknown>(path, { reaction: "" });
       return;
     } catch (e) {
-      if (!(e instanceof UnipileApiError) || (e.status !== 400 && e.status !== 404 && e.status !== 405)) throw e;
+      if (
+        !(e instanceof UnipileApiError) ||
+        (e.status !== 400 && e.status !== 404 && e.status !== 405)
+      )
+        throw e;
     }
     try {
-      await this.request(`/messages/${encodeURIComponent(input.messageId)}/reactions`, { method: "DELETE" });
+      await this.request(path, { method: "DELETE" });
     } catch (e) {
-      if (e instanceof UnipileApiError && (e.status === 404 || e.status === 405)) return;
+      if (
+        e instanceof UnipileApiError &&
+        (e.status === 404 || e.status === 405)
+      )
+        return;
       throw e;
     }
   }
 
-  async setChatRequestStatus(input: { chatId: string; accepted: boolean }): Promise<void> {
-    // LIVE-CONFIRM (§13): IG accept/ignore message-request action on PATCH /chats/{id}.
-    await this.request(`/chats/${encodeURIComponent(input.chatId)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ action: input.accepted ? "acceptRequest" : "declineRequest" }),
-      headers: { "content-type": "application/json" },
-    });
+  private reactionPath(input: {
+    accountId: string;
+    chatId: string;
+    messageId: string;
+  }): string {
+    return `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}/messages/${encodeURIComponent(input.messageId)}/reactions`;
   }
 
-  async setChatRead(input: { chatId: string; read: boolean }): Promise<void> {
-    await this.request(`/chats/${encodeURIComponent(input.chatId)}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        action: input.read ? "setReadStatus" : "setUnreadStatus",
-        value: input.read,
-      }),
-      headers: { "content-type": "application/json" },
-    });
+  async setChatRequestStatus(input: {
+    accountId: string;
+    chatId: string;
+    accepted: boolean;
+  }): Promise<void> {
+    // LIVE-CONFIRM: IG accept/ignore message-request action on PATCH chat.
+    await this.request(
+      `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          action: input.accepted ? "acceptRequest" : "declineRequest",
+        }),
+        headers: { "content-type": "application/json" },
+      }
+    );
   }
 
-  /** Fetch the profile of the user the account belongs to (LinkedIn member,
-   * WhatsApp number owner, etc.). Used at auth-completion time to populate
-   * the connection's display name. */
-  getOwnProfile(input: { accountId: string }): Promise<UnipileAttendee> {
-    return this.get<UnipileAttendee>(`/users/me`, {
-      account_id: input.accountId,
-    });
+  async setChatRead(input: {
+    accountId: string;
+    chatId: string;
+    read: boolean;
+  }): Promise<void> {
+    await this.request(
+      `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          action: input.read ? "setReadStatus" : "setUnreadStatus",
+          value: input.read,
+        }),
+        headers: { "content-type": "application/json" },
+      }
+    );
   }
 
-  // ---------- LinkedIn invitations ----------
+  /** Fetch the connected account's own provider profile. */
+  getOwnProfile(input: { accountId: string }): Promise<UnipileUser> {
+    return this.get<UnipileUser>(
+      `/v2/${encodeURIComponent(input.accountId)}/users/me`
+    );
+  }
+
+  // ---------- LinkedIn invitations / relations ----------
 
   listReceivedInvitations(input: {
     accountId: string;
-    cursor?: string | null;
+    offset?: number;
     limit?: number;
   }): Promise<UnipileInvitationList> {
-    return this.get<UnipileInvitationList>("/users/invite/received", {
-      account_id: input.accountId,
-      ...(input.cursor ? { cursor: input.cursor } : {}),
-      ...(input.limit ? { limit: String(input.limit) } : {}),
-    });
+    // LIVE-CONFIRM: exact v2 invitations path.
+    return this.get<UnipileInvitationList>(
+      `/v2/${encodeURIComponent(input.accountId)}/users/invitations`,
+      {
+        ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.offset ? { offset: String(input.offset) } : {}),
+      }
+    );
   }
 
   listRelations(input: {
     accountId: string;
-    cursor?: string | null;
+    offset?: number;
     limit?: number;
   }): Promise<UnipileRelationList> {
-    return this.get<UnipileRelationList>("/users/relations", {
-      account_id: input.accountId,
-      ...(input.cursor ? { cursor: input.cursor } : {}),
-      ...(input.limit ? { limit: String(input.limit) } : {}),
-    });
+    return this.get<UnipileRelationList>(
+      `/v2/${encodeURIComponent(input.accountId)}/users/relations`,
+      {
+        ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.offset ? { offset: String(input.offset) } : {}),
+      }
+    );
   }
 
   async acceptInvitation(input: {
+    accountId: string;
     invitationId: string;
     sharedSecret: string;
   }): Promise<void> {
+    // LIVE-CONFIRM: exact v2 invitation accept path/body.
     await this.request(
-      `/users/invite/received/${encodeURIComponent(input.invitationId)}`,
+      `/v2/${encodeURIComponent(input.accountId)}/users/invitations/${encodeURIComponent(input.invitationId)}`,
       {
         method: "POST",
         body: JSON.stringify({
@@ -401,11 +434,12 @@ export class UnipileClient {
   }
 
   async ignoreInvitation(input: {
+    accountId: string;
     invitationId: string;
     sharedSecret: string;
   }): Promise<void> {
     await this.request(
-      `/users/invite/received/${encodeURIComponent(input.invitationId)}`,
+      `/v2/${encodeURIComponent(input.accountId)}/users/invitations/${encodeURIComponent(input.invitationId)}`,
       {
         method: "POST",
         body: JSON.stringify({
@@ -417,32 +451,16 @@ export class UnipileClient {
     );
   }
 
-  getAttendee(input: { providerId: string }): Promise<UnipileAttendee> {
-    return this.get<UnipileAttendee>(
-      `/users/${encodeURIComponent(input.providerId)}`
+  getAttendee(input: {
+    accountId: string;
+    providerId: string;
+  }): Promise<UnipileUser> {
+    return this.get<UnipileUser>(
+      `/v2/${encodeURIComponent(input.accountId)}/users/${encodeURIComponent(input.providerId)}`
     );
   }
 
   // ---------- Internals ----------
-
-  private async requestFormData<T>(path: string, form: FormData): Promise<T> {
-    const url = `${this.base}${path}`;
-    const headers = {
-      "X-API-KEY": this.env.UNIPILE_API_KEY,
-      accept: "application/json",
-      // Do NOT set content-type — browser/runtime sets it with the boundary
-    };
-    const response = await this.fetchImpl(url, { method: "POST", body: form, headers });
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new UnipileApiError(
-        `Unipile POST ${path} returned ${response.status}`,
-        response.status,
-        text
-      );
-    }
-    return (await response.json()) as T;
-  }
 
   private get<T>(path: string, query?: Record<string, string>): Promise<T> {
     const qs =
@@ -479,4 +497,11 @@ export class UnipileClient {
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
+}
+
+/** Base64-encode bytes for v2 JSON attachment uploads (Workers-safe). */
+function base64FromBytes(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
 }

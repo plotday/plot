@@ -215,9 +215,9 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
   try {
     const client = new UnipileClient(c.env);
     const profile = await client.getOwnProfile({ accountId: result.accountId });
-    fullName = profile.name && profile.name.trim() ? profile.name : null;
+    fullName = profile.display_name && profile.display_name.trim() ? profile.display_name : null;
     email = profile.specifics?.email ?? null;
-    userId = profile.provider_id ?? result.accountId;
+    userId = profile.id ?? result.accountId;
   } catch (e) {
     // Non-fatal: fall back to whatever the account record says. The label can
     // be updated by the connector's later getAccountName() override.
@@ -229,7 +229,7 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
       const client = new UnipileClient(c.env);
       const account = await client.getAccount(result.accountId);
       fullName = account.name ?? null;
-      userId = account.connection_params?.im?.id ?? result.accountId;
+      userId = account.user_id ?? result.accountId;
     } catch {
       // Both calls failed — accept the placeholder.
     }

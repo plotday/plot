@@ -4504,20 +4504,20 @@ export class Integrations extends Tool implements IAuth {
       const client = new UnipileClient(this.env);
 
       // Three-stage probe to maximise the chance of getting a friendly name:
-      //   1. /users/me?account_id=X — minimal, returns provider_id always
-      //   2. /users/{provider_id}?account_id=X — rich profile (the LinkedIn
-      //      /users/me endpoint omits `name` for the calling member)
-      //   3. /accounts/{id} — Unipile's stored account label as fallback
+      //   1. /v2/:account_id/users/me — minimal, returns the member id always
+      //   2. /v2/:account_id/users/:id — rich profile (the LinkedIn /users/me
+      //      endpoint can omit display_name for the calling member)
+      //   3. /v2/accounts/:id — Unipile's stored account label as fallback
       const me = await client.getOwnProfile({ accountId });
 
-      let fullName = me.name && me.name.trim() ? me.name : null;
+      let fullName = me.display_name && me.display_name.trim() ? me.display_name : null;
       let email = me.specifics?.email ?? null;
-      const userId = me.provider_id ?? null;
+      const userId = me.id ?? null;
 
       if ((!fullName || !email) && userId) {
         try {
-          const rich = await client.getAttendee({ providerId: userId });
-          if (!fullName && rich.name && rich.name.trim()) fullName = rich.name;
+          const rich = await client.getAttendee({ accountId, providerId: userId });
+          if (!fullName && rich.display_name && rich.display_name.trim()) fullName = rich.display_name;
           if (!email && rich.specifics?.email) email = rich.specifics.email;
         } catch {
           // Best-effort: the rich attendee probe failing is not fatal.

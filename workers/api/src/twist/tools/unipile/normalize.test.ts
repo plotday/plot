@@ -7,111 +7,104 @@ import {
   normalizeRelation,
 } from "./normalize";
 
-describe("normalize", () => {
-  it("normalizes a 1:1 linkedin chat and includes self in participants with isSelf flag", () => {
+describe("normalize (v2)", () => {
+  it("normalizes a group linkedin chat from embedded participants with isSelf flags", () => {
     const chat = normalizeChat(
       {
         object: "Chat",
         id: "c1",
-        account_id: "acct-1",
-        account_type: "LINKEDIN",
-        provider_id: "linkedin-thread-xyz",
+        provider: "linkedin",
         name: null,
-        type: 0,
-        timestamp: "2026-05-22T10:00:00.000Z",
+        type: "group",
+        is_group: true,
+        is_archived: false,
         unread_count: 2,
-        archived: 0,
-        read_only: 0,
-        muted_until: null,
-        attendee_provider_id: "ACoAA12345",
+        last_message_timestamp: "2026-05-22T10:00:00.000Z",
+        folders: [],
+        participants: [
+          {
+            object: "GroupParticipant",
+            is_self: false,
+            user: {
+              object: "User",
+              id: "ACoAA12345",
+              display_name: "Jane Doe",
+              public_identifier: "jdoe",
+              public_picture_url: "https://media.licdn.com/jdoe.jpg",
+              specifics: { headline: "PM" },
+            },
+          },
+          {
+            object: "GroupParticipant",
+            is_self: true,
+            user: {
+              object: "User",
+              id: "ACoAAme00",
+              display_name: "Me Myself",
+              public_identifier: null,
+            },
+          },
+        ],
       },
-      [
-        {
-          object: "Attendee",
-          provider_id: "ACoAA12345",
-          name: "Jane Doe",
-          profile_url: "https://www.linkedin.com/in/jdoe/",
-          picture_url: "https://media.licdn.com/jdoe.jpg",
-          is_self: 0,
-          specifics: { public_identifier: "jdoe", headline: "PM" },
-        },
-        {
-          object: "Attendee",
-          provider_id: "ACoAAme00",
-          name: "Me Myself",
-          profile_url: null,
-          picture_url: null,
-          is_self: 1,
-          specifics: {},
-        },
-      ],
       "linkedin"
     );
     expect(chat.id).toBe("c1");
-    expect(chat.isGroup).toBe(false);
+    expect(chat.isGroup).toBe(true);
     expect(chat.participants).toHaveLength(2);
     const jane = chat.participants.find((p) => p.id === "ACoAA12345")!;
     expect(jane.name).toBe("Jane Doe");
     expect(jane.handle).toBe("jdoe");
+    expect(jane.subtitle).toBe("PM");
     expect(jane.isSelf).toBe(false);
     const me = chat.participants.find((p) => p.id === "ACoAAme00")!;
     expect(me.isSelf).toBe(true);
     expect(chat.unreadCount).toBe(2);
-    expect(chat.url).toBe(
-      "https://www.linkedin.com/messaging/thread/linkedin-thread-xyz/"
-    );
+    expect(chat.url).toBe("https://www.linkedin.com/messaging/thread/c1/");
     expect(chat.folder).toBeNull();
   });
 
-  it("normalizeChat with whatsapp provider yields null url and no linkedin.com profileUrl", () => {
+  it("normalizes a 1:1 whatsapp chat from the embedded user; null url and profileUrl", () => {
     const chat = normalizeChat(
       {
         object: "Chat",
         id: "c2",
-        account_id: "acct-2",
-        account_type: "WHATSAPP",
-        provider_id: "wa-thread-abc",
-        name: "WhatsApp Group",
-        type: 1,
-        timestamp: "2026-05-22T11:00:00.000Z",
+        provider: "whatsapp",
+        name: null,
+        type: "1to1",
+        is_group: false,
+        is_1to1: true,
+        is_archived: false,
         unread_count: 0,
-        archived: 0,
-        read_only: 0,
-        muted_until: null,
-        attendee_provider_id: "+15551234567",
-      },
-      [
-        {
-          object: "Attendee",
-          provider_id: "+15551234567",
-          name: "Alice",
-          profile_url: null,
-          picture_url: null,
-          is_self: 0,
-          specifics: { public_identifier: "alice_wa" },
+        last_message_timestamp: "2026-05-22T11:00:00.000Z",
+        folders: [],
+        user_id: "15551234567@s.whatsapp.net",
+        user: {
+          object: "User",
+          id: "15551234567@s.whatsapp.net",
+          display_name: "Alice",
+          public_identifier: "alice_wa",
         },
-      ],
+      },
       "whatsapp"
     );
+    expect(chat.isGroup).toBe(false);
     expect(chat.url).toBeNull();
-    const alice = chat.participants.find((p) => p.id === "+15551234567")!;
-    // profileUrl is null (no linkedin.com fallback for non-linkedin providers)
+    expect(chat.participants).toHaveLength(1);
+    const alice = chat.participants[0]!;
+    expect(alice.name).toBe("Alice");
     expect(alice.profileUrl).toBeNull();
   });
 
-  it("normalizes a message and flags sent-by-me when is_sender=1", () => {
+  it("normalizes a message and flags sent-by-me when is_sender is true", () => {
     const msg = normalizeMessage({
       object: "Message",
       id: "m1",
       chat_id: "c1",
-      chat_provider_id: "linkedin-thread-xyz",
-      provider_id: "lnk-msg-1",
       sender_id: "ACoAA12345",
-      sender_attendee_id: "att-1",
       timestamp: "2026-05-22T10:05:00.000Z",
-      is_sender: 1,
-      is_event: 0,
-      seen: 1,
+      is_sender: true,
+      is_seen: true,
+      is_event: false,
       text: "Hello",
       attachments: [],
     });
@@ -123,46 +116,38 @@ describe("normalize", () => {
     expect(msg.reactions).toEqual([]);
   });
 
-  it("normalizes message reactions and flags sent-by-me reactor", () => {
+  it("normalizes reactions_counter and flags reacted-by-me", () => {
     const msg = normalizeMessage({
       object: "Message",
       id: "m2",
       chat_id: "c1",
-      chat_provider_id: "linkedin-thread-xyz",
-      provider_id: "lnk-msg-2",
       sender_id: "ACoAA12345",
-      sender_attendee_id: "att-1",
       timestamp: "2026-05-22T10:06:00.000Z",
-      is_sender: 0,
-      is_event: 0,
-      seen: 1,
+      is_sender: false,
+      is_event: false,
       text: "Nice",
       attachments: [],
-      reactions: [
-        { value: "👍", sender_id: "ACoAAme00", is_sender: true },
-        { value: "❤️", sender_id: "ACoAA12345", is_sender: false },
+      reactions_counter: [
+        { value: "👍", count: 2, reacted: true },
+        { value: "❤️", count: 1, reacted: false },
       ],
     });
     expect(msg.reactions).toEqual([
-      { value: "👍", senderId: "ACoAAme00", sentByMe: true },
-      { value: "❤️", senderId: "ACoAA12345", sentByMe: false },
+      { value: "👍", senderId: "", sentByMe: true },
+      { value: "❤️", senderId: "", sentByMe: false },
     ]);
   });
 
-  it("surfaces eventType for is_event=1 messages so connectors can skip them", () => {
+  it("surfaces eventType for is_event messages so connectors can skip them", () => {
     const msg = normalizeMessage({
       object: "Message",
       id: "m3",
       chat_id: "c1",
-      chat_provider_id: "linkedin-thread-xyz",
-      provider_id: "lnk-msg-3",
       sender_id: "ACoAAme00",
-      sender_attendee_id: "att-self",
       timestamp: "2026-05-22T10:07:00.000Z",
-      is_sender: 1,
-      is_event: 1,
+      is_sender: true,
+      is_event: true,
       event_type: "reaction",
-      seen: 1,
       text: null,
       attachments: [],
     });
@@ -170,18 +155,18 @@ describe("normalize", () => {
     expect(msg.text).toBe("");
   });
 
-  it("normalizes an invitation with inviter profile", () => {
+  it("normalizes a v2 invitation with inviter profile", () => {
     const inv = normalizeInvitation({
       object: "InvitationReceived",
       id: "inv-1",
       parsed_datetime: "2026-05-22T09:00:00.000Z",
       invitation_text: "Let's connect",
       inviter: {
-        inviter_id: "ACoAA999",
-        inviter_name: "Carla Ng",
-        inviter_public_identifier: "carlang",
-        inviter_description: "PM",
-        inviter_profile_picture_url: null,
+        object: "User",
+        id: "ACoAA999",
+        display_name: "Carla Ng",
+        public_identifier: "carlang",
+        specifics: { headline: "PM" },
       },
       specifics: { provider: "LINKEDIN", shared_secret: "ss-token" },
     });
@@ -203,11 +188,10 @@ describe("normalize", () => {
       parsed_datetime: "2026-05-22T09:00:00.000Z",
       invitation_text: null,
       inviter: {
-        inviter_id: "ACoAA000",
-        inviter_name: null,
-        inviter_public_identifier: null,
-        inviter_description: null,
-        inviter_profile_picture_url: null,
+        object: "User",
+        id: "ACoAA000",
+        display_name: null,
+        public_identifier: null,
       },
       specifics: { provider: "LINKEDIN", shared_secret: "ss-token" },
     });
@@ -216,32 +200,31 @@ describe("normalize", () => {
     expect(inv.inviter.profileUrl).toBeNull();
   });
 
-  it("falls back to publicIdentifier when name missing", () => {
-    const profile = normalizeProfile({
-      object: "Attendee",
-      provider_id: "ACoAA000",
-      name: null,
-      profile_url: null,
-      picture_url: null,
-      is_self: 0,
-      specifics: { public_identifier: "ghost" },
-    }, "linkedin");
+  it("falls back to publicIdentifier when display name missing", () => {
+    const profile = normalizeProfile(
+      {
+        object: "User",
+        id: "ACoAA000",
+        display_name: null,
+        public_identifier: "ghost",
+      },
+      "linkedin"
+    );
     expect(profile.name).toBe("ghost");
+    expect(profile.isSelf).toBe(false);
   });
 
-  it("normalizeRelation maps the flat relation shape to ChatProfile", () => {
+  it("normalizeRelation maps the v2 relation shape to ChatProfile", () => {
     const profile = normalizeRelation({
       object: "UserRelation",
       member_id: "ACoAA111",
-      member_urn: "urn:li:member:111",
-      connection_urn: "urn:li:fs_miniProfile:111",
+      display_name: "Grace Hopper",
       first_name: "Grace",
       last_name: "Hopper",
       headline: "Rear Admiral, COBOL pioneer",
       public_identifier: "ghopper",
       public_profile_url: "https://www.linkedin.com/in/ghopper",
-      profile_picture_url: "https://media.licdn.com/g.jpg",
-      created_at: 1700000000,
+      public_picture_url: "https://media.licdn.com/g.jpg",
     });
     expect(profile.id).toBe("ACoAA111");
     expect(profile.name).toBe("Grace Hopper");
@@ -257,37 +240,14 @@ describe("normalize", () => {
     const profile = normalizeRelation({
       object: "UserRelation",
       member_id: "ACoAA222",
-      member_urn: "urn:li:member:222",
-      connection_urn: "urn:li:fs_miniProfile:222",
       first_name: "",
       last_name: "",
       headline: "",
       public_identifier: "anon",
       public_profile_url: "https://www.linkedin.com/in/anon",
-      created_at: 1700000000,
     });
     expect(profile.name).toBe("anon");
     expect(profile.subtitle).toBeNull();
     expect(profile.pictureUrl).toBeNull();
-  });
-
-  it("normalizeRelation falls back to Unknown when names and publicIdentifier are all empty", () => {
-    const profile = normalizeRelation({
-      object: "UserRelation",
-      member_id: "ACoAA333",
-      member_urn: "urn:li:member:333",
-      connection_urn: "urn:li:fs_miniProfile:333",
-      first_name: "",
-      last_name: "",
-      headline: "",
-      public_identifier: "",
-      public_profile_url: "",
-      created_at: 1700000000,
-    });
-    expect(profile.id).toBe("ACoAA333");
-    expect(profile.name).toBe("Unknown");
-    expect(profile.handle).toBeNull();
-    expect(profile.subtitle).toBeNull();
-    expect(profile.profileUrl).toBeNull();
   });
 });

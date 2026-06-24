@@ -52,7 +52,7 @@ const INSTAGRAM_PROVIDER = "instagram" as AuthProvider;
  * a non-inbox folder. Group chats are never requests.
  */
 function isRequest(chat: ChatThread): boolean {
-  // LIVE-CONFIRM (§13): exact folder value
+  // LIVE-CONFIRM: exact v2 folder value for IG message requests.
   return (chat.folder ?? "").toUpperCase().includes("REQUEST");
 }
 
@@ -378,7 +378,8 @@ export class Instagram extends Connector<Instagram> {
   ): Promise<void> {
     const meta = (thread.meta ?? {}) as Record<string, unknown>;
     const channelId = meta.channelId as string | undefined;
-    if (!channelId) return;
+    const chatId = meta.chatId as string | undefined;
+    if (!channelId || !chatId) return;
     if (!note.key || !note.key.startsWith("message-")) return;
     const messageId = note.key.slice("message-".length);
     if (!messageId) return;
@@ -392,12 +393,13 @@ export class Instagram extends Connector<Instagram> {
       if (decision.action === "set") {
         await this.tools.instagram.setMessageReaction({
           channelId,
+          chatId,
           messageId,
           reaction: decision.emoji,
         });
         await this.set(stateKey, decision.emoji);
       } else {
-        await this.tools.instagram.clearMessageReaction({ channelId, messageId });
+        await this.tools.instagram.clearMessageReaction({ channelId, chatId, messageId });
         await this.clear(stateKey);
       }
     } catch (error) {

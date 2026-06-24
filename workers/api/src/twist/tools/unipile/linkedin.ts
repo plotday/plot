@@ -11,24 +11,28 @@ export class LinkedInMessaging extends UnipileMessagingTool implements ILinkedIn
 
   async listReceivedInvitations(params: { channelId: string; cursor?: string | null; limit?: number }): Promise<LinkedInInvitationPage> {
     await this.assertAccount(params.channelId);
-    const result = await this.client.listReceivedInvitations({ accountId: params.channelId, cursor: params.cursor ?? null, limit: params.limit });
-    return { invitations: result.items.map(normalizeInvitation), nextCursor: result.cursor };
+    const offset = params.cursor ? Number(params.cursor) : 0;
+    const result = await this.client.listReceivedInvitations({ accountId: params.channelId, offset, limit: params.limit });
+    const nextCursor = result.has_more ? String(offset + result.data.length) : null;
+    return { invitations: result.data.map(normalizeInvitation), nextCursor };
   }
 
   async listRelations(params: { channelId: string; cursor?: string | null; limit?: number }): Promise<LinkedInRelationPage> {
     await this.assertAccount(params.channelId);
-    const result = await this.client.listRelations({ accountId: params.channelId, cursor: params.cursor ?? null, limit: params.limit });
-    return { relations: result.items.map(normalizeRelation), nextCursor: result.cursor };
+    const offset = params.cursor ? Number(params.cursor) : 0;
+    const result = await this.client.listRelations({ accountId: params.channelId, offset, limit: params.limit });
+    const nextCursor = result.has_more ? String(offset + result.data.length) : null;
+    return { relations: result.data.map(normalizeRelation), nextCursor };
   }
 
   async acceptInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
     await this.assertAccount(params.channelId);
-    await this.client.acceptInvitation({ invitationId: params.invitationId, sharedSecret: params.sharedSecret });
+    await this.client.acceptInvitation({ accountId: params.channelId, invitationId: params.invitationId, sharedSecret: params.sharedSecret });
   }
 
   async ignoreInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
     await this.assertAccount(params.channelId);
-    await this.client.ignoreInvitation({ invitationId: params.invitationId, sharedSecret: params.sharedSecret });
+    await this.client.ignoreInvitation({ accountId: params.channelId, invitationId: params.invitationId, sharedSecret: params.sharedSecret });
   }
 }
 

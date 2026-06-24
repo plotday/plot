@@ -124,12 +124,13 @@ export abstract class UnipileMessaging extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract setMessageReaction(params: {
     channelId: string;
+    chatId: string;
     messageId: string;
     reaction: string;
   }): Promise<void>;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract clearMessageReaction(params: { channelId: string; messageId: string }): Promise<void>;
+  abstract clearMessageReaction(params: { channelId: string; chatId: string; messageId: string }): Promise<void>;
 
   /**
    * Start a new chat (1:1 or group) and send the first message. Provider ids

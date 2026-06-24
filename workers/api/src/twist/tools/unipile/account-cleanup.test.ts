@@ -4,7 +4,6 @@ import { deleteUnipileAccount, selectOrphanAccountIds } from "./account-cleanup"
 
 const env = {
   UNIPILE_API_KEY: "test-key",
-  UNIPILE_DSN: "api7.unipile.com:13441",
   UNIPILE_WEBHOOK_SECRET: "test-secret",
 } as unknown as Bindings;
 
@@ -23,7 +22,7 @@ describe("deleteUnipileAccount", () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(String(url)).toBe(
-      "https://api7.unipile.com:13441/api/v1/accounts/acct-1"
+      "https://api.unipile.com/v2/accounts/acct-1"
     );
     expect(init?.method).toBe("DELETE");
   });

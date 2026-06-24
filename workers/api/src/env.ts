@@ -249,9 +249,9 @@ export type Bindings = {
   readonly SYNC_TIMING_ENABLED?: string;
   readonly NOTIFICATION_DELAY_MULTIPLIER?: string;
 
-  // Unipile API configuration for LinkedIn messaging
+  // Unipile API v2 configuration (LinkedIn/Instagram/WhatsApp messaging).
+  // v2 uses a single host (https://api.unipile.com) — no DSN.
   readonly UNIPILE_API_KEY: string;
-  readonly UNIPILE_DSN: string;
   readonly UNIPILE_WEBHOOK_SECRET: string;
 
   readonly TWIST_CONFIG: KVNamespace;

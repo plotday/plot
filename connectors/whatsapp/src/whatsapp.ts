@@ -276,7 +276,8 @@ export class WhatsApp extends Connector<WhatsApp> {
   ): Promise<void> {
     const meta = (thread.meta ?? {}) as Record<string, unknown>;
     const channelId = meta.channelId as string | undefined;
-    if (!channelId) return;
+    const chatId = meta.chatId as string | undefined;
+    if (!channelId || !chatId) return;
     if (!note.key || !note.key.startsWith("message-")) return;
     const messageId = note.key.slice("message-".length);
     if (!messageId) return;
@@ -290,12 +291,13 @@ export class WhatsApp extends Connector<WhatsApp> {
       if (decision.action === "set") {
         await this.tools.whatsapp.setMessageReaction({
           channelId,
+          chatId,
           messageId,
           reaction: decision.emoji,
         });
         await this.set(stateKey, decision.emoji);
       } else {
-        await this.tools.whatsapp.clearMessageReaction({ channelId, messageId });
+        await this.tools.whatsapp.clearMessageReaction({ channelId, chatId, messageId });
         await this.clear(stateKey);
       }
     } catch (error) {
