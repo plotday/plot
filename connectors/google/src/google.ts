@@ -36,11 +36,24 @@ import {
   removeEnabledChannelFn,
   SELF_HEAL_INTERVAL_MS,
 } from "@plotday/connector-gmail";
+import {
+  type TasksSyncHost,
+  POLL_INTERVAL_MS,
+  POLL_RECURRING_INTERVAL_MS,
+  onChannelEnabledFn as tasksOnChannelEnabledFn,
+  onChannelDisabledFn as tasksOnChannelDisabledFn,
+  syncBatchFn as tasksSyncBatchFn,
+  periodicSyncFn as tasksPeriodicSyncFn,
+  periodicSyncBatchFn as tasksPeriodicSyncBatchFn,
+  onCreateLinkFn as tasksOnCreateLinkFn,
+  onLinkUpdatedFn as tasksOnLinkUpdatedFn,
+} from "@plotday/connector-google-tasks";
 import { Connector } from "@plotday/twister";
 import type {
   Actor,
   ActorId,
   CreateLinkDraft,
+  Link,
   NoteWriteBackResult,
   Thread,
   ToolBuilder,
@@ -94,6 +107,7 @@ export class Google extends Connector<Google> {
           "https://www.googleapis.com/calendar/*",
           "https://gmail.googleapis.com/gmail/v1/*",
           "https://people.googleapis.com/v1/*",
+          "https://tasks.googleapis.com/*",
         ],
       }),
       googleContacts: build(GoogleContacts),
@@ -102,15 +116,16 @@ export class Google extends Connector<Google> {
   }
 
   /**
-   * Records the connecting user's actor id so Mail sync can attribute synced
-   * threads to the account owner. Stored under the `mail:` namespace, matching
-   * what the extracted Gmail sync reads via the mail host.
+   * Records the connecting user's actor id so Mail + Tasks sync can attribute
+   * synced threads/tasks to the account owner. Stored under each product's key
+   * namespace, matching what the extracted sync reads via its host.
    */
   override async activate(context: {
     auth: Authorization;
     actor: Actor;
   }): Promise<void> {
     await this.makeMailHost().set("auth_actor_id", context.actor.id);
+    await this.makeTasksHost().set("auth_actor_id", context.actor.id);
   }
 
   async getChannels(
@@ -137,6 +152,11 @@ export class Google extends Connector<Google> {
       return;
     }
 
+    if (productKey === "tasks") {
+      await this.onTasksChannelEnabled(rawId, context);
+      return;
+    }
+
     const product = resolveProductForChannelId(
       Object.values(PRODUCTS_BY_KEY),
       channel.id
@@ -155,6 +175,11 @@ export class Google extends Connector<Google> {
 
     if (productKey === "mail") {
       await this.stopMailSync(rawId);
+      return;
+    }
+
+    if (productKey === "tasks") {
+      await tasksOnChannelDisabledFn(this.makeTasksHost(), rawId);
       return;
     }
 
@@ -765,10 +790,23 @@ export class Google extends Connector<Google> {
     await onThreadToDoFn(this.makeMailHost(), thread, actor, todo, options);
   }
 
+  /**
+   * Outbound link creation, routed by draft type across products: Tasks owns
+   * `task` drafts, Mail owns `email` drafts. Each extracted function also
+   * returns null for the other's types, so this routing is belt-and-braces.
+   */
   override async onCreateLink(
     draft: CreateLinkDraft
   ): Promise<NewLinkWithNotes | null> {
+    if (draft.type === "task") {
+      return tasksOnCreateLinkFn(this.makeTasksHost(), draft);
+    }
     return onCreateLinkFn(this.makeMailHost(), draft);
+  }
+
+  /** Write back link status changes (Tasks owns this; Mail has no onLinkUpdated). */
+  async onLinkUpdated(link: Link): Promise<void> {
+    await tasksOnLinkUpdatedFn(this.makeTasksHost(), link);
   }
 
   override async downloadAttachment(ref: string): Promise<
@@ -776,6 +814,113 @@ export class Google extends Connector<Google> {
     | { body: Uint8Array; mimeType: string; fileName?: string }
   > {
     return downloadAttachmentFn(this.makeMailHost(), ref);
+  }
+
+  // ===========================================================================
+  // Tasks (Google Tasks) — mirrors @plotday/connector-google-tasks. Polling
+  // only (no webhooks). Storage keys are namespaced under "tasks:"; scheduling
+  // is owned here. The poll task key `poll:<listId>` is NOT prefixed (a
+  // per-instance task key the extracted onChannelDisabledFn passes raw to
+  // cancelScheduledTask). onCreateLink is routed by draft.type above;
+  // onLinkUpdated is Tasks-only.
+  // ===========================================================================
+
+  /** Public set proxy so makeTasksHost() can wrap `this` (host needs public). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _tasksHostSet(key: string, value: any): Promise<void> {
+    return this.set(`tasks:${key}`, value);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _tasksHostGet<T = any>(key: string): Promise<T | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.get<any>(`tasks:${key}`);
+  }
+  _tasksHostClear(key: string): Promise<void> {
+    return this.clear(`tasks:${key}`);
+  }
+
+  /**
+   * Returns a TasksSyncHost that namespaces every storage key under "tasks:"
+   * and routes the scheduler section to this connector's own task* methods
+   * (which own this.callback / runTask / scheduleRecurring / cancelScheduledTask).
+   */
+  private makeTasksHost(): TasksSyncHost {
+    const self = this;
+    return {
+      id: self.id,
+      set: (key, value) => self._tasksHostSet(key, value),
+      get: <T>(key: string) => self._tasksHostGet<T>(key),
+      clear: (key) => self._tasksHostClear(key),
+      tools: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        integrations: self.tools.integrations as any,
+      },
+      scheduler: {
+        queueSyncBatch: (listId) => self.tasksQueueSyncBatch(listId),
+        queuePeriodicSyncBatch: (listId) =>
+          self.tasksQueuePeriodicSyncBatch(listId),
+        schedulePeriodicSync: (listId) => self.tasksSchedulePeriodicSync(listId),
+        cancelScheduledTask: (key) => self.cancelScheduledTask(key),
+      },
+    };
+  }
+
+  /** Initial backfill + periodic-poll setup for a task list (raw list id). */
+  private async onTasksChannelEnabled(
+    rawId: string,
+    context?: SyncContext
+  ): Promise<void> {
+    const result = await tasksOnChannelEnabledFn(this.makeTasksHost(), rawId, {
+      syncHistoryMin: context?.syncHistoryMin,
+      recovering: context?.recovering,
+    });
+    if ("skip" in result) return;
+    await this.tasksQueueSyncBatch(result.start.listId);
+    await this.tasksSchedulePeriodicSync(result.start.listId);
+  }
+
+  // --- Tasks scheduling (stays on the connector) ----------------------------
+
+  private async tasksQueueSyncBatch(listId: string): Promise<void> {
+    const callback = await this.callback(this.tasksSyncBatch, listId);
+    await this.runTask(callback);
+  }
+
+  private async tasksQueuePeriodicSyncBatch(listId: string): Promise<void> {
+    const callback = await this.callback(this.tasksPeriodicSyncBatch, listId);
+    await this.runTask(callback);
+  }
+
+  private async tasksSchedulePeriodicSync(listId: string): Promise<void> {
+    const syncCallback = await this.callback(this.tasksPeriodicSync, listId);
+    await this.scheduleRecurring(`poll:${listId}`, syncCallback, {
+      intervalMs: POLL_RECURRING_INTERVAL_MS,
+      firstRunAt: new Date(Date.now() + POLL_INTERVAL_MS),
+    });
+  }
+
+  // --- Tasks sync batches (dispatched callbacks — must live on this class) ---
+
+  async tasksSyncBatch(listId: string): Promise<void> {
+    const result = await tasksSyncBatchFn(this.makeTasksHost(), listId);
+    if ("done" in result) return;
+    await this.tasksQueueSyncBatch(result.next.listId);
+  }
+
+  async tasksPeriodicSync(listId: string): Promise<void> {
+    const start = await tasksPeriodicSyncFn(this.makeTasksHost(), listId);
+    if (!start) return;
+    await this.tasksQueuePeriodicSyncBatch(listId);
+  }
+
+  async tasksPeriodicSyncBatch(listId: string): Promise<void> {
+    const result = await tasksPeriodicSyncBatchFn(this.makeTasksHost(), listId);
+    if ("done" in result) return;
+    if ("next" in result) {
+      await this.tasksQueuePeriodicSyncBatch(result.next.listId);
+      return;
+    }
+    await this.tasksSchedulePeriodicSync(result.reschedule.listId);
   }
 }
 
