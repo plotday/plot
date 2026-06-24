@@ -44,7 +44,6 @@ const EVENTS = [
   "relation.new",
   "relation.request.accept",
 ];
-const HEADER_NAME = "X-Plot-Webhook-Token";
 const WEBHOOK_PATH = "/hook/messaging";
 const WEBHOOK_NAME = "plot";
 
@@ -60,11 +59,10 @@ async function main(): Promise<void> {
   );
   const env = parseDotenv(readFileSync(envFile, "utf8"));
 
-  const required = [
-    "UNIPILE_API_KEY",
-    "UNIPILE_WEBHOOK_SECRET",
-    "API_ROOT",
-  ] as const;
+  // UNIPILE_WEBHOOK_SECRET is NOT required to create the endpoint — v2 generates
+  // the per-endpoint HMAC signing secret. We use it only to cross-check that the
+  // stored secret matches the live endpoint.
+  const required = ["UNIPILE_API_KEY", "API_ROOT"] as const;
   for (const key of required) {
     if (!env[key]) fail(`Missing ${key} in ${envFile}`);
   }
@@ -79,28 +77,40 @@ async function main(): Promise<void> {
 
   const client = new UnipileClient({
     UNIPILE_API_KEY: env.UNIPILE_API_KEY!,
-    UNIPILE_WEBHOOK_SECRET: env.UNIPILE_WEBHOOK_SECRET!,
+    UNIPILE_WEBHOOK_SECRET: env.UNIPILE_WEBHOOK_SECRET ?? "",
   });
 
   log(`Bootstrapping Unipile v2 webhook for ${envArg} (${requestUrl})`);
 
-  // v2 uses ONE unified endpoint per URL subscribing to all events. We also
-  // attach our shared token as a delivery header; the endpoint additionally
-  // returns its own signing `secret` (verification is finalized in live test).
+  // v2 uses ONE unified endpoint per URL subscribing to all events, and signs
+  // deliveries with an HMAC secret it GENERATES at creation. Recreating rotates
+  // that secret, so we leave an existing endpoint in place and only create when
+  // missing. The signing secret must be stored as UNIPILE_WEBHOOK_SECRET
+  // (op://<env>/Unipile/v2/webhook secret) for hook-messaging to verify.
   const existing = (await client.listWebhooks()).data;
   const match = existing.find((w) => w.url === requestUrl);
   if (match) {
-    log(`  endpoint exists (${match.id}); recreating to refresh events/header`);
-    await client.deleteWebhook(match.id);
+    log(`  endpoint exists (${match.id}) — left in place (recreating would rotate the signing secret).`);
+    if (match.secret) {
+      if (env.UNIPILE_WEBHOOK_SECRET && env.UNIPILE_WEBHOOK_SECRET === match.secret) {
+        log(`  signing secret matches UNIPILE_WEBHOOK_SECRET ✓`);
+      } else {
+        log(`  ⚠️  UNIPILE_WEBHOOK_SECRET does NOT match the endpoint's signing secret.`);
+        log(`     Update op://${envArg}/Unipile/v2/webhook secret to:`);
+        log(`       ${match.secret}`);
+      }
+    }
+    log(`  (To change the subscribed events, delete this endpoint in the dashboard and re-run — then update the stored secret.)`);
+  } else {
+    const created = await client.createWebhook({
+      name: WEBHOOK_NAME,
+      url: requestUrl,
+      triggerEvents: EVENTS,
+    });
+    log(`  created (${created.id})`);
+    log(`  ⚠️  STORE this signing secret as UNIPILE_WEBHOOK_SECRET (op://${envArg}/Unipile/v2/webhook secret):`);
+    log(`       ${created.secret ?? "(none returned — check the dashboard)"}`);
   }
-  const created = await client.createWebhook({
-    name: WEBHOOK_NAME,
-    url: requestUrl,
-    triggerEvents: EVENTS,
-    headers: [{ key: HEADER_NAME, value: env.UNIPILE_WEBHOOK_SECRET! }],
-  });
-  log(`  created (${created.id})`);
-  if (created.secret) log(`  signing secret: ${created.secret}`);
 
   log("Done.");
 }

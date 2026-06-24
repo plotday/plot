@@ -10,29 +10,32 @@ export class LinkedInMessaging extends UnipileMessagingTool implements ILinkedIn
   protected readonly provider = "linkedin";
 
   async listReceivedInvitations(params: { channelId: string; cursor?: string | null; limit?: number }): Promise<LinkedInInvitationPage> {
-    await this.assertAccount(params.channelId);
-    const offset = params.cursor ? Number(params.cursor) : 0;
-    const result = await this.client.listReceivedInvitations({ accountId: params.channelId, offset, limit: params.limit });
-    const nextCursor = result.has_more ? String(offset + result.data.length) : null;
-    return { invitations: result.data.map(normalizeInvitation), nextCursor };
+    return this.withAccount(params.channelId, async () => {
+      // v2 relations/invitations are cursor-paginated (next_cursor), not offset.
+      const result = await this.client.listReceivedInvitations({ accountId: params.channelId, cursor: params.cursor ?? null, limit: params.limit });
+      return { invitations: (result.data ?? []).map(normalizeInvitation), nextCursor: result.next_cursor ?? null };
+    });
   }
 
   async listRelations(params: { channelId: string; cursor?: string | null; limit?: number }): Promise<LinkedInRelationPage> {
-    await this.assertAccount(params.channelId);
-    const offset = params.cursor ? Number(params.cursor) : 0;
-    const result = await this.client.listRelations({ accountId: params.channelId, offset, limit: params.limit });
-    const nextCursor = result.has_more ? String(offset + result.data.length) : null;
-    return { relations: result.data.map(normalizeRelation), nextCursor };
+    return this.withAccount(params.channelId, async () => {
+      const result = await this.client.listRelations({ accountId: params.channelId, cursor: params.cursor ?? null, limit: params.limit });
+      return { relations: (result.data ?? []).map(normalizeRelation), nextCursor: result.next_cursor ?? null };
+    });
   }
 
+  // `sharedSecret` is retained in the signature for interface compatibility but
+  // is unused — v2 accept/ignore is keyed on the relation-request id alone.
   async acceptInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
-    await this.assertAccount(params.channelId);
-    await this.client.acceptInvitation({ accountId: params.channelId, invitationId: params.invitationId, sharedSecret: params.sharedSecret });
+    return this.withAccount(params.channelId, () =>
+      this.client.acceptInvitation({ accountId: params.channelId, invitationId: params.invitationId })
+    );
   }
 
   async ignoreInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
-    await this.assertAccount(params.channelId);
-    await this.client.ignoreInvitation({ accountId: params.channelId, invitationId: params.invitationId, sharedSecret: params.sharedSecret });
+    return this.withAccount(params.channelId, () =>
+      this.client.ignoreInvitation({ accountId: params.channelId, invitationId: params.invitationId })
+    );
   }
 }
 

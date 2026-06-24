@@ -190,14 +190,20 @@ describe("UnipileClient (v2)", () => {
     expect(accounts.map((a) => a.id)).toEqual(["acc-1", "acc-2"]);
   });
 
-  it("listRelations puts account in the path and uses offset/limit", async () => {
+  it("listRelations targets the me-scoped route and returns {data, next_cursor}", async () => {
     const { client, calls } = recordingClient(
       () =>
         new Response(
           JSON.stringify({
-            object: "UserRelationsList",
-            data: [{ object: "UserRelation", member_id: "ACoAA123", display_name: "Ada Lovelace", public_identifier: "adalovelace" }],
-            has_more: false,
+            data: [
+              {
+                object: "UserRelation",
+                id: "rel-1",
+                user: { object: "User", id: "ACoAA123", display_name: "Ada Lovelace", public_identifier: "adalovelace" },
+                created_at: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            next_cursor: null,
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         )
@@ -205,9 +211,23 @@ describe("UnipileClient (v2)", () => {
 
     const result = await client.listRelations({ accountId: "acct-1", limit: 50 });
 
-    expect(calls[0]!.url).toBe(`${BASE}/v2/acct-1/users/relations?limit=50`);
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acct-1/users/me/relations?limit=50`);
     expect(result.data).toHaveLength(1);
-    expect(result.data[0]!.member_id).toBe("ACoAA123");
-    expect(result.has_more).toBe(false);
+    expect(result.data[0]!.user.id).toBe("ACoAA123");
+    expect(result.next_cursor).toBeNull();
+  });
+
+  test("acceptInvitation posts the v2 accept route (no shared_secret)", async () => {
+    const { client, calls } = recordingClient(() => new Response(null, { status: 204 }));
+    await client.acceptInvitation({ accountId: "acc1", invitationId: "rr_1" });
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/users/me/relation-requests/rr_1/accept`);
+    expect(calls[0]!.init.method).toBe("POST");
+  });
+
+  test("ignoreInvitation posts the v2 cancel route", async () => {
+    const { client, calls } = recordingClient(() => new Response(null, { status: 204 }));
+    await client.ignoreInvitation({ accountId: "acc1", invitationId: "rr_2" });
+    expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/users/me/relation-requests/rr_2/cancel`);
+    expect(calls[0]!.init.method).toBe("POST");
   });
 });

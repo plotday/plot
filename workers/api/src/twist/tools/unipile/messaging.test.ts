@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { UnipileMessagingTool } from "./messaging";
+import { UnipileApiError } from "./client";
 
 class TestTool extends UnipileMessagingTool {
   protected readonly provider = "testprov";
@@ -42,6 +43,50 @@ describe("assertAccount provider keying", () => {
     );
     // The connection must be flagged for re-auth so the app shows "Reconnect"
     // instead of an eternal "Syncing" — keyed on the responsible actor.
-    expect(flag).toHaveBeenCalledWith("acc1", "actor1");
+    expect(flag).toHaveBeenCalledWith("acc1", "actor1", "token_missing");
+  });
+});
+
+describe("withAccount auth-rejection handling", () => {
+  function enabled() {
+    return make((k) =>
+      k.startsWith("channel_config:") ? { enabledBy: "actor1" } : k.startsWith("auth_token:") ? { access_token: "tok" } : null,
+    );
+  }
+
+  test("flags needs-reauth and rethrows when the API returns 401", async () => {
+    const t = enabled();
+    const flag = vi.fn(async () => {});
+    (t as any).flagChannelNeedsReauth = flag;
+    const err = new UnipileApiError("unauthorized", 401, "");
+    await expect((t as any).withAccount("acc1", async () => { throw err; })).rejects.toBe(err);
+    expect(flag).toHaveBeenCalledWith("acc1", "actor1", "auth_rejected");
+  });
+
+  test("flags needs-reauth on 403 as well", async () => {
+    const t = enabled();
+    const flag = vi.fn(async () => {});
+    (t as any).flagChannelNeedsReauth = flag;
+    const err = new UnipileApiError("forbidden", 403, "");
+    await expect((t as any).withAccount("acc1", async () => { throw err; })).rejects.toBe(err);
+    expect(flag).toHaveBeenCalledWith("acc1", "actor1", "auth_rejected");
+  });
+
+  test("does NOT flag on a non-auth error (e.g. 500)", async () => {
+    const t = enabled();
+    const flag = vi.fn(async () => {});
+    (t as any).flagChannelNeedsReauth = flag;
+    const err = new UnipileApiError("boom", 500, "");
+    await expect((t as any).withAccount("acc1", async () => { throw err; })).rejects.toBe(err);
+    expect(flag).not.toHaveBeenCalled();
+  });
+
+  test("returns the value and does not flag on success", async () => {
+    const t = enabled();
+    const flag = vi.fn(async () => {});
+    (t as any).flagChannelNeedsReauth = flag;
+    const out = await (t as any).withAccount("acc1", async () => "ok");
+    expect(out).toBe("ok");
+    expect(flag).not.toHaveBeenCalled();
   });
 });

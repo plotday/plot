@@ -86,6 +86,7 @@ type NeedsReauthEventInput = {
     | "no_refresh_token"
     | "insufficient_scope"
     | "token_missing"
+    | "auth_rejected"
     | "connector_signal";
   // Human-readable reason captured at flag time (usually the raw OAuth error).
   reason: string;

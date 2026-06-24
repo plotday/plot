@@ -10,6 +10,7 @@ import { disposeRpc } from "../utils/rpc";
 import { notifyUserSyncByEnv } from "./sync/notify";
 import { captureServerError } from "../utils/error-capture";
 import { classifyEvent, type HostedWebhookEvent } from "./hook-messaging-classify";
+import { verifyUnipileSignature } from "./hook-messaging-verify";
 
 const hookMessaging = new Hono<{ Bindings: Bindings }>();
 
@@ -21,23 +22,18 @@ const hookMessaging = new Hono<{ Bindings: Bindings }>();
 hookMessaging.post("/hook/messaging", async (c) => {
   const logger = createLogger({ route: "hook/messaging" });
 
-  // LIVE-CONFIRM (webhook auth): v2 webhook endpoints return their own signing
-  // `secret` (wes_…) and may not forward the custom `headers` we register. Log
-  // the incoming header NAMES (never values) on every delivery so the first
-  // real v2 delivery reveals whether our `X-Plot-Webhook-Token` arrives, or
-  // which Unipile signature header to verify against the endpoint secret.
-  logger.info("hook/messaging headers", {
-    header_names: Object.keys(c.req.header()),
-  });
-
-  // Auth model (v1 + during cutover): we attach a custom request header
-  // `X-Plot-Webhook-Token: <UNIPILE_WEBHOOK_SECRET>` when registering the
-  // webhook and compare it in constant time. If v2 does not forward custom
-  // headers, switch this to signature verification against the wes_ secret.
-  const presented = c.req.header("x-plot-webhook-token");
+  // Unipile v2 signs every delivery with HMAC SHA-256: header
+  // `unipile-signature: t=<unix>,v0=<hmac-hex>` over `${t}.${rawBody}`, keyed on
+  // the per-endpoint secret (UNIPILE_WEBHOOK_SECRET). Verify against the RAW
+  // body — never parse-then-reserialize. See ./hook-messaging-verify.
+  // https://developer.unipile.com/v2.0/docs/configure-a-webhook
+  const signature = c.req.header("unipile-signature");
   const bodyText = await c.req.text();
-  if (!presented || !constantTimeEquals(presented, c.env.UNIPILE_WEBHOOK_SECRET)) {
-    logger.warn("Hosted-auth webhook token mismatch");
+  if (!(await verifyUnipileSignature(signature, bodyText, c.env.UNIPILE_WEBHOOK_SECRET))) {
+    logger.warn("Unipile webhook signature verification failed", {
+      have_signature: !!signature,
+      header_names: Object.keys(c.req.header()),
+    });
     return c.json({ ok: false }, 401);
   }
 
@@ -96,15 +92,6 @@ hookMessaging.post("/hook/messaging", async (c) => {
   }
   return c.json({ ok: true });
 });
-
-function constantTimeEquals(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
 
 async function handleAccountConnected(
   env: Bindings,

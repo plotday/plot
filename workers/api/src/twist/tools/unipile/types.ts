@@ -48,6 +48,10 @@ export type UnipileUser = {
   last_name?: string | null;
   public_picture_url?: string | null;
   bio?: string | null;
+  /** Headline-equivalent on relation/profile payloads (top-level, not nested). */
+  description?: string | null;
+  /** Provider profile URL when supplied (e.g. linkedin.com/in/…). */
+  profile_url?: string | null;
   specifics?: {
     network_distance?: string;
     email?: string;
@@ -155,37 +159,37 @@ export type UnipileWebhook = {
 export type UnipileWebhookList = UnipileList<UnipileWebhook>;
 
 /**
- * LinkedIn invitation received. v2 shape — LIVE-CONFIRM against a real
- * LinkedIn account (mock provider does not expose invitations).
+ * LinkedIn invitation received — `GET /v2/:acc/users/me/relation-requests?type=received`.
+ * v2 shape (confirmed live): the inviter is embedded under `user`. There is no
+ * `shared_secret` in v2 (accept/ignore is keyed on the request id).
  */
 export type UnipileInvitation = {
-  object: string;
+  object?: string;
   id: string;
-  parsed_datetime?: string;
-  invitation_text?: string | null;
-  inviter?: UnipileUser;
-  specifics?: { provider?: string; shared_secret?: string };
+  type?: string;
+  created_at?: string;
+  message?: string | null;
+  user: UnipileUser;
 };
 
-export type UnipileInvitationList = UnipileList<UnipileInvitation>;
+/** v2 relation/invitation lists are cursor-paginated: `{ data, next_cursor }`. */
+export type UnipileInvitationList = {
+  data: UnipileInvitation[];
+  next_cursor?: string | null;
+};
 
 /**
- * LinkedIn 1st-degree relation. v2 shape — LIVE-CONFIRM against a real
- * LinkedIn account.
+ * LinkedIn 1st-degree relation — `GET /v2/:acc/users/me/relations`.
+ * v2 shape (confirmed live): the profile is embedded under `user`.
  */
 export type UnipileRelation = {
-  object: string;
-  member_id?: string;
-  id?: string;
-  first_name?: string;
-  last_name?: string;
-  display_name?: string;
-  headline?: string;
-  public_identifier?: string;
-  public_profile_url?: string;
-  public_picture_url?: string;
-  profile_picture_url?: string;
-  created_at?: number;
+  object?: string;
+  id: string;
+  user: UnipileUser;
+  created_at?: string;
 };
 
-export type UnipileRelationList = UnipileList<UnipileRelation>;
+export type UnipileRelationList = {
+  data: UnipileRelation[];
+  next_cursor?: string | null;
+};

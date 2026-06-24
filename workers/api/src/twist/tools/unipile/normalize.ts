@@ -29,14 +29,15 @@ export function normalizeProfile(
     isSelf,
     handle,
     name,
-    subtitle: user.specifics?.headline ?? null,
+    subtitle: user.description ?? user.specifics?.headline ?? null,
     email: user.specifics?.email ?? null,
     phone: user.specifics?.phone ?? null,
     pictureUrl: user.public_picture_url ?? null,
     profileUrl:
-      provider === "linkedin" && handle
+      user.profile_url ??
+      (provider === "linkedin" && handle
         ? `https://www.linkedin.com/in/${handle}`
-        : null,
+        : null),
   };
 }
 
@@ -113,55 +114,23 @@ function normalizeAttachment(a: UnipileAttachment): ChatAttachment {
 }
 
 /**
- * Normalize a v2 LinkedIn invitation. The inviter is a v2 `UnipileUser`.
- * LIVE-CONFIRM against a real LinkedIn account (mock has no invitations).
+ * Normalize a v2 LinkedIn received invitation. The inviter is embedded under
+ * `user`; v2 has no `shared_secret` (accept/ignore is keyed on the request id).
  */
 export function normalizeInvitation(inv: UnipileInvitation): LinkedInInvitation {
-  const inviter = inv.inviter;
-  const handle = inviter?.public_identifier ?? null;
-  const name = (inviter?.display_name && inviter.display_name.trim()) || handle || "Unknown";
   return {
     id: inv.id,
-    sharedSecret: inv.specifics?.shared_secret ?? "",
-    inviter: {
-      id: inviter?.id ?? inv.id,
-      isSelf: false,
-      handle,
-      name,
-      subtitle: inviter?.specifics?.headline ?? null,
-      email: null,
-      phone: null,
-      pictureUrl: inviter?.public_picture_url ?? null,
-      profileUrl: handle ? `https://www.linkedin.com/in/${handle}` : null,
-    },
-    message: inv.invitation_text ?? null,
-    sentAt: inv.parsed_datetime ? new Date(inv.parsed_datetime) : new Date(0),
+    sharedSecret: "",
+    inviter: normalizeProfile(inv.user, "linkedin", false),
+    message: inv.message ?? null,
+    sentAt: inv.created_at ? new Date(inv.created_at) : new Date(0),
   };
 }
 
 /**
  * Normalize a v2 LinkedIn relation (1st-degree connection) into ChatProfile.
- * LIVE-CONFIRM the exact v2 relation shape against a real LinkedIn account.
+ * The profile is embedded under `user`.
  */
 export function normalizeRelation(rel: UnipileRelation): ChatProfile {
-  const first = rel.first_name?.trim() ?? "";
-  const last = rel.last_name?.trim() ?? "";
-  const joined = (rel.display_name?.trim() || [first, last].filter(Boolean).join(" ")).trim();
-  const handle = rel.public_identifier || null;
-  const name = joined || handle || "Unknown";
-  const subtitle = rel.headline?.trim() || null;
-  const pic = rel.public_picture_url ?? rel.profile_picture_url ?? null;
-  return {
-    id: rel.member_id ?? rel.id ?? "",
-    isSelf: false,
-    handle,
-    name,
-    subtitle,
-    email: null,
-    phone: null,
-    pictureUrl: pic,
-    profileUrl:
-      rel.public_profile_url ||
-      (handle ? `https://www.linkedin.com/in/${handle}` : null),
-  };
+  return normalizeProfile(rel.user, "linkedin", false);
 }

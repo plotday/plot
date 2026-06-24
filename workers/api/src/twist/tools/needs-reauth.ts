@@ -15,6 +15,9 @@ export type NeedsReauthTrigger =
   | "no_refresh_token"
   | "insufficient_scope"
   | "token_missing"
+  // The provider API rejected an otherwise-present credential as
+  // unauthenticated (HTTP 401/403) — e.g. a pre-v2 Unipile account id under v2.
+  | "auth_rejected"
   | "connector_signal";
 
 export type NeedsReauthDetails = {

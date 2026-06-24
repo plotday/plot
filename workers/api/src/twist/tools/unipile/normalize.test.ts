@@ -155,23 +155,24 @@ describe("normalize (v2)", () => {
     expect(msg.text).toBe("");
   });
 
-  it("normalizes a v2 invitation with inviter profile", () => {
+  it("normalizes a v2 received invitation (inviter under `user`)", () => {
     const inv = normalizeInvitation({
-      object: "InvitationReceived",
+      object: "RelationRequest",
       id: "inv-1",
-      parsed_datetime: "2026-05-22T09:00:00.000Z",
-      invitation_text: "Let's connect",
-      inviter: {
+      type: "received",
+      created_at: "2026-05-22T09:00:00.000Z",
+      message: "Let's connect",
+      user: {
         object: "User",
         id: "ACoAA999",
         display_name: "Carla Ng",
         public_identifier: "carlang",
-        specifics: { headline: "PM" },
+        description: "PM",
       },
-      specifics: { provider: "LINKEDIN", shared_secret: "ss-token" },
     });
     expect(inv.id).toBe("inv-1");
-    expect(inv.sharedSecret).toBe("ss-token");
+    // v2 has no shared_secret on the request payload.
+    expect(inv.sharedSecret).toBe("");
     expect(inv.message).toBe("Let's connect");
     expect(inv.inviter.id).toBe("ACoAA999");
     expect(inv.inviter.name).toBe("Carla Ng");
@@ -183,17 +184,15 @@ describe("normalize (v2)", () => {
 
   it("falls back to Unknown when inviter name and public id are missing", () => {
     const inv = normalizeInvitation({
-      object: "InvitationReceived",
       id: "inv-2",
-      parsed_datetime: "2026-05-22T09:00:00.000Z",
-      invitation_text: null,
-      inviter: {
+      created_at: "2026-05-22T09:00:00.000Z",
+      message: null,
+      user: {
         object: "User",
         id: "ACoAA000",
         display_name: null,
         public_identifier: null,
       },
-      specifics: { provider: "LINKEDIN", shared_secret: "ss-token" },
     });
     expect(inv.inviter.id).toBe("ACoAA000");
     expect(inv.inviter.name).toBe("Unknown");
@@ -214,17 +213,22 @@ describe("normalize (v2)", () => {
     expect(profile.isSelf).toBe(false);
   });
 
-  it("normalizeRelation maps the v2 relation shape to ChatProfile", () => {
+  it("normalizeRelation maps the v2 relation shape (profile under `user`) to ChatProfile", () => {
     const profile = normalizeRelation({
       object: "UserRelation",
-      member_id: "ACoAA111",
-      display_name: "Grace Hopper",
-      first_name: "Grace",
-      last_name: "Hopper",
-      headline: "Rear Admiral, COBOL pioneer",
-      public_identifier: "ghopper",
-      public_profile_url: "https://www.linkedin.com/in/ghopper",
-      public_picture_url: "https://media.licdn.com/g.jpg",
+      id: "rel-1",
+      created_at: "2008-10-30T12:26:43.000Z",
+      user: {
+        object: "User",
+        id: "ACoAA111",
+        display_name: "Grace Hopper",
+        first_name: "Grace",
+        last_name: "Hopper",
+        public_identifier: "ghopper",
+        description: "Rear Admiral, COBOL pioneer",
+        profile_url: "https://www.linkedin.com/in/ghopper",
+        public_picture_url: "https://media.licdn.com/g.jpg",
+      },
     });
     expect(profile.id).toBe("ACoAA111");
     expect(profile.name).toBe("Grace Hopper");
@@ -239,12 +243,14 @@ describe("normalize (v2)", () => {
   it("normalizeRelation falls back to publicIdentifier when names are empty", () => {
     const profile = normalizeRelation({
       object: "UserRelation",
-      member_id: "ACoAA222",
-      first_name: "",
-      last_name: "",
-      headline: "",
-      public_identifier: "anon",
-      public_profile_url: "https://www.linkedin.com/in/anon",
+      id: "rel-2",
+      user: {
+        object: "User",
+        id: "ACoAA222",
+        display_name: null,
+        public_identifier: "anon",
+        profile_url: "https://www.linkedin.com/in/anon",
+      },
     });
     expect(profile.name).toBe("anon");
     expect(profile.subtitle).toBeNull();

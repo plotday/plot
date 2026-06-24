@@ -391,69 +391,72 @@ export class UnipileClient {
 
   // ---------- LinkedIn invitations / relations ----------
 
+  /**
+   * Received connection invitations.
+   * v2: `GET /v2/:acc/users/me/relation-requests?type=received` (cursor-paged).
+   * (The bare `/users/invitations` path v1 used is parsed by v2 as
+   * `users/:user_id`, so it must be the `me`-scoped relation-requests route.)
+   */
   listReceivedInvitations(input: {
     accountId: string;
-    offset?: number;
+    cursor?: string | null;
     limit?: number;
   }): Promise<UnipileInvitationList> {
-    // LIVE-CONFIRM: exact v2 invitations path.
     return this.get<UnipileInvitationList>(
-      `/v2/${encodeURIComponent(input.accountId)}/users/invitations`,
+      `/v2/${encodeURIComponent(input.accountId)}/users/me/relation-requests`,
       {
+        type: "received",
         ...(input.limit ? { limit: String(input.limit) } : {}),
-        ...(input.offset ? { offset: String(input.offset) } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
       }
     );
   }
 
+  /**
+   * 1st-degree connections.
+   * v2: `GET /v2/:acc/users/me/relations` (cursor-paged). The bare
+   * `/users/relations` path v1 used is parsed by v2 as `users/:user_id`.
+   */
   listRelations(input: {
     accountId: string;
-    offset?: number;
+    cursor?: string | null;
     limit?: number;
   }): Promise<UnipileRelationList> {
     return this.get<UnipileRelationList>(
-      `/v2/${encodeURIComponent(input.accountId)}/users/relations`,
+      `/v2/${encodeURIComponent(input.accountId)}/users/me/relations`,
       {
         ...(input.limit ? { limit: String(input.limit) } : {}),
-        ...(input.offset ? { offset: String(input.offset) } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
       }
     );
   }
 
+  /**
+   * Accept a received connection invitation.
+   * v2: `POST /v2/:acc/users/me/relation-requests/:id/accept` (confirmed live;
+   * no shared_secret — the request id is sufficient).
+   */
   async acceptInvitation(input: {
     accountId: string;
     invitationId: string;
-    sharedSecret: string;
   }): Promise<void> {
-    // LIVE-CONFIRM: exact v2 invitation accept path/body.
     await this.request(
-      `/v2/${encodeURIComponent(input.accountId)}/users/invitations/${encodeURIComponent(input.invitationId)}`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          action: "accept",
-          shared_secret: input.sharedSecret,
-        }),
-        headers: { "content-type": "application/json" },
-      }
+      `/v2/${encodeURIComponent(input.accountId)}/users/me/relation-requests/${encodeURIComponent(input.invitationId)}/accept`,
+      { method: "POST", body: "{}", headers: { "content-type": "application/json" } }
     );
   }
 
+  /**
+   * Ignore (decline) a received connection invitation.
+   * v2: `POST /v2/:acc/users/me/relation-requests/:id/cancel` (confirmed live).
+   */
   async ignoreInvitation(input: {
     accountId: string;
     invitationId: string;
-    sharedSecret: string;
   }): Promise<void> {
     await this.request(
-      `/v2/${encodeURIComponent(input.accountId)}/users/invitations/${encodeURIComponent(input.invitationId)}`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          action: "ignore",
-          shared_secret: input.sharedSecret,
-        }),
-        headers: { "content-type": "application/json" },
-      }
+      `/v2/${encodeURIComponent(input.accountId)}/users/me/relation-requests/${encodeURIComponent(input.invitationId)}/cancel`,
+      { method: "POST", body: "{}", headers: { "content-type": "application/json" } }
     );
   }
 
