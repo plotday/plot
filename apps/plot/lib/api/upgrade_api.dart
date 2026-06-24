@@ -70,86 +70,46 @@ class ResourceUsage extends Equatable {
   List<Object?> get props => [count, limit];
 }
 
-/// Premium-connection policy for a scope, mirroring the backend's
-/// `PremiumPolicy` discriminated union.
+/// Connection add-on usage for a scope, mirroring the backend's add-on model.
 ///
-/// - `blocked`: plan does not allow premium connections (Free / Core).
-/// - `credits`: plan includes a fixed number of premium slots (+ add-ons).
-///   Premium connections do not count against the regular pool.
-/// - `weighted`: premium connections share the regular pool but each one
-///   consumes `weight` slots from it.
-enum PremiumPolicy {
-  blocked,
-  credits,
-  weighted;
-
-  static PremiumPolicy fromJson(String? value) {
-    switch (value) {
-      case 'credits':
-        return PremiumPolicy.credits;
-      case 'weighted':
-        return PremiumPolicy.weighted;
-      case 'blocked':
-      default:
-        return PremiumPolicy.blocked;
-    }
-  }
-}
-
+/// An "connection add-on" (LinkedIn / Instagram / WhatsApp) costs $5/mo and can
+/// be enabled on any paid plan. It requires a purchased add-on credit AND
+/// consumes a regular connection slot like any other connection.
+///
+/// - [allowed]: whether this scope's plan can have connection add-ons (true on
+///   any paid plan; false on Free).
+/// - [count]: connection add-ons currently enabled in this scope.
+/// - [purchased]: add-on credits purchased ($5/mo each).
 class PremiumUsage extends Equatable {
-  final PremiumPolicy policy;
-
-  /// Number of premium connections currently in this scope.
+  final bool allowed;
   final int count;
-
-  /// Allowed premium count when [policy] is [PremiumPolicy.credits]
-  /// (= `included + addons`). Null for `weighted` (no separate limit;
-  /// premium shares the regular pool) and `blocked` (none allowed).
-  final int? limit;
-
-  /// Plan-default premium slots. Only meaningful when [policy] is
-  /// [PremiumPolicy.credits]. Null otherwise.
-  final int? included;
-
-  /// Add-on premium slots beyond the plan default. Only meaningful when
-  /// [policy] is [PremiumPolicy.credits]. Null otherwise.
-  final int? addons;
-
-  /// Per-premium-connection cost in regular pool slots when [policy] is
-  /// [PremiumPolicy.weighted]. Null otherwise.
-  final int? weight;
+  final int purchased;
 
   const PremiumUsage({
-    required this.policy,
+    this.allowed = false,
     this.count = 0,
-    this.limit,
-    this.included,
-    this.addons,
-    this.weight,
+    this.purchased = 0,
   });
 
   factory PremiumUsage.fromJson(Map<String, dynamic> json) {
-    final policy = PremiumPolicy.fromJson(json['policy'] as String?);
     return PremiumUsage(
-      policy: policy,
+      // Defensive: an older server returning the legacy union shape has no
+      // `allowed`, so this reads false — treated as "no add-ons" (safe).
+      allowed: json['allowed'] as bool? ?? false,
       count: json['count'] as int? ?? 0,
-      limit: json['limit'] as int?,
-      included: json['included'] as int?,
-      addons: json['addons'] as int?,
-      weight: json['weight'] as int?,
+      purchased: json['purchased'] as int? ?? 0,
     );
   }
 
-  bool get isBlocked => policy == PremiumPolicy.blocked;
+  /// Add-on connectors can't be enabled on this plan at all (Free).
+  bool get isBlocked => !allowed;
 
-  /// True for `credits` plans whose limit is reached. Always false for
-  /// `weighted` (the regular pool limit governs) and `blocked` (handled
-  /// by [isBlocked] separately).
-  bool get isAtLimit =>
-      policy == PremiumPolicy.credits && limit != null && count >= limit!;
+  /// On a paid plan, but every purchased add-on credit is already in use — the
+  /// user must buy another add-on to enable one more.
+  bool get needsAddon => allowed && count >= purchased;
 
   @override
-  List<Object?> get props => [policy, count, limit, included, addons, weight];
+  List<Object?> get props => [allowed, count, purchased];
 }
 
 /// Usage data for the current user's personal account

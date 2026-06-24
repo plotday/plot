@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type Stripe from "stripe";
 
 import type { Kysely } from "kysely";
 
@@ -10,7 +11,9 @@ import {
   isCustomerDeletedError,
 } from "../stripe/utils";
 import {
+  applyAppleAddonTransactionToUser,
   applyAppleTransactionToUser,
+  isAddonProduct,
   verifyTransaction,
 } from "../apple/iap";
 import { createLogger, type Logger } from "@plotday/worker-util";
@@ -91,6 +94,42 @@ export async function cancelStripeSubscriptionBestEffort(
       { stripe_subscription_id: stripeSubId, error: (e as Error).message }
     );
   }
+}
+
+/**
+ * How Stripe bills an add-on quantity change. `always_invoice` reconciles the
+ * proration on the spot: an increase charges the prorated remainder of the
+ * current period immediately, and a decrease banks a prorated credit on the
+ * customer balance (applied to future invoices, not refunded to the card).
+ * Chosen over `create_prorations` so annual subscribers aren't handed add-ons
+ * free until their distant renewal.
+ */
+export const ADDON_PRORATION_BEHAVIOR = "always_invoice" as const;
+
+/**
+ * Build the single subscription-item mutation that sets a customer's add-on
+ * connection count. Pure (no Stripe I/O) so the add/remove/delete decision is
+ * unit-testable:
+ *  - existing add-on item + quantity > 0 → update its quantity
+ *  - existing add-on item + quantity 0   → delete the item
+ *  - no existing item (adding the first) → attach `newAddonPriceId` at quantity
+ */
+export function buildAddonItemUpdate(
+  existingAddonItemId: string | null,
+  quantity: number,
+  newAddonPriceId: string | null
+): Stripe.SubscriptionUpdateParams.Item {
+  if (existingAddonItemId) {
+    return quantity > 0
+      ? { id: existingAddonItemId, quantity }
+      : { id: existingAddonItemId, deleted: true };
+  }
+  if (!newAddonPriceId) {
+    throw new Error(
+      "buildAddonItemUpdate: newAddonPriceId required to add a new add-on item"
+    );
+  }
+  return { price: newAddonPriceId, quantity };
 }
 
 // GET /upgrade - Get current subscription status with effective plan
@@ -553,6 +592,132 @@ upgrade.post("/upgrade/portal", async (c) => {
   }
 });
 
+// POST /upgrade/addons - Set the number of $5/mo connection add-ons on the
+// user's (or team's) existing Stripe subscription. The add-on is a separate
+// line item on the same subscription; Stripe prorates the quantity change.
+// iOS App Store plans manage add-ons via StoreKit instead (see /upgrade/iap/
+// verify) and get `manage_in_app` here.
+upgrade.post("/upgrade/addons", async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+  const user = c.var.user;
+
+  const body = await c.req.json<{ quantity?: number; teamId?: string }>();
+  const quantity = Math.floor(body.quantity ?? 0);
+  if (!Number.isFinite(quantity) || quantity < 0) {
+    return c.json({ error: "quantity must be a non-negative integer" }, 400);
+  }
+
+  // Resolve the target subscription (personal or team).
+  let stripeSubscriptionId: string | null = null;
+  let plan = "free";
+  if (body.teamId) {
+    const member = await c.var.db
+      .selectFrom("team_user")
+      .select("role")
+      .where("team_id", "=", body.teamId)
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+    if (!member || member.role !== "admin") {
+      return c.json({ error: "Must be team admin to change add-ons" }, 403);
+    }
+    const teamSub = await c.var.db
+      .selectFrom("team_subscription")
+      .select(["stripe_subscription_id", "plan"])
+      .where("team_id", "=", body.teamId)
+      .executeTakeFirst();
+    stripeSubscriptionId = teamSub?.stripe_subscription_id ?? null;
+    plan = teamSub?.plan ?? "free";
+  } else {
+    const sub = await c.var.db
+      .selectFrom("user_subscription")
+      .select(["stripe_subscription_id", "plan", "origin"])
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+    if (sub?.origin === "app_store") {
+      // App Store plans manage add-ons through StoreKit, not Stripe.
+      return c.json({ error: "manage_in_app" }, 409);
+    }
+    stripeSubscriptionId = sub?.stripe_subscription_id ?? null;
+    plan = sub?.plan ?? "free";
+  }
+
+  if (plan === "free") {
+    return c.json({ error: "Add-ons require a paid plan" }, 400);
+  }
+  if (!stripeSubscriptionId) {
+    return c.json({ error: "No active subscription found" }, 400);
+  }
+
+  const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+
+  // Load the subscription to find the plan interval and any existing add-on
+  // item. The add-on price must share the plan's interval (Stripe requires all
+  // recurring items on a subscription to use the same interval).
+  const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+  const items = sub.items.data;
+  const isAddonItem = (i: Stripe.SubscriptionItem) =>
+    (i.price?.lookup_key ?? "").startsWith("addon");
+  const planItem = items.find((i) => !isAddonItem(i));
+  const addonItem = items.find(isAddonItem);
+  const interval =
+    planItem?.price?.recurring?.interval === "year" ? "annual" : "monthly";
+  const addonLookupKey = `addon_${interval}`;
+
+  if (!addonItem && quantity === 0) {
+    return c.json({ addons: 0 });
+  }
+
+  // Build the single item mutation: update / delete the existing add-on item,
+  // or add a new one resolved by lookup key.
+  let itemUpdate: Stripe.SubscriptionUpdateParams.Item;
+  if (addonItem) {
+    itemUpdate = buildAddonItemUpdate(addonItem.id, quantity, null);
+  } else {
+    const prices = await stripe.prices.list({
+      lookup_keys: [addonLookupKey],
+      limit: 1,
+    });
+    if (prices.data.length === 0) {
+      logger.error("Add-on price not configured", undefined, {
+        lookup_key: addonLookupKey,
+      });
+      return c.json({ error: "Add-on price not configured" }, 500);
+    }
+    itemUpdate = buildAddonItemUpdate(null, quantity, prices.data[0].id);
+  }
+
+  // always_invoice: charge an increase's proration now, credit a decrease now —
+  // so annual subscribers aren't given add-ons free until renewal.
+  await stripe.subscriptions.update(stripeSubscriptionId, {
+    items: [itemUpdate],
+    proration_behavior: ADDON_PRORATION_BEHAVIOR,
+  });
+
+  // Reflect immediately; the subscription.updated webhook re-syncs the same
+  // value from the line-item quantity.
+  if (body.teamId) {
+    await c.var.db
+      .updateTable("team_subscription")
+      .set({ premium_connection_addons: quantity })
+      .where("team_id", "=", body.teamId)
+      .execute();
+  } else {
+    await c.var.db
+      .updateTable("user_subscription")
+      .set({ premium_connection_addons: quantity })
+      .where("user_id", "=", user.id)
+      .execute();
+  }
+
+  c.var.tracker.capture("[User] Addons Updated", {
+    quantity,
+    team_id: body.teamId ?? null,
+  });
+
+  return c.json({ addons: quantity });
+});
+
 // POST /upgrade/iap/verify - Validate an Apple StoreKit transaction and
 // apply the resulting entitlement to the current user. Called from the
 // Flutter IAP service after StoreKit returns `purchased` or `restored`.
@@ -607,13 +772,33 @@ upgrade.post("/upgrade/iap/verify", async (c) => {
   }
 
   // Defense-in-depth: a genuinely paid Stripe subscriber must manage/upgrade
-  // on the web (the client already hides IAP for them). A trial or free
-  // (free_monthly) Stripe row is convertible.
+  // (including add-ons) on the web — the client already hides IAP for them.
+  // A trial or free (free_monthly) Stripe row is convertible.
   if (await hasActivePaidStripeSubscription(c.var.db, user.id)) {
     logger.warn("IAP: blocked — active paid Stripe plan, manage on web", {
       user_id: user.id,
     });
     return c.json({ error: "manage_on_web" }, 409);
+  }
+
+  // Add-on subscription: update only the add-on credit count; no plan change
+  // and no Stripe plan-subscription reconciliation.
+  if (isAddonProduct(txn.productId)) {
+    const addonResult = await applyAppleAddonTransactionToUser(
+      c.var.db,
+      user.id,
+      txn
+    );
+    c.var.tracker.capture("[User] Subscription Updated", {
+      origin: "app_store",
+      apple_product_id: txn.productId,
+      addon_count: addonResult.addons,
+    });
+    return c.json({
+      addons: addonResult.addons,
+      expires_at: addonResult.expiresAt?.toISOString() ?? null,
+      origin: "app_store",
+    });
   }
 
   const result = await applyAppleTransactionToUser(c.var.db, user.id, txn);

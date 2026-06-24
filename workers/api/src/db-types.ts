@@ -1796,6 +1796,7 @@ export interface UserSettings {
   email_token: string | null;
   enter_behavior: EnterBehavior | null;
   event_sessions_finalized_through: Timestamp | null;
+  move_affinity: Generated<Json>;
   onboarding_completed: boolean | null;
   seq: Generated<string>;
   tracking_paused_at: Timestamp | null;
@@ -1804,6 +1805,8 @@ export interface UserSettings {
 }
 
 export interface UserSubscription {
+  apple_addon_original_transaction_id: string | null;
+  apple_addon_product_id: string | null;
   apple_original_transaction_id: string | null;
   apple_product_id: string | null;
   billing_cycle_end: Timestamp;

@@ -188,6 +188,37 @@ async function identifyStripeUser(c: any, stripeCustomerId: string) {
 /**
  * Handle subscription created/updated events
  */
+/**
+ * Lookup-key prefix identifying the connection add-on price(s) on a
+ * subscription (`addon_monthly` / `addon_annual`). The add-on rides the same
+ * subscription as the plan, as an extra line item whose quantity is the number
+ * of purchased connection add-ons.
+ */
+const ADDON_PRICE_PREFIX = "addon";
+
+/**
+ * Split a subscription's line items into the plan item's quantity (drives a
+ * team's `connection_group_quantity`) and the add-on item's quantity (drives
+ * `premium_connection_addons`). The add-on item is absent (→ 0) when the user
+ * has no add-ons.
+ */
+export function parseSubscriptionItemQuantities(subscription: Stripe.Subscription): {
+  planQuantity: number;
+  addonQuantity: number;
+} {
+  let planQuantity = 1;
+  let addonQuantity = 0;
+  for (const item of subscription.items?.data ?? []) {
+    const lookupKey = item.price?.lookup_key ?? "";
+    if (lookupKey.startsWith(ADDON_PRICE_PREFIX)) {
+      addonQuantity = item.quantity ?? 0;
+    } else {
+      planQuantity = item.quantity ?? 1;
+    }
+  }
+  return { planQuantity, addonQuantity };
+}
+
 export async function handleSubscriptionUpdate(
   c: any,
   subscription: Stripe.Subscription
@@ -212,6 +243,8 @@ export async function handleSubscriptionUpdate(
 
   const { start, end } = getBillingCycleDates(subscription);
   const status = mapStripeStatus(subscription.status);
+  const { planQuantity, addonQuantity } =
+    parseSubscriptionItemQuantities(subscription);
 
   // Determine plan from subscription metadata, validated against known values
   const validPlans = ["free", "core", "pro", "team"];
@@ -250,6 +283,8 @@ export async function handleSubscriptionUpdate(
         billing_cycle_start: start.toISOString(),
         billing_cycle_end: end.toISOString(),
         trial_ends_at: trialEndsAt ? trialEndsAt.toISOString() : null,
+        // Add-on line item quantity (0 when the user has no add-ons).
+        premium_connection_addons: addonQuantity,
       })
       .where("stripe_customer_id", "=", customerId)
       .executeTakeFirst();
@@ -267,6 +302,7 @@ export async function handleSubscriptionUpdate(
           status,
           billing_cycle_start: start.toISOString(),
           billing_cycle_end: end.toISOString(),
+          premium_connection_addons: addonQuantity,
         })
         .where("stripe_customer_id", "=", customerId)
         .execute();
@@ -377,11 +413,11 @@ export async function handleSubscriptionUpdate(
     }
   }
 
-  // Update connection_group_quantity for org subscriptions
-  const quantity = subscription.items?.data?.[0]?.quantity ?? 1;
+  // Update connection_group_quantity for org subscriptions (the plan item's
+  // quantity — the add-on item, if any, is excluded by the parser).
   await c.var.db
     .updateTable("team_subscription")
-    .set({ connection_group_quantity: quantity })
+    .set({ connection_group_quantity: planQuantity })
     .where("stripe_customer_id", "=", customerId)
     .execute();
 

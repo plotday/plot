@@ -30,17 +30,17 @@ const FAQS = [
   {
     question: "What counts as a connection?",
     answer:
-      "A connection is one account linked to Plot via OAuth — for example, one Slack user in one workspace, one Google Calendar account, or one Linear account. Each sign-in counts as one connection, and you get access to everything within that account (all calendars, all projects, all channels). If two people on your team each connect their own Slack account, that's two connections. A small number of integrations are Pro connections, which work a little differently; see below.",
+      "A connection is one account linked to Plot via OAuth — for example, one Slack user in one workspace, one Google Calendar account, or one Linear account. Each sign-in counts as one connection, and you get access to everything within that account (all calendars, all projects, all channels). If two people on your team each connect their own Slack account, that's two connections. A few integrations are connection add-ons, which cost a little extra; see below.",
   },
   {
-    question: "What's a Pro connection?",
+    question: "What's a connection add-on?",
     answer:
-      "Pro connections are a small number of integrations with additional, per-connection costs to operate. On Plot Pro, your plan includes one Pro connection. On Team, each Pro connection counts as 3 connections from your shared pool. We're planning a paid add-on for Plot Pro users who need more Pro connections.",
+      "Connection add-ons are a few integrations provided by a third party with real per-connection costs to operate. They cost $5/month each and can be added to any paid plan (Core, Pro, or Team) in any number. An add-on enables the connection and also counts as one of your plan's connections — so on Core, two regular plus three connection add-ons uses your full five.",
   },
   {
     question: "What happens if I hit my connection limit?",
     answer:
-      "On the Free plan, you'll be prompted to upgrade to Core or Pro. On Core, you can upgrade to Pro for unlimited connections. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle. Pro connections follow different rules — see \"What's a Pro connection?\" above.",
+      "On the Free plan, you'll be prompted to upgrade to Core or Pro. On Core, you can upgrade to Pro for unlimited connections. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle. Connection add-ons also need an add-on to be purchased — see \"What's a connection add-on?\" above.",
   },
   {
     question: "How far back does Plot import from my connected services?",

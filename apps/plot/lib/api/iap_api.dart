@@ -14,9 +14,26 @@ import 'package:plot/logging.dart';
 const String kIapProductCoreMonthly = 'day.plot.app.core_monthly';
 const String kIapProductProMonthly = 'day.plot.app.pro_monthly';
 
-const Set<String> _kAllProductIds = {
+/// Connection add-on products. A SEPARATE App Store subscription group from
+/// the plans: auto-renewable subscriptions can't be bought in an arbitrary
+/// quantity, so "N connection add-ons" is modeled as tiered products (one
+/// active at a time). Apple prices are $6.99 / $12.99 / $17.99 for 1 / 2 / 3
+/// add-ons (a gentle volume discount that still nets ≥ $5/unit after Apple's
+/// fee — vs $5/unit on web). iOS is capped at 3 tiers because Apple's price
+/// grid has no clean points above that; web/Stripe is unbounded.
+const Map<int, String> kIapAddonProductForCount = {
+  1: 'day.plot.app.addon_1',
+  2: 'day.plot.app.addon_2',
+  3: 'day.plot.app.addon_3',
+};
+
+/// Highest add-on count purchasable in-app (the tier cap on iOS).
+const int kIapMaxAddons = 3;
+
+final Set<String> _kAllProductIds = {
   kIapProductCoreMonthly,
   kIapProductProMonthly,
+  ...kIapAddonProductForCount.values,
 };
 
 /// Outcome of a purchase attempt surfaced to UI.
@@ -206,6 +223,23 @@ class IapService {
       );
     }
     return completer.future;
+  }
+
+  /// Buy (or change to) the add-on tier granting [count] connection add-ons.
+  /// Tiers are mutually exclusive within the App Store add-on subscription
+  /// group, so picking a higher tier upgrades the user's add-on count (Apple
+  /// prorates the change).
+  Future<IapResult> buyAddon(int count) {
+    final productId = kIapAddonProductForCount[count];
+    if (productId == null) {
+      return Future.value(
+        const IapResult(
+          status: IapPurchaseStatus.storeError,
+          message: 'That add-on amount is not available.',
+        ),
+      );
+    }
+    return buy(productId);
   }
 
   /// Trigger a restore of all past purchases tied to the user's Apple

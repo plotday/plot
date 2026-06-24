@@ -11,11 +11,11 @@ import 'package:plot/widget/pro_badge.dart';
 /// The onboarding "Connect your tools" tiles are a hardcoded white surface on
 /// a themed backdrop, so they pass [ProBadge] an explicit brand colour. The
 /// theme-derived default accent is the neutral-theme grey there and renders
-/// "Pro" near-invisible on white — these guard that the override wins and the
+/// "Add-on" near-invisible on white — these guard that the override wins and the
 /// default still works for in-app lists.
 void main() {
   Color proTextColor(WidgetTester tester) {
-    final text = tester.widget<Text>(find.text('Pro'));
+    final text = tester.widget<Text>(find.text('Add-on'));
     return text.style!.color!;
   }
 
@@ -43,7 +43,7 @@ void main() {
     );
     await tester.pumpWidget(host(const ProBadge(color: override), scheme));
 
-    expect(find.text('Pro'), findsOneWidget);
+    expect(find.text('Add-on'), findsOneWidget);
     expect(proTextColor(tester), override);
   });
 
@@ -56,7 +56,7 @@ void main() {
     );
     await tester.pumpWidget(host(const ProBadge(), scheme));
 
-    expect(find.text('Pro'), findsOneWidget);
+    expect(find.text('Add-on'), findsOneWidget);
     expect(proTextColor(tester), scheme.accent);
   });
 }

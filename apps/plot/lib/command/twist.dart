@@ -2,7 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
-import 'upgrade.dart' show ShowUpgradeOptions;
+import 'upgrade.dart' show BuyAddonCommand, ShowUpgradeOptions;
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/analytics/profile.dart';
@@ -901,32 +901,26 @@ Future<UsageData> _freshUsage() async {
 Command _connectionAtLimitCommand() =>
     ShowUpgradeOptions(title: 'Upgrade to add more connections');
 
-/// Returned when a Free/Core user tries to add a premium connection.
-Command _premiumBlockedCommand() => ShowUpgradeOptions(
-  title: 'Upgrade to Pro to add a Pro connection',
+/// Returned when a user on a plan that can't have add-ons (Free) taps an
+/// add-on connector — they must move to a paid plan first.
+Command _addonNeedsPaidPlanCommand() => ShowUpgradeOptions(
+  title: 'Upgrade to use connection add-ons',
   subtitle:
-      'LinkedIn (and other Pro connectors) are included with Pro. '
-      'Your current plan only includes standard connections.',
+      'Connection add-ons are \$5/month each on any paid plan. '
+      'Upgrade to add one.',
 );
 
-/// Returned when a Pro user has used their included premium connection,
-/// or a Team is too close to the pool ceiling to accommodate one
-/// (premium connections count as 3 from the team pool).
-Command _premiumAtLimitCommand({required bool isTeam}) => ShowUpgradeOptions(
-  title: isTeam
-      ? 'Pro connection limit reached'
-      : "You've used your included Pro connection",
-  subtitle: isTeam
-      ? "Pro connections count as 3 from your team's pool. "
-            'Add another group of 50 connections to keep going. '
-            'Dedicated Pro add-ons are coming soon.'
-      : 'Pro includes one Pro connection. Pro add-ons are coming '
-            "soon — we'll let you know.",
-);
+/// Returned when a paid user has used all their connection add-ons and needs
+/// to buy another. Personal scopes purchase in-app (StoreKit) or on the web;
+/// team add-ons are managed by an admin on the web.
+Command _addonNeededCommand({required String owner}) =>
+    owner == 'personal'
+        ? BuyAddonCommand()
+        : BuyAddonCommand(teamId: owner);
 
 /// Convenience wrapper around [_evaluatePremium]: returns a ready-to-run
-/// command for the premium-block / premium-at-limit cases, or null when the
-/// connector is not premium or the standard limit-check should proceed.
+/// command for the add-on-block / add-on-needed cases, or null when the
+/// connector is not an add-on or the standard limit-check should proceed.
 Command? _premiumGateCommand({
   required UsageData usage,
   required String owner, // 'personal' or team id
@@ -937,9 +931,9 @@ Command? _premiumGateCommand({
     case _PremiumGate.allowed:
       return null;
     case _PremiumGate.blocked:
-      return _premiumBlockedCommand();
+      return _addonNeedsPaidPlanCommand();
     case _PremiumGate.atLimit:
-      return _premiumAtLimitCommand(isTeam: owner != 'personal');
+      return _addonNeededCommand(owner: owner);
   }
 }
 
@@ -958,46 +952,26 @@ Command? premiumOnboardingGate({
 
 enum _PremiumGate { allowed, atLimit, blocked }
 
-/// Decide whether the selected scope can accept another premium connection.
+/// Decide whether the selected scope can accept another connection add-on.
 /// Returns:
-///   - [_PremiumGate.allowed] when no further gating is needed (regular
-///     pool checks still apply for `weighted` scopes — handled separately).
-///   - [_PremiumGate.atLimit] when the scope's premium credit pool is
-///     exhausted, or a `weighted` scope can't fit another premium.
-///   - [_PremiumGate.blocked] when the scope's plan doesn't allow premium.
+///   - [_PremiumGate.allowed] when no add-on gating is needed (the regular
+///     connection-pool check still applies separately).
+///   - [_PremiumGate.atLimit] when the scope is on a paid plan but has used
+///     all its purchased add-on credits (needs to buy another).
+///   - [_PremiumGate.blocked] when the scope's plan can't have add-ons (Free).
 _PremiumGate _evaluatePremium({
   required UsageData usage,
   required String owner, // 'personal' or team id
 }) {
-  final PremiumUsage? premium;
-  final ResourceUsage? poolForWeighted;
-  if (owner == 'personal') {
-    premium = usage.personal.premium;
-    poolForWeighted = null; // personal Pro is unlimited
-  } else {
-    final team = usage.teams.firstWhereOrNull((t) => t.id == owner);
-    premium = team?.premium;
-    poolForWeighted = team?.connections;
-  }
+  final PremiumUsage? premium = owner == 'personal'
+      ? usage.personal.premium
+      : usage.teams.firstWhereOrNull((t) => t.id == owner)?.premium;
   // Treat a missing payload (older server) as blocked so we never silently
-  // let a premium slip through pre-rollout.
+  // let an add-on slip through pre-rollout.
   if (premium == null) return _PremiumGate.blocked;
-  switch (premium.policy) {
-    case PremiumPolicy.blocked:
-      return _PremiumGate.blocked;
-    case PremiumPolicy.credits:
-      return premium.isAtLimit ? _PremiumGate.atLimit : _PremiumGate.allowed;
-    case PremiumPolicy.weighted:
-      // Premium uses `weight` slots from the regular pool. If the pool has
-      // fewer free slots than the weight, calling it "at limit" surfaces the
-      // correct premium-specific upgrade message instead of the generic one.
-      final weight = premium.weight ?? 1;
-      if (poolForWeighted == null || poolForWeighted.limit == null) {
-        return _PremiumGate.allowed; // unlimited pool — no gating
-      }
-      final remaining = poolForWeighted.limit! - poolForWeighted.count;
-      return remaining < weight ? _PremiumGate.atLimit : _PremiumGate.allowed;
-  }
+  if (premium.isBlocked) return _PremiumGate.blocked;
+  if (premium.needsAddon) return _PremiumGate.atLimit;
+  return _PremiumGate.allowed;
 }
 
 /// Returns the at-limit command for a twist-limit case.
@@ -1042,14 +1016,11 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
           : '${personal.count} of ${personal.limit} personal',
     );
     final premium = usage.personal.premium;
-    // On Pro (policy=credits), surface the included premium slot so users see
-    // why a second LinkedIn would be blocked. On Team scopes the premium
-    // count folds into the regular pool via weighting, so we don't add a
-    // separate line per-team.
-    if (premium != null &&
-        premium.policy == PremiumPolicy.credits &&
-        premium.limit != null) {
-      parts.add('Pro: ${premium.count} of ${premium.limit}');
+    // Surface add-on usage so users see why another connection add-on needs a
+    // purchase, e.g. "Add-ons: 1 of 1". Only when the plan allows add-ons and
+    // the user has bought at least one.
+    if (premium != null && premium.allowed && premium.purchased > 0) {
+      parts.add('Add-ons: ${premium.count} of ${premium.purchased}');
     }
     for (final org in usage.teams) {
       parts.add(

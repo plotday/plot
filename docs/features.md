@@ -60,9 +60,10 @@ Plot gives you the context and clarity to make your next move.
   workspace, one Linear account).
 - Available today: Google (Gmail, Calendar, Chat, Contacts, Drive), Microsoft (Outlook Calendar,
   Teams channels + DMs), Slack, Linear, Notion (pages and comments), PostHog, Apple Calendar.
-- Pro connections: WhatsApp (two-way DMs and group chats), Instagram (two-way DMs and message
+- Connection add-ons: WhatsApp (two-way DMs and group chats), Instagram (two-way DMs and message
   requests), LinkedIn (two-way messages and connection requests) — read, reply, react, and start new
-  conversations.
+  conversations. These are provided by a third party and cost $5/month each on top of any paid plan;
+  each also counts as one of your plan's connections.
 - Add private notes on any shared thread, visible only to you.
 - Auto-threading (opt-in per connection): for tools that carry a conversation as a run of separate
   messages — like Slack channels — Plot can fold related messages into a single thread instead of
@@ -320,6 +321,9 @@ yours.
 - **Pro** — unlimited connections and twists, no-code twist builder. $25/mo, or $20/mo annually.
 - **Team** — shared org connections (per 50), unlimited twists, no-code twist builder. $124/mo, or
   $99/mo annually; scales per 50 connections.
+- **Connection add-ons** — third-party integrations with a real per-connection cost. $5/month each
+  ($6.99 via the App Store, with a small volume discount on multiple), addable to any paid plan. An
+  add-on enables the connection and also counts as one of your plan's connections.
 - 30-day Core trial for new signups, with reminders and a graceful downgrade.
 - Annual billing saves 20%. Stripe-powered checkout and self-service subscription management. On Apple platforms (iPhone, iPad, Mac), subscriptions can also be purchased directly in-app via Apple's in-app purchase (StoreKit), with a single cross-platform entitlement shared between web and native.
 - Plan changes propagate instantly to all devices.

@@ -19,7 +19,7 @@ import {
 import { SignIn, useAuth, useClerk, useUser } from "@clerk/react-router";
 import { IconCheck } from "@tabler/icons-react";
 import { Link, useSearchParams } from "react-router";
-import { PLANS, PRICES } from "~/lib/plans";
+import { ADDON_PRICE, PLANS, PRICES } from "~/lib/plans";
 import type { Billing } from "~/lib/plans";
 
 import type { Route } from "./+types/upgrade";
@@ -120,6 +120,9 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const [teamQuantity, setTeamQuantity] = useState("50");
   const [orgName, setOrgName] = useState("");
   const [domainAutoJoin, setDomainAutoJoin] = useState(true);
+  // Number of $5/mo connection add-ons on the personal plan (from /usage).
+  const [addonCount, setAddonCount] = useState(0);
+  const [addonBusy, setAddonBusy] = useState(false);
 
   const emailDomain = user?.primaryEmailAddress?.emailAddress
     ?.split("@")[1]
@@ -149,11 +152,22 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     async function fetchSubscription() {
       try {
         const token = await getToken();
-        const res = await fetch(`${loaderData.apiUrl}/app/upgrade`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          setSubscription(await res.json());
+        const [subRes, usageRes] = await Promise.all([
+          fetch(`${loaderData.apiUrl}/app/upgrade`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${loaderData.apiUrl}/app/upgrade/usage`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+        if (subRes.ok) {
+          setSubscription(await subRes.json());
+        }
+        if (usageRes.ok) {
+          const usage = (await usageRes.json()) as {
+            personal?: { premium?: { purchased?: number } };
+          };
+          setAddonCount(usage.personal?.premium?.purchased ?? 0);
         }
       } catch {
         // Ignore fetch errors, show free plan
@@ -204,6 +218,39 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoadingPlan(null);
+    }
+  };
+
+  // Set the personal plan's connection add-on count. Stripe prorates the
+  // change on the existing subscription; no checkout redirect needed.
+  const handleSetAddons = async (quantity: number) => {
+    if (quantity < 0) return;
+    setAddonBusy(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${loaderData.apiUrl}/app/upgrade/addons`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ quantity }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(
+          data.error === "manage_in_app"
+            ? "Manage add-ons in the Plot app on this device."
+            : data.error || "Failed to update add-ons",
+        );
+      }
+      const { addons } = (await res.json()) as { addons: number };
+      setAddonCount(addons);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setAddonBusy(false);
     }
   };
 
@@ -378,22 +425,48 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             <Title order={4}>Active subscriptions</Title>
             <Box className={classes.subscriptionsList}>
               {hasPersonalPaid && (
-                <Box className={classes.currentPlan}>
-                  <Text fw={600} size="lg" style={{ flex: 1 }}>
-                    Plot {personalPlan === "core" ? "Core" : "Pro"}
-                  </Text>
-                  <Badge color="green" variant="light">
-                    Active
-                  </Badge>
-                  <Button
-                    onClick={() => handlePortal()}
-                    loading={loadingPlan === "portal"}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Manage plan
-                  </Button>
-                </Box>
+                <Stack gap="xs">
+                  <Box className={classes.currentPlan}>
+                    <Text fw={600} size="lg" style={{ flex: 1 }}>
+                      Plot {personalPlan === "core" ? "Core" : "Pro"}
+                    </Text>
+                    <Badge color="green" variant="light">
+                      Active
+                    </Badge>
+                    <Button
+                      onClick={() => handlePortal()}
+                      loading={loadingPlan === "portal"}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Manage plan
+                    </Button>
+                  </Box>
+                  <Box className={classes.currentPlan}>
+                    <Stack gap={2} style={{ flex: 1 }}>
+                      <Text fw={600}>Connection add-ons</Text>
+                      <Text c="dimmed" size="sm">
+                        {addonCount} active · ${ADDON_PRICE}/mo each
+                      </Text>
+                    </Stack>
+                    <Button
+                      onClick={() => handleSetAddons(addonCount - 1)}
+                      disabled={addonBusy || addonCount <= 0}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Remove
+                    </Button>
+                    <Button
+                      onClick={() => handleSetAddons(addonCount + 1)}
+                      loading={addonBusy}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Add
+                    </Button>
+                  </Box>
+                </Stack>
               )}
               {activeOrgs.map((org) => (
                 <Box key={org.id} className={classes.currentPlan}>

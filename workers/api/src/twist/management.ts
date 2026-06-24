@@ -1432,7 +1432,7 @@ export async function enforcePersonalPlanLimits({
   env: Bindings;
   twistFactory: ReturnType<typeof twistFactory>;
   userId: string;
-  limits: Pick<PlanLimits, "connections" | "twists" | "premium">;
+  limits: Pick<PlanLimits, "connections" | "twists" | "addonsAllowed">;
 }): Promise<{ removedConnections: number; archivedTwists: number }> {
   const logger = createLogger({
     operation: "enforcePersonalPlanLimits",
@@ -1443,11 +1443,11 @@ export async function enforcePersonalPlanLimits({
   let archivedTwists = 0;
 
   // Trim connections that exceed the new plan, via each connector's removeAuth
-  // callback (which deletes the upstream hosted/Unipile account). Regular and
-  // premium connections are trimmed against separate budgets: a premium
-  // connection the new plan blocks (e.g. LinkedIn on Free/Core) must be removed
-  // even when it fits within the regular connection count, or we keep paying
-  // its per-account upstream cost. See `selectConnectionsToTrim`.
+  // callback (which deletes the upstream hosted/Unipile account). Add-on
+  // connections that exceed the purchased add-on credits (e.g. all of them on
+  // Free, which can't buy any) are removed even when they'd fit the regular
+  // connection count, or we keep paying their per-account upstream cost. See
+  // `selectConnectionsToTrim`.
   const allConnections = await db
     .selectFrom("twist_instance_connection as ptc")
     .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
@@ -1474,8 +1474,8 @@ export async function enforcePersonalPlanLimits({
     })),
     {
       connections: limits.connections,
-      premium: limits.premium,
-      premiumAddons,
+      addonsAllowed: limits.addonsAllowed,
+      addonCredits: premiumAddons,
     }
   );
 

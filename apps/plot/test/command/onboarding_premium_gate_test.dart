@@ -17,60 +17,50 @@ TeamUsage _team() => const TeamUsage(
   id: 'team_1',
   name: 'Acme',
   connections: ResourceUsage(count: 0, limit: 50),
-  premium: PremiumUsage(policy: PremiumPolicy.weighted, weight: 3),
+  premium: PremiumUsage(allowed: true, count: 0, purchased: 0),
   isAdmin: true,
 );
 
 void main() {
   group('premiumOnboardingGate', () {
-    test('returns null for a non-premium connector', () {
+    test('returns null for a non-add-on connector', () {
       final gate = premiumOnboardingGate(
-        usage: _usage(premium: const PremiumUsage(policy: PremiumPolicy.blocked)),
+        usage: _usage(premium: const PremiumUsage(allowed: false)),
         isPremium: false,
       );
       expect(gate, isNull);
     });
 
-    test('blocks Free/Core users with the upgrade-to-Pro command', () {
+    test('blocks Free users with the upgrade-to-paid-plan command', () {
       final gate = premiumOnboardingGate(
-        usage: _usage(premium: const PremiumUsage(policy: PremiumPolicy.blocked)),
+        usage: _usage(premium: const PremiumUsage(allowed: false)),
         isPremium: true,
       );
       expect(gate, isNotNull);
-      expect(gate!.title, 'Upgrade to Pro to add a Pro connection');
+      expect(gate!.title, 'Upgrade to use connection add-ons');
     });
 
-    test('blocks when premium payload is missing (treated as blocked)', () {
+    test('blocks when add-on payload is missing (treated as blocked)', () {
       final gate = premiumOnboardingGate(usage: _usage(), isPremium: true);
       expect(gate, isNotNull);
-      expect(gate!.title, 'Upgrade to Pro to add a Pro connection');
+      expect(gate!.title, 'Upgrade to use connection add-ons');
     });
 
-    test('blocks a Pro user who already used their included Pro connection', () {
+    test('prompts to buy an add-on when all purchased credits are used', () {
       final gate = premiumOnboardingGate(
         usage: _usage(
-          premium: const PremiumUsage(
-            policy: PremiumPolicy.credits,
-            count: 1,
-            limit: 1,
-            included: 1,
-          ),
+          premium: const PremiumUsage(allowed: true, count: 1, purchased: 1),
         ),
         isPremium: true,
       );
       expect(gate, isNotNull);
-      expect(gate!.title, "You've used your included Pro connection");
+      expect(gate!.title, 'Add a connection add-on');
     });
 
-    test('allows a Pro user with an unused included Pro connection', () {
+    test('allows a paid user with a spare add-on credit', () {
       final gate = premiumOnboardingGate(
         usage: _usage(
-          premium: const PremiumUsage(
-            policy: PremiumPolicy.credits,
-            count: 0,
-            limit: 1,
-            included: 1,
-          ),
+          premium: const PremiumUsage(allowed: true, count: 0, purchased: 1),
         ),
         isPremium: true,
       );
@@ -80,7 +70,7 @@ void main() {
     test('defers to the setup modal when the user has a team', () {
       final gate = premiumOnboardingGate(
         usage: _usage(
-          premium: const PremiumUsage(policy: PremiumPolicy.blocked),
+          premium: const PremiumUsage(allowed: false),
           teams: [_team()],
         ),
         isPremium: true,

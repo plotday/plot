@@ -6,9 +6,10 @@ export type Connection = {
   category: string;
   entities: string[];
   available: boolean;
-  // True for "premium" connections (Unipile-backed, real per-connection cost).
-  // Pro plan includes 1; Team plan counts each as 3 from the shared pool;
-  // Free/Core can't enable premium connections.
+  // True for "add-on" connections (Unipile-backed, real per-connection cost):
+  // LinkedIn, Instagram, WhatsApp. They cost $5/mo each on any paid plan, and
+  // also count as a regular connection. Not available on Free. (Field kept as
+  // `premium` to match the API's internal flag.)
   premium?: boolean;
 };
 

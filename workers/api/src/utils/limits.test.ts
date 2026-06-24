@@ -122,41 +122,51 @@ describe("selectConnectionsToTrim", () => {
   const ids = (cs: TrimmableConnection[]) =>
     cs.map((c) => c.twistInstanceId).sort();
 
-  it("trims the lone LinkedIn premium connection on Pro→Free downgrade", () => {
-    // The cost bug: Free blocks premium, but a single premium connection sits
-    // within the regular connection budget (2) so a count-only trim keeps it.
+  it("trims the lone LinkedIn connection add-on on Pro→Free downgrade", () => {
+    // Free can't buy add-ons (addonsAllowed=false), so a single add-on
+    // connection is trimmed even though it sits within the regular budget (2).
     const linkedin = conn({ twistInstanceId: "linkedin", premium: true });
     const trimmed = selectConnectionsToTrim([linkedin], {
       connections: 2,
-      premium: { type: "blocked" },
+      addonsAllowed: false,
+      addonCredits: 0,
     });
     expect(ids(trimmed)).toEqual(["linkedin"]);
   });
 
-  it("blocked policy trims every premium connection, keeps regular within limit", () => {
+  it("Free trims every connection add-on, keeps regular within limit", () => {
     const reg1 = conn({ twistInstanceId: "reg1", premium: false });
     const reg2 = conn({ twistInstanceId: "reg2", premium: false });
-    const prem1 = conn({ twistInstanceId: "prem1", premium: true });
-    const prem2 = conn({ twistInstanceId: "prem2", premium: true });
-    const trimmed = selectConnectionsToTrim([reg1, reg2, prem1, prem2], {
+    const add1 = conn({ twistInstanceId: "add1", premium: true });
+    const add2 = conn({ twistInstanceId: "add2", premium: true });
+    const trimmed = selectConnectionsToTrim([reg1, reg2, add1, add2], {
       connections: 5,
-      premium: { type: "blocked" },
+      addonsAllowed: false,
+      addonCredits: 0,
     });
-    expect(ids(trimmed)).toEqual(["prem1", "prem2"]);
+    expect(ids(trimmed)).toEqual(["add1", "add2"]);
   });
 
-  it("counts premium separately from the regular pool — a regular within limit survives", () => {
-    // 2 regular + 1 premium = 3 total. Old count-only logic (offset 2 over all)
-    // would trim one. Premium-aware logic keeps both regular (≤2) and trims only
-    // the blocked premium.
-    const reg1 = conn({ twistInstanceId: "reg1", premium: false });
-    const reg2 = conn({ twistInstanceId: "reg2", premium: false });
-    const prem = conn({ twistInstanceId: "prem", premium: true });
-    const trimmed = selectConnectionsToTrim([reg1, reg2, prem], {
-      connections: 2,
-      premium: { type: "blocked" },
+  it("connection add-ons count toward the regular pool", () => {
+    // Core: connections=5, 3 add-on credits. 3 regular + 3 add-on = 6 total.
+    // Add-ons are all within credit (3<=3), but the pool of 5 is exceeded by 1,
+    // so the single oldest survivor is trimmed.
+    const oldest = conn({
+      twistInstanceId: "oldest",
+      premium: false,
+      connectedAt: "2026-01-01T00:00:00Z",
     });
-    expect(ids(trimmed)).toEqual(["prem"]);
+    const r2 = conn({ twistInstanceId: "r2", premium: false, connectedAt: "2026-01-02T00:00:00Z" });
+    const r3 = conn({ twistInstanceId: "r3", premium: false, connectedAt: "2026-01-03T00:00:00Z" });
+    const a1 = conn({ twistInstanceId: "a1", premium: true, connectedAt: "2026-01-04T00:00:00Z" });
+    const a2 = conn({ twistInstanceId: "a2", premium: true, connectedAt: "2026-01-05T00:00:00Z" });
+    const a3 = conn({ twistInstanceId: "a3", premium: true, connectedAt: "2026-01-06T00:00:00Z" });
+    const trimmed = selectConnectionsToTrim([oldest, r2, r3, a1, a2, a3], {
+      connections: 5,
+      addonsAllowed: true,
+      addonCredits: 3,
+    });
+    expect(ids(trimmed)).toEqual(["oldest"]);
   });
 
   it("trims the OLDEST excess regular connections, keeping the newest", () => {
@@ -177,12 +187,13 @@ describe("selectConnectionsToTrim", () => {
     });
     const trimmed = selectConnectionsToTrim([oldest, mid, newest], {
       connections: 2,
-      premium: { type: "blocked" },
+      addonsAllowed: false,
+      addonCredits: 0,
     });
     expect(ids(trimmed)).toEqual(["oldest"]);
   });
 
-  it("credits policy keeps the newest `included + addons` premium, trims older", () => {
+  it("keeps the newest `addonCredits` connection add-ons, trims older", () => {
     const old = conn({
       twistInstanceId: "old",
       premium: true,
@@ -200,39 +211,46 @@ describe("selectConnectionsToTrim", () => {
     });
     const trimmed = selectConnectionsToTrim([old, newer, newest], {
       connections: Infinity,
-      premium: { type: "credits", included: 1 },
-      premiumAddons: 1,
+      addonsAllowed: true,
+      addonCredits: 2,
     });
-    // included(1) + addons(1) = keep 2 newest; trim the oldest.
+    // Keep the 2 newest add-ons; trim the oldest.
     expect(ids(trimmed)).toEqual(["old"]);
   });
 
-  it("Infinity connection budget never trims regular connections", () => {
+  it("Infinity pool + enough credits never trims", () => {
     const reg1 = conn({ twistInstanceId: "reg1", premium: false });
     const reg2 = conn({ twistInstanceId: "reg2", premium: false });
-    const prem = conn({ twistInstanceId: "prem", premium: true });
-    const trimmed = selectConnectionsToTrim([reg1, reg2, prem], {
+    const add = conn({ twistInstanceId: "add", premium: true });
+    const trimmed = selectConnectionsToTrim([reg1, reg2, add], {
       connections: Infinity,
-      premium: { type: "credits", included: 1 },
+      addonsAllowed: true,
+      addonCredits: 1,
     });
     expect(ids(trimmed)).toEqual([]);
   });
 
-  it("weighted policy (team) leaves premium connections intact", () => {
-    const prem1 = conn({ twistInstanceId: "prem1", premium: true });
-    const prem2 = conn({ twistInstanceId: "prem2", premium: true });
-    const trimmed = selectConnectionsToTrim([prem1, prem2], {
-      connections: Infinity,
-      premium: { type: "weighted", weightAsRegular: 3 },
+  it("trims the union of excess add-ons and pool overflow without double-counting", () => {
+    // connections=2, addonCredits=1. 1 regular + 2 add-on.
+    // Pass 1 trims the oldest add-on (over the 1 credit). Pass 2 sees survivors
+    // [regular, newest add-on] = 2, exactly the pool — nothing more trimmed.
+    const reg = conn({ twistInstanceId: "reg", premium: false, connectedAt: "2026-01-01T00:00:00Z" });
+    const addOld = conn({ twistInstanceId: "addOld", premium: true, connectedAt: "2026-01-02T00:00:00Z" });
+    const addNew = conn({ twistInstanceId: "addNew", premium: true, connectedAt: "2026-01-03T00:00:00Z" });
+    const trimmed = selectConnectionsToTrim([reg, addOld, addNew], {
+      connections: 2,
+      addonsAllowed: true,
+      addonCredits: 1,
     });
-    expect(ids(trimmed)).toEqual([]);
+    expect(ids(trimmed)).toEqual(["addOld"]);
   });
 
   it("returns nothing for an empty connection list", () => {
     expect(
       selectConnectionsToTrim([], {
         connections: 2,
-        premium: { type: "blocked" },
+        addonsAllowed: false,
+        addonCredits: 0,
       })
     ).toEqual([]);
   });

@@ -21,9 +21,18 @@ CREATE TABLE "public"."user_subscription" (
     "origin" text NOT NULL DEFAULT 'stripe',
     "apple_original_transaction_id" text UNIQUE,
     "apple_product_id" text,
-    -- Additional premium connection credits beyond the plan default. Wired
-    -- now for forward-compatibility with paid add-ons; no UI yet. Pro plan
-    -- effective premium limit = (plan.included + premium_connection_addons).
+    -- App Store add-on subscription tracking. Connection add-ons are sold via
+    -- a SEPARATE StoreKit subscription group (tiered products addon_1..addon_5,
+    -- one active at a time), independent of the plan subscription above. These
+    -- track that add-on subscription's lifecycle so its renewals/lapses update
+    -- premium_connection_addons without disturbing the plan fields.
+    "apple_addon_original_transaction_id" text UNIQUE,
+    "apple_addon_product_id" text,
+    -- Number of purchased connection add-on credits ($5/mo each). Populated by
+    -- Stripe (an add-on line item's quantity on the plan subscription) or by
+    -- App Store (the active tiered add-on product → count). The number of
+    -- enabled connection add-ons may not exceed this; connection add-ons also
+    -- count against the regular connection pool.
     "premium_connection_addons" integer NOT NULL DEFAULT 0,
     UNIQUE(user_id)
 );
@@ -33,6 +42,7 @@ CREATE INDEX idx_user_subscription_stripe_customer_id ON "public"."user_subscrip
 CREATE INDEX idx_user_subscription_stripe_subscription_id ON "public"."user_subscription" ("stripe_subscription_id") WHERE "stripe_subscription_id" IS NOT NULL;
 CREATE INDEX idx_user_subscription_trial_ends_at ON "public"."user_subscription" ("trial_ends_at") WHERE "trial_ends_at" IS NOT NULL;
 CREATE INDEX idx_user_subscription_apple_original_transaction_id ON "public"."user_subscription" ("apple_original_transaction_id") WHERE "apple_original_transaction_id" IS NOT NULL;
+CREATE INDEX idx_user_subscription_apple_addon_original_transaction_id ON "public"."user_subscription" ("apple_addon_original_transaction_id") WHERE "apple_addon_original_transaction_id" IS NOT NULL;
 
 CREATE TRIGGER set_user_subscription_updated_at
     BEFORE INSERT OR UPDATE ON "public"."user_subscription"

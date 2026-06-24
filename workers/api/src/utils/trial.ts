@@ -95,8 +95,8 @@ export async function getExcessConnectionNames(
     })),
     {
       connections: PLAN_LIMITS.free.connections,
-      premium: PLAN_LIMITS.free.premium,
-      premiumAddons,
+      addonsAllowed: PLAN_LIMITS.free.addonsAllowed,
+      addonCredits: premiumAddons,
     }
   );
 

@@ -11,6 +11,14 @@ export const PRICES = {
   team: { monthly: 124, annual: 99 },
 } as const;
 
+/**
+ * Price of one connection add-on, in USD/month. Connection add-ons can be
+ * added to any paid plan; each also counts as a regular connection. (App Store
+ * buyers pay $5.99/mo to cover Apple's surcharge — see the StoreKit add-on
+ * tiers.)
+ */
+export const ADDON_PRICE = 5;
+
 export type PlanKey = "free" | "core" | "pro" | "team";
 
 export interface Plan {
@@ -64,6 +72,7 @@ export const PLANS: Plan[] = [
     description: "Increase your connections and automations.",
     features: [
       "Up to 5 connections",
+      `Connection add-ons $${ADDON_PRICE}/mo each`,
       "2 Twists (automations and agents)",
       "Import 30 days of historical items from connections",
       "Automated organization and prioritization (expanded limits)",
@@ -88,7 +97,7 @@ export const PLANS: Plan[] = [
       "Unlimited connections and automations. Bring all your tools into one place.",
     features: [
       "Unlimited connections",
-      "Includes 1 Pro connection",
+      `Connection add-ons $${ADDON_PRICE}/mo each`,
       "Unlimited Twists (optional AI usage extra)",
       "Import 1 year of historical items from connections",
       "No-code Twist builder",
@@ -114,7 +123,7 @@ export const PLANS: Plan[] = [
       "Provide your teams with the connections and automations to do their best work.",
     features: [
       "50+ connections shared across your team",
-      "Pro connections count as 3 from the pool",
+      `Connection add-ons $${ADDON_PRICE}/mo each`,
       "Unlimited Twists (optional AI usage extra)",
       "Import 1 year of historical items from connections",
       "No-code Twist builder",

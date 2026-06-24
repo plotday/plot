@@ -3624,6 +3624,8 @@ export type Database = {
       }
       user_subscription: {
         Row: {
+          apple_addon_original_transaction_id: string | null
+          apple_addon_product_id: string | null
           apple_original_transaction_id: string | null
           apple_product_id: string | null
           billing_cycle_end: string
@@ -3641,6 +3643,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          apple_addon_original_transaction_id?: string | null
+          apple_addon_product_id?: string | null
           apple_original_transaction_id?: string | null
           apple_product_id?: string | null
           billing_cycle_end: string
@@ -3658,6 +3662,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          apple_addon_original_transaction_id?: string | null
+          apple_addon_product_id?: string | null
           apple_original_transaction_id?: string | null
           apple_product_id?: string | null
           billing_cycle_end?: string

@@ -137,7 +137,7 @@ function ConnectionCard({
       {connection.available ? (
         <span className={classes.badgeRow}>
           {connection.premium ? (
-            <span className={classes.premiumBadge}>Pro</span>
+            <span className={classes.premiumBadge}>Add-on</span>
           ) : (
             <span className={classes.availableBadge}>Available</span>
           )}

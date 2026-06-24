@@ -368,8 +368,8 @@ class _ToolTileState extends State<_ToolTile> {
               const SizedBox(width: 8),
               // The tile is a hardcoded white surface on a themed backdrop, so
               // pass the onboarding brand violet explicitly — the theme-derived
-              // default accent is the neutral-theme grey here and "Pro" would
-              // be invisible on white.
+              // default accent is the neutral-theme grey here and "Add-on"
+              // would be invisible on white.
               const ProBadge(color: Color(0xFF7C3AED)),
             ],
           ],

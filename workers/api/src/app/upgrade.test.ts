@@ -34,6 +34,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb, type DB } from "../db";
 import type { Bindings } from "../env";
 import {
+  ADDON_PRORATION_BEHAVIOR,
+  buildAddonItemUpdate,
   hasActivePaidStripeSubscription,
   cancelStripeSubscriptionBestEffort,
 } from "./upgrade";
@@ -254,5 +256,38 @@ describe("cancelStripeSubscriptionBestEffort", () => {
 
     expect(tracker.captureException).toHaveBeenCalledWith(err);
     expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
+describe("add-on quantity changes", () => {
+  it("bills add-on changes immediately (always_invoice)", () => {
+    // Annual subscribers must not get add-ons free until renewal; an increase
+    // charges the prorated remainder now and a decrease credits it now.
+    expect(ADDON_PRORATION_BEHAVIOR).toBe("always_invoice");
+  });
+
+  it("updates the quantity of an existing add-on item", () => {
+    expect(buildAddonItemUpdate("si_addon", 3, null)).toEqual({
+      id: "si_addon",
+      quantity: 3,
+    });
+  });
+
+  it("deletes the add-on item when the new quantity is 0", () => {
+    expect(buildAddonItemUpdate("si_addon", 0, null)).toEqual({
+      id: "si_addon",
+      deleted: true,
+    });
+  });
+
+  it("attaches a new add-on item by price when none exists yet", () => {
+    expect(buildAddonItemUpdate(null, 2, "price_addon_monthly")).toEqual({
+      price: "price_addon_monthly",
+      quantity: 2,
+    });
+  });
+
+  it("throws if asked to add a new add-on item without a price", () => {
+    expect(() => buildAddonItemUpdate(null, 1, null)).toThrow();
   });
 });

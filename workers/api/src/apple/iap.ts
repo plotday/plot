@@ -12,6 +12,35 @@ export const IAP_PRODUCT_TO_PLAN: Record<string, "core" | "pro"> = {
   "day.plot.app.pro_monthly": "pro",
 };
 
+/**
+ * Connection add-on products, in a SEPARATE App Store subscription group from
+ * the plan products above. Auto-renewable subscriptions can't be bought in an
+ * arbitrary quantity, so we model "N connection add-ons" as tiered products
+ * (one active at a time); each tier maps to the number of add-on credits it
+ * grants. The web/Stripe path is unbounded; iOS is capped at this tier count.
+ *
+ * Apple prices (vs $5/unit on web) absorb Apple's fee while staying ≥ $5/unit
+ * net: addon_1=$6.99, addon_2=$12.99, addon_3=$17.99 (a gentle volume discount
+ * landing on Apple's available price points). Capped at 3 because the grid has
+ * no clean higher points; web/Stripe is unbounded. Prices live in App Store
+ * Connect, not here.
+ */
+export const IAP_ADDON_PRODUCT_TO_COUNT: Record<string, number> = {
+  "day.plot.app.addon_1": 1,
+  "day.plot.app.addon_2": 2,
+  "day.plot.app.addon_3": 3,
+};
+
+/** True when `productId` is the add-on subscription group rather than a plan. */
+export function isAddonProduct(productId: string): boolean {
+  return productId in IAP_ADDON_PRODUCT_TO_COUNT;
+}
+
+/** True when `productId` is a recognized plan or add-on IAP product. */
+export function isKnownIapProduct(productId: string): boolean {
+  return productId in IAP_PRODUCT_TO_PLAN || isAddonProduct(productId);
+}
+
 /** Apple-issued bundle ID Apple's JWS payloads carry; must match
  *  what's bound to the App Store Connect product. */
 export const APPLE_BUNDLE_ID = "day.plot.app";
@@ -106,7 +135,7 @@ export function decodeTransaction(jws: string): JwsTransactionPayload {
       `Apple transaction bundleId mismatch: ${payload.bundleId} !== ${APPLE_BUNDLE_ID}`
     );
   }
-  if (!IAP_PRODUCT_TO_PLAN[payload.productId]) {
+  if (!isKnownIapProduct(payload.productId)) {
     throw new Error(`Unknown Apple productId: ${payload.productId}`);
   }
   return payload;
@@ -562,7 +591,7 @@ export async function verifyTransaction(
       `Apple transaction bundleId mismatch: ${payload.bundleId} !== ${APPLE_BUNDLE_ID}`
     );
   }
-  if (!IAP_PRODUCT_TO_PLAN[payload.productId]) {
+  if (!isKnownIapProduct(payload.productId)) {
     throw new Error(`Unknown Apple productId: ${payload.productId}`);
   }
   return payload;
@@ -681,6 +710,52 @@ export async function applyAppleTransactionToUser(
 }
 
 /**
+ * Apply a verified Apple ADD-ON transaction to the user's subscription row.
+ *
+ * Connection add-ons live in a separate App Store subscription group from the
+ * plan, so this touches ONLY the add-on columns (`premium_connection_addons` +
+ * `apple_addon_*`) and never the plan fields — a user can hold a plan
+ * subscription and an add-on subscription simultaneously.
+ *
+ * When the add-on subscription is entitled, `premium_connection_addons` is set
+ * to the active product's tier count (a tier change up/down rewrites it);
+ * when expired or revoked it's reset to 0.
+ */
+export async function applyAppleAddonTransactionToUser(
+  db: Kysely<DB>,
+  userId: string,
+  txn: JwsTransactionPayload
+): Promise<{ addons: number; expiresAt: Date | null }> {
+  const tierCount = IAP_ADDON_PRODUCT_TO_COUNT[txn.productId];
+  if (tierCount === undefined) {
+    throw new Error(`Unsupported add-on productId: ${txn.productId}`);
+  }
+
+  const now = new Date();
+  const expiresAt = txn.expiresDate ? new Date(txn.expiresDate) : null;
+  const isExpired = expiresAt !== null && expiresAt.getTime() < now.getTime();
+  const isRevoked = txn.revocationDate != null;
+  const isEntitled = !isExpired && !isRevoked;
+
+  const addons = isEntitled ? tierCount : 0;
+
+  // The user must already have a subscription row (add-ons require a paid plan,
+  // which created it). UPDATE in place; never touch the plan fields.
+  await db
+    .updateTable("user_subscription")
+    .set({
+      premium_connection_addons: addons,
+      apple_addon_original_transaction_id: txn.originalTransactionId,
+      apple_addon_product_id: txn.productId,
+      updated_at: sql`now()`,
+    })
+    .where("user_id", "=", userId)
+    .execute();
+
+  return { addons, expiresAt };
+}
+
+/**
  * Locate the Plot user owning a given Apple original_transaction_id.
  * Used by the App Store Server Notification webhook, which delivers
  * renewals/refunds without any session context — we have to map them
@@ -694,6 +769,23 @@ export async function findUserByOriginalTransactionId(
     .selectFrom("user_subscription")
     .select("user_id")
     .where("apple_original_transaction_id", "=", originalTransactionId)
+    .executeTakeFirst();
+  return row?.user_id ?? null;
+}
+
+/**
+ * Locate the Plot user owning a given Apple ADD-ON original_transaction_id.
+ * Add-on renewals/lapses arrive via the same notification webhook but must be
+ * mapped through the separate add-on transaction id.
+ */
+export async function findUserByAddonOriginalTransactionId(
+  db: Kysely<DB>,
+  originalTransactionId: string
+): Promise<string | null> {
+  const row = await db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("apple_addon_original_transaction_id", "=", originalTransactionId)
     .executeTakeFirst();
   return row?.user_id ?? null;
 }

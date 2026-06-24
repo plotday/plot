@@ -7,7 +7,9 @@ import { sendEmail } from "./email/send";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
 import {
+  findUserByAddonOriginalTransactionId,
   findUserByOriginalTransactionId,
+  isAddonProduct,
   verifyAppleJws,
   type JwsNotificationPayload,
   type JwsRenewalInfoPayload,
@@ -1019,10 +1021,14 @@ webhook.post(
     // request-scoped middleware.
     const db = createFrontendDb(c.env);
     try {
-      const userId = await findUserByOriginalTransactionId(
-        db,
-        txn.originalTransactionId
-      );
+      // Add-on subscriptions are a separate App Store subscription group, so
+      // they map back to the user through the dedicated add-on transaction id.
+      const userId = isAddonProduct(txn.productId)
+        ? await findUserByAddonOriginalTransactionId(
+            db,
+            txn.originalTransactionId
+          )
+        : await findUserByOriginalTransactionId(db, txn.originalTransactionId);
       if (!userId) {
         // First-purchase notifications arrive in parallel with the
         // client's /upgrade/iap/verify call. If the client hasn't yet

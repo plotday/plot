@@ -3,7 +3,11 @@ import type { Kysely } from "kysely";
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import type { createLogger } from "@plotday/worker-util";
-import { applyAppleTransactionToUser } from "./iap";
+import {
+  applyAppleAddonTransactionToUser,
+  applyAppleTransactionToUser,
+  isAddonProduct,
+} from "./iap";
 import type {
   JwsNotificationPayload,
   JwsRenewalInfoPayload,
@@ -41,6 +45,21 @@ export async function handleAppStoreTransaction(
 
   if (inGracePeriod) {
     return { ok: true, grace: true };
+  }
+
+  // Add-on subscription notification: update only the add-on credit count.
+  // Never touches the plan fields or free-tier reinstatement (the user's plan
+  // subscription is a separate App Store subscription, tracked independently).
+  if (isAddonProduct(txn.productId)) {
+    const addonResult = await applyAppleAddonTransactionToUser(db, userId, txn);
+    tracker.capture("[User] Subscription Updated", {
+      plan: txn.productId,
+      origin: "app_store",
+      notification_type: notif.notificationType,
+      subtype: notif.subtype ?? null,
+      addon_count: addonResult.addons,
+    });
+    return { ok: true };
   }
 
   const applied = await applyAppleTransactionToUser(db, userId, txn);

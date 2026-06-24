@@ -3,9 +3,10 @@
  * as premium (`twist.premium = true`).
  *
  * Premium connectors have a real per-connection cost (e.g. Unipile-backed
- * integrations) and are metered separately from the regular pool — see
- * `PLAN_LIMITS[plan].premium` and `checkChannelConnectionLimit()` in
- * `../utils/limits.ts`.
+ * integrations). They are surfaced to users as paid "connection add-ons":
+ * enabling one requires a purchased add-on credit AND consumes a regular
+ * connection slot — see `PLAN_LIMITS[plan].addonsAllowed` and
+ * `checkChannelConnectionLimit()` in `../utils/limits.ts`.
  *
  * This lives in the private API worker, not in the public `@plotday/twister`
  * package or the `Connector` base class. Reasons:
@@ -27,6 +28,10 @@
 export const PREMIUM_TWIST_PACKAGE_IDS: ReadonlySet<string> = new Set([
   // @plotday/connector-linkedin — Unipile-backed messaging.
   "4e6a959d-ebe2-4a85-bd06-ec46fbac204a",
+  // @plotday/connector-instagram — Unipile-backed DMs / message requests.
+  "e80fe77e-eeba-4ac5-983a-6f769cff42b9",
+  // @plotday/connector-whatsapp — Unipile-backed DMs / group chats.
+  "3345727d-7979-4153-8769-e800588cd742",
 ]);
 
 export function isPremiumTwistPackage(twistPackageId: string): boolean {

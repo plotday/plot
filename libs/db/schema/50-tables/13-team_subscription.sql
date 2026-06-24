@@ -10,10 +10,11 @@ CREATE TABLE "public"."team_subscription" (
     "billing_cycle_start" timestamp with time zone NOT NULL,
     "billing_cycle_end" timestamp with time zone NOT NULL,
     "connection_group_quantity" integer NOT NULL DEFAULT 1,
-    -- Additional premium connection credits beyond the plan default. Wired
-    -- now for forward-compatibility with paid add-ons; no UI yet. On Team
-    -- plans premium connections are normally weighted into the regular pool
-    -- (3× per connection); this column is reserved for explicit team add-ons.
+    -- Number of purchased connection add-on credits ($5/mo each) for the team,
+    -- populated by an add-on line item's quantity on the team Stripe
+    -- subscription. The number of enabled connection add-ons may not exceed
+    -- this; connection add-ons also count against the team's regular pool (one
+    -- slot each — they are no longer weighted).
     "premium_connection_addons" integer NOT NULL DEFAULT 0,
     UNIQUE (team_id)
 );

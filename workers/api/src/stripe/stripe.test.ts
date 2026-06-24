@@ -21,8 +21,57 @@ import {
   handleSubscriptionDeleted,
   handleSubscriptionUpdate,
   hasActiveAppStoreEntitlement,
+  parseSubscriptionItemQuantities,
 } from "./stripe";
+import type Stripe from "stripe";
 import type * as stripeUtils from "./utils";
+
+// ---------------------------------------------------------------------------
+// parseSubscriptionItemQuantities — pure split of plan vs add-on line items.
+// ---------------------------------------------------------------------------
+describe("parseSubscriptionItemQuantities", () => {
+  const sub = (
+    items: { lookup_key: string | null; quantity?: number }[]
+  ): Stripe.Subscription =>
+    ({
+      items: {
+        data: items.map((i) => ({
+          quantity: i.quantity,
+          price: { lookup_key: i.lookup_key },
+        })),
+      },
+    }) as unknown as Stripe.Subscription;
+
+  it("reads the plan quantity and defaults add-ons to 0", () => {
+    expect(
+      parseSubscriptionItemQuantities(
+        sub([{ lookup_key: "team_monthly", quantity: 2 }])
+      )
+    ).toEqual({ planQuantity: 2, addonQuantity: 0 });
+  });
+
+  it("splits a plan item and an add-on item regardless of order", () => {
+    expect(
+      parseSubscriptionItemQuantities(
+        sub([
+          { lookup_key: "addon_monthly", quantity: 3 },
+          { lookup_key: "core_monthly", quantity: 1 },
+        ])
+      )
+    ).toEqual({ planQuantity: 1, addonQuantity: 3 });
+  });
+
+  it("recognizes the annual add-on lookup key", () => {
+    expect(
+      parseSubscriptionItemQuantities(
+        sub([
+          { lookup_key: "pro_annual", quantity: 1 },
+          { lookup_key: "addon_annual", quantity: 4 },
+        ])
+      )
+    ).toEqual({ planQuantity: 1, addonQuantity: 4 });
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Module-level mock: intercept createStripeClient so the handler never hits

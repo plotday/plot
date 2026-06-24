@@ -7,10 +7,13 @@ import { createDb, type DB } from "../db";
 import type { Bindings } from "../env";
 import {
   APPLE_BUNDLE_ID,
+  IAP_ADDON_PRODUCT_TO_COUNT,
   IAP_PRODUCT_TO_PLAN,
+  applyAppleAddonTransactionToUser,
   applyAppleTransactionToUser,
   decodeJws,
   decodeTransaction,
+  isAddonProduct,
   verifyAppleJws,
   type JwsTransactionPayload,
 } from "./iap";
@@ -132,6 +135,27 @@ describe("apple/iap", () => {
     expect(txn.productId).toBe("day.plot.app.pro_monthly");
   });
 
+  it("exposes the add-on product → count mapping", () => {
+    expect(IAP_ADDON_PRODUCT_TO_COUNT["day.plot.app.addon_1"]).toBe(1);
+    expect(IAP_ADDON_PRODUCT_TO_COUNT["day.plot.app.addon_3"]).toBe(3);
+    expect(isAddonProduct("day.plot.app.addon_3")).toBe(true);
+    expect(isAddonProduct("day.plot.app.pro_monthly")).toBe(false);
+  });
+
+  it("decodeTransaction accepts an add-on product", () => {
+    const payload: Partial<JwsTransactionPayload> = {
+      transactionId: "2000000444444444",
+      originalTransactionId: "2000000444444444",
+      bundleId: APPLE_BUNDLE_ID,
+      productId: "day.plot.app.addon_2",
+      purchaseDate: 1700000000000,
+      originalPurchaseDate: 1700000000000,
+      expiresDate: 1702592000000,
+    };
+    const txn = decodeTransaction(makeFakeJws(payload));
+    expect(txn.productId).toBe("day.plot.app.addon_2");
+  });
+
   // -----------------------------------------------------------------
   // verifyAppleJws — structural checks that don't need a real Apple
   // signed chain. End-to-end verification (real cert chain + real
@@ -242,6 +266,79 @@ describe.skipIf(!DATABASE_URL)(
     });
   }
 );
+
+describe.skipIf(!DATABASE_URL)("applyAppleAddonTransactionToUser", () => {
+  /** Seed a paid app_store plan row, apply an add-on txn, return the row. */
+  async function applyAndRead(
+    txnOverrides: Partial<JwsTransactionPayload> & { productId: string }
+  ) {
+    const db = createDb({ DATABASE_URL } as unknown as Bindings);
+    const userId = randomUUID();
+    let row: Record<string, unknown> | undefined;
+    try {
+      await db.transaction().execute(async (trx: Kysely<DB>) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await trx
+          .insertInto("user_subscription")
+          .values({
+            user_id: userId,
+            plan: "pro",
+            status: "active",
+            origin: "app_store",
+            apple_original_transaction_id: "2000000000000001",
+            apple_product_id: "day.plot.app.pro_monthly",
+            billing_cycle_start: new Date().toISOString(),
+            billing_cycle_end: new Date(Date.now() + 8.64e7).toISOString(),
+          })
+          .execute();
+
+        await applyAppleAddonTransactionToUser(trx, userId, makeTxn(txnOverrides));
+
+        row = await trx
+          .selectFrom("user_subscription")
+          .selectAll()
+          .where("user_id", "=", userId)
+          .executeTakeFirstOrThrow();
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    return row!;
+  }
+
+  it("sets the add-on count and tracking columns; leaves the plan intact", async () => {
+    const row = await applyAndRead({
+      productId: "day.plot.app.addon_3",
+      originalTransactionId: "2000000000000099",
+    });
+    expect(row.premium_connection_addons).toBe(3);
+    expect(row.apple_addon_product_id).toBe("day.plot.app.addon_3");
+    expect(row.apple_addon_original_transaction_id).toBe("2000000000000099");
+    // Plan fields untouched.
+    expect(row.plan).toBe("pro");
+    expect(row.apple_product_id).toBe("day.plot.app.pro_monthly");
+  });
+
+  it("resets the add-on count to 0 when the add-on subscription has expired", async () => {
+    const row = await applyAndRead({
+      productId: "day.plot.app.addon_2",
+      expiresDate: Date.now() - 1000,
+    });
+    expect(row.premium_connection_addons).toBe(0);
+  });
+
+  it("resets the add-on count to 0 when revoked", async () => {
+    const row = await applyAndRead({
+      productId: "day.plot.app.addon_3",
+      revocationDate: Date.now(),
+    });
+    expect(row.premium_connection_addons).toBe(0);
+  });
+});
 
 /** Build a minimal X.509 v3 cert (DER) that's just well-formed enough
  *  for the verifier to parse it before rejecting on the root pin. We

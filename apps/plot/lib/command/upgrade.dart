@@ -144,6 +144,167 @@ Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
+/// Manage $5/mo connection add-ons. On App Store builds this opens a quantity
+/// picker (0–[kIapMaxAddons]): choosing more upgrades in-app (immediate,
+/// prorated); choosing fewer or none routes to Apple's Manage Subscriptions
+/// screen (apps can't downgrade/cancel an auto-renewable sub directly).
+/// Elsewhere it opens web add-on management. Team add-ons ([teamId] set) are
+/// managed by an admin on the web.
+class BuyAddonCommand extends Command {
+  BuyAddonCommand({this.teamId})
+    : super(
+        title: 'Add a connection add-on',
+        icon: PlotIcon.connection,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  /// When set, the add-on is for this team (managed on the web by an admin).
+  final String? teamId;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Team add-ons ride the team's Stripe subscription — admin-managed on the
+    // web. Personal add-ons off the App Store are managed on the web too.
+    if (teamId != null || !UpgradeUi.isAppStoreBuild) {
+      await openWebUpgrade(context);
+      return const CommandSkipped();
+    }
+    return _runIap(context);
+  }
+
+  Future<CommandReturn> _runIap(BuildContext context) async {
+    if (!IapService.instance.isReady) {
+      await IapService.instance.init();
+    }
+    if (!IapService.instance.isReady) {
+      if (context.mounted) {
+        context.showToast(
+          message: 'In-app purchases are not available right now.',
+          isError: true,
+        );
+      }
+      return const CommandSkipped();
+    }
+    if (!context.mounted) return const CommandSkipped();
+
+    final current =
+        SubscriptionService.instance.usage?.personal.premium?.purchased ?? 0;
+
+    // Picker of total add-on counts (0 = none). Selecting MORE upgrades in-app
+    // (immediate, Apple prorates); selecting FEWER or none routes to Apple's
+    // Manage Subscriptions screen — an app can't cancel or downgrade an
+    // auto-renewable subscription directly, the system handles that.
+    final result = await _pickAddonCount(context, current);
+    if (result == null || !context.mounted || result == current) {
+      return const CommandSkipped();
+    }
+
+    if (result < current) {
+      try {
+        await launchUrl(
+          Uri.parse(_appStoreManageSubscriptionsUrl),
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (e, st) {
+        log.warning('Failed to open App Store subscriptions URL', e, st);
+      }
+      if (context.mounted) {
+        context.showToast(
+          message: result == 0
+              ? 'Cancel your connection add-ons in App Store settings.'
+              : 'Reduce your connection add-ons in App Store settings.',
+        );
+      }
+      return const CommandDone();
+    }
+
+    // Upgrade or first purchase — in-app.
+    final purchase = await IapService.instance.buyAddon(result);
+    if (!context.mounted) return const CommandSkipped();
+
+    switch (purchase.status) {
+      case IapPurchaseStatus.purchased:
+        await SubscriptionService.instance.refresh();
+        SubscriptionService.instance.acknowledgeBaseline();
+        if (context.mounted) {
+          context.showToast(message: 'Connection add-ons updated.');
+        }
+        return const CommandDone();
+      case IapPurchaseStatus.canceled:
+        return const CommandSkipped();
+      case IapPurchaseStatus.pending:
+        context.showToast(message: 'Purchase is pending approval.');
+        return const CommandSkipped();
+      case IapPurchaseStatus.serverError:
+        context.showToast(
+          message:
+              'Purchase succeeded but we could not confirm it. '
+              'Try Restore Purchases in Settings.',
+          isError: true,
+        );
+        return const CommandSkipped();
+      case IapPurchaseStatus.storeError:
+        context.showToast(
+          message: purchase.message ?? 'Purchase failed.',
+          isError: true,
+        );
+        return const CommandSkipped();
+    }
+  }
+
+  /// The total-quantity picker (0..[kIapMaxAddons]). Returns the chosen count,
+  /// or null if dismissed. Prices come live from StoreKit so each storefront
+  /// shows its own localized amount.
+  Future<int?> _pickAddonCount(BuildContext context, int current) async {
+    String? priceFor(int n) =>
+        IapService.instance.productFor(kIapAddonProductForCount[n]!)?.price;
+
+    final result = await SelectModal.open<int>(
+      context,
+      showFilter: false,
+      title: 'Connection add-ons',
+      // Carries the auto-renew + Terms/Privacy disclosure required on any
+      // IAP-triggering screen (3.1.2). Per-tier prices are on the rows.
+      subtitleWidget: const SubscriptionDisclosure(
+        note:
+            'Connection add-ons are provided by a third party and bill on top '
+            'of your plan. Each also counts as one of your plan connections.',
+      ),
+      selectedValue: current,
+      items: (_) async => [
+        SelectGroup<int>(items: [for (var n = 0; n <= kIapMaxAddons; n++) n]),
+      ],
+      itemBuilder: (count, _) => Builder(
+        builder: (context) {
+          final muted = context.theme.typography.sm.copyWith(
+            color: context.theme.plotColors.muted,
+          );
+          if (count == 0) {
+            return ListTile(
+              title: 'None',
+              details: Text(
+                count == current ? 'Current' : 'Cancel in App Store settings',
+                style: muted,
+              ),
+            );
+          }
+          final price = priceFor(count);
+          return ListTile(
+            title:
+                '$count connection add-on${count == 1 ? '' : 's'}'
+                '${price == null ? '' : ' — $price/month'}',
+            details: count == current ? Text('Current', style: muted) : null,
+          );
+        },
+      ),
+    );
+    return result.present ? result.value : null;
+  }
+}
+
+/// (Public for the App Store review-screenshot harness in
+/// test/screenshot/addon_review_screenshot_test.dart.)
 /// Subscription disclosure shown on every screen that can trigger a StoreKit
 /// purchase. Apple's subscription guidelines (3.1.2) require the purchase
 /// screen to disclose (a) the subscription length, (b) that it auto-renews,
@@ -154,8 +315,8 @@ Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
 /// Rendered with the theme's body typography (not a raw [TextStyle]) so the
 /// copy reads like body text elsewhere, with the Terms / Privacy links shown
 /// as tappable accent-coloured links instead of inline raw URLs.
-class _SubscriptionDisclosure extends StatelessWidget {
-  const _SubscriptionDisclosure({this.priceLine, this.note});
+class SubscriptionDisclosure extends StatelessWidget {
+  const SubscriptionDisclosure({this.priceLine, this.note, super.key});
 
   /// Optional bold price line shown above the disclosure. Used on the
   /// single-plan confirmation path, where there's no plan tile to carry the
@@ -213,8 +374,10 @@ class _SubscriptionDisclosure extends StatelessWidget {
 
   /// A tappable disclosure link in the accent [FColors.primary] colour, which
   /// signals it's clickable on touch where there's no hover to reveal it. The
-  /// vertical padding widens the tap target, and the pointer cursor marks it
-  /// as a true external link on desktop.
+  /// pointer cursor marks it as a true external link on desktop. The link text
+  /// carries the same `height: 1.4` as the surrounding body so the line it sits
+  /// on isn't taller than the others — keeping the paragraph's line spacing
+  /// even (no vertical padding, which would inflate that line).
   WidgetSpan _link(BuildContext context, String label, String url) {
     return WidgetSpan(
       alignment: PlaceholderAlignment.baseline,
@@ -225,13 +388,11 @@ class _SubscriptionDisclosure extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: () =>
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              label,
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.colors.primary,
-              ),
+          child: Text(
+            label,
+            style: context.theme.typography.sm.copyWith(
+              color: context.theme.colors.primary,
+              height: 1.4,
             ),
           ),
         ),
@@ -324,7 +485,7 @@ class ShowUpgradeOptions extends Command {
           : 'Core — \$14.99/month';
       final confirmed = await ConfirmModal(
         title: _title,
-        messageWidget: _SubscriptionDisclosure(priceLine: priceLine),
+        messageWidget: SubscriptionDisclosure(priceLine: priceLine),
         confirmLabel: plan == 'pro' ? 'Subscribe to Pro' : 'Subscribe to Core',
       ).run(context);
       if (!context.mounted || !confirmed) return const CommandSkipped();
@@ -337,7 +498,7 @@ class ShowUpgradeOptions extends Command {
       title: _title,
       // Reached only on App Store builds (the web flow returns early above),
       // so the IAP-triggering screen always carries the required disclosure.
-      subtitleWidget: _SubscriptionDisclosure(note: _subtitle),
+      subtitleWidget: SubscriptionDisclosure(note: _subtitle),
       items: (_) async => [SelectGroup<String>(items: plans)],
       itemBuilder: (plan, _) => Builder(
         builder: (context) {
@@ -348,7 +509,7 @@ class ShowUpgradeOptions extends Command {
             details: Text(
               isCore
                   ? 'Up to five connections'
-                  : 'Unlimited connections (including 1 Pro connection)',
+                  : 'Unlimited connections',
               style: context.theme.typography.sm.copyWith(
                 color: context.theme.plotColors.muted,
               ),
