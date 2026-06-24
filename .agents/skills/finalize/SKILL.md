@@ -48,7 +48,7 @@ Do NOT capture expected/handled errors (network timeouts, auth failures the user
 
 Evaluate whether the change is user-facing:
 
-- **Notable for users** (new feature, UX improvement, bug fix users would notice): Add a bullet point to the top of `docs/updates.md` in plain language.
+- **Notable for users** (new feature, UX improvement, bug fix users would notice): Add a fragment via `pnpm updates:new` (one file in `docs/updates.d/`, folded into `docs/updates.md` at release).
 - **Major new functionality or capability changes**: Also update `docs/features.md` to reflect the new capabilities.
 - **Internal refactors, infra changes, minor fixes users wouldn't notice**: Skip docs.
 

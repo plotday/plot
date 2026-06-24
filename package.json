@@ -27,9 +27,10 @@
     "apply-migrations": "pnpm --filter @plotday/db run apply-migrations",
     "gen-seed": "pnpm --filter @plotday/db run gen-seed",
     "pre-commit": "nx run-many -t pre-commit --exclude plot",
-    "lint": "pnpm lint:pnpm-installed && pnpm lint:store-metadata && nx run-many -t lint --exclude plot",
+    "lint": "pnpm lint:pnpm-installed && pnpm lint:store-metadata && pnpm updates:check && nx run-many -t lint --exclude plot",
     "lint:pnpm-installed": "if [ \"$CI\" = \"true\" ]; then echo 'CI=true; skipping pnpm install (already run by workflow)'; else pnpm install --silent --frozen-lockfile; fi",
     "lint:store-metadata": "node scripts/check-store-metadata.mjs",
+    "updates:check": "node scripts/check-updates-fragments.mjs",
     "test": "nx run-many -t test --exclude plot",
     "test:watch": "pnpm -r run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
@@ -56,7 +57,9 @@
     "tunnel:stop": "bash scripts/tunnel stop",
     "tunnel:status": "bash scripts/tunnel status",
     "tunnel:setup": "bash scripts/tunnel setup",
-    "test:notifications": "tsx scripts/test-notifications.ts"
+    "test:notifications": "tsx scripts/test-notifications.ts",
+    "updates:new": "node scripts/new-update.mjs",
+    "updates:next": "node scripts/preview-updates.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",

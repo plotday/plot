@@ -1,5 +1,25 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { gatherFragments, assembleFragments } from "./lib/updates-fragments.mjs";
+
+/** Split out a legacy `## Next release` block (from before the fragment
+ *  workflow). Returns the block's `### ` section body (without the `##` line)
+ *  and the content with that block removed. No block → { nextBody: "", rest }. */
+export function extractNextRelease(content) {
+  const lines = content.split("\n");
+  const idx = lines.findIndex((l) => l.trim() === "## Next release");
+  if (idx === -1) return { nextBody: "", rest: content };
+  let end = lines.length;
+  for (let i = idx + 1; i < lines.length; i++) {
+    if (lines[i].startsWith("## ")) {
+      end = i;
+      break;
+    }
+  }
+  const nextBody = lines.slice(idx + 1, end).join("\n").trim();
+  const rest = [...lines.slice(0, idx), ...lines.slice(end)].join("\n");
+  return { nextBody, rest };
+}
 
 /**
  * Stamp an updates.md changelog for a release.
@@ -19,11 +39,26 @@ import { pathToFileURL } from "node:url";
  * Returns `{ stamped, content }`; `stamped` is false (and content unchanged)
  * when the current-release block has no `- ` bullet to ship.
  */
-export function stampUpdates(content, version, date) {
+export function stampUpdates(content, version, date, fragmentBody = "") {
   const lines = content.split("\n");
   const heading = `## ${version} — ${date}`;
 
-  // Preferred path: a literal `## Next release` heading marks the cycle.
+  // Preferred path: assemble pending fragments into a fresh stamped block.
+  if (fragmentBody.trim()) {
+    // Fold any legacy `## Next release` block (from a pre-fragment PR) into the
+    // same stamped version block so it can't be stranded mid-history.
+    const { nextBody, rest: withoutNext } = extractNextRelease(content);
+    const body = nextBody
+      ? assembleFragments([nextBody, fragmentBody])
+      : fragmentBody.trim();
+    const rest = withoutNext.replace(/^\n+/, "");
+    let out = `${heading}\n\n${body}`;
+    if (rest.trim().length > 0) out += `\n\n${rest}`;
+    if (content.endsWith("\n") && !out.endsWith("\n")) out += "\n";
+    return { stamped: true, content: out };
+  }
+
+  // Legacy path: a literal `## Next release` heading marks the cycle.
   const nextIdx = lines.findIndex((l) => l.trim() === "## Next release");
   if (nextIdx !== -1) {
     let end = lines.length;
@@ -70,19 +105,21 @@ export function stampUpdates(content, version, date) {
   return { stamped: true, content: out };
 }
 
-// CLI: node scripts/stamp-updates.mjs <version> <date> [path=docs/updates.md]
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [version, date, file = "docs/updates.md"] = process.argv.slice(2);
+// CLI: node scripts/stamp-updates.mjs <version> <date> [path=docs/updates.md] [fragdir=docs/updates.d]
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [version, date, file = "docs/updates.md", fragDir = "docs/updates.d"] = process.argv.slice(2);
   if (!version || !date) {
-    console.error("usage: node scripts/stamp-updates.mjs <version> <date> [path]");
+    console.error("usage: node scripts/stamp-updates.mjs <version> <date> [path] [fragdir]");
     process.exit(1);
   }
+  const { body, files } = gatherFragments(fragDir);
   const original = readFileSync(file, "utf8");
-  const { stamped, content } = stampUpdates(original, version, date);
+  const { stamped, content } = stampUpdates(original, version, date, body);
   if (!stamped) {
-    console.log(`stamp-updates: no unreleased bullets — skipping ${version}`);
+    console.log(`stamp-updates: no pending fragments or bullets — skipping ${version}`);
     process.exit(0);
   }
   writeFileSync(file, content);
-  console.log(`stamp-updates: stamped ${file} for ${version} (${date})`);
+  for (const f of files) unlinkSync(f);
+  console.log(`stamp-updates: stamped ${file} for ${version} (${date}); removed ${files.length} fragment(s)`);
 }

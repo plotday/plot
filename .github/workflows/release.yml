@@ -131,7 +131,7 @@ jobs:
 
           git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
           git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
-          git add apps/plot/pubspec.yaml docs/updates.md
+          git add apps/plot/pubspec.yaml docs/updates.md docs/updates.d
           git commit -m "Release ${RELEASE_VERSION}: stamp changelog + bump to ${NEXT_VERSION} [skip ci]"
           git push origin HEAD:main
 

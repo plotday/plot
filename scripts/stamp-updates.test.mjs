@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { stampUpdates } from "./stamp-updates.mjs";
+import { stampUpdates, extractNextRelease } from "./stamp-updates.mjs";
 
 test("renames the `## Next release` heading, preserving grouped sections", () => {
   const input = [
@@ -92,4 +92,74 @@ test("stamps the whole file when there is no heading or separator", () => {
   const { stamped, content } = stampUpdates(input, "1.1.0+296", "2026-06-10");
   assert.equal(stamped, true);
   assert.match(content, /^## 1\.1\.0\+296 — 2026-06-10\n\n- only bullet/);
+});
+
+test("prepends a stamped block built from fragment body, keeping prior releases", () => {
+  const released = "## 1.4.0+353 — 2026-05-21\n\n### Fixes\n- shipped in 353\n";
+  const fragmentBody = "### Threads\n\n- a new thread feature\n\n### Fixes\n\n- a new fix";
+  const { stamped, content } = stampUpdates(released, "1.5.0+360", "2026-06-23", fragmentBody);
+  assert.equal(stamped, true);
+  assert.match(content, /^## 1\.5\.0\+360 — 2026-06-23\n\n### Threads\n\n- a new thread feature\n\n### Fixes\n\n- a new fix/);
+  const idxNew = content.indexOf("## 1.5.0+360");
+  const idxOld = content.indexOf("## 1.4.0+353");
+  assert.ok(idxNew >= 0 && idxOld > idxNew, "new release precedes the prior one");
+});
+
+test("no-op when there is neither a fragment body nor a legacy unreleased block", () => {
+  const released = "## 1.4.0+353 — 2026-05-21\n\n### Fixes\n- shipped in 353\n";
+  const { stamped, content } = stampUpdates(released, "1.5.0+360", "2026-06-23", "");
+  assert.equal(stamped, false);
+  assert.equal(content, released);
+});
+
+test("extractNextRelease pulls the block body and removes it from content", () => {
+  const input = [
+    "## Next release",
+    "",
+    "### Fixes",
+    "- legacy fix",
+    "",
+    "## 1.0.0+1 — 2026-01-01",
+    "",
+    "- shipped",
+    "",
+  ].join("\n");
+  const { nextBody, rest } = extractNextRelease(input);
+  assert.equal(nextBody, "### Fixes\n- legacy fix");
+  assert.equal(rest.includes("## Next release"), false);
+  assert.match(rest, /^## 1\.0\.0\+1 — 2026-01-01/);
+});
+
+test("extractNextRelease with no block returns content unchanged", () => {
+  const input = "## 1.0.0+1 — 2026-01-01\n\n- shipped\n";
+  const { nextBody, rest } = extractNextRelease(input);
+  assert.equal(nextBody, "");
+  assert.equal(rest, input);
+});
+
+test("fragment stamp folds a legacy ## Next release block in, Fixes last", () => {
+  const content = [
+    "## Next release",
+    "",
+    "### Connections",
+    "- a connection note",
+    "",
+    "### Fixes",
+    "- a legacy fix",
+    "",
+    "## 1.5.0+366 — 2026-06-24",
+    "",
+    "### Fixes",
+    "- shipped in 366",
+    "",
+  ].join("\n");
+  const fragmentBody = "### Fixes\n\n- a fragment fix";
+  const { stamped, content: out } = stampUpdates(content, "1.6.0+370", "2026-07-01", fragmentBody);
+  assert.equal(stamped, true);
+  assert.equal(out.includes("## Next release"), false);
+  assert.match(
+    out,
+    /^## 1\.6\.0\+370 — 2026-07-01\n\n### Connections\n\n- a connection note\n\n### Fixes\n\n- a legacy fix\n- a fragment fix/,
+  );
+  assert.match(out, /## 1\.5\.0\+366 — 2026-06-24\n\n### Fixes\n- shipped in 366/);
 });
