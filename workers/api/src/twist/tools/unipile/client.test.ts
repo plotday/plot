@@ -97,20 +97,28 @@ describe("UnipileClient (v2)", () => {
     expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/users/me`);
   });
 
-  test("createHostedAuthLink posts the v2 hosted auth path", async () => {
+  test("createHostedAuthLink posts the v2 body (lowercase providers, redirect_uri) and reads `link`", async () => {
     const { client, calls } = recordingClient(
-      () => new Response(JSON.stringify({ object: "HostedAuthURL", url: "https://x" }), { status: 200 })
+      () => new Response(JSON.stringify({ object: "HostedAuthLink", link: "https://auth.unipile.com/?token=abc" }), { status: 200 })
     );
-    await client.createHostedAuthLink({
+    const res = await client.createHostedAuthLink({
       providers: ["LINKEDIN"],
       name: "state1",
-      successRedirectUrl: "s",
-      failureRedirectUrl: "f",
-      notifyUrl: "n",
+      successRedirectUrl: "https://api.example/auth/hosted/success?state=state1",
+      failureRedirectUrl: "https://api.example/auth/hosted/failure?state=state1",
+      notifyUrl: "https://api.example/hook/messaging",
       expiresAt: new Date("2026-01-01T00:00:00.000Z"),
     });
     expect(calls[0]!.url).toBe(`${BASE}/v2/auth/link`);
     expect(calls[0]!.init.method).toBe("POST");
+    const body = JSON.parse(String(calls[0]!.init.body));
+    expect(body.providers).toEqual(["linkedin"]);
+    expect(body.redirect_uri).toBe("https://api.example/auth/hosted/success?state=state1");
+    expect(body.expires_on).toBe("2026-01-01T00:00:00.000Z");
+    expect(body.notify_url).toBe("https://api.example/hook/messaging");
+    expect(body.name).toBe("state1");
+    // Response carries the wizard URL under `link`, not `url`.
+    expect(res.url).toBe("https://auth.unipile.com/?token=abc");
   });
 
   describe("removeMessageReaction", () => {

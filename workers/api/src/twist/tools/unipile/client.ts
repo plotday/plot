@@ -60,9 +60,12 @@ export class UnipileClient {
   // ---------- Account lifecycle ----------
 
   /**
-   * Create a hosted-auth link. v2: `POST /v2/auth/link` (confirmed live; the
-   * route exists and requires `expires_on`). Full body/flow against a real
-   * LinkedIn account is verified in live testing.
+   * Create a hosted-auth link. v2: `POST /v2/auth/link`. Verified live — the v2
+   * body differs from v1: `providers` is a LOWERCASE enum array, redirects
+   * collapse to a single `redirect_uri`, and the wizard link comes back under
+   * `link` (not `url`). Unipile appends `account_id` to `redirect_uri` on
+   * completion; `failureRedirectUrl` has no v2 equivalent (failures land on the
+   * same `redirect_uri` and authBridge handles the missing account_id).
    */
   async createHostedAuthLink(input: {
     providers: ("LINKEDIN" | "WHATSAPP" | "INSTAGRAM")[];
@@ -72,15 +75,18 @@ export class UnipileClient {
     notifyUrl: string;
     expiresAt: Date;
   }): Promise<UnipileHostedAuthLink> {
-    return this.post<UnipileHostedAuthLink>("/v2/auth/link", {
-      type: "create",
-      providers: input.providers,
-      expires_on: input.expiresAt.toISOString(),
-      name: input.name,
-      success_redirect_url: input.successRedirectUrl,
-      failure_redirect_url: input.failureRedirectUrl,
-      notify_url: input.notifyUrl,
-    });
+    const resp = await this.post<{ object?: string; link?: string; url?: string }>(
+      "/v2/auth/link",
+      {
+        type: "create",
+        providers: input.providers.map((p) => p.toLowerCase()),
+        expires_on: input.expiresAt.toISOString(),
+        redirect_uri: input.successRedirectUrl,
+        notify_url: input.notifyUrl,
+        name: input.name,
+      }
+    );
+    return { object: "HostedAuthURL", url: resp.link ?? resp.url ?? "" };
   }
 
   getAccount(accountId: string): Promise<UnipileAccount> {
