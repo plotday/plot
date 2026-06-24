@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.64.0
+
+### Added
+
+- Connector.products metadata for combined (multi-product) connectors. ([#222](https://github.com/plotday/plot/pull/222) [`0f876ac`](https://github.com/plotday/plot/commit/0f876ac722ad7109d04bd3c3a32434c976c93393))
+
+### Fixed
+
+- the `plot deploy` permissions summary no longer prints internal underscore-prefixed runtime markers (`_products`, `_dynamic_link_types`, `_providers`, `_ai_required`, …) — only user-facing tool permissions are shown. ([#222](https://github.com/plotday/plot/pull/222) [`40e42e5`](https://github.com/plotday/plot/commit/40e42e57b1c85da227fd2c80844c9d1fa682478f))
+
 ## 0.63.0
 
 ### Added
