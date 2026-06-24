@@ -53,6 +53,45 @@ export function fallbackBand(s: FallbackSignals): ImportanceBand {
   return automatedList || promo || coldNoReply ? "low" : "normal";
 }
 
+/** The thread_state.importance default, returned for facet-less threads. */
+const DEFAULT_IMPORTANCE = 50;
+
+/**
+ * Deterministic importance (0..100) for the AI-skip path. When the LLM scorer
+ * never runs (free-tier AI quota exhausted, AI disabled, or no note content),
+ * `markThreadUnreadForOthers` previously hard-coded importance to 50 — above the
+ * notify gate — so every promo/newsletter a heavy free inbox received notified.
+ * Connector facets are computed deterministically at ingest (no LLM, no quota),
+ * so we can still suppress obvious bulk/promo mail here.
+ *
+ * Facet-less threads (user-composed: facets null or all-null) keep the
+ * historical default of 50 — unchanged behaviour. Threads with facets run
+ * through `fallbackBand`'s facet-only branches (promotion, or automated+list).
+ * The cold-no-reply heuristic is intentionally disabled (senderKnown=true):
+ * per-recipient history isn't available cheaply here, and we never suppress
+ * direct mail on sender automation alone.
+ */
+export function fallbackImportanceFromFacets(
+  facets: {
+    format: string | null;
+    automation: "human" | "automated" | null;
+    reach: "direct" | "list" | null;
+  } | null
+): number {
+  if (!facets || (!facets.format && !facets.automation && !facets.reach)) {
+    return DEFAULT_IMPORTANCE;
+  }
+  return bandToImportance(
+    fallbackBand({
+      facetAutomation: facets.automation,
+      facetReach: facets.reach,
+      facetFormat: facets.format,
+      senderEmailAutomated: false,
+      senderKnown: true,
+    })
+  );
+}
+
 /** Prompt fragment: the four-band rubric. Keyed on the injected feature block. */
 export const IMPORTANCE_RUBRIC = `importance — pick exactly one band:
 - "suppress": promotional / mass-distribution / automated bulk the recipient consistently ignores. Strong signals: automation=automated AND reach=list; or historical read rate below ~15% over several prior threads; or a no-reply sender the recipient has no history with.

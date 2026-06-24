@@ -15,6 +15,7 @@
 import type { Kysely } from "kysely";
 import type { DB } from "../db";
 import type { Bindings } from "../env";
+import { emitCtaPushEvent } from "./cta-telemetry";
 import { sendDataNotificationToUser } from "./send";
 
 const WINDOW_MS = 5 * 60 * 1000;
@@ -61,4 +62,11 @@ export async function maybeSendCtaPush(
       kind: note.cta.kind,
     });
   }
+
+  // Record the push so OTP/confirm volume + any residual false positives are
+  // measurable. These pushes bypass every normal gate and write no
+  // thread_notify_state, so without this they're invisible. Best-effort.
+  await emitCtaPushEvent(env, db, { id: note.id, threadId: note.threadId, cta: note.cta }, [
+    ...seen,
+  ]);
 }

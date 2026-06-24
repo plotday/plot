@@ -2,6 +2,12 @@
 
 ### Fixes
 
+- Ads and promotions are much quieter. A marketing email that happens to mention a number next to the
+  word "code" (a discount code, an order number) no longer pops up as if it were a login verification
+  code — those instant code alerts are now reserved for genuine one-time passcodes.
+- Promotions, newsletters, and other bulk mail no longer notify you, even on a busy inbox. Previously,
+  once Plot's daily AI allowance ran out, everything that arrived afterward was treated as important
+  and notified you; now obvious marketing and mailing-list mail stays quiet regardless.
 - On a phone or narrow window, the bottom bar no longer covers the last items in your agenda or a
   focus's thread list. You can now scroll all the way to the bottom instead of the final row or two
   staying hidden behind the bar.

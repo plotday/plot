@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bandToImportance,
   fallbackBand,
+  fallbackImportanceFromFacets,
   IMPORTANCE_RUBRIC,
   parseBand,
 } from "./band";
@@ -67,6 +68,28 @@ describe("fallbackBand", () => {
     expect(fallbackBand({ ...base, facetAutomation: "human", facetReach: "direct" })).toBe(
       "normal",
     );
+  });
+});
+
+describe("fallbackImportanceFromFacets", () => {
+  it("suppresses promotion mail below the notify gate", () => {
+    expect(fallbackImportanceFromFacets({ format: "promotion", automation: "automated", reach: "list" })).toBeLessThan(50);
+  });
+  it("suppresses an automated newsletter (reading on a list) below the gate", () => {
+    expect(fallbackImportanceFromFacets({ format: "reading", automation: "automated", reach: "list" })).toBeLessThan(50);
+  });
+  it("keeps a direct human message at/above the gate (still notifies)", () => {
+    expect(fallbackImportanceFromFacets({ format: "message", automation: "human", reach: "direct" })).toBeGreaterThanOrEqual(50);
+  });
+  it("preserves the historical default (50) for facet-less (user-composed) threads", () => {
+    expect(fallbackImportanceFromFacets(null)).toBe(50);
+    expect(fallbackImportanceFromFacets({ format: null, automation: null, reach: null })).toBe(50);
+  });
+  it("still notifies direct automated mail (suppresses only on promo/list, never on automation alone)", () => {
+    // A direct transactional/notification email (automated, reach=direct, no
+    // promo format) keeps notifying — we never guess suppression from sender
+    // automation alone in the cheap fallback.
+    expect(fallbackImportanceFromFacets({ format: null, automation: "automated", reach: "direct" })).toBeGreaterThanOrEqual(50);
   });
 });
 

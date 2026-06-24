@@ -6,7 +6,26 @@ import { UserAiUsage } from "../state/user-ai-usage";
 import { getPersonalPlan, isUserInAnyTeam } from "./limits";
 
 export const FREE_AI_LIMITS = {
-  note_processing: 100, // embedding + analysis + summary per month
+  // Per 30-day window, shared across importance analysis (note-analysis),
+  // thread summaries, and notification copy. 100 was far too low for a busy
+  // inbox: a heavy free user exhausts it within the first day's mail, after
+  // which importance scoring stops running and every thread keeps the default
+  // importance of 50 (above the notify gate) — so promos/newsletters notify.
+  //
+  // Cost analysis (@cf/meta/llama-3.3-70b-instruct-fp8-fast, ~$0.29/M input +
+  // ~$2.25/M output tokens): one analysis call is ~1.8k input + ~150 output
+  // tokens ≈ $0.0009. So this ceiling costs ~$0.45/user/mo AT THE CAP, and the
+  // median free user stays well under it. Cheap insurance for correct
+  // notifications. NOTE: facet-based suppression (fallbackImportanceFromFacets)
+  // now keeps obvious promos/bulk quiet even when this budget IS exhausted, so
+  // this cap no longer gates the promo-spam fix — it only governs how much
+  // importance/summary discrimination a heavy inbox gets.
+  //
+  // Follow-up (not yet implemented): exclude initial-sync backfill from this
+  // budget so a one-time import doesn't consume a month's steady-state
+  // allowance. Backfilled mail is marked read and never notifies, so it gets no
+  // value from importance scoring anyway.
+  note_processing: 500,
 } as const;
 
 export type AiOperation = keyof typeof FREE_AI_LIMITS;

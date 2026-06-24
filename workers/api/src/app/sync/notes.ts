@@ -7,6 +7,7 @@ import { type DB, type Kysely, createFrontendDb, sql, withUserDb } from "../../d
 import type { Bindings } from "../../env";
 import { analyzeNote } from "../../queue/note-analysis";
 import { rpcUser } from "../../rpc";
+import { fallbackImportanceFromFacets } from "../../state/importance/band";
 import {
   checkAiLimitForContacts,
   isAiEnabled,
@@ -639,9 +640,12 @@ export async function noteVisibleUserIds(
 
 /**
  * Mark a thread as unread for all priority members except the excluded user.
- * Creates a row with all three state booleans false and importance 50 —
- * used as a fallback when AI analysis doesn't run or fails. The thread is
- * still unread (read_at NULL) so it shows in Updates.
+ * Used as a fallback when AI analysis doesn't run or fails (free-tier AI quota
+ * exhausted, AI disabled, empty content). Importance is derived deterministically
+ * from the thread's connector facets (see fallbackImportanceFromFacets): obvious
+ * bulk/promo mail is suppressed below the notify gate even without the LLM, while
+ * facet-less (user-composed) threads keep the historical default of 50. The
+ * thread is still unread (read_at NULL) so it shows in Updates.
  * Returns the list of user IDs that were successfully marked unread.
  */
 export async function markThreadUnreadForOthers(
@@ -651,10 +655,10 @@ export async function markThreadUnreadForOthers(
   excludeUserId: string,
   noteCreatedAt?: string
 ): Promise<string[]> {
-  // Get all thread contacts and groups
+  // Get all thread contacts, groups, and facets
   const thread = await db
     .selectFrom("thread")
-    .select(["contacts", "groups"])
+    .select(["contacts", "groups", "facets"])
     .where("id", "=", threadId)
     .executeTakeFirst();
 
@@ -662,6 +666,16 @@ export async function markThreadUnreadForOthers(
   const contacts = (thread.contacts ?? []) as string[];
   const groups = (thread.groups ?? []) as string[];
   if (contacts.length === 0 && groups.length === 0) return [];
+
+  // Deterministic importance from facets (no LLM): suppresses promo/bulk mail
+  // below the notify gate on the AI-skip path; facet-less threads stay at 50.
+  const importance = fallbackImportanceFromFacets(
+    thread.facets as {
+      format: string | null;
+      automation: "human" | "automated" | null;
+      reach: "direct" | "list" | null;
+    } | null
+  );
 
   // Resolve every user with visibility: linked to any thread contact,
   // OR a member of any thread group (via their linked contacts).
@@ -692,7 +706,7 @@ export async function markThreadUnreadForOthers(
         p_thread_id: threadId,
         p_active: false,
         p_urgent: false,
-        p_importance: 50,
+        p_importance: importance,
         // p_read_at omitted → defaults to NULL; combined with
         // p_set_read_at: true this marks the thread unread (race-safe
         // when p_note_created_at is set).
