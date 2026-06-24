@@ -60,6 +60,20 @@ class Modal extends StatelessWidget {
     ModalProvider.of(context).pop<T>(context, result);
   }
 
+  /// Pops the top modal but keeps it on display until the next [Modal.show]
+  /// (push) replaces it, swapping the two in a single frame. Use to hand off
+  /// from one modal to another (e.g. the connection auth screen to its
+  /// channel-setup screen after OAuth) without the modal beneath — typically
+  /// the connections list — flashing into view during the gap while the next
+  /// modal loads its data.
+  ///
+  /// The caller MUST follow this with a push (open the next modal). Until then
+  /// the handed-off modal stays on screen; a user dismiss (Esc/X) still removes
+  /// it normally.
+  static void popForSwap<T>(BuildContext context, Value<T> result) {
+    ModalProvider.of(context).popForSwap<T>(context, result);
+  }
+
   static Future<void> popAll(BuildContext context) {
     return ModalProvider.of(context).popAll(context);
   }
@@ -370,6 +384,10 @@ class _ModalProviderState extends State<ModalProvider> {
   final GlobalKey _rootContextKey = GlobalKey();
   bool _usedRootNavigator = false;
 
+  /// A modal popped via [popForSwap] that is kept on display (still the visible
+  /// top) until the next [push] swaps it out atomically. See [popForSwap].
+  _ModalStackItem<dynamic>? _retainedForSwap;
+
   @override
   void initState() {
     super.initState();
@@ -517,29 +535,65 @@ class _ModalProviderState extends State<ModalProvider> {
       // When the dialog closes for any reason (including barrier dismiss),
       // drain the stack so any unresolved completers complete with absent.
       unawaited(dialogFuture.whenComplete(() {
+        _retainedForSwap = null;
         while (_modalStack.isNotEmpty) {
           _modalStack.removeLast().completeAbsent();
         }
         _notifyStackChanged();
       }));
     }
+
+    // A modal handed off via [popForSwap] stayed on display (covering the modal
+    // beneath it) while this new modal loaded. Now that the new modal is on the
+    // stack as the top, drop the retained one: it sits directly beneath the new
+    // top, so removing it is invisible — and the modal beneath THAT (e.g. the
+    // connections list) never flashes into view during the hand-off. Done after
+    // the length==1 dialog-open check so the retained item, which kept the
+    // stack non-empty, doesn't make this push reopen the dialog route.
+    final retained = _retainedForSwap;
+    if (retained != null) {
+      _retainedForSwap = null;
+      _modalStack.remove(retained);
+      _notifyStackChanged();
+    }
     return stackItem.completer.future;
+  }
+
+  /// Pops the top modal but KEEPS it on the stack and on display until the next
+  /// [push] replaces it. See [Modal.popForSwap] for the rationale.
+  void popForSwap<T>(BuildContext context, Value<T> result) {
+    if (_modalStack.isEmpty) return;
+    final top = _modalStack.last;
+    // Remember the top so the next push() drops it from underneath the incoming
+    // modal in a single frame, but leave it on the stack and displayed for now.
+    _retainedForSwap = top;
+    // Complete the awaiting run() so the caller proceeds to open the next modal.
+    // Don't touch the stack or notifier: the display must not change yet.
+    if (!result.present) {
+      top.completeAbsent();
+    } else if (top is _ModalStackItem<T>) {
+      if (!top.completer.isCompleted) top.completer.complete(result);
+    } else {
+      top.completeAbsent();
+    }
   }
 
   void pop<T>(BuildContext context, Value<T> result) {
     if (_modalStack.isEmpty) return;
 
     final stackItem = _modalStack.removeLast();
+    if (identical(stackItem, _retainedForSwap)) _retainedForSwap = null;
     // Check if this is the last modal BEFORE completing the completer,
     // because completing may trigger a cascade of pops that empties the stack
     final shouldCloseDialog = _modalStack.isEmpty;
 
     // Complete the completer - this may synchronously trigger more pops
-    // For absent values, use completeAbsent() to avoid type mismatches
+    // For absent values, use completeAbsent() to avoid type mismatches.
+    // A popForSwap'd item may already be completed; guard against re-completing.
     if (!result.present) {
       stackItem.completeAbsent();
     } else if (stackItem is _ModalStackItem<T>) {
-      stackItem.completer.complete(result);
+      if (!stackItem.completer.isCompleted) stackItem.completer.complete(result);
     } else {
       // The top stack item expects a different generic type than the caller is
       // popping with — typically because a nested modal (e.g. a FormModal<
@@ -575,6 +629,7 @@ class _ModalProviderState extends State<ModalProvider> {
     if (_modalStack.isEmpty) return;
 
     final stackItem = _modalStack.removeLast();
+    if (identical(stackItem, _retainedForSwap)) _retainedForSwap = null;
     // Check if this is the last modal BEFORE completing the completer,
     // because completing may trigger a cascade of pops that empties the stack
     final shouldCloseDialog = _modalStack.isEmpty;
@@ -601,6 +656,7 @@ class _ModalProviderState extends State<ModalProvider> {
   }
 
   Future<void> popAll(BuildContext context) async {
+    _retainedForSwap = null;
     while (_modalStack.isNotEmpty) {
       final stackItem = _modalStack.removeLast();
       stackItem.completeAbsent();
@@ -675,6 +731,10 @@ class _ModalProviderInherited extends InheritedWidget {
     state.pop<T>(context, result);
   }
 
+  void popForSwap<T>(BuildContext context, Value<T> result) {
+    state.popForSwap<T>(context, result);
+  }
+
   void dismiss(BuildContext context, Value<dynamic> value) {
     state.dismiss(context, value);
   }
@@ -693,7 +753,11 @@ class _ModalStackItem<T> {
   final Widget modal;
   final Completer<Value<T>> completer = Completer<Value<T>>();
 
-  void completeAbsent() => completer.complete(Value.absent());
+  // Guarded: a popForSwap'd item is completed while still on the stack, so a
+  // later drain/dismiss of the same item must not re-complete it.
+  void completeAbsent() {
+    if (!completer.isCompleted) completer.complete(Value.absent());
+  }
 }
 
 class _ModalStackDisplay extends StatefulWidget {

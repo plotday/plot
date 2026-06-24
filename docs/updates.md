@@ -1,3 +1,10 @@
+## Next release
+
+### Fixes
+
+- Connecting an account is smoother: after you sign in, Plot now goes straight to choosing what to
+  sync, without a brief flash of the connections list in between.
+
 ## 1.5.0+366 — 2026-06-24
 
 ### Fixes

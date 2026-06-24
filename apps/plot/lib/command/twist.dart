@@ -2654,11 +2654,15 @@ class AddSourceDetail extends ShowForm {
     clearDraft();
 
     // Start fetching integrations for the upcoming EditSource in parallel with
-    // the modal-pop animation, so the next modal can open immediately.
+    // the hand-off, so the next modal can open immediately.
     EditSource.preloadIntegrations(draftId);
 
     if (context.mounted) {
-      Modal.pop<CommandReturn>(context, Value(const CommandDone()));
+      // Hand off to the channel-setup modal (EditSource) the caller opens next.
+      // popForSwap keeps THIS auth modal on display until EditSource is pushed,
+      // so the connections list beneath it never flashes into view during the
+      // gap while EditSource loads its integrations/usage/channel data.
+      Modal.popForSwap<CommandReturn>(context, Value(const CommandDone()));
     }
   }
 }
