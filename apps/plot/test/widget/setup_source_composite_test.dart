@@ -89,13 +89,29 @@ ProductStatus _status(String key, {required bool enabled}) => ProductStatus(
           enabled ? ProductStatusReason.granted : ProductStatusReason.scopeMissing,
     );
 
-TwistChannel _channel(String id, String title) => TwistChannel(
+/// Like [_status] but with an explicit [reason] — used to model the real
+/// fresh-connect state where scope IS granted but nothing is enabled
+/// server-side yet (`no-channels`), distinct from `scope-missing`.
+ProductStatus _statusReason(
+  String key, {
+  required bool enabled,
+  required ProductStatusReason reason,
+}) =>
+    ProductStatus(key: key, enabled: enabled, reason: reason);
+
+TwistChannel _channel(
+  String id,
+  String title, {
+  bool? enabledByDefault = true,
+  bool enabled = true,
+}) =>
+    TwistChannel(
       provider: AuthProvider.google,
       providerKey: 'google',
       id: id, // namespaced: "productKey:rawId"
       title: title,
-      enabled: true,
-      enabledByDefault: true,
+      enabled: enabled,
+      enabledByDefault: enabledByDefault,
       currentUserHasAccess: true,
     );
 
@@ -119,6 +135,59 @@ TwistIntegrations _compositeData() => TwistIntegrations(
         _status('gmail', enabled: true),
         _status('drive', enabled: false),
         _status('contacts', enabled: true),
+      ],
+      channelNoun: const ChannelNoun(singular: 'label', plural: 'labels'),
+    );
+
+/// The REAL fresh-connect composite state: every product's scope is granted,
+/// but NOTHING is enabled server-side yet (the draft hasn't been saved), so
+/// productStatus.reason is `no-channels` for all. The channels carry
+/// `enabledByDefault: true` so `_applySuggestedDefaults` seeds them locally on.
+/// (server `enabled: false` is irrelevant in setup mode — the seed keys off
+/// enabledByDefault, not server enabled.)
+TwistIntegrations _freshConnectData() => TwistIntegrations(
+      providers: [_googleProvider()],
+      accounts: [_googleAccount()],
+      channels: [
+        _channel('calendar:primary', 'Personal', enabled: false),
+        _channel('mail:inbox', 'Inbox', enabled: false),
+        _channel('mail:sent', 'Sent', enabled: false),
+      ],
+      products: [
+        _product('calendar', 'Calendar'),
+        _product('mail', 'Mail'),
+      ],
+      productStatus: [
+        _statusReason('calendar',
+            enabled: false, reason: ProductStatusReason.noChannels),
+        _statusReason('mail',
+            enabled: false, reason: ProductStatusReason.noChannels),
+      ],
+      channelNoun: const ChannelNoun(singular: 'label', plural: 'labels'),
+    );
+
+/// A composite state where Mail's scope is granted with its owned channel
+/// seeded ON, while Calendar's scope is ALSO granted (`no-channels`) but its
+/// only channel is `enabledByDefault: false` so it starts OFF locally — lets us
+/// assert that toggling a scope-granted product ON enables channels locally
+/// (no staged re-auth), in contrast to a scope-MISSING product.
+TwistIntegrations _scopeGrantedOffData() => TwistIntegrations(
+      providers: [_googleProvider()],
+      accounts: [_googleAccount()],
+      channels: [
+        _channel('mail:inbox', 'Inbox', enabled: false),
+        _channel('calendar:primary', 'Personal',
+            enabled: false, enabledByDefault: false),
+      ],
+      products: [
+        _product('mail', 'Mail'),
+        _product('calendar', 'Calendar'),
+      ],
+      productStatus: [
+        _statusReason('mail',
+            enabled: false, reason: ProductStatusReason.noChannels),
+        _statusReason('calendar',
+            enabled: false, reason: ProductStatusReason.noChannels),
       ],
       channelNoun: const ChannelNoun(singular: 'label', plural: 'labels'),
     );
@@ -358,6 +427,66 @@ void main() {
       // onAfterTap rebuild, the parent's setState wouldn't repaint this modal
       // subtree and the tap would appear to do nothing (count unchanged).
       expect(onSwitchCount(), before - 1);
+    });
+
+    testWidgets(
+        '(i) on connect, scope-granted no-channels products show their toggles '
+        'ON (seeded owned channels), not OFF', (tester) async {
+      // The bug: every product showed OFF after connect because the toggle keyed
+      // off the server productStatus (no-channels → off) instead of the locally
+      // seeded enabledByDefault channels.
+      await tester.pumpWidget(
+        _wrap(
+          SetupSourceWidget(
+            twistInstanceId: 'test-instance',
+            setupMode: true,
+            showAccounts: false,
+            initialData: _freshConnectData(),
+          ),
+        ),
+      );
+      await tester.pump(); // settle _applySuggestedDefaults seed + postFrame
+
+      final switches = tester.widgetList<FSwitch>(find.byType(FSwitch)).toList();
+      expect(switches, hasLength(2),
+          reason: 'one trailing toggle per product (Calendar, Mail)');
+      expect(switches.every((s) => s.value == true), isTrue,
+          reason:
+              'scope-granted products with seeded owned channels start ON, '
+              'even though the server reports no-channels pre-save');
+    });
+
+    testWidgets(
+        '(j) toggling a scope-granted (no-channels) product ON enables its '
+        'channels locally and does NOT stage a re-auth', (tester) async {
+      IntegrationChanges? lastChange;
+
+      await tester.pumpWidget(
+        _wrap(
+          SetupSourceWidget(
+            twistInstanceId: 'test-instance',
+            setupMode: true,
+            showAccounts: false,
+            initialData: _scopeGrantedOffData(),
+            onChanged: (c) => lastChange = c,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Calendar's scope is granted but its only channel is enabledByDefault:
+      // false, so it starts OFF locally. Tapping its single-channel row toggles
+      // the product (no drill-down for a 1-channel product).
+      await tester.tap(find.text('Calendar'));
+      await tester.pump();
+
+      expect(lastChange, isNotNull);
+      expect(lastChange!.selectedChannels, contains('google:calendar:primary'),
+          reason: 'scope-granted toggle enables the product channel locally');
+      expect(lastChange!.stagedProducts, isNot(contains('calendar')),
+          reason:
+              'scope already granted — must NOT stage a re-auth (no "Continue '
+              'with Google")');
     });
   });
 }

@@ -843,29 +843,40 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     for (final product in products) {
       final status = statusByKey[product.key];
       final isEnabled = status?.enabled == true;
+      // Scope is granted unless the server explicitly reports it missing. This
+      // is the pivot for the whole row: a scope-granted product (whether
+      // `granted`, `no-channels`, or `locally-off`) is toggled/refined LOCALLY
+      // and saved — never re-authed. Only `scope-missing` stages a re-auth
+      // (§1.4). On a fresh connect every owned product is `no-channels`
+      // server-side (nothing saved yet) but scope IS granted, so it must read
+      // ON from the locally-seeded enabledByDefault channels (§1.2/§1.3) — the
+      // bug was keying the toggle off the server `enabled` flag instead.
+      final scopeGranted =
+          status?.reason != ProductStatusReason.scopeMissing;
       final productChannels = channelsByProduct[product.key] ?? [];
       // Drill only when there's an actual choice of channels (>1). Single- or
       // zero-channel products (e.g. Contacts) are a plain toggle — no drill.
-      final canDrill = isEnabled && productChannels.length > 1;
+      final canDrill = scopeGranted && productChannels.length > 1;
       final anyChannelOn = productChannels.any(
         (c) => _localSelectedChannels.contains('${c.providerKey}:${c.id}'),
       );
       final isStaged = _stagedProducts.contains(product.key);
 
       // The trailing toggle IS the status: scope granted AND (no channels, or a
-      // channel on); a not-enabled product reflects whether it's staged.
-      final bool toggleOn = isEnabled
+      // channel selected locally); a scope-missing product reflects whether
+      // it's staged for re-auth.
+      final bool toggleOn = scopeGranted
           ? (productChannels.isEmpty ? true : anyChannelOn)
           : isStaged;
 
-      // "Not synced" reflects the product's CURRENT server sync state — whether
-      // it's actively syncing right now — NOT the staged toggle. A synced
-      // product the user has toggled off (a pending disable) keeps a synced
-      // summary until saved; a not-yet-synced product the user toggled on still
-      // reads "Not synced" until the re-auth lands. When synced: multi-channel
-      // shows the staged enabled count; single/channelless shows nothing (the
-      // on-toggle conveys it).
-      final bool isSynced = isEnabled;
+      // "Not synced" reflects whether the product will sync: it's syncing on the
+      // server now (`isEnabled`), OR scope is granted and at least one channel
+      // is selected locally (a fresh-connect seed or a pending enable). A
+      // server-synced product the user toggles off keeps its synced summary
+      // until saved (still `isEnabled`), so toggling never spuriously flips the
+      // label to "Not synced". When synced: multi-channel shows the selected
+      // count; single/channelless shows nothing (the on-toggle conveys it).
+      final bool isSynced = isEnabled || (scopeGranted && anyChannelOn);
       String summary;
       if (!isSynced) {
         summary = 'Not synced';
@@ -884,11 +895,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         summary = '';
       }
 
-      // Toggle = status. Enabled→off clears the product's channel(s) locally,
-      // off→on re-selects them; not-enabled→on stages a re-auth (Task 4 CTA).
+      // Toggle = status. Scope granted → enabling/disabling is LOCAL: off→on
+      // selects the product's channel(s), on→off clears them (saved via
+      // activateDraft / the batch endpoint). Only a scope-MISSING product
+      // stages a re-auth (the "Continue with Google" CTA, §1.4).
       void toggleProduct() {
         setState(() {
-          if (isEnabled) {
+          if (scopeGranted) {
             for (final ch in productChannels) {
               final key = '${ch.providerKey}:${ch.id}';
               if (anyChannelOn) {
@@ -946,18 +959,20 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       ) async {
         if (subIndex >= products.length) return;
         final product = products[subIndex];
-        final isEnabled = statusByKey[product.key]?.enabled == true;
+        final scopeGranted = statusByKey[product.key]?.reason !=
+            ProductStatusReason.scopeMissing;
         final productChannels = channelsByProduct[product.key] ?? [];
-        if (isEnabled && productChannels.length > 1) {
+        if (scopeGranted && productChannels.length > 1) {
           _openProductChannels(context, product, productChannels, data);
           return;
         }
-        // Single-/zero-channel or not-enabled: Enter toggles status.
+        // Single-/zero-channel or scope-missing: Enter toggles status. Scope
+        // granted → toggle channels locally; scope-missing → stage re-auth.
         final anyOn = productChannels.any(
           (c) => _localSelectedChannels.contains('${c.providerKey}:${c.id}'),
         );
         setState(() {
-          if (isEnabled) {
+          if (scopeGranted) {
             for (final ch in productChannels) {
               final key = '${ch.providerKey}:${ch.id}';
               if (anyOn) {
