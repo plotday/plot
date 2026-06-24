@@ -109,7 +109,10 @@ export default class GoogleContacts
   }
 
   async getChannels(_auth: Authorization, _token: AuthToken): Promise<Channel[]> {
-    return [{ id: "contacts", title: "Contacts" }];
+    // enabledByDefault: see getContactsChannels in ./channels — the title
+    // "Contacts" otherwise trips the client's low-value heuristic and defaults
+    // the channel off despite a granted scope.
+    return [{ id: "contacts", title: "Contacts", enabledByDefault: true }];
   }
 
   /**
