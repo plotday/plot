@@ -10,10 +10,17 @@ export const contactsProduct: Product = {
   linkTypes: [],
   channelless: true,
   getRawChannels: () => getContactsChannels(),
+  // Contacts' lifecycle is handled directly by the Google class (it owns
+  // scheduling + the contacts: key namespace), so onChannelEnabled/Disabled
+  // intercept the `contacts` product before these are reached — like Calendar.
   onEnable: async () => {
-    throw new Error("Phase 3: contacts sync not yet re-homed");
+    throw new Error(
+      "Contacts onEnable must be handled directly by Google.onChannelEnabled"
+    );
   },
   onDisable: async () => {
-    throw new Error("Phase 3: contacts sync not yet re-homed");
+    throw new Error(
+      "Contacts onDisable must be handled directly by Google.onChannelDisabled"
+    );
   },
 };

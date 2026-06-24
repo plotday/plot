@@ -1,4 +1,9 @@
-import GoogleContacts from "@plotday/connector-google-contacts";
+import GoogleContacts, {
+  type ContactsSyncHost,
+  onChannelEnabledFn as contactsOnChannelEnabledFn,
+  onChannelDisabledFn as contactsOnChannelDisabledFn,
+  syncBatchFn as contactsSyncBatchFn,
+} from "@plotday/connector-google-contacts";
 import {
   type CalendarSyncHost,
   clearBuffersFn,
@@ -157,6 +162,11 @@ export class Google extends Connector<Google> {
       return;
     }
 
+    if (productKey === "contacts") {
+      await this.onContactsChannelEnabled(rawId);
+      return;
+    }
+
     const product = resolveProductForChannelId(
       Object.values(PRODUCTS_BY_KEY),
       channel.id
@@ -180,6 +190,11 @@ export class Google extends Connector<Google> {
 
     if (productKey === "tasks") {
       await tasksOnChannelDisabledFn(this.makeTasksHost(), rawId);
+      return;
+    }
+
+    if (productKey === "contacts") {
+      await contactsOnChannelDisabledFn(this.makeContactsHost(), rawId);
       return;
     }
 
@@ -921,6 +936,78 @@ export class Google extends Connector<Google> {
       return;
     }
     await this.tasksSchedulePeriodicSync(result.reschedule.listId);
+  }
+
+  // ===========================================================================
+  // Contacts (Google Contacts) — mirrors @plotday/connector-google-contacts.
+  // A channelless single-channel, read-only contact IMPORT (no webhooks, no
+  // recurring poll, no write-backs). Storage keys namespaced under "contacts:".
+  // ===========================================================================
+
+  /** Public set proxy so makeContactsHost() can wrap `this` (host needs public). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _contactsHostSet(key: string, value: any): Promise<void> {
+    return this.set(`contacts:${key}`, value);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _contactsHostGet<T = any>(key: string): Promise<T | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.get<any>(`contacts:${key}`);
+  }
+  _contactsHostClear(key: string): Promise<void> {
+    return this.clear(`contacts:${key}`);
+  }
+
+  /**
+   * Returns a ContactsSyncHost that namespaces every storage key under
+   * "contacts:" and routes its single scheduler hook (queueSyncBatch) back to
+   * this connector's own method (which owns this.callback / runTask).
+   */
+  private makeContactsHost(): ContactsSyncHost {
+    const self = this;
+    return {
+      set: (key, value) => self._contactsHostSet(key, value),
+      get: <T>(key: string) => self._contactsHostGet<T>(key),
+      clear: (key) => self._contactsHostClear(key),
+      tools: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        integrations: self.tools.integrations as any,
+      },
+      scheduler: {
+        queueSyncBatch: (batchNumber, syncableId) =>
+          self.contactsQueueSyncBatch(batchNumber, syncableId),
+      },
+    };
+  }
+
+  /** Kicks off the paginated contact import for the (single) contacts channel. */
+  private async onContactsChannelEnabled(rawId: string): Promise<void> {
+    const start = await contactsOnChannelEnabledFn(
+      this.makeContactsHost(),
+      rawId
+    );
+    if (!start) return;
+    await this.contactsQueueSyncBatch(1, rawId);
+  }
+
+  private async contactsQueueSyncBatch(
+    batchNumber: number,
+    syncableId: string
+  ): Promise<void> {
+    const callback = await this.callback(
+      this.contactsSyncBatch,
+      batchNumber,
+      syncableId
+    );
+    await this.runTask(callback);
+  }
+
+  /** One page of the contact import; chaining (next page) is owned by the fn. */
+  async contactsSyncBatch(
+    batchNumber: number,
+    syncableId: string
+  ): Promise<void> {
+    await contactsSyncBatchFn(this.makeContactsHost(), batchNumber, syncableId);
   }
 }
 
