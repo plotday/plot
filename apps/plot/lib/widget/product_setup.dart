@@ -35,16 +35,16 @@ class ProductSetupWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Plot can sync these from your Google account. '
-          'You choose what to allow on Google\'s next screen.',
-          style: typography.sm.copyWith(color: colors.mutedForeground),
-        ),
-        SizedBox(height: spacing.md),
         for (final product in products) ...[
           _ProductRow(product: product),
           SizedBox(height: spacing.sm),
         ],
+        SizedBox(height: spacing.xs),
+        Text(
+          'Grant all permissions for full functionality. Everything is '
+          'optional and only what you share will be synced.',
+          style: typography.sm.copyWith(color: colors.mutedForeground),
+        ),
         Padding(
           padding: EdgeInsets.only(top: spacing.md),
           child: SizedBox(
@@ -79,7 +79,9 @@ class _ProductRow extends StatelessWidget {
     final colors = context.theme.colors;
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      // Top-align the logo with the product title (not centered against the
+      // title+description block).
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (product.icon.isNotEmpty)
           Padding(

@@ -2118,7 +2118,10 @@ class AddSourceDetail extends ShowForm {
       return [
         StaticFormGroup(
           items: [
-            if (twist.description != null)
+            // Composite connections convey what they sync via the product
+            // list (ProductSetupWidget) + its note below, so the connector
+            // description here is redundant — suppress it.
+            if (twist.description != null && !refreshed.isComposite)
               FormInfo(key: 'description', text: twist.description!),
             if (refreshedHostedHasAccount) ...[
               ..._buildStandardSourceItems(
@@ -2361,7 +2364,9 @@ class AddSourceDetail extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            if (twist.description != null)
+            // Suppressed for composite connections — the product list
+            // (ProductSetupWidget) + its note convey what's synced.
+            if (twist.description != null && !integrations.isComposite)
               FormInfo(key: 'description', text: twist.description!),
             if (hostedHasAccount) ...[
               ..._buildStandardSourceItems(

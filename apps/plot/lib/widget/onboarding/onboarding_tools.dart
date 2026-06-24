@@ -351,7 +351,10 @@ class _ToolTileState extends State<_ToolTile> {
             Flexible(
               child: Text(
                 twist.name,
-                maxLines: 1,
+                // Long connector names (e.g. "Google Mail, Calendar, and
+                // Tasks") wrap to a second line within the tile rather than
+                // truncating mid-word.
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Color(0xFF1F1F1F),

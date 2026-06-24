@@ -992,6 +992,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Breathing room between the preceding Label field and the product
+        // toggles.
+        SizedBox(height: theme.spacing.md),
         ...accountRows,
         ...rows,
         ...orphanRows,
@@ -1641,7 +1644,9 @@ class _CompositeProductRowState extends State<_CompositeProductRow> {
                           widget.label,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: theme.typography.sm.fontSize,
+                            // One size larger than the inline summary so the
+                            // product name reads as the row's title.
+                            fontSize: theme.typography.md.fontSize,
                             color: theme.colors.foreground,
                             fontWeight: FontWeight.w500,
                           ),
