@@ -1665,9 +1665,21 @@ class _PriorityPageState extends State<PriorityPage>
       },
     );
 
-    return BlockDragScope(
-      controller: _activityFeedDragController,
-      child: ScrollEdgeFade(background: context.colour.background, child: list),
+    // The single-panel bottom nav is overlaid on top of the page content
+    // (see _MobileShellChrome's Stack), so reserve its measured height as
+    // bottom padding — otherwise the last feed rows are painted under the
+    // nav and can't be scrolled into view (reachable only via overscroll).
+    // BottomNavInset.of returns 0 in multi-panel and on nav-hidden routes,
+    // so this is a no-op there.
+    return Padding(
+      padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
+      child: BlockDragScope(
+        controller: _activityFeedDragController,
+        child: ScrollEdgeFade(
+          background: context.colour.background,
+          child: list,
+        ),
+      ),
     );
   }
 }

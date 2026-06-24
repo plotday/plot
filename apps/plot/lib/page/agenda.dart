@@ -15,7 +15,8 @@ import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/block_list_separator.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/window_controls_inset.dart';
-import 'package:plot/widget/priorities_shell.dart' show SecondaryTabBackScope;
+import 'package:plot/widget/priorities_shell.dart'
+    show BottomNavInset, SecondaryTabBackScope;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'loading.dart';
@@ -152,8 +153,12 @@ class _AgendaBody extends StatelessWidget {
         }
         // The agenda has no header on single-panel mobile, so the list
         // would slide under the status bar / dynamic island without an
-        // explicit top SafeArea. The bottom nav (rendered at the shell
-        // level) handles the bottom inset, so leave it off here.
+        // explicit top SafeArea. The bottom nav is overlaid on top of the
+        // page content (see _MobileShellChrome's Stack), so the list
+        // reserves its measured height as bottom padding — otherwise the
+        // last agenda rows are painted under the nav and can't be scrolled
+        // into view. BottomNavInset already includes the bottom safe-area,
+        // which is why SafeArea keeps bottom: false.
         //
         // The first date row has no separator above it (separators sit
         // *between* items). On desktop the panel squircle paints that
@@ -182,7 +187,14 @@ class _AgendaBody extends StatelessWidget {
                   // Desktop (macOS) traffic-light clearance; nothing on mobile.
                   const WindowControlsInset(),
                   Container(height: 1, color: context.theme.colors.border),
-                  Expanded(child: AgendaList(items: state.agendaViewItems)),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: BottomNavInset.of(context),
+                      ),
+                      child: AgendaList(items: state.agendaViewItems),
+                    ),
+                  ),
                 ],
               ),
             ),

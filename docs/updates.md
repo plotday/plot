@@ -2,6 +2,9 @@
 
 ### Fixes
 
+- On a phone or narrow window, the bottom bar no longer covers the last items in your agenda or a
+  focus's thread list. You can now scroll all the way to the bottom instead of the final row or two
+  staying hidden behind the bar.
 - Messages you send out to email and chat now arrive cleanly formatted, instead of showing odd
   mid-sentence line breaks or raw formatting marks like `**`. Bold text, links, and lists render
   properly in email (Gmail and Outlook) and on Microsoft Teams, and come through as tidy plain text
