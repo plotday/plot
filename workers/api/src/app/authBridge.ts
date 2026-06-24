@@ -216,7 +216,12 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
     const client = new UnipileClient(c.env);
     const profile = await client.getOwnProfile({ accountId: result.accountId });
     fullName = profile.display_name && profile.display_name.trim() ? profile.display_name : null;
-    email = profile.specifics?.email ?? null;
+    // v2 returns the member's email under the top-level `emails` array (LinkedIn,
+    // etc.), not `specifics.email`. The email is what lets onAuth's buildActor
+    // resolve the connecting user's existing contact — without it the token is
+    // stored under a fresh contact that the channel's enabledBy never matches,
+    // and every sync fails with "has no stored credentials — reconnect".
+    email = profile.specifics?.email ?? profile.emails?.[0] ?? null;
     userId = profile.id ?? result.accountId;
   } catch (e) {
     // Non-fatal: fall back to whatever the account record says. The label can

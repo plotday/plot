@@ -171,8 +171,6 @@ describe("normalize (v2)", () => {
       },
     });
     expect(inv.id).toBe("inv-1");
-    // v2 has no shared_secret on the request payload.
-    expect(inv.sharedSecret).toBe("");
     expect(inv.message).toBe("Let's connect");
     expect(inv.inviter.id).toBe("ACoAA999");
     expect(inv.inviter.name).toBe("Carla Ng");

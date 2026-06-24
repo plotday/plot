@@ -52,6 +52,9 @@ export type UnipileUser = {
   description?: string | null;
   /** Provider profile URL when supplied (e.g. linkedin.com/in/…). */
   profile_url?: string | null;
+  /** v2 `users/me` returns the member's email(s) here (top-level), NOT under
+   * `specifics.email` like v1. Used to resolve the connecting user's contact. */
+  emails?: string[] | null;
   specifics?: {
     network_distance?: string;
     email?: string;

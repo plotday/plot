@@ -551,9 +551,8 @@ export class LinkedIn extends Connector<LinkedIn> {
     const meta = (link.meta ?? {}) as Record<string, unknown>;
     const channelId    = meta.channelId    as string | undefined;
     const invitationId = meta.invitationId as string | undefined;
-    const sharedSecret = meta.sharedSecret as string | undefined;
     if (!channelId) return;
-    if (!invitationId || !sharedSecret) return; // chat-only link — nothing to write back
+    if (!invitationId) return; // chat-only link — nothing to write back
 
     // Idempotency: each invitation can only be accepted once. Plot may
     // re-fire onLinkUpdated on unrelated edits (notes, title, etc.).
@@ -569,7 +568,6 @@ export class LinkedIn extends Connector<LinkedIn> {
       await this.tools.linkedin.acceptInvitation({
         channelId,
         invitationId,
-        sharedSecret,
       });
       await this.set(flagKey, "accept");
     } catch (error) {
@@ -685,7 +683,6 @@ function buildInvitationLink(
       channelId,
       profileId: inv.inviter.id,
       invitationId: inv.id,
-      sharedSecret: inv.sharedSecret,
     },
     ...(initialSync ? { unread: false, archived: false } : {}),
   } satisfies NewLinkWithNotes;

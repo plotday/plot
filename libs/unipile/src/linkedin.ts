@@ -3,7 +3,6 @@ import { UnipileMessaging, type ChatProfile } from "./messaging";
 /** LinkedIn connection request (invitation). */
 export type LinkedInInvitation = {
   id: string;
-  sharedSecret: string;
   inviter: ChatProfile;
   message: string | null;
   sentAt: Date;
@@ -43,13 +42,11 @@ export abstract class LinkedInMessaging extends UnipileMessaging {
   abstract acceptInvitation(params: {
     channelId: string;
     invitationId: string;
-    sharedSecret: string;
   }): Promise<void>;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract ignoreInvitation(params: {
     channelId: string;
     invitationId: string;
-    sharedSecret: string;
   }): Promise<void>;
 }

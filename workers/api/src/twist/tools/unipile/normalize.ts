@@ -30,7 +30,7 @@ export function normalizeProfile(
     handle,
     name,
     subtitle: user.description ?? user.specifics?.headline ?? null,
-    email: user.specifics?.email ?? null,
+    email: user.specifics?.email ?? user.emails?.[0] ?? null,
     phone: user.specifics?.phone ?? null,
     pictureUrl: user.public_picture_url ?? null,
     profileUrl:
@@ -120,7 +120,6 @@ function normalizeAttachment(a: UnipileAttachment): ChatAttachment {
 export function normalizeInvitation(inv: UnipileInvitation): LinkedInInvitation {
   return {
     id: inv.id,
-    sharedSecret: "",
     inviter: normalizeProfile(inv.user, "linkedin", false),
     message: inv.message ?? null,
     sentAt: inv.created_at ? new Date(inv.created_at) : new Date(0),

@@ -24,15 +24,14 @@ export class LinkedInMessaging extends UnipileMessagingTool implements ILinkedIn
     });
   }
 
-  // `sharedSecret` is retained in the signature for interface compatibility but
-  // is unused — v2 accept/ignore is keyed on the relation-request id alone.
-  async acceptInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
+  // v2 accept/ignore is keyed on the relation-request id alone (no shared_secret).
+  async acceptInvitation(params: { channelId: string; invitationId: string }): Promise<void> {
     return this.withAccount(params.channelId, () =>
       this.client.acceptInvitation({ accountId: params.channelId, invitationId: params.invitationId })
     );
   }
 
-  async ignoreInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
+  async ignoreInvitation(params: { channelId: string; invitationId: string }): Promise<void> {
     return this.withAccount(params.channelId, () =>
       this.client.ignoreInvitation({ accountId: params.channelId, invitationId: params.invitationId })
     );
