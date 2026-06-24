@@ -2,12 +2,21 @@ import GoogleContacts from "@plotday/connector-google-contacts";
 import {
   type CalendarSyncHost,
   clearBuffersFn,
+  extractRSVPParamsFn,
+  getWatchRenewalScheduleFn,
   resolveCalendarIdFn,
   runCalendarInit,
   runSyncBatch,
+  setupCalendarWatchFn,
+  startIncrementalSyncFn,
+  stopCalendarWatchFn,
+  updateEventRSVPWithApiFn,
+  validateCalendarWebhookFn,
+  getApiFn,
 } from "@plotday/connector-google-calendar";
 import { Connector } from "@plotday/twister";
-import type { ToolBuilder } from "@plotday/twister";
+import type { Actor, ActorId, Thread, ToolBuilder } from "@plotday/twister";
+import type { ScheduleContactStatus } from "@plotday/twister/schedule";
 import {
   AuthProvider,
   Integrations,
@@ -16,7 +25,7 @@ import {
   type Channel,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
-import { Network } from "@plotday/twister/tools/network";
+import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
 import { GOOGLE_SCOPES, PRODUCTS } from "./scopes";
 import { composeChannels, resolveProductForChannelId } from "./compose";
@@ -84,13 +93,53 @@ export class Google extends Connector<Google> {
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
+    const { product: productKey, rawId } = parse(channel.id);
+
+    if (productKey === "calendar") {
+      await this.stopCalendarSync(rawId);
+      return;
+    }
+
     const product = resolveProductForChannelId(
       Object.values(PRODUCTS_BY_KEY),
       channel.id
     );
     if (!product) return;
-    const { rawId } = parse(channel.id);
     await product.onDisable(rawId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // RSVP write-back (dispatched by the runtime to the acting user's instance)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Called when the user updates their RSVP for an event. Routes by the
+   * thread's `meta.syncableId` (the calendar id, which uses the `calendar:`
+   * namespace on this connector). Falls back to link-type routing for
+   * threads without a syncableId.
+   */
+  async onScheduleContactUpdated(
+    thread: Thread,
+    _scheduleId: string,
+    _contactId: ActorId,
+    status: ScheduleContactStatus | null,
+    _actor: Actor
+  ): Promise<void> {
+    const params = extractRSVPParamsFn(thread, status);
+    if (!params) return;
+
+    const { calendarId, eventId, googleStatus } = params;
+    const host = this.makeCalendarHost();
+
+    try {
+      const api = await getApiFn(host, calendarId);
+      await updateEventRSVPWithApiFn(api, calendarId, eventId, googleStatus);
+    } catch (error) {
+      console.error("[RSVP Sync] Failed to sync RSVP", {
+        event_id: eventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -189,22 +238,27 @@ export class Google extends Connector<Google> {
 
   /**
    * Initializes a calendar channel: resolves the calendar ID, acquires the
-   * sync lock, sets the initial SyncState, and queues the first batch.
-   *
-   * NOTE: Watch setup (webhooks) is intentionally omitted — the combined
-   * connector does not yet re-home the incremental/webhook path. This will be
-   * added in a future phase.
+   * sync lock, sets the initial SyncState, sets up the push webhook, and
+   * queues the first batch.
    */
   async calendarInit(calendarId: string): Promise<void> {
     const host = this.makeCalendarHost();
     const result = await runCalendarInit(host, calendarId);
     if ("done" in result) return;
 
-    // TODO Phase: incremental watch not yet re-homed from GoogleCalendar.
-    // Watch setup (setupCalendarWatch / onCalendarWebhook) will be wired here
-    // once the webhook/incremental path is migrated to the combined connector.
-
     const { resolvedCalendarId, batchNumber, mode, initialSync } = result.next;
+
+    // Set up the push webhook for this calendar. A watch failure must never
+    // abort sync setup — the calendar still populates without live updates.
+    try {
+      await this.calendarSetupWatch(resolvedCalendarId);
+    } catch (error) {
+      console.error(
+        `Failed to set up calendar watch for ${resolvedCalendarId}; continuing with sync (live updates disabled until next renewal):`,
+        error
+      );
+    }
+
     const syncCallback = await this.callback(
       this.calendarSyncBatch,
       batchNumber,
@@ -242,6 +296,183 @@ export class Google extends Connector<Google> {
       initialSync ?? false
     );
     await this.runTask(nextCallback);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Calendar watch / webhook (dispatched callbacks — must live on this class)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Creates the Google Calendar push-notification watch for the given calendar.
+   * Idempotent: stops any existing watch before registering a new one.
+   * After success, schedules proactive renewal 24h before expiry.
+   *
+   * @private
+   */
+  private async calendarSetupWatch(calendarId: string): Promise<void> {
+    // The webhook URL embeds a reference to calendarOnWebhook so the runtime
+    // routes incoming push notifications directly to that method.
+    const webhookUrl = await this.tools.network.createWebhook(
+      {},
+      this.calendarOnWebhook,
+      calendarId
+    );
+
+    const result = await setupCalendarWatchFn(
+      this.makeCalendarHost(),
+      webhookUrl,
+      calendarId
+    );
+    if ("skipped" in result) return;
+
+    // Schedule proactive renewal 24h before expiry.
+    await this.calendarScheduleWatchRenewal(calendarId);
+  }
+
+  /**
+   * Schedules a durable recurring renewal for the calendar watch.
+   * If the renewal window has already passed, renews immediately.
+   *
+   * @private
+   */
+  private async calendarScheduleWatchRenewal(calendarId: string): Promise<void> {
+    const schedule = await getWatchRenewalScheduleFn(
+      this.makeCalendarHost(),
+      calendarId
+    );
+    if (!schedule) return;
+
+    if ("immediate" in schedule) {
+      await this.calendarRenewWatch(calendarId);
+      return;
+    }
+
+    const renewalCallback = await this.callback(
+      this.calendarRenewWatch,
+      calendarId
+    );
+    // Durable recurring: ceiling 3.5 days (half the ~7-day watch) guarantees a
+    // renewal fires even if a precise beat is lost; firstRunAt keeps the precise
+    // expiry-24h timing.
+    await this.scheduleRecurring(
+      `calendar:watch-renewal:${calendarId}`,
+      renewalCallback,
+      schedule
+    );
+  }
+
+  /**
+   * Renews the calendar watch. Called by the scheduled renewal task and
+   * reactively when a webhook arrives close to the watch expiry.
+   *
+   * Gracefully catches and logs errors without re-throwing.
+   */
+  async calendarRenewWatch(calendarId: string): Promise<void> {
+    try {
+      const oldWatchData = await this._calendarHostGet(
+        `calendar_watch_${calendarId}`
+      );
+      if (!oldWatchData) {
+        console.warn(
+          `No watch data found for calendar ${calendarId}, skipping renewal`
+        );
+        return;
+      }
+      // calendarSetupWatch is idempotent — it stops the old watch and
+      // re-schedules the keyed renewal — so no separate teardown is needed.
+      await this.calendarSetupWatch(calendarId);
+    } catch (error) {
+      console.error(`Failed to renew watch for calendar ${calendarId}:`, error);
+    }
+  }
+
+  /**
+   * Receives Google Calendar push notifications for a specific calendar.
+   * Validates the incoming request, optionally triggers watch renewal if near
+   * expiry, then enqueues an incremental sync batch.
+   *
+   * The webhook URL was registered by {@link calendarSetupWatch} with `calendarId`
+   * as the extra arg, so the runtime calls this method with the right calendarId.
+   */
+  async calendarOnWebhook(
+    request: WebhookRequest,
+    calendarId: string
+  ): Promise<void> {
+    const validation = await validateCalendarWebhookFn(
+      this.makeCalendarHost(),
+      request,
+      calendarId
+    );
+    if ("invalid" in validation) return;
+
+    if (validation.needsRenewal) {
+      this.calendarRenewWatch(calendarId).catch((error) => {
+        console.error(
+          `Failed to reactively renew watch for ${calendarId}:`,
+          error
+        );
+      });
+    }
+
+    await this.calendarStartIncrementalSync(calendarId);
+  }
+
+  /**
+   * Acquires the sync lock and enqueues an incremental sync batch for the
+   * given calendar. No-op when the lock is already held (another sync is
+   * in progress).
+   */
+  async calendarStartIncrementalSync(calendarId: string): Promise<void> {
+    const result = await startIncrementalSyncFn(
+      this.makeCalendarHost(),
+      calendarId
+    );
+    if ("done" in result) return;
+
+    const syncCallback = await this.callback(
+      this.calendarSyncBatch,
+      1,
+      "incremental",
+      calendarId,
+      false
+    );
+    await this.runTask(syncCallback);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Calendar teardown
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Stops all calendar sync machinery for the given calendar id:
+   * cancels the renewal task, stops the Google watch, clears all stored state.
+   *
+   * @private
+   */
+  private async stopCalendarSync(calendarId: string): Promise<void> {
+    const host = this.makeCalendarHost();
+
+    // 1. Cancel the scheduled renewal task.
+    await this.cancelScheduledTask(`calendar:watch-renewal:${calendarId}`);
+
+    // 2. Stop watch via Google API (best effort).
+    try {
+      await stopCalendarWatchFn(host, calendarId);
+    } catch (error) {
+      console.warn(
+        "Failed to stop calendar watch:",
+        error instanceof Error ? error.message : error
+      );
+    }
+
+    // 3. Clear sync-related storage and release the framework-managed lock.
+    await host.clear(`calendar_watch_${calendarId}`);
+    await host.clear(`sync_state_${calendarId}`);
+    await host.clear(`auth_token_${calendarId}`);
+    await host.tools.store.releaseLock(`sync_${calendarId}`);
+
+    // 4. Clear pending_occ / seen_master buffers from any crashed run.
+    await clearBuffersFn(host, calendarId);
   }
 }
 
