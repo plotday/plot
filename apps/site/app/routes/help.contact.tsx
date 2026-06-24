@@ -50,7 +50,7 @@ export default function Contact() {
                 Support Email
               </Text>
               <Text size="lg">
-                <Anchor href="mailto:team@plot.day">help@plot.day</Anchor>
+                <Anchor href="mailto:help@plot.day">help@plot.day</Anchor>
               </Text>
             </div>
 
