@@ -3988,14 +3988,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  /// Defers publishing a brand-new thread so the 5-second undo window can
-  /// fire. The draft thread row stays `draft=true` in the DB; [PendingSend]
-  /// holds the promote-ready thread + publish-ready note. When the window
-  /// elapses (or the app closes), [PendingSend.commit] promotes the thread
-  /// and publishes the note atomically.
+  /// Sends a brand-new thread with a 5-second undo window. The thread is
+  /// promoted to non-draft and the note published immediately — so both appear
+  /// in the feed / list / search right away and render seamlessly — but their
+  /// remote PUSH is held by [PendingSend] until the window elapses (or the app
+  /// closes). [PendingSend.commit] releases the hold and pushes;
+  /// [PendingSend.undo] hides the note and returns the thread to draft.
+  /// Returns the now-non-draft thread to navigate to.
   ///
-  /// Falls back to the immediate [add] path when [note] is null (nothing
-  /// to undo — an empty-body thread with no link action).
+  /// Falls back to the immediate [add] path when [note] is null (nothing to
+  /// undo — an empty-body thread with no link action).
   Future<Thread> sendThreadWithUndo(Thread draftThread, {Note? note}) async {
     // No note → nothing to undo; use the existing immediate publish path.
     if (note == null) {
@@ -4009,13 +4011,24 @@ class PriorityBloc extends Cubit<PriorityState> {
         draftThread.copyWith(draft: false, todo: isSelfTodo ? true : null);
     final publishNote = note.copyWith(threadId: draftThread.id, draft: false);
 
-    // Reset the compose surface WITHOUT publishing — the draft thread row
-    // stays `draft=true` in the DB until PendingSend.commit() fires.
+    // Register the hold + 5s timer BEFORE saving so a save-triggered push can't
+    // claim the rows before the hold is in place.
+    PendingSend.instance.start(
+      noteId: publishNote.id,
+      threadId: draftThread.id,
+      promotedThreadFromDraft: true,
+    );
+
+    // Promote the thread + publish the note as real (non-draft) rows WITHOUT
+    // pushing — they appear in the feed/list immediately; PendingSend holds
+    // their push for the undo window.
+    await promoteThread.save();
+    await publishNote.save(pushToRemote: false);
+
+    // Reset the compose surface for the next thread.
     resetDraftAfterSend(draftThread.priority);
 
-    PendingSend.instance.start(note: publishNote, newThread: promoteThread);
-
-    return draftThread;
+    return promoteThread;
   }
 
   void _loadAgenda({bool triggerSync = true, _PriorityLoadProfile? profile}) {

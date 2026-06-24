@@ -190,14 +190,18 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     }
   }
 
-  /// Undoes the pending send for this thread: cancels the timer, restores the
-  /// note content into the composer, and refocuses the editor.
+  /// Undoes the pending send for this thread: hides the un-sent note, restores
+  /// its content into the composer, and refocuses the editor. (Undo also
+  /// returns a brand-new thread to draft; ThreadBloc's `Thread.watchOne`
+  /// reconciles `state.thread` to that.)
   void _undoPendingSend() {
-    final note = PendingSend.instance.pendingNote;
-    unawaited(PendingSend.instance.undo());
-    if (!mounted) return;
-    context.read<ThreadBloc>().restoreDraft(note);
-    _noteEditorKey.currentState?.focus();
+    final threadBloc = context.read<ThreadBloc>();
+    unawaited(() async {
+      final note = await PendingSend.instance.undo();
+      if (!mounted) return;
+      threadBloc.restoreDraft(note);
+      _noteEditorKey.currentState?.focus();
+    }());
   }
 
   @override
@@ -765,35 +769,29 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                                 ),
                               ),
                             ),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildPendingSendRow(state),
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxHeight: panelConstraints.maxHeight * 0.4,
-                                  ),
-                                  child: Padding(
-                                    padding: EdgeInsets.only(
-                                      left: context.isMultiPanel ? 20.0 : 0,
-                                      right: context.isMultiPanel ? 20.0 : 0,
-                                      top: 8,
-                                      // NoteEditor's `flushToBottom` already
-                                      // absorbs the bottom safe-area inset.
-                                      // Adding it here too produced a doubled
-                                      // gap below the action buttons on iOS.
-                                      bottom: context.isMultiPanel ? 20.0 : 0,
-                                    ),
-                                    child: NoteEditor(
-                                      key: _noteEditorKey,
-                                      draft: state.draft,
-                                      flushToBottom:
-                                          !layoutStateForPanels.multiPanel,
-                                      viewerMode: state.thread.isReadOnly,
-                                    ),
-                                  ),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxHeight: panelConstraints.maxHeight * 0.4,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  left: context.isMultiPanel ? 20.0 : 0,
+                                  right: context.isMultiPanel ? 20.0 : 0,
+                                  top: 8,
+                                  // NoteEditor's `flushToBottom` already
+                                  // absorbs the bottom safe-area inset.
+                                  // Adding it here too produced a doubled
+                                  // gap below the action buttons on iOS.
+                                  bottom: context.isMultiPanel ? 20.0 : 0,
                                 ),
-                              ],
+                                child: NoteEditor(
+                                  key: _noteEditorKey,
+                                  draft: state.draft,
+                                  flushToBottom:
+                                      !layoutStateForPanels.multiPanel,
+                                  viewerMode: state.thread.isReadOnly,
+                                ),
+                              ),
                             ),
                           ],
                         );
@@ -804,27 +802,6 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
               );
             },
           ),
-        );
-      },
-    );
-  }
-
-  /// Builds the in-flight "SENDING" note row shown just above the composer.
-  /// Returns [SizedBox.shrink] when no send is pending for this thread.
-  Widget _buildPendingSendRow(ThreadState state) {
-    return ListenableBuilder(
-      listenable: PendingSend.instance,
-      builder: (context, _) {
-        final pending = PendingSend.instance;
-        if (!pending.isPending ||
-            pending.pendingThreadId != state.thread.id) {
-          return const SizedBox.shrink();
-        }
-        return NoteWidget(
-          note: pending.pendingNote!,
-          showAuthor: false,
-          sending: true,
-          onUndoSend: _undoPendingSend,
         );
       },
     );
@@ -857,27 +834,34 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
 
     final totalItems = _getTotalItemCount(state);
 
-    final list = InfiniteList(
-      controller: listController,
-      scrollController: _scrollController,
-      count: totalItems,
-      reverse: true,
-      doneEnd: true,
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      fetcher: (first, count) =>
-          Future<void>.value(), // No pagination needed for ThreadPage
-      itemKey: (index) {
-        final note = _getNoteAtIndex(state, index);
-        return note?.id.toString() ?? 'empty_$index';
-      },
-      builder: (context, index, focusNode, {reorderableIndex}) {
-        return _buildItemAtIndex(
-          state,
-          index,
-          focusNode,
-          reorderableIndex: reorderableIndex,
-        );
-      },
+    // Rebuild the list when the pending-send state changes so the in-flight
+    // note's footer flips between `SENDING` and the author/timestamp without a
+    // re-mount: the note is the same keyed list row throughout, so only its
+    // footer subtree updates (no flicker, no reflow).
+    final list = ListenableBuilder(
+      listenable: PendingSend.instance,
+      builder: (context, _) => InfiniteList(
+        controller: listController,
+        scrollController: _scrollController,
+        count: totalItems,
+        reverse: true,
+        doneEnd: true,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        fetcher: (first, count) =>
+            Future<void>.value(), // No pagination needed for ThreadPage
+        itemKey: (index) {
+          final note = _getNoteAtIndex(state, index);
+          return note?.id.toString() ?? 'empty_$index';
+        },
+        builder: (context, index, focusNode, {reorderableIndex}) {
+          return _buildItemAtIndex(
+            state,
+            index,
+            focusNode,
+            reorderableIndex: reorderableIndex,
+          );
+        },
+      ),
     );
 
     // Keep the initial scroll target pinned to the top while async content
@@ -926,6 +910,11 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   }) {
     final note = _getNoteAtIndex(state, index);
     if (note != null) {
+      // While its push is held, this row shows `SENDING ✕` in the footer slot
+      // instead of the author/timestamp. It's the same keyed row before and
+      // after the window, so the transition is just the footer subtree.
+      final sending = PendingSend.instance.isPending &&
+          PendingSend.instance.pendingNoteId == note.id;
       return NoteWidget(
         note: note,
         selected: false, // No selection on ThreadPage
@@ -934,6 +923,8 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         key: _scrollTargetIndex == index ? _scrollTargetKey : ValueKey(note.id),
         reorderableIndex: reorderableIndex,
         showAuthor: state.hasOtherAuthors,
+        sending: sending,
+        onUndoSend: sending ? _undoPendingSend : null,
         searchHighlight: state.search.isNotEmpty ? state.search : null,
         initiallyExpanded: noteInitiallyExpanded(
           note,

@@ -7,61 +7,68 @@ import 'package:plot/store/store.dart';
 
 /// Global, single-slot "undo send" controller.
 ///
-/// When a user sends a note we do NOT publish/push it immediately. Instead the
-/// publish-ready note (and, for a brand-new thread, the promote-ready thread)
-/// is held here in memory and a [window] timer is armed. The thread view
-/// renders the held note with a `SENDING` footer. When the timer fires — or the
-/// app closes / signs out — [commit] saves and pushes it. [undo] drops it and
-/// hands the note back so its content can be restored into the editor.
+/// On send, the note (and, for a brand-new thread, the thread) is already saved
+/// as a normal NON-draft row, so it appears in lists / feeds / search and
+/// renders seamlessly in place — only its footer shows `SENDING` instead of the
+/// author/timestamp during the window. The row's remote PUSH is held (via
+/// [Store.pushHeldNoteIds] / [Store.pushHeldThreadIds]) for [window] so others
+/// don't see it until it commits.
 ///
-/// Only one send is ever in flight: [start] commits any prior pending send
-/// first.
+/// - [commit] releases the hold and pushes (the note depends on its thread, so
+///   the thread + its links push first when needed).
+/// - [undo] hides the never-pushed note (back to draft + archived, so it leaves
+///   the list and can never sync), returns a brand-new thread to draft (→ the
+///   drafts list), and hands the note back so its content can be restored.
+/// - [flush] commits immediately on app-close / sign-out.
+///
+/// Only one send is in flight at a time: [start] commits any prior pending send.
 class PendingSend extends ChangeNotifier {
   PendingSend._();
   static final PendingSend instance = PendingSend._();
 
   static const Duration window = Duration(seconds: 5);
 
-  Note? _note;
-  Thread? _newThread;
+  NoteId? _noteId;
+  ThreadId? _threadId;
+  bool _promotedThreadFromDraft = false;
   Timer? _timer;
 
-  bool get isPending => _note != null;
-  Note? get pendingNote => _note;
-  ThreadId? get pendingThreadId => _note?.threadId;
+  bool get isPending => _noteId != null;
+  NoteId? get pendingNoteId => _noteId;
+  ThreadId? get pendingThreadId => _threadId;
+  bool get promotedThreadFromDraft => _promotedThreadFromDraft;
 
-  /// Registers a new pending send. [note] must be the publish version
-  /// (`draft == false`). [newThread] is the promote version (`draft == false`)
-  /// for a new-thread send, or null when replying to an existing thread.
-  void start({required Note note, Thread? newThread}) {
-    if (isPending) {
-      // One at a time: finalize the prior send before starting a new one.
-      unawaited(commit());
+  /// Begins a [window]-second undo window for an already-saved (non-draft,
+  /// unpushed) note. Set [promotedThreadFromDraft] when this send promoted a
+  /// brand-new / draft thread out of draft (its push is held too, and undo
+  /// returns it to draft). Commits any prior pending send first.
+  void start({
+    required NoteId noteId,
+    required ThreadId threadId,
+    bool promotedThreadFromDraft = false,
+  }) {
+    if (isPending) unawaited(commit());
+    _noteId = noteId;
+    _threadId = threadId;
+    _promotedThreadFromDraft = promotedThreadFromDraft;
+    Store.pushHeldNoteIds.add(_hex(noteId.toBytes()));
+    if (promotedThreadFromDraft) {
+      Store.pushHeldThreadIds.add(_hex(threadId.toBytes()));
     }
-    _note = note;
-    _newThread = newThread;
     _timer?.cancel();
     _timer = Timer(window, () => unawaited(commit()));
     notifyListeners();
   }
 
-  /// Publishes the held note (and promotes the held thread), then clears.
+  /// Releases the push hold and pushes the (already-saved) note + thread.
   /// Store-level and context-free so it is safe from app-close / sign-out.
   Future<void> commit() async {
-    final note = _note;
-    final newThread = _newThread;
-    if (note == null) return;
-    _clear();
+    if (_noteId == null) return;
+    _release();
     notifyListeners();
     try {
-      if (newThread != null) {
-        // draft == false → promotes the thread out of draft and pushes it.
-        await newThread.save();
-      }
-      // draft == false → publishes the note and pushes it.
-      await note.save();
+      await SyncOrchestrator.instance.push(SyncOrchestrator.note);
     } catch (e, t) {
-      // A failed commit must not strand the app; surface for diagnosis.
       try {
         await Tracker.captureException(e, t);
       } catch (_) {
@@ -70,14 +77,41 @@ class PendingSend extends ChangeNotifier {
     }
   }
 
-  /// Cancels the pending send and returns the note so the caller can move its
-  /// content back into the NoteEditor. Performs no DB writes — nothing was
-  /// persisted as published during the window.
+  /// Cancels the send: hides the never-pushed note (draft + archived, so it
+  /// leaves the list and never syncs), returns a brand-new thread to draft, and
+  /// returns the note so its content can be restored into the editor.
   Future<Note?> undo() async {
-    final note = _note;
-    _clear();
+    final noteId = _noteId;
+    final threadId = _threadId;
+    final demote = _promotedThreadFromDraft;
+    if (noteId == null) return null;
+    _release();
     notifyListeners();
-    return note;
+    if (!Store.isAvailable) return null;
+    try {
+      final note = await Note.get(noteId);
+      if (note != null) {
+        // draft = true → excluded from the notes list AND the push claim;
+        // archived → never resurfaces as a resumable draft. Local-only.
+        await note
+            .copyWith(draft: true, archivedAt: Value(DateTime.now()))
+            .save(pushToRemote: false);
+      }
+      if (demote && threadId != null) {
+        final thread = await Thread.getOne(threadId);
+        // Back to draft → leaves the feed, shows in the drafts list if
+        // abandoned. Draft threads are excluded from the push claim.
+        await thread.copyWith(draft: true).save();
+      }
+      return note;
+    } catch (e, t) {
+      try {
+        await Tracker.captureException(e, t);
+      } catch (_) {
+        // Never let error-reporting failure suppress the undo result.
+      }
+      return null;
+    }
   }
 
   /// Commit immediately if something is pending (app-close / sign-out).
@@ -85,10 +119,20 @@ class PendingSend extends ChangeNotifier {
     if (isPending) await commit();
   }
 
-  void _clear() {
+  void _release() {
+    final noteId = _noteId;
+    final threadId = _threadId;
+    if (noteId != null) Store.pushHeldNoteIds.remove(_hex(noteId.toBytes()));
+    if (_promotedThreadFromDraft && threadId != null) {
+      Store.pushHeldThreadIds.remove(_hex(threadId.toBytes()));
+    }
     _timer?.cancel();
     _timer = null;
-    _note = null;
-    _newThread = null;
+    _noteId = null;
+    _threadId = null;
+    _promotedThreadFromDraft = false;
   }
+
+  static String _hex(List<int> bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }

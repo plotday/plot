@@ -1,6 +1,6 @@
-/// Verifies that [PriorityBloc.sendThreadWithUndo] defers publish by leaving
-/// the thread `draft=true` in the DB and registering the promote-ready thread
-/// + publish-ready note with [PendingSend]. Also verifies
+/// Verifies that [PriorityBloc.sendThreadWithUndo] promotes the new thread and
+/// publishes the note immediately (so they appear in the feed/list/search) but
+/// HOLDS both pushes via [PendingSend] for the undo window. Also verifies
 /// [PriorityBloc.resetDraftAfterSend] emits a fresh compose surface.
 library;
 
@@ -24,6 +24,9 @@ import 'package:plot/util/profile_preferences.dart';
 
 final _selfId = ActorId.fromString('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 final _priorityId = Uuid.fromString('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+
+String _hex(Uuid id) =>
+    id.toBytes().map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
 // ---------------------------------------------------------------------------
 // DB insert helpers
@@ -96,6 +99,8 @@ void main() {
 
     store = Store.forTesting(NativeDatabase.memory());
     Injector.appInstance.registerSingleton<Store>(() => store, override: true);
+    Store.pushHeldNoteIds.clear();
+    Store.pushHeldThreadIds.clear();
 
     // Populate actor cache so Note.draft() / Base.actorId resolve.
     Actor.clearCache();
@@ -114,6 +119,8 @@ void main() {
 
   tearDown(() async {
     await PendingSend.instance.undo();
+    Store.pushHeldNoteIds.clear();
+    Store.pushHeldThreadIds.clear();
     await nowBloc.close();
     await localPreferences.close();
     Actor.clearCache();
@@ -148,9 +155,8 @@ void main() {
 
   group('PriorityBloc.sendThreadWithUndo', () {
     test(
-        'with a note: registers pending send, thread row stays draft, '
-        'note row absent; after commit thread promoted and note published',
-        () async {
+        'with a note: promotes the thread + publishes the note immediately '
+        '(real rows) but holds both pushes for the undo window', () async {
       // everything: true prevents the per-focus background sync from needing
       // Env/AppInfo/network (those static late finals aren't set in unit tests).
       final bloc = PriorityBloc(
@@ -161,10 +167,7 @@ void main() {
       );
       addTearDown(bloc.close);
 
-      // Arrange a draft thread (not yet in DB — sendThreadWithUndo does NOT
-      // save it before the window).
       final draftThread = Thread(priority: priority, draft: true);
-
       final note = Note(
         id: NoteId.generate(),
         threadId: draftThread.id,
@@ -179,37 +182,32 @@ void main() {
       // Act
       final returned = await bloc.sendThreadWithUndo(draftThread, note: note);
 
-      // The returned thread is the still-draft original.
+      // The thread is promoted right away (so it appears in the feed/search).
       expect(returned.id, draftThread.id);
-      expect(returned.draft, isTrue);
+      expect(returned.draft, isFalse);
 
-      // PendingSend is armed.
-      expect(PendingSend.instance.isPending, isTrue);
-      expect(PendingSend.instance.pendingNote?.draft, isFalse);
-      expect(PendingSend.instance.pendingNote?.content, 'hello undo');
-      expect(PendingSend.instance.pendingThreadId, draftThread.id);
-
-      // DB: thread row does NOT exist yet (draft thread never saved here).
-      final threads = await store.select(store.threads).get();
-      expect(threads.where((t) => t.draft == false), isEmpty);
-
-      // DB: note row does NOT exist yet.
-      final notes = await store.select(store.notes).get();
-      expect(notes.where((n) => n.draft == false), isEmpty);
-
-      // After commit: PendingSend writes thread (draft=false) + note (draft=false).
-      await PendingSend.instance.commit();
-
+      // Both rows are real (non-draft) in the DB immediately.
       final publishedThreads = await (store.select(store.threads)
             ..where((t) => t.draft.equals(false)))
           .get();
       expect(publishedThreads, hasLength(1));
-
       final publishedNotes = await (store.select(store.notes)
             ..where((n) => n.draft.equals(false)))
           .get();
       expect(publishedNotes, hasLength(1));
       expect(publishedNotes.single.content, 'hello undo');
+
+      // But both pushes are held for the undo window.
+      expect(PendingSend.instance.isPending, isTrue);
+      expect(PendingSend.instance.pendingNoteId, note.id);
+      expect(PendingSend.instance.pendingThreadId, draftThread.id);
+      expect(PendingSend.instance.promotedThreadFromDraft, isTrue);
+      expect(Store.pushHeldNoteIds, contains(_hex(note.id)));
+      expect(Store.pushHeldThreadIds, contains(_hex(draftThread.id)));
+
+      // Release now so the real 5s timer never fires a network commit.
+      // (commit's hold-release is covered network-free in pending_send_test.)
+      await PendingSend.instance.undo();
     });
 
     test('with no note: falls back to immediate add (thread published, no pending)',

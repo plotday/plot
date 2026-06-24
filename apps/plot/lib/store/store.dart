@@ -1207,9 +1207,10 @@ class Store extends _$Store {
       // Exclude draft rows and rows belonging to draft threads — they shouldn't
       // be pushed until published.
       final draftFilter = _buildDraftFilter(table);
+      final holdFilter = _buildHoldFilter(table);
       final claimSw = Stopwatch()..start();
       final List<QueryRow> pendingRows = await customWriteReturning(
-        'UPDATE ${table.actualTableName} SET pending = pending | 1 WHERE pending IS NOT NULL$draftFilter RETURNING *',
+        'UPDATE ${table.actualTableName} SET pending = pending | 1 WHERE pending IS NOT NULL$draftFilter$holdFilter RETURNING *',
         updates: {table},
       );
       final claimMs = claimSw.elapsedMilliseconds;
@@ -1430,6 +1431,37 @@ class Store extends _$Store {
   /// and the note loops forever. So we combine both filters rather than
   /// returning on the first match: a note is pushable only when it is
   /// published AND its thread is not a local draft.
+  /// IDs (32-char lowercase hex, no dashes) of the note/thread currently in a
+  /// 5-second "undo send" window (see `PendingSend`). The rows are saved
+  /// NON-draft so they appear in lists/feeds/search immediately, but their
+  /// remote push is held until the window elapses (or the app closes / signs
+  /// out). Mirrors the role of [_buildDraftFilter]: held rows stay `pending`
+  /// but are excluded from the push claim until released, so a stray sync can't
+  /// send a note before its undo window completes. At most one of each is set
+  /// (sends are one-at-a-time), but a Set keeps the brief commit-prior overlap
+  /// safe.
+  static final Set<String> pushHeldNoteIds = {};
+  static final Set<String> pushHeldThreadIds = {};
+
+  /// SQL fragment excluding [pushHeldNoteIds] / [pushHeldThreadIds] from a push
+  /// claim. Covers the note/thread tables and the tag/reaction tables that
+  /// share their parent's id (pushing a child ahead of a held parent would
+  /// 404 server-side). Returns '' when nothing is held.
+  static String _buildHoldFilter(TableInfo<Table, DataClass> table) {
+    final name = table.actualTableName;
+    Set<String>? held;
+    if (name == 'notes' || name == 'note_tags' || name == 'note_reactions') {
+      held = pushHeldNoteIds;
+    } else if (name == 'threads' ||
+        name == 'thread_tags' ||
+        name == 'thread_reactions') {
+      held = pushHeldThreadIds;
+    }
+    if (held == null || held.isEmpty) return '';
+    final list = held.map((h) => "x'$h'").join(', ');
+    return ' AND id NOT IN ($list)';
+  }
+
   static String _buildDraftFilter(TableInfo<Table, DataClass> table) {
     final columns = table.$columns;
     final name = table.actualTableName;
