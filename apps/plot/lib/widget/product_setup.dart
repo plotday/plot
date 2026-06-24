@@ -35,6 +35,8 @@ class ProductSetupWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Breathing room between the modal's header divider and the first row.
+        SizedBox(height: spacing.md),
         for (final product in products) ...[
           _ProductRow(product: product),
           SizedBox(height: spacing.sm),
