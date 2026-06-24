@@ -26,6 +26,11 @@ import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
 
 import { enrichLinkContactsFromOutlook, OUTLOOK_PEOPLE_SCOPES } from "./enrich";
 import {
+  getOutlookMailChannels,
+  OUTLOOK_MAIL_LINK_TYPES,
+  OUTLOOK_MAIL_SCOPES,
+} from "./channels";
+import {
   EXCLUDED_WELL_KNOWN,
   GraphMailApi,
   GraphMailApiError,
@@ -226,10 +231,7 @@ type ConversationItem = {
 export class OutlookMail extends Connector<OutlookMail> {
   static readonly PROVIDER = AuthProvider.Microsoft;
   static readonly handleReplies = true;
-  static readonly SCOPES = [
-    "https://graph.microsoft.com/mail.readwrite",
-    "https://graph.microsoft.com/mail.send",
-  ];
+  static readonly SCOPES = OUTLOOK_MAIL_SCOPES;
 
   readonly provider = AuthProvider.Microsoft;
   readonly channelNoun = { singular: "folder", plural: "folders" };
@@ -237,7 +239,7 @@ export class OutlookMail extends Connector<OutlookMail> {
   // carry name + address but nothing else) can be enriched with display
   // names from the user's People/Contacts data.
   readonly scopes = Integrations.MergeScopes(
-    OutlookMail.SCOPES,
+    OUTLOOK_MAIL_SCOPES,
     OUTLOOK_PEOPLE_SCOPES
   );
   readonly access = [
@@ -245,35 +247,7 @@ export class OutlookMail extends Connector<OutlookMail> {
     "Sends replies, creates drafts, and updates messages from Plot",
     "Reads your contacts to recognise senders by name",
   ];
-  readonly linkTypes = [
-    {
-      type: "email",
-      label: "Thread",
-      noteLabel: "Reply",
-      sharingModel: "message" as const,
-      composePlaceholder: "Send an Outlook email",
-      composeVerb: "Send",
-      replyPlaceholder: "Reply",
-      replyVerb: "Send",
-      supportsFileAttachments: true,
-      logo: "https://api.iconify.design/logos/microsoft-icon.svg",
-      logoDark:
-        "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4",
-      logoMono: "https://api.iconify.design/simple-icons/microsoftoutlook.svg",
-      contactRoles: [
-        { id: "to", label: "To", default: true },
-        { id: "cc", label: "CC" },
-        { id: "bcc", label: "BCC", hidden: true },
-      ],
-      supportsContactChanges: true,
-      // Outlook composes target any address — a Plot contact (with or
-      // without a connection-scoped row) or a free-form typed email
-      // delivered via `inviteEmails`.
-      compose: {
-        targets: "addresses" as const,
-      },
-    },
-  ];
+  readonly linkTypes = OUTLOOK_MAIL_LINK_TYPES;
 
   build(build: ToolBuilder) {
     return {
@@ -377,24 +351,7 @@ export class OutlookMail extends Connector<OutlookMail> {
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
-    const api = new GraphMailApi(token.token);
-    const folders = await api.getMailFolders();
-    const wellKnown = await api.getWellKnownFolderIds();
-    // Cache for sync paths (channel routing, excluded-folder filtering).
-    await this.set("wellknown_folders", wellKnown);
-
-    const excluded = new Set(
-      EXCLUDED_WELL_KNOWN.map((n) => wellKnown[n]).filter(Boolean) as string[]
-    );
-    return folders
-      .filter((f) => !excluded.has(f.id) && !f.isHidden)
-      .map((f) => ({
-        id: f.id,
-        title: f.displayName,
-        // Default to the user's actual conversations: incoming + outgoing.
-        enabledByDefault:
-          f.id === wellKnown.inbox || f.id === wellKnown.sentitems,
-      }));
+    return getOutlookMailChannels(token);
   }
 
   async onChannelEnabled(
