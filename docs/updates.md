@@ -4,6 +4,8 @@
 
 - Connecting an account is smoother: after you sign in, Plot now goes straight to choosing what to
   sync, without a brief flash of the connections list in between.
+- When you connect an account, the connect button keeps spinning until the sign-in window opens,
+  instead of looking finished while you're still waiting for the window to appear.
 
 ## 1.5.0+366 — 2026-06-24
 

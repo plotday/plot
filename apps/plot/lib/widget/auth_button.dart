@@ -1,11 +1,16 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:convert' show jsonDecode;
 import 'dart:math' show Random;
 
 import 'package:crypto/crypto.dart' show sha256;
 
 import 'package:flutter/foundation.dart'
-    show kIsWeb, kReleaseMode, defaultTargetPlatform, TargetPlatform;
+    show
+        kIsWeb,
+        kReleaseMode,
+        defaultTargetPlatform,
+        TargetPlatform,
+        visibleForTesting;
 import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter/widgets.dart';
@@ -508,25 +513,32 @@ class _AuthButtonState extends State<AuthButton>
     try {
       final authUrl = await _generateAuthUrl(redirectUri: redirectUri);
 
-      // The auth popup is now what the user interacts with — drop our button
-      // spinner while it's open. On web the call doesn't resolve until the
-      // callback arrives or FlutterWebAuth2's timeout (default 5 min) elapses,
-      // so leaving the spinner on makes the button look stuck for a user who
-      // closed/abandoned the popup. Restored below for the token exchange.
-      if (mounted) setState(() => _isLoading = false);
-
-      final result = await FlutterWebAuth2.authenticate(
-        url: authUrl.url,
-        callbackUrlScheme: AuthButton._isWindows
-            ? _desktopCallbackUrl
-            : redirectUri.split(':').first,
-        options: AuthButton._isWindows
-            ? const FlutterWebAuth2Options(useWebview: false)
-            : const FlutterWebAuth2Options(),
+      // Keep the spinner on through a short grace period after launching the
+      // popup. The popup can lag the authenticate() call by several seconds, and
+      // dropping the spinner immediately makes the button look idle while the
+      // user is still waiting for the popup to appear. runWithPopupSpinnerGrace
+      // drops it after the grace so the button doesn't look stuck for a user who
+      // closed/abandoned the popup (on web the call doesn't resolve until the
+      // callback arrives or FlutterWebAuth2's ~5-min timeout elapses). Restored
+      // below for the token exchange.
+      final result = await runWithPopupSpinnerGrace(
+        dropSpinner: () {
+          if (mounted) setState(() => _isLoading = false);
+        },
+        authenticate: () => FlutterWebAuth2.authenticate(
+          url: authUrl.url,
+          callbackUrlScheme: AuthButton._isWindows
+              ? _desktopCallbackUrl
+              : redirectUri.split(':').first,
+          options: AuthButton._isWindows
+              ? const FlutterWebAuth2Options(useWebview: false)
+              : const FlutterWebAuth2Options(),
+        ),
       );
 
-      // Back in the app doing invisible token-exchange work — restore the
-      // spinner (and re-guard against a second tap during the tail).
+      // Back in the app doing invisible token-exchange work — ensure the
+      // spinner is on (the grace timer may have dropped it) and re-guard against
+      // a second tap during the tail.
       if (mounted) setState(() => _isLoading = true);
 
       final responseUri = Uri.parse(result);
@@ -544,9 +556,10 @@ class _AuthButtonState extends State<AuthButton>
         return;
       }
       if (isAuthCallbackTimeout(e)) {
-        // The user saw the popup and didn't finish (closed/abandoned it). The
-        // spinner is already cleared, so just move on quietly — no toast, and
-        // not a bug to report.
+        // The user saw the popup and didn't finish (closed/abandoned it). By
+        // now the grace timer has long since cleared the spinner (the web
+        // timeout is ~5 min) and the finally clears it again, so just move on
+        // quietly — no toast, and not a bug to report.
         log.info(
           'OAuth flow timed out awaiting callback (${widget.provider.name})',
         );
@@ -865,9 +878,10 @@ class _AuthButtonState extends State<AuthButton>
         return;
       }
       if (isAuthCallbackTimeout(e)) {
-        // The user saw the popup and didn't finish (closed/abandoned it). The
-        // spinner is already cleared, so just move on quietly — no toast, and
-        // not a bug to report.
+        // The user saw the popup and didn't finish (closed/abandoned it). By
+        // now the grace timer has long since cleared the spinner (the web
+        // timeout is ~5 min) and the finally clears it again, so just move on
+        // quietly — no toast, and not a bug to report.
         log.info(
           'OAuth flow timed out awaiting callback (${widget.provider.name})',
         );
@@ -941,29 +955,37 @@ class _AuthButtonState extends State<AuthButton>
     TwistAuthUrl authUrl,
     String redirectUri,
   ) async {
-    // The auth popup is now what the user interacts with — drop our button
-    // spinner while it's open. On web the call doesn't resolve until the
-    // callback arrives or FlutterWebAuth2's timeout (default 5 min) elapses, so
-    // leaving the spinner on makes the button look stuck for a user who
-    // closed/abandoned the popup. Restored below once we're back doing
-    // invisible work (token exchange + the caller's activation step).
-    if (mounted) setState(() => _isLoading = false);
-
-    final result = await FlutterWebAuth2.authenticate(
-      url: authUrl.url,
-      callbackUrlScheme: AuthButton._isWindows
-          ? _desktopCallbackUrl
-          : redirectUri.split(':').first,
-      options: AuthButton._isWindows
-          ? const FlutterWebAuth2Options(useWebview: false)
-          : const FlutterWebAuth2Options(),
+    // Keep the button spinner on through a short grace period after launching
+    // the popup. The popup can lag the authenticate() call by several seconds
+    // (notably LinkedIn/Unipile hosted auth), and dropping the spinner the
+    // instant we call authenticate() makes the button look idle while the user
+    // is still waiting for the popup to appear. runWithPopupSpinnerGrace drops
+    // it after the grace so the button doesn't look stuck for a user who
+    // closed/abandoned the popup (on web the call doesn't resolve until the
+    // callback arrives or FlutterWebAuth2's ~5-min timeout elapses). Restored
+    // below once we're back doing invisible work (token exchange + the caller's
+    // activation step).
+    final result = await runWithPopupSpinnerGrace(
+      dropSpinner: () {
+        if (mounted) setState(() => _isLoading = false);
+      },
+      authenticate: () => FlutterWebAuth2.authenticate(
+        url: authUrl.url,
+        callbackUrlScheme: AuthButton._isWindows
+            ? _desktopCallbackUrl
+            : redirectUri.split(':').first,
+        options: AuthButton._isWindows
+            ? const FlutterWebAuth2Options(useWebview: false)
+            : const FlutterWebAuth2Options(),
+      ),
     );
 
     final responseUri = Uri.parse(result);
     final params = responseUri.queryParameters;
     if (params['error'] != null) {
-      // Leave the spinner off; the user reads the error toast and the button is
-      // back to normal so they can retry.
+      // Drop the spinner so the user can read the error toast and retry (the
+      // grace timer may not have fired yet if the error came back quickly).
+      if (mounted) setState(() => _isLoading = false);
       final errorParam = params['error']!.trim();
       if (mounted) {
         _showTwistAuthError(
@@ -973,8 +995,9 @@ class _AuthButtonState extends State<AuthButton>
       return false;
     }
 
-    // Success (code exchange or bridge `success=1`) — restore the spinner for
-    // the token exchange and the caller's [AuthButton._onSuccess] activation.
+    // Success (code exchange or bridge `success=1`) — ensure the spinner is on
+    // (the grace timer may have dropped it) for the token exchange and the
+    // caller's [AuthButton._onSuccess] activation.
     if (mounted) setState(() => _isLoading = true);
 
     final code = params['code'];
@@ -1037,6 +1060,43 @@ bool isAuthCallbackTimeout(Object e) =>
     e is PlatformException &&
     e.code == 'error' &&
     e.message == 'Timeout waiting for callback value';
+
+/// How long the auth button keeps its spinner running after launching the
+/// OAuth popup. The popup can take several seconds to actually appear (notably
+/// LinkedIn/Unipile hosted auth), and FlutterWebAuth2 exposes no "popup is
+/// visible" signal, so the spinner stands in for "still launching" until this
+/// elapses. See [runWithPopupSpinnerGrace].
+const Duration _authPopupSpinnerGrace = Duration(seconds: 5);
+
+/// Runs [authenticate] (the OAuth popup) while keeping the button spinner on
+/// for a grace period, then calling [dropSpinner].
+///
+/// Dropping the spinner the instant we call authenticate() makes the button
+/// look idle while the user is still waiting for the popup to appear — the
+/// popup can lag the call by several seconds (notably LinkedIn/Unipile hosted
+/// auth) and there's no reliable signal for when it becomes visible. We instead
+/// keep the spinner on until [grace] elapses (a proxy for "the popup should be
+/// up by now"), then call [dropSpinner] — so the button doesn't look stuck for
+/// a user who closed/abandoned the popup (on web authenticate() won't resolve
+/// until the callback arrives or its ~5-min timeout fires).
+///
+/// The grace timer is cancelled as soon as [authenticate] settles, so a fast
+/// or cancelled flow never drops the spinner mid-work — keeping it on a little
+/// longer than the popup needs is harmless (the popup is the user's focus by
+/// then). Returns the [authenticate] result and rethrows its errors.
+@visibleForTesting
+Future<T> runWithPopupSpinnerGrace<T>({
+  required Future<T> Function() authenticate,
+  required void Function() dropSpinner,
+  Duration grace = _authPopupSpinnerGrace,
+}) async {
+  final timer = Timer(grace, dropSpinner);
+  try {
+    return await authenticate();
+  } finally {
+    timer.cancel();
+  }
+}
 
 FButtonStyle buildAuthButtonStyle(
   BuildContext context,
