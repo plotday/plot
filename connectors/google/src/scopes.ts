@@ -103,9 +103,9 @@ export const PRODUCTS: ProductInfo[] = [
     key: "contacts",
     label: "Google Contacts",
     description: "Recognizes people by name and photo on your threads.",
-    // TODO: mirror to plot.day/assets (like logo-google-tasks.svg) for
-    // production robustness — this is a third-party hotlink.
-    icon: "https://images.seeklogo.com/logo-png/45/1/google-contacts-logo-png_seeklogo-456656.png",
+    // Hosted on plot.day/assets like the Tasks logo (mirrored from the brand
+    // PNG). Goes live with the next apps/site deploy.
+    icon: "https://plot.day/assets/logo-google-contacts.png",
     scopeGroupId: "contacts",
   },
 ];
