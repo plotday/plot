@@ -24,6 +24,7 @@ import 'package:plot/widget/thread_assignee.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/primary_link_header_actions.dart';
 import 'package:plot/widget/thread_sharing.dart';
+import 'package:plot/widget/pinned_link_row.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 
@@ -752,6 +753,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                               _ThreadFilterBar(
                                 threadNoteId: state.threadNoteId!,
                               ),
+                            ...pinnedBookmarkLinks(state.links).map(
+                              (link) => PinnedLinkRow(link: link),
+                            ),
                             Flexible(
                               flex: 1,
                               fit: FlexFit.tight,
