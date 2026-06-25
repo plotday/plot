@@ -304,7 +304,7 @@ jobs:
           cp apps/plot/.env.production apps/plot/app.env
 
       - name: Cache Flutter dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.pub-cache
@@ -325,7 +325,7 @@ jobs:
         run: dart pub global activate derry
 
       - name: Cache build_runner outputs
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             apps/plot/.dart_tool/build
@@ -560,7 +560,7 @@ jobs:
           java-version: 21
 
       - name: Cache Gradle
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
@@ -594,7 +594,7 @@ jobs:
           EOF
 
       - name: Cache Flutter dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.pub-cache
@@ -615,7 +615,7 @@ jobs:
         run: dart pub global activate derry
 
       - name: Cache build_runner outputs
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             apps/plot/.dart_tool/build
@@ -860,7 +860,7 @@ jobs:
           cp apps/plot/.env.production apps/plot/app.env
 
       - name: Cache Flutter dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.pub-cache
@@ -881,7 +881,7 @@ jobs:
         run: dart pub global activate derry
 
       - name: Cache build_runner outputs
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             apps/plot/.dart_tool/build
@@ -1192,7 +1192,7 @@ jobs:
         run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/app.env
 
       - name: Cache Flutter dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~\AppData\Local\Pub\Cache
@@ -1212,7 +1212,7 @@ jobs:
         run: dart pub global activate derry
 
       - name: Cache build_runner outputs
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             apps\plot\.dart_tool\build
