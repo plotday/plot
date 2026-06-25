@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/store/types.dart' show ContactExternalAccount;
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/widget/compose/compose_pill.dart';
 import 'package:plot/widget/compose/compose_target.dart';
@@ -1615,6 +1616,186 @@ void main() {
           t.target!.compose.targets == 'addresses');
       expect(addr.inviteEmails, const ['new@unseen.com']);
     });
+
+    test('hides connections that cannot reach the contact — only the LinkedIn '
+        'DM is offered for a LinkedIn-only contact (no email, not a Plot user)',
+        () async {
+      final linkedinId = await _insertConnector(
+        store,
+        name: 'LinkedIn',
+        linkType: 'dm',
+        targets: 'contacts',
+        channelId: 'li-default',
+      );
+      await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      final self = Uuid.generate();
+      final danylo = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(
+        store,
+        danylo,
+        name: 'Danylo Bukur',
+        noEmail: true,
+        externalAccounts: [
+          ContactExternalAccount(
+            twistInstanceId: linkedinId,
+            accountId: 'li-acc',
+            provider: 'linkedin',
+          ),
+        ],
+      );
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final results = await bloc.connectionsForRoster(
+        contacts: [danylo],
+        groups: const [],
+        inviteEmails: const [],
+      );
+
+      // Only the LinkedIn (contacts) connector can reach Danylo.
+      final connectorTargets = results.where((t) => t.target != null).toList();
+      expect(connectorTargets, hasLength(1));
+      expect(connectorTargets.single.target!.compose.targets, 'contacts');
+      expect(connectorTargets.single.target!.twist.name, 'LinkedIn');
+      // Gmail (addresses) is not offered — Danylo has no email.
+      expect(
+        results.any((t) => t.target?.compose.targets == 'addresses'),
+        isFalse,
+      );
+      // Plot chat is not offered — Danylo is not a Plot user and has no email.
+      expect(results.any((t) => t.kind == ComposeTargetKind.chat), isFalse);
+    });
+
+    test('offers Plot + Gmail but hides the LinkedIn DM for an email contact '
+        'not bound to LinkedIn', () async {
+      await _insertConnector(
+        store,
+        name: 'LinkedIn',
+        linkType: 'dm',
+        targets: 'contacts',
+        channelId: 'li-default',
+      );
+      await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      // Greg has an email (derived from name) and no LinkedIn account.
+      await _insertActor(store, greg, name: 'Greg Smith');
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final results = await bloc.connectionsForRoster(
+        contacts: [greg],
+        groups: const [],
+        inviteEmails: const [],
+      );
+
+      // Gmail (addresses) reaches Greg by email; Plot can invite him by email.
+      expect(
+        results.any((t) => t.target?.compose.targets == 'addresses'),
+        isTrue,
+      );
+      expect(results.any((t) => t.kind == ComposeTargetKind.chat), isTrue);
+      // LinkedIn (contacts) is hidden — Greg has no LinkedIn account.
+      expect(
+        results.any((t) => t.target?.compose.targets == 'contacts'),
+        isFalse,
+      );
+    });
+
+    test('offers nothing for a contact with no email, not a Plot user, and no '
+        'connection account', () async {
+      await _insertConnector(
+        store,
+        name: 'LinkedIn',
+        linkType: 'dm',
+        targets: 'contacts',
+        channelId: 'li-default',
+      );
+      await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      final self = Uuid.generate();
+      final ghost = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, ghost, name: 'No Reach', noEmail: true);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final results = await bloc.connectionsForRoster(
+        contacts: [ghost],
+        groups: const [],
+        inviteEmails: const [],
+      );
+
+      expect(results, isEmpty);
+    });
+
+    test('offers Plot chat for a Plot user even without an email, but not an '
+        'email-only connection', () async {
+      await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      final self = Uuid.generate();
+      final teammate = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(
+        store,
+        teammate,
+        name: 'Team Mate',
+        noEmail: true,
+        type: ActorType.user,
+      );
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final results = await bloc.connectionsForRoster(
+        contacts: [teammate],
+        groups: const [],
+        inviteEmails: const [],
+      );
+
+      // Plot chat reaches a Plot user directly.
+      expect(results.any((t) => t.kind == ComposeTargetKind.chat), isTrue);
+      // Gmail can't reach a user with no email address.
+      expect(
+        results.any((t) => t.target?.compose.targets == 'addresses'),
+        isFalse,
+      );
+    });
   });
 }
 
@@ -1669,16 +1850,22 @@ Future<void> _insertActor(
   required String name,
   bool self = false,
   bool inviteable = true,
+  bool noEmail = false,
+  ActorType type = ActorType.contact,
+  List<ContactExternalAccount> externalAccounts = const [],
 }) async {
   await store.into(store.actors).insert(
         ActorsCompanion(
           id: Value(ActorId(id)),
-          type: const Value(ActorType.contact),
+          type: Value(type),
           name: Value(name),
-          email: Value('${name.replaceAll(' ', '.').toLowerCase()}@x.test'),
+          email: noEmail
+              ? const Value<String?>(null)
+              : Value('${name.replaceAll(' ', '.').toLowerCase()}@x.test'),
           self: Value(self),
           inviteable: Value(inviteable),
           primary: const Value(true),
+          externalAccounts: Value(externalAccounts),
         ),
       );
 }

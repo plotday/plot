@@ -1570,34 +1570,105 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     );
   }
 
-  /// Connections that can reach [contacts]/[groups]/[inviteEmails], MRU-first.
-  /// Plot per applicable scope, plus DM-type connectors — all DM types when no
-  /// group is selected, email (addresses) connectors only when a group is.
+  /// Connections that can actually **reach** [contacts]/[groups]/[inviteEmails],
+  /// MRU-first. Only ways that can address the whole roster are offered, so the
+  /// picker never shows a dead end:
+  ///
+  /// - **Plot** (per applicable scope) when every contact is a Plot user (chat
+  ///   directly) or has an email (invite by email).
+  /// - **addresses connectors** (e.g. Gmail) when every contact has an email.
+  /// - **contacts connectors** (e.g. LinkedIn/Slack) when every contact has an
+  ///   external account on that connection (and there are no raw invite emails).
+  ///
+  /// A group selection still restricts connectors to email-accepting
+  /// (addresses) ones. An **empty** roster (no contacts/groups/invite emails)
+  /// is the bare "new thread" template call — every way is offered, since there
+  /// is no specific recipient to be unreachable.
   Future<List<ComposeTarget>> connectionsForRoster({
     required List<Uuid> contacts,
     required List<Uuid> groups,
     required List<String> inviteEmails,
   }) async {
     final ctx = await _searchContextFor();
-    final options = <ComposeTarget>[];
-    for (final teamId in <BigInt?>{null, ...ctx.teamNames.keys}) {
-      options.add(ComposeTarget.chat(
-        teamId: teamId,
-        hasTeams: ctx.hasTeams,
-        teamName: teamId == null ? null : ctx.teamNames[teamId],
-        contacts: contacts,
-        groups: groups,
-        inviteEmails: inviteEmails,
-      ));
+
+    // Resolve roster contacts so reachability can read each one's email, type
+    // (Plot user vs contact), and per-connection external accounts. The picker
+    // usually selected these from a list that already warmed the Actor cache;
+    // load any stragglers so a cold cache can't wrongly hide a connection.
+    // An id that can't be resolved stays unresolved → treated as unreachable.
+    final actorsById = <Uuid, Actor>{};
+    for (final id in contacts) {
+      final cached = Actor.fromCache(ActorId.fromUuid(id));
+      if (cached != null) {
+        actorsById[id] = cached;
+      } else {
+        try {
+          actorsById[id] = await Actor.getOne(ActorId.fromUuid(id));
+        } catch (_) {
+          // Unknown contact — leave unresolved (unreachable).
+        }
+      }
     }
-    // DM-type connectors. With no group, offer all DM-type connectors
-    // (contacts + addresses) as before. With a group selected, offer only
-    // email-accepting (addresses) connectors — the group is expanded to member
-    // emails at dispatch, and every member is guaranteed to have an email.
-    // contacts-type DMs (e.g. Slack) are deferred until per-platform
-    // reachability is modelled.
+
+    // Bare template call (no specific recipient): keep offering every way.
+    final hasRoster =
+        contacts.isNotEmpty || groups.isNotEmpty || inviteEmails.isNotEmpty;
+
+    bool hasEmail(Uuid id) {
+      final e = actorsById[id]?.email;
+      return e != null && e.isNotEmpty;
+    }
+
+    // Plot reaches the roster when every contact is a Plot user or has an email
+    // (groups are Plot-native; typed invite emails are invitable → only the
+    // contacts gate).
+    bool plotReachable() {
+      if (!hasRoster) return true;
+      return contacts.every((id) {
+        final a = actorsById[id];
+        return (a != null && a.type == ActorType.user) || hasEmail(id);
+      });
+    }
+
+    // A DM connector reaches the roster when it can address every recipient.
+    bool connectorReachable(CreateTarget t) {
+      if (!hasRoster) return true;
+      if (t.compose.targets == 'addresses') {
+        // Gmail etc.: every contact needs an email; group members resolve to
+        // emails at dispatch and typed invite emails are emails.
+        return contacts.every(hasEmail);
+      }
+      // contacts-type (LinkedIn/Slack): every contact needs an external account
+      // on this connection; raw invite emails can't be reached.
+      if (inviteEmails.isNotEmpty) return false;
+      if (contacts.isEmpty) return false;
+      return contacts.every(
+        (id) => actorsById[id]?.hasExternalAccount(t.twist.id) ?? false,
+      );
+    }
+
+    final options = <ComposeTarget>[];
+    if (plotReachable()) {
+      for (final teamId in <BigInt?>{null, ...ctx.teamNames.keys}) {
+        options.add(ComposeTarget.chat(
+          teamId: teamId,
+          hasTeams: ctx.hasTeams,
+          teamName: teamId == null ? null : ctx.teamNames[teamId],
+          contacts: contacts,
+          groups: groups,
+          inviteEmails: inviteEmails,
+        ));
+      }
+    }
+    // DM-type connectors. With a group selected, offer only email-accepting
+    // (addresses) connectors — the group is expanded to member emails at
+    // dispatch. Reachability then drops any connection that can't address the
+    // whole roster.
     for (final t in ctx.createTargets.where(
-      (t) => t.isDmType && (groups.isEmpty || t.compose.targets == 'addresses'),
+      (t) =>
+          t.isDmType &&
+          (groups.isEmpty || t.compose.targets == 'addresses') &&
+          connectorReachable(t),
     )) {
       options.add(ComposeTarget.connector(
         t,

@@ -1366,19 +1366,33 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// step-1 query, clear the shared field for "Select a connection", and show
   /// step 2.
   Future<void> _pickRecipient(ComposePeopleEntry entry) async {
-    final remembered = await context
-        .read<ComposeTargetsBloc>()
-        .lastUsedTargetForRoster(
-          contacts: entry.contacts,
-          groups: entry.groups,
-          inviteEmails: entry.inviteEmails,
-        );
+    final bloc = context.read<ComposeTargetsBloc>();
+    final remembered = await bloc.lastUsedTargetForRoster(
+      contacts: entry.contacts,
+      groups: entry.groups,
+      inviteEmails: entry.inviteEmails,
+    );
     if (!mounted) return;
     _stashedSectionsQuery = _pickerSearchController.text;
     _pickerSearchController.clear();
     if (remembered != null) {
       setState(() => _selectedRecipient = entry);
       await _applyTarget(remembered);
+      return;
+    }
+    // When exactly one connection can reach this roster, skip the connection
+    // step and go straight to compose with it. Zero reachable still shows
+    // step 2, where the picker explains there is no connected way to reach the
+    // contact (rather than offering connections that would fail on send).
+    final reachable = await bloc.connectionsForRoster(
+      contacts: entry.contacts,
+      groups: entry.groups,
+      inviteEmails: entry.inviteEmails,
+    );
+    if (!mounted) return;
+    if (reachable.length == 1) {
+      setState(() => _selectedRecipient = entry);
+      await _applyTarget(reachable.single);
       return;
     }
     setState(() {

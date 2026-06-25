@@ -890,7 +890,13 @@ export class Integrations extends Tool implements IAuth {
     observeOnly = false
   ): Promise<any | null> {
     const title = channel.title ?? channel.id;
-    const linkTypes = channel.linkTypes ?? null;
+    // Persist the connector-level linkTypes fallback when the channel declares
+    // none. Source connectors (LinkedIn/Instagram/WhatsApp) declare `linkTypes`
+    // only at the class level and return bare channels from getChannels(), so
+    // without this the enabled channel row's link_types is NULL — and a twist
+    // in dynamic-link-types mode then resolves `user.twist.link_types` to NULL,
+    // hiding the connector's compose target from the new-thread picker (#1a).
+    const linkTypes = channel.linkTypes ?? this.connectorLinkTypes(provider) ?? null;
 
     await this.store.set(`channel_config:${provider}:${channel.id}`, {
       enabled: true,
@@ -1102,16 +1108,20 @@ export class Integrations extends Tool implements IAuth {
     for (const channel of flat) {
       dedupedByChannelId.set(channel.id, channel);
     }
-    const values = [...dedupedByChannelId.values()].map((channel) => ({
-      twist_instance_id: this.twistInstanceId,
-      channel_id: channel.id,
-      title: channel.title ?? channel.id,
-      enabled: false,
-      link_types: (channel.linkTypes
-        ? JSON.stringify(channel.linkTypes)
-        : null) as any,
-      updated_at: futureDate,
-    }));
+    const values = [...dedupedByChannelId.values()].map((channel) => {
+      // Fall back to the connector-level linkTypes when the channel declares
+      // none, so discovery rows for class-level-only connectors (LinkedIn etc.)
+      // carry compose-bearing link_types (#1a).
+      const lt = channel.linkTypes ?? this.connectorLinkTypes();
+      return {
+        twist_instance_id: this.twistInstanceId,
+        channel_id: channel.id,
+        title: channel.title ?? channel.id,
+        enabled: false,
+        link_types: (lt ? JSON.stringify(lt) : null) as any,
+        updated_at: futureDate,
+      };
+    });
 
     await this.db
       .insertInto("channel")
@@ -1145,6 +1155,25 @@ export class Integrations extends Tool implements IAuth {
       .execute();
   }
 
+  /**
+   * Connector-level linkTypes fallback for a channel that declares none of its
+   * own. Source connectors (LinkedIn/Instagram/WhatsApp) declare `linkTypes`
+   * only at the class level and return bare channels from getChannels(), so the
+   * persisted `channel.link_types` must fall back to the connector's declared
+   * linkTypes. Mirrors the read-side resolution in {@link annotateChannelTree}
+   * so what we write matches what the modal/display path computes.
+   */
+  private connectorLinkTypes(
+    provider?: AuthProvider
+  ): LinkTypeConfig[] | undefined {
+    return (
+      (this.sourceProvider?.linkTypes as LinkTypeConfig[] | undefined) ??
+      (provider != null
+        ? this.providerConfigs.find((p) => p.provider === provider)?.linkTypes
+        : undefined)
+    );
+  }
+
 
   // ============================================================================
   // Source save operations (delegates to internal Plot instance)
@@ -1161,16 +1190,29 @@ export class Integrations extends Tool implements IAuth {
       // Lazy import to avoid circular dependency at module load time
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { Plot: PlotClass } = require("./plot/index") as { Plot: typeof Plot };
-      this._plot = new PlotClass({
-        db: this.db,
-        twistInstanceId: this.twistInstanceId,
-        options: {
-          thread: { access: 1 /* ThreadAccess.Create */ },
-        },
-        env: this.env,
-      });
+      this._plot = new PlotClass(this.internalPlotOptions());
     }
     return this._plot!;
+  }
+
+  /**
+   * Construction options for the internal Plot used by source save operations
+   * (saveContacts/saveLink). Forwards `sourceProvider` so `addContacts` can
+   * resolve the connector's provider and write `contact_external_account`
+   * bindings for synced contacts — without it, emailless relation contacts
+   * (e.g. LinkedIn 1st-degree connections) get no binding and appear
+   * unreachable in the new-thread connection picker (#1b).
+   */
+  private internalPlotOptions() {
+    return {
+      db: this.db,
+      twistInstanceId: this.twistInstanceId,
+      options: {
+        thread: { access: 1 /* ThreadAccess.Create */ },
+      },
+      env: this.env,
+      sourceProvider: this.sourceProvider,
+    };
   }
 
   /**

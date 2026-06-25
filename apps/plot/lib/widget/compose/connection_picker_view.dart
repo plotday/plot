@@ -190,6 +190,41 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
     return label.substring(open + 1, close).trim();
   }
 
+  // ─── Empty state ───────────────────────────────────────────────────────────
+
+  /// Shown when no connection can reach the chosen recipient — they are not on
+  /// Plot and have no email address, and no connected app (LinkedIn, etc.) has
+  /// an account for them. Explains the dead end rather than showing a blank
+  /// grid or offering connections that would fail on send.
+  Widget _noReachableConnections(BuildContext context) {
+    final colors = context.theme.colors;
+    final typography = context.theme.typography;
+    final spacing = context.theme.spacing;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: spacing.xl, vertical: spacing.lg),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(PlotIcon.plugCircleXmark, size: 28, color: colors.mutedForeground),
+          SizedBox(height: spacing.md),
+          Text(
+            'No way to reach this contact yet',
+            textAlign: TextAlign.center,
+            style: typography.md.copyWith(fontWeight: FontWeight.w600),
+          ),
+          SizedBox(height: spacing.sm),
+          Text(
+            "They're not on Plot and have no email address. Connect the app you "
+            'know them through, or add their email to message them.',
+            textAlign: TextAlign.center,
+            style: typography.sm.copyWith(color: colors.mutedForeground),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── Header widget ─────────────────────────────────────────────────────────
 
   /// A plain section-label widget. Mirrors the heading style in
@@ -258,11 +293,13 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
         Expanded(
           child: _connections == null
               ? const SizedBox.shrink()
-              : PillGrid(
-                  key: _gridKey,
-                  sections: _buildSections(),
-                  scrollController: widget.scrollController,
-                ),
+              : _connections!.isEmpty
+                  ? _noReachableConnections(context)
+                  : PillGrid(
+                      key: _gridKey,
+                      sections: _buildSections(),
+                      scrollController: widget.scrollController,
+                    ),
         ),
       ],
     );
