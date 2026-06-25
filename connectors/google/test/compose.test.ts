@@ -149,6 +149,48 @@ describe("composeChannels", () => {
     const channels = await composeChannels([calendarFake, mailFake], token);
     expect(channels).toEqual([]);
   });
+
+  describe("composeChannels (concurrency)", () => {
+    function fakeProduct(key: string, scopes: string[], ids: string[], onCall: () => void, onDone: () => void = () => {}) {
+      return {
+        key,
+        requiredScopes: scopes,
+        linkTypes: [{ type: `${key}-type`, label: key }],
+        getRawChannels: async () => {
+          onCall();
+          // resolve on a later microtask so concurrency is observable
+          await Promise.resolve();
+          onDone(); // call is now resolving — decrement inFlight so serial vs concurrent is distinguishable
+          return ids.map((id) => ({ id, title: id }));
+        },
+      } as any;
+    }
+
+    it("enumerates eligible products concurrently and preserves order", async () => {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const bump = () => { inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); };
+      const done = () => { inFlight--; };
+      const products = [
+        fakeProduct("mail", ["s.mail"], ["INBOX"], bump, done),
+        fakeProduct("calendar", ["s.cal"], ["primary"], bump, done),
+      ];
+      const token = { token: "t", scopes: ["s.mail", "s.cal"] } as any;
+      const out = await composeChannels(products, token);
+      expect(out.map((c) => c.id)).toEqual(["mail:INBOX", "calendar:primary"]);
+      expect(maxInFlight).toBe(2); // both started before either resolved → concurrent
+    });
+
+    it("skips products whose required scopes are not all granted", async () => {
+      const products = [
+        fakeProduct("mail", ["s.mail"], ["INBOX"], () => {}),
+        fakeProduct("calendar", ["s.cal"], ["primary"], () => {}),
+      ];
+      const token = { token: "t", scopes: ["s.mail"] } as any;
+      const out = await composeChannels(products, token);
+      expect(out.map((c) => c.id)).toEqual(["mail:INBOX"]);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

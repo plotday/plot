@@ -34,18 +34,22 @@ export async function composeChannels(
 ): Promise<Channel[]> {
   const grantedScopes = new Set(token.scopes ?? []);
 
+  // Enumerate every eligible product concurrently (each getRawChannels is an
+  // independent network call to Google). Order is preserved by enumerating
+  // results in `eligible` order, which is products' declaration order.
+  const eligible = products.filter((product) =>
+    product.requiredScopes.every((s) => grantedScopes.has(s))
+  );
+  const perProduct = await Promise.all(
+    eligible.map((product) => product.getRawChannels(token))
+  );
+
   const result: Channel[] = [];
-
-  for (const product of products) {
-    const hasAllScopes = product.requiredScopes.every((s) => grantedScopes.has(s));
-    if (!hasAllScopes) continue;
-
-    const rawChannels = await product.getRawChannels(token);
-    for (const raw of rawChannels) {
+  eligible.forEach((product, i) => {
+    for (const raw of perProduct[i]) {
       result.push(prefixChannel(product.key, raw, product.linkTypes));
     }
-  }
-
+  });
   return result;
 }
 
