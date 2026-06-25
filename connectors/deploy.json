@@ -4,14 +4,12 @@
     "@plotday/connector-airtable",
     "@plotday/connector-attio",
     "@plotday/connector-github",
-    "@plotday/connector-gmail",
-    "@plotday/connector-google-calendar",
+    "@plotday/connector-google",
     "@plotday/connector-google-chat",
     "@plotday/connector-google-drive",
-    "@plotday/connector-google-tasks",
     "@plotday/connector-granola",
     "@plotday/connector-linear",
-    "@plotday/connector-outlook-calendar",
+    "@plotday/connector-outlook",
     "@plotday/connector-slack",
     "@plotday/connector-linkedin"
   ]
