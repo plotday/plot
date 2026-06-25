@@ -6,10 +6,15 @@ import {
   type Authorization,
   type Channel,
   type StatusIcon,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { TrelloApi } from "./trello-api";
 import { buildCardLinkType } from "./trello-channels";
+import { transformCard } from "./trello-sync";
+
+const CARDS_PER_PAGE = 100;
+type TrelloSyncState = { before: string | null; batchNumber: number; initialSync: boolean };
 
 export class Trello extends Connector<Trello> {
   static readonly handleReplies = true;
@@ -87,9 +92,61 @@ export class Trello extends Connector<Trello> {
     );
   }
 
-  // Lifecycle + sync + write-back methods are added in later tasks.
-  async onChannelEnabled(): Promise<void> {}
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    await this.set(`sync_enabled_${channel.id}`, true);
+
+    // Queue webhook setup as a separate task (never inline — blocks the HTTP response).
+    const webhookCb = await this.callback(this.setupWebhook, channel.id);
+    await this.runTask(webhookCb);
+
+    if (!context?.observeOnly) {
+      await this.startBatchSync(channel.id);
+    }
+  }
+
   async onChannelDisabled(): Promise<void> {}
+
+  /** Stub — Task 6 will implement the real webhook registration. */
+  async setupWebhook(_boardId: string): Promise<void> {}
+
+  private async startBatchSync(boardId: string): Promise<void> {
+    await this.set(`sync_state_${boardId}`, {
+      before: null,
+      batchNumber: 1,
+      initialSync: true,
+    } as TrelloSyncState);
+    const cb = await this.callback(this.syncBatch, boardId);
+    await this.runTask(cb);
+  }
+
+  private async syncBatch(boardId: string): Promise<void> {
+    const state = await this.get<TrelloSyncState>(`sync_state_${boardId}`);
+    if (!state) throw new Error(`Trello sync state not found for board ${boardId}`);
+
+    const api = await this.getApi(boardId);
+    const cards = await api.getCards(boardId, {
+      limit: CARDS_PER_PAGE,
+      before: state.before ?? undefined,
+    });
+
+    for (const card of cards) {
+      await this.tools.integrations.saveLink(transformCard(card, boardId, state.initialSync));
+    }
+
+    if (cards.length === CARDS_PER_PAGE) {
+      // Full page → more cards remain; paginate before the last (oldest) card id.
+      await this.set(`sync_state_${boardId}`, {
+        before: cards[cards.length - 1].id,
+        batchNumber: state.batchNumber + 1,
+        initialSync: state.initialSync,
+      } as TrelloSyncState);
+      const cb = await this.callback(this.syncBatch, boardId);
+      await this.runTask(cb);
+    } else {
+      if (state.initialSync) await this.tools.integrations.channelSyncCompleted(boardId);
+      await this.clear(`sync_state_${boardId}`);
+    }
+  }
 }
 
 export default Trello;
