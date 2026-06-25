@@ -69,6 +69,19 @@ export type LinkTypeConfig = {
   /** Human-readable label (e.g., "Issue", "Pull Request") */
   label: string;
   /**
+   * Display name of the specific product/source this link type belongs to.
+   * Used in place of the connector's display name when building
+   * "{source} {label}" copy (the thread type name, the "Create new …" picker
+   * entry, compose chips). Only needed for **aggregate** connectors that bundle
+   * several products under one display name: the Google connector's display
+   * name is "Gmail & Calendar", but its `event` link type should read
+   * "Google Calendar event", its `email` link type "Gmail thread", and its
+   * `task` link type "Google Tasks task". Set it to the standalone product
+   * name (e.g. "Gmail", "Google Calendar", "Google Tasks"). Single-product
+   * connectors can omit it — Plot falls back to the connector display name.
+   */
+  sourceName?: string;
+  /**
    * Connector's word for a note on a linked item of this type — used by the
    * Flutter app to adapt note/composer copy ("Add a comment" on Linear,
    * "Add a message" on Slack, "Add a reply" on Gmail). Defaults to "note"

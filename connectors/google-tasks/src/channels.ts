@@ -17,6 +17,10 @@ export const TASKS_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "task",
     label: "Task",
+    // Per-product brand for aggregate connectors (the Google connector's
+    // display name is "Gmail & Calendar"); standalone Google Tasks falls back
+    // to its own display name anyway.
+    sourceName: "Google Tasks",
     sharingModel: "none" as const,
     // Logo: full-color SVG from static assets (iconify has no logos/google-tasks)
     // logoMono: monochrome version from simple-icons (works fine on iconify)
