@@ -54,7 +54,7 @@ export async function queue(
       case "run-dlq-development":
       case "run-dlq-production":
       case "run-dlq-test":
-        await handleRunDlq(env, batch as MessageBatch<RunMessage>, postHog);
+        await handleRunDlq(batch as MessageBatch<RunMessage>);
         break;
 
       case "run-development":
