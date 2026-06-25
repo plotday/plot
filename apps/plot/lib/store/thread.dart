@@ -588,6 +588,24 @@ class ThreadsBase extends BaseTable {
     List<Uint8List> threadIds,
   ) async {
     await store.transaction(() async {
+      // `user_note_tags` is keyed by note id (no thread_id column), so resolve
+      // the revoked threads' note ids first — before the notes are deleted —
+      // and clear their note_tags rows. Otherwise an orphaned note_tags row
+      // keeps its `pending` bit and the sync loop re-pushes it to
+      // /sync/note-tags/update forever; the server rejects every push with
+      // 422 "User does not have access to this priority" (the thread_priority
+      // row is revoked), which is reported to error tracking on each retry.
+      final noteIds =
+          await (store.selectOnly(store.notes)
+                ..addColumns([store.notes.id])
+                ..where(store.notes.threadId.isIn(threadIds)))
+              .map((row) => row.read(store.notes.id)!)
+              .get();
+      if (noteIds.isNotEmpty) {
+        await (store.delete(
+          store.noteTags,
+        )..where((nt) => nt.id.isIn(noteIds))).go();
+      }
       await (store.delete(
         store.notes,
       )..where((n) => n.threadId.isIn(threadIds))).go();

@@ -2692,7 +2692,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 375;
+  int get schemaVersion => 376;
 
   /// Schema-drift probes run in `beforeOpen` (one column-set per
   /// recently-changed table). A stale on-disk schema — e.g. web OPFS surviving
@@ -4355,6 +4355,24 @@ class Store extends _$Store {
       // Cross-device per-source-focus move affinity (Move modal recency tier).
       // Non-null TEXT with a '{}' default; existing rows get the empty map.
       await _safeAddColumn(m, userSettings, userSettings.moveAffinity);
+    }
+
+    if (from < 376) {
+      // One-time cleanup for the access-loss strand fixed in
+      // `Thread._hardDeleteRevokedThreads`: revoking a thread used to
+      // hard-delete its notes but leave the `note_tags` rows (keyed by note
+      // id) behind. An orphaned note_tags row keeps its `pending` bit, so the
+      // sync loop re-pushed it to /sync/note-tags/update forever — the server
+      // rejected every push with 422 "User does not have access to this
+      // priority" (the thread_priority row is revoked) and the client reported
+      // it to error tracking on each retry. Purge note_tags rows whose note no
+      // longer exists locally and that still carry a pending push: the tag
+      // update targets a note the user can't reach, so it can never succeed.
+      await _safeCustomStatement(m, '''
+        DELETE FROM note_tags
+        WHERE pending IS NOT NULL
+          AND id NOT IN (SELECT id FROM notes)
+      ''');
     }
   }
 
