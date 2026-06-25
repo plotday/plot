@@ -1,4 +1,4 @@
-import { Connector, type ToolBuilder } from "@plotday/twister";
+import { Connector, type Link, type ToolBuilder } from "@plotday/twister";
 import {
   AuthProvider,
   Integrations,
@@ -156,6 +156,25 @@ export class Trello extends Connector<Trello> {
     } as TrelloSyncState);
     const cb = await this.callback(this.syncBatch, boardId);
     await this.runTask(cb);
+  }
+
+  async onLinkUpdated(link: Link): Promise<void> {
+    const cardId = link.meta?.cardId as string | undefined;
+    const boardId = link.meta?.boardId as string | undefined;
+    if (!cardId || !boardId) return;
+    const fields: { idList?: string; closed?: boolean; name?: string } = {};
+    // `archived` is not on the Link read type but the runtime injects it from the thread
+    const archived = (link as Link & { archived?: boolean }).archived;
+    if (archived) fields.closed = true;
+    if (link.status) fields.idList = link.status; // status === Trello list id
+    if (link.title) fields.name = link.title;
+    if (Object.keys(fields).length === 0) return;
+    try {
+      const api = await this.getApi(boardId);
+      await api.updateCard(cardId, fields);
+    } catch (error) {
+      console.error("[trello] onLinkUpdated write-back failed:", error);
+    }
   }
 
   private async syncBatch(boardId: string): Promise<void> {
