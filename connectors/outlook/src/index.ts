@@ -1,4 +1,4 @@
-// Scaffold: composite class (outlook.ts) is added in a later phase.
+export { default, Outlook } from "./outlook";
 // Re-export scopes, products metadata, and scaffolding helpers.
 export { OUTLOOK_SCOPES, OPTIONAL_SCOPE_GROUPS, PRODUCTS, type ProductInfo } from "./scopes";
 export { PRODUCTS_BY_KEY, type Product } from "./products/product";
