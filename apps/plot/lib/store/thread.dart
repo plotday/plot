@@ -871,6 +871,18 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// Sentinel date meaning "to do now" (no specific schedule date).
   static final todoNowDate = Date(1970, 1, 1);
 
+  /// Well-known icon URL stamped on Plot-created threads — the `@plot.app`
+  /// priority's `default_thread_icon`. It is an `http` URL but represents the
+  /// app itself, not a pasted link, so the source filter surfaces it under a
+  /// dedicated [plotIconBucket] "Plot" chip instead of folding it into the
+  /// generic "Link" bucket. Keep in sync with the server default
+  /// (`libs/db/migrations/20260404203200_add_default_thread_icon.sql`).
+  static const plotIconUrl = 'https://plot.day/assets/plot-icon.svg';
+
+  /// Synthetic source-filter bucket id for [plotIconUrl] threads. Parallels
+  /// the `'link'` bucket used for pasted-link favicons.
+  static const plotIconBucket = 'plot';
+
   static Future<void> pullInitial() async {
     // Set pulledAt baseline for links so future incremental pulls work.
     // Links for visible threads are fetched via pullTo in pullAgenda/pullActivityFeed.
@@ -1797,11 +1809,19 @@ class Thread extends Equatable implements Comparable<Thread> {
       // 'link' icon) under a single synthetic 'link' bucket so the filter
       // modal shows one "Link" chip instead of one per favicon URL.
       var linkCount = 0;
+      var plotCount = 0;
       final collapsed = <(String, int)>[];
       for (final row in rows) {
         final icon = row.read(a.icon);
         final count = row.read(a.id.count());
         if (icon == null || count == null) continue;
+        // Plot-created threads carry the app's own icon URL. They look like a
+        // favicon (http) but are not pasted links — surface them under their
+        // own "Plot" chip, checked before the generic link collapse below.
+        if (icon == plotIconUrl) {
+          plotCount += count;
+          continue;
+        }
         if (icon == 'link' || icon.startsWith('http')) {
           linkCount += count;
           continue;
@@ -1819,6 +1839,9 @@ class Thread extends Equatable implements Comparable<Thread> {
       }
       if (linkCount > 0) {
         collapsed.add(('link', linkCount));
+      }
+      if (plotCount > 0) {
+        collapsed.add((plotIconBucket, plotCount));
       }
       return collapsed;
     });
@@ -2141,16 +2164,31 @@ class Thread extends Equatable implements Comparable<Thread> {
       // 'link' is the synthetic bucket for pasted-link threads — it matches
       // both the literal 'link' icon and any favicon-URL icon. See
       // watchIconCountsForPriority for the collapsing logic. Any URL-style
-      // value (legacy state from before the collapse) is treated the same.
+      // value (legacy state from before the collapse) is treated the same,
+      // EXCEPT the Plot icon URL, which is its own [plotIconBucket] "Plot"
+      // chip and must not be swept into the generic link match.
+      final includesPlot =
+          iconFilter.contains(plotIconBucket) ||
+          iconFilter.contains(plotIconUrl);
       final includesLink = iconFilter.any(
-        (v) => v == 'link' || v.startsWith('http'),
+        (v) => v == 'link' || (v.startsWith('http') && v != plotIconUrl),
       );
       final others = iconFilter
-          .where((v) => v != 'link' && !v.startsWith('http'))
+          .where(
+            (v) => v != 'link' && v != plotIconBucket && !v.startsWith('http'),
+          )
           .toList();
       Expression<bool>? predicate;
       if (includesLink) {
-        predicate = a.icon.equals('link') | a.icon.like('http%');
+        predicate =
+            a.icon.equals('link') |
+            (a.icon.like('http%') & a.icon.equals(plotIconUrl).not());
+      }
+      if (includesPlot) {
+        final plotPredicate = a.icon.equals(plotIconUrl);
+        predicate = predicate == null
+            ? plotPredicate
+            : predicate | plotPredicate;
       }
       if (others.isNotEmpty) {
         final othersPredicate = a.icon.isIn(others);
@@ -2579,17 +2617,29 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       wheres.add('a.active = 0 AND COALESCE(a.unread, 0) = 0');
     }
 
-    // Icon filter — mirrors [_getQuery] logic.
+    // Icon filter — mirrors [_getQuery] logic. The Plot icon URL is its own
+    // [plotIconBucket] "Plot" chip and must not be swept into the generic
+    // link match.
     if (iconFilter != null && iconFilter.isNotEmpty) {
+      final includesPlot =
+          iconFilter.contains(plotIconBucket) ||
+          iconFilter.contains(plotIconUrl);
       final includesLink = iconFilter.any(
-        (v) => v == 'link' || v.startsWith('http'),
+        (v) => v == 'link' || (v.startsWith('http') && v != plotIconUrl),
       );
       final others = iconFilter
-          .where((v) => v != 'link' && !v.startsWith('http'))
+          .where(
+            (v) => v != 'link' && v != plotIconBucket && !v.startsWith('http'),
+          )
           .toList();
       final preds = <String>[];
       if (includesLink) {
-        preds.add("(a.icon = 'link' OR a.icon LIKE 'http%')");
+        preds.add("(a.icon = 'link' OR (a.icon LIKE 'http%' AND a.icon <> ?))");
+        variables.add(Variable.withString(plotIconUrl));
+      }
+      if (includesPlot) {
+        preds.add('a.icon = ?');
+        variables.add(Variable.withString(plotIconUrl));
       }
       if (others.isNotEmpty) {
         final placeholders = others.map((_) => '?').join(',');
@@ -2826,17 +2876,29 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       wheres.add('a.unread = 1 AND a.read_at IS NULL');
     }
 
-    // Icon filter — mirrors [_getQuery] logic.
+    // Icon filter — mirrors [_getQuery] logic. The Plot icon URL is its own
+    // [plotIconBucket] "Plot" chip and must not be swept into the generic
+    // link match.
     if (iconFilter != null && iconFilter.isNotEmpty) {
+      final includesPlot =
+          iconFilter.contains(plotIconBucket) ||
+          iconFilter.contains(plotIconUrl);
       final includesLink = iconFilter.any(
-        (v) => v == 'link' || v.startsWith('http'),
+        (v) => v == 'link' || (v.startsWith('http') && v != plotIconUrl),
       );
       final others = iconFilter
-          .where((v) => v != 'link' && !v.startsWith('http'))
+          .where(
+            (v) => v != 'link' && v != plotIconBucket && !v.startsWith('http'),
+          )
           .toList();
       final preds = <String>[];
       if (includesLink) {
-        preds.add("(a.icon = 'link' OR a.icon LIKE 'http%')");
+        preds.add("(a.icon = 'link' OR (a.icon LIKE 'http%' AND a.icon <> ?))");
+        variables.add(Variable.withString(plotIconUrl));
+      }
+      if (includesPlot) {
+        preds.add('a.icon = ?');
+        variables.add(Variable.withString(plotIconUrl));
       }
       if (others.isNotEmpty) {
         final placeholders = others.map((_) => '?').join(',');

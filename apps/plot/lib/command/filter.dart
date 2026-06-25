@@ -292,6 +292,19 @@ class ToggleIconFilter extends Command {
       );
     }
 
+    // Plot-created threads: the synthetic "plot" bucket (or the raw Plot icon
+    // URL as legacy state). Show the app's name and logo, not a generic link.
+    // Checked before the http branch because the Plot icon is itself an http
+    // URL.
+    if (iconValue == Thread.plotIconBucket || iconValue == Thread.plotIconUrl) {
+      return (
+        title: 'Plot',
+        icon: PlotIcon.notes,
+        logoUrl: Thread.plotIconUrl,
+        logoDarkUrl: null,
+      );
+    }
+
     // Direct URL logo
     if (iconValue.startsWith('http')) {
       return (
