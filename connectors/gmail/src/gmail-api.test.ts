@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  GmailApi,
   buildNewEmailMessage,
   buildReplyMessage,
   stripQuotedReply,
@@ -88,6 +89,45 @@ function firstNoteContent(t: GmailThread): string {
   const result = transformGmailThread(t);
   return result.notes?.[0]?.content ?? "";
 }
+
+describe("GmailApi.call empty-body responses", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("stopWatch resolves when Gmail returns 204 No Content (empty body)", async () => {
+    // Gmail's users.stop endpoint returns 204 No Content with an EMPTY body.
+    // Parsing an empty body with response.json() throws
+    // "SyntaxError: Unexpected end of JSON input" — which escaped through
+    // setupWatch()'s unguarded stopWatch() recovery and surfaced as an
+    // unhandled twist exception (PostHog 019eff7f).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(null, { status: 204, statusText: "No Content" })
+      )
+    );
+    const api = new GmailApi("test-token");
+    await expect(api.stopWatch()).resolves.toBeUndefined();
+  });
+
+  it("call returns parsed JSON for a normal response (regression)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ emailAddress: "kris@plot.day" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+      )
+    );
+    const api = new GmailApi("test-token");
+    await expect(api.getProfile()).resolves.toEqual({
+      emailAddress: "kris@plot.day",
+    });
+  });
+});
 
 describe("forwarded email body extraction", () => {
   it("keeps the body of an inline HTML forward (Gmail wraps it in gmail_quote)", () => {
