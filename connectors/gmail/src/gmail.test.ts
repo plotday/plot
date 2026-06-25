@@ -562,3 +562,98 @@ describe("recoverMailboxDelivery — durable recovery on upgrade", () => {
     expect(spies.requeueInitialSync).not.toHaveBeenCalled();
   });
 });
+
+describe("thread-state write-back when the connection has no auth token", () => {
+  // A Gmail connection whose OAuth has lapsed/been revoked resolves no token
+  // for its channel. The thread-state write-backs (to-do star, read-state)
+  // are best-effort label syncs — the user's change already lives in Plot —
+  // so they must degrade to a silent no-op rather than throwing. Throwing
+  // pages error tracking on every to-do/read toggle for a re-auth-needed
+  // connection (PostHog issue 019ed581: "No Google authentication token
+  // available", 673 occurrences / 296 users).
+  function makeGmail(token: { token: string; scopes: string[] } | null): {
+    gmail: Gmail;
+    integrationsGet: ReturnType<typeof vi.fn>;
+  } {
+    const storeMap = new Map<string, unknown>([["enabled_channels", ["INBOX"]]]);
+    const store = {
+      get: vi.fn(async (key: string) =>
+        storeMap.has(key) ? storeMap.get(key) : null
+      ),
+      set: vi.fn(async (key: string, value: unknown) => {
+        storeMap.set(key, value);
+      }),
+      clear: vi.fn(async (key: string) => {
+        storeMap.delete(key);
+      }),
+      list: vi.fn(async (prefix: string) =>
+        [...storeMap.keys()].filter((k) => k.startsWith(prefix))
+      ),
+    };
+    const integrationsGet = vi.fn().mockResolvedValue(token);
+    const tools = {
+      store,
+      integrations: { get: integrationsGet },
+      network: {},
+      files: {},
+    };
+    const gmail = new Gmail(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    return { gmail, integrationsGet };
+  }
+
+  const thread = {
+    id: "thread-1",
+    meta: { threadId: "gmail-thread-1", channelId: "INBOX" },
+  } as never;
+  const actor = { id: "actor-1" } as never;
+
+  it("onThreadToDo resolves without throwing and never calls Gmail", async () => {
+    const { gmail, integrationsGet } = makeGmail(null);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}"));
+
+    await expect(
+      gmail.onThreadToDo(thread, actor, true, {})
+    ).resolves.toBeUndefined();
+
+    expect(integrationsGet).toHaveBeenCalledWith("INBOX");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("onThreadRead resolves without throwing and never calls Gmail", async () => {
+    const { gmail, integrationsGet } = makeGmail(null);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}"));
+
+    await expect(
+      gmail.onThreadRead(thread, actor, false)
+    ).resolves.toBeUndefined();
+
+    expect(integrationsGet).toHaveBeenCalledWith("INBOX");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("onThreadToDo still writes the STARRED/INBOX labels when a token is present", async () => {
+    const { gmail } = makeGmail({ token: "tok", scopes: [] });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}"));
+
+    await gmail.onThreadToDo(thread, actor, true, {});
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(String(url)).toContain("/threads/gmail-thread-1/modify");
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      addLabelIds: ["STARRED", "INBOX"],
+    });
+    fetchSpy.mockRestore();
+  });
+});

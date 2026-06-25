@@ -377,6 +377,26 @@ export async function getApiFn(
 }
 
 /**
+ * Like {@link getApiFn}, but returns `null` instead of throwing when the
+ * channel resolves no auth token (lapsed / revoked Google OAuth).
+ *
+ * Use this in best-effort write-backs (to-do star, read-state) where a
+ * re-auth-needed connection should degrade to a silent no-op: the user's
+ * change already lives in Plot, and the connection's re-auth need is already
+ * surfaced in the connections UI. Throwing there only pages error tracking on
+ * every toggle. Sync paths that must surface a missing token still use the
+ * throwing {@link getApiFn}.
+ */
+export async function tryGetApiFn(
+  host: GmailSyncHost,
+  channelId: string
+): Promise<GmailApi | null> {
+  const token = await host.tools.integrations.get(channelId);
+  if (!token) return null;
+  return new GmailApi(token.token);
+}
+
+/**
  * Returns a Gmail API client authed with any enabled channel's token.
  * Auth is per-Google-account (not per-label), so any enabled channelId
  * resolves to the same OAuth credential.
@@ -1515,7 +1535,10 @@ export async function onThreadReadFn(
   const threadId = meta.threadId as string;
   if (!threadId) return;
 
-  const api = await getApiFn(host, channelId);
+  // Best-effort: if the connection lost its Google auth, skip the label
+  // write-back instead of throwing (read-state already lives in Plot).
+  const api = await tryGetApiFn(host, channelId);
+  if (!api) return;
 
   // Cache the new unread state before modifying Gmail to prevent echo loops
   await host.set(`unread:${threadId}`, unread);
@@ -1545,11 +1568,17 @@ export async function onThreadToDoFn(
     return;
   }
 
+  // Best-effort: if the connection lost its Google auth, skip the star
+  // write-back instead of throwing (the to-do change already lives in Plot).
+  // Resolved before the local-state mutation below so a no-token call is a
+  // complete no-op and leaves no divergent `starred:` marker.
+  const api = await tryGetApiFn(host, channelId);
+  if (!api) return;
+
   // Update local state BEFORE calling Gmail, so the webhook fired by our
   // own write sees isStarred === wasStarred and doesn't re-propagate.
   await host.set(`starred:${threadId}`, todo);
 
-  const api = await getApiFn(host, channelId);
   if (todo) {
     // Add STARRED, and re-add INBOX so an archived email returns to the
     // inbox when the user adds it to their agenda in Plot.
