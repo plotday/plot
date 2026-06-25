@@ -39,6 +39,13 @@ class CreateTarget {
   /// Display label for picker copy. Falls back to the linkType's label.
   String get _displayLabel => compose.label ?? linkType.label;
 
+  /// The brand to show for this target. Aggregate connectors (e.g. the Google
+  /// connector, display name "Gmail & Calendar") tag each link type with its
+  /// own product via [LinkTypeConfig.sourceName], so a Gmail compose target
+  /// reads "Gmail" rather than "Gmail & Calendar". Falls back to
+  /// [connectorName] for single-product connectors.
+  String get effectiveSourceName => linkType.sourceName ?? connectorName;
+
   /// Stable identity for MRU keying and de-duping. Delegates to
   /// [connectionTargetKey] so it stays byte-identical to the key recorded
   /// from a draft's [CreateLinkUserAction] (see [createLinkActionKey]).
@@ -50,24 +57,30 @@ class CreateTarget {
       );
 
   String get title =>
-      'Create new $connectorName ${_displayLabel.toLowerCase()}';
+      'Create new $effectiveSourceName ${_displayLabel.toLowerCase()}';
 
   /// For channel-type targets: "{channel}" or "{channel} ({account})".
   /// For DM-type targets: the connection display name, e.g. "Slack: Acme Workspace".
   String get subtitle {
     if (isDmType) {
       final label = accountName ?? twist.name;
-      return '$connectorName: $label';
+      return '$effectiveSourceName: $label';
     }
     final ch = channel!;
     return accountName == null ? ch.title : '${ch.title} ($accountName)';
   }
 
   String get searchText {
+    // Include the connector name as well so aggregate connectors stay findable
+    // by either the product brand ("Google Calendar") or the connection's
+    // display name ("Gmail & Calendar").
     if (isDmType) {
-      return '$connectorName $_displayLabel ${accountName ?? ''}'.toLowerCase();
+      return '$effectiveSourceName $connectorName $_displayLabel '
+              '${accountName ?? ''}'
+          .toLowerCase();
     }
-    return '$connectorName $_displayLabel ${channel!.title} ${accountName ?? ''}'
+    return '$effectiveSourceName $connectorName $_displayLabel '
+            '${channel!.title} ${accountName ?? ''}'
         .toLowerCase();
   }
 
@@ -76,10 +89,10 @@ class CreateTarget {
   /// - DM-type: "Slack: Acme Workspace · direct messages"
   String get chipLabel {
     if (isDmType) {
-      final label = accountName ?? connectorName;
-      return '$connectorName: $label · ${_displayLabel.toLowerCase()}';
+      final label = accountName ?? effectiveSourceName;
+      return '$effectiveSourceName: $label · ${_displayLabel.toLowerCase()}';
     }
-    return '$connectorName · ${_displayLabel.toLowerCase()}';
+    return '$effectiveSourceName · ${_displayLabel.toLowerCase()}';
   }
 
   CreateLinkUserAction toUserAction() => CreateLinkUserAction(
@@ -88,6 +101,7 @@ class CreateTarget {
         linkType: linkType.type,
         status: defaultStatus?.status,
         connectorName: connectorName,
+        sourceName: linkType.sourceName,
         linkTypeLabel: _displayLabel,
         channelName: isDmType ? subtitle : channel!.title,
         accountName: accountName,

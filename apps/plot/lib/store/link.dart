@@ -32,6 +32,14 @@ enum SharingModel {
 class LinkTypeConfig {
   final String type;
   final String label;
+  /// Product/source name for this link type, used in place of the connector's
+  /// display name when building "{source} {type}" copy (the thread type name,
+  /// "Create new …" picker, compose chips). Only aggregate connectors that
+  /// bundle several products under one display name set it — the Google
+  /// connector's display name is "Gmail & Calendar", but its `event` link type
+  /// carries `sourceName: "Google Calendar"`, `email` → "Gmail", `task` →
+  /// "Google Tasks". Null falls back to the connector/twist display name.
+  final String? sourceName;
   /// Connector's word for a note on a linked item of this type (e.g. "Comment"
   /// on Linear, "Message" on Slack, "Reply" on Gmail). Drives adaptive
   /// composer hints and command titles. Null falls back to "note".
@@ -85,6 +93,7 @@ class LinkTypeConfig {
   const LinkTypeConfig({
     required this.type,
     required this.label,
+    this.sourceName,
     this.noteLabel,
     this.logo,
     this.logoDark,
@@ -108,6 +117,8 @@ class LinkTypeConfig {
     return LinkTypeConfig(
       type: json['type'] as String,
       label: json['label'] as String,
+      sourceName:
+          json['sourceName'] as String? ?? json['source_name'] as String?,
       noteLabel:
           json['noteLabel'] as String? ?? json['note_label'] as String?,
       logo: json['logo'] as String?,

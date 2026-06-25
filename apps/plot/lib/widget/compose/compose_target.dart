@@ -317,7 +317,7 @@ class ComposeTarget extends Equatable {
     String? channelDetail,
     String? contactDetail,
   }) {
-    final buf = StringBuffer(target.connectorName);
+    final buf = StringBuffer(target.effectiveSourceName);
     final account = target.accountName;
     if (connectionCount > 1 && account != null && account.isNotEmpty) {
       buf.write(' ($account)');

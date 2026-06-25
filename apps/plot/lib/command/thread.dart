@@ -4378,9 +4378,13 @@ List<Command> threadCommands(
     if (openInLink?.sourceUrl != null)
       OpenThreadLink(
         url: openInLink!.sourceUrl!,
+        // Prefer the link type's per-product source name (aggregate connectors
+        // brand each link type) so "Open in Google Calendar" beats "Open in
+        // Gmail & Calendar"; fall back to the connection's twist name.
         connectorName: openInLink.createdBy == null
             ? null
-            : TwistInstance.fromCache(openInLink.createdBy!)?.name,
+            : (openInLink.getTypeConfig()?.sourceName ??
+                  TwistInstance.fromCache(openInLink.createdBy!)?.name),
       ),
     ?primary,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))

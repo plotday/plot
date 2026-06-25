@@ -120,8 +120,8 @@ class ConnectionComposeField extends StatelessWidget {
 String connectionTargetTitle(CreateTarget target) {
   final type = _normalizeLinkTypeLabel(target.linkType.label);
   return type.isEmpty
-      ? target.connectorName
-      : '${target.connectorName} $type';
+      ? target.effectiveSourceName
+      : '${target.effectiveSourceName} $type';
 }
 
 /// The connection-identifying subtitle: account name for DM-style targets,

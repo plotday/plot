@@ -268,7 +268,10 @@ class ComposePill extends StatelessWidget {
           // link type trails muted: "{connection} › {channel}  {Slack thread}".
           final ct = target.target;
           final connectionLabel = ct?.accountName;
-          final connectorName = ct?.connectorName;
+          // Prefer the link type's per-product source name (aggregate
+          // connectors brand each link type) over the connection's connector
+          // name, so a Google calendar event reads "Google Calendar event".
+          final connectorName = lt?.sourceName ?? ct?.connectorName;
           final linkTypeLabel = lt?.label;
           final typeMeta = (connectorName != null && connectorName.isNotEmpty)
               ? (linkTypeLabel != null && linkTypeLabel.isNotEmpty

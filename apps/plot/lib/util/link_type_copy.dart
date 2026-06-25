@@ -41,8 +41,11 @@ String composerHintForNewThread(LinkTypeConfig? cfg, {String? connectorName}) {
     return cfg.composePlaceholder!;
   }
   final label = cfg.label.toLowerCase();
-  if (connectorName != null && connectorName.isNotEmpty) {
-    return 'Create a new $connectorName $label';
+  // Prefer the link type's per-product source name (aggregate connectors brand
+  // each link type) over the connection's connector name.
+  final source = cfg.sourceName ?? connectorName;
+  if (source != null && source.isNotEmpty) {
+    return 'Create a new $source $label';
   }
   return 'Create a new $label';
 }

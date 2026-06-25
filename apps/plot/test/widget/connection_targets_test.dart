@@ -47,4 +47,49 @@ void main() {
       expect(createLinkActionKey(action), 'tw2||email|addresses');
     });
   });
+
+  group('CreateLinkUserAction.title', () {
+    test('uses sourceName over connectorName for aggregate connectors', () {
+      const action = CreateLinkUserAction(
+        twistInstanceId: 'tw1',
+        channelId: 'ch1',
+        linkType: 'event',
+        connectorName: 'Gmail & Calendar',
+        sourceName: 'Google Calendar',
+        linkTypeLabel: 'Event',
+        channelName: 'Calendar',
+        dmTargets: 'channels',
+      );
+      expect(action.title, 'Create new Google Calendar event');
+    });
+
+    test('falls back to connectorName when sourceName is null', () {
+      const action = CreateLinkUserAction(
+        twistInstanceId: 'tw1',
+        channelId: 'ch1',
+        linkType: 'issue',
+        connectorName: 'Linear',
+        linkTypeLabel: 'Issue',
+        channelName: 'Plot',
+        dmTargets: 'channels',
+      );
+      expect(action.title, 'Create new Linear issue');
+    });
+
+    test('round-trips sourceName through toJson/fromJson', () {
+      const action = CreateLinkUserAction(
+        twistInstanceId: 'tw1',
+        channelId: 'ch1',
+        linkType: 'task',
+        connectorName: 'Gmail & Calendar',
+        sourceName: 'Google Tasks',
+        linkTypeLabel: 'Task',
+        channelName: 'My Tasks',
+        dmTargets: 'channels',
+      );
+      final restored = CreateLinkUserAction.fromJson(action.toJson());
+      expect(restored.sourceName, 'Google Tasks');
+      expect(restored.title, 'Create new Google Tasks task');
+    });
+  });
 }

@@ -263,7 +263,13 @@ class ToggleIconFilter extends Command {
               pt.id,
             )?.parsedLinkTypes?.where((c) => c.type == type).firstOrNull;
         final typeLabel = config?.label ?? type;
-        title = '${pt.name} ${typeLabel.toLowerCase()}';
+        // Aggregate connectors (e.g. the Google connector, display name
+        // "Gmail & Calendar") brand each link type with its own product via
+        // `sourceName`, so a calendar event reads "Google Calendar event"
+        // rather than "Gmail & Calendar event". Falls back to the connector
+        // name for single-product connectors.
+        final sourceName = config?.sourceName ?? pt.name;
+        title = '$sourceName ${typeLabel.toLowerCase()}';
       } else if (pt != null) {
         title = '${pt.name} thread';
       } else {

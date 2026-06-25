@@ -413,6 +413,7 @@ class CreateLinkUserAction extends UserAction {
     required this.linkType,
     this.status,
     required this.connectorName,
+    this.sourceName,
     required this.linkTypeLabel,
     required this.channelName,
     this.accountName,
@@ -430,6 +431,10 @@ class CreateLinkUserAction extends UserAction {
   /// Connector brand name (e.g. "Linear"), stripped of any " (account)"
   /// suffix carried on the twist instance name.
   final String connectorName;
+  /// Per-product source name from the link type (e.g. "Google Calendar" for an
+  /// aggregate connector whose display name is "Gmail & Calendar"). Preferred
+  /// over [connectorName] in [title]. Null falls back to [connectorName].
+  final String? sourceName;
   /// Human-readable link type label (e.g. "Issue"). Lowercased at render.
   final String linkTypeLabel;
   /// Channel title (e.g. the Linear team name "Plot"), or the connection
@@ -450,10 +455,11 @@ class CreateLinkUserAction extends UserAction {
 
   /// Display for both the picker row and the note-editor attachment row.
   ///
-  /// "Create new {connector} {linkType}" — linkType lowercased so the
-  /// sentence reads naturally.
+  /// "Create new {source} {linkType}" — linkType lowercased so the sentence
+  /// reads naturally. Uses the link type's [sourceName] (per-product brand for
+  /// aggregate connectors) and falls back to [connectorName].
   String get title =>
-      'Create new $connectorName ${linkTypeLabel.toLowerCase()}';
+      'Create new ${sourceName ?? connectorName} ${linkTypeLabel.toLowerCase()}';
 
   /// "{channel}" or "{channel} ({account})" when an account is known.
   String get subtitle =>
@@ -483,6 +489,7 @@ class CreateLinkUserAction extends UserAction {
       linkType: linkType,
       status: status ?? this.status,
       connectorName: connectorName,
+      sourceName: sourceName,
       linkTypeLabel: linkTypeLabel,
       channelName: channelName,
       accountName: accountName,
@@ -516,6 +523,7 @@ class CreateLinkUserAction extends UserAction {
       linkType: linkType,
       status: json['status'] as String?,
       connectorName: json['connectorName'] as String,
+      sourceName: json['sourceName'] as String?,
       linkTypeLabel: json['linkTypeLabel'] as String,
       channelName: json['channelName'] as String,
       accountName: json['accountName'] as String?,
@@ -534,6 +542,7 @@ class CreateLinkUserAction extends UserAction {
       'linkType': linkType,
       if (status != null) 'status': status,
       'connectorName': connectorName,
+      if (sourceName != null) 'sourceName': sourceName,
       'linkTypeLabel': linkTypeLabel,
       'channelName': channelName,
       if (accountName != null) 'accountName': accountName,
@@ -551,6 +560,7 @@ class CreateLinkUserAction extends UserAction {
     linkType,
     status,
     connectorName,
+    sourceName,
     linkTypeLabel,
     channelName,
     accountName,

@@ -718,8 +718,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         final showAccount = (ctx?.connectionCount(target) ?? 1) > 1;
         final account = target.accountName;
         return (showAccount && account != null && account.isNotEmpty)
-            ? '${target.connectorName} · $account'
-            : target.connectorName;
+            ? '${target.effectiveSourceName} · $account'
+            : target.effectiveSourceName;
       case ComposeTargetKind.twist:
         // Header = twist name (+ scope suffix); the content line shows the
         // thread type (t.label).

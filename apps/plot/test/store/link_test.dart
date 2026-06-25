@@ -30,6 +30,30 @@ void main() {
       expect(cfg.replyVerb, isNull);
     });
 
+    test('parses sourceName (snake_case and camelCase)', () {
+      expect(
+        LinkTypeConfig.fromJson({
+          'type': 'event',
+          'label': 'Event',
+          'source_name': 'Google Calendar',
+        }).sourceName,
+        'Google Calendar',
+      );
+      expect(
+        LinkTypeConfig.fromJson({
+          'type': 'email',
+          'label': 'Thread',
+          'sourceName': 'Gmail',
+        }).sourceName,
+        'Gmail',
+      );
+    });
+
+    test('sourceName defaults to null when absent', () {
+      final cfg = LinkTypeConfig.fromJson({'type': 'note', 'label': 'Note'});
+      expect(cfg.sourceName, isNull);
+    });
+
     test('parses camelCase variants of the four new fields', () {
       final cfg = LinkTypeConfig.fromJson({
         'type': 'email',
