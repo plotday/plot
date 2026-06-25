@@ -58,6 +58,7 @@ describe("mailProduct", () => {
       ok: true,
       status: 200,
       json: async () => fakeLabels,
+      text: async () => JSON.stringify(fakeLabels),
     }));
 
     const token = makeToken([GMAIL_MODIFY_SCOPE]);
@@ -75,12 +76,14 @@ describe("mailProduct", () => {
   });
 
   it("composeChannels namespaces mail channel ids with 'mail:' prefix", async () => {
+    const fakeLabels = {
+      labels: [{ id: "INBOX", name: "Inbox", type: "system" }],
+    };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({
-        labels: [{ id: "INBOX", name: "Inbox", type: "system" }],
-      }),
+      json: async () => fakeLabels,
+      text: async () => JSON.stringify(fakeLabels),
     }));
 
     const token = makeToken([GMAIL_MODIFY_SCOPE]);
