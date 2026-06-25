@@ -1,4 +1,4 @@
-import { describe, it, expect, test } from "vitest";
+import { describe, it, expect, test, vi } from "vitest";
 import { UnipileClient, UnipileApiError } from "./client";
 
 const env = {
@@ -229,5 +229,40 @@ describe("UnipileClient (v2)", () => {
     await client.ignoreInvitation({ accountId: "acc1", invitationId: "rr_2" });
     expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/users/me/relation-requests/rr_2/cancel`);
     expect(calls[0]!.init.method).toBe("POST");
+  });
+
+  test("retries on 429 (rate limit) then succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      let n = 0;
+      const { client, calls } = recordingClient(() => {
+        n++;
+        if (n < 3) {
+          return new Response(JSON.stringify({ status: 429 }), { status: 429 });
+        }
+        return new Response(JSON.stringify({ object: "ChatList", data: [], has_more: false }), { status: 200 });
+      });
+      const p = client.listChats({ accountId: "acct-1" });
+      await vi.runAllTimersAsync();
+      const result = await p;
+      expect(calls).toHaveLength(3); // two 429s + one success
+      expect(result.data).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("gives up after the retry cap and throws the 429", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client } = recordingClient(() => new Response(JSON.stringify({ status: 429 }), { status: 429 }));
+      const p = client.listChats({ accountId: "acct-1" }).catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+      const err = await p;
+      expect(err).toBeInstanceOf(UnipileApiError);
+      expect((err as UnipileApiError).status).toBe(429);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -3379,7 +3379,38 @@ export class Integrations extends Tool implements IAuth {
     const providerUserId = extractUserId(tokenInfo.provider, providerData);
     let actor: Actor;
     try {
-      actor = await this.buildActor(email, tokenInfo.provider, providerUserId);
+      if (config?.authMode === "hosted") {
+        // Hosted connections (LinkedIn/Instagram/WhatsApp) belong to the
+        // connecting OWNER. Bind the token to the owner's primary contact — the
+        // SAME contact activateDraft enables the channel under
+        // (`contact WHERE user_id = owner_id`). An email-resolved contact
+        // (buildActor) diverges from that whenever the provider email is
+        // absent, mismatched, populated late, or duplicated — and then every
+        // sync fails with "has no stored credentials — reconnect". Binding to
+        // the owner contact keeps onAuth and the channel's enabledBy in lockstep
+        // (and stops spurious duplicate contacts).
+        const owner = await this.db
+          .selectFrom("twist_instance")
+          .select("owner_id")
+          .where("id", "=", this.twistInstanceId)
+          .executeTakeFirst();
+        const ownerContact = owner?.owner_id
+          ? await this.db
+              .selectFrom("contact")
+              .select(["id", "name"])
+              .where("user_id", "=", owner.owner_id)
+              .executeTakeFirst()
+          : null;
+        actor = ownerContact?.id
+          ? {
+              id: ownerContact.id as ActorId,
+              type: ActorType.Contact,
+              name: ownerContact.name ?? null,
+            }
+          : await this.buildActor(email, tokenInfo.provider, providerUserId);
+      } else {
+        actor = await this.buildActor(email, tokenInfo.provider, providerUserId);
+      }
     } catch (error) {
       throw error;
     }
@@ -3483,15 +3514,37 @@ export class Integrations extends Tool implements IAuth {
       // this mainly fires when the user deliberately picks another.) To move
       // a connection to a different account, remove it and add a new one.
       if (previousActorId && previousActorId !== actor.id) {
-        const expected = await this.db
-          .selectFrom("contact")
-          .select("email")
-          .where("id", "=", previousActorId)
-          .executeTakeFirst();
-        const expectedEmail = expected?.email ?? null;
-        throw new Error(
-          `${AUTH_ACCOUNT_MISMATCH_ERROR}: re-auth used a different account` +
-            (expectedEmail ? ` (expected ${expectedEmail})` : "")
+        // A re-auth that resolves a DIFFERENT actor usually means the user
+        // picked another account/mailbox — reject so the connection doesn't
+        // silently re-point. But ALLOW it when the SAME upstream account is
+        // being re-bound to a corrected contact (e.g. an earlier bind resolved
+        // the wrong contact — before the hosted-auth email fix): the connection
+        // stays on the same account, just under the right actor.
+        const prevToken = await this.store.get<StoredTokenData>(
+          `auth_token:${tokenInfo.provider}:${previousActorId}`
+        );
+        const sameUpstreamAccount =
+          !!prevToken?.access_token &&
+          prevToken.access_token === effectiveAccessToken;
+        if (!sameUpstreamAccount) {
+          const expected = await this.db
+            .selectFrom("contact")
+            .select("email")
+            .where("id", "=", previousActorId)
+            .executeTakeFirst();
+          const expectedEmail = expected?.email ?? null;
+          throw new Error(
+            `${AUTH_ACCOUNT_MISMATCH_ERROR}: re-auth used a different account` +
+              (expectedEmail ? ` (expected ${expectedEmail})` : "")
+          );
+        }
+        createLogger({ twist_instance_id: this.twistInstanceId }).info(
+          "onAuth: re-binding the same account to a corrected contact",
+          {
+            provider: tokenInfo.provider,
+            previous_actor_id: previousActorId,
+            new_actor_id: actor.id,
+          }
         );
       }
 

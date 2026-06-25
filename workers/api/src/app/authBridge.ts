@@ -159,6 +159,41 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
     });
   }
 
+  // v2 hosted auth uses a SINGLE redirect_uri, so FAILURES land here too — with
+  // `error_title`/`error_type`/`error_detail` in the query instead of an
+  // `account_id`. Surface the real reason (and log it) instead of falling
+  // through to the generic "Connection timed out" below.
+  const errorTitle = query.error_title as string | undefined;
+  const errorType = query.error_type as string | undefined;
+  const errorDetail = query.error_detail as string | undefined;
+
+  // `api/already_exists` means the account is already connected in Unipile
+  // (`error_detail` is its `acc_` id). This fires when the user reconnects a
+  // Plot connection whose LOCAL binding broke (not the upstream session) — so
+  // we don't re-run the wizard, we just (re)bind the existing account. Treat it
+  // as a success for that account id and fall through to the normal onAuth path.
+  let alreadyExistsAccountId: string | null = null;
+  if (errorType === "api/already_exists" && errorDetail?.startsWith("acc_")) {
+    alreadyExistsAccountId = errorDetail;
+    logger.info("hosted/success: account already connected upstream, binding it", {
+      state,
+      account_id: alreadyExistsAccountId,
+    });
+  } else if (errorTitle || errorType || errorDetail) {
+    logger.warn("hosted/success: provider returned an auth error", {
+      state,
+      error_title: errorTitle,
+      error_type: errorType,
+      error_detail: errorDetail,
+    });
+    await storageObj.clear(`hosted_auth:${state}`);
+    return htmlBridgeResponse({
+      bridgeUri,
+      state,
+      error: errorDetail || errorTitle || errorType || "Authentication failed",
+    });
+  }
+
   // Fast path: Unipile appends account_id to the redirect URL. Use it
   // directly without waiting on a webhook. The notify_url callback isn't
   // reliably delivered (and arrives in a different payload shape when it
@@ -166,6 +201,7 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
   const queryAccountId =
     (query.account_id as string | undefined) ??
     (query.accountId as string | undefined) ??
+    alreadyExistsAccountId ??
     null;
 
   let resultJson: string | null = null;
@@ -175,6 +211,7 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
       accountType:
         (query.account_type as string | undefined) ??
         (query.provider as string | undefined) ??
+        provider?.toUpperCase() ??
         "LINKEDIN",
       receivedAt: Date.now(),
     });

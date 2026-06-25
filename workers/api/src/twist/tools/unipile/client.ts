@@ -172,6 +172,27 @@ export class UnipileClient {
   }
 
   /**
+   * List chats within a specific inbox. v2 LinkedIn requires this — the generic
+   * `GET /v2/:acc/chats` returns 501 ("Use List inbox Chats endpoint for this
+   * provider"). Inbox ids are constants (e.g. CLASSIC_PRIMARY, CLASSIC_INMAIL);
+   * results are cursor-paginated (`next_cursor`).
+   */
+  listInboxChats(input: {
+    accountId: string;
+    inboxId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{ data: UnipileChat[]; next_cursor?: string | null }> {
+    return this.get<{ data: UnipileChat[]; next_cursor?: string | null }>(
+      `/v2/${encodeURIComponent(input.accountId)}/inboxes/${encodeURIComponent(input.inboxId)}/chats`,
+      {
+        ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      }
+    );
+  }
+
+  /**
    * Resolve a provider identifier (username, public id, or phone) to a user.
    * v2: `GET /v2/:account_id/users/:identifier`.
    */
@@ -487,7 +508,7 @@ export class UnipileClient {
     });
   }
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, attempt = 0): Promise<T> {
     const url = `${this.base}${path}`;
     const headers = {
       "X-API-KEY": this.env.UNIPILE_API_KEY,
@@ -495,6 +516,21 @@ export class UnipileClient {
       ...((init.headers as Record<string, string>) ?? {}),
     };
     const response = await this.fetchImpl(url, { ...init, headers });
+
+    // Rate limit: LinkedIn (and other providers) throttle hard, especially
+    // during a backfill. Respect `Retry-After` (seconds) when present, else back
+    // off exponentially, capped — then retry a few times before giving up so a
+    // transient 429 doesn't fail the whole sync.
+    if (response.status === 429 && attempt < MAX_429_RETRIES) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delaySec = Math.min(
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 2 ** attempt,
+        RETRY_CAP_SECONDS
+      );
+      await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
+      return this.request<T>(path, init, attempt + 1);
+    }
+
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new UnipileApiError(
@@ -507,6 +543,11 @@ export class UnipileClient {
     return (await response.json()) as T;
   }
 }
+
+/** 429 retry policy. Kept small so a backfill page doesn't block too long; the
+ * queue retry handles sustained throttling. */
+const MAX_429_RETRIES = 3;
+const RETRY_CAP_SECONDS = 8;
 
 /** Base64-encode bytes for v2 JSON attachment uploads (Workers-safe). */
 function base64FromBytes(bytes: Uint8Array): string {
