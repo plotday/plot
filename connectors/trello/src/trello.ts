@@ -1,4 +1,4 @@
-import { Connector, type Link, type ToolBuilder } from "@plotday/twister";
+import { Connector, type Link, type Note, type NoteWriteBackResult, type Thread, type ToolBuilder } from "@plotday/twister";
 import {
   AuthProvider,
   Integrations,
@@ -175,6 +175,32 @@ export class Trello extends Connector<Trello> {
     } catch (error) {
       console.error("[trello] onLinkUpdated write-back failed:", error);
     }
+  }
+
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    const cardId = thread.meta?.cardId as string | undefined;
+    const boardId = thread.meta?.boardId as string | undefined;
+    if (!cardId || !boardId) return;
+    const api = await this.getApi(boardId);
+    const action = await api.addComment(cardId, note.content ?? "");
+    if (!action?.id) return;
+    return { key: `comment-${action.id}`, externalContent: action.data.text };
+  }
+
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    if (!note.key) return;
+    const cardId = thread.meta?.cardId as string | undefined;
+    const boardId = thread.meta?.boardId as string | undefined;
+    if (!cardId || !boardId) return;
+    const api = await this.getApi(boardId);
+    if (note.key === "description") {
+      const card = await api.updateCard(cardId, { desc: note.content ?? "" });
+      return { externalContent: card.desc ?? note.content ?? "" };
+    }
+    const m = note.key.match(/^comment-(.+)$/);
+    if (!m) return;
+    const updated = await api.updateComment(m[1], note.content ?? "");
+    return { externalContent: updated.data.text };
   }
 
   private async syncBatch(boardId: string): Promise<void> {

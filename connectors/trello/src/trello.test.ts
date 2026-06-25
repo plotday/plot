@@ -190,3 +190,31 @@ describe("onLinkUpdated", () => {
     expect(updateCard).not.toHaveBeenCalled();
   });
 });
+
+describe("comment write-back", () => {
+  const thread = { meta: { cardId: "c1", boardId: "b1" } } as any;
+  it("onNoteCreated posts a comment and returns the keyed baseline", async () => {
+    const trello = makeTrello();
+    const addComment = vi.fn().mockResolvedValue({ id: "act5", data: { text: "hello" } });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ addComment });
+    const res = await trello.onNoteCreated({ content: "hello" } as any, thread);
+    expect(addComment).toHaveBeenCalledWith("c1", "hello");
+    expect(res).toEqual({ key: "comment-act5", externalContent: "hello" });
+  });
+  it("onNoteUpdated edits an existing comment", async () => {
+    const trello = makeTrello();
+    const updateComment = vi.fn().mockResolvedValue({ id: "act5", data: { text: "edited" } });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ updateComment });
+    const res = await trello.onNoteUpdated({ key: "comment-act5", content: "edited" } as any, thread);
+    expect(updateComment).toHaveBeenCalledWith("act5", "edited");
+    expect(res).toEqual({ externalContent: "edited" });
+  });
+  it("onNoteUpdated maps the description note to the card desc", async () => {
+    const trello = makeTrello();
+    const updateCard = vi.fn().mockResolvedValue({ desc: "new desc" });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ updateCard });
+    const res = await trello.onNoteUpdated({ key: "description", content: "new desc" } as any, thread);
+    expect(updateCard).toHaveBeenCalledWith("c1", { desc: "new desc" });
+    expect(res).toEqual({ externalContent: "new desc" });
+  });
+});
