@@ -2514,6 +2514,87 @@ export class Integrations extends Tool implements IAuth {
       }];
     }
 
+    // Handle thread_read dispatch — route to connector's onThreadRead.
+    // The Plot-tool dispatch path requires plotOptions.thread.access, which
+    // connectors don't declare, so dispatch from here for connector-owned threads.
+    // Only the connection owner's own read is written back to the external
+    // account: a connector has a single external account (the owner's), so
+    // another viewer reading a shared thread must NOT mark the owner's mailbox
+    // read.
+    if (dispatchItem?.itemType === "thread_read" && this.sourceProvider) {
+      const { item } = dispatchItem;
+      if (!item?.thread_id || !item.user_id) return [];
+
+      // Only dispatch for threads this connector created.
+      const link = await this.db
+        .selectFrom("link")
+        .select(["meta", "channel_id", "source"])
+        .where("thread_id", "=", item.thread_id as string)
+        .where("created_by", "=", this.twistInstanceId)
+        .executeTakeFirst();
+      if (!link) return [];
+
+      // Only the connection owner's read writes back to the external account.
+      const owner = await this.db
+        .selectFrom("twist_instance")
+        .select("owner_id")
+        .where("id", "=", this.twistInstanceId)
+        .executeTakeFirst();
+      if (!owner || owner.owner_id !== item.user_id) return [];
+
+      const threadRow = await this.db
+        .selectFrom("thread")
+        .select(["id", "title", "archived_at"])
+        .where("id", "=", item.thread_id as string)
+        .executeTakeFirst();
+      if (!threadRow) return [];
+
+      const meta: ThreadMeta = {
+        ...((link.meta as Record<string, unknown>) ?? {}),
+        channelId: link.channel_id ?? null,
+        linkSource: link.source ?? null,
+      } as ThreadMeta;
+
+      // Resolve actor from the reading user's primary linked contact.
+      let actor: Actor = {
+        id: item.user_id as ActorId,
+        type: ActorType.User,
+        name: null,
+      };
+      const contact = await this.db
+        .selectFrom("user_contact as uc")
+        .innerJoin("contact as c", "c.id", "uc.contact_id")
+        .select(["c.id", "c.name"])
+        .where("uc.user_id", "=", item.user_id as string)
+        .where("uc.linked", "=", true)
+        .where("uc.primary", "=", true)
+        .where("uc.archived_at", "is", null)
+        .executeTakeFirst();
+      if (contact) {
+        actor = {
+          id: contact.id as ActorId,
+          name: contact.name ?? null,
+          type: ActorType.User,
+        };
+      }
+
+      const thread: Partial<Thread> = {
+        id: threadRow.id as Uuid,
+        title: threadRow.title ?? "",
+        archived: threadRow.archived_at !== null,
+        meta,
+      };
+
+      // unread mirrors the Plot-tool path: read_at set => now read (unread=false);
+      // read_at cleared => now unread (unread=true).
+      const unread = !item.read_at;
+
+      return [{
+        sourceMethod: "onThreadRead",
+        args: [thread, actor, unread],
+      }];
+    }
+
     // Handle schedule_contact dispatch — route to connector's onScheduleContactUpdated.
     // The Plot-tool dispatch path requires plotOptions.thread.access, which
     // connectors don't declare, so dispatch from here for connector-owned link schedules.

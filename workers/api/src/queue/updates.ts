@@ -702,10 +702,15 @@ export async function processTwistBatch(
       if (!threadRead.thread_id) continue;
 
       try {
-        await twistWrapper.dispatch("Plot", {
+        const threadReadDispatchArgs = {
           itemType: "thread_read" as const,
           item: threadRead,
-        });
+        };
+        // Plot-tool path for twists that declare plotOptions.thread.access,
+        // Integrations path for connectors (which don't declare Plot) so they
+        // can write the read state back to the external account.
+        await twistWrapper.dispatch("Plot", threadReadDispatchArgs);
+        await twistWrapper.dispatch("Integrations", threadReadDispatchArgs);
       } catch (error) {
         logger.error("Error processing thread read", error as Error, {
           thread_id: threadRead.thread_id,
