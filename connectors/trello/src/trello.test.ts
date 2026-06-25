@@ -182,13 +182,6 @@ describe("onLinkUpdated", () => {
     await trello.onLinkUpdated(linkWith({ status: "l3" }));
     expect(updateCard).toHaveBeenCalledWith("c1", expect.objectContaining({ idList: "l3" }));
   });
-  it("archives the card when archived=true", async () => {
-    const trello = makeTrello();
-    const updateCard = vi.fn().mockResolvedValue({});
-    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ updateCard });
-    await trello.onLinkUpdated(linkWith({ archived: true }));
-    expect(updateCard).toHaveBeenCalledWith("c1", expect.objectContaining({ closed: true }));
-  });
   it("no-ops when meta.cardId is missing", async () => {
     const trello = makeTrello();
     const updateCard = vi.fn();

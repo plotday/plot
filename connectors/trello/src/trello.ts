@@ -162,10 +162,10 @@ export class Trello extends Connector<Trello> {
     const cardId = link.meta?.cardId as string | undefined;
     const boardId = link.meta?.boardId as string | undefined;
     if (!cardId || !boardId) return;
-    const fields: { idList?: string; closed?: boolean; name?: string } = {};
-    // `archived` is not on the Link read type but the runtime injects it from the thread
-    const archived = (link as Link & { archived?: boolean }).archived;
-    if (archived) fields.closed = true;
+    // Note: archive write-back is intentionally not supported yet. The Link read
+    // type has no `archived` field; supporting it would require a runtime
+    // `fromDbLink` change to surface it here.
+    const fields: { idList?: string; name?: string } = {};
     if (link.status) fields.idList = link.status; // status === Trello list id
     if (link.title) fields.name = link.title;
     if (Object.keys(fields).length === 0) return;
