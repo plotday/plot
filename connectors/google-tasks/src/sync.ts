@@ -477,6 +477,12 @@ export function transformTask(
     source,
     type: "task",
     title: task.title,
+    // The Google Tasks API exposes no creation timestamp, so use `updated` as
+    // the link's source time. The link upsert sets source_created_at on INSERT
+    // only (ON CONFLICT never overwrites it), so this is captured once at first
+    // import and does NOT drift forward when the task is later edited — the
+    // thread keeps sorting at the task's original import time, not "just now".
+    created: new Date(task.updated),
     channelId: listId,
     meta: {
       taskId: task.id,
