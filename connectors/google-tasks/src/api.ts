@@ -7,6 +7,34 @@
 
 const BASE_URL = "https://tasks.googleapis.com/tasks/v1";
 
+/**
+ * Error thrown by the Google Tasks REST client. Carries the HTTP `status` so
+ * callers can distinguish a permanent "resource gone" (404) — e.g. the user
+ * deleted a task list while its Plot channel was still enabled — from
+ * transient 5xx/429 failures worth retrying.
+ *
+ * The message format is preserved verbatim (`Google Tasks API error
+ * <status>: <body>`) for backwards compatibility with existing logs/grouping.
+ */
+export class GoogleTasksApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, body: string) {
+    super(`Google Tasks API error ${status}: ${body}`);
+    this.name = "GoogleTasksApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * True when the error indicates the target task list (or task) no longer
+ * exists on Google's side. A 404 from a list-scoped endpoint is permanent:
+ * retrying or reporting it to error tracking is pure noise.
+ */
+export function isNotFoundError(error: unknown): boolean {
+  return error instanceof GoogleTasksApiError && error.status === 404;
+}
+
 export type GoogleTaskList = {
   id: string;
   title: string;
@@ -54,9 +82,7 @@ async function request<T>(
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(
-      `Google Tasks API error ${response.status}: ${text}`
-    );
+    throw new GoogleTasksApiError(response.status, text);
   }
   return response.json() as Promise<T>;
 }

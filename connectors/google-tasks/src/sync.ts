@@ -29,6 +29,7 @@ import type { CreateLinkDraft } from "@plotday/twister/connector";
 
 import {
   createTask,
+  isNotFoundError,
   listTasks,
   updateTask,
   type GoogleTask,
@@ -257,12 +258,26 @@ export async function syncBatchFn(
   const authActorId = await host.get<ActorId>("auth_actor_id");
 
   // Fetch batch of tasks
-  const result = await listTasks(token, listId, {
-    showCompleted: false,
-    pageToken: state.pageToken ?? undefined,
-    maxResults: 50,
-    updatedMin: state.syncHistoryMin ?? undefined,
-  });
+  let result;
+  try {
+    result = await listTasks(token, listId, {
+      showCompleted: false,
+      pageToken: state.pageToken ?? undefined,
+      maxResults: 50,
+      updatedMin: state.syncHistoryMin ?? undefined,
+    });
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      // The task list was deleted on Google's side while still enabled in
+      // Plot. A 404 here is permanent, so tear the channel down exactly like a
+      // disable (cancel the poll, clear state, archive its links) instead of
+      // throwing — otherwise every retry pages error tracking and the message
+      // eventually dead-letters.
+      await onChannelDisabledFn(host, listId);
+      return { done: true };
+    }
+    throw error;
+  }
 
   await saveTaskPageFn(host, result.tasks, listId, state.initialSync, authActorId);
 
@@ -341,11 +356,23 @@ export async function periodicSyncBatchFn(
   const token = await getTokenFn(host, listId);
   const authActorId = await host.get<ActorId>("auth_actor_id");
 
-  const result = await listTasks(token, listId, {
-    updatedMin: lastSync ?? undefined,
-    pageToken: state.pageToken ?? undefined,
-    maxResults: 50,
-  });
+  let result;
+  try {
+    result = await listTasks(token, listId, {
+      updatedMin: lastSync ?? undefined,
+      pageToken: state.pageToken ?? undefined,
+      maxResults: 50,
+    });
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      // List deleted on Google's side — stop polling it for good. Tearing down
+      // here (cancel poll, clear state, archive links) matches the disable path
+      // and prevents the hourly poll from re-throwing the same 404 forever.
+      await onChannelDisabledFn(host, listId);
+      return { done: true };
+    }
+    throw error;
+  }
 
   await saveTaskPageFn(host, result.tasks, listId, false, authActorId);
 
@@ -575,7 +602,15 @@ export async function onLinkUpdatedFn(
   const token = await getTokenFn(host, listId);
   const isDone = link.status === "done";
 
-  await updateTask(token, listId, taskId, {
-    status: isDone ? "completed" : "needsAction",
-  });
+  try {
+    await updateTask(token, listId, taskId, {
+      status: isDone ? "completed" : "needsAction",
+    });
+  } catch (error) {
+    // The task or its list was deleted on Google's side — there is nothing to
+    // write back. A 404 is permanent, so swallow it rather than throwing
+    // (which would retry on the queue and eventually page / dead-letter).
+    if (isNotFoundError(error)) return;
+    throw error;
+  }
 }
