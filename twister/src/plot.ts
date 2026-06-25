@@ -728,6 +728,21 @@ export type Note = ThreadCommon & {
    * from the connector's extraction; clients read it to show an ephemeral prompt.
    */
   cta: Cta | null;
+  /** Group this note belongs to within its thread (e.g. a Trello checklist id). Null = ordinary note. */
+  sectionKey: string | null;
+  /** Display label for the group (e.g. the checklist name). */
+  sectionLabel: string | null;
+  /** Sort position of the group among the thread's groups (fractional index). */
+  sectionPosition: string | null;
+  /** Sort position of this item within its group (fractional index). */
+  itemPosition: string | null;
+  /**
+   * Actors referenced by this note's `tags`, hydrated with `source.accountId`
+   * for the connector receiving this dispatch. Populated by the runtime only on
+   * connector dispatch (so a connector can resolve an assignee to its external
+   * id without a lookup); `{}` elsewhere.
+   */
+  tagActors: Record<ActorId, Actor>;
 };
 
 /**
@@ -742,7 +757,7 @@ export type Note = ThreadCommon & {
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "id" | "key" | "reNote"
+    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "id" | "key" | "reNote" | "tagActors"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
@@ -910,6 +925,13 @@ export type Actor = {
    * - `string`: Display name
    */
   name?: string | null;
+  /**
+   * The actor's external account id for the connector receiving this object
+   * (e.g. a Trello member id), or null if the actor has no linked account for
+   * that connector. Populated by the runtime on dispatch — symmetric with
+   * `NewContact.source.accountId` which connectors set on inbound sync.
+   */
+  source?: { accountId: string } | null;
 };
 
 /**
