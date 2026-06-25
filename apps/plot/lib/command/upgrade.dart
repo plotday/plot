@@ -401,6 +401,14 @@ class SubscriptionDisclosure extends StatelessWidget {
   }
 }
 
+/// Live StoreKit price for a plan ('core'/'pro'), or null when StoreKit hasn't
+/// loaded the product yet. Never hardcode the amount: it varies by storefront,
+/// would silently go stale on any price change (no code rollout updates it),
+/// and would never match what the native StoreKit sheet actually charges.
+String? _livePlanPrice(String plan) => IapService.instance
+    .productFor(plan == 'pro' ? kIapProductProMonthly : kIapProductCoreMonthly)
+    ?.price;
+
 /// Surfaces a plan picker (Core vs Pro) then routes to [BuyPlanCommand].
 /// Used as the entry point for "Upgrade your plan" and the at-limit toasts.
 ///
@@ -446,8 +454,24 @@ class ShowUpgradeOptions extends Command {
     // Off the App Store, the upgrade flow lives on the web, which presents
     // full plan details and its own picker. Skip the in-app plan modal —
     // it only exists to choose a StoreKit product — and open the page
-    // directly. The modal's title/subtitle are App-Store-only from here.
+    // directly.
     if (!UpgradeUi.isAppStoreBuild) {
+      // When the caller attached explanatory context (today only the
+      // connection-add-on gate: "subscribe first, then add the add-on"),
+      // surface it in-app before bouncing to the external upgrade page —
+      // otherwise the browser opens cold with no hint of why the user is here
+      // or what to do when they come back. On the App Store the plan picker
+      // below shows the same note inline, so this keeps the two environments
+      // at parity.
+      final subtitle = _subtitle;
+      if (subtitle != null) {
+        final proceed = await ConfirmModal(
+          title: _title,
+          message: subtitle,
+          confirmLabel: 'Continue',
+        ).run(context);
+        if (!context.mounted || !proceed) return const CommandSkipped();
+      }
       await openWebUpgrade(context);
       return const CommandSkipped();
     }
@@ -480,13 +504,14 @@ class ShowUpgradeOptions extends Command {
       // in its subtitle; the single-plan upgrade path would otherwise jump
       // straight to StoreKit, so surface the disclosure in a confirmation
       // first (keeps every IAP-triggering screen compliant with 3.1.2).
-      final priceLine = plan == 'pro'
-          ? 'Pro — \$24.99/month'
-          : 'Core — \$14.99/month';
+      final planName = plan == 'pro' ? 'Pro' : 'Core';
+      final price = _livePlanPrice(plan);
       final confirmed = await ConfirmModal(
         title: _title,
-        messageWidget: SubscriptionDisclosure(priceLine: priceLine),
-        confirmLabel: plan == 'pro' ? 'Subscribe to Pro' : 'Subscribe to Core',
+        messageWidget: SubscriptionDisclosure(
+          priceLine: price == null ? null : '$planName — $price/month',
+        ),
+        confirmLabel: 'Subscribe to $planName',
       ).run(context);
       if (!context.mounted || !confirmed) return const CommandSkipped();
       return BuyPlanCommand(plan: plan).run(context);
@@ -503,8 +528,10 @@ class ShowUpgradeOptions extends Command {
       itemBuilder: (plan, _) => Builder(
         builder: (context) {
           final isCore = plan == 'core';
+          final name = isCore ? 'Core' : 'Pro';
+          final price = _livePlanPrice(plan);
           return ListTile(
-            title: isCore ? 'Core — \$14.99/month' : 'Pro — \$24.99/month',
+            title: price == null ? name : '$name — $price/month',
             icon: isCore ? PlotIcon.connection : PlotIcon.sparkles,
             details: Text(
               isCore

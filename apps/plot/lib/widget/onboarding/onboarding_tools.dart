@@ -9,7 +9,6 @@ import 'package:plot/state/subscription_service.dart';
 import 'package:plot/command/twist.dart';
 import 'package:plot/command/upgrade.dart' show ShowUpgradeOptions;
 import 'package:plot/widget/logo_image.dart';
-import 'package:plot/widget/pro_badge.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
@@ -99,31 +98,17 @@ class _OnboardingToolsState extends State<OnboardingTools> {
   Future<void> _openSetup(Twist twist) async {
     // Kick off the subscription/usage refresh now, before createDraft, so the
     // three-call refresh overlaps the draft round-trip instead of running
-    // after it. The premium gate below and `_buildForm`'s `_freshUsage()` both
-    // coalesce onto this in-flight refresh (SubscriptionService dedupes), so
-    // this only ever moves the work earlier — never duplicates it.
+    // after it. `AddSourceDetail`'s `_freshUsage()` coalesces onto this
+    // in-flight refresh (SubscriptionService dedupes), so this only ever moves
+    // the work earlier — never duplicates it.
     unawaited(SubscriptionService.instance.ensureFresh());
 
-    // Pull a fresh subscription/usage snapshot before gating. After a browser
-    // (Stripe) upgrade, the cached value could otherwise still read "blocked"
-    // and re-show the subscribe modal. The service coalesces this with any
-    // refresh already kicked off by app refocus.
-    if (twist.premium) {
-      await SubscriptionService.instance.ensureFresh();
-      if (!mounted) return;
-      final usage = SubscriptionService.instance.usage;
-      if (usage != null) {
-        final gate =
-            premiumOnboardingGate(usage: usage, isPremium: twist.premium);
-        if (gate != null) {
-          await gate.run(context);
-          // The upgrade may complete out-of-band (browser). The service's
-          // refocus/broadcast refresh updates usage; the user taps again to
-          // proceed. No stale re-cache here.
-          return;
-        }
-      }
-    }
+    // Add-on (premium) connectors open the same setup modal as every other
+    // connector. When the user's plan can't take the add-on, the modal itself
+    // surfaces an upgrade button (StoreKit on App Store builds, the web upgrade
+    // flow elsewhere — both via the modal's premium gate). We deliberately do
+    // NOT short-circuit to the upgrade flow on the tile tap: jumping straight
+    // to a web page without ever opening the modal made no sense to users.
     await AddSourceDetail(twist, dismissable: true).run(context);
     // Mirror ManageConnections: after OAuth, AddSourceDetail leaves the
     // connection as a DRAFT and hands it off here. We open EditSource so the
@@ -192,10 +177,12 @@ class _OnboardingToolsState extends State<OnboardingTools> {
     // Bucket the available connectors into the three onboarding sections.
     // Anything without a recognized category (including null) falls through
     // to "Apps" so a new or uncategorized connector is never dropped.
-    final messaging =
-        tools.where((t) => t.category == _messagingCategory).toList();
-    final calendars =
-        tools.where((t) => t.category == _calendarCategory).toList();
+    final messaging = tools
+        .where((t) => t.category == _messagingCategory)
+        .toList();
+    final calendars = tools
+        .where((t) => t.category == _calendarCategory)
+        .toList();
     final apps = tools
         .where(
           (t) =>
@@ -208,10 +195,9 @@ class _OnboardingToolsState extends State<OnboardingTools> {
     // EditSource closed without picking channels). They linger in
     // /sources/summary but aren't real connections from the user's
     // perspective. ManageConnections applies the same rule.
-    final connected =
-        _connected
-            .where((s) => s.twistPackageId != null && s.enabledCount > 0)
-            .toList();
+    final connected = _connected
+        .where((s) => s.twistPackageId != null && s.enabledCount > 0)
+        .toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -227,11 +213,8 @@ class _OnboardingToolsState extends State<OnboardingTools> {
         var columns = ((available + spacing) / (idealTile + spacing)).floor();
         if (columns < 1) columns = 1;
         if (columns > 4) columns = 4;
-        final tileWidth =
-            ((available - spacing * (columns - 1)) / columns).clamp(
-              minTile,
-              280.0,
-            );
+        final tileWidth = ((available - spacing * (columns - 1)) / columns)
+            .clamp(minTile, 280.0);
         // Activated connections render two-up, but collapse to one-up on a
         // phone (narrow) where the tile grid is already a single column.
         final connectedTileWidth = columns < 2
@@ -316,11 +299,9 @@ class _ToolTileState extends State<_ToolTile> {
       onTap: _handleTap,
       builder: (context, hovered) => AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
         decoration: BoxDecoration(
-          color: hovered
-              ? const Color(0xFFF5F3FF)
-              : const Color(0xFFFFFFFF),
+          color: hovered ? const Color(0xFFF5F3FF) : const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(10),
           boxShadow: hovered
               ? const [
@@ -332,46 +313,72 @@ class _ToolTileState extends State<_ToolTile> {
                 ]
               : null,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        // A normal compact row (logo + name, vertically centred). For add-on
+        // connectors a small all-caps "ADD-ON" label is overlaid in the
+        // top-right corner via a Stack. Because it's Positioned it takes no
+        // layout space, so it neither steals width from the name (long labels
+        // like "WhatsApp" — and "Facebook Messenger" soon — keep the full tile
+        // width) nor pushes the name row off-centre.
+        child: Stack(
+          // Let the corner tag sit slightly above the content box (negative
+          // top below) without being clipped.
+          clipBehavior: Clip.none,
           children: [
-            if (_busy) ...[
-              // Standard app spinner (SpinKitFadingCircle), sized to the logo
-              // slot it replaces so the tile doesn't reflow while loading.
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: Center(child: Spinner(size: 18)),
-              ),
-              const SizedBox(width: 10),
-            ] else if (twist.logoUrl != null) ...[
-              LogoImage(url: twist.logoUrl!, size: 20),
-              const SizedBox(width: 10),
-            ],
-            Flexible(
-              child: Text(
-                twist.name,
-                // Long connector names (e.g. "Google Mail, Calendar, and
-                // Tasks") wrap to a second line within the tile rather than
-                // truncating mid-word.
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF1F1F1F),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  decoration: TextDecoration.none,
-                ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 28),
+              child: Row(
+                children: [
+                  if (_busy) ...[
+                    // Standard app spinner (SpinKitFadingCircle), sized to the
+                    // logo slot it replaces so the tile doesn't reflow while
+                    // loading.
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Center(child: Spinner(size: 18)),
+                    ),
+                    const SizedBox(width: 10),
+                  ] else if (twist.logoUrl != null) ...[
+                    LogoImage(url: twist.logoUrl!, size: 20),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Text(
+                      twist.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF1F1F1F),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            if (twist.premium) ...[
-              const SizedBox(width: 8),
-              // The tile is a hardcoded white surface on a themed backdrop, so
-              // pass the onboarding brand violet explicitly — the theme-derived
-              // default accent is the neutral-theme grey here and "Add-on"
-              // would be invisible on white.
-              const ProBadge(color: Color(0xFF7C3AED)),
-            ],
+            if (twist.premium)
+              const Positioned(
+                top: -3,
+                right: 0,
+                // A bare all-caps tag (no pill) marking an add-on connection.
+                // The tile is a hardcoded white surface on a themed backdrop,
+                // so the brand violet is set explicitly — the ambient theme
+                // accent is the neutral-theme grey here and would be nearly
+                // invisible on white.
+                child: Text(
+                  'ADD-ON',
+                  style: TextStyle(
+                    fontSize: 9,
+                    height: 1,
+                    letterSpacing: 0.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF7C3AED),
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -574,9 +581,7 @@ class _ConnectedRow extends StatelessWidget {
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: hovered
-              ? const Color(0xFFF5F3FF)
-              : const Color(0xFFFFFFFF),
+          color: hovered ? const Color(0xFFF5F3FF) : const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
@@ -645,4 +650,3 @@ class _ConnectedRow extends StatelessWidget {
     );
   }
 }
-

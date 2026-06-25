@@ -906,8 +906,7 @@ Command _connectionAtLimitCommand() =>
 Command _addonNeedsPaidPlanCommand() => ShowUpgradeOptions(
   title: 'Upgrade to use connection add-ons',
   subtitle:
-      'Connection add-ons are \$5/month each on any paid plan. '
-      'Upgrade to add one.',
+      'Connection add-ons require a paid plan. Subscribe first, then add one.',
 );
 
 /// Returned when a paid user has used all their connection add-ons and needs
@@ -935,19 +934,6 @@ Command? _premiumGateCommand({
     case _PremiumGate.atLimit:
       return _addonNeededCommand(owner: owner);
   }
-}
-
-/// Onboarding-facing gate: the upgrade [Command] to run instead of opening
-/// setup for a premium connector, or null to proceed. Mirrors the preemptive
-/// gate [AddSourceDetail] applies — we only gate on the tile tap when the user
-/// has no team to fall back to; team-aware gating happens inside the setup
-/// modal. Pure (no context/IO) so it is unit-testable.
-Command? premiumOnboardingGate({
-  required UsageData usage,
-  required bool isPremium,
-}) {
-  if (!isPremium || usage.teams.isNotEmpty) return null;
-  return _premiumGateCommand(usage: usage, owner: 'personal', isPremium: true);
 }
 
 enum _PremiumGate { allowed, atLimit, blocked }
