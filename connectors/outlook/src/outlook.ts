@@ -1,5 +1,15 @@
 import { Connector } from "@plotday/twister";
-import type { Actor, ToolBuilder } from "@plotday/twister";
+import type {
+  Actor,
+  ActorId,
+  CreateLinkDraft,
+  NewLinkWithNotes,
+  Note,
+  NoteWriteBackResult,
+  Thread,
+  ToolBuilder,
+} from "@plotday/twister";
+import type { ScheduleContactStatus } from "@plotday/twister/schedule";
 import {
   AuthProvider,
   Integrations,
@@ -26,6 +36,11 @@ import {
   initialSyncBatchFn,
   incrementalSyncBatchFn,
   onOutlookMailWebhookFn,
+  onCreateLinkFn,
+  onNoteCreatedFn,
+  onThreadReadFn,
+  onThreadToDoFn,
+  downloadAttachmentFn,
   getMailboxRenewalSchedule,
   type InitialSyncState,
 } from "@plotday/connector-outlook-mail";
@@ -33,15 +48,17 @@ import {
   type OutlookCalendarSyncHost,
   type WatchState,
   clearBuffersFn as calendarClearBuffersFn,
+  extractRSVPParamsFn,
+  getApiFn as getCalendarApiFn,
   initOutlookCalendarFn,
   renewOutlookWatchFn,
   scheduleSubscriptionRenewalFn,
   setupOutlookWatchFn,
   startIncrementalSyncFn,
-  startSyncFn,
   stopSyncFn,
   syncOutlookBatchFn,
   tryGetApiFn,
+  updateEventRSVPWithApiFn,
   watchNeedsReactiveRenewalFn,
 } from "@plotday/connector-outlook-calendar";
 
@@ -143,10 +160,11 @@ export class Outlook extends Connector<Outlook> {
       return;
     }
 
-    // TODO(F1): wire contacts. Contacts has no import (enabling only grants
-    // enrichment scopes Mail reads via token.scopes), so leave it as an
-    // explicit no-op stub until F1 fills in the contacts: dispatch the same
-    // way mail/calendar are wired above.
+    // Contacts is an intentional no-op: Outlook has no contacts IMPORT.
+    // Enabling the synthetic `contacts:contacts` channel only signals the
+    // intent to grant the People.Read / Contacts.Read scopes, which Mail's
+    // sync reads via `token.scopes` to enrich sender display names
+    // (see enrichLinkContactsFromOutlook). There is no sync to start.
     if (productKey === "contacts") {
       return;
     }
@@ -165,9 +183,104 @@ export class Outlook extends Connector<Outlook> {
       return;
     }
 
-    // TODO(F1): wire contacts teardown.
+    // Contacts no-op (no import to tear down): see onChannelEnabled. Disabling
+    // only withdraws scope intent; nothing was started.
     if (productKey === "contacts") {
       return;
+    }
+  }
+
+  // ===========================================================================
+  // Write-back routing (dispatched by the runtime to the acting user's
+  // instance). Each delegates to the extracted standalone function via the
+  // matching namespaced host:
+  //   - compose / notes / read / to-do / attachment download → Mail host
+  //   - RSVP (onScheduleContactUpdated) → Calendar host
+  // The Mail write-backs no-op for non-mail threads (they gate on
+  // meta.conversationId / draft.type === "email"); RSVP no-ops for threads
+  // without an Outlook event id. No extra product-enabled guards are needed —
+  // routing is by thread/draft shape, matching the standalone connectors and
+  // the combined Google connector.
+  // ===========================================================================
+
+  /**
+   * Outbound link creation from Plot. Only Mail declares a `compose` block
+   * (the `email` link type), so route to the Mail host; {@link onCreateLinkFn}
+   * returns null for any non-`email` draft type.
+   */
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    return onCreateLinkFn(this.makeMailHost(), draft);
+  }
+
+  /** Reply / compose write-back → Mail. */
+  async onNoteCreated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
+    return onNoteCreatedFn(this.makeMailHost(), note, thread);
+  }
+
+  /** Read/unread write-back → Mail (mirrors message isRead state). */
+  async onThreadRead(
+    thread: Thread,
+    actor: Actor,
+    unread: boolean
+  ): Promise<void> {
+    await onThreadReadFn(this.makeMailHost(), thread, actor, unread);
+  }
+
+  /** To-do / flag write-back → Mail (mirrors message flag state). */
+  async onThreadToDo(
+    thread: Thread,
+    actor: Actor,
+    todo: boolean,
+    options: { date?: Date }
+  ): Promise<void> {
+    await onThreadToDoFn(this.makeMailHost(), thread, actor, todo, options);
+  }
+
+  /** Attachment download → Mail (resolves the opaque inbound-sync `ref`). */
+  override async downloadAttachment(ref: string): Promise<
+    | { redirectUrl: string }
+    | { body: Uint8Array; mimeType: string; fileName?: string }
+  > {
+    return downloadAttachmentFn(this.makeMailHost(), ref);
+  }
+
+  /**
+   * RSVP write-back → Calendar. The dispatch is routed to the RSVPing user's
+   * own connector instance (via `twist_instance_for_actor`), so this already
+   * runs under that user's auth — no actAs needed. Mirrors
+   * OutlookCalendar.onScheduleContactUpdated.
+   */
+  async onScheduleContactUpdated(
+    thread: Thread,
+    _scheduleId: string,
+    _contactId: ActorId,
+    status: ScheduleContactStatus | null,
+    actor: Actor
+  ): Promise<void> {
+    const params = extractRSVPParamsFn(thread, status);
+    if (!params) return;
+
+    const { calendarId, eventId, outlookStatus } = params;
+
+    try {
+      const api = await getCalendarApiFn(this.makeCalendarHost(), calendarId);
+      await updateEventRSVPWithApiFn(
+        api,
+        calendarId,
+        eventId,
+        outlookStatus,
+        actor.id as ActorId
+      );
+    } catch (error) {
+      console.error("[RSVP Sync] Failed to sync RSVP", {
+        event_id: eventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -582,32 +695,6 @@ export class Outlook extends Connector<Outlook> {
     if ("done" in result) return;
 
     // Set up the push webhook for this calendar.
-    await this.setupOutlookWatch(calendarId);
-
-    const { batchNumber, initialSync } = result.next;
-    const syncCallback = await this.callback(
-      this.syncOutlookBatch,
-      calendarId,
-      initialSync,
-      batchNumber
-    );
-    await this.runTask(syncCallback);
-  }
-
-  /**
-   * Manual-start sync entry point (parity with the standalone driver; not used
-   * by channel enable, which flows through {@link onCalendarChannelEnabled}).
-   */
-  async startCalendarSync(options: {
-    calendarId: string;
-    timeMin?: Date | null;
-    timeMax?: Date | null;
-  }): Promise<void> {
-    const { calendarId } = options;
-
-    const result = await startSyncFn(this.makeCalendarHost(), options);
-    if ("done" in result) return;
-
     await this.setupOutlookWatch(calendarId);
 
     const { batchNumber, initialSync } = result.next;

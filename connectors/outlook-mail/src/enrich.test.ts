@@ -100,4 +100,34 @@ describe("enrichLinkContactsFromOutlook", () => {
       (link.notes![0] as { author: { name?: string } }).author.name
     ).toBe("Ann Example");
   });
+
+  it("no-ops (leaves links unchanged, throws nothing, no fetch) when contacts scopes are absent", async () => {
+    // Granted scopes EXCLUDE people.read / contacts.read — the Contacts product
+    // was not enabled, so enrichment must degrade silently rather than throw or
+    // mutate. Mirrors how the composite Outlook connector gates enrichment on
+    // `token.scopes`.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const link: NewLinkWithNotes = {
+      type: "email",
+      title: "t",
+      accessContacts: [{ email: "ann@x.com" }],
+      notes: [{ author: { email: "ann@x.com" }, content: "x" }],
+    };
+    const snapshot = JSON.stringify(link);
+
+    await expect(
+      enrichLinkContactsFromOutlook(
+        [link],
+        "tok",
+        ["https://graph.microsoft.com/mail.readwrite"]
+      )
+    ).resolves.toBeUndefined();
+
+    // No People/Contacts call attempted, and the link is byte-for-byte unchanged
+    // (no name was filled in).
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(JSON.stringify(link)).toBe(snapshot);
+  });
 });
