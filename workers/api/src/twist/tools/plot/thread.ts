@@ -232,6 +232,52 @@ export async function markThreadUnreadForUsers(
 }
 
 /**
+ * Clear the connection owner's LIVE unread on a thread the connector reports as
+ * read (`link.unread === false`: the owner read it in the source app — e.g.
+ * marked a Gmail thread read — or it's an initial-sync backfill item).
+ *
+ * The owner is the only user a connector-ingested thread is ever marked unread
+ * for (see {@link markThreadUnreadForUsers}, gated on the owner's filing), and
+ * each connector instance reflects its own owner's mailbox — so we clear exactly
+ * that user and never other shared-thread members, who keep their own read state.
+ *
+ * Writes `thread_state.read_at` (which `user.thread.unread` reads) via
+ * `clear_thread_state`, which is race-safe: it only marks read when the thread is
+ * currently unread AND the read time is at/after the latest content, so a
+ * genuinely-newer unread message keeps the thread unread. This is the missing
+ * counterpart to the unread path: `createThread`'s `unread === false` branch
+ * only writes the legacy `thread_read` table, which `user.thread.unread` ignores
+ * — so without this, an already-unread thread never clears when read externally.
+ */
+export async function markThreadReadForOwner(
+  plot: Plot,
+  threadId: string
+): Promise<void> {
+  // Resolve the owner AND confirm they have a (non-archived) filing on the
+  // thread in one query: clear_thread_state raises "Thread not found" without a
+  // thread_priority row, and a thread filtered out for this user (e.g. a
+  // team connector firing for a non-member) legitimately has none — so skip
+  // rather than error. Mirrors markThreadUnreadForUsers' early return.
+  const owner = await plot.db
+    .selectFrom("twist_instance as ti")
+    .innerJoin("thread_priority as tp", (join) =>
+      join
+        .onRef("tp.user_id", "=", "ti.owner_id")
+        .on("tp.thread_id", "=", threadId)
+        .on("tp.archived_at", "is", null)
+    )
+    .select("ti.owner_id")
+    .where("ti.id", "=", plot.twistInstanceId)
+    .executeTakeFirst();
+  if (!owner?.owner_id) return;
+
+  await rpcUser(plot.db, "clear_thread_state", {
+    user_id: owner.owner_id,
+    p_thread_id: threadId,
+  });
+}
+
+/**
  * upsert_thread can merge into an existing thread (source match); only a
  * freshly-created row carries this call's pre-insert classification
  * decision. created_at within 60s of now ⇒ created by this call.

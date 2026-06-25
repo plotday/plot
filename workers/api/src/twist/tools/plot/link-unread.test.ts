@@ -283,4 +283,65 @@ describe.skipIf(!DATABASE_URL)("createLink unread on arrival", () => {
     expect(row).toBeDefined();
     expect(row.unread).toBe(true);
   });
+
+  it("clears the owner's unread when the connector re-syncs the thread as read (unread:false)", async () => {
+    // Inbound read-state sync: a thread arrives unread (external sender), then
+    // the owner reads it in the source app (e.g. Gmail). The connector re-syncs
+    // the same thread with unread:false. The owner's live unread MUST clear —
+    // historically the read path only wrote the dead legacy thread_read table
+    // and left thread_state.read_at NULL, so the thread stayed unread forever.
+    const rows = await withConnectorPlot(async (plot, db, { userId }) => {
+      const senderId = randomUUID();
+      await sql`
+        INSERT INTO contact (id, name, email)
+        VALUES (${senderId}::uuid, 'External Sender', ${`sender-${senderId}@example.test`})
+      `.execute(db);
+
+      const source = `gmail:${randomUUID()}`;
+      const note = {
+        key: `msg-${randomUUID()}`,
+        content: "Their message",
+        author: { id: senderId },
+        created: new Date("2026-06-22T13:00:00.000Z"),
+      };
+
+      // 1. Thread arrives unread (no unread flag → "non-authors" marks owner).
+      const threadId = await plot.createLink({
+        title: "Incoming question",
+        source,
+        author: { id: senderId },
+        preview: "Their message",
+        notes: [note],
+      } as any);
+
+      const before = await sql<{ unread: boolean }>`
+        SELECT unread FROM "user".thread
+        WHERE id = ${threadId}::uuid AND user_id = ${userId}::uuid
+      `.execute(db);
+
+      // 2. Owner reads it in Gmail → connector re-syncs the SAME thread (same
+      // source/note) reporting it is now read.
+      await plot.createLink({
+        title: "Incoming question",
+        source,
+        author: { id: senderId },
+        preview: "Their message",
+        unread: false,
+        notes: [note],
+      } as any);
+
+      const after = await sql<{ unread: boolean }>`
+        SELECT unread FROM "user".thread
+        WHERE id = ${threadId}::uuid AND user_id = ${userId}::uuid
+      `.execute(db);
+
+      return { before: before.rows[0], after: after.rows[0] };
+    });
+
+    expect(rows.before).toBeDefined();
+    expect(rows.before.unread).toBe(true);
+    expect(rows.after).toBeDefined();
+    // The connector reported the thread read; Plot must reflect that.
+    expect(rows.after.unread).toBe(false);
+  });
 });

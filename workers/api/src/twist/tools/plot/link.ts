@@ -15,7 +15,11 @@ import {
   createPreviewFromMarkdown,
   convertNoteToMarkdown,
 } from "./thread-helpers";
-import { createThread, markThreadUnreadForUsers } from "./thread";
+import {
+  createThread,
+  markThreadReadForOwner,
+  markThreadUnreadForUsers,
+} from "./thread";
 import { createNotes } from "./note";
 import { normalizeConferencingLink } from "./conferencing";
 import { createLinkSchedules } from "./schedule";
@@ -434,6 +438,33 @@ export async function createLink(
           await plot.getUserId().catch(() => undefined),
           {
             context: "plot:createLink:markThreadUnreadForUsers",
+            twist_instance_id: plot.twistInstanceId,
+            thread_id: threadId,
+          },
+        );
+        await postHog.shutdown();
+      }
+    } else {
+      // link.unread === false: the connector reports this thread is read (the
+      // owner read it in the source app, or it's an initial-sync backfill item).
+      // Clear the owner's LIVE unread now that the notes exist (so the read-vs-
+      // content race guard sees the real latest-note time). createThread's own
+      // unread===false branch only writes the legacy thread_read table, which
+      // user.thread.unread ignores — so without this an already-unread thread
+      // (e.g. one marked unread on a prior sync) never clears.
+      try {
+        await markThreadReadForOwner(plot, threadId);
+      } catch (readError) {
+        const postHog = new PostHog(plot.env.POSTHOG_API_KEY, {
+          host: plot.env.POSTHOG_HOST,
+          flushAt: 1,
+          flushInterval: 0,
+        });
+        postHog.captureException(
+          readError as Error,
+          await plot.getUserId().catch(() => undefined),
+          {
+            context: "plot:createLink:markThreadReadForOwner",
             twist_instance_id: plot.twistInstanceId,
             thread_id: threadId,
           },
