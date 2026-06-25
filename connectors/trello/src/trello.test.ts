@@ -232,6 +232,8 @@ describe("onCreateLink", () => {
     expect(link!.status).toBe("l1");
     expect(link!.channelId).toBe("b1");
     expect(link!.originatingNote).toEqual({ key: "description", externalContent: "body" });
+    expect(link!.meta).toEqual({ syncProvider: "trello", boardId: "b1", cardId: "5f000000bbbbbbbbbbbbbbbb", idList: "l1" });
+    expect(link!.type).toBe("card");
   });
   it("returns null for a non-card type", async () => {
     const trello = makeTrello();

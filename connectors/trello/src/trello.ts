@@ -177,7 +177,8 @@ export class Trello extends Connector<Trello> {
       channelId: boardId,
       sourceUrl: card.url,
       meta: { syncProvider: "trello", boardId, cardId: card.id, idList: card.idList },
-      originatingNote: { key: "description", externalContent: card.desc ?? undefined },
+      // Use || not ?? so empty-string desc ("") yields undefined, matching transformCard's null for empty desc.
+      originatingNote: { key: "description", externalContent: card.desc || undefined },
     };
   }
 
