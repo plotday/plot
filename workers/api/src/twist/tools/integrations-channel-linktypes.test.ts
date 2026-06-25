@@ -52,6 +52,9 @@ describe("applyChannelEnabled — channel.link_types fallback (#1a)", () => {
       markChannelSyncStarted: async () => {},
       connectorLinkTypes: (Integrations.prototype as any).connectorLinkTypes,
       applyChannelEnabled: (Integrations.prototype as any).applyChannelEnabled,
+      // applyChannelEnabled delegates its dispatch-entry construction here.
+      buildOnChannelEnabledEntry: (Integrations.prototype as any)
+        .buildOnChannelEnabledEntry,
     } as any;
     return { h, captured };
   }

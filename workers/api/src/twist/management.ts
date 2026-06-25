@@ -1,4 +1,5 @@
 import { type Kysely } from "kysely";
+import { PostHog } from "posthog-node";
 
 import type { twistFactory } from ".";
 import type { DB } from "../db-types";
@@ -826,6 +827,82 @@ export async function createDraft(
   }
 }
 
+/** Dispose an RPC stub returned by callCallback, if it is disposable. */
+export function disposeRpcResult(result: unknown): void {
+  if (result && typeof result === "object" && Symbol.dispose in result) {
+    (result as any)[Symbol.dispose]();
+  }
+}
+
+/**
+ * Enable the user's selected channels during draft activation. One
+ * `enableSyncBatch` callCallback per provider (instead of one enableSync per
+ * channel) plus the per-provider auto-enable / auto-threading default seeds.
+ */
+export async function enableActivatedChannels(
+  twistWrapper: { callCallback: (path: string[], method: string, ...args: any[]) => Promise<any> },
+  integrationsMap: Record<string, string>,
+  syncables: Array<{ provider: string; syncableId: string }>,
+  actorId: string,
+  logger: { warn: (msg: string, meta?: any) => void },
+  captureException?: (error: unknown, context: { provider: string; operation: string }) => void
+): Promise<Array<{ provider: string; actorId: string; channelIds: string[]; integrationsPath: string }>> {
+  const byProvider = new Map<string, string[]>();
+  for (const { provider, syncableId } of syncables) {
+    const list = byProvider.get(provider) ?? [];
+    list.push(syncableId);
+    byProvider.set(provider, list);
+  }
+
+  const descriptors: Array<{ provider: string; actorId: string; channelIds: string[]; integrationsPath: string }> = [];
+
+  for (const [provider, channelIds] of byProvider) {
+    const integrationsPath = integrationsMap[provider];
+    if (!integrationsPath) {
+      logger.warn("No integrations path found for provider during activation", {
+        provider,
+        available_providers: Object.keys(integrationsMap),
+      });
+      continue;
+    }
+    const path = integrationsPath.split(":");
+
+    try {
+      disposeRpcResult(
+        await twistWrapper.callCallback(path, "enableSyncBatch", provider, channelIds, actorId, undefined, { dispatch: false })
+      );
+      descriptors.push({ provider, actorId, channelIds, integrationsPath });
+    } catch (error) {
+      logger.warn("Failed to enable channels during activation", {
+        provider,
+        error_message: error instanceof Error ? error.message : String(error),
+      });
+      captureException?.(error, { provider, operation: "enableSyncBatch" });
+    }
+
+    try {
+      disposeRpcResult(await twistWrapper.callCallback(path, "initAutoEnableDefault", provider, actorId));
+    } catch (error) {
+      logger.warn("Failed to seed auto-enable default during activation", {
+        provider,
+        error_message: error instanceof Error ? error.message : String(error),
+      });
+      captureException?.(error, { provider, operation: "initAutoEnableDefault" });
+    }
+    try {
+      disposeRpcResult(await twistWrapper.callCallback(path, "initAutoThreadingDefault", provider, actorId));
+    } catch (error) {
+      logger.warn("Failed to seed auto-threading default during activation", {
+        provider,
+        error_message: error instanceof Error ? error.message : String(error),
+      });
+      captureException?.(error, { provider, operation: "initAutoThreadingDefault" });
+    }
+  }
+
+  return descriptors;
+}
+
 /**
  * Activate a draft twist: flip draft=false, call activate lifecycle, enable channels.
  * The legacy `priorityId` parameter is accepted for API compatibility but
@@ -1079,6 +1156,8 @@ export async function activateDraft(
     );
   }
 
+  let channelDispatch: Array<{ provider: string; actorId: string; channelIds: string[]; integrationsPath: string }> = [];
+
   // Enable selected channels via callCallback to the Integrations tool
   if (syncables && syncables.length > 0) {
     logger.info("activateDraft: enabling channels", {
@@ -1129,98 +1208,21 @@ export async function activateDraft(
     });
 
     if (contact) {
-      const twistWrapper = await activate.twistFactory({
-        twistInstanceId: draftId,
-      });
-
-      for (const { provider, syncableId } of syncables) {
-        const integrationsPath = integrationsMap[provider];
-        if (!integrationsPath) {
-          logger.warn("No integrations path found for provider during activation", {
-            provider,
-            syncable_id: syncableId,
-            available_providers: Object.keys(integrationsMap),
-          });
-          continue;
-        }
-
-        logger.info("activateDraft: calling enableSync", {
-          provider,
-          syncable_id: syncableId,
-          integrations_path: integrationsPath,
-          actor_id: contact.id,
+      const twistWrapper = await activate.twistFactory({ twistInstanceId: draftId });
+      const captureActivateError = (error: unknown, ctx: { provider: string; operation: string }) => {
+        const postHog = new PostHog(env.POSTHOG_API_KEY, {
+          host: env.POSTHOG_HOST,
+          flushAt: 1,
+          flushInterval: 0,
         });
-
-        try {
-          const result = await twistWrapper.callCallback(
-            integrationsPath.split(":"),
-            "enableSync",
-            provider,
-            syncableId,
-            contact.id,
-            undefined // title
-          );
-          logger.info("activateDraft: enableSync result", {
-            provider,
-            syncable_id: syncableId,
-            has_result: !!result,
-            result_type: typeof result,
-          });
-          if (result && typeof result === "object" && Symbol.dispose in result) {
-            (result as any)[Symbol.dispose]();
-          }
-        } catch (error) {
-          logger.warn("Failed to enable channel during activation", {
-            provider,
-            syncable_id: syncableId,
-            error_message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-
-      // Seed the per-connection "sync new channels" default from the
-      // connector's declaration, now that the user's initial channel
-      // selection has been applied. Done once per provider; the tool no-ops
-      // when a value is already stored or the connector default isn't `true`.
-      const seededProviders = new Set<string>();
-      for (const { provider } of syncables) {
-        if (seededProviders.has(provider)) continue;
-        seededProviders.add(provider);
-        const integrationsPath = integrationsMap[provider];
-        if (!integrationsPath) continue;
-        try {
-          const result = await twistWrapper.callCallback(
-            integrationsPath.split(":"),
-            "initAutoEnableDefault",
-            provider,
-            contact.id
-          );
-          if (result && typeof result === "object" && Symbol.dispose in result) {
-            (result as any)[Symbol.dispose]();
-          }
-        } catch (error) {
-          logger.warn("Failed to seed auto-enable default during activation", {
-            provider,
-            error_message: error instanceof Error ? error.message : String(error),
-          });
-        }
-        try {
-          const result = await twistWrapper.callCallback(
-            integrationsPath.split(":"),
-            "initAutoThreadingDefault",
-            provider,
-            contact.id
-          );
-          if (result && typeof result === "object" && Symbol.dispose in result) {
-            (result as any)[Symbol.dispose]();
-          }
-        } catch (error) {
-          logger.warn("Failed to seed auto-threading default during activation", {
-            provider,
-            error_message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+        postHog.captureException(
+          error instanceof Error ? error : new Error(String(error)),
+          draft.owner_id ?? undefined,
+          { context: `activate:${ctx.operation}`, provider: ctx.provider }
+        );
+        void postHog.shutdown();
+      };
+      channelDispatch = await enableActivatedChannels(twistWrapper, integrationsMap, syncables, contact.id, logger, captureActivateError);
     }
   } else {
     logger.info("activateDraft: no channels to enable", {
@@ -1229,7 +1231,7 @@ export async function activateDraft(
     });
   }
 
-  return draft;
+  return { draft, channelDispatch };
 }
 
 /**

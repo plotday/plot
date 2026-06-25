@@ -18,6 +18,7 @@ import {
   createDraft,
   deleteDraft,
   deleteTwist,
+  disposeRpcResult,
   getAll as getAllTwists,
   getByFilter,
   getById as getTwistById,
@@ -429,7 +430,7 @@ twists.post("/twist/draft/:id/activate", async (c) => {
   }
   const body = parseResult.data;
   try {
-    await activateDraft(
+    const { channelDispatch } = await activateDraft(
       c.var.db,
       c.env,
       draftId,
@@ -448,6 +449,48 @@ twists.post("/twist/draft/:id/activate", async (c) => {
     );
 
     notifyUserSync(c, c.var.user.id);
+
+    // Lever B: run onChannelEnabled OFF the response. The request-scoped db is
+    // torn down after we return, so the background task opens its own db and a
+    // fresh twist factory (see AGENTS "Never use c.var.db inside waitUntil").
+    // If this is ever lost (eviction), recoverStuckSyncs re-dispatches.
+    if (channelDispatch.length > 0) {
+      const env = c.env;
+      const tracker = c.var.tracker;
+      c.executionCtx.waitUntil((async () => {
+        const bgLogger = createLogger({ twist_instance_id: draftId });
+        const bgDb = createDb(env);
+        try {
+          const wrapper = await twistFactory({
+            env,
+            ctx: c.executionCtx as ExecutionContext,
+            db: bgDb,
+          })({ twistInstanceId: draftId });
+          for (const d of channelDispatch) {
+            try {
+              const result = await wrapper.callCallback(
+                d.integrationsPath.split(":"),
+                "dispatchEnabledChannels",
+                d.provider,
+                d.actorId,
+                d.channelIds
+              );
+              disposeRpcResult(result);
+            } catch (error) {
+              bgLogger.warn("Deferred onChannelEnabled dispatch failed", {
+                provider: d.provider,
+                error_message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+        } catch (error) {
+          bgLogger.error("Deferred channel dispatch setup failed", error as Error);
+          tracker?.captureException(error as Error);
+        } finally {
+          await bgDb.destroy();
+        }
+      })());
+    }
 
     return c.json({ success: true });
   } catch (error) {

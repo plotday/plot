@@ -970,27 +970,31 @@ export class Integrations extends Tool implements IAuth {
       await this.markChannelSyncStarted(provider, channel.id);
     }
 
-    const channelArg = { id: channel.id, title };
-    // Failure dispatch: when onChannelEnabled throws, entrypoint.ts routes
-    // through `tool.callCallback(functionName, ...args)` on the same
-    // built-in tool whose dispatch produced this entry — i.e. the
-    // Integrations tool itself. Calling __failChannelSync clears the
-    // syncing state so the UI doesn't get stuck on "syncing" forever.
+    return this.buildOnChannelEnabledEntry(provider, { id: channel.id, title }, syncContext);
+  }
+
+  /**
+   * Build the `onChannelEnabled` dispatch entry for a channel WITHOUT
+   * persisting anything. Shared by applyChannelEnabled (which persists first)
+   * and dispatchEnabledChannels (background dispatch where state is already
+   * persisted). `channel.title` must already be resolved by the caller.
+   */
+  private buildOnChannelEnabledEntry(
+    provider: AuthProvider,
+    channel: { id: string; title: string },
+    syncContext: SyncContext
+  ): any | null {
+    const channelArg = { id: channel.id, title: channel.title };
+    // __failChannelSync clears the channel's "syncing" state if onChannelEnabled throws,
+    // so the UI doesn't get stuck on "syncing" forever when the initial sync fails.
     const onFailure = {
       functionName: "__failChannelSync",
       args: [provider, channel.id],
     };
-
     if (this.sourceProvider) {
-      return {
-        sourceMethod: "onChannelEnabled",
-        args: [channelArg, syncContext],
-        onFailure,
-      };
+      return { sourceMethod: "onChannelEnabled", args: [channelArg, syncContext], onFailure };
     }
-    const providerIndex = this.providerConfigs.findIndex(
-      (p) => p.provider === provider
-    );
+    const providerIndex = this.providerConfigs.findIndex((p) => p.provider === provider);
     if (providerIndex < 0) return null;
     return {
       optionPath: ["providers", providerIndex, "onChannelEnabled"],
@@ -1115,6 +1119,45 @@ export class Integrations extends Tool implements IAuth {
     const dispatches = await this.buildRecoveryDispatches(provider, actorId);
     if (dispatches.length === 0) return;
     return { __dispatch: dispatches } as any;
+  }
+
+  /**
+   * Background re-dispatch of `onChannelEnabled` for channels that were just
+   * enabled by enableSyncBatch with dispatch deferred. State is already
+   * persisted, so this builds the dispatch entries only (no re-persist). Uses a
+   * NON-recovery context (a fresh initial sync) — unlike recoverConnection,
+   * which re-walks history with `recovering: true`. Invoked off the activate
+   * HTTP response via executionCtx.waitUntil; recoverStuckSyncs is the backstop
+   * if this never runs.
+   *
+   * Batch fault-isolation: all channels are returned in one `{ __dispatch: [...] }` so
+   * the entrypoint runs them sequentially. If a channel's `onChannelEnabled` throws
+   * synchronously, the entrypoint aborts the rest of that batch — but every channel was
+   * already persisted and `initial_sync_started_at`-stamped by `enableSyncBatch`, so any
+   * skipped channel is the orphan signature that `recoverStuckSyncs` re-dispatches. This
+   * is intentional and mirrors the `recoverConnection`/`buildRecoveryDispatches` pattern.
+   */
+  async dispatchEnabledChannels(
+    provider: AuthProvider,
+    _actorId: ActorId,
+    channelIds: string[]
+  ): Promise<{ __dispatch: any[] } | undefined> {
+    if (!channelIds || channelIds.length === 0) return;
+    const syncContext = await this.buildSyncContext({});
+    const entries: any[] = [];
+    for (const channelId of channelIds) {
+      const config = await this.store.get<ChannelConfig>(
+        `channel_config:${provider}:${channelId}`
+      );
+      if (!config?.enabled) continue;
+      const entry = this.buildOnChannelEnabledEntry(
+        provider,
+        { id: channelId, title: config.title ?? channelId },
+        syncContext
+      );
+      if (entry) entries.push(entry);
+    }
+    if (entries.length > 0) return { __dispatch: entries };
   }
 
   /**
@@ -4155,6 +4198,68 @@ export class Integrations extends Tool implements IAuth {
     if (refreshDispatch) dispatches.push(refreshDispatch);
     if (enableEntry) dispatches.push(enableEntry);
     if (dispatches.length > 0) return { __dispatch: dispatches } as any;
+  }
+
+  /**
+   * Enable several channels for one provider in a single call. The activation
+   * path used to call enableSync once per channel — each a full callCallback
+   * round-trip into the runtime that re-read the entire channel-access tree and
+   * rebuilt the sync context. This reads the tree once and builds the context
+   * once, then persists each channel's enabled state, collecting the
+   * onChannelEnabled dispatch entries. Returns them as a single `__dispatch` so
+   * the entrypoint runs them inline (same semantics as enableSync). Lever B
+   * (dispatchEnabledChannels) later moves the dispatch off the response.
+   */
+  async enableSyncBatch(
+    provider: AuthProvider,
+    channelIds: string[],
+    actorId: ActorId,
+    titles?: Record<string, string>,
+    options?: { dispatch?: boolean }
+  ): Promise<{ __dispatch: any[] } | undefined> {
+    if (!channelIds || channelIds.length === 0) return;
+
+    const tree = await this.getChannelAccess(provider, actorId);
+    const syncContext = await this.buildSyncContext({ forActor: actorId, provider });
+
+    const entries: any[] = [];
+    for (const channelId of channelIds) {
+      const channelObj = this.findChannelInTree(tree, channelId);
+      const title = titles?.[channelId] ?? channelObj?.title;
+
+      // Per-channel linkTypes fallback — mirrors enableSync (integrations.ts
+      // ~3942-3958): if KV has no linkTypes, reuse an existing channel row's.
+      let linkTypes = channelObj?.linkTypes ?? null;
+      if (!linkTypes) {
+        const existingChannel = await this.db
+          .selectFrom("channel")
+          .select("link_types")
+          .where("channel_id", "=", channelId)
+          .where("link_types", "is not", null)
+          .limit(1)
+          .executeTakeFirst();
+        if (existingChannel?.link_types) {
+          try {
+            linkTypes = typeof existingChannel.link_types === "string"
+              ? JSON.parse(existingChannel.link_types)
+              : existingChannel.link_types;
+          } catch { /* ignore parse errors */ }
+        }
+      }
+
+      const channel: Channel = {
+        id: channelId,
+        title: title ?? channelId,
+        ...(linkTypes ? { linkTypes } : {}),
+      };
+      const entry = await this.applyChannelEnabled(provider, actorId, channel, syncContext);
+      if (entry) entries.push(entry);
+    }
+
+    // Lever B: when the caller will dispatch onChannelEnabled in the background,
+    // persist state (above) but do not run the dispatch inline.
+    if (options?.dispatch === false) return;
+    if (entries.length > 0) return { __dispatch: entries };
   }
 
   /**
