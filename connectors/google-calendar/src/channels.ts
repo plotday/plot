@@ -41,6 +41,10 @@ export const CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "event",
     label: "Event",
+    // Per-product brand for aggregate connectors (the Google connector's
+    // display name is "Gmail & Calendar"); standalone Google Calendar falls
+    // back to its own display name anyway.
+    sourceName: "Google Calendar",
     sharingModel: "thread" as const,
     includesSchedules: true,
     logo: "https://api.iconify.design/logos/google-calendar.svg",
