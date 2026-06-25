@@ -155,6 +155,26 @@ Plot but is not dispatched — there is no instance to deliver to.
 
 Set `readonly scopes = Integrations.MergeScopes(MyGoogleConnector.SCOPES, GoogleContacts.SCOPES)` and add `googleContacts: build(GoogleContacts)` to your `build()` return (see `gmail/`, `google-drive/`). Alternatively declare the contacts scopes as an optional `ScopeConfig` group so the user can decline them (see `google-calendar/`).
 
+### Connect / enable-path performance contract
+
+The connect and channel-enable paths are on the user's critical path. The
+runtime keeps them fast, and connectors must not undo that:
+
+- **`getChannels` runs synchronously during connect.** Keep it lean and
+  **parallelize independent enumeration** — when you list resources across
+  several products/APIs, run them with `Promise.all`, never a serial
+  `for … await` loop (see `connectors/google/src/compose.ts`). A serial loop
+  pays the sum of every round-trip while the user waits.
+- **`onChannelEnabled` is dispatched OFF the user's critical path.** When a user
+  activates a connection, the runtime persists the enabled-channel state
+  synchronously and runs `onChannelEnabled` in the background. So: never assume
+  `onChannelEnabled` has run by the time the user sees the connection, and keep
+  using `runTask()` for webhook setup and initial sync — the background dispatch
+  still has the normal per-execution budget. Heavy *inline* work in
+  `onChannelEnabled` (or in `getChannels` on enable) is the recurring mistake;
+  the activate path used to do an inline `getChannels` that paginated every
+  Google Drive folder and blocked for seconds.
+
 ## Architecture
 
 Connectors persist data directly via `integrations.saveLink()` (building `NewLinkWithNotes`). They do not push through a parent twist, and should not call `plot.createThread()`.
