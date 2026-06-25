@@ -270,6 +270,38 @@ export function selectOwnedDefaultChannels(channels: Channel[]): Channel[] {
   return out;
 }
 
+/**
+ * The bound connections that need an account backfilled into getIntegrationData.
+ *
+ * getIntegrationData derives the account list from `auth_token:` keys, so a
+ * connection that has a `twist_instance_connection` row but no token — either
+ * bankruptcy-provisioned (never authed) or token-cleared on a permanent refresh
+ * failure (needs-reauth) — is missing from the accounts list. The reconnect
+ * modal then can't tell which account to use (no `accountHint`, so no OAuth
+ * `login_hint`). Given the token-derived `existing` accounts and the bound
+ * connection rows, return the connections NOT already represented, deduped by
+ * `provider:actorId` (so a reconnected account never doubles). The caller
+ * enriches each with its own stored settings — these connections may still
+ * carry auto-enable / auto-threading / scope-group selections that must be
+ * preserved, so this helper deliberately does not fabricate them.
+ */
+export function boundConnectionsWithoutToken<
+  C extends { provider: string; actor_id: string; email: string | null },
+>(
+  existing: Array<{ provider: AuthProvider; actorId: ActorId }>,
+  connections: C[]
+): C[] {
+  const seen = new Set(existing.map((a) => `${a.provider}:${a.actorId}`));
+  const out: C[] = [];
+  for (const c of connections) {
+    const key = `${c.provider}:${c.actor_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+  }
+  return out;
+}
+
 // @ts-ignore - class correctly implements IAuth but TS can't verify due to Kysely type differences
 export class Integrations extends Tool implements IAuth {
   private store: Store;
@@ -3467,6 +3499,38 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Remove the auth keys persisted for an actor during onAuth. onAuth stores
+   * the token (and enabled scope groups) BEFORE the account-match / dedup
+   * guards run, so when a guard rejects the just-authed account those keys are
+   * left behind. getIntegrationData lists accounts by scanning `auth_token:`
+   * keys, so an orphaned token surfaces the rejected account as a phantom
+   * second account on a connection that must only ever have one. Call this
+   * before each guard rejection to undo the speculative writes.
+   */
+  private async clearStoredAuthForActor(
+    provider: AuthProvider,
+    actorId: ActorId
+  ): Promise<void> {
+    // Best-effort: this runs immediately before a guard's tagged throw
+    // (AUTH_ACCOUNT_MISMATCH/DUPLICATE), which HandleOauthCallback maps to a
+    // specific user-facing message. A transient store failure here must not
+    // mask that tagged error — swallow and log, then let the guard throw.
+    try {
+      await this.store.clear(`auth_token:${provider}:${actorId}`);
+      await this.store.clear(`enabled_scope_groups:${provider}:${actorId}`);
+    } catch (error) {
+      createLogger({ twist_instance_id: this.twistInstanceId }).warn(
+        "clearStoredAuthForActor failed (best-effort cleanup)",
+        {
+          provider,
+          actor_id: actorId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+  }
+
+  /**
    * Handle OAuth callback after token exchange.
    * Called by the OAuth callback handler.
    */
@@ -3656,6 +3720,9 @@ export class Integrations extends Tool implements IAuth {
             .where("id", "=", previousActorId)
             .executeTakeFirst();
           const expectedEmail = expected?.email ?? null;
+          // Undo the token + scope-group writes for the rejected account so it
+          // doesn't linger as a phantom second account in getIntegrationData.
+          await this.clearStoredAuthForActor(tokenInfo.provider, actor.id);
           throw new Error(
             `${AUTH_ACCOUNT_MISMATCH_ERROR}: re-auth used a different account` +
               (expectedEmail ? ` (expected ${expectedEmail})` : "")
@@ -3715,6 +3782,9 @@ export class Integrations extends Tool implements IAuth {
             )
             .executeTakeFirst();
           if (duplicate) {
+            // Undo the token + scope-group writes for the rejected account so it
+            // doesn't linger as a phantom account in getIntegrationData.
+            await this.clearStoredAuthForActor(tokenInfo.provider, actor.id);
             throw new Error(
               `${AUTH_ACCOUNT_DUPLICATE_ERROR}: account already connected to this connector`
             );
@@ -4189,6 +4259,7 @@ export class Integrations extends Tool implements IAuth {
     // Resolve all contact IDs belonging to the current user so we can
     // correctly mark currentUserHasAccess for linked contacts.
     const currentUserContactIds = new Set<string>();
+    let currentUserId: string | null = null;
     if (currentActorId) {
       currentUserContactIds.add(currentActorId);
       const currentContact = await this.db
@@ -4197,6 +4268,7 @@ export class Integrations extends Tool implements IAuth {
         .where("id", "=", currentActorId)
         .executeTakeFirst();
       if (currentContact?.user_id) {
+        currentUserId = currentContact.user_id;
         const linkedContacts = await this.db
           .selectFrom("contact")
           .select("id")
@@ -4410,6 +4482,63 @@ export class Integrations extends Tool implements IAuth {
         if (!channelTreesByProvider.has(provider) && actorChannels.length > 0) {
           channelTreesByProvider.set(provider, actorChannels);
         }
+      }
+    }
+
+    // Backfill bound connections that have no auth_token yet — a connection
+    // has a twist_instance_connection row but no token when it's
+    // bankruptcy-provisioned (never authed) or its token was cleared on a
+    // permanent refresh failure (needs-reauth). The token scan above misses
+    // these, so the reconnect modal can't show / pre-select which account to
+    // sign in as (empty accounts → null accountHint → no OAuth login_hint).
+    // Scoped to the current user so a shared instance never leaks another
+    // user's bound account/email to the viewer.
+    if (this.providerConfigs.length > 0 && currentUserId) {
+      const boundRows = await this.db
+        .selectFrom("twist_instance_connection as tic")
+        .leftJoin("contact as c", "c.id", "tic.actor_id")
+        .select(["tic.provider", "tic.actor_id", "c.email"])
+        .where("tic.twist_instance_id", "=", this.twistInstanceId)
+        .where("tic.user_id", "=", currentUserId)
+        .where(
+          "tic.provider",
+          "in",
+          this.providerConfigs.map((p) => p.provider)
+        )
+        .execute();
+      // Only the rows with no token-based account, enriched with their OWN
+      // stored settings — a token-cleared needs-reauth account may still carry
+      // auto-enable / auto-threading / scope-group selections that must survive.
+      for (const conn of boundConnectionsWithoutToken(accounts, boundRows)) {
+        const provider = conn.provider as AuthProvider;
+        const actorId = conn.actor_id as ActorId;
+        const [autoEnableSetting, autoThreadingSetting, enabledScopeGroups] =
+          await Promise.all([
+            this.store.get<boolean>(
+              `auto_enable_new_channels:${provider}:${actorId}`
+            ),
+            this.store.get<boolean>(
+              `auto_threading_enabled:${provider}:${actorId}`
+            ),
+            this.store.get<string[]>(
+              `enabled_scope_groups:${provider}:${actorId}`
+            ),
+          ]);
+        accounts.push({
+          provider,
+          actorId,
+          email: conn.email,
+          name: null,
+          autoEnableNewChannels:
+            autoEnableSetting ??
+            this.sourceProvider?.autoEnableNewChannelsByDefault ??
+            false,
+          autoThreadingEnabled:
+            autoThreadingSetting ??
+            this.sourceProvider?.autoThreadingByDefault ??
+            false,
+          ...(enabledScopeGroups ? { enabledScopeGroups } : {}),
+        });
       }
     }
 
