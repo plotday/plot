@@ -1,3 +1,38 @@
+## 1.5.0+367 — 2026-06-25
+
+### Connections
+
+- Connection add-ons replace Pro connections. LinkedIn, Instagram, and WhatsApp are provided by a
+  third party and now cost $5/month each, and you can add as many as you like to any paid plan —
+  including Core. Each add-on counts as one of your plan's connections (so two regular plus three
+  connection add-ons fills a Core plan). You can add or remove them anytime, and on iPhone, iPad, and
+  Mac you can buy them right in the app.
+
+### Starting a thread
+
+- When you pick someone to message, Plot now only offers connections that can actually reach them — no more choosing Gmail for someone who has no email address, or Plot chat for someone who isn't on Plot.
+- If there's only one way to reach them, Plot skips straight to writing your message.
+- When no connected app can reach a contact, Plot now explains that instead of showing an empty list.
+
+### Threads
+
+- Links you pin to a thread now appear at the top of the thread again, and you can open, edit, or unpin them.
+
+### Fixes
+
+- Threads from a connected Google account now show the right type name for each product — a calendar event reads "Google Calendar event", an email reads "Gmail thread", and a task reads "Google Tasks task" — instead of all reading "Gmail & Calendar".
+- When you add someone who doesn't use Plot yet to a thread — whether you pick them from your
+  contacts or type their email — they now get an email invitation to join. Previously only typed-in
+  email addresses were invited, so people you selected from your contacts were quietly left out.
+- New messages from WhatsApp, LinkedIn, and Instagram (and task updates from Todoist) now arrive in real time instead of only showing up on the next sync.
+- Connecting an account is smoother: after you sign in, Plot now goes straight to choosing what to
+  sync, without a brief flash of the connections list in between.
+- When you connect an account, the connect button keeps spinning until the sign-in window opens,
+  instead of looking finished while you're still waiting for the window to appear.
+- When filtering threads by source, threads created in Plot now show up under their own "Plot" filter with the Plot logo, instead of being grouped under a generic "Link" filter alongside pasted web links.
+- Contacts from LinkedIn (and other messaging connections) now correctly show up as reachable through that connection when you start a thread.
+- Connecting WhatsApp or Instagram now shows a proper "Continue with WhatsApp" / "Continue with Instagram" button with the right logo, instead of a generic "Continue with Other" button with no icon.
+
 ## 1.5.0+366 — 2026-06-24
 
 ### Fixes
