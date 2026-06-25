@@ -59,9 +59,15 @@ if [ -z "$target" ]; then
 fi
 
 echo "Draining contract migrations up to version $target ..."
+# --exec-order non-linear matches the expand apply: a soaked contract whose
+# timestamp landed behind an already-drained one still applies instead of
+# aborting. --to-version still caps the set to soaked migrations, so non-linear
+# only relaxes ordering among files at or below the target, never drains an
+# unsoaked contract.
 atlas migrate apply \
   --dir "file://${CONTRACT_DIR}" \
   --revisions-schema "${CONTRACT_REVISIONS_SCHEMA}" \
   --allow-dirty \
+  --exec-order non-linear \
   --to-version "$target" \
   --url "$URL"

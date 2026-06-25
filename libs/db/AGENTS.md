@@ -425,6 +425,34 @@ The `migration-safety` job in `.github/workflows/lint.yml` runs [Squawk](https:/
 
 Squawk replaces Atlas's `migrate lint` here because recent Atlas versions gate `migrate lint` behind `atlas login` (a paid Cloud seat) that can't run in CI under our single-seat license; Squawk is free and needs no login. The exact rules that fail the build are scoped in `libs/db/.squawk.toml`. The job is pinned to `squawk-cli@1.6.1`: Squawk 2.x replaced libpg_query with a parser that can't handle schema-qualified operator classes (e.g. `extensions.gin_trgm_ops`, `public.halfvec_cosine_ops`) used by our trigram/vector index migrations, and its parse-error finding can't be suppressed — so do not bump to 2.x without re-verifying the whole `migrations/` corpus parses.
 
+### Out-of-order migrations (`--exec-order non-linear`)
+
+All `atlas migrate apply` invocations (local `apply-migrations.sh`, the prod
+deploy step in `.github/workflows/deploy-workers.yml`, and `drain-contracts.sh`)
+pass **`--exec-order non-linear`**. Concurrent PRs/worktrees routinely merge
+migrations whose timestamps interleave — PR A authored at 14:08 can merge *after*
+PR B authored at 15:52, so by the time A lands its migration is "behind" the
+already-applied B. Atlas's default `linear` mode treats that as an error and
+**hard-fails the deploy**; `non-linear` applies the older file anyway.
+
+This is safe, not a loosening of the safety net:
+
+- **Schema files stay the source of truth.** The CI lint job applies the full
+  migration set to a *fresh* DB (always canonical timestamp order, so no
+  out-of-order case ever arises there) and fails if the committed `src/types.ts`
+  doesn't match. Apply order on an existing DB therefore can't change the
+  verified end state.
+- **Real conflicts still fail loudly.** Each migration runs in a transaction; an
+  out-of-order file whose SQL is incompatible with the newer schema throws and
+  rolls back rather than silently drifting. `linear` doesn't detect semantic
+  conflicts either — it only forces a deterministic order — so `non-linear`
+  doesn't lower the floor.
+- **Never `linear-skip`.** That mode silently *skips* the out-of-order file so it
+  never applies, producing real schema drift. Always `non-linear`.
+
+If you add a new `atlas migrate apply` call, include `--exec-order non-linear`
+for consistency.
+
 ### Making a destructive change (expand/contract)
 
 1. **Expand** (one PR): add the new column / stop reading the old one, etc. `pnpm gen-migration -- <name>` → `migrations/`. Ship it. Workers go live not using the old column.

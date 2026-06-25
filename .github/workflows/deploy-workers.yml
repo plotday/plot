@@ -303,8 +303,18 @@ jobs:
         env:
           MIGRATOR_PASSWORD: ${{ secrets.MIGRATOR_PASSWORD }}
         run: |
+          # --exec-order non-linear: apply a migration whose timestamp is behind
+          # the latest version already applied to prod, instead of aborting the
+          # deploy. Concurrent PRs routinely interleave migration timestamps, so
+          # the default "linear" mode turns a benign out-of-order merge into a
+          # hard deploy failure. Safe: schema files are the source of truth (CI
+          # replays the full set on a fresh DB in canonical order and gates on a
+          # committed types match), and a real conflict still fails loudly here
+          # with a transactional rollback. Never "linear-skip" (silently drops
+          # the file so it never applies).
           atlas migrate apply \
             --dir "file://migrations" \
+            --exec-order non-linear \
             --url "postgres://migrator:${MIGRATOR_PASSWORD}@localhost:5432/plot?sslmode=disable"
 
   deploy:
