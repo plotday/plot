@@ -3147,7 +3147,16 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   static Future<List<TypedResult>> _hydrateActivityFeedRows(
     List<ThreadId> ids,
   ) async {
-    if (ids.isEmpty) return [];
+    // Guard against late-firing feed streams: the per-tab activity-feed
+    // watchers (watchActionTabHead / watchUnreadHead / watchDoneHead /
+    // watchCatchUpHead) drive their `asyncMap` hydration through this single
+    // chokepoint. During sign-out / account-switch / DB teardown the Store is
+    // removed from the injector while a subscription is still alive and emits
+    // one last event; without this guard `Store.get` throws
+    // `NotDefinedException: The type "Store" is not defined!`. Returning an
+    // empty list lets the callback resolve to an empty page — _mapResultsToThreads
+    // short-circuits on empty input — instead of crashing the stream.
+    if (ids.isEmpty || !Store.isAvailable) return [];
 
     final a = Store.get.alias(Store.get.threads, 'a');
     final sched = Store.get.alias(Store.get.schedules, 'sched');
