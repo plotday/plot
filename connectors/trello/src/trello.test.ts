@@ -103,3 +103,70 @@ describe("syncBatch", () => {
     expect(state.before).toBe(fullPage[fullPage.length - 1].id); // paginate before the last card
   });
 });
+
+describe("setupWebhook", () => {
+  it("skips registration for localhost URLs (dev guard)", async () => {
+    const createWebhook = vi.fn().mockResolvedValue("http://localhost:8787/hook/x");
+    const store = makeStore();
+    const trello = makeTrello({ store, network: { createWebhook } });
+    const apiCreate = vi.fn();
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ createWebhook: apiCreate });
+
+    await (trello as unknown as { setupWebhook: (b: string) => Promise<void> }).setupWebhook("b1");
+    expect(apiCreate).not.toHaveBeenCalled();
+    expect(store.map.has("webhook_id_b1")).toBe(false);
+  });
+
+  it("registers the webhook and stores id + callback url for non-localhost", async () => {
+    const url = "https://api.plot.test/hook/abc";
+    const createWebhook = vi.fn().mockResolvedValue(url);
+    const store = makeStore();
+    const trello = makeTrello({ store, network: { createWebhook } });
+    const apiCreate = vi.fn().mockResolvedValue({ id: "wh1" });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ createWebhook: apiCreate });
+
+    await (trello as unknown as { setupWebhook: (b: string) => Promise<void> }).setupWebhook("b1");
+    expect(apiCreate).toHaveBeenCalledWith("b1", url);
+    expect(store.map.get("webhook_id_b1")).toBe("wh1");
+    expect(store.map.get("webhook_url_b1")).toBe(url);
+  });
+});
+
+describe("onWebhook", () => {
+  const url = "https://api.plot.test/hook/abc";
+  const body = JSON.stringify({ action: { type: "updateCard", data: { card: { id: "card9" } } } });
+
+  async function sign(secret: string, raw: string, cb: string) {
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+    const s = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw + cb));
+    return btoa(String.fromCharCode(...new Uint8Array(s)));
+  }
+
+  it("re-fetches the card and saves it when the signature is valid", async () => {
+    const store = makeStore({ webhook_url_b1: url });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const trello = makeTrello({ store, integrations: { saveLink } });
+    const getCard = vi.fn().mockResolvedValue({ id: "card9", name: "C", desc: "", idList: "l1", idBoard: "b1", closed: false, url: "u", idMembers: [], dateLastActivity: "2026-01-01T00:00:00Z" });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ getCard });
+    const sig = await sign("SEC", body, url);
+
+    await (trello as unknown as { onWebhook: (r: unknown, b: string) => Promise<void> }).onWebhook(
+      { method: "POST", headers: { "x-trello-webhook": sig }, params: {}, body: JSON.parse(body), rawBody: body }, "b1",
+    );
+    expect(getCard).toHaveBeenCalledWith("card9");
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(saveLink.mock.calls[0][0].source).toBe("trello:card:card9");
+  });
+
+  it("ignores a webhook with an invalid signature", async () => {
+    const store = makeStore({ webhook_url_b1: url });
+    const saveLink = vi.fn();
+    const trello = makeTrello({ store, integrations: { saveLink } });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ getCard: vi.fn() });
+
+    await (trello as unknown as { onWebhook: (r: unknown, b: string) => Promise<void> }).onWebhook(
+      { method: "POST", headers: { "x-trello-webhook": "bad" }, params: {}, body: JSON.parse(body), rawBody: body }, "b1",
+    );
+    expect(saveLink).not.toHaveBeenCalled();
+  });
+});

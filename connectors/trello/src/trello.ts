@@ -8,8 +8,8 @@ import {
   type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
-import { Network } from "@plotday/twister/tools/network";
-import { TrelloApi } from "./trello-api";
+import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { TrelloApi, verifyTrelloWebhook } from "./trello-api";
 import { buildCardLinkType } from "./trello-channels";
 import { transformCard } from "./trello-sync";
 
@@ -106,8 +106,47 @@ export class Trello extends Connector<Trello> {
 
   async onChannelDisabled(): Promise<void> {}
 
-  /** Stub — Task 6 will implement the real webhook registration. */
-  async setupWebhook(_boardId: string): Promise<void> {}
+  async setupWebhook(boardId: string): Promise<void> {
+    try {
+      const webhookUrl = await this.tools.network.createWebhook({}, this.onWebhook, boardId);
+      if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) return; // dev guard
+      const api = await this.getApi(boardId);
+      const webhook = await api.createWebhook(boardId, webhookUrl);
+      if (webhook?.id) {
+        await this.set(`webhook_id_${boardId}`, webhook.id);
+        await this.set(`webhook_url_${boardId}`, webhookUrl);
+      }
+    } catch (error) {
+      console.error("Failed to set up Trello webhook — real-time updates will not work:", error);
+    }
+  }
+
+  private async onWebhook(request: WebhookRequest, boardId: string): Promise<void> {
+    // Trello sends a HEAD to verify the callback URL on creation; nothing to do.
+    if (request.method === "HEAD") return;
+    if (!request.rawBody) return;
+
+    const signature = request.headers["x-trello-webhook"];
+    const callbackUrl = await this.get<string>(`webhook_url_${boardId}`);
+    const token = await this.tools.integrations.get(boardId);
+    const secret = token?.provider?.secret;
+    if (!signature || !callbackUrl || !secret) return;
+
+    const valid = await verifyTrelloWebhook(secret, request.rawBody, callbackUrl, signature);
+    if (!valid) {
+      console.warn("Trello webhook signature verification failed");
+      return;
+    }
+
+    const action = (request.body as { action?: { data?: { card?: { id?: string } } } })?.action;
+    const cardId = action?.data?.card?.id;
+    if (!cardId) return;
+
+    // Re-fetch the card for fresh, complete data (webhook payloads are partial).
+    const api = await this.getApi(boardId);
+    const card = await api.getCard(cardId);
+    await this.tools.integrations.saveLink(transformCard(card, boardId, false));
+  }
 
   private async startBatchSync(boardId: string): Promise<void> {
     await this.set(`sync_state_${boardId}`, {
