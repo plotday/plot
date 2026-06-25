@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show File;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
@@ -158,10 +159,7 @@ class NoteActionWidget extends StatelessWidget {
           textStyle: textStyle,
         );
       case UserActionType.plan:
-        return PlanActionWidget(
-          plan: link as PlanUserAction,
-          note: note,
-        );
+        return PlanActionWidget(plan: link as PlanUserAction, note: note);
       case UserActionType.createLink:
         // Rendered inline by NoteEditor's attachment row; invisible elsewhere.
         return const SizedBox.shrink();
@@ -272,7 +270,8 @@ class _CallbackActionWithoutNote extends StatefulWidget {
       _CallbackActionWithoutNoteState();
 }
 
-class _CallbackActionWithoutNoteState extends State<_CallbackActionWithoutNote> {
+class _CallbackActionWithoutNoteState
+    extends State<_CallbackActionWithoutNote> {
   bool _isLoading = false;
 
   @override
@@ -326,11 +325,7 @@ class _CallbackActionWithoutNoteState extends State<_CallbackActionWithoutNote> 
 
 /// Widget that displays a plan of operations for user approval.
 class PlanActionWidget extends StatefulWidget {
-  const PlanActionWidget({
-    required this.plan,
-    this.note,
-    super.key,
-  });
+  const PlanActionWidget({required this.plan, this.note, super.key});
 
   final PlanUserAction plan;
   final Note? note;
@@ -359,8 +354,7 @@ class _PlanActionWidgetState extends State<PlanActionWidget> {
           children: [
             Text(
               widget.plan.title,
-              style: theme.typography.sm
-                  .copyWith(fontWeight: FontWeight.w600),
+              style: theme.typography.sm.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             ...widget.plan.operations.map(
@@ -395,20 +389,14 @@ class _PlanActionWidgetState extends State<PlanActionWidget> {
                   variant: FButtonVariant.primary,
                   mainAxisSize: MainAxisSize.min,
                   onPress: _isLoading ? null : () => _handleResponse(true),
-                  child: Text(
-                    'Approve',
-                    style: theme.typography.sm,
-                  ),
+                  child: Text('Approve', style: theme.typography.sm),
                 ),
                 const SizedBox(width: 8),
                 FButton(
                   variant: FButtonVariant.outline,
                   mainAxisSize: MainAxisSize.min,
                   onPress: _isLoading ? null : () => _handleResponse(false),
-                  child: Text(
-                    'Reject',
-                    style: theme.typography.sm,
-                  ),
+                  child: Text('Reject', style: theme.typography.sm),
                 ),
               ],
             ),
@@ -514,7 +502,9 @@ class _ExternalLinkButtonState extends State<ExternalLinkButton> {
               onExit: (_) => setState(() => _hovered = false),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: context.theme.colors.background,
+                  color: _hovered
+                      ? context.theme.colors.secondary
+                      : context.theme.colors.background,
                   border: Border.all(
                     color: context.theme.colors.border,
                     width: 0.5,
@@ -541,11 +531,7 @@ class _ExternalLinkButtonState extends State<ExternalLinkButton> {
                         child: Text(
                           widget.link.title,
                           style: context.theme.typography.sm.copyWith(
-                            color: _hovered
-                                ? context.theme.colors.foreground
-                                : context.theme.colors.foreground.withValues(
-                                    alpha: 0.7,
-                                  ),
+                            color: context.theme.colors.foreground,
                           ),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
@@ -553,10 +539,7 @@ class _ExternalLinkButtonState extends State<ExternalLinkButton> {
                       ),
                       if (widget.note != null) ...[
                         const SizedBox(width: 8),
-                        _NoteLinkMenu(
-                          link: widget.link,
-                          note: widget.note!,
-                        ),
+                        _NoteLinkMenu(link: widget.link, note: widget.note!),
                       ],
                     ],
                   ),
@@ -580,7 +563,17 @@ class _ExternalLinkButtonState extends State<ExternalLinkButton> {
   }
 }
 
-/// "..." menu for a note-attached link row. Offers Edit and Pin.
+/// The canonical (non-note-scoped) thread link whose source URL matches [url],
+/// or null when the URL is not pinned to the thread. Drives the note link
+/// menu's "Pin to thread" / "Unpin from thread" toggle.
+Link? matchingPinnedLink(List<Link> links, String url) {
+  for (final link in links) {
+    if (link.sourceUrl == url) return link;
+  }
+  return null;
+}
+
+/// "..." menu for a note-attached link row. Offers Edit and Pin/Unpin.
 class _NoteLinkMenu extends StatefulWidget {
   const _NoteLinkMenu({required this.link, required this.note});
 
@@ -593,6 +586,32 @@ class _NoteLinkMenu extends StatefulWidget {
 
 class _NoteLinkMenuState extends State<_NoteLinkMenu> {
   final _controller = OverlayPortalController();
+
+  /// The canonical thread link whose source URL matches this note link, when
+  /// the link is currently pinned. Kept live via [Link.watchForThread] so the
+  /// menu toggles between "Pin to thread" and "Unpin from thread".
+  StreamSubscription<List<Link>>? _linksSub;
+  Link? _pinnedLink;
+
+  @override
+  void initState() {
+    super.initState();
+    _linksSub = Link.watchForThread(widget.note.threadId).listen((links) {
+      final match = matchingPinnedLink(links, widget.link.url);
+      if (!mounted) return;
+      if (match?.id != _pinnedLink?.id) {
+        setState(() => _pinnedLink = match);
+      } else {
+        _pinnedLink = match;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _linksSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -662,13 +681,22 @@ class _NoteLinkMenuState extends State<_NoteLinkMenu> {
           _editLink();
         },
       ),
-      FItem(
-        title: const Text('Pin to thread'),
-        onPress: () {
-          _controller.hide();
-          _pinLink();
-        },
-      ),
+      if (_pinnedLink != null)
+        FItem(
+          title: const Text('Unpin from thread'),
+          onPress: () {
+            _controller.hide();
+            Link.unpinFromThread(_pinnedLink!);
+          },
+        )
+      else
+        FItem(
+          title: const Text('Pin to thread'),
+          onPress: () {
+            _controller.hide();
+            _pinLink();
+          },
+        ),
     ];
   }
 
@@ -687,9 +715,10 @@ class _NoteLinkMenuState extends State<_NoteLinkMenu> {
       favicon: widget.link.favicon,
     );
     final actions = (widget.note.actions ?? const <UserAction>[])
-        .map((a) => identical(a, widget.link) || a == widget.link
-            ? updatedAction
-            : a)
+        .map(
+          (a) =>
+              identical(a, widget.link) || a == widget.link ? updatedAction : a,
+        )
         .toList();
     await widget.note.copyWith(actions: actions).save();
   }
@@ -1063,10 +1092,7 @@ class _FileImageWidgetState extends State<FileImageWidget> {
         borderRadius: BorderRadius.circular(borderRadiusMd),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 200),
-          child: AspectRatio(
-            aspectRatio: w / h,
-            child: child,
-          ),
+          child: AspectRatio(aspectRatio: w / h, child: child),
         ),
       );
 
@@ -1097,11 +1123,7 @@ class _FileImageWidgetState extends State<FileImageWidget> {
 
     final noDimContainer = ClipRRect(
       borderRadius: BorderRadius.circular(borderRadiusMd),
-      child: SizedBox(
-        height: 200,
-        width: 300,
-        child: noDimChild,
-      ),
+      child: SizedBox(height: 200, width: 300, child: noDimChild),
     );
 
     if (_loading) return noDimContainer;
@@ -1162,9 +1184,7 @@ class _SkeletonBoxState extends State<_SkeletonBox>
   @override
   Widget build(BuildContext context) {
     final isDark = context.read<ThemeBloc>().isDarkMode(context);
-    final base = isDark
-        ? const Color(0xFF2A2A2A)
-        : const Color(0xFFE8E8E8);
+    final base = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE8E8E8);
     final highlight = isDark
         ? const Color(0xFF3A3A3A)
         : const Color(0xFFF5F5F5);
@@ -1272,19 +1292,13 @@ class _FullImageViewerState extends State<_FullImageViewer> {
                   child: Icon(
                     PlotIcon.download,
                     size: 16,
-                    color: _downloading
-                        ? fg.withValues(alpha: 0.5)
-                        : fg,
+                    color: _downloading ? fg.withValues(alpha: 0.5) : fg,
                   ),
                 ),
               ),
               Tapable(
                 onTap: () => Modal.pop<void>(context, const Value(null)),
-                child: Icon(
-                  PlotIcon.close,
-                  size: 16,
-                  color: fg,
-                ),
+                child: Icon(PlotIcon.close, size: 16, color: fg),
               ),
             ],
           ),
@@ -1363,11 +1377,8 @@ Future<void> _showFullImageViewer(
     maxWidthPercentage: 0.9,
     maxHeightPercentage: 0.9,
     padding: EdgeInsets.zero,
-    builder: (context) => _FullImageViewer(
-      bytes: bytes,
-      fileName: fileName,
-      mimeType: mimeType,
-    ),
+    builder: (context) =>
+        _FullImageViewer(bytes: bytes, fileName: fileName, mimeType: mimeType),
   ).show<void>(context);
 }
 
@@ -1376,11 +1387,7 @@ Future<void> _showFullImageViewer(
 /// (e.g. attachment lists in the note editor) where a full inline preview
 /// would be too large.
 class FileImageThumbnail extends StatefulWidget {
-  const FileImageThumbnail({
-    required this.link,
-    this.size = 32,
-    super.key,
-  });
+  const FileImageThumbnail({required this.link, this.size = 32, super.key});
 
   final FileUserAction link;
   final double size;

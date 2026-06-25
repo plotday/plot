@@ -234,9 +234,12 @@ class _NoteWidgetState extends State<NoteWidget> {
             ),
           if (noteLinks.isNotEmpty)
             Padding(
+              // right: 0 so the link row extends to the same right edge as the
+              // note timestamp (which sits at the ListTile's content edge); the
+              // ListTile's own right: 16 provides the gutter.
               padding: const EdgeInsets.only(
                 left: 6,
-                right: 6,
+                right: 0,
                 top: 8,
                 bottom: 4,
               ),
@@ -256,7 +259,12 @@ class _NoteWidgetState extends State<NoteWidget> {
                     // timestamps. Mirrors NoteCommands' left-edge compensation.
                     child: Transform.translate(
                       offset: Offset(
-                        context.theme.buttonStyles.ghost.md.iconContentStyle
+                        context
+                            .theme
+                            .buttonStyles
+                            .ghost
+                            .md
+                            .iconContentStyle
                             .padding
                             .resolve(TextDirection.ltr)
                             .right,

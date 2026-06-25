@@ -60,7 +60,9 @@ class _PinnedLinkRowState extends State<PinnedLinkRow> {
               onExit: (_) => setState(() => _hovered = false),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: context.theme.colors.background,
+                  color: _hovered
+                      ? context.theme.colors.secondary
+                      : context.theme.colors.background,
                   border: Border(
                     bottom: BorderSide(
                       color: context.theme.colors.border,
@@ -80,6 +82,7 @@ class _PinnedLinkRowState extends State<PinnedLinkRow> {
                       if (linkLogo != null)
                         LogoImage(
                           url: linkLogo,
+                          size: 14,
                           fallback: const Icon(PlotIcon.link, size: 14),
                         )
                       else
@@ -89,10 +92,7 @@ class _PinnedLinkRowState extends State<PinnedLinkRow> {
                         child: Text(
                           link.title ?? '',
                           style: context.theme.typography.sm.copyWith(
-                            color: _hovered
-                                ? context.theme.colors.foreground
-                                : context.theme.colors.foreground
-                                      .withValues(alpha: 0.7),
+                            color: context.theme.colors.foreground,
                           ),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
@@ -210,7 +210,8 @@ class _PinnedLinkMenuState extends State<_PinnedLinkMenu> {
       initialUrl: widget.link.sourceUrl ?? '',
     ).run(context);
     if (result == null) return;
-    if (result.title == widget.link.title && result.url == widget.link.sourceUrl) {
+    if (result.title == widget.link.title &&
+        result.url == widget.link.sourceUrl) {
       return;
     }
     await Link.updateTitleAndUrl(
