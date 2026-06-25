@@ -5,6 +5,9 @@ import type { Bindings } from "../env";
 import { rpcUser } from "../rpc";
 import { twistFactory } from "../twist/factory";
 
+// Cloudflare Workers extends the global CacheStorage with a `.default` cache.
+declare const caches: CacheStorage & { default: Cache };
+
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
 const files = new Hono<{ Bindings: Bindings }>();
@@ -62,7 +65,33 @@ files.post("/files", async (c) => {
   });
 });
 
-// Download a file
+// Allowed preview width buckets (longest edge). Inputs are clamped to the
+// smallest bucket >= requested width to maximize cache reuse / bound cost.
+const PREVIEW_WIDTH_BUCKETS = [400, 800];
+
+function parsePreviewWidth(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0 || String(n) !== raw) return null;
+  return (
+    PREVIEW_WIDTH_BUCKETS.find((b) => b >= n) ??
+    PREVIEW_WIDTH_BUCKETS[PREVIEW_WIDTH_BUCKETS.length - 1]
+  );
+}
+
+// Build the RFC 5987 Content-Disposition for an original (attachment) download.
+function attachmentDisposition(fileName: string): string {
+  const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_");
+  const encoded = encodeURIComponent(fileName).replace(
+    /['()]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
+
+// Download a file. Returns the R2 original unless ?w=<px> requests a resized
+// inline preview, in which case a small WebP variant is produced via the
+// Images binding (edge-cached), falling back to the original on any failure.
 files.get("/files/:fileId", async (c) => {
   const user = c.var.user;
   if (!user) {
@@ -70,20 +99,25 @@ files.get("/files/:fileId", async (c) => {
   }
 
   const fileId = c.req.param("fileId");
+  const width = parsePreviewWidth(c.req.query("w"));
 
-  // List objects with prefix to find the file (key includes filename)
-  const listed = await c.env.FILES_BUCKET.list({ prefix: `files/${fileId}/` });
-  if (!listed.objects.length) {
-    return c.json({ message: "File not found" }, 404);
-  }
+  // Lazily fetch the R2 object (key includes the filename) so a preview cache
+  // hit can serve without reading the original.
+  let objectKey: string | null = null;
+  let object: R2ObjectBody | null = null;
+  let listed = false;
+  const ensureObject = async (): Promise<R2ObjectBody | null> => {
+    if (object || listed) return object;
+    listed = true;
+    const res = await c.env.FILES_BUCKET.list({ prefix: `files/${fileId}/` });
+    if (!res.objects.length) return null;
+    objectKey = res.objects[0].key;
+    object = await c.env.FILES_BUCKET.get(objectKey);
+    return object;
+  };
 
-  const objectKey = listed.objects[0].key;
-  const object = await c.env.FILES_BUCKET.get(objectKey);
-  if (!object) {
-    return c.json({ message: "File not found" }, 404);
-  }
-
-  // Look up priority from DB: note -> thread_priority for the current user
+  // Resolve the owning priority: DB (note this file is attached to) first, then
+  // fall back to the R2 object's customMetadata for not-yet-attached uploads.
   const noteRow = await c.var.db
     .selectFrom("note")
     .innerJoin("thread_priority", "thread_priority.thread_id", "note.thread_id")
@@ -92,38 +126,119 @@ files.get("/files/:fileId", async (c) => {
     .where("thread_priority.user_id", "=", user.id)
     .executeTakeFirst();
 
-  // Fall back to R2 metadata for files not yet attached to a note
-  const priorityId = noteRow?.priority_id ?? object.customMetadata?.priorityId;
+  let priorityId = noteRow?.priority_id ?? null;
+  if (!priorityId) {
+    const obj = await ensureObject();
+    if (!obj) {
+      return c.json({ message: "File not found" }, 404);
+    }
+    priorityId = obj.customMetadata?.priorityId ?? null;
+  }
   if (!priorityId) {
     return c.json({ message: "File metadata missing" }, 500);
   }
 
+  // Access check ALWAYS runs before any cache read or transform.
   const hasAccess = await rpcUser(c.var.db, "has_priority_access", {
     user_id: user.id,
     priority_id: priorityId,
   });
-
   if (!hasAccess) {
     return c.json({ message: "Access denied" }, 403);
   }
 
-  // Extract filename from the key (files/{fileId}/{fileName})
-  const fileName = objectKey.split("/").pop() || "download";
+  // --- Resized inline preview path ---
+  if (width !== null) {
+    const cache =
+      typeof caches !== "undefined" ? caches.default : undefined;
+    const cacheKey = c.req.url;
+
+    if (cache) {
+      const hit = await cache.match(cacheKey);
+      if (hit) {
+        const bytes = await hit.arrayBuffer();
+        return new Response(bytes, {
+          headers: {
+            "Content-Type": hit.headers.get("Content-Type") ?? "image/webp",
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "Content-Disposition": "inline",
+          },
+        });
+      }
+    }
+
+    const obj = await ensureObject();
+    if (!obj) {
+      return c.json({ message: "File not found" }, 404);
+    }
+
+    const contentType =
+      obj.httpMetadata?.contentType || "application/octet-stream";
+    const bodyBytes = new Uint8Array(await obj.arrayBuffer()); // buffer once
+
+    if (contentType.startsWith("image/")) {
+      try {
+        const result = await c.env.IMAGES.input(new Response(bodyBytes).body!)
+          .transform({ width, height: width, fit: "scale-down" })
+          .output({ format: "image/webp", quality: 80 });
+        const variant = result.response();
+        const bytes = await variant.arrayBuffer();
+        const variantType = variant.headers.get("Content-Type") ?? "image/webp";
+
+        // Edge-cache a public copy (only ever read back through this
+        // auth-gated worker; the URL key is a random UUID).
+        if (cache) {
+          c.executionCtx.waitUntil(
+            cache.put(
+              cacheKey,
+              new Response(bytes, {
+                headers: {
+                  "Content-Type": variantType,
+                  "Cache-Control": "public, max-age=31536000, immutable",
+                  "Content-Disposition": "inline",
+                },
+              }),
+            ),
+          );
+        }
+
+        return new Response(bytes, {
+          headers: {
+            "Content-Type": variantType,
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "Content-Disposition": "inline",
+          },
+        });
+      } catch (error) {
+        c.var.tracker?.captureException(error, {
+          context: "files:image-transform",
+        });
+        // fall through to serving the buffered original below
+      }
+    }
+
+    // Non-image or transform failure: serve the buffered original.
+    const fileName = (objectKey ?? "").split("/").pop() || "download";
+    return new Response(bodyBytes, {
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition": attachmentDisposition(fileName),
+      },
+    });
+  }
+
+  // --- Full-size original path (no ?w) ---
+  const obj = await ensureObject();
+  if (!obj) {
+    return c.json({ message: "File not found" }, 404);
+  }
+  const fileName = (objectKey ?? "").split("/").pop() || "download";
   const contentType =
-    object.httpMetadata?.contentType || "application/octet-stream";
-
-  // ASCII fallback: replace non-ASCII chars with underscores
-  const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_");
-  // RFC 5987 encoded filename for Unicode support
-  const encodedFileName = encodeURIComponent(fileName).replace(
-    /['()]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-
-  return new Response(object.body, {
+    obj.httpMetadata?.contentType || "application/octet-stream";
+  return new Response(obj.body, {
     headers: {
       "Content-Type": contentType,
-      "Content-Disposition": `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFileName}`,
+      "Content-Disposition": attachmentDisposition(fileName),
     },
   });
 });

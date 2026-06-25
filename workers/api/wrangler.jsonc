@@ -353,6 +353,9 @@
           "bucket_name": "plot-articles-development"
         }
       ],
+      "images": {
+        "binding": "IMAGES"
+      },
       "triggers": {
         "crons": ["*/5 * * * *"]
       }
@@ -659,6 +662,9 @@
           "bucket_name": "plot-articles-production"
         }
       ],
+      "images": {
+        "binding": "IMAGES"
+      },
       "triggers": {
         "crons": ["*/5 * * * *"]
       }

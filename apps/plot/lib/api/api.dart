@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
 import 'package:plot/api/api_exception.dart';
+import 'package:plot/api/file_url.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/base.dart';
@@ -539,11 +540,11 @@ Future<Uint8List> getFileRefBytes(String noteId, int actionIndex) async {
 }
 
 /// Download a file attachment, returning the raw bytes.
-Future<Uint8List> getFileBytes(String fileId) async {
+Future<Uint8List> getFileBytes(String fileId, {int? width}) async {
   try {
     final headers = await getHeaders()..remove('Content-Type');
     final response = await http.get(
-      Uri.parse('${Env.apiRoot}/files/$fileId'),
+      buildFileBytesUri(Env.apiRoot, fileId, width: width),
       headers: headers,
     ).timeout(const Duration(seconds: 120));
     if (response.statusCode != 200) {

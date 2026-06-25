@@ -303,6 +303,9 @@ export type Bindings = {
   readonly CHANNEL_ROUTER: DurableObjectNamespace<ChannelRouter>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;
   readonly FILES_BUCKET: R2Bucket;
+  // Cloudflare Images binding. Transforms R2-stored attachment originals into
+  // small WebP previews on the fly (see app/files.ts). Originals stay in R2.
+  readonly IMAGES: ImagesBinding;
   // Global cache of extracted article markdown, keyed by url_hash. Backs the
   // `extracted_url` Postgres table.
   readonly ARTICLES_BUCKET: R2Bucket;

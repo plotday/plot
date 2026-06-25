@@ -83,6 +83,9 @@
   Previously a connection you'd already replaced — for example LinkedIn after reconnecting it — could
   keep the badge lit even though the Connections screen showed everything as fine, with no way to
   clear it.
+- Image attachments load faster in threads. Previews now fetch a smaller, optimized version of the
+  picture, while opening one full-screen or downloading it still gives you the full-resolution
+  original.
 
 ## 1.5.0+364 — 2026-06-22
 

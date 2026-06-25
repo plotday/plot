@@ -26,6 +26,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/util/download.dart';
+import 'package:plot/widget/spinner.dart';
 import 'logging.dart';
 
 /// Widget that displays a single note action with appropriate styling based on type
@@ -926,6 +927,11 @@ class _FileLinkButtonState extends State<FileLinkButton> {
   }
 }
 
+/// Longest-edge width (px) requested for inline image previews. Sized for the
+/// ~200pt-tall inline display at up to 3x device pixel ratio. Must be one of
+/// the server's allowed buckets (see workers/api/src/app/files.ts).
+const int _inlineImagePreviewWidth = 800;
+
 /// Displays an image attachment inline with a max height, opening a
 /// zoomable modal on tap. Falls back to [FileLinkButton] on error.
 class FileImageWidget extends StatefulWidget {
@@ -941,6 +947,8 @@ class _FileImageWidgetState extends State<FileImageWidget> {
   Uint8List? _bytes;
   bool _loading = true;
   bool _error = false;
+  Uint8List? _originalBytes;
+  bool _openingViewer = false;
 
   @override
   void initState() {
@@ -956,7 +964,10 @@ class _FileImageWidgetState extends State<FileImageWidget> {
 
   Future<void> _loadImage() async {
     try {
-      final bytes = await api.getFileBytes(widget.link.fileId);
+      final bytes = await api.getFileBytes(
+        widget.link.fileId,
+        width: _inlineImagePreviewWidth,
+      );
       if (mounted) {
         FilePreviewCache.put(widget.link.fileId, bytes);
         setState(() {
@@ -979,11 +990,35 @@ class _FileImageWidgetState extends State<FileImageWidget> {
   }
 
   Future<void> _openViewer() async {
-    final bytes = _bytes;
-    if (bytes == null) return;
+    if (_openingViewer) return;
+    var original = _originalBytes;
+    if (original == null) {
+      setState(() => _openingViewer = true);
+      try {
+        // No width -> full-size original (also reused by the viewer's download).
+        original = await api.getFileBytes(widget.link.fileId);
+        _originalBytes = original;
+      } on NetworkException {
+        if (mounted) {
+          context.showToast(
+            message: "You're offline. Please try again when connected.",
+            isError: true,
+          );
+        }
+        return;
+      } catch (e, t) {
+        log.warning('Failed to load full image: ${widget.link.fileName}', e, t);
+        Tracker.captureException(e, t);
+        // Fall back to the inline variant so zoom still shows something.
+        original = _bytes;
+      } finally {
+        if (mounted) setState(() => _openingViewer = false);
+      }
+    }
+    if (original == null || !mounted) return;
     await _showFullImageViewer(
       context,
-      bytes: bytes,
+      bytes: original,
       fileName: widget.link.fileName,
       mimeType: widget.link.mimeType,
     );
@@ -1036,7 +1071,10 @@ class _FileImageWidgetState extends State<FileImageWidget> {
       );
 
       if (_loading) return container;
-      return Tapable(onTap: _openViewer, child: container);
+      return Tapable(
+        onTap: _openViewer,
+        child: _withOpeningOverlay(container),
+      );
     }
 
     // No dimensions (legacy images) — stable-size container for both states.
@@ -1067,7 +1105,28 @@ class _FileImageWidgetState extends State<FileImageWidget> {
     );
 
     if (_loading) return noDimContainer;
-    return Tapable(onTap: _openViewer, child: noDimContainer);
+    return Tapable(
+      onTap: _openViewer,
+      child: _withOpeningOverlay(noDimContainer),
+    );
+  }
+
+  Widget _withOpeningOverlay(Widget child) {
+    if (!_openingViewer) return child;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        child,
+        Positioned.fill(
+          child: ColoredBox(
+            color: const Color(0x33000000),
+            child: Center(
+              child: Spinner(size: 20),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
