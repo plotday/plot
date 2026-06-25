@@ -215,6 +215,14 @@ export const CONNECTIONS: Connection[] = [
 
   // Email
   {
+    name: "Outlook",
+    description: "Email, calendar, and contacts from your Outlook account.",
+    ...si("microsoftoutlook", "0078D4", "47A5ED"),
+    category: "Email",
+    entities: ["Emails", "Events", "Contacts"],
+    available: false,
+  },
+  {
     name: "Outlook Mail",
     description: "Send and reply to Outlook email, tracking threads for follow-up and snoozing the rest.",
     ...si("microsoftoutlook", "0078D4", "47A5ED"),
