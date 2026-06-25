@@ -151,7 +151,7 @@ describe("composeChannels", () => {
   });
 
   describe("composeChannels (concurrency)", () => {
-    function fakeProduct(key: string, scopes: string[], ids: string[], onCall: () => void) {
+    function fakeProduct(key: string, scopes: string[], ids: string[], onCall: () => void, onDone: () => void = () => {}) {
       return {
         key,
         requiredScopes: scopes,
@@ -160,6 +160,7 @@ describe("composeChannels", () => {
           onCall();
           // resolve on a later microtask so concurrency is observable
           await Promise.resolve();
+          onDone(); // call is now resolving — decrement inFlight so serial vs concurrent is distinguishable
           return ids.map((id) => ({ id, title: id }));
         },
       } as any;
@@ -169,9 +170,10 @@ describe("composeChannels", () => {
       let inFlight = 0;
       let maxInFlight = 0;
       const bump = () => { inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); };
+      const done = () => { inFlight--; };
       const products = [
-        fakeProduct("mail", ["s.mail"], ["INBOX"], bump),
-        fakeProduct("calendar", ["s.cal"], ["primary"], bump),
+        fakeProduct("mail", ["s.mail"], ["INBOX"], bump, done),
+        fakeProduct("calendar", ["s.cal"], ["primary"], bump, done),
       ];
       const token = { token: "t", scopes: ["s.mail", "s.cal"] } as any;
       const out = await composeChannels(products, token);
