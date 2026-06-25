@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.65.0
+
+### Added
+
+- `LinkTypeConfig.sourceName` — a per-link-type product name that overrides the connector's display name when building "{source} {type}" copy. Lets aggregate connectors (e.g. the Google connector, display name "Gmail & Calendar") show the right per-product brand: "Google Calendar event", "Gmail thread", "Google Tasks task". ([#226](https://github.com/plotday/plot/pull/226) [`986b1f9`](https://github.com/plotday/plot/commit/986b1f977e4364825bc73925893ea8452c8a597d))
+
 ## 0.64.0
 
 ### Added
