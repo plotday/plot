@@ -218,3 +218,23 @@ describe("comment write-back", () => {
     expect(res).toEqual({ externalContent: "new desc" });
   });
 });
+
+describe("onCreateLink", () => {
+  it("creates a card in the chosen list and returns the synced link", async () => {
+    const trello = makeTrello();
+    const createCard = vi.fn().mockResolvedValue({
+      id: "5f000000bbbbbbbbbbbbbbbb", name: "New card", desc: "body", idList: "l1", idBoard: "b1", closed: false, url: "https://trello.com/c/x", idMembers: [], dateLastActivity: "2026-01-01T00:00:00Z",
+    });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ createCard });
+    const link = await trello.onCreateLink({ channelId: "b1", type: "card", status: "l1", title: "New card", noteContent: "body", contacts: [] } as any);
+    expect(createCard).toHaveBeenCalledWith({ idList: "l1", name: "New card", desc: "body" });
+    expect(link!.source).toBe("trello:card:5f000000bbbbbbbbbbbbbbbb");
+    expect(link!.status).toBe("l1");
+    expect(link!.channelId).toBe("b1");
+    expect(link!.originatingNote).toEqual({ key: "description", externalContent: "body" });
+  });
+  it("returns null for a non-card type", async () => {
+    const trello = makeTrello();
+    expect(await trello.onCreateLink({ type: "other" } as any)).toBeNull();
+  });
+});

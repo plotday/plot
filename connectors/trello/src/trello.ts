@@ -1,4 +1,4 @@
-import { Connector, type Link, type Note, type NoteWriteBackResult, type Thread, type ToolBuilder } from "@plotday/twister";
+import { Connector, type CreateLinkDraft, type Link, type NewLinkWithNotes, type Note, type NoteWriteBackResult, type Thread, type ToolBuilder } from "@plotday/twister";
 import {
   AuthProvider,
   Integrations,
@@ -9,7 +9,7 @@ import {
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { TrelloApi, verifyTrelloWebhook } from "./trello-api";
+import { TrelloApi, cardCreatedAt, verifyTrelloWebhook } from "./trello-api";
 import { buildCardLinkType } from "./trello-channels";
 import { transformCard } from "./trello-sync";
 
@@ -156,6 +156,29 @@ export class Trello extends Connector<Trello> {
     } as TrelloSyncState);
     const cb = await this.callback(this.syncBatch, boardId);
     await this.runTask(cb);
+  }
+
+  async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== "card") return null;
+    const boardId = draft.channelId;
+    const api = await this.getApi(boardId);
+    const card = await api.createCard({
+      idList: draft.status ?? "",
+      name: draft.title,
+      ...(draft.noteContent ? { desc: draft.noteContent } : {}),
+    });
+    if (!card?.id) return null;
+    return {
+      source: `trello:card:${card.id}`,
+      type: "card",
+      title: card.name,
+      status: card.idList,
+      created: cardCreatedAt(card.id),
+      channelId: boardId,
+      sourceUrl: card.url,
+      meta: { syncProvider: "trello", boardId, cardId: card.id, idList: card.idList },
+      originatingNote: { key: "description", externalContent: card.desc ?? undefined },
+    };
   }
 
   async onLinkUpdated(link: Link): Promise<void> {
