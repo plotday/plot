@@ -88,3 +88,27 @@ export function computeContactsDiff(
 
   return { added, removed, changed };
 }
+
+/**
+ * The contactIds that became active members in `next` and were not active
+ * members before — the candidates for an invitation email.
+ *
+ * A `null` `prev` means a brand-new thread (no server-side row existed before
+ * this save), so every active member of `next` is newly added. Re-saving a
+ * thread with unchanged membership yields an empty list, which is what keeps
+ * routine saves (title edits, priority moves, marking read) from re-inviting
+ * contacts already on the thread.
+ *
+ * Membership-only (role changes and removals are ignored); ordering follows
+ * `next.contacts`. Self/linked/non-inviteable filtering is the caller's job —
+ * this is a pure set diff over effective membership.
+ */
+export function newlyAddedMemberIds(
+  prev: ContactsSnapshot | null,
+  next: ContactsSnapshot,
+): string[] {
+  if (!prev) {
+    return [...effectiveMembers(next)];
+  }
+  return computeContactsDiff(prev, next).added.map((a) => a.contactId);
+}

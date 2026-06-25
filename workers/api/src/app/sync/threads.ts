@@ -33,6 +33,7 @@ import {
   snapshotThreadContacts,
   type ThreadContactsSnapshot,
 } from "./contacts-changed-dispatch";
+import { inviteNewlyAddedContacts } from "./invite-added-contacts";
 import {
   stripAnnounceContactsFromThreads,
   stripHiddenRoleContactsFromThreads,
@@ -812,6 +813,11 @@ threads.post("/sync/threads", async (c) => {
   if (contactsMayChange) {
     prevContacts = await snapshotThreadContacts(c.var.db, threadData.id as string);
   }
+  // Whether this save set the thread's contacts at all (vs. a save that only
+  // touched title/priority/etc.). Drives the "invite newly-added contacts"
+  // pass below. Independent of `threadData.id`: a brand-new thread whose id the
+  // server generates still provided contacts and has prevContacts === null.
+  const contactsInPayload = threadData.contacts !== undefined;
 
   const result = await withUserDb(c.var.db, userId, async (trx) => {
     const upsertResult = await rpcUser(trx, "upsert_thread", {
@@ -932,6 +938,40 @@ threads.post("/sync/threads", async (c) => {
   // notify the connector that owns the thread (best-effort, connector-only).
   if (prevContacts && result?.id) {
     await dispatchContactsChangedIfNeeded(c, result.id as string, prevContacts);
+  }
+
+  // Invite the non-Plot contacts the user newly added to this thread. Selecting
+  // an existing contact writes a contact UUID into thread.contacts (via
+  // upsert_thread), which — unlike the typed-email `invite_emails` path below —
+  // never sent an invitation. The membership diff means routine saves (no new
+  // contacts) invite nobody. Runs before the invite_emails block so the two
+  // paths don't double-process the same contacts. Best-effort; never fails sync.
+  //
+  // Skip connector-backed compose (a Gmail/Slack/etc. send): those recipients
+  // receive the native message, so a Plot invitation would be unwanted. Adding
+  // someone to an existing thread's Plot sharing (no create_link) still invites.
+  if (
+    contactsInPayload &&
+    result?.id &&
+    !isDispatchableCreateLink(createLinkSpec)
+  ) {
+    try {
+      await inviteNewlyAddedContacts(c.var.db, {
+        threadId: result.id as string,
+        prevContacts,
+        inviterUserId: userId,
+        mailQueue: c.env.MAIL_QUEUE,
+        appRoot: c.env.APP_ROOT,
+        captureException: (error, context) =>
+          c.var.tracker.captureException(error, context),
+      });
+    } catch (error) {
+      console.error(
+        "[sync/threads] Added-contact invitation pass failed:",
+        error,
+      );
+      c.var.tracker.captureException(error as Error);
+    }
   }
 
   // Dispatch classify jobs for peer thread_priority rows the upsert

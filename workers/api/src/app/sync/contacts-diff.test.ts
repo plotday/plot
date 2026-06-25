@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { computeContactsDiff, type ContactsSnapshot } from "./contacts-diff";
+import {
+  computeContactsDiff,
+  newlyAddedMemberIds,
+  type ContactsSnapshot,
+} from "./contacts-diff";
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -98,5 +102,43 @@ describe("computeContactsDiff", () => {
     const diff = computeContactsDiff(prev, next);
     expect(diff.added).toEqual([{ contactId: B, role: null }]);
     expect(diff.changed).toEqual([]);
+  });
+});
+
+describe("newlyAddedMemberIds", () => {
+  it("treats a brand-new thread (prev null) as adding all effective members", () => {
+    // A new thread doesn't exist server-side before its first sync, so there
+    // is no prior snapshot — every contact on it is newly added and is an
+    // invitation candidate.
+    expect(newlyAddedMemberIds(null, snap([A, B]))).toEqual([A, B]);
+  });
+
+  it("excludes dropped contacts from a brand-new thread's added members", () => {
+    expect(newlyAddedMemberIds(null, snap([A, B], { dropped: [B] }))).toEqual([A]);
+  });
+
+  it("returns nothing when a thread is re-saved with unchanged contacts", () => {
+    // The critical regression guard: re-saving (title edit, priority move,
+    // marking read) must never re-invite contacts already on the thread.
+    const s = snap([A, B], { roles: { [A]: "to", [B]: "cc" } });
+    expect(newlyAddedMemberIds(s, s)).toEqual([]);
+  });
+
+  it("returns only the newly added contact when one is added to an existing thread", () => {
+    expect(newlyAddedMemberIds(snap([A]), snap([A, B]))).toEqual([B]);
+  });
+
+  it("returns nothing when contacts are only removed", () => {
+    expect(newlyAddedMemberIds(snap([A, B]), snap([A]))).toEqual([]);
+  });
+
+  it("treats an undrop (was dropped, now active) as a newly added member", () => {
+    expect(newlyAddedMemberIds(snap([A, B], { dropped: [B] }), snap([A, B]))).toEqual([B]);
+  });
+
+  it("ignores a role-only change (no membership addition)", () => {
+    const prev = snap([A, B], { roles: { [B]: "to" } });
+    const next = snap([A, B], { roles: { [B]: "cc" } });
+    expect(newlyAddedMemberIds(prev, next)).toEqual([]);
   });
 });
