@@ -154,8 +154,13 @@ CREATE OR REPLACE FUNCTION public.update_thread_activity_from_link ()
 BEGIN
     IF NEW.thread_id IS NOT NULL AND NEW.source_created_at IS NOT NULL THEN
         PERFORM set_config('plot.skip_activity_seq', 'on', TRUE);
+        -- activity_base is the max of CONTENT source times only — never seeded
+        -- with created_at (import time). GREATEST() ignores a NULL activity_base,
+        -- so the first link sets it to source_created_at even when that predates
+        -- the thread's import. The created_at fallback happens at read time in
+        -- thread_priority.activity_at, so backfilled content sorts by its origin.
         UPDATE thread
-        SET activity_base = GREATEST(COALESCE(activity_base, created_at), NEW.source_created_at)
+        SET activity_base = GREATEST(activity_base, NEW.source_created_at)
         WHERE id = NEW.thread_id
           AND (activity_base IS NULL OR activity_base < NEW.source_created_at);
         PERFORM set_config('plot.skip_activity_seq', 'off', TRUE);

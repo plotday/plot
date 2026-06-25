@@ -135,8 +135,10 @@ BEGIN
         RETURN NEW;
     END IF;
     PERFORM set_config('plot.skip_activity_seq', 'on', TRUE);
+    -- Max of CONTENT times only — never seeded with created_at (import time).
+    -- GREATEST() ignores a NULL activity_base.
     UPDATE thread
-    SET activity_base = GREATEST(COALESCE(activity_base, created_at), v_end)
+    SET activity_base = GREATEST(activity_base, v_end)
     WHERE id = v_thread_id
       AND (activity_base IS NULL OR activity_base < v_end);
     PERFORM set_config('plot.skip_activity_seq', 'off', TRUE);

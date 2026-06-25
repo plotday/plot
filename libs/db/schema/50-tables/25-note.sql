@@ -182,7 +182,10 @@ BEGIN
             SET last_note_created_at = GREATEST (last_note_created_at, NEW.created_at),
                 last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at),
                 last_note_seq = GREATEST (last_note_seq, NEW.seq),
-                activity_base = GREATEST (COALESCE(activity_base, created_at), NEW.source_created_at),
+                -- Max of CONTENT source times only — never seeded with created_at
+                -- (import time), so a backfilled note keeps the thread at its
+                -- origin time. GREATEST() ignores a NULL activity_base.
+                activity_base = GREATEST (activity_base, NEW.source_created_at),
                 updated_by = NEW.updated_by
             WHERE id = NEW.thread_id
               AND (last_note_created_at IS NULL
@@ -207,6 +210,14 @@ BEGIN
             -- twist_instance_id while author_id is the user's own linked
             -- contact — so a created_by-only check would mark the author unread
             -- and notify them about their own reply.
+            --
+            -- bumped_at carries the note's ORIGIN time (source_created_at), NOT
+            -- now(). It is the only per-user input to thread_priority.activity_at,
+            -- so a live reply (source ~ now) re-surfaces the thread while a
+            -- backfilled historical reply sorts at its true time instead of
+            -- masquerading as fresh activity at import. The app's separate
+            -- Active→Done write sets bumped_at = now() directly; the ON CONFLICT
+            -- GREATEST below never lowers such a bump.
             INSERT INTO thread_state (user_id, thread_id, read_at, bumped_at, last_note_source_created_at)
             SELECT v.user_id,
                    NEW.thread_id,
@@ -216,7 +227,7 @@ BEGIN
                        THEN now()
                        ELSE NULL
                    END,
-                   now(),
+                   NEW.source_created_at,
                    NEW.source_created_at
             FROM (
                 SELECT tp.user_id
@@ -232,7 +243,10 @@ BEGIN
                   )
             ) v
             ON CONFLICT (user_id, thread_id) DO UPDATE
-            SET bumped_at = now(),
+            -- Raise to the note's origin time, never lower an existing (newer)
+            -- value — preserves an app-set Active→Done bump and orders by the
+            -- latest message this user can actually see.
+            SET bumped_at = GREATEST(thread_state.bumped_at, NEW.source_created_at),
                 last_note_source_created_at =
                     GREATEST(thread_state.last_note_source_created_at, NEW.source_created_at),
                 -- A non-author visible user must see the thread as unread
