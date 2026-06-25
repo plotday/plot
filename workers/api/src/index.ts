@@ -253,14 +253,22 @@ app.route("/", unsubscribe);
 // Admin endpoints — gated by ADMIN_API_KEY bearer token (no app/sdk auth).
 app.route("/", admin);
 
-// Mount webhook route at top level
-app.route("/", webhook);
+// Specific provider webhooks MUST be mounted before the `webhook` app below.
+// `webhook` owns the catch-all `/hook/:token` route (Network.PATH) which
+// enqueues the path segment as a callback token. Hono runs matching handlers
+// in registration order and stops at the first response, so a catch-all
+// registered first would shadow these — `/hook/messaging` would enqueue
+// `token="messaging"` (dropped later as INVALID_TOKEN_FORMAT) instead of
+// reaching its real handler. See app/hook-route-precedence.test.ts.
 
 // Unipile messaging webhook (account lifecycle + message events)
 app.route("/", hookMessaging);
 
 // Todoist app-level webhook (task + comment events for all connected users)
 app.route("/", hookTodoist);
+
+// Mount the generic webhook app last — it carries the `/hook/:token` catch-all.
+app.route("/", webhook);
 
 // OAuth bridge — public endpoint hit by the provider's browser redirect
 // (no user-auth context), so it must live outside the /app section.
