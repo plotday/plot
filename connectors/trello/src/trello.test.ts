@@ -240,3 +240,19 @@ describe("onCreateLink", () => {
     expect(await trello.onCreateLink({ type: "other" } as any)).toBeNull();
   });
 });
+
+describe("onChannelDisabled", () => {
+  it("deletes the webhook, archives links, and clears state", async () => {
+    const store = makeStore({ webhook_id_b1: "wh1", webhook_url_b1: "u", sync_enabled_b1: true });
+    const archiveLinks = vi.fn().mockResolvedValue(undefined);
+    const trello = makeTrello({ store, integrations: { archiveLinks } });
+    const deleteWebhook = vi.fn().mockResolvedValue({});
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ deleteWebhook });
+
+    await trello.onChannelDisabled({ id: "b1", title: "B" } as any);
+    expect(deleteWebhook).toHaveBeenCalledWith("wh1");
+    expect(archiveLinks).toHaveBeenCalledWith({ channelId: "b1" });
+    expect(store.map.has("webhook_id_b1")).toBe(false);
+    expect(store.map.has("sync_enabled_b1")).toBe(false);
+  });
+});

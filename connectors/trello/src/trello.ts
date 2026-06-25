@@ -104,7 +104,23 @@ export class Trello extends Connector<Trello> {
     }
   }
 
-  async onChannelDisabled(): Promise<void> {}
+  async onChannelDisabled(channel: Channel): Promise<void> {
+    const boardId = channel.id;
+    const webhookId = await this.get<string>(`webhook_id_${boardId}`);
+    if (webhookId) {
+      try {
+        const api = await this.getApi(boardId);
+        await api.deleteWebhook(webhookId);
+      } catch (error) {
+        console.warn("Failed to delete Trello webhook:", error);
+      }
+    }
+    await this.clear(`webhook_id_${boardId}`);
+    await this.clear(`webhook_url_${boardId}`);
+    await this.clear(`sync_state_${boardId}`);
+    await this.clear(`sync_enabled_${boardId}`);
+    await this.tools.integrations.archiveLinks({ channelId: boardId });
+  }
 
   async setupWebhook(boardId: string): Promise<void> {
     try {
