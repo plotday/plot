@@ -214,3 +214,35 @@ describe("PRODUCTS_BY_KEY", () => {
     expect(PRODUCTS_BY_KEY.contacts).toBe(contactsProduct);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Per-product source names
+//
+// The Google connector's display name is "Gmail & Calendar". Each product's
+// link types must carry a `sourceName` so the Plot app shows the right
+// per-product brand in "{source} {type}" copy (thread type name, compose
+// picker) instead of the aggregate connector name.
+// ---------------------------------------------------------------------------
+
+describe("product source names", () => {
+  it("every mail link type declares sourceName 'Gmail'", () => {
+    expect(mailProduct.linkTypes.length).toBeGreaterThan(0);
+    for (const lt of mailProduct.linkTypes) {
+      expect(lt.sourceName).toBe("Gmail");
+    }
+  });
+
+  it("every calendar link type declares sourceName 'Google Calendar'", () => {
+    expect(PRODUCTS_BY_KEY.calendar.linkTypes.length).toBeGreaterThan(0);
+    for (const lt of PRODUCTS_BY_KEY.calendar.linkTypes) {
+      expect(lt.sourceName).toBe("Google Calendar");
+    }
+  });
+
+  it("every task link type declares sourceName 'Google Tasks'", () => {
+    expect(tasksProduct.linkTypes.length).toBeGreaterThan(0);
+    for (const lt of tasksProduct.linkTypes) {
+      expect(lt.sourceName).toBe("Google Tasks");
+    }
+  });
+});

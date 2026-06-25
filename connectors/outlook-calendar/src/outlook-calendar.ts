@@ -161,7 +161,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     "Reads your events to add them to your agenda",
     "Writes your event RSVPs",
   ];
-  readonly linkTypes = [{ type: "event", label: "Event", sharingModel: "thread" as const, includesSchedules: true, logo: "https://api.iconify.design/logos/microsoft-icon.svg", logoDark: "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4", logoMono: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
+  readonly linkTypes = [{ type: "event", label: "Event", sourceName: "Outlook Calendar", sharingModel: "thread" as const, includesSchedules: true, logo: "https://api.iconify.design/logos/microsoft-icon.svg", logoDark: "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4", logoMono: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
 
   build(build: ToolBuilder) {
     return {

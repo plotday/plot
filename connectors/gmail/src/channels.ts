@@ -17,6 +17,10 @@ export const GMAIL_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "email",
     label: "Thread",
+    // Per-product brand for aggregate connectors (the Google connector's
+    // display name is "Gmail & Calendar"); standalone Gmail falls back to its
+    // own display name anyway.
+    sourceName: "Gmail",
     noteLabel: "Reply",
     sharingModel: "message" as const,
     composePlaceholder: "Send a Gmail email",
