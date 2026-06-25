@@ -1,6 +1,15 @@
 import { Connector, type ToolBuilder } from "@plotday/twister";
-import { AuthProvider, Integrations, type StatusIcon } from "@plotday/twister/tools/integrations";
+import {
+  AuthProvider,
+  Integrations,
+  type AuthToken,
+  type Authorization,
+  type Channel,
+  type StatusIcon,
+} from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
+import { TrelloApi } from "./trello-api";
+import { buildCardLinkType } from "./trello-channels";
 
 export class Trello extends Connector<Trello> {
   static readonly handleReplies = true;
@@ -41,10 +50,44 @@ export class Trello extends Connector<Trello> {
     };
   }
 
-  // Lifecycle + sync + write-back methods are added in later tasks.
-  async getChannels(): Promise<import("@plotday/twister/tools/integrations").Channel[]> {
-    return [];
+  /**
+   * Resolve Trello credentials for a given channel. If a token is provided
+   * (e.g. passed by the runtime to getChannels), it is used directly.
+   * Otherwise the token is fetched from integrations by channelId.
+   */
+  private async getApi(channelId: string, token?: AuthToken | null): Promise<TrelloApi> {
+    const tok = token ?? (await this.tools.integrations.get(channelId));
+    const key = tok?.provider?.["key"];
+    if (!tok?.token || !key) {
+      throw new Error(`No Trello credentials for channel ${channelId}`);
+    }
+    return new TrelloApi(key, tok.token);
   }
+
+  /**
+   * Returns one Channel per Trello board, each with per-board dynamic
+   * statuses derived from the board's lists.
+   *
+   * Matches Linear's getChannels pattern: the runtime passes the account
+   * token as the second argument; getApi falls back to integrations.get for
+   * per-board calls in later tasks.
+   */
+  async getChannels(_auth?: Authorization | null, token?: AuthToken | null): Promise<Channel[]> {
+    const api = await this.getApi("", token ?? undefined);
+    const boards = await api.getBoards();
+    return Promise.all(
+      boards.map(async (board) => {
+        const lists = await api.getLists(board.id);
+        return {
+          id: board.id,
+          title: board.name,
+          linkTypes: [buildCardLinkType(lists)],
+        };
+      }),
+    );
+  }
+
+  // Lifecycle + sync + write-back methods are added in later tasks.
   async onChannelEnabled(): Promise<void> {}
   async onChannelDisabled(): Promise<void> {}
 }
