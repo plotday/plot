@@ -87,9 +87,10 @@ void main() {
         ),
       );
 
-      // The header must contain the key phrase from the spec.
+      // The header explains the permissions ask in provider-agnostic terms
+      // (the copy is shared by Google/Outlook composite setup, see #426).
       expect(
-        find.textContaining('Plot can sync these from your Google account'),
+        find.textContaining('Grant all permissions for full functionality'),
         findsOneWidget,
       );
     });

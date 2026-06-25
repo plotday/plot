@@ -1508,6 +1508,8 @@ class ProviderIcon extends StatelessWidget {
       case AuthProvider.discord:
       case AuthProvider.github:
       case AuthProvider.linkedin:
+      case AuthProvider.whatsapp:
+      case AuthProvider.instagram:
       case AuthProvider.apple:
         return true;
       default:
@@ -1550,6 +1552,10 @@ class ProviderIcon extends StatelessWidget {
         return 'assets/discord.svg';
       case AuthProvider.linkedin:
         return 'assets/linkedin.svg';
+      case AuthProvider.whatsapp:
+        return 'assets/whatsapp.svg';
+      case AuthProvider.instagram:
+        return 'assets/instagram.svg';
       case AuthProvider.apple:
         // Black wordmark on light, white on dark.
         return context.colour.brightness == Brightness.dark

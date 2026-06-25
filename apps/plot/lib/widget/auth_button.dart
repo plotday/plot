@@ -1447,6 +1447,42 @@ AuthProviderConfig getAuthProviderConfig(AuthProvider provider) {
         buttonText: 'Continue with LinkedIn',
       );
 
+    case AuthProvider.whatsapp:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF111B21),
+        borderColor: const Color(0xFFDADBDD),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF6FBF7),
+        focusColor: const Color(0xFF25D366),
+        loadingColor: const Color(0xFF25D366),
+        disabledTextColor: const Color(0xFF8696A0),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with WhatsApp',
+      );
+
+    case AuthProvider.instagram:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF1F1F1F),
+        borderColor: const Color(0xFFDADBDD),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFFBF6F9),
+        focusColor: const Color(0xFFE4405F),
+        loadingColor: const Color(0xFFE4405F),
+        disabledTextColor: const Color(0xFF9AA0A6),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Instagram',
+      );
+
     default:
       return AuthProviderConfig(
         backgroundColor: Colors.white,
@@ -1534,6 +1570,10 @@ String? authProviderIconAsset(AuthProvider provider) {
       return "assets/airtable.svg";
     case AuthProvider.linkedin:
       return "assets/linkedin.svg";
+    case AuthProvider.whatsapp:
+      return "assets/whatsapp.svg";
+    case AuthProvider.instagram:
+      return "assets/instagram.svg";
     default:
       return null;
   }
