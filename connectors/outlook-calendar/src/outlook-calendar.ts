@@ -26,6 +26,12 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
+import {
+  OUTLOOK_CALENDAR_LINK_TYPES,
+  OUTLOOK_CALENDAR_SCOPE,
+  getOutlookCalendarChannels,
+} from "./channels";
+
 type Calendar = {
   id: string;
   name: string;
@@ -151,7 +157,7 @@ async function hashContent(content: string): Promise<string> {
  */
 export class OutlookCalendar extends Connector<OutlookCalendar> {
   static readonly PROVIDER = AuthProvider.Microsoft;
-  static readonly SCOPES = ["https://graph.microsoft.com/calendars.readwrite"];
+  static readonly SCOPES = [OUTLOOK_CALENDAR_SCOPE];
 
   readonly provider = AuthProvider.Microsoft;
   readonly channelNoun = { singular: "calendar", plural: "calendars" };
@@ -161,7 +167,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     "Reads your events to add them to your agenda",
     "Writes your event RSVPs",
   ];
-  readonly linkTypes = [{ type: "event", label: "Event", sharingModel: "thread" as const, includesSchedules: true, logo: "https://api.iconify.design/logos/microsoft-icon.svg", logoDark: "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4", logoMono: "https://api.iconify.design/simple-icons/microsoftoutlook.svg" }];
+  readonly linkTypes = OUTLOOK_CALENDAR_LINK_TYPES;
 
   build(build: ToolBuilder) {
     return {
@@ -191,9 +197,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
-    const api = new GraphApi(token.token);
-    const calendars = await api.getCalendars();
-    return calendars.map((c) => ({ id: c.id, title: c.name }));
+    return getOutlookCalendarChannels(token);
   }
 
   /**
