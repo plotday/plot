@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { cleanConvertedMarkdown, preprocessEmailHtml } from "../plot/thread-helpers";
+import {
+  cleanConvertedMarkdown,
+  convertNoteToMarkdown,
+  preprocessEmailHtml,
+} from "../plot/thread-helpers";
+
+type Ai = Parameters<typeof convertNoteToMarkdown>[0];
 
 // Fragment of an Iterable/Mailchimp-style email (Anthropic rate-limit update,
 // Mon, 28 Jul 2025). This exact email rendered as a single run-on block of
@@ -392,5 +398,52 @@ describe("cleanConvertedMarkdown — glued inline elements", () => {
     const input = "Read ![Logo](https://cdn.example.com/logo.png) now.";
     const out = cleanConvertedMarkdown(input);
     expect(out).toBe(input);
+  });
+});
+
+describe("convertNoteToMarkdown HTML conversion", () => {
+  const htmlNote = "<p>Hello world</p>";
+  // Mirrors the real failure: Cloudflare's to-markdown service returns an HTML
+  // error page (a transient 5xx) and the internal binding throws while trying
+  // to JSON.parse the body — "Unexpected token '<', \"<!DOCTYPE \"...".
+  const transientError = () =>
+    new SyntaxError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`);
+
+  it("retries a transient toMarkdown failure before degrading", async () => {
+    const toMarkdown = vi
+      .fn()
+      .mockRejectedValueOnce(transientError())
+      .mockResolvedValueOnce({
+        format: "markdown",
+        data: "Hello CONVERTEDMARKER",
+      });
+    const ai = { toMarkdown } as unknown as Ai;
+
+    const result = await convertNoteToMarkdown(ai, htmlNote, "html");
+
+    expect(toMarkdown).toHaveBeenCalledTimes(2);
+    // Proves the second (successful) conversion was used, not the
+    // strip-to-text fallback (which would never emit CONVERTEDMARKER).
+    expect(result).toContain("CONVERTEDMARKER");
+  });
+
+  it("degrades to stripped text and warns (not errors) when retries are exhausted", async () => {
+    const toMarkdown = vi.fn().mockRejectedValue(transientError());
+    const ai = { toMarkdown } as unknown as Ai;
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await convertNoteToMarkdown(ai, htmlNote, "html");
+
+    // Graceful degradation: no throw, content preserved as plain text.
+    expect(result).toContain("Hello world");
+    // A handled, transient upstream failure must not be logged at error
+    // severity (which pages on PostHog) — warn only.
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });

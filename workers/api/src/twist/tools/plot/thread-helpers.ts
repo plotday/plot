@@ -731,37 +731,50 @@ export async function convertNoteToMarkdown(
       // in virtually all HTML email) so we get clean paragraphs instead of
       // Markdown tables with spurious pipes and tiny-scaled cell content.
       const preprocessed = await preprocessEmailHtml(note);
-      try {
-        const result = await ai.toMarkdown({
-          name: "note.html",
-          blob: new Blob([preprocessed], { type: "text/html" }),
-        });
 
-        // Check if conversion was successful
-        if (result.format === "markdown") {
-          return cleanConvertedMarkdown(result.data);
+      // Cloudflare's to-markdown service is occasionally flaky: when it returns
+      // an HTML error page (a transient 5xx) the internal binding throws while
+      // JSON-parsing the body ("Unexpected token '<', \"<!DOCTYPE \"..."). These
+      // failures are transient, so retry a few times before degrading to a
+      // plain-text strip — a single blip would otherwise permanently saddle the
+      // note with the inferior rendering.
+      const maxAttempts = 3;
+      let lastError: Error | undefined;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const result = await ai.toMarkdown({
+            name: "note.html",
+            blob: new Blob([preprocessed], { type: "text/html" }),
+          });
+
+          if (result.format === "markdown") {
+            return cleanConvertedMarkdown(result.data);
+          }
+
+          // The only other variant is a structured error result — capture and
+          // retry.
+          lastError = new Error(String(result.error));
+        } catch (error) {
+          lastError = error as Error;
         }
 
-        // Handle error case (format === "error")
-        if ("error" in result) {
-          const logger = createLogger();
-          logger.error(
-            "Failed to convert HTML to Markdown",
-            new Error(String(result.error))
+        if (attempt < maxAttempts) {
+          // Short randomized backoff to ride out the transient blip.
+          await new Promise((resolve) =>
+            setTimeout(resolve, attempt * 100 + Math.floor(Math.random() * 50))
           );
-          return cleanConvertedMarkdown(stripHtmlToText(preprocessed));
         }
-
-        // Fallback for unexpected format
-        const logger = createLogger();
-        logger.error("Unexpected toMarkdown response format", { result });
-        return cleanConvertedMarkdown(stripHtmlToText(note));
-      } catch (error) {
-        // If conversion fails, strip HTML tags as fallback
-        const logger = createLogger();
-        logger.error("Failed to convert HTML to Markdown", error as Error);
-        return cleanConvertedMarkdown(stripHtmlToText(note));
       }
+
+      // All attempts exhausted — degrade gracefully to a plain-text strip.
+      // This is a handled, transient upstream failure (not a bug in our code),
+      // so log at warn severity rather than error to avoid paging on PostHog.
+      const logger = createLogger();
+      logger.warn(
+        "HTML-to-Markdown conversion failed after retries; falling back to plain text",
+        lastError ?? new Error("toMarkdown produced no result")
+      );
+      return cleanConvertedMarkdown(stripHtmlToText(preprocessed));
     }
 
     case "text": {
