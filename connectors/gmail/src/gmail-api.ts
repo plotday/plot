@@ -125,7 +125,14 @@ export class GmailApi {
       throw new GmailApiError(response.status, response.statusText, errorText);
     }
 
-    return await response.json();
+    // Some Gmail endpoints — notably users.stop (POST /stop, used by
+    // stopWatch) — return 204 No Content with an EMPTY body. Calling
+    // response.json() on an empty body throws "SyntaxError: Unexpected end of
+    // JSON input"; this escaped through setupWatch()'s unguarded stopWatch()
+    // recovery path and surfaced as an unhandled twist exception. Read the
+    // body as text and only parse it when non-empty.
+    const text = await response.text();
+    return text ? JSON.parse(text) : undefined;
   }
 
   public async getLabels(): Promise<GmailLabel[]> {
