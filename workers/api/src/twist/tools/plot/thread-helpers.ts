@@ -1,7 +1,9 @@
 import LinkifyIt from "linkify-it";
+import { type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
 
 import { type Database, DbError } from "@plotday/db";
+import type { DB } from "../../../db-types";
 import type {
   ActorId,
   ActorType,
@@ -1146,12 +1148,16 @@ export type PreparedThread = (
  * @param authorId - The resolved author contact ID
  * @param activityId - The activity to mark as read
  * @param timestamp - The read_at timestamp to use
+ * @param db - Optional Kysely handle. Defaults to `plot.db`; pass a transaction
+ *   handle to run the read-marking inside an open transaction (e.g. the atomic
+ *   createLink path) so it sees the same uncommitted thread/notes.
  */
 export async function markThreadReadForAuthor(
   plot: Plot,
   authorId: string,
   activityId: string,
-  timestamp: string
+  timestamp: string,
+  db: Kysely<DB> = plot.db
 ): Promise<void> {
   // No real author — just the twist itself
   if (authorId === plot.twistInstanceId) {
@@ -1160,7 +1166,7 @@ export async function markThreadReadForAuthor(
 
   try {
     // Look up whether this contact is linked to a user
-    const contact = await plot.db
+    const contact = await db
       .selectFrom("contact")
       .select("user_id")
       .where("id", "=", authorId)
@@ -1174,7 +1180,7 @@ export async function markThreadReadForAuthor(
     // Check if there are unread notes from other authors since this user's
     // last read_at — mirrors the DB trigger logic but uses author_id (the real
     // author) instead of created_by (which is the twist for synced notes).
-    const existingRead = await plot.db
+    const existingRead = await db
       .selectFrom("thread_read")
       .select("read_at")
       .where("user_id", "=", userId)
@@ -1183,7 +1189,7 @@ export async function markThreadReadForAuthor(
 
     const lastReadAt = existingRead?.read_at ?? null;
 
-    let unreadFromOthersQuery = plot.db
+    let unreadFromOthersQuery = db
       .selectFrom("note")
       .select("id")
       .where("thread_id", "=", activityId)
@@ -1218,7 +1224,7 @@ export async function markThreadReadForAuthor(
 
     // Upsert a single activity_read entry for the author
     try {
-      await plot.db
+      await db
         .insertInto("thread_read")
         .values({
           thread_id: activityId,

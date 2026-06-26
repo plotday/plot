@@ -4,16 +4,20 @@ import { ActorType } from "@plotday/twister/plot";
 import type { LinkFilter } from "@plotday/twister/tools/plot";
 import { LinkAccess } from "@plotday/twister/tools/plot";
 
-import { sql } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
 
+import type { DB } from "../../../db-types";
+import { withUserDb } from "../../../db";
 import { rpcUser } from "../../../rpc";
 import { applyMuteForNewThread } from "../../../state/mute";
 import {
   handleDbOperationError,
+  prepareThreadForDb,
   processNewActor,
   createPreviewFromMarkdown,
   convertNoteToMarkdown,
+  ThreadFilingSkippedError,
 } from "./thread-helpers";
 import {
   createThread,
@@ -32,21 +36,25 @@ import type { Plot } from "./index";
  * notes and no non-revoked thread_priority — in which case a hard delete
  * avoids leaving server cruft (nothing was ever synced to strand).
  */
-async function archiveOrDeleteOrphanThread(plot: Plot, threadId: Uuid): Promise<void> {
-  const hasNote = await plot.db
+async function archiveOrDeleteOrphanThread(
+  plot: Plot,
+  threadId: Uuid,
+  db: Kysely<DB> = plot.db
+): Promise<void> {
+  const hasNote = await db
     .selectFrom("note").select("note.id")
     .where("note.thread_id", "=", threadId as string)
     .limit(1).executeTakeFirst();
-  const hasFiling = await plot.db
+  const hasFiling = await db
     .selectFrom("thread_priority").select("thread_priority.thread_id")
     .where("thread_priority.thread_id", "=", threadId as string)
     .where("thread_priority.revoked_at", "is", null)
     .limit(1).executeTakeFirst();
   if (!hasNote && !hasFiling) {
-    await plot.db.deleteFrom("thread").where("id", "=", threadId as string).execute();
+    await db.deleteFrom("thread").where("id", "=", threadId as string).execute();
     return;
   }
-  await plot.db
+  await db
     .updateTable("thread")
     .set({ archived_at: new Date().toISOString() })
     .where("id", "=", threadId as string)
@@ -220,20 +228,25 @@ export async function createLink(
       }
     }
 
-    // Pass skipNotify=true so we can fire a single notifySyncDOs after the
-    // link row (and any schedules) are committed. Otherwise clients see the
-    // thread with no link yet and activity_at falls back to created_at=now(),
-    // briefly placing the thread at the top of today before it settles to the
-    // link's source_created_at.
-    let { id: threadId, priorityId: threadPriorityId, authorId, created } = await createThread(plot, threadData, true);
-    // Whether this saveLink produced a genuinely new thread. Reset to false if
-    // the link turns out to belong to a pre-existing thread (race dedup below),
-    // so forward-mute only runs for fresh arrivals — not replies/updates.
-    let isNewThread = created;
+    // Prepare the thread row (classification, embedding, author resolution —
+    // all network/read work) on plot.db, OUTSIDE the write transaction. Holding
+    // a pooled connection across these calls is the pool-pressure anti-pattern
+    // that stranded orphan thread shells in the first place. The committed
+    // thread+link write happens together in the transaction below.
+    const prepared = await prepareThreadForDb(plot, threadData);
+    if (!prepared) {
+      // Team-connector thread with no matching team priority for this user.
+      // saveLink catches ThreadFilingSkippedError and returns null (matches
+      // createThread's behavior).
+      throw new ThreadFilingSkippedError();
+    }
 
-    // Step 2: Create the link row (priority_id returned from createThread)
+    // Pre-warm the memoized owner lookup so nothing inside the transaction
+    // queries plot.db (a single-connection pool) for it — that would deadlock
+    // against the connection the transaction holds.
+    const userId = await plot.getUserId();
 
-    // Generate preview for link
+    // Generate the link preview (may invoke AI for HTML notes) outside the txn.
     let previewText: string | null = null;
     if (link.preview !== undefined) {
       previewText =
@@ -250,126 +263,158 @@ export async function createLink(
       }
     }
 
-    // Resolve assignee for the link (may already be processed by createThread, but idempotent)
+    // Resolve assignee outside the txn: processNewActor → addContacts opens its
+    // OWN connection/transaction, which must not nest inside ours. Scope new
+    // contacts to the thread's resolved priority (same value createThread uses).
     let assigneeId: string | null | undefined = undefined;
     if (link.assignee !== undefined) {
-      assigneeId = await processNewActor(
-        plot,
-        link.assignee,
-        threadPriorityId
-      );
+      assigneeId = await processNewActor(plot, link.assignee, prepared.priorityId);
     }
 
-    // Build link defaults (all fields for INSERT)
-    const linkDefaults: Record<string, any> = {
-      thread_id: threadId,
-      created_by: plot.twistInstanceId,
-      // Credit the resolved external author (from createThread), not the
-      // connector twist instance. Falls back to the twist when no author.
-      author_id: authorId,
-      updated_by: plot.getUpdatedBy(),
-      sync_depth: plot.syncDepth + 1,
-      source_created_at:
-        link.created instanceof Date
-          ? link.created.toISOString()
-          : typeof link.created === "string"
-            ? link.created
-            : new Date().toISOString(),
-      title: link.title,
-      ...(previewText !== null ? { preview: previewText } : {}),
-      ...(assigneeId !== undefined ? { assignee_id: assigneeId } : {}),
-      ...(link.type !== undefined ? { type: link.type } : {}),
-      ...(link.status !== undefined ? { status: link.status } : {}),
-      ...(link.actions !== undefined
-        ? { actions: link.actions as Json | null }
-        : {}),
-      ...(link.meta !== undefined
-        ? { meta: link.meta as Json | null }
-        : {}),
-      ...(link.sourceUrl !== undefined ? { source_url: link.sourceUrl } : {}),
-      ...(link.channelId !== undefined ? { channel_id: link.channelId } : {}),
-      ...(link.relatedSource !== undefined
-        ? { related_source: link.relatedSource }
-        : {}),
-      ...(hasSource ? { sources: sourcesArray } : {}),
-      priority: link.priority ?? 0,
-    };
+    // Commit the thread row and the link row in ONE transaction so a mid-save
+    // failure rolls the thread back instead of leaving an orphan shell (a thread
+    // with no link → NULL feed sort key). withUserDb wraps the txn in
+    // retryOnTxnConflict (40P01/40001), and the pool-exhaustion retry wraps the
+    // whole createLink at the saveLink layer, so a rolled-back txn releases its
+    // connection before that backoff (no double-wrap, no pressure). Notes,
+    // schedules, and notify run AFTER commit (below): they do network/AI work
+    // and run notes in parallel — neither safe to hold the single-connection
+    // transaction open across.
+    const committed = await withUserDb(plot.db, userId, async (trx) => {
+      // skipNotify=true: a single notifySyncDOs fires after the link (+ notes)
+      // exist. opts.db=trx commits the thread on the transaction; `prepared`
+      // was computed above, outside the txn.
+      const tr = await createThread(plot, threadData, true, {
+        db: trx,
+        prepared,
+      });
+      let committedThreadId = tr.id as Uuid;
+      const committedPriorityId = tr.priorityId;
+      // Whether this saveLink produced a genuinely new thread. Reset to false if
+      // the link turns out to belong to a pre-existing thread (race dedup
+      // below), so forward-mute only runs for fresh arrivals — not replies.
+      let isNewThread = tr.created;
 
-    let linkId: string;
-
-    if (hasSource) {
-      // Build upsert fields (only explicitly provided values for UPDATE)
-      const linkUpsert: Record<string, any> = {
-        source: primarySource,
-        sources: sourcesArray,
-        thread_id: threadId,
+      // Build link defaults (all fields for INSERT)
+      const linkDefaults: Record<string, any> = {
+        thread_id: committedThreadId,
+        created_by: plot.twistInstanceId,
+        // Credit the resolved external author (from createThread), not the
+        // connector twist instance. Falls back to the twist when no author.
+        author_id: tr.authorId,
         updated_by: plot.getUpdatedBy(),
         sync_depth: plot.syncDepth + 1,
+        source_created_at:
+          link.created instanceof Date
+            ? link.created.toISOString()
+            : typeof link.created === "string"
+              ? link.created
+              : new Date().toISOString(),
+        title: link.title,
+        ...(previewText !== null ? { preview: previewText } : {}),
+        ...(assigneeId !== undefined ? { assignee_id: assigneeId } : {}),
+        ...(link.type !== undefined ? { type: link.type } : {}),
+        ...(link.status !== undefined ? { status: link.status } : {}),
+        ...(link.actions !== undefined
+          ? { actions: link.actions as Json | null }
+          : {}),
+        ...(link.meta !== undefined
+          ? { meta: link.meta as Json | null }
+          : {}),
+        ...(link.sourceUrl !== undefined ? { source_url: link.sourceUrl } : {}),
+        ...(link.channelId !== undefined ? { channel_id: link.channelId } : {}),
+        ...(link.relatedSource !== undefined
+          ? { related_source: link.relatedSource }
+          : {}),
+        ...(hasSource ? { sources: sourcesArray } : {}),
+        priority: link.priority ?? 0,
       };
 
-      if (link.title !== undefined) linkUpsert.title = link.title;
-      if (link.preview !== undefined) linkUpsert.preview = previewText;
-      if (link.type !== undefined) linkUpsert.type = link.type;
-      if (link.status !== undefined) linkUpsert.status = link.status;
-      if (link.meta !== undefined)
-        linkUpsert.meta = link.meta as Json | null;
-      if (link.actions !== undefined)
-        linkUpsert.actions = link.actions as Json | null;
-      if (assigneeId !== undefined) linkUpsert.assignee_id = assigneeId;
-      if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
-      if (link.channelId !== undefined) linkUpsert.channel_id = link.channelId;
-      if (link.priority !== undefined) linkUpsert.priority = link.priority;
-      if (link.relatedSource !== undefined)
-        linkUpsert.related_source = link.relatedSource;
+      let linkId: string;
 
-      const userId = await plot.getUserId();
-      const linkResult = await rpcUser(plot.db, "upsert_link", {
-        user_id: userId,
-        p_link: linkUpsert as Json,
-        p_defaults: linkDefaults as Json,
-      });
-      linkId = linkResult.id;
+      if (hasSource) {
+        // Build upsert fields (only explicitly provided values for UPDATE)
+        const linkUpsert: Record<string, any> = {
+          source: primarySource,
+          sources: sourcesArray,
+          thread_id: committedThreadId,
+          updated_by: plot.getUpdatedBy(),
+          sync_depth: plot.syncDepth + 1,
+        };
 
-      // If the link was already associated with a different thread (race condition
-      // where concurrent saveLink calls for the same source each create a thread),
-      // clean up the orphaned thread we just created and use the existing one.
-      if (linkResult.thread_id && linkResult.thread_id !== threadId) {
-        // Archive (not delete) the orphan thread so the removal syncs to
-        // clients; archived_at frees the (twist_id, key) slot just like
-        // delete (thread_twist_key_unique is WHERE archived_at IS NULL).
-        // The thread has no links (the link moved to linkResult.thread_id),
-        // so there is no link cascade.
-        await archiveOrDeleteOrphanThread(plot, threadId);
-        threadId = linkResult.thread_id as Uuid;
-        // The link belonged to a pre-existing thread, not the one we created.
-        isNewThread = false;
+        if (link.title !== undefined) linkUpsert.title = link.title;
+        if (link.preview !== undefined) linkUpsert.preview = previewText;
+        if (link.type !== undefined) linkUpsert.type = link.type;
+        if (link.status !== undefined) linkUpsert.status = link.status;
+        if (link.meta !== undefined)
+          linkUpsert.meta = link.meta as Json | null;
+        if (link.actions !== undefined)
+          linkUpsert.actions = link.actions as Json | null;
+        if (assigneeId !== undefined) linkUpsert.assignee_id = assigneeId;
+        if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
+        if (link.channelId !== undefined) linkUpsert.channel_id = link.channelId;
+        if (link.priority !== undefined) linkUpsert.priority = link.priority;
+        if (link.relatedSource !== undefined)
+          linkUpsert.related_source = link.relatedSource;
+
+        const linkResult = await rpcUser(trx, "upsert_link", {
+          user_id: userId,
+          p_link: linkUpsert as Json,
+          p_defaults: linkDefaults as Json,
+        });
+        linkId = linkResult.id;
+
+        // If the link was already associated with a different thread (race
+        // where concurrent saveLink calls for the same source each create a
+        // thread), clean up the orphan thread we just created and use the
+        // existing one. On the transaction so the cleanup commits atomically.
+        if (linkResult.thread_id && linkResult.thread_id !== committedThreadId) {
+          // Archive (not delete) the orphan thread so the removal syncs to
+          // clients; archived_at frees the (twist_id, key) slot just like
+          // delete (thread_twist_key_unique is WHERE archived_at IS NULL).
+          // The thread has no links (the link moved to linkResult.thread_id),
+          // so there is no link cascade.
+          await archiveOrDeleteOrphanThread(plot, committedThreadId, trx);
+          committedThreadId = linkResult.thread_id as Uuid;
+          // The link belonged to a pre-existing thread, not the one we created.
+          isNewThread = false;
+        }
+      } else {
+        // Plain insert for links without source
+        const linkResult = await trx
+          .insertInto("link")
+          // @ts-ignore - Type mismatch between builder and actual values
+          .values({
+            thread_id: committedThreadId,
+            created_by: linkDefaults.created_by,
+            author_id: linkDefaults.author_id,
+            updated_by: linkDefaults.updated_by,
+            sync_depth: linkDefaults.sync_depth,
+            source_created_at: linkDefaults.source_created_at,
+            title: linkDefaults.title,
+            preview: linkDefaults.preview ?? null,
+            assignee_id: assigneeId ?? null,
+            type: link.type ?? null,
+            status: link.status ?? null,
+            actions: (link.actions ?? null) as Json | null,
+            meta: (link.meta ?? null) as Json | null,
+            source_url: link.sourceUrl ?? null,
+            channel_id: link.channelId ?? null,
+          })
+          .returning("id")
+          .executeTakeFirstOrThrow();
+        linkId = linkResult.id;
       }
-    } else {
-      // Plain insert for links without source
-      const linkResult = await plot.db
-        .insertInto("link")
-        // @ts-ignore - Type mismatch between builder and actual values
-        .values({
-          thread_id: threadId,
-          created_by: linkDefaults.created_by,
-          author_id: linkDefaults.author_id,
-          updated_by: linkDefaults.updated_by,
-          sync_depth: linkDefaults.sync_depth,
-          source_created_at: linkDefaults.source_created_at,
-          title: linkDefaults.title,
-          preview: linkDefaults.preview ?? null,
-          assignee_id: assigneeId ?? null,
-          type: link.type ?? null,
-          status: link.status ?? null,
-          actions: (link.actions ?? null) as Json | null,
-          meta: (link.meta ?? null) as Json | null,
-          source_url: link.sourceUrl ?? null,
-          channel_id: link.channelId ?? null,
-        })
-        .returning("id")
-        .executeTakeFirstOrThrow();
-      linkId = linkResult.id;
-    }
+
+      return {
+        threadId: committedThreadId,
+        threadPriorityId: committedPriorityId,
+        linkId,
+        isNewThread,
+      };
+    });
+
+    const { threadId, threadPriorityId, linkId, isNewThread } = committed;
 
     // Boundary captured just before createNotes so the unread-marking below
     // scopes its "any other-authored note?" check to the notes created by THIS

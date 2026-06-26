@@ -19,7 +19,8 @@ import {
 import { ContactAccess, ThreadAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "@plotday/worker-util";
-import { sql } from "kysely";
+import { sql, type Kysely } from "kysely";
+import type { DB } from "../../../db-types";
 import { rpc, rpcUser } from "../../../rpc";
 import { logClassificationDecision } from "../../../state/classify-thread";
 import {
@@ -127,9 +128,10 @@ export async function markThreadUnreadForUsers(
   plot: Plot,
   threadId: string,
   mode: "all" | "non-authors",
-  syncStartedAt: Date
+  syncStartedAt: Date,
+  db: Kysely<DB> = plot.db
 ): Promise<void> {
-  const priorityUsers = await plot.db
+  const priorityUsers = await db
     .selectFrom("thread_priority")
     .select("user_id")
     .where("thread_id", "=", threadId)
@@ -169,7 +171,7 @@ export async function markThreadUnreadForUsers(
         AND n.author_id IS NOT NULL
       ORDER BY n.source_created_at DESC, n.created_at DESC
       LIMIT 1
-    `.execute(plot.db);
+    `.execute(db);
     latestAuthorUserId = latest.rows[0]?.user_id ?? null;
   }
 
@@ -198,13 +200,13 @@ export async function markThreadUnreadForUsers(
               AND uc.archived_at IS NULL
           )
         LIMIT 1
-      `.execute(plot.db);
+      `.execute(db);
 
       if (otherAuthored.rows.length === 0) continue;
     }
 
     try {
-      await rpcUser(plot.db, "upsert_thread_state", {
+      await rpcUser(db, "upsert_thread_state", {
         user_id,
         p_thread_id: threadId,
         p_active: false,
@@ -294,17 +296,50 @@ function isFreshlyCreated(createdAt: string | Date): boolean {
 export async function createThread(
   plot: Plot,
   activity: NewThread | NewThreadWithNotes,
-  skipNotify = false
+  skipNotify = false,
+  /**
+   * Atomic-commit hooks. `db` is the Kysely handle used for ALL writes here —
+   * defaults to `plot.db`, but the atomic createLink path passes its open
+   * transaction so the thread write commits together with the link write.
+   * `prepared` lets that caller run the network/read-heavy {@link prepareThreadForDb}
+   * BEFORE opening the transaction (holding a pooled connection across the
+   * classify/embed network calls is the pool-pressure anti-pattern that stranded
+   * orphan thread shells), then pass the result in.
+   *
+   * IMPORTANT: when `db` is a transaction, EVERY query below must use `db`, never
+   * `plot.db` — `plot.db` is a single-connection pool, so a stray query while the
+   * transaction holds that connection would deadlock. Memoized Plot accessors
+   * (getUserId) are pre-warmed by prepareThreadForDb, so they don't hit the DB here.
+   */
+  opts?: { db?: Kysely<DB>; prepared?: PreparedThread }
 ): Promise<{ id: Uuid; priorityId: string; authorId: string; created: boolean }> {
+  const db = opts?.db ?? plot.db;
   try {
-    // Use shared helper for all preparation logic
-    const prepared = await prepareThreadForDb(plot, activity);
+    // Use shared helper for all preparation logic (skipped when the caller
+    // already prepared it outside the transaction — see `opts.prepared`).
+    const prepared = opts?.prepared ?? (await prepareThreadForDb(plot, activity));
     if (!prepared) {
       // Team-connector thread with no matching team priority for this user.
       // Skip filing by throwing the marker error: callers in this worker
       // (integrations.saveLink) catch it and return null so connector batches
       // continue, and handleTwistOperation suppresses it from error reporting.
       throw new ThreadFilingSkippedError();
+    }
+    // When committing inside a transaction the activity must carry no inline
+    // notes/tags/reactions: resolving those goes through addContacts, which
+    // opens its OWN connection/transaction — unsafe to nest inside a single-
+    // connection transaction. The atomic createLink path satisfies this (it
+    // writes the link's notes after commit). Non-transaction callers are
+    // unaffected (db === plot.db).
+    if (
+      db.isTransaction &&
+      (("notes" in activity && !!activity.notes?.length) ||
+        !!activity.tags ||
+        !!activity.reactions)
+    ) {
+      throw new Error(
+        "createThread: inline notes/tags/reactions are not supported when committing inside a transaction"
+      );
     }
     const { priorityId, authorId, pendingDecision, ...prep } = prepared;
 
@@ -314,7 +349,7 @@ export async function createThread(
       (!("icon" in activity) || (activity as any).icon === undefined) &&
       (!("type" in activity) || (activity as any).type === undefined)
     ) {
-      const ptRow = await plot.db
+      const ptRow = await db
         .selectFrom("twist_instance")
         .select("twist_id")
         .where("id", "=", plot.twistInstanceId)
@@ -341,7 +376,7 @@ export async function createThread(
       // RPC returns full activity row directly
       const userId = await plot.getUserId();
       try {
-        dbResult = await rpcUser(plot.db, "upsert_thread", {
+        dbResult = await rpcUser(db, "upsert_thread", {
           user_id: userId,
           p_thread: prep.upsert as Json,
           p_defaults: { ...prep.defaults, priority_id: priorityId } as Json,
@@ -364,7 +399,7 @@ export async function createThread(
       }
     } else {
       // Plain insert for activities without source
-      dbResult = await plot.db
+      dbResult = await db
         .insertInto("thread")
         // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
         .values(prep.insert)
@@ -376,7 +411,7 @@ export async function createThread(
     // exists. Skip merged rows (upsert_thread source match) — only a
     // freshly-created row carries this call's decision.
     if (pendingDecision && isFreshlyCreated(dbResult.created_at)) {
-      await logClassificationDecision(plot.db, plot.env, {
+      await logClassificationDecision(db, plot.env, {
         ...pendingDecision,
         threadId: dbResult.id,
       });
@@ -502,7 +537,7 @@ export async function createThread(
       // Mark read for ALL priority users
       // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
       // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
-      const usersData = await rpc(plot.db, "get_users_with_priority_access", {
+      const usersData = await rpc(db, "get_users_with_priority_access", {
         target_priority_id: priorityId,
       });
       const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
@@ -514,7 +549,7 @@ export async function createThread(
             SELECT uid, ${dbResult.id}::uuid, now()
             FROM unnest(${userIds}::uuid[]) AS uid
             ON CONFLICT (user_id, thread_id) DO UPDATE SET read_at = EXCLUDED.read_at
-          `.execute(plot.db);
+          `.execute(db);
         } catch (err) {
           const logger = createLogger({
             twist_instance_id: plot.twistInstanceId,
@@ -540,11 +575,12 @@ export async function createThread(
         plot,
         authorId,
         dbResult.id,
-        readTimestamp
+        readTimestamp,
+        db
       );
 
       // Also mark read for each unique note author linked to a user
-      const noteAuthors = await plot.db
+      const noteAuthors = await db
         .selectFrom("note")
         .innerJoin("contact", "contact.id", "note.author_id")
         .select("note.author_id")
@@ -562,7 +598,8 @@ export async function createThread(
             plot,
             row.author_id,
             dbResult.id,
-            readTimestamp
+            readTimestamp,
+            db
           );
         }
       }
@@ -587,7 +624,8 @@ export async function createThread(
         plot,
         dbResult.id,
         activity?.unread === true ? "all" : "non-authors",
-        syncStartedAt
+        syncStartedAt,
+        db
       );
     }
 

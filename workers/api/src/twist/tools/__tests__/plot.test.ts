@@ -89,7 +89,7 @@ const noopRawExecutor: any = {
 
 // Helper to create a chainable mock for Kysely queries
 function createDbMock() {
-  return {
+  const mock: any = {
     selectFrom: vi.fn((table: string) => {
       if (table === "twist_instance") {
         return createSelectQuery({ owner_id: "user-1" });
@@ -110,7 +110,20 @@ function createDbMock() {
     updateTable: vi.fn(),
     deleteFrom: vi.fn(),
     getExecutor: () => noopRawExecutor,
-  } as any;
+    isTransaction: false,
+  };
+  // createLink wraps its thread+link writes in withUserDb → db.transaction().
+  // The mock has no real transaction semantics; run the callback against a
+  // trx that delegates to this same mock (so the chained inserts resolve) but
+  // reports isTransaction = true, matching how the runtime threads the handle.
+  mock.transaction = () => ({
+    execute: async (cb: (trx: any) => Promise<any>) => {
+      const trx = Object.create(mock);
+      trx.isTransaction = true;
+      return cb(trx);
+    },
+  });
+  return mock as any;
 }
 
 // Helper to create mock env bindings
