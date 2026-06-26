@@ -1146,6 +1146,22 @@ class _PriorityPageState extends State<PriorityPage>
                             // Unified feed: no tab header. The four
                             // sections (Updates / Doing / Scheduled /
                             // Activity) render inline as agenda headers.
+                            // Key per-focus scroll restoration by the focus the
+                            // DISPLAYED items belong to (`activeTabContext`), not
+                            // the route's `priorityId`. On a switch the route id
+                            // flips a few frames before the bloc swaps in the new
+                            // focus's items (it keeps the outgoing list to avoid a
+                            // blank frame). Keying by the route would recreate the
+                            // scroll position — and restore its saved offset —
+                            // against the OUTGOING list, scrolling the wrong
+                            // content (and overscroll-stranding it while content
+                            // streams in). Keying by the items' focus moves the
+                            // position swap to the instant the new content lands,
+                            // so PageStorage restores it directly at its offset.
+                            // Falls back to the route id before any items load and
+                            // in the unscoped Everything view (null context).
+                            final feedScrollFocusId =
+                                state.activeTabContext?.id ?? widget.priorityId;
                             return _buildActivityFeed(
                               context,
                               state,
@@ -1153,7 +1169,7 @@ class _PriorityPageState extends State<PriorityPage>
                               listController,
                               ScrollControllerContext.of(context),
                               scrollStorageKey: PageStorageKey(
-                                'priority_feed_${widget.priorityId}',
+                                'priority_feed_$feedScrollFocusId',
                               ),
                             );
                           },
