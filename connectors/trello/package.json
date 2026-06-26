@@ -1,0 +1,43 @@
+{
+  "name": "@plotday/connector-trello",
+  "plotTwistId": "06829c6d-d28f-42bd-8ca8-fede11dd0582",
+  "displayName": "Trello",
+  "description": "Track your Trello cards and check them off as work moves forward.",
+  "logoUrl": "https://api.iconify.design/logos/trello.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  },
+  "repository": { "type": "git", "url": "https://github.com/plotday/plot.git", "directory": "connectors/trello" },
+  "homepage": "https://plot.day",
+  "bugs": { "url": "https://github.com/plotday/plot/issues" },
+  "keywords": ["plot", "connector", "trello", "project-management"]
+}

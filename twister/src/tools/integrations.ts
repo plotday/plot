@@ -665,6 +665,8 @@ export enum AuthProvider {
   Todoist = "todoist",
   /** Airtable OAuth provider for Airtable bases */
   Airtable = "airtable",
+  /** Trello token-authorize provider (not OAuth 2.0 — token returned in URL fragment) */
+  Trello = "trello",
 }
 
 /**
