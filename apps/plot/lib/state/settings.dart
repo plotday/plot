@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:drift/drift.dart' as drift;
@@ -12,6 +14,12 @@ class SettingsBloc extends Cubit<SettingsState> {
     _init();
   }
 
+  /// Drift watch on the current user's settings row. Held so it can be torn
+  /// down and re-bound when a different user signs in on the same device — the
+  /// stream is bound to one [Store] (one user's DB) and dies when that Store is
+  /// closed on sign-out. See [restart].
+  StreamSubscription<UserSettingsRow?>? _watchSub;
+
   /// Initialize by loading from database and watching for changes
   Future<void> _init() async {
     // SettingsBloc is provided at app root and constructed lazily on first
@@ -22,11 +30,30 @@ class SettingsBloc extends Cubit<SettingsState> {
 
     await _loadFromDatabase();
 
-    UserSettingsEntity.watch().listen((settings) {
+    await _watchSub?.cancel();
+    _watchSub = UserSettingsEntity.watch().listen((settings) {
       if (settings != null) {
         _updateFromDatabase(settings);
       }
     });
+  }
+
+  /// Re-bind to the current user's settings after a sign-out → sign-in on the
+  /// same device. This bloc lives at the app root and isn't recreated per user,
+  /// and its [_watchSub] is bound to the previous user's now-closed [Store], so
+  /// without this it would keep showing the previous user's enter-behavior / AI
+  /// setting. Called from the re-sign-in path in `root_provider`.
+  Future<void> restart() async {
+    await _watchSub?.cancel();
+    _watchSub = null;
+    emit(const SettingsState());
+    await _init();
+  }
+
+  @override
+  Future<void> close() {
+    _watchSub?.cancel();
+    return super.close();
   }
 
   /// Load settings from the database

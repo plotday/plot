@@ -359,6 +359,24 @@ void main() {
       expect(prefs.lastUsedMsForSignature(chat.signature), isNotNull);
       expect(bloc.state.targets.first.target.signature, chat.signature);
     });
+
+    test('restart drops the cached targets so the next user starts empty',
+        () async {
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+
+      bloc.prependToCache(ComposeTarget.note(hasTeams: false));
+      bloc.prependToCache(ComposeTarget.chat(hasTeams: false));
+      expect(bloc.state.targets, isNotEmpty);
+
+      // Re-sign-in cleanup: the previous user's materialized targets must not
+      // carry over to the next user on the same device.
+      bloc.restart();
+
+      expect(bloc.state.targets, isEmpty);
+    });
   });
 
   // ---------------------------------------------------------------------------

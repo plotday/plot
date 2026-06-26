@@ -16,15 +16,28 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     _loadFromPreferences();
   }
 
-  static const String _kMentionMruKey = 'mention_mru_ids';
-  static const String _kShowAllPrioritiesKey = 'show_all_priorities';
-  static const String _kSubTypeMruPrefix = 'thread_subtype_mru:';
-  static const String _kConnectionMruKey = 'connection_mru';
-  static const String _kReactionMruKey = 'reaction_mru';
-  static const String _kLinkMruKey = 'link_mru';
+  // Preference keys are public so the central user-scoped-preferences registry
+  // ([clearUserScopedPreferences]) can clear them on sign-out without
+  // duplicating the literals. They all hold user-specific usage data and must
+  // not bleed across accounts on a shared device.
+  static const String kMentionMruKey = 'mention_mru_ids';
+  static const String kShowAllPrioritiesKey = 'show_all_priorities';
+  static const String kSubTypeMruPrefix = 'thread_subtype_mru:';
+  static const String kConnectionMruKey = 'connection_mru';
+  static const String kReactionMruKey = 'reaction_mru';
+  static const String kLinkMruKey = 'link_mru';
   static const int _maxMruItems = 50;
   static const int _maxLinkMruItems = 100;
   static const int _maxReactionMruItems = 40;
+
+  /// Drop all in-memory user-scoped preference state back to defaults.
+  ///
+  /// Called on sign-out: this bloc is provided at the app root and is NOT
+  /// recreated when a different user signs in on the same device, so without
+  /// this the next user would inherit the previous user's mention / connection
+  /// / link MRUs (their contacts and connections). The persisted copies are
+  /// cleared in the same step via `clearUserScopedPreferences`.
+  void reset() => emit(const LocalPreferencesState(mentionMruIds: []));
 
   /// Record usage of a mention, moving it to the front of the MRU list
   Future<void> recordMentionUsage(String twistInstanceId) async {
@@ -252,7 +265,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   /// If no stored value, returns the default order.
   List<ThreadSubType> getSubTypeMru(String priorityId) {
     final prefs = ProfilePreferences.instance;
-    final stored = prefs.getString('$_kSubTypeMruPrefix$priorityId');
+    final stored = prefs.getString('$kSubTypeMruPrefix$priorityId');
     if (stored != null && stored.isNotEmpty) {
       final names = stored.split(',');
       final result = <ThreadSubType>[];
@@ -281,7 +294,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     current.insert(0, subType);
     final prefs = ProfilePreferences.instance;
     await prefs.setString(
-      '$_kSubTypeMruPrefix$priorityId',
+      '$kSubTypeMruPrefix$priorityId',
       current.map((t) => t.value).join(','),
     );
   }
@@ -289,10 +302,10 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   /// Load state from profile preferences
   Future<void> _loadFromPreferences() async {
     final prefs = ProfilePreferences.instance;
-    final idsString = prefs.getString(_kMentionMruKey);
-    final showAllPriorities = prefs.getBool(_kShowAllPrioritiesKey) ?? false;
+    final idsString = prefs.getString(kMentionMruKey);
+    final showAllPriorities = prefs.getBool(kShowAllPrioritiesKey) ?? false;
 
-    final mruJson = prefs.getString(_kConnectionMruKey);
+    final mruJson = prefs.getString(kConnectionMruKey);
     Map<String, ConnectionMruEntry> connectionMru = const {};
     if (mruJson != null && mruJson.isNotEmpty) {
       try {
@@ -308,7 +321,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       }
     }
 
-    final reactionString = prefs.getString(_kReactionMruKey);
+    final reactionString = prefs.getString(kReactionMruKey);
     List<Reaction> reactionMru = const [];
     if (reactionString != null && reactionString.isNotEmpty) {
       try {
@@ -321,7 +334,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       }
     }
 
-    final linkMruJson = prefs.getString(_kLinkMruKey);
+    final linkMruJson = prefs.getString(kLinkMruKey);
     Map<String, int> linkMru = const {};
     if (linkMruJson != null && linkMruJson.isNotEmpty) {
       try {
@@ -346,14 +359,14 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   /// Persist state to profile preferences
   Future<void> _persistState() async {
     final prefs = ProfilePreferences.instance;
-    await prefs.setString(_kMentionMruKey, state.mentionMruIds.join(','));
-    await prefs.setBool(_kShowAllPrioritiesKey, state.showAllPriorities);
+    await prefs.setString(kMentionMruKey, state.mentionMruIds.join(','));
+    await prefs.setBool(kShowAllPrioritiesKey, state.showAllPriorities);
   }
 
   Future<void> _persistConnectionMru() async {
     final prefs = ProfilePreferences.instance;
     await prefs.setString(
-      _kConnectionMruKey,
+      kConnectionMruKey,
       jsonEncode(
         state.connectionMru.map((k, v) => MapEntry(k, v.toJson())),
       ),
@@ -362,11 +375,11 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
 
   Future<void> _persistReactionMru() async {
     final prefs = ProfilePreferences.instance;
-    await prefs.setString(_kReactionMruKey, jsonEncode(state.reactionMru));
+    await prefs.setString(kReactionMruKey, jsonEncode(state.reactionMru));
   }
 
   Future<void> _persistLinkMru() async {
     final prefs = ProfilePreferences.instance;
-    await prefs.setString(_kLinkMruKey, jsonEncode(state.linkMru));
+    await prefs.setString(kLinkMruKey, jsonEncode(state.linkMru));
   }
 }

@@ -49,4 +49,17 @@ class ProfilePreferences {
 
   Future<bool> remove(String key) => _prefs.remove(key);
   bool containsKey(String key) => _prefs.containsKey(key);
+
+  /// All stored keys (without the global profile prefix, which
+  /// [SharedPreferences.setPrefix] strips transparently).
+  Set<String> getKeys() => _prefs.getKeys();
+
+  /// Remove every stored key matching [test]. Used to clear prefix-keyed
+  /// preferences (e.g. per-role / per-priority entries) whose exact names
+  /// aren't known ahead of time.
+  Future<void> removeWhere(bool Function(String key) test) async {
+    for (final key in _prefs.getKeys().where(test).toList()) {
+      await _prefs.remove(key);
+    }
+  }
 }

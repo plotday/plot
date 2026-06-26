@@ -47,6 +47,11 @@ class Topic {
 
   static final Map<Uuid, TopicRow> _cache = {};
 
+  /// Drop the synchronous topics cache. Called on sign-out so a different user
+  /// on the same device never reads the previous user's topics before their own
+  /// pull lands. Mirrors [Priority.clearCache] / [Link.clearCache].
+  static void clearCache() => _cache.clear();
+
   static Future<void> pull() async {
     await Store.get.pull(table, TopicsBase(), initial: true);
     await Store.get.pull(table, TopicsBase());

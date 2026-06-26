@@ -14,12 +14,16 @@ import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/share_intent.dart';
 import 'package:plot/state/activity_section.dart';
+import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/onboarding.dart';
 import 'package:plot/state/post_auth_navigation_gate.dart';
 import 'package:plot/state/priorities.dart';
+import 'package:plot/state/settings.dart';
 import 'package:plot/state/theme.dart';
+import 'package:plot/state/user_scoped_preferences.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/router.dart';
@@ -210,6 +214,17 @@ class RootProviderState extends State<RootProvider> {
                 };
                 if (context.mounted) _setupReAuthListener(context);
 
+                // On a re-sign-in, re-bind the app-root blocs whose Drift
+                // subscriptions were created against the previous user's
+                // now-closed Store (these blocs aren't recreated per user).
+                // Without this they keep emitting the previous user's settings
+                // and compose targets. Pairs with the store-cache clears and
+                // preference reset in the UserSignedOut handler.
+                if (navigateToDefault && context.mounted) {
+                  unawaited(context.read<SettingsBloc>().restart());
+                  context.read<ComposeTargetsBloc>().restart();
+                }
+
                 // On a re-sign-in (user signed out and back in while the app
                 // was running) jump to the current-priority cascade. NOT on
                 // cold start / web refresh: there the router has already
@@ -268,6 +283,15 @@ class RootProviderState extends State<RootProvider> {
               // Latch the sign-out so the next UserReady is recognised as a
               // re-sign-in (and navigates to the default priority).
               _postAuthNav.onSignedOut();
+              // Drop this user's device-local, user-scoped preferences so a
+              // different account signing in on the same device doesn't inherit
+              // their focus links, @-mention contacts, or compose connections.
+              // Reset the in-memory copy first (this bloc lives at the app root
+              // and isn't recreated per user), then clear the persisted keys.
+              // Mirrors the in-memory cache clears below. See
+              // [clearUserScopedPreferences].
+              context.read<LocalPreferencesBloc>().reset();
+              await clearUserScopedPreferences();
               await NotificationService.instance.stop();
               _teardownNowBlocListener();
               _reAuthSubscription?.cancel();
@@ -279,6 +303,13 @@ class RootProviderState extends State<RootProvider> {
               Link.clearCache();
               Priority.clearCache();
               Role.clearCache();
+              // The remaining per-user synchronous store caches. Like the four
+              // above, they survive sign-out and would otherwise seed the next
+              // user's reads from the previous user's data until their own pull
+              // lands. (TwistInstance's cache is cleared by stopGlobalWatch.)
+              Group.clearCache();
+              Topic.clearCache();
+              Channel.clearCache();
               // Reset the window/tab title to the bare app name.
               setWindowTitle(windowTitleForFocus(null));
               // Set theme to Catalyst when signed out

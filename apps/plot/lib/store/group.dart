@@ -76,6 +76,11 @@ class Group {
   // each pull.
   static final Map<Uuid, GroupRow> _cache = {};
 
+  /// Drop the synchronous groups cache. Called on sign-out so a different user
+  /// on the same device never reads the previous user's groups before their own
+  /// pull lands. Mirrors [Priority.clearCache] / [Link.clearCache].
+  static void clearCache() => _cache.clear();
+
   static Future<bool> push() async {
     return Store.get.push(table, GroupsBase());
   }

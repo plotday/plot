@@ -473,6 +473,26 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     return super.close();
   }
 
+  /// Re-bind to the current user's stores after a sign-out → sign-in on the
+  /// same device. This bloc lives at the app root and isn't recreated per user;
+  /// its [_watchConnections] subscriptions are bound to the previous user's
+  /// now-closed [Store], so without re-subscribing it would keep emitting the
+  /// previous user's targets and never react to the new user's connections.
+  /// Also drops the in-memory created-people MRU (the previous user's contacts
+  /// / groups) and the cached base/search context so the next [warm] / [refresh]
+  /// rebuilds entirely from the new user's data. Called from the re-sign-in
+  /// path in `root_provider`.
+  void restart() {
+    _refreshDebounce?.cancel();
+    _channelSub?.cancel();
+    _twistSub?.cancel();
+    _prioritySub?.cancel();
+    _createdPeopleMru.clear();
+    _invalidateSearchContext();
+    emit(const ComposeTargetsState(targets: []));
+    _watchConnections();
+  }
+
   /// How many recent authored threads to scan for used combinations. The
   /// base list stays conservative (recently-used combos + one fresh template
   /// per connection); the full channel/contact space is reachable via

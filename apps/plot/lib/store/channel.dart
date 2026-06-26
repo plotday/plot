@@ -72,6 +72,11 @@ class Channel extends Equatable {
   /// Populated during sync.
   static final Map<String, Channel> _cache = {};
 
+  /// Drop the synchronous channel cache. Called on sign-out so a different user
+  /// on the same device never reads the previous user's channels before their
+  /// own pull lands. Mirrors [Priority.clearCache] / [Link.clearCache].
+  static void clearCache() => _cache.clear();
+
   /// Build a cache key from twistInstanceId + channelId.
   static String _cacheKey(Uuid ptId, String channelId) =>
       '${ptId.toString()}:$channelId';
