@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.66.0
+
+### Added
+
+- structured-item note fields (`sectionKey`, `sectionLabel`, `sectionPosition`, `itemPosition`), `Note.tagActors` (dispatch-time hydrated assignees), and `Actor.source.accountId` (external account id resolved at dispatch). ([#236](https://github.com/plotday/plot/pull/236) [`a454043`](https://github.com/plotday/plot/commit/a454043b2d2ecf8e286d97fdfbf858ee8e35459f))
+- `AuthProvider.Trello` for the Trello connector's token-authorize flow. ([#236](https://github.com/plotday/plot/pull/236) [`620e375`](https://github.com/plotday/plot/commit/620e375c62aa4a674acb7b478b4d55b3e8ac2c44))
+
 ## 0.65.0
 
 ### Added
