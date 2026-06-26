@@ -6,6 +6,7 @@ import {
   withUserDb,
   withDb,
   withFrontendDb,
+  withRetryOnTransient,
   isTransientDbError,
   isPoolExhaustedError,
   isLockContentionError,
@@ -16,6 +17,15 @@ import {
   sql,
   resolveConnectionString,
 } from "./db";
+
+/** A DbError-shaped wrapper: the real pg/Hyperdrive error sits in `.cause`. */
+function wrapInCause(topMessage: string, cause: unknown): Error {
+  const e = new Error(topMessage);
+  (e as { cause?: unknown }).cause = cause;
+  return e;
+}
+
+const POOL_MSG = "Timed out while waiting for an open slot in the pool.";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -157,6 +167,27 @@ describe("isPoolExhaustedError", () => {
     expect(isPoolExhaustedError(undefined)).toBe(false);
     expect(isPoolExhaustedError(null)).toBe(false);
     expect(isPoolExhaustedError({})).toBe(false);
+  });
+
+  it("classifies a pool error wrapped in a DbError's cause chain", () => {
+    // createLink runs its queries through rpcUser/safeQuery, which wrap the
+    // underlying Hyperdrive timeout in a DbError whose top-level message is
+    // generic. Classification must look through `.cause` or the connector save
+    // path's retry never fires.
+    const wrapped = wrapInCause("Database query failed", new Error(POOL_MSG));
+    expect(isPoolExhaustedError(wrapped)).toBe(true);
+    expect(isTransientDbError(wrapped)).toBe(true);
+  });
+
+  it("classifies a pool error nested two levels deep", () => {
+    const deep = wrapInCause("outer", wrapInCause("middle", new Error(POOL_MSG)));
+    expect(isPoolExhaustedError(deep)).toBe(true);
+  });
+
+  it("does not loop forever on a self-referential cause", () => {
+    const e = new Error("nothing transient") as Error & { cause?: unknown };
+    e.cause = e;
+    expect(isPoolExhaustedError(e)).toBe(false);
   });
 });
 
@@ -320,6 +351,96 @@ describe("transientRetryDelayMs", () => {
   it("returns 0 for non-transient errors at any attempt", () => {
     expect(transientRetryDelayMs(new Error("duplicate key value"))).toBe(0);
     expect(transientRetryDelayMs(new Error("duplicate key value"), 3)).toBe(0);
+  });
+});
+
+describe("withRetryOnTransient", () => {
+  it("retries a pool-exhaustion failure with backoff and eventually succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const fn = vi.fn(async () => {
+        attempts++;
+        if (attempts < 3) throw new Error(POOL_MSG);
+        return "ok";
+      });
+      const p = withRetryOnTransient(fn);
+      // Drive the backoff timers (the retry awaits setTimeout between attempts).
+      await vi.runAllTimersAsync();
+      await expect(p).resolves.toBe("ok");
+      expect(attempts).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-runs the SAME fn from the top each attempt (idempotency contract)", async () => {
+    vi.useFakeTimers();
+    try {
+      const seen: number[] = [];
+      let attempts = 0;
+      const fn = async () => {
+        attempts++;
+        seen.push(attempts);
+        if (attempts < 2) throw new Error("Connection terminated unexpectedly");
+        return attempts;
+      };
+      const p = withRetryOnTransient(fn);
+      await vi.runAllTimersAsync();
+      await expect(p).resolves.toBe(2);
+      expect(seen).toEqual([1, 2]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does NOT retry a non-transient error (runs fn once, rethrows)", async () => {
+    let attempts = 0;
+    const fn = async () => {
+      attempts++;
+      throw new Error("duplicate key value");
+    };
+    await expect(withRetryOnTransient(fn)).rejects.toThrow("duplicate key value");
+    expect(attempts).toBe(1);
+  });
+
+  it("propagates the transient error after exhausting the retry budget", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const fn = async () => {
+        attempts++;
+        throw new Error(POOL_MSG);
+      };
+      const p = withRetryOnTransient(fn);
+      const assertion = expect(p).rejects.toThrow("open slot in the pool");
+      await vi.runAllTimersAsync();
+      await assertion;
+      // 1 initial attempt + maxRetriesFor(pool) retries.
+      expect(attempts).toBe(1 + maxRetriesFor(new Error(POOL_MSG)));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("classifies (and retries) a pool error wrapped in a DbError cause", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const fn = async () => {
+        attempts++;
+        if (attempts < 2) {
+          throw wrapInCause("Database query failed", new Error(POOL_MSG));
+        }
+        return "healed";
+      };
+      const p = withRetryOnTransient(fn);
+      await vi.runAllTimersAsync();
+      await expect(p).resolves.toBe("healed");
+      expect(attempts).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

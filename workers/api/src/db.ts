@@ -158,12 +158,68 @@ export async function withFrontendDb<T>(
   return withDbForLane(env, "frontend", fn);
 }
 
+/**
+ * Retry an idempotent operation on a transient DB error (Hyperdrive pool
+ * exhaustion / connection recycling) using the SAME backoff+jitter policy as
+ * {@link withDb}, but WITHOUT allocating a fresh pool. Use this to wrap a save
+ * that runs on an already-shared pooled connection (e.g. a connector's
+ * createLink, where `plot.db` is a cached handle shared across the concurrent
+ * saveLinks chunk and so can't be swapped for a private transaction): a failed
+ * statement releases its slot back to the pool before this catch runs, so the
+ * backoff wait holds NO connection — it adds delay, not pressure, letting peer
+ * connections in the same burst drain before re-acquiring (the documented
+ * property that makes the pool-exhaustion retry safe; see withDbForLane).
+ *
+ * `fn` MUST be idempotent across attempts — it is re-run from the top, so a
+ * partially-applied first attempt is re-applied, not compensated. createLink
+ * qualifies: upsert_thread dedups on (twist_id, key) and upsert_link on
+ * (source, …), so a re-run re-finds the thread/link a prior attempt committed.
+ * Non-transient errors are rethrown immediately (no retry).
+ */
+export async function withRetryOnTransient<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; ; attempt++) {
+    if (attempt > 0) {
+      const delayMs = transientRetryDelayMs(lastError, attempt);
+      if (delayMs > 0) {
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxRetriesFor(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+// Collect the lowercased messages of an error AND its `cause` chain. Kysely /
+// `safeQuery` wrap the original pg/Hyperdrive error in a DbError whose top-level
+// message ("Database query failed") may not carry the transient marker, so a
+// connector save path (createLink → rpcUser → safeQuery) surfaces a pool
+// timeout one level down in `cause`. A top-level-only check missed it and the
+// retry never fired. Capped to 8 hops so a pathological self-referential cause
+// can't loop.
+function errorChainText(error: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = error;
+  for (let i = 0; i < 8 && cur; i++) {
+    const m = (cur as { message?: unknown })?.message;
+    if (typeof m === "string") parts.push(m);
+    cur = (cur as { cause?: unknown })?.cause;
+  }
+  return parts.join(" \n ").toLowerCase();
+}
+
 export function isTransientDbError(error: unknown): boolean {
-  // Lowercase before matching: pg throws "Connection terminated unexpectedly"
-  // (capital C) from client.js when a pooled Hyperdrive connection is recycled
-  // mid-query. A case-sensitive check for "connection terminated" missed it, so
-  // the retry below never fired and the drop surfaced as a captured exception.
-  const msg = ((error as Error)?.message ?? "").toLowerCase();
+  // pg throws "Connection terminated unexpectedly" (capital C) from client.js
+  // when a pooled Hyperdrive connection is recycled mid-query; lowercase before
+  // matching. Walks the cause chain so a wrapped DbError still classifies.
+  const msg = errorChainText(error);
   return (
     msg.includes("shutting down") ||
     msg.includes("connection terminated") ||
@@ -183,8 +239,7 @@ export function isTransientDbError(error: unknown): boolean {
  * race and adds churn to an already-saturated pool.
  */
 export function isPoolExhaustedError(error: unknown): boolean {
-  const msg = ((error as Error)?.message ?? "").toLowerCase();
-  return msg.includes("open slot in the pool");
+  return errorChainText(error).includes("open slot in the pool");
 }
 
 /**

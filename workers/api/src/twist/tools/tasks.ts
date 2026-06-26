@@ -3,6 +3,7 @@ import type { PostHog } from "posthog-node";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import type { Tasks as IRun } from "@plotday/twister/tools/tasks";
 
+import { isTransientDbError } from "../../db";
 import { type Bindings, type TwistEnvironment } from "../../env";
 import { isCallbackError } from "../../errors";
 import { isQueueRetryExhausted } from "../../queue/retry";
@@ -252,7 +253,14 @@ export class Tasks extends Tool implements IRun {
         // memory limit.", PostHog 019ed581). isTransientError covers the OOM so
         // a single isolate kill (which rejects every in-flight promise at once)
         // is retried here rather than fanning out into dozens of captures.
-        if (isTransientError(error)) {
+        //
+        // isTransientDbError covers a Hyperdrive pool-exhaustion / connection-
+        // recycle error propagated up from a connector save (saveLinks rethrows
+        // it after saveLink's in-process backoff is exhausted). Classifying it
+        // here retries the idempotent task QUIETLY (no Error Tracking page) with
+        // the same isQueueRetryExhausted one-time-report backstop — instead of
+        // falling through to failure_retry, which would re-flood 019ed581.
+        if (isTransientError(error) || isTransientDbError(error)) {
           // Persistent failure guard: the run queue has no DLQ, so once retries
           // are exhausted Cloudflare drops the message silently. If a transient
           // error keeps failing to the attempt cap (e.g. an isolate that OOMs

@@ -13,6 +13,7 @@ import type {
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { createLogger } from "@plotday/worker-util";
+import { isTransientDbError } from "../../../db";
 import {
   classifyThreadForUser,
   type PendingDecision,
@@ -61,6 +62,16 @@ export async function handleDbOperationError(
   plot: Plot,
   context: Record<string, unknown>
 ): Promise<never> {
+  // Transient infra errors (Hyperdrive pool exhaustion / connection recycling)
+  // are not bugs. By the time one reaches here the caller's
+  // withRetryOnTransient has already exhausted its in-process backoff budget,
+  // and the run-queue will re-run the idempotent task. Rethrow WITHOUT paging
+  // Error Tracking — capturing here re-floods PostHog 019ed581 with expected
+  // saturation noise — so the transient class propagates to saveLinks /
+  // processQueue for the quiet queue-level retry.
+  if (isTransientDbError(error)) {
+    throw error;
+  }
   if (error instanceof DbError) {
     // Log full error with stack trace for debugging (PostHog/console)
     const logger = createLogger({ twist_instance_id: plot.twistInstanceId });

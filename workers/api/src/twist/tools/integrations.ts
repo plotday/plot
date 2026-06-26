@@ -33,6 +33,7 @@ import type { Uuid } from "@plotday/twister/utils/uuid";
 
 import type { Json } from "@plotday/db";
 import type { DB } from "../../db-types";
+import { isTransientDbError, withRetryOnTransient } from "../../db";
 import { type Bindings, type TwistEnvironment } from "../../env";
 import {
   extractUserId,
@@ -1417,7 +1418,17 @@ export class Integrations extends Tool implements IAuth {
 
     let threadId: Uuid;
     try {
-      threadId = await plot.createLink(link, createOpts);
+      // Retry the whole createLink on a transient DB error (Hyperdrive pool
+      // exhaustion / connection recycle) with backoff+jitter. createLink is
+      // idempotent — upsert_thread dedups on (twist_id, key) and upsert_link on
+      // (source, …) — so a re-run re-finds and completes a thread/link a failed
+      // first attempt left partial, healing the orphan-shell that a swallowed
+      // mid-save pool timeout used to strand (PostHog 019ed581). The backoff
+      // holds no connection (the failed statement released its slot first), so
+      // it adds delay, not pressure.
+      threadId = await withRetryOnTransient(() =>
+        plot.createLink(link, createOpts)
+      );
     } catch (error) {
       if (error instanceof ThreadFilingSkippedError) {
         // Team-connector firing for a user who has no priority in the team.
@@ -1569,10 +1580,14 @@ export class Integrations extends Tool implements IAuth {
    */
   async saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]> {
     if (links.length === 0) return [];
-    // Bound concurrency so a 2,500-link page doesn't fan out to 2,500
-    // simultaneous DB transactions. Kysely serializes on a single connection
-    // anyway, but chunking provides isolation and back-pressure.
-    const CHUNK = 10;
+    // Bound concurrency so a large page doesn't fan out to one DB op per link.
+    // Lowered from 10 to 5: each saveLink can hold a connection across several
+    // round-trips, and several connector callbacks back-fill at once (Gmail +
+    // Calendar) against a 60-slot Hyperdrive pool shared with frontend sync and
+    // the TwistSync DOs — 10/callback is what saturated it (PostHog 019ed581).
+    // Keeping peak concurrent DB use lower is the cheapest pressure relief; the
+    // per-link backoff retry in saveLink absorbs the residual bursts.
+    const CHUNK = 5;
     const results: (Uuid | null)[] = new Array(links.length);
     for (let i = 0; i < links.length; i += CHUNK) {
       const chunk = links.slice(i, i + CHUNK);
@@ -1584,6 +1599,17 @@ export class Integrations extends Tool implements IAuth {
         if (r.status === "fulfilled") {
           results[i + j] = r.value;
         } else {
+          // A transient DB error that survived saveLink's in-process backoff
+          // retry means sustained pool saturation. Do NOT swallow it into a
+          // silent miss (the old behaviour, which during an initial backfill
+          // permanently dropped the item): propagate so the connector callback
+          // throws and the run-queue re-runs this idempotent sync once load
+          // subsides — processQueue classifies it transient and retries
+          // quietly. Permanent / per-item failures still null out so one
+          // malformed item can't lose the whole page.
+          if (isTransientDbError(r.reason)) {
+            throw r.reason;
+          }
           const source =
             (chunk[j] as { source?: string }).source ?? "(no source)";
           console.error(
