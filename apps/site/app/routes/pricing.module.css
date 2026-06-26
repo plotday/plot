@@ -61,8 +61,17 @@
   }
 
   @media (min-width: $mantine-breakpoint-md) {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
+}
+
+.addonFootnote {
+  margin: var(--mantine-spacing-lg) auto 0;
+  max-width: 640px;
+  text-align: center;
+  font-size: rem(13px);
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));
+  line-height: 1.6;
 }
 
 .pricingCard {

@@ -15,7 +15,7 @@ import {
 import { IconCheck } from "@tabler/icons-react";
 import { Link } from "react-router";
 import { mergeMeta } from "~/lib/meta";
-import { PLANS } from "~/lib/plans";
+import { ADDON_PRICE, PLANS } from "~/lib/plans";
 import type { Billing } from "~/lib/plans";
 
 import type { Route } from "./+types/pricing";
@@ -23,49 +23,54 @@ import classes from "./pricing.module.css";
 
 const FAQS = [
   {
-    question: "Why no per-seat pricing?",
+    question: "How does Plot's pricing work?",
     answer:
-      "Per-seat pricing penalizes collaboration — it makes you think twice about adding a teammate. Plot is built around the idea that everyone involved should be working together, so we never charge per person. Bringing a teammate into a conversation should be free. You pay for connections, which reflect the actual complexity of your business.",
+      "The whole platform is free to use, forever. You pay only for the things you add on top: extra connections (the accounts you link) and automations. Most people start free and add connections as they grow.",
   },
   {
     question: "What counts as a connection?",
     answer:
-      "A connection is one account linked to Plot via OAuth — for example, one Slack user in one workspace, one Google Calendar account, or one Linear account. Each sign-in counts as one connection, and you get access to everything within that account (all calendars, all projects, all channels). If two people on your team each connect their own Slack account, that's two connections. A few integrations are connection add-ons, which cost a little extra; see below.",
+      "One account you link to Plot — one Google account, one Slack workspace, one Linear org. Each account is one connection and brings in everything inside it. Linking your personal and work Google accounts is two connections. Composite connectors count once: one Google connection covers Gmail, Calendar, and Tasks; one Outlook connection covers mail and calendar.",
   },
   {
     question: "What's a connection add-on?",
     answer:
-      "Connection add-ons are a few integrations provided by a third party with real per-connection costs to operate. They cost $5/month each and can be added to any paid plan (Core, Pro, or Team) in any number. An add-on enables the connection and also counts as one of your plan's connections — so on Core, two regular plus three connection add-ons uses your full five.",
+      "Every plan includes some connections; each connection beyond that is a $5/month add-on. On Free you start with 2 and can add more at $5/month each — and once you'd need about five extra, Pro (with unlimited connections) is the better deal. A few connectors always require an add-on, even on a paid plan — see the next question.",
   },
   {
-    question: "What happens if I hit my connection limit?",
+    question: "Which connectors always need an add-on?",
     answer:
-      "On the Free plan, you'll be prompted to upgrade to Core or Pro. On Core, you can upgrade to Pro for unlimited connections. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle. Connection add-ons also need an add-on to be purchased — see \"What's a connection add-on?\" above.",
+      "LinkedIn, Instagram, and WhatsApp. They're provided through a third party with real per-account costs, so they always need a $5/month connection add-on — on any plan, including Free — and they don't count toward your included connections.",
+  },
+  {
+    question: "What happens when I reach my connection limit?",
+    answer:
+      "On Free, add connections for $5/month each, or upgrade to Pro for unlimited. On Team, add another block of 50 connections anytime; on annual billing, added blocks are prorated for the rest of your cycle.",
+  },
+  {
+    question: "What's an automation?",
+    answer:
+      "An automation (we call them twists) extends Plot with an agent or a custom workflow that acts on your behalf. Install ones made by others, or build your own with the no-code builder. They all run securely inside Plot.",
+  },
+  {
+    question: "How does automation capacity work?",
+    answer:
+      "Your plan includes a number of automation slots — 1 on Free, 10 on Pro. Most automations use one slot; heavier ones use more (a 2× automation uses two). It's based on what you have turned on, so you can free up room by turning one off — or add 20 slots for $10/month.",
+  },
+  {
+    question: "How does AI work, and what does it cost?",
+    answer:
+      "AI is built in. The Plot assistant is included on every plan, and when an automation uses AI the cost is already included in its capacity — no token bills, no API keys, nothing to configure.",
+  },
+  {
+    question: "Is collaboration really free?",
+    answer:
+      "Yes, some teams use Plot to completely replace other platforms like Slack or Teams. Plot users share threads with no limits on sharing or history.",
   },
   {
     question: "How far back does Plot import from my connected services?",
     answer:
-      "When you first connect a service, Plot imports recent items — 1 week on Free, 30 days on Core, and 1 year on Pro and Team. After that, all new updates sync in real-time regardless of your plan. Everything already in Plot stays forever — the limit only applies to the initial import from external services. If you upgrade, we automatically import the additional history.",
-  },
-  {
-    question: "Can I try Plot before committing to a paid plan?",
-    answer:
-      "Yes. Start with the Free plan — it includes unlimited collaborators and full search and history, so you (or your team) can experience Plot together. When you're ready for more connections or twists, upgrade anytime.",
-  },
-  {
-    question: "What's a twist?",
-    answer:
-      "Twists are optional extensions that add capabilities to Plot — automations, AI agents, and custom workflows. Install twists published by others, or build your own. All twists run securely within Plot. Twists that use AI incur token costs, billed at cost or covered by your own API keys.",
-  },
-  {
-    question: "How does AI pricing work?",
-    answer:
-      "Plot includes AI features like smart search, auto-tagging, and summaries. On the Free plan, these features are available with monthly usage limits. Paid plans include unlimited AI processing. When you install twists that use AI, you pay for the tokens consumed — at cost, with no markup. You can also bring your own API keys and pay your provider directly. We show full usage breakdowns per model and per twist, and you can set budgets so there are never surprises. Plot never profits from your AI usage.",
-  },
-  {
-    question: "How do I add more connections on a Team plan?",
-    answer:
-      "Connections are added in groups of 50. You can add more at any time from your account settings. On annual plans, additional groups are prorated for the remainder of your billing cycle. The price updates dynamically so you can see the cost before confirming.",
+      "Plot imports recent items when you connect: 1 week on Free, 1 year on Pro and Team. After that, everything syncs in real time, and everything already in Plot stays forever — the limit only applies to the initial import.",
   },
   {
     question: "Do annual plans auto-renew?",
@@ -75,30 +80,20 @@ const FAQS = [
   {
     question: "Is there an enterprise plan?",
     answer:
-      "Not yet, but it's on our roadmap. If you need SSO, advanced security controls, or custom terms, reach out and we'll work with you.",
+      "Not yet. If you need SSO, advanced security controls, or custom terms, reach out and we'll work with you.",
   },
 ];
 
 export function meta(_: Route.MetaArgs) {
+  const description =
+    "Plot is free to use, forever. Pay only to extend with extra connections and automations.";
   return mergeMeta([
     { title: "Pricing | Plot" },
-    {
-      name: "description",
-      content:
-        "Simple pricing with no per-seat fees. Bring your whole team in without thinking twice.",
-    },
+    { name: "description", content: description },
     { property: "og:title", content: "Plot Pricing" },
-    {
-      property: "og:description",
-      content:
-        "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice.",
-    },
+    { property: "og:description", content: description },
     { name: "twitter:title", content: "Plot Pricing" },
-    {
-      name: "twitter:description",
-      content:
-        "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice.",
-    },
+    { name: "twitter:description", content: description },
   ]);
 }
 
@@ -113,16 +108,15 @@ export default function Pricing() {
           <Stack align="center" gap="lg" ta="center">
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Simple pricing.
+                Everything you need to
                 <br />
-                No per-seat fees.
+                bring your work together.
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Everyone collaborates in Plot for free.
+              Plot is free to use, forever.
               <br />
-              You only pay for the connections that bring your conversations
-              together.
+              Pay only to extend with extra connections and automations.
             </Text>
           </Stack>
         </Container>
@@ -166,7 +160,7 @@ export default function Pricing() {
       <Box className={classes.graySection} pt={40} pb={80}>
         <Container size="lg">
           <Box className={classes.pricingGrid}>
-            {PLANS.map((plan) => (
+            {PLANS.filter((plan) => plan.key !== "core").map((plan) => (
               <div
                 key={plan.key}
                 className={
@@ -229,6 +223,11 @@ export default function Pricing() {
               </div>
             ))}
           </Box>
+          <Text className={classes.addonFootnote}>
+            A few connectors — LinkedIn, Instagram, and WhatsApp — always need a
+            ${ADDON_PRICE}/mo connection add-on, on any plan. They don't count
+            toward your included connections.
+          </Text>
         </Container>
       </Box>
 
@@ -240,20 +239,29 @@ export default function Pricing() {
               What's a connection?
             </Title>
             <Text className={classes.sectionBody}>
-              A connection is a link between Plot and one account in an external
-              service. Each connected user in a service counts as one
-              connection, and each connection gives you access to everything in
-              that account (e.g. all your calendars from one Google account, all
-              your projects in Linear, all your channels in a Slack workspace).
+              A connection is one account you link to Plot — one Google account,
+              one Slack workspace, one Linear org. Each account is one
+              connection, and one connection brings in everything inside it.
+            </Text>
+            <Text className={classes.sectionBody}>
+              Connections are per account, not per app. If you link your
+              personal Google and your work Google, that's two connections. And
+              because Plot groups an account's tools together, one Google
+              connection covers Gmail, Calendar, and Tasks; one Outlook
+              connection covers mail and calendar.
+            </Text>
+            <Text className={classes.sectionBody}>
+              Each plan includes a set number of connections, and you can add
+              more for ${ADDON_PRICE}/mo each. A few connectors always need an
+              add-on — see the FAQ below for the details.
+            </Text>
+            <Text className={classes.sectionBody}>
+              For a team, connections add up across everyone's tools — here's
+              how an 80-person team might look:
             </Text>
             <Box className={classes.connectionDiagram}>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>Gmail</Text>
-                <Text className={classes.connectionDots} />
-                <Text c="dimmed">80 connections</Text>
-              </Box>
-              <Box className={classes.connectionItem}>
-                <Text fw={600}>Google Calendar</Text>
+                <Text fw={600}>Google</Text>
                 <Text className={classes.connectionDots} />
                 <Text c="dimmed">80 connections</Text>
               </Box>
@@ -268,12 +276,22 @@ export default function Pricing() {
                 <Text c="dimmed">80 connections</Text>
               </Box>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>Linear</Text>
+                <Text fw={600}>HubSpot</Text>
                 <Text className={classes.connectionDots} />
-                <Text c="dimmed">35 connections</Text>
+                <Text c="dimmed">15 connections</Text>
               </Box>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>GitHub</Text>
+                <Text fw={600}>Loom</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">15 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Intercom</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">12 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Linear</Text>
                 <Text className={classes.connectionDots} />
                 <Text c="dimmed">35 connections</Text>
               </Box>
@@ -283,19 +301,9 @@ export default function Pricing() {
                 <Text c="dimmed">12 connections</Text>
               </Box>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>HubSpot</Text>
+                <Text fw={600}>GitHub</Text>
                 <Text className={classes.connectionDots} />
-                <Text c="dimmed">15 connections</Text>
-              </Box>
-              <Box className={classes.connectionItem}>
-                <Text fw={600}>Intercom</Text>
-                <Text className={classes.connectionDots} />
-                <Text c="dimmed">8 connections</Text>
-              </Box>
-              <Box className={classes.connectionItem}>
-                <Text fw={600}>Loom</Text>
-                <Text className={classes.connectionDots} />
-                <Text c="dimmed">35 connections</Text>
+                <Text c="dimmed">26 connections</Text>
               </Box>
               <Box className={classes.connectionItem}>
                 <Text fw={600}>PostHog</Text>
@@ -303,42 +311,47 @@ export default function Pricing() {
                 <Text c="dimmed">26 connections</Text>
               </Box>
               <Box className={classes.connectionTotal}>
-                <Text fw={700}>Total: 486 connections</Text>
+                <Text fw={700}>Total: 381 connections</Text>
               </Box>
             </Box>
             <Text className={classes.sectionBody}>
-              An 80-person team uses around 500 connections — everyone connects
-              their core tools, plus specialized ones for each team.
+              An 80-person team uses just under 400 connections — everyone
+              connects their core tools, plus specialized ones for each team.
             </Text>
           </Stack>
         </Container>
       </Box>
 
-      {/* What's a twist? */}
+      {/* What's an automation? */}
       <Box className={classes.graySection} pt={60} pb={60}>
         <Container size="md">
           <Stack gap="lg">
             <Title order={2} size="h3" className={classes.sectionTitle}>
-              What's a twist?
+              What's an automation?
             </Title>
             <Text className={classes.sectionBody}>
-              Twists are extensions that add new capabilities to Plot —
-              automations, agents, and custom workflows that make Plot work the
-              way your business works. Install twists published by others, or
-              build your own.
+              Automations — we call them twists — add new capabilities to Plot:
+              agents and custom workflows that act on your behalf. Install ones
+              published by others, or build your own with the no-code builder.
             </Text>
             <Text className={classes.sectionBody} fw={700}>
-              All twists are hosted and run securely within Plot.
+              All automations are hosted and run securely within Plot.
             </Text>
             <Text className={classes.sectionBody}>
-              Some twists use AI to do their work. When they do, AI usage is
-              billed at cost — no markup, no margin. You can also bring your own
-              API keys and pay your provider directly. Set budgets to stay in
-              control.
+              Your plan includes automation capacity — Free includes 1, Pro
+              includes 10. A heavier automation uses more: a 2× automation takes
+              2 of your capacity. Turn one off to free up room, or add 20 more
+              for $10/mo.
             </Text>
             <Text className={classes.sectionBody}>
-              Plot never profits from your AI usage, so we'll never push you to
-              use more.
+              When an automation uses AI, that cost is already included in its
+              capacity — there's no separate AI bill, no API keys to bring, and
+              nothing to configure.
+            </Text>
+            <Text className={classes.sectionBody}>
+              The built-in Plot assistant is included on every plan and never
+              uses your automation capacity — it's the general-purpose helper,
+              included on Free too.
             </Text>
           </Stack>
         </Container>

@@ -146,8 +146,8 @@ export default function Twists() {
                 <Text className={classes.sectionBody} fz="sm">
                   Twists can bring AI right alongside your work — chat and agents
                   that draw on your threads, focuses, and connections for context.
-                  Use AI as much or as little as you want — bring your own key,
-                  point it at your own model, or turn it off entirely.
+                  When a twist uses AI, the cost is already included in its
+                  capacity — no keys to bring and no models to configure.
                 </Text>
               </Stack>
             </SimpleGrid>
