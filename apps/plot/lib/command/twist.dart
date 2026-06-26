@@ -2217,6 +2217,10 @@ class AddSourceDetail extends ShowForm {
                         onScopeGroupsChanged: (groups) {
                           scopeGroupSelections[provider.provider.name] = groups;
                         },
+                        // Initial connect hands off to the channel-setup modal,
+                        // which keeps this modal displayed while it loads. Keep
+                        // the spinner on until that swap.
+                        keepSpinnerOnSuccess: true,
                         onSuccess: () async {
                           await _connectedAfterOAuth(
                             formContext,
@@ -2460,6 +2464,10 @@ class AddSourceDetail extends ShowForm {
                         onScopeGroupsChanged: (groups) {
                           scopeGroupSelections[provider.provider.name] = groups;
                         },
+                        // Initial connect hands off to the channel-setup modal,
+                        // which keeps this modal displayed while it loads. Keep
+                        // the spinner on until that swap.
+                        keepSpinnerOnSuccess: true,
                         onSuccess: () async {
                           await _connectedAfterOAuth(
                             formContext,
@@ -3984,6 +3992,7 @@ class _AuthWithScopeToggles extends StatefulWidget {
     this.onScopeGroupsChanged,
     this.accountHint,
     this.accountLabel,
+    this.keepSpinnerOnSuccess = false,
   });
 
   final TwistProvider provider;
@@ -3992,6 +4001,12 @@ class _AuthWithScopeToggles extends StatefulWidget {
   final Set<String>? initialEnabledGroups;
   final ValueChanged<Set<String>>? onScopeGroupsChanged;
   final String? accountHint;
+
+  /// Forwarded to [AuthButton.connect]: when this auth completes by handing off
+  /// to another modal (the initial connect flow), keep the button spinner on
+  /// until the swap so it doesn't look idle during the gap. False for in-place
+  /// re-auth, where the form refreshes the same modal.
+  final bool keepSpinnerOnSuccess;
 
   /// Human-readable account (email/name) this connection belongs to. When set,
   /// it's shown above the auth button so the user knows which account to pick —
@@ -4100,6 +4115,7 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
                 ? _enabledGroups.toList()
                 : null,
             accountHint: widget.accountHint,
+            keepSpinnerOnSuccess: widget.keepSpinnerOnSuccess,
             onSuccess: widget.onSuccess,
           ),
         ),

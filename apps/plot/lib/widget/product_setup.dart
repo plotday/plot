@@ -57,6 +57,10 @@ class ProductSetupWidget extends StatelessWidget {
               twistInstanceId: twistInstanceId,
               enabledScopeGroups:
                   products.map((p) => p.scopeGroupId).toList(),
+              // After OAuth returns, [onSuccess] hands off to the channel-setup
+              // modal, which keeps THIS modal displayed while it loads. Keep the
+              // spinner running until that swap so the button never looks idle.
+              keepSpinnerOnSuccess: true,
               onSuccess: onSuccess,
             ),
           ),

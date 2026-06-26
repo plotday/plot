@@ -114,7 +114,8 @@ class AuthButton extends StatefulWidget {
        _twistInstanceId = null,
        _enabledScopeGroups = null,
        _accountHint = null,
-       _onSuccess = null;
+       _onSuccess = null,
+       keepSpinnerOnSuccess = false;
 
   // Run an OAuth authorization flow for the given link
   AuthButton.authorize({
@@ -132,6 +133,7 @@ class AuthButton extends StatefulWidget {
        _enabledScopeGroups = null,
        _accountHint = null,
        _onSuccess = null,
+       keepSpinnerOnSuccess = false,
        scopes = link.scopes;
 
   // Run an OAuth connect flow for a twist integration. Unlike authorize(),
@@ -145,6 +147,7 @@ class AuthButton extends StatefulWidget {
     required Future<void> Function() onSuccess,
     List<String>? enabledScopeGroups,
     String? accountHint,
+    this.keepSpinnerOnSuccess = false,
     this.onError,
     super.key,
   }) : _link = null,
@@ -205,6 +208,17 @@ class AuthButton extends StatefulWidget {
   final List<String>? _enabledScopeGroups;
   final String? _accountHint;
   final Future<void> Function()? _onSuccess;
+
+  /// When true, the button keeps its loading spinner running after a successful
+  /// [_onSuccess] instead of clearing it. Used by the initial connect flow,
+  /// where [_onSuccess] hands off to a separate setup modal (via
+  /// [Modal.popForSwap]) that keeps THIS modal displayed while it loads:
+  /// clearing the spinner the instant [_onSuccess] resolves would leave the
+  /// button looking idle during that hand-off gap. The button is disposed when
+  /// the next modal swaps in, so the spinner never needs re-clearing. Error and
+  /// cancel paths still clear it so the user can retry.
+  final bool keepSpinnerOnSuccess;
+
   final void Function(String error)? onError;
 
   @override
@@ -825,6 +839,12 @@ class _AuthButtonState extends State<AuthButton>
       }
     }
 
+    // When the caller hands off to another modal on success (see
+    // [AuthButton.keepSpinnerOnSuccess]), keep the spinner on past [_onSuccess]
+    // so the button doesn't look idle during the hand-off gap. Set only after
+    // [_onSuccess] resolves without throwing — error/cancel paths leave it
+    // false so the finally clears the spinner and the user can retry.
+    var keepSpinning = false;
     try {
       final authUrl = await TwistApi.getAuthUrl(
         twistInstanceId: widget._twistInstanceId!,
@@ -850,6 +870,7 @@ class _AuthButtonState extends State<AuthButton>
       // performs here; otherwise the modal redisplays a clickable auth button
       // during the tail-end network work and users can trigger a second flow.
       await widget._onSuccess?.call();
+      keepSpinning = widget.keepSpinnerOnSuccess;
     } on GoogleSignInException catch (e, t) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
         log.info('Google sign-in cancelled');
@@ -891,7 +912,7 @@ class _AuthButtonState extends State<AuthButton>
       Tracker.captureException(e, t);
       if (mounted) _showTwistAuthError();
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !keepSpinning) setState(() => _isLoading = false);
     }
   }
 

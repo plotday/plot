@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
+import 'package:plot/widget/auth_button.dart' show AuthButton;
 import 'package:plot/widget/product_setup.dart';
 
 /// Minimal [TwistProvider] for testing — supplies a Google provider with
@@ -129,6 +130,27 @@ void main() {
 
       // AuthButton renders a FButton; one must be present.
       expect(find.byType(FButton), findsOneWidget);
+    });
+
+    testWidgets('connect button keeps its spinner on through the hand-off',
+        (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          ProductSetupWidget(
+            provider: _googleProvider(),
+            products: [_product('Gmail')],
+            twistInstanceId: 'test-instance-id',
+            onSuccess: () async {},
+          ),
+        ),
+      );
+
+      // After OAuth returns, the composite connect flow hands off to a separate
+      // channel-setup modal (EditSource) that keeps THIS modal displayed while
+      // it loads. The button must keep spinning until that modal swaps in, so
+      // it cannot clear its loading state the instant onSuccess resolves.
+      final button = tester.widget<AuthButton>(find.byType(AuthButton));
+      expect(button.keepSpinnerOnSuccess, isTrue);
     });
   });
 }
