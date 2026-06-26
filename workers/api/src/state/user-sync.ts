@@ -5,22 +5,11 @@ import { PostHog } from "posthog-node";
 import { withDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
+import {
+  isTransientDoResetError,
+  transientErrorReason,
+} from "../utils/transient-error";
 import { createLogger } from "@plotday/worker-util";
-
-// Cloudflare surfaces transient platform errors in a few shapes: the
-// explicit "storage operation exceeded timeout" message, the generic
-// "internal error; reference = <id>" wrapper, and "Network connection
-// lost" when a DO-to-DO fetch drops mid-flight. All are platform noise
-// — the DO is reset and the next notify schedules a fresh alarm.
-function isTransientDoResetError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const msg = error.message;
-  return (
-    msg.includes("storage operation exceeded timeout") ||
-    msg.includes("internal error; reference") ||
-    msg.includes("Network connection lost")
-  );
-}
 
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 300; // Minimum time to wait before sending, allowing batching
@@ -77,6 +66,31 @@ export class UserSync extends DurableObject<Bindings> {
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "UserSync",
       ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
+  }
+
+  /**
+   * Emit a `push.transient` counter (NOT a captureException) for each
+   * suppressed transient platform blip, so a SUSTAINED spike trips the
+   * server-side volume alert (infra/posthog/alerts.tf) even though individual
+   * occurrences self-heal via the retry/reschedule below. Shares the
+   * `push.transient` event + `reason` breakdown with PushNotify so one alert
+   * watches the whole push-delivery path; `durable_object` distinguishes them.
+   */
+  private captureTransientCounter(error: unknown) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.capture({
+      distinctId: "system",
+      event: "push.transient",
+      properties: {
+        durable_object: "UserSync",
+        reason: transientErrorReason(error),
+      },
     });
     this.ctx.waitUntil(postHog.shutdown());
   }
@@ -370,6 +384,10 @@ export class UserSync extends DurableObject<Bindings> {
       // After TRANSIENT_RETRY_DELAYS_MS is exhausted, treat it as a real
       // error so a misclassified persistent failure surfaces.
       if (isTransientDoResetError(error)) {
+        // Count every occurrence (before deciding to reschedule vs. capture)
+        // so a sustained spike trips the volume alert (infra/posthog/alerts.tf)
+        // — the per-DO retry budget below only captures AFTER it's exhausted.
+        this.captureTransientCounter(error);
         const retryIndex = this.state.transientRetries;
         const delayMs = TRANSIENT_RETRY_DELAYS_MS[retryIndex];
         if (delayMs !== undefined) {

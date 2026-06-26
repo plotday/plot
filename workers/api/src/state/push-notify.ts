@@ -3,9 +3,13 @@ import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
-import { withDb } from "../db";
+import { isTransientDbError, withDb } from "../db";
 import type { Bindings } from "../env";
 import { sendDataNotificationToUser } from "../notifications/send";
+import {
+  isTransientDoResetError,
+  transientErrorReason,
+} from "../utils/transient-error";
 import { selectNotifyCandidates } from "./notify-candidates";
 
 // The server no longer schedules notification timing. Once a notify-eligible
@@ -29,6 +33,20 @@ const MIN_PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
  */
 const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
+/**
+ * Transient infrastructure errors that should be logged but NOT paged to
+ * PostHog Error Tracking. Covers both the Cloudflare DO-reset family
+ * (storage-timeout reset, generic platform fault, DO-to-DO fetch drop) and
+ * the Hyperdrive/pg connection drops that surface on the same alarm path.
+ * Both self-resolve: the DO is reset and the next notify() schedules a fresh
+ * alarm. PostHog issue 019ebd3b paged 7 times from PushNotify.alarm for
+ * "Durable Object storage operation exceeded timeout which caused object to
+ * be reset" and "Connection terminated unexpectedly" before this gate.
+ */
+function isTransientNotifyError(error: unknown): boolean {
+  return isTransientDoResetError(error) || isTransientDbError(error);
+}
+
 export class PushNotify extends DurableObject<Bindings> {
   private userId: string | null = null;
   private hasUrgent: boolean = false;
@@ -47,6 +65,32 @@ export class PushNotify extends DurableObject<Bindings> {
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "PushNotify",
       ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
+  }
+
+  /**
+   * Emit a `push.transient` counter (NOT a captureException — these are
+   * expected, self-healing platform blips) so a SUSTAINED spike is still
+   * visible. A code-level "N in a row" floor would live in DO state that a
+   * platform reset wipes, so detection is delegated to a server-side PostHog
+   * volume alert over this counter (infra/posthog/alerts.tf), mirroring the
+   * `bg.deferred` capacity-pressure alert. `system` distinct id keeps it a
+   * pure rate (no per-user cardinality); `reason` is the breakdown dimension.
+   */
+  private captureTransientCounter(error: unknown) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.capture({
+      distinctId: "system",
+      event: "push.transient",
+      properties: {
+        durable_object: "PushNotify",
+        reason: transientErrorReason(error),
+      },
     });
     this.ctx.waitUntil(postHog.shutdown());
   }
@@ -102,7 +146,14 @@ export class PushNotify extends DurableObject<Bindings> {
       // will still sync and decide what to show.
       hasUrgent = false;
       hadCandidates = true;
-      this.captureException(error as Error);
+      // A transient Hyperdrive/pg drop or DO reset here is platform noise —
+      // the fallback wake covers it. Count it for the volume alert, but only
+      // page on real, unexpected failures.
+      if (isTransientNotifyError(error)) {
+        this.captureTransientCounter(error);
+      } else {
+        this.captureException(error as Error);
+      }
     }
 
     if (!hadCandidates) {
@@ -252,10 +303,24 @@ export class PushNotify extends DurableObject<Bindings> {
         urgent: this.hasUrgent,
       });
     } catch (error) {
-      logger.error("Error in PushNotify alarm", error as Error, {
-        user_id: this.userId,
-      });
-      this.captureException(error as Error);
+      // Transient Cloudflare DO resets (storage-timeout reset, platform fault,
+      // DO-to-DO fetch drop) and Hyperdrive/pg connection drops are platform
+      // noise — the DO is reset and the next notify() schedules a fresh alarm.
+      // Log them but don't page Error Tracking (PostHog issue 019ebd3b).
+      if (isTransientNotifyError(error)) {
+        logger.warn("PushNotify alarm interrupted by transient platform error", {
+          user_id: this.userId,
+          error_message: (error as Error).message,
+        });
+        // Count it so a sustained spike trips the volume alert even though no
+        // individual occurrence pages (infra/posthog/alerts.tf).
+        this.captureTransientCounter(error);
+      } else {
+        logger.error("Error in PushNotify alarm", error as Error, {
+          user_id: this.userId,
+        });
+        this.captureException(error as Error);
+      }
     } finally {
       this.resetState();
     }

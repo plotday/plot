@@ -43,6 +43,58 @@ export function isTransientError(error: unknown): boolean {
 }
 
 /**
+ * Detect transient Cloudflare platform errors that reset a Durable Object
+ * mid-execution. Distinct from `isTransientError` (twist-runtime retry
+ * semantics) — this set is the shape these faults take when they surface
+ * inside a DO alarm/handler: the explicit "storage operation exceeded
+ * timeout" message, the generic "internal error; reference = <id>" wrapper,
+ * and "Network connection lost" when a DO-to-DO fetch drops mid-flight. All
+ * are platform noise — the DO is reset and the next notify() schedules a
+ * fresh alarm — so the caller should log and move on, NOT page Error
+ * Tracking (PostHog issue 019ebd3b saw 7 captures from PushNotify.alarm for
+ * "Durable Object storage operation exceeded timeout which caused object to
+ * be reset"). Used by the push DOs (PushNotify, UserSync); pair it with
+ * `isTransientDbError` from ../db for the Hyperdrive/pg connection drops that
+ * surface on the same path.
+ */
+export function isTransientDoResetError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message;
+  return (
+    msg.includes("storage operation exceeded timeout") ||
+    msg.includes("internal error; reference") ||
+    msg.includes("Network connection lost")
+  );
+}
+
+/**
+ * Stable, low-cardinality label for a suppressed transient push-DO error,
+ * used as the `reason` property on the `push.transient` PostHog counter so the
+ * volume alert (infra/posthog/alerts.tf) can be broken down by failure mode —
+ * the same pattern as the `bg.deferred` counter's `reason`. Keep the return
+ * set small (it becomes a breakdown dimension); anything unrecognized maps to
+ * "other". The DB markers mirror `isTransientDbError` (db.ts) deliberately —
+ * this util stays dependency-free (no import of db.ts) so it remains a leaf.
+ */
+export function transientErrorReason(error: unknown): string {
+  const msg = error instanceof Error ? error.message : "";
+  const lower = msg.toLowerCase();
+  if (msg.includes("storage operation exceeded timeout")) {
+    return "do_storage_timeout";
+  }
+  if (msg.includes("internal error; reference")) return "platform_internal";
+  if (msg.includes("Network connection lost")) return "network_lost";
+  if (
+    lower.includes("connection terminated") ||
+    lower.includes("shutting down") ||
+    lower.includes("open slot in the pool")
+  ) {
+    return "db_drop";
+  }
+  return "other";
+}
+
+/**
  * Detect downstream provider rate-limit / quota errors that bubble up from a
  * connector callback. These are expected under load, self-resolve once the
  * provider's rate window passes, and the queue consumers already retry them.

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   isAuthError,
   isRateLimitError,
+  isTransientDoResetError,
   isTransientError,
+  transientErrorReason,
 } from "./transient-error";
 
 describe("isTransientError", () => {
@@ -43,6 +45,80 @@ describe("isTransientError", () => {
     expect(
       isTransientError(new Error("loaded 5000 messages into memory"))
     ).toBe(false);
+  });
+});
+
+describe("isTransientDoResetError", () => {
+  it("matches the verbatim Cloudflare DO-reset platform strings", () => {
+    // Exact string the Workers runtime emits when a Durable Object storage
+    // operation overruns its internal timeout and the platform resets the
+    // object (PostHog issue 019ebd3b: 7 captures from PushNotify.alarm). The
+    // DO is reset and the next notify() schedules a fresh alarm, so it is
+    // platform noise — never paged.
+    expect(
+      isTransientDoResetError(
+        new Error(
+          "Durable Object storage operation exceeded timeout which caused object to be reset."
+        )
+      )
+    ).toBe(true);
+    // Generic platform fault wrapper.
+    expect(
+      isTransientDoResetError(new Error("internal error; reference = abc123"))
+    ).toBe(true);
+    // DO-to-DO fetch dropped mid-flight.
+    expect(
+      isTransientDoResetError(new Error("Network connection lost"))
+    ).toBe(true);
+  });
+
+  it("does NOT match real bugs or non-Errors", () => {
+    expect(
+      isTransientDoResetError(new Error("Cannot read properties of undefined"))
+    ).toBe(false);
+    expect(isTransientDoResetError(new Error("Gmail API error: 500"))).toBe(
+      false
+    );
+    expect(
+      isTransientDoResetError(
+        "Durable Object storage operation exceeded timeout"
+      )
+    ).toBe(false);
+    expect(isTransientDoResetError(undefined)).toBe(false);
+  });
+});
+
+describe("transientErrorReason", () => {
+  it("labels each suppressed transient push-DO failure mode", () => {
+    expect(
+      transientErrorReason(
+        new Error(
+          "Durable Object storage operation exceeded timeout which caused object to be reset."
+        )
+      )
+    ).toBe("do_storage_timeout");
+    expect(
+      transientErrorReason(new Error("internal error; reference = abc123"))
+    ).toBe("platform_internal");
+    expect(transientErrorReason(new Error("Network connection lost"))).toBe(
+      "network_lost"
+    );
+    // pg / Hyperdrive drops (mirrors isTransientDbError, case-insensitive).
+    expect(
+      transientErrorReason(new Error("Connection terminated unexpectedly"))
+    ).toBe("db_drop");
+    expect(
+      transientErrorReason(
+        new Error("Timed out while waiting for an open slot in the pool.")
+      )
+    ).toBe("db_drop");
+  });
+
+  it("maps unrecognized errors and non-Errors to 'other'", () => {
+    expect(
+      transientErrorReason(new Error("Cannot read properties of undefined"))
+    ).toBe("other");
+    expect(transientErrorReason(undefined)).toBe("other");
   });
 });
 
