@@ -36,8 +36,19 @@
     "typescript": "^5.9.3",
     "vitest": "^2.1.8"
   },
-  "repository": { "type": "git", "url": "https://github.com/plotday/plot.git", "directory": "connectors/trello" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "connectors/trello"
+  },
   "homepage": "https://plot.day",
-  "bugs": { "url": "https://github.com/plotday/plot/issues" },
-  "keywords": ["plot", "connector", "trello", "project-management"]
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "connector",
+    "trello",
+    "project-management"
+  ]
 }
