@@ -48,9 +48,20 @@ function serviceName(s: EmailSignals): string {
 // ---- OTP code --------------------------------------------------------------
 const CODE_KEYWORD =
   /(one[\s-]?time|verification|security|confirmation|access|login|sign[\s-]?in|auth(entication)?|2fa|two[\s-]?factor|otp|passcode|pass\s?code|pin|code)/i;
-// Alphanumeric (e.g. "G-557812", "ABZ419") OR a 4–8 digit numeric code.
-// Numeric-only requires ≥4 digits to avoid matching short incidental numbers.
-const CODE_TOKEN = /\b([A-Z]{1,4}-\d{3,8}|[A-Z]{1,4}\d{3,8}|\d{4,8})\b/;
+// A code, anchored to a WHOLE standalone token: alphanumeric (e.g. "G-557812",
+// "ABZ419") OR a 4–8 digit numeric code. Numeric-only requires ≥4 digits to
+// avoid matching short incidental numbers, and ≤8 so a long identifier (a
+// 15-digit order number) can never satisfy it even as a slice.
+const CODE_CORE = /^([A-Z]{1,4}-\d{3,8}|[A-Z]{1,4}\d{3,8}|\d{4,8})$/;
+// Wrapper punctuation stripped from a token's ends before the whole-token test.
+// Deliberately excludes '-' '/' '+' '=' '%' '.' (and alphanumerics): those are
+// identifier/URL/decimal characters, so a token glued to them is NOT a
+// standalone code and must fail CODE_CORE (e.g. "…f76e-39378156-bc8f",
+// "…+750993/…", "1234.56").
+const WRAP = /^[.,;:!?()[\]{}<>"'*`|]+|[.,;:!?()[\]{}<>"'*`|]+$/g;
+// A label that turns the following number into an identifier, not a code
+// ("Order number: 600…", "Account number 12345678", "Reference number …").
+const ID_LABEL = /\bnumber\s*[:#]?\s*$/i;
 
 function looksLikeYear(t: string): boolean {
   return /^\d{4}$/.test(t) && Number(t) >= 1900 && Number(t) <= 2100;
@@ -63,6 +74,12 @@ function looksLikePlaceholder(t: string): boolean {
   return /^(\d)\1{3,}$/.test(t);
 }
 
+// A real one-time code is a small STANDALONE token, never a fragment spliced
+// out of a longer number, URL, or UUID-like tracking token. We therefore scan
+// each keyword line word-by-word and only accept a whitespace-delimited token
+// that matches CODE_CORE in full — rejecting the dominant residual FP where a
+// 4–8 digit run sat inside a tracking link (…-39378156-…, …+750993/…) on a line
+// that happened to carry a code keyword.
 function extractOtp(s: EmailSignals): string | null {
   const hay = `${s.subject ?? ""}\n${s.bodyText ?? ""}`;
   if (!hay.trim()) return null;
@@ -70,12 +87,15 @@ function extractOtp(s: EmailSignals): string | null {
     const line = rawLine.trim();
     if (!CODE_KEYWORD.test(line)) continue;
     if (/\$\s?\d|#\s?\d|\border\b|\binvoice\b|\btotal\b/i.test(line)) continue;
-    const m = line.match(CODE_TOKEN);
-    if (!m) continue;
-    const tok = m[1];
-    if (looksLikeYear(tok)) continue;
-    if (looksLikePlaceholder(tok)) continue;
-    return tok;
+    for (const m of line.matchAll(/\S+/g)) {
+      const core = m[0].replace(WRAP, "");
+      if (!CODE_CORE.test(core)) continue;
+      if (looksLikeYear(core)) continue;
+      if (looksLikePlaceholder(core)) continue;
+      // Reject numbers introduced by an identifier label ("order/account number").
+      if (ID_LABEL.test(line.slice(0, m.index ?? 0))) continue;
+      return core;
+    }
   }
   return null;
 }

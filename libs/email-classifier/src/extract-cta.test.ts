@@ -173,6 +173,33 @@ describe("extractCta — promotional false positives", () => {
       bodyText: "Your code: 000000. Shop the sale now!",
     }))).toBeNull();
   });
+  // Real samples (martha.braun@gmail.com): direct, automated transactional mail
+  // — NOT list/promotion, so the reach gate doesn't catch them — where the old
+  // detector spliced a digit fragment out of a tracking-link token sitting on a
+  // line that happened to carry a code keyword. A genuine OTP is a small,
+  // STANDALONE code, never a slice of a longer URL/UUID/identifier.
+  it("does NOT splice a digit fragment out of a tracking-link token (Reclaim)", () => {
+    // thread CcRuoq3tNqLxdMEYHVYLh — "Weekly Report" report email. The fragment
+    // 39378156 lived inside …f76e-39378156-bc8f… on a line with "Sign in".
+    expect(extractCta(signals({
+      fromAddress: "no-reply@reclaim.ai", fromName: "Reclaim.ai",
+      subject: "🎉 Weekly Report at Reclaim: Jun 20 - 26",
+      bodyText:
+        "Sign in to view your stats: https://app.reclaim.ai/i/CL0/stats/0100019f0401f76e-39378156-bc8f-4558-a478-526a2151ab73-0",
+    }))).toBeNull();
+  });
+  it("does NOT treat an order-number id or a URL fragment as an OTP (Walmart)", () => {
+    // thread CcRquZiM1Uy9ri8GsPk7r — "Thank you for shopping with us!". The
+    // 15-digit order number must not be chopped to an 8-digit code, and the
+    // fragment 750993 inside a clickTracker URL must not surface either.
+    expect(extractCta(signals({
+      fromAddress: "no-reply@walmart.ca", fromName: "Walmart Canada",
+      subject: "Thank you for shopping with us!",
+      bodyText:
+        "Thank you for shopping with us! Order number: 600000097650390.\n" +
+        "Access your account here: https://w-mt.ca/g/rptrcks/clickTracker?redirectTo=msnpt+750993/dFeijEb7W5",
+    }))).toBeNull();
+  });
   it("does NOT extract a confirm CTA from a bulk-list mailing", () => {
     const dmarcPass = "spf=pass; dkim=pass; dmarc=pass header.from=shop.com";
     expect(extractCta(signals({
