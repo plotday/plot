@@ -869,6 +869,27 @@ class Store extends _$Store {
     return e.toString();
   }
 
+  /// Whether a permanent-rejection [revertOutcomeName] (a [_RevertOutcome]
+  /// name) warrants an error-tracking report.
+  ///
+  /// `absentOnServer` is the EXPECTED transient case: the row is an unsynced
+  /// create the server hasn't seen yet — almost always because a parent row (a
+  /// note's thread, which files `thread_priority`) hasn't been pushed in this
+  /// cycle, so `/sync/<endpoint>` fails `assertThreadAccess` with a 403. The
+  /// row is kept `pending` and the next sync retries; once the parent lands it
+  /// self-heals with no data loss. Capturing it floods error tracking with
+  /// noise for a self-correcting condition (PostHog issue 019f0508), so we
+  /// don't report it. (The known *non*-transient variant — a published note
+  /// stranded on a still-draft thread — loops forever and is prevented at the
+  /// source by `_buildDraftFilter`, not by reporting after the fact.)
+  ///
+  /// `reverted` (we overwrote the user's local edit with the server's version)
+  /// and `fetchFailed` (we couldn't determine the remote state) are genuine
+  /// concerns worth surfacing.
+  @visibleForTesting
+  static bool shouldReportRevertOutcome(String revertOutcomeName) =>
+      revertOutcomeName != _RevertOutcome.absentOnServer.name;
+
   /// Report an unexpected sync-push failure to PostHog error tracking with the
   /// structured context needed to debug it.
   ///
@@ -1327,20 +1348,24 @@ class Store extends _$Store {
                     "${outcome.name}",
                   );
 
-                  // A permanent server rejection is always a sync bug: either
-                  // we discard the user's local edit (reverted to remote) or
-                  // strand it (kept pending and retried forever). Report every
-                  // case with full context so we can debug it from error
-                  // tracking rather than relying on user logs.
-                  _reportSyncFailure(
-                    'Permanent sync push rejected',
-                    table: baseTable.name,
-                    endpoint: baseTable.syncEndpoint,
-                    rowId: rowId,
-                    outcome: outcome.name,
-                    error: e,
-                    stackTrace: stackTrace,
-                  );
+                  // Report only the outcomes that discard or strand a local
+                  // change: `reverted` (we overwrote the user's edit) and
+                  // `fetchFailed` (unknown remote state). `absentOnServer` is
+                  // the expected transient case — an unsynced create whose
+                  // parent row hasn't pushed yet — which we keep pending and
+                  // retry; it self-heals next cycle, so reporting it is just
+                  // error-tracking noise (see [shouldReportRevertOutcome]).
+                  if (shouldReportRevertOutcome(outcome.name)) {
+                    _reportSyncFailure(
+                      'Permanent sync push rejected',
+                      table: baseTable.name,
+                      endpoint: baseTable.syncEndpoint,
+                      rowId: rowId,
+                      outcome: outcome.name,
+                      error: e,
+                      stackTrace: stackTrace,
+                    );
+                  }
 
                   if (outcome == _RevertOutcome.reverted) {
                     await customUpdate(
