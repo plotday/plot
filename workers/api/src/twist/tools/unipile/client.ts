@@ -104,6 +104,13 @@ export class UnipileClient {
   /**
    * List every account in the Unipile workspace. v2 lists are offset/limit
    * paginated and report `has_more`. Used by account-cleanup to find orphans.
+   *
+   * Scope note: in v2 each Plot environment (dev, prod) has its OWN Unipile API
+   * key, so this returns only the accounts belonging to the calling
+   * environment's workspace — never the other environment's. That isolation is
+   * what lets the orphan sweep (see account-cleanup.ts) trust the local Plot DB
+   * as the complete reference for what's in use. Under v1 the dev and prod
+   * workspaces were shared, so this returned both environments' accounts.
    */
   async listAccounts(): Promise<UnipileAccount[]> {
     const out: UnipileAccount[] = [];

@@ -175,9 +175,13 @@ export abstract class UnipileMessagingTool extends Tool implements IUnipileMessa
     if (!cfg?.enabledBy) throw new Error(`${this.provider} channel ${channelId} is not enabled by any actor`);
     const token = await this.store.get<StoredTokenData>(`auth_token:${this.provider}:${cfg.enabledBy}`);
     if (!token?.access_token) {
-      // The stored account credential is gone (lost saveAuth write, or a
-      // dev/prod Unipile pool reclaim). Flag the connection for re-auth so the
-      // app prompts "Reconnect" — otherwise the initial-sync backfill dies here
+      // The stored account credential is gone (a lost saveAuth write, a
+      // same-environment orphan sweep that deleted the account, or a pre-v2
+      // account id that no longer authenticates under v2). In v2 each
+      // environment has its own Unipile workspace, so a cross-environment
+      // "dev/prod pool reclaim" can no longer be a cause. Flag the connection
+      // for re-auth so the app prompts "Reconnect" — otherwise the
+      // initial-sync backfill dies here
       // before calling channelSyncCompleted and the tile spins on "Syncing"
       // forever. Best-effort (flagConnectionNeedsReauth never throws).
       await this.flagChannelNeedsReauth(channelId, cfg.enabledBy, "token_missing");

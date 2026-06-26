@@ -76,7 +76,9 @@ function accountIdentity(account: UnipileAccount): string | null {
 /**
  * Of the given Unipile account ids, which are still referenced by a live Plot
  * connection — an ENABLED `channel` row under a NON-archived `twist_instance`
- * (channel_id == account_id for hosted connectors).
+ * (channel_id == account_id for hosted connectors). Since v2 scopes Unipile
+ * accounts per environment (see `sweepOrphanAccountsForIdentity`), this local DB
+ * is the authoritative reference for everything in THIS environment's workspace.
  */
 async function referencedAccountIds(
   db: Kysely<DB>,
@@ -98,6 +100,16 @@ async function referencedAccountIds(
  * Connect-time orphan sweep (Flow B). After a hosted account finishes auth,
  * delete every OTHER Unipile account for the same LinkedIn identity that no
  * live Plot connection references. Best-effort: never throws.
+ *
+ * Environment isolation: in v2 each Plot environment has its own Unipile API
+ * key, so `listAccounts()` returns only THIS environment's accounts. That makes
+ * the local Plot DB the complete reference for what's in use here, so an
+ * unreferenced same-identity account is safe to delete. Under v1's shared
+ * workspace this sweep could reach the OTHER environment's accounts — a dev
+ * reconnect could delete a live prod account (the local DB has no reference to
+ * it) and vice versa; v2's per-environment keys remove that hazard. The
+ * reference guard below stays for the genuine same-environment case: two
+ * distinct Plot users on one LinkedIn login.
  */
 export async function sweepOrphanAccountsForIdentity(
   env: Bindings,
