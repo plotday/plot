@@ -21,6 +21,21 @@ export type TrelloCommentAction = {
   memberCreator: TrelloMember | null;
   data: { text: string };
 };
+export type TrelloCheckItem = {
+  id: string;
+  name: string;
+  state: "complete" | "incomplete";
+  pos: number;
+  idMember: string | null;
+};
+
+export type TrelloChecklist = {
+  id: string;
+  name: string;
+  pos: number;
+  checkItems: TrelloCheckItem[];
+};
+
 export type TrelloCard = {
   id: string;
   name: string;
@@ -33,6 +48,7 @@ export type TrelloCard = {
   members?: TrelloMember[];
   attachments?: TrelloAttachment[];
   actions?: TrelloCommentAction[];
+  checklists?: TrelloChecklist[];
   dateLastActivity: string;
 };
 
@@ -80,6 +96,10 @@ export class TrelloApi {
       "attachment_fields=id,name,url,bytes,mimeType",
       "actions=commentCard",
       "actions_limit=50",
+      "checklists=all",
+      "checklist_fields=name,pos",
+      "checkItems=all",
+      "checkItem_fields=name,state,pos,idMember",
       `limit=${opts.limit}`,
       ...(opts.before ? [`before=${opts.before}`] : []),
     ].join("&");
@@ -95,6 +115,10 @@ export class TrelloApi {
       "attachment_fields=id,name,url,bytes,mimeType",
       "actions=commentCard",
       "actions_limit=50",
+      "checklists=all",
+      "checklist_fields=name,pos",
+      "checkItems=all",
+      "checkItem_fields=name,state,pos,idMember",
     ].join("&");
     return this.req("GET", `/cards/${cardId}`, q);
   }

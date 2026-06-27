@@ -56,6 +56,24 @@ describe("TrelloApi request shaping", () => {
     expect(body).toContain("idModel=b1");
     expect(body).toContain("callbackURL=");
   });
+
+  it("getCards requests checklists + checkItems with member ids", async () => {
+    const f = mockFetchOnce([]);
+    await api.getCards("b1", { limit: 50 });
+    const url = f.mock.calls[0][0] as string;
+    expect(url).toContain("checklists=all");
+    expect(url).toContain("checklist_fields=name,pos");
+    expect(url).toContain("checkItems=all");
+    expect(url).toContain("checkItem_fields=name,state,pos,idMember");
+  });
+
+  it("getCard requests checklists + checkItems too", async () => {
+    const f = mockFetchOnce({ id: "c1", name: "C" });
+    await api.getCard("c1");
+    const url = f.mock.calls[0][0] as string;
+    expect(url).toContain("checklists=all");
+    expect(url).toContain("checkItem_fields=name,state,pos,idMember");
+  });
 });
 
 describe("cardCreatedAt", () => {
