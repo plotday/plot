@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Tag } from "@plotday/twister";
 import { transformCard } from "./trello-sync";
 import type { TrelloCard } from "./trello-api";
 
@@ -72,5 +73,73 @@ describe("transformCard", () => {
     type KN = { key?: string; content?: string | null };
     const desc = (link.notes as KN[])!.find((n) => n.key === "description")!;
     expect(desc.content).toBeNull();
+  });
+});
+
+describe("transformCard checklists", () => {
+  function withChecklists() {
+    return card({
+      members: [
+        { id: "m1", fullName: "Ada", username: "ada", avatarUrl: null },
+        { id: "m2", fullName: "Bob", username: "bob", avatarUrl: null },
+      ],
+      checklists: [
+        {
+          id: "cl1",
+          name: "QA tasks",
+          pos: 16384,
+          checkItems: [
+            { id: "ci1", name: "Write tests", state: "complete", pos: 100, idMember: "m1" },
+            { id: "ci2", name: "Review PR", state: "incomplete", pos: 200, idMember: null },
+            { id: "ci3", name: "Deploy", state: "complete", pos: 300, idMember: null },
+          ],
+        },
+        { id: "cl2", name: "Empty", pos: 32768, checkItems: [] },
+      ],
+    });
+  }
+
+  it("emits one note per checkItem with section + item positions", () => {
+    const link = transformCard(withChecklists(), "board-1", false, "owner1");
+    type KN = { key?: string; content?: string | null; sectionKey?: string | null; sectionLabel?: string | null; sectionPosition?: string | null; itemPosition?: string | null; tags?: Record<number, unknown[]> };
+    const notes = (link.notes ?? []) as KN[];
+    const ci1 = notes.find((n) => n.key === "checkitem-ci1")!;
+    expect(ci1.content).toBe("Write tests");
+    expect(ci1.sectionKey).toBe("cl1");
+    expect(ci1.sectionLabel).toBe("QA tasks");
+    expect(ci1.sectionPosition).toBe("16384");
+    expect(ci1.itemPosition).toBe("100");
+  });
+
+  it("skips empty checklists entirely", () => {
+    const link = transformCard(withChecklists(), "board-1", false, "owner1");
+    const keys = (link.notes ?? []).map((n) => (n as { key?: string }).key);
+    expect(keys.filter((k) => k?.startsWith("checkitem-"))).toEqual(["checkitem-ci1", "checkitem-ci2", "checkitem-ci3"]);
+  });
+
+  it("assigns Tag.Todo from idMember and Tag.Done for a complete assigned item", () => {
+    const link = transformCard(withChecklists(), "board-1", false, "owner1");
+    const ci1 = (link.notes ?? []).find((n) => (n as { key?: string }).key === "checkitem-ci1")! as { tags?: Record<number, Array<{ source?: { accountId?: string } }>> };
+    expect(ci1.tags?.[Tag.Todo]?.[0].source?.accountId).toBe("m1");
+    expect(ci1.tags?.[Tag.Done]?.[0].source?.accountId).toBe("m1");
+  });
+
+  it("leaves an incomplete unassigned item untagged", () => {
+    const link = transformCard(withChecklists(), "board-1", false, "owner1");
+    const ci2 = (link.notes ?? []).find((n) => (n as { key?: string }).key === "checkitem-ci2")! as { tags?: Record<number, unknown[]> };
+    expect(ci2.tags).toBeUndefined();
+  });
+
+  it("attributes Done to the owner for an unassigned complete item", () => {
+    const link = transformCard(withChecklists(), "board-1", false, "owner1");
+    const ci3 = (link.notes ?? []).find((n) => (n as { key?: string }).key === "checkitem-ci3")! as { tags?: Record<number, Array<{ source?: { accountId?: string } }>> };
+    expect(ci3.tags?.[Tag.Todo]).toBeUndefined();
+    expect(ci3.tags?.[Tag.Done]?.[0].source?.accountId).toBe("owner1");
+  });
+
+  it("omits owner Done when no ownerMemberId is provided", () => {
+    const link = transformCard(withChecklists(), "board-1", false, undefined);
+    const ci3 = (link.notes ?? []).find((n) => (n as { key?: string }).key === "checkitem-ci3")! as { tags?: Record<number, unknown[]> };
+    expect(ci3.tags).toBeUndefined();
   });
 });
