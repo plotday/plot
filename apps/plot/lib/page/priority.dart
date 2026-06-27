@@ -1557,11 +1557,18 @@ class _PriorityPageState extends State<PriorityPage>
                 );
 
                 if (sectionThreads != null) {
+                  // The Active (doing) block gains a leading "Mark all read"
+                  // button when it holds unread threads — same command and
+                  // icon as the multi-select header's bulk action.
+                  final showMarkAllRead =
+                      marker!.section == ActivitySection.doing &&
+                      BulkMarkRead.applies(sectionThreads);
                   return [
                     _SectionHeaderWithRescheduleAll(
                       tile: tile,
                       threads: sectionThreads,
-                      sectionLabel: marker!.label,
+                      sectionLabel: marker.label,
+                      showMarkAllRead: showMarkAllRead,
                     ),
                   ];
                 }
@@ -1724,55 +1731,74 @@ class _FeedEntry {
   final bool ghost;
 }
 
-/// Section header (Doing or a Scheduled-day bucket) paired with a small
-/// trailing-edge "Do all later" button. The underlying [AgendaTile] keeps
-/// its centered text; the button sits in a Row with an invisible mirror on
-/// the left so the centered title stays at the row's true horizontal
-/// midpoint regardless of the button's width.
+/// Section header (Doing or a Scheduled-day bucket) paired with small
+/// trailing-edge buttons. The underlying [AgendaTile] keeps its centered text;
+/// the buttons sit in a Row with an invisible mirror on the left so the
+/// centered title stays at the row's true horizontal midpoint regardless of
+/// the buttons' width. When [showMarkAllRead] is set (the Active block with
+/// unread threads), a "Mark all read" button precedes "Do all later" in the
+/// trailing group, and the left mirror grows to match.
 class _SectionHeaderWithRescheduleAll extends StatelessWidget {
   const _SectionHeaderWithRescheduleAll({
     required this.tile,
     required this.threads,
     required this.sectionLabel,
+    this.showMarkAllRead = false,
   });
 
   final Widget tile;
   final List<Thread> threads;
   final String sectionLabel;
 
+  /// When true, a "Mark all read" button (the same [BulkMarkRead] command and
+  /// icon as the multi-select header) precedes "Do all later" in the trailing
+  /// group. Only the Active block sets this, and only while it holds unread
+  /// threads.
+  final bool showMarkAllRead;
+
   @override
   Widget build(BuildContext context) {
     final spacing = context.theme.spacing;
-    final button = Padding(
+    // Trailing buttons sit directly adjacent — matching the multi-select
+    // command bar, where each [Button.icon] supplies its own spacing — with a
+    // single `lg` inset framing the whole group off the right edge and away
+    // from the tile. "Mark all read" (only when the Active block has unread
+    // threads) comes before "Do all later".
+    final trailing = Padding(
       padding: EdgeInsets.symmetric(horizontal: spacing.lg),
-      child: Button.icon(
-        RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showMarkAllRead) Button.icon(BulkMarkRead(threads)),
+          Button.icon(
+            RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
+          ),
+        ],
       ),
     );
     // The whole header sits on the subtle section-header band. Wrapping the
     // full Row (not just the centered tile) means the band also runs behind
-    // the trailing "Do all later" button and its invisible left mirror —
-    // otherwise the band only paints under the tile in the middle and the
-    // sides show through. The tile paints the same opaque band internally for
-    // button-less sections, so the two coincide here with no seam.
+    // the trailing buttons and their invisible left mirror — otherwise the
+    // band only paints under the tile in the middle and the sides show
+    // through. The tile paints the same opaque band internally for button-less
+    // sections, so the two coincide here with no seam.
     return DecoratedBox(
       decoration: BoxDecoration(color: context.colour.sectionHeaderBackground),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Invisible mirror on the left reserves the button's width so
-          // the centred tile text sits at the row's true horizontal
-          // midpoint. Using the same widget on both sides keeps the
-          // reserved widths identical down to anti-aliasing.
+          // Invisible mirror of the entire trailing group reserves its exact
+          // width on the left so the centred tile text sits at the row's true
+          // horizontal midpoint — whether the group is one button or two.
           Visibility(
             visible: false,
             maintainSize: true,
             maintainAnimation: true,
             maintainState: true,
-            child: button,
+            child: trailing,
           ),
           Expanded(child: tile),
-          button,
+          trailing,
         ],
       ),
     );
