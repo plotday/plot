@@ -197,3 +197,51 @@ describe("classifyNote suppression", () => {
     expect(result.state.default.importance).toBeGreaterThanOrEqual(50);
   });
 });
+
+describe("classifyNote skip guard for human authors", () => {
+  // `skip` exists to drop passive AUTOMATED material (receipts, sign-in
+  // notifications). The LLM over-applies it to short human acknowledgements
+  // ("thanks", "sounds good"), which silently suppresses unread for the whole
+  // thread — including the thread author, who gets no thread_state row at all
+  // and so never sees the reply. A note authored by a real linked Plot user
+  // must never be skipped.
+  it("forces skip=false on the default for a note from a linked Plot user", async () => {
+    const env = {
+      AI: aiReturning(
+        '{"state":{"default":{"active":false,"urgent":false,"importance":"normal","skip":true},"overrides":{}}}',
+      ),
+    } as any;
+    const result = await classifyNote(env, {
+      ...baseContext,
+      senderIsLinkedUser: true,
+    });
+    expect(result.state.default.skip).toBe(false);
+  });
+
+  it("clears skip in per-member overrides for a note from a linked Plot user", async () => {
+    const env = {
+      AI: aiReturning(
+        '{"state":{"default":{"active":false,"urgent":false,"importance":"normal","skip":false},"overrides":{"1":{"skip":true}}}}',
+      ),
+    } as any;
+    const result = await classifyNote(env, {
+      ...baseContext,
+      senderIsLinkedUser: true,
+    });
+    // member #1 maps to member id "c-r" (baseContext.members[0]).
+    expect(result.state.overrides["c-r"]?.skip ?? false).toBe(false);
+  });
+
+  it("still honors skip for a non-linked (automated) sender", async () => {
+    const env = {
+      AI: aiReturning(
+        '{"state":{"default":{"active":false,"urgent":false,"importance":"normal","skip":true},"overrides":{}}}',
+      ),
+    } as any;
+    const result = await classifyNote(env, {
+      ...baseContext,
+      senderIsLinkedUser: false,
+    });
+    expect(result.state.default.skip).toBe(true);
+  });
+});

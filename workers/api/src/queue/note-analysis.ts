@@ -487,6 +487,22 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
       }
     }
 
+    // A note authored by a real, linked Plot user is never "skipped". `skip`
+    // exists to drop passive AUTOMATED material (receipts, sign-in
+    // notifications, system acks); the LLM over-applies it to short human
+    // acknowledgements ("thanks", "sounds good"). Skipping a human reply
+    // creates no thread_state row, and because analyzeNote() reports success
+    // notes.ts also skips the markThreadUnreadForOthers fallback — so the
+    // thread silently stays read for everyone, including its author (who has
+    // no thread_state row at all). Importance can still be low (no noisy push);
+    // we only guarantee the unread row exists.
+    if (context.senderIsLinkedUser) {
+      stateDefault.skip = false;
+      for (const override of Object.values(overrides)) {
+        if (override.skip) override.skip = false;
+      }
+    }
+
     return { state: { default: stateDefault, overrides } };
   } catch {
     console.error("[note-analysis] Failed to parse AI response:", text);
