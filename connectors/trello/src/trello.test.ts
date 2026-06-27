@@ -59,7 +59,7 @@ describe("getChannels", () => {
 describe("syncBatch", () => {
   const bid = "b1";
   function withApi(trello: Trello, cards: unknown[]) {
-    const api = { getCards: vi.fn().mockResolvedValue(cards) };
+    const api = { me: vi.fn().mockResolvedValue({ id: "owner1", fullName: "O", username: "o" }), getCards: vi.fn().mockResolvedValue(cards) };
     (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue(api);
     return api;
   }
