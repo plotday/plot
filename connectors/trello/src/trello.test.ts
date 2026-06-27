@@ -24,6 +24,7 @@ export function makeTrello(
     integrations: {
       get: vi.fn().mockResolvedValue({ token: "tok", provider: { key: "KEY", secret: "SEC" } }),
       saveLink: vi.fn().mockResolvedValue("thread-1"),
+      saveNote: vi.fn().mockResolvedValue("note-1"),
       channelSyncCompleted: vi.fn().mockResolvedValue(undefined),
       archiveLinks: vi.fn().mockResolvedValue(undefined),
       ...opts.integrations,
@@ -147,7 +148,8 @@ describe("onWebhook", () => {
     const saveLink = vi.fn().mockResolvedValue("t1");
     const trello = makeTrello({ store, integrations: { saveLink } });
     const getCard = vi.fn().mockResolvedValue({ id: "card9", name: "C", desc: "", idList: "l1", idBoard: "b1", closed: false, url: "u", idMembers: [], dateLastActivity: "2026-01-01T00:00:00Z" });
-    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ getCard });
+    const me = vi.fn().mockResolvedValue({ id: "owner1", fullName: "O", username: "o" });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ getCard, me });
     const sig = await sign("SEC", body, url);
 
     await (trello as unknown as { onWebhook: (r: unknown, b: string) => Promise<void> }).onWebhook(
@@ -272,6 +274,56 @@ describe("checkItem write-back", () => {
     await trello.onNoteUpdated({ key: "description", content: "d" } as any, thread);
     expect(updateCheckItem).not.toHaveBeenCalled();
     expect(updateCard).toHaveBeenCalled();
+  });
+});
+
+describe("checkItem deletion via webhook", () => {
+  const url = "https://api.plot.test/hook/abc";
+  async function sign(secret: string, raw: string, cb: string) {
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+    const s = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw + cb));
+    return btoa(String.fromCharCode(...new Uint8Array(s)));
+  }
+  async function fire(trello: Trello, action: unknown, store: ReturnType<typeof makeStore>) {
+    const body = JSON.stringify({ action });
+    const sig = await sign("SEC", body, url);
+    await (trello as unknown as { onWebhook: (r: unknown, b: string) => Promise<void> }).onWebhook(
+      { method: "POST", headers: { "x-trello-webhook": sig }, params: {}, body: JSON.parse(body), rawBody: body }, "b1",
+    );
+  }
+
+  it("archives a single note on deleteCheckItem", async () => {
+    const store = makeStore({ webhook_url_b1: url, checklist_items_card9: { cl1: ["ci1", "ci2"] } });
+    const saveNote = vi.fn().mockResolvedValue("n1");
+    const trello = makeTrello({ store, integrations: { saveNote } });
+    await fire(trello, { type: "deleteCheckItem", data: { card: { id: "card9" }, checkItem: { id: "ci1" } } }, store);
+    expect(saveNote).toHaveBeenCalledWith({ thread: { source: "trello:card:card9" }, key: "checkitem-ci1", archived: true });
+    expect(await store.get("checklist_items_card9")).toEqual({ cl1: ["ci2"] });
+  });
+
+  it("archives every item of a removed checklist", async () => {
+    const store = makeStore({ webhook_url_b1: url, checklist_items_card9: { cl1: ["ci1", "ci2"], cl2: ["ci3"] } });
+    const saveNote = vi.fn().mockResolvedValue("n1");
+    const trello = makeTrello({ store, integrations: { saveNote } });
+    await fire(trello, { type: "removeChecklistFromCard", data: { card: { id: "card9" }, checklist: { id: "cl1" } } }, store);
+    expect(saveNote).toHaveBeenCalledTimes(2);
+    expect(saveNote).toHaveBeenCalledWith({ thread: { source: "trello:card:card9" }, key: "checkitem-ci1", archived: true });
+    expect(saveNote).toHaveBeenCalledWith({ thread: { source: "trello:card:card9" }, key: "checkitem-ci2", archived: true });
+    expect(await store.get("checklist_items_card9")).toEqual({ cl2: ["ci3"] });
+  });
+
+  it("still re-fetches the card for non-deletion actions", async () => {
+    const store = makeStore({ webhook_url_b1: url });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const saveNote = vi.fn();
+    const trello = makeTrello({ store, integrations: { saveLink, saveNote } });
+    const getCard = vi.fn().mockResolvedValue({ id: "card9", name: "C", desc: "", idList: "l1", idBoard: "b1", closed: false, url: "u", idMembers: [], dateLastActivity: "2026-01-01T00:00:00Z" });
+    const me = vi.fn().mockResolvedValue({ id: "owner1", fullName: "O", username: "o" });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ getCard, me });
+    await fire(trello, { type: "updateCheckItemStateOnCard", data: { card: { id: "card9" }, checkItem: { id: "ci1" } } }, store);
+    expect(getCard).toHaveBeenCalledWith("card9");
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(saveNote).not.toHaveBeenCalled();
   });
 });
 

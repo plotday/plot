@@ -154,14 +154,54 @@ export class Trello extends Connector<Trello> {
       return;
     }
 
-    const action = (request.body as { action?: { data?: { card?: { id?: string } } } })?.action;
+    const action = (
+      request.body as {
+        action?: {
+          type?: string;
+          data?: { card?: { id?: string }; checkItem?: { id?: string }; checklist?: { id?: string } };
+        };
+      }
+    )?.action;
     const cardId = action?.data?.card?.id;
     if (!cardId) return;
+
+    // Deletion actions: archive the affected checkitem note(s); no card re-fetch needed.
+    if (action?.type === "deleteCheckItem") {
+      const checkItemId = action.data?.checkItem?.id;
+      if (checkItemId) {
+        await this.tools.integrations.saveNote({
+          thread: { source: `trello:card:${cardId}` },
+          key: `checkitem-${checkItemId}`,
+          archived: true,
+        });
+        const map = (await this.get<Record<string, string[]>>(`checklist_items_${cardId}`)) ?? {};
+        for (const clId of Object.keys(map)) map[clId] = map[clId].filter((id) => id !== checkItemId);
+        await this.set(`checklist_items_${cardId}`, map);
+      }
+      return;
+    }
+    if (action?.type === "removeChecklistFromCard") {
+      const checklistId = action.data?.checklist?.id;
+      const map = (await this.get<Record<string, string[]>>(`checklist_items_${cardId}`)) ?? {};
+      const itemIds = checklistId ? (map[checklistId] ?? []) : [];
+      for (const itemId of itemIds) {
+        await this.tools.integrations.saveNote({
+          thread: { source: `trello:card:${cardId}` },
+          key: `checkitem-${itemId}`,
+          archived: true,
+        });
+      }
+      if (checklistId) delete map[checklistId];
+      await this.set(`checklist_items_${cardId}`, map);
+      return;
+    }
 
     // Re-fetch the card for fresh, complete data (webhook payloads are partial).
     const api = await this.getApi(boardId);
     const card = await api.getCard(cardId);
-    await this.tools.integrations.saveLink(transformCard(card, boardId, false));
+    const ownerMemberId = await this.getOwnerMemberId(boardId);
+    await this.tools.integrations.saveLink(transformCard(card, boardId, false, ownerMemberId));
+    await this.recordChecklistItems(cardId, card);
   }
 
   private async startBatchSync(boardId: string): Promise<void> {
