@@ -1,3 +1,48 @@
+## 1.5.0+369 — 2026-06-27
+
+### AI
+
+- AI is now built in on every plan, with nothing to set up — no API keys, no token bills, and no model settings to manage. When a twist uses AI, the cost is already included in its capacity.
+- You can still turn AI off entirely, for yourself or for an individual twist, in settings.
+
+### Connections
+
+- When a connection needs a $5/mo connection add-on, you now see and approve the cost *before* you connect the account — and you're only billed once the connection is actually added. Back out of the connect step and nothing is charged.
+- Need more connections than your plan includes? Each extra connection is now a $5/mo connection add-on — or upgrade to Pro for unlimited. Add-ons are billed only while the connection is active, and turning one off stops the charge.
+- Your first 30 days include unlimited connections on the Free plan — connect as many of your apps as you like.
+- Trello checklist items now appear in Plot. Check them off, assign them, or rename them in either place and the change syncs both ways.
+
+### Threads
+
+- The Active section header now has a "Mark all read" button that appears whenever Active has unread threads, so you can clear them all in one tap.
+
+### Plans
+
+- Team plans now give your organization one shared pool of 50 connections and twist automations — mix and match however you like, and add another 50-slot block anytime you need more room.
+- Twist automation add-ons now come in packs of 5 for $10/month — get exactly the extra capacity you need, billed only while you're using it.
+
+### Twists
+
+- Twists now have a clear capacity. Your plan includes a set number — 1 on Free, 10 on Pro — and heavier twists count for a little more.
+- Need more room? Add a twist add-on for +20 twists at $10/mo, or upgrade your plan. Like connection add-ons, it's billed only while you're using the extra capacity, and removing twists frees it back up.
+
+### Fixes
+
+- Calendar events in your feed once again show when they happen — the date and time of the next upcoming occurrence, or the most recent past one for events that have already wrapped up.
+- Emails and messages you read in their original app (like Gmail) now show as read in Plot too.
+- Switching to a focus now opens it cleanly at the top instead of briefly scrolling or bouncing partway down. Returning to a focus you'd already scrolled restores your place.
+- When buying a subscription or connection add-on on Mac, you can now type or paste your password into the App Store confirmation prompt — previously the keystrokes went to the screen behind it.
+- Reading a thread in Plot now marks it read in the app it came from — opening a Gmail or Outlook email, or a LinkedIn, WhatsApp, or Instagram chat in Plot now clears its unread badge in the original app too.
+- Reading a thread on one device now reliably marks it read on your other devices — including when you reply to it, which previously could leave it stuck unread elsewhere.
+- Reconnecting a connection now shows which account to sign in with and pre-selects it, so you don't accidentally pick the wrong one.
+- Fixed a connection sometimes showing a second, leftover account after a sign-in with the wrong account was declined.
+- Replies from people you're collaborating with now reliably show up as unread. Previously a short reply like "thanks, that makes sense" could be mistaken for a passive notification and the thread would quietly stay marked as read — even for the person who started it.
+- Search results no longer list the same thread twice.
+- Signing out now fully clears your personal data from the device. When a different account signs in afterwards — or you create a new one — it no longer inherits your recently used focuses, contacts, or connections.
+- Switching between focuses is faster, and the list now dims briefly while the new focus loads so the change registers immediately instead of feeling like a lag.
+- Threads from a newly connected account now sort by their original date instead of all bunching up at the time you connected. Emails, calendar events, and tasks imported from months ago land in the right place in your feed, in true reverse-chronological order, matching the date shown on each item.
+- When you and someone else both connect the same source — for example, the same GitHub repository — synced items now show up for both of you. Previously, an item could appear only for whoever's connection synced it first.
+
 ## 1.5.0+367 — 2026-06-25
 
 ### Connections
