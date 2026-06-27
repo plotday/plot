@@ -1,5 +1,6 @@
 import type { Kysely } from "kysely";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { z } from "zod";
 
 import type { DB } from "../db";
@@ -31,6 +32,7 @@ import {
 } from "./product-status";
 import { reconcileAddonQuantityDown } from "../stripe/addons";
 import { createStripeClient } from "../stripe/utils";
+import { provisionAddonForConsentedEnable } from "./upgrade";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
@@ -417,6 +419,133 @@ export async function reconcileScopeTwistAddonBillingDown(args: {
       .where("user_id", "=", userId)
       .execute();
   }
+}
+
+/**
+ * Resolve billing scope for a consented add-on purchase at the enable step.
+ *
+ * For a team-owned twist: reads `team_subscription` keyed on the team.
+ * For a personal twist: reads `user_subscription` keyed on the user.
+ *
+ * Returns the Stripe customer ID, existing add-on subscription ID (if any),
+ * the table name + id value needed to write back the updated quantity, and
+ * the scope metadata for Stripe's subscription metadata.
+ *
+ * Returns `customerId: null` when no billing record exists (caller returns 403).
+ *
+ * Exported so the shared `chargeConsentedAddonOrError` gate and its tests can
+ * resolve the billing scope without going through the HTTP layer.
+ */
+export async function resolveAddonScope(
+  db: Kysely<DB>,
+  userId: string,
+  twistInstanceId: string
+): Promise<{
+  customerId: string | null;
+  addonSubscriptionId: string | null;
+  table: "user_subscription" | "team_subscription";
+  idVal: string;
+  scopeMetadata: Record<string, string>;
+}> {
+  const twistInfo = await resolveTwistInfo(db, twistInstanceId);
+  const teamId = twistInfo?.teamId ? String(twistInfo.teamId) : null;
+
+  if (teamId) {
+    const row = await db
+      .selectFrom("team_subscription")
+      .select(["stripe_customer_id", "stripe_addon_subscription_id"])
+      .where("team_id", "=", teamId)
+      .executeTakeFirst();
+    return {
+      customerId: row?.stripe_customer_id ?? null,
+      addonSubscriptionId: row?.stripe_addon_subscription_id ?? null,
+      table: "team_subscription",
+      idVal: teamId,
+      scopeMetadata: { team_id: teamId },
+    };
+  }
+
+  const row = await db
+    .selectFrom("user_subscription")
+    .select(["stripe_customer_id", "stripe_addon_subscription_id"])
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  return {
+    customerId: row?.stripe_customer_id ?? null,
+    addonSubscriptionId: row?.stripe_addon_subscription_id ?? null,
+    table: "user_subscription",
+    idVal: userId,
+    scopeMetadata: { user_id: userId },
+  };
+}
+
+/**
+ * Shared "consent before auth, charge on enable" gate for a billable connection
+ * add-on. Used by every path that enables a connection: single-channel enable,
+ * batch enable, and draft activate. Centralizes the three-branch consent/charge
+ * logic so it lives in exactly one place.
+ *
+ * Runs `checkChannelConnectionLimit` for the twist instance and resolves:
+ *   - allowed                              → `{ proceed: true }`
+ *   - addon_required + consent + card      → charge now, `{ proceed: true }`
+ *   - addon_required + consent, no card    → 402 `{ reason:"needs_card", checkout_url }`
+ *   - addon_required, no/declined consent  → 403 `addon_required` (error.toJSON())
+ *   - any other limit failure              → 403 error.toJSON()
+ *
+ * Charge-first ordering: the add-on is provisioned (charged) BEFORE the caller
+ * enables the connection — the money-safe direction, consistent across all call
+ * sites. Residual orphan-charge window (finding I2): if the subsequent enable
+ * throws or the request is abandoned after a successful charge, the credit
+ * persists for that billing cycle. This self-heals — a retry consumes the
+ * already-provisioned credit (the Stripe quantity sync is idempotent), and a
+ * later disable reconciles the quantity back down via
+ * `reconcileScopeAddonBillingDown`. No behavior change here; comment only.
+ */
+export async function chargeConsentedAddonOrError(
+  c: Context<{ Bindings: Bindings }>,
+  twistInstanceId: string,
+  consentAddon: boolean | undefined
+): Promise<{ proceed: true } | { response: Response }> {
+  const limitCheck = await checkChannelConnectionLimit(
+    c.var.db,
+    c.var.user.id,
+    twistInstanceId
+  );
+  if (limitCheck.allowed) return { proceed: true };
+
+  if (limitCheck.error.reason === "addon_required" && consentAddon === true) {
+    const scope = await resolveAddonScope(
+      c.var.db,
+      c.var.user.id,
+      twistInstanceId
+    );
+    if (!scope.customerId) {
+      return { response: c.json(limitCheck.error.toJSON(), 403) };
+    }
+    const res = await provisionAddonForConsentedEnable({
+      stripe: createStripeClient(c.env.STRIPE_SECRET_KEY),
+      db: c.var.db,
+      customerId: scope.customerId,
+      addonSubscriptionId: scope.addonSubscriptionId,
+      scopeMetadata: scope.scopeMetadata,
+      siteRoot: c.env.SITE_ROOT || "https://plot.day",
+      table: scope.table,
+      idVal: scope.idVal,
+      captureException: (e) => c.var.tracker.captureException(e),
+    });
+    if (!res.ok) {
+      return {
+        response: c.json(
+          { reason: "needs_card", checkout_url: res.checkout_url },
+          402
+        ),
+      };
+    }
+    // Charged successfully — caller proceeds to enable the connection.
+    return { proceed: true };
+  }
+
+  return { response: c.json(limitCheck.error.toJSON(), 403) };
 }
 
 // ============================================================================
@@ -1172,21 +1301,24 @@ twistIntegrations.post(
       );
     }
 
+    // Read optional consent flag from request body (may be absent or empty).
+    const body = await c.req.json<{ consentAddon?: boolean }>().catch(
+      () => ({} as { consentAddon?: boolean })
+    );
+
     // Get current user's actor ID
     const currentActorId = await getCurrentActorId(c.var.db, c.var.user.id);
     if (!currentActorId) {
       return c.json({ message: "No actor found for current user" }, 400);
     }
 
-    // Check connection limit before enabling channel
-    const limitCheck = await checkChannelConnectionLimit(
-      c.var.db,
-      c.var.user.id,
-      twistInstanceId
+    // Check connection limit + charge-on-enable (consent) before enabling.
+    const gate = await chargeConsentedAddonOrError(
+      c,
+      twistInstanceId,
+      body.consentAddon
     );
-    if (!limitCheck.allowed) {
-      return c.json(limitCheck.error.toJSON(), 403);
-    }
+    if ("response" in gate) return gate.response;
 
     try {
       // Create twist wrapper and call enableSync via callCallback
@@ -1383,6 +1515,7 @@ twistIntegrations.post(
       disable: z
         .array(z.object({ provider: z.string(), syncableId: z.string() }))
         .optional(),
+      consentAddon: z.boolean().optional(),
     });
 
     const raw = await c.req.json();
@@ -1418,16 +1551,14 @@ twistIntegrations.post(
         return c.json({ message: "No actor found for current user" }, 400);
       }
 
-      // Connection limit is twist-instance-wide; one check covers every
-      // provider/channel we're about to enable.
-      const limitCheck = await checkChannelConnectionLimit(
-        c.var.db,
-        c.var.user.id,
-        twistInstanceId
+      // Connection limit + charge-on-enable (consent) is twist-instance-wide;
+      // one check covers every provider/channel we're about to enable.
+      const gate = await chargeConsentedAddonOrError(
+        c,
+        twistInstanceId,
+        parsed.data.consentAddon
       );
-      if (!limitCheck.allowed) {
-        return c.json(limitCheck.error.toJSON(), 403);
-      }
+      if ("response" in gate) return gate.response;
     }
 
     const factory = twistFactory({

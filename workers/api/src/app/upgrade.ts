@@ -14,6 +14,7 @@ import {
   customerHasPaymentMethod,
   provisionAddonCredit,
   createAddonCheckoutSession,
+  createAddonCardSetupSession,
   setTwistAddonQuantity,
   TWIST_ADDON,
 } from "../stripe/addons";
@@ -939,6 +940,83 @@ export async function purchaseAddonCreditForScope(args: {
     scopeMetadata,
   });
   return { ok: false, checkout_url };
+}
+
+/**
+ * Charge-on-enable helper for the add-on consent flow.
+ *
+ * Called when a user has already consented to an add-on charge and is enabling
+ * a connection. If the customer has a card on file, charges immediately via
+ * `provisionAddonCredit` and writes the new quantity + sub ID to the scope row,
+ * returning `{ ok: true, addons }`. Otherwise returns a Stripe Setup session
+ * URL (no charge, card capture only) as `{ ok: false, needsCard: true, checkout_url }`.
+ */
+export async function provisionAddonForConsentedEnable(args: {
+  stripe: Stripe;
+  db: Kysely<DB>;
+  customerId: string;
+  addonSubscriptionId: string | null;
+  scopeMetadata: Record<string, string>;
+  siteRoot: string;
+  table: "user_subscription" | "team_subscription";
+  idVal: string;
+  captureException: (e: unknown) => void;
+}): Promise<{ ok: true; addons: number } | { ok: false; needsCard: true; checkout_url: string }> {
+  const {
+    stripe,
+    db,
+    customerId,
+    addonSubscriptionId,
+    scopeMetadata,
+    siteRoot,
+    table,
+    idVal,
+    captureException,
+  } = args;
+
+  if (await customerHasPaymentMethod(stripe, customerId)) {
+    const { subscriptionId, quantity } = await provisionAddonCredit({
+      stripe,
+      customerId,
+      addonSubscriptionId,
+      scopeMetadata,
+    });
+    // Reflect immediately; the webhook re-syncs the same values.
+    // Wrap in try/catch: a write failure after a successful charge must NOT
+    // surface as an error to the caller — the webhook will reconcile the DB.
+    try {
+      if (table === "team_subscription") {
+        await db
+          .updateTable("team_subscription")
+          .set({
+            premium_connection_addons: quantity,
+            stripe_addon_subscription_id: subscriptionId,
+          })
+          .where("team_id", "=", idVal)
+          .execute();
+      } else {
+        await db
+          .updateTable("user_subscription")
+          .set({
+            premium_connection_addons: quantity,
+            stripe_addon_subscription_id: subscriptionId,
+          })
+          .where("user_id", "=", idVal)
+          .execute();
+      }
+    } catch (e) {
+      captureException(e);
+    }
+    return { ok: true, addons: quantity };
+  }
+
+  const checkout_url = await createAddonCardSetupSession({
+    stripe,
+    customerId,
+    siteRoot,
+    scopeMetadata,
+  });
+  return { ok: false, needsCard: true, checkout_url };
 }
 
 // POST /upgrade/addons/purchase - Provision one add-on connection credit.

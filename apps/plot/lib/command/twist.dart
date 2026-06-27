@@ -1,10 +1,10 @@
 import 'package:collection/collection.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'command.dart';
 import 'upgrade.dart'
     show
-        BuyAddonCommand,
         BuyTwistAddonCommand,
         ConnectionCapacityOffer,
         ShowUpgradeOptions,
@@ -208,6 +208,8 @@ class ManageConnections extends Command {
     if (!keepCache) {
       _upcomingCache = null; // Reset cache for each new session
       _dataCache = null;
+      // Drop any stale add-on consent so a new session re-asks before charging.
+      _addonConsentedDrafts.clear();
     }
     try {
       Future<void> Function()? refreshFn;
@@ -904,33 +906,144 @@ Future<UsageData> _freshUsage() async {
 /// that picker triggers StoreKit IAP; on web/DMG it routes to
 /// `${Env.siteRoot}/upgrade`. Team limits route to a no-op toast since
 /// Team purchases are admin-only and not IAP-available.
+///
+/// Used for the genuine plan-limit case (App Store regular-beyond-pool, where
+/// there is no connection add-on tier). The BILLABLE add-on case routes
+/// through [_ConsentGate] / [ConnectionCapacityOffer] instead so the add-on is
+/// offered and consent is captured before the charge.
 Command _connectionAtLimitCommand() =>
     ShowUpgradeOptions(title: 'Upgrade to add more connections');
 
-/// Returned when a paid user has used all their connection add-ons and needs
-/// to buy another. Personal scopes purchase in-app (StoreKit) or on the web;
-/// team add-ons are managed by an admin on the web.
-Command _addonNeededCommand({required String owner}) =>
-    owner == 'personal'
-        ? BuyAddonCommand()
-        : BuyAddonCommand(teamId: owner);
+/// Draft / twist-instance ids for which the user has CONSENTED to a connection
+/// add-on charge (web/Stripe). Populated by the consent gate ([_ConsentGate])
+/// before authorization and by the reactive `addon_required` handler; consumed
+/// by the activate/enable calls so they pass `consentAddon: true` (the server
+/// charges on enable, or returns needs_card to capture a card first). Keyed by
+/// the draft/twistInstance id, which is stable across the OAuth → channel-setup
+/// handoff. Cleared when [ManageConnections] starts a fresh session and removed
+/// once the connection successfully enables.
+final Set<String> _addonConsentedDrafts = {};
 
-/// Convenience wrapper around [_evaluatePremium]: returns a ready-to-run
-/// command for the add-on-block / add-on-needed cases, or null when the
-/// connector is not an add-on or the standard limit-check should proceed.
+bool _hasAddonConsent(String draftId) => _addonConsentedDrafts.contains(draftId);
+
+/// After an enable returned needs_card (402, [ApiException.needsCard]): open
+/// the $0 Stripe setup session to capture a card, then tell the user to
+/// connect again (the next enable charges). No charge happens here. Keeps the
+/// setup modal open (returns [CommandSkipped]) so the captured consent persists
+/// and the user can connect again on return from the browser.
+Future<CommandReturn> _handleNeedsCard(
+  BuildContext context,
+  ApiException e,
+) async {
+  final url = e.checkoutUrl;
+  if (url != null) {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (err, st) {
+      log.warning('Failed to open card-setup checkout', err, st);
+    }
+  }
+  if (context.mounted) {
+    context.showToast(
+      message: 'Add a payment method in your browser, then connect again.',
+    );
+  }
+  return const CommandSkipped();
+}
+
+/// Runs the connection add-on offer after an enable hit `addon_required`.
+/// On the web/Stripe consent path it records consent in [_addonConsentedDrafts]
+/// and reports `consented: true` so the caller retries the enable with
+/// `consentAddon: true`. Otherwise (App Store purchase, plan upgrade, or
+/// abandon) it returns the offer's result for the caller to surface as-is.
+Future<({bool consented, CommandReturn offerResult})> _offerAddonConsent(
+  BuildContext context, {
+  required String draftId,
+  required bool isPremium,
+  String? teamId,
+}) async {
+  final result = await ConnectionCapacityOffer(
+    teamId: teamId,
+    isPremium: isPremium,
+  ).run(context);
+  if (result is CommandAddonConsented) {
+    _addonConsentedDrafts.add(draftId);
+    return (consented: true, offerResult: result);
+  }
+  return (consented: false, offerResult: result);
+}
+
+/// Returns the consent gate for a connection that needs an add-on, or null when
+/// no gating is needed (allowed, not premium, or the user already consented for
+/// [draftId]). Premium connectors always need the add-on when out of credits;
+/// the standard connection-pool check is handled separately by the caller.
 Command? _premiumGateCommand({
   required UsageData usage,
   required String owner, // 'personal' or team id
   required bool isPremium,
+  required String draftId,
 }) {
   if (!isPremium) return null;
+  // Consent already captured before auth — let the auth/enable proceed; the
+  // enable call carries consentAddon and the server charges on enable.
+  if (_hasAddonConsent(draftId)) return null;
   switch (_evaluatePremium(usage: usage, owner: owner)) {
-    case _PremiumGate.allowed:  return null;
-    case _PremiumGate.atLimit:  return _addonNeededCommand(owner: owner);
+    case _PremiumGate.allowed:
+      return null;
+    case _PremiumGate.atLimit:
+      return _ConsentGate(
+        draftId: draftId,
+        isPremium: true,
+        teamId: owner == 'personal' ? null : owner,
+      );
   }
 }
 
 enum _PremiumGate { allowed, atLimit }
+
+/// Consent-before-authorization gate for a billable connection. Runs the
+/// connection-capacity offer; on the web/Stripe consent path it records consent
+/// for [draftId] (so the subsequent activate/enable carries `consentAddon` and
+/// the server charges on enable) and refreshes the form so the auth/enable CTA
+/// replaces this gate. On the App Store path the offer completes a StoreKit
+/// purchase up front and we likewise refresh. No charge happens in this command
+/// on the web path — the money is the server's job on enable.
+class _ConsentGate extends Command {
+  _ConsentGate({required this.draftId, required this.isPremium, this.teamId})
+    : super(
+        title: 'Add a connection',
+        icon: PlotIcon.connection,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  final String draftId;
+  final bool isPremium;
+  final String? teamId;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final result = await ConnectionCapacityOffer(
+      teamId: teamId,
+      isPremium: isPremium,
+    ).run(context);
+    if (result is CommandAddonConsented) {
+      // Web/Stripe: consent captured (no charge). Record it so the auth/enable
+      // path carries consentAddon, then refresh so the gate clears.
+      _addonConsentedDrafts.add(draftId);
+      return const CommandRefresh();
+    }
+    if (result is CommandDone) {
+      // App Store: a StoreKit purchase provisioned a credit. Refresh so the
+      // gate clears (usage now shows the new credit).
+      return const CommandRefresh();
+    }
+    // Plan upgrade chosen (web page opened), or the user abandoned — leave the
+    // gate in place; a completed plan change refreshes it via the subscription
+    // notifier (refreshOn).
+    return const CommandSkipped();
+  }
+}
 
 /// Decide whether the selected scope can accept another connection add-on.
 /// Returns:
@@ -1464,14 +1577,23 @@ class EditSource extends ShowForm {
                     usage: live,
                     owner: owner,
                     isPremium: integrations.premium,
+                    draftId: twistInstanceId,
                   );
                   if (premiumGate != null) return premiumGate;
                   final team = live.teams.firstWhereOrNull((t) => t.id == owner);
                   final atLimit = team != null
                       ? team.connections.isAtLimit
                       : live.personal.connections.isAtLimit;
-                  if (atLimit) {
-                    return _connectionAtLimitCommand();
+                  // Billable regular connection beyond the pool: offer the
+                  // add-on (web) or Pro and capture consent before saving.
+                  // Once consented, fall through so SaveSource enables with
+                  // consentAddon (the server charges on enable).
+                  if (atLimit && !_hasAddonConsent(twistInstanceId)) {
+                    return _ConsentGate(
+                      draftId: twistInstanceId,
+                      isPremium: false,
+                      teamId: owner == 'personal' ? null : owner,
+                    );
                   }
                 }
 
@@ -2134,14 +2256,16 @@ class AddSourceDetail extends ShowForm {
                 buildTeamSelect(refreshed)!,
               ...refreshed.providers.map((provider) {
                 final initialOwner = refreshedDefault;
-                // Premium gate: at-limit when add-on credits are used up;
-                // allowed otherwise (any plan). Falls through to the regular
-                // at-limit logic when premium is allowed.
+                // Premium gate: consent before auth when add-on credits are
+                // used up; allowed otherwise (any plan). Falls through to the
+                // regular at-limit logic when premium is allowed or already
+                // consented.
                 final premiumGate = teams.isEmpty
                     ? _premiumGateCommand(
                         usage: usage,
                         owner: initialOwner,
                         isPremium: twist.premium,
+                        draftId: draftId,
                       )
                     : null;
                 if (premiumGate != null) {
@@ -2153,15 +2277,21 @@ class AddSourceDetail extends ShowForm {
                 }
                 // Gate preemptively only when the user has no team to fall
                 // back to. When teams exist, let them authenticate — the
-                // save/connect path checks the selected team's limit.
+                // save/connect path checks the selected team's limit. Once the
+                // user has consented to an add-on, let them authenticate (the
+                // enable carries consentAddon and the server charges on enable).
                 final initialAtLimit =
                     teams.isEmpty && usage.personal.connections.isAtLimit;
 
-                if (initialAtLimit) {
+                if (initialAtLimit && !_hasAddonConsent(draftId)) {
                   return FormButton(
                     key: 'upgrade_${provider.provider.name}',
                     isPrimary: true,
-                    buildCommand: (_) => _connectionAtLimitCommand(),
+                    buildCommand: (_) => _ConsentGate(
+                      draftId: draftId,
+                      isPremium: false,
+                      teamId: initialOwner == 'personal' ? null : initialOwner,
+                    ),
                   );
                 }
 
@@ -2253,6 +2383,7 @@ class AddSourceDetail extends ShowForm {
                       usage: live,
                       owner: owner,
                       isPremium: twist.premium,
+                      draftId: draftId,
                     );
                     if (premiumGate != null) return premiumGate;
                     final team = live.teams.firstWhereOrNull(
@@ -2262,8 +2393,12 @@ class AddSourceDetail extends ShowForm {
                         ? team.connections.isAtLimit
                         : live.personal.connections.isAtLimit;
 
-                    if (atLimit) {
-                      return _connectionAtLimitCommand();
+                    if (atLimit && !_hasAddonConsent(draftId)) {
+                      return _ConsentGate(
+                        draftId: draftId,
+                        isPremium: false,
+                        teamId: owner == 'personal' ? null : owner,
+                      );
                     }
 
                     return ConnectNoProviderCommand(
@@ -2389,6 +2524,7 @@ class AddSourceDetail extends ShowForm {
                         usage: usage,
                         owner: initialOwner,
                         isPremium: twist.premium,
+                        draftId: draftId,
                       )
                     : null;
                 if (premiumGate != null) {
@@ -2400,15 +2536,21 @@ class AddSourceDetail extends ShowForm {
                 }
                 // Gate preemptively only when the user has no team to fall
                 // back to. When teams exist, let them authenticate — the
-                // save/connect path checks the selected team's limit.
+                // save/connect path checks the selected team's limit. Once
+                // consented, let them authenticate (the enable carries
+                // consentAddon; the server charges on enable).
                 final initialAtLimit =
                     teams.isEmpty && usage.personal.connections.isAtLimit;
 
-                if (initialAtLimit) {
+                if (initialAtLimit && !_hasAddonConsent(draftId)) {
                   return FormButton(
                     key: 'upgrade_${provider.provider.name}',
                     isPrimary: true,
-                    buildCommand: (_) => _connectionAtLimitCommand(),
+                    buildCommand: (_) => _ConsentGate(
+                      draftId: draftId,
+                      isPremium: false,
+                      teamId: initialOwner == 'personal' ? null : initialOwner,
+                    ),
                   );
                 }
 
@@ -2502,6 +2644,7 @@ class AddSourceDetail extends ShowForm {
                       usage: live,
                       owner: owner,
                       isPremium: twist.premium,
+                      draftId: draftId,
                     );
                     if (premiumGate != null) return premiumGate;
                     final team = live.teams.firstWhereOrNull(
@@ -2511,8 +2654,12 @@ class AddSourceDetail extends ShowForm {
                         ? team.connections.isAtLimit
                         : live.personal.connections.isAtLimit;
 
-                    if (atLimit) {
-                      return _connectionAtLimitCommand();
+                    if (atLimit && !_hasAddonConsent(draftId)) {
+                      return _ConsentGate(
+                        draftId: draftId,
+                        isPremium: false,
+                        teamId: owner == 'personal' ? null : owner,
+                      );
                     }
 
                     return ConnectNoProviderCommand(
@@ -3367,6 +3514,7 @@ class SetupTwist extends ShowForm {
                     usage: live,
                     owner: owner,
                     isPremium: twist.premium,
+                    draftId: draftId,
                   );
                   if (premiumGate != null) return premiumGate;
                   final team = live.teams.firstWhereOrNull((t) => t.id == owner);
@@ -3374,8 +3522,12 @@ class SetupTwist extends ShowForm {
                       ? team.connections.isAtLimit
                       : live.personal.connections.isAtLimit;
 
-                  if (atLimit) {
-                    return _connectionAtLimitCommand();
+                  if (atLimit && !_hasAddonConsent(draftId)) {
+                    return _ConsentGate(
+                      draftId: draftId,
+                      isPremium: false,
+                      teamId: owner == 'personal' ? null : owner,
+                    );
                   }
 
                   return ConnectNoProviderCommand(
@@ -3490,7 +3642,14 @@ class ActivateTwist extends Command {
   };
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) =>
+      // Carry consent for a source connector if it was captured before auth.
+      _attempt(context, consentAddon: _hasAddonConsent(draftId));
+
+  Future<CommandReturn> _attempt(
+    BuildContext context, {
+    required bool consentAddon,
+  }) async {
     try {
       await TwistApi.activateDraft(
         draftId: draftId,
@@ -3504,10 +3663,12 @@ class ActivateTwist extends Command {
                   .toList()
             : null,
         teamId: teamId,
+        consentAddon: consentAddon,
       );
 
       // Mark the draft as activated so cleanup doesn't delete it
       SetupTwist.clearDraft();
+      _addonConsentedDrafts.remove(draftId);
 
       // Save link channel selections if any (draftId is now the twistInstanceId)
       if (linkChannels != null && linkChannels!.isNotEmpty) {
@@ -3545,6 +3706,26 @@ class ActivateTwist extends Command {
           ).run(context);
         }
         return const CommandSkipped();
+      }
+      // Source connector beyond the pool: consented but no card → capture one;
+      // not yet consented → offer the add-on and retry with consentAddon:true.
+      if (e.needsCard) {
+        return context.mounted
+            ? _handleNeedsCard(context, e)
+            : const CommandSkipped();
+      }
+      if (e.isAddonRequired && !consentAddon) {
+        if (!context.mounted) return const CommandSkipped();
+        final offer = await _offerAddonConsent(
+          context,
+          draftId: draftId,
+          isPremium: isPremium ?? false,
+          teamId: e.isTeam == true ? e.teamId : null,
+        );
+        if (offer.consented && context.mounted) {
+          return _attempt(context, consentAddon: true);
+        }
+        return offer.offerResult;
       }
       if (e.isPlanLimitExceeded) {
         return CommandMessage(
@@ -3802,7 +3983,15 @@ class _ActivateNoProviderSource extends Command {
   final String? accountLabel;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) =>
+      // Carry consent if it was captured before auth (premium / at-limit gate);
+      // otherwise the reactive handler below offers the add-on and retries.
+      _attempt(context, consentAddon: _hasAddonConsent(draftId));
+
+  Future<CommandReturn> _attempt(
+    BuildContext context, {
+    required bool consentAddon,
+  }) async {
     try {
       final changes = getChanges();
       final channels = changes.selectedChannels.map((key) {
@@ -3818,6 +4007,7 @@ class _ActivateNoProviderSource extends Command {
         name: twistName,
         channels: channels,
         teamId: teamId,
+        consentAddon: consentAddon,
       );
 
       if (accountLabel != null) {
@@ -3834,20 +4024,34 @@ class _ActivateNoProviderSource extends Command {
       AddSourceDetail.lastConnectedDraftId = draftId;
       AddSourceDetail.lastActivatedInSetupModal = true;
       AddSourceDetail.clearDraft();
+      _addonConsentedDrafts.remove(draftId);
 
       // A connection was added — refresh connector counts on the next sync.
       markUserAnalyticsProfileStale();
 
       return const CommandDone();
     } on ApiException catch (e) {
-      if (e.isAddonRequired) {
-        if (context.mounted) {
-          return ConnectionCapacityOffer(
-            teamId: e.isTeam == true ? e.teamId : null,
-            isPremium: isPremium ?? false,
-          ).run(context);
+      // Consented but no card on file: capture a card, then connect again.
+      if (e.needsCard) {
+        return context.mounted
+            ? _handleNeedsCard(context, e)
+            : const CommandSkipped();
+      }
+      // Billable connection without prior consent: offer the add-on / upgrade.
+      // On the web consent path, retry the activate with consentAddon:true so
+      // the server charges on enable.
+      if (e.isAddonRequired && !consentAddon) {
+        if (!context.mounted) return const CommandSkipped();
+        final offer = await _offerAddonConsent(
+          context,
+          draftId: draftId,
+          isPremium: isPremium ?? false,
+          teamId: e.isTeam == true ? e.teamId : null,
+        );
+        if (offer.consented && context.mounted) {
+          return _attempt(context, consentAddon: true);
         }
-        return const CommandSkipped();
+        return offer.offerResult;
       }
       if (e.isPlanLimitExceeded) {
         return CommandMessage(
@@ -4187,12 +4391,21 @@ class SaveSource extends Command {
   final String? accountLabel;
 
   /// Whether this connector is a premium connector (LinkedIn, IG, WhatsApp).
-  /// Used to route the addon_required 403 response to the correct offer:
-  /// premium → always [BuyAddonCommand]; regular → [ConnectionCapacityOffer].
+  /// Forwarded to [ConnectionCapacityOffer] so the addon_required response is
+  /// routed to the correct offer: premium → consent only; regular → add-on or
+  /// plan upgrade.
   final bool isPremium;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) =>
+      // Carry consent if it was captured before auth (premium / at-limit gate);
+      // otherwise the reactive handler below offers the add-on and retries.
+      _attempt(context, consentAddon: _hasAddonConsent(twistInstanceId));
+
+  Future<CommandReturn> _attempt(
+    BuildContext context, {
+    required bool consentAddon,
+  }) async {
     try {
       // Newly-connected OAuth draft: the instance is still a draft, so commit
       // it by activating with exactly the chosen channels (the channels
@@ -4213,6 +4426,7 @@ class SaveSource extends Command {
           name: name,
           channels: channels,
           teamId: teamId,
+          consentAddon: consentAddon,
         );
         if (accountLabel != null) {
           try {
@@ -4225,6 +4439,7 @@ class SaveSource extends Command {
           }
         }
         EditSource._committed = true;
+        _addonConsentedDrafts.remove(twistInstanceId);
         await TwistInstance.pull();
         return CommandMessage('Connection "$name" saved');
       }
@@ -4301,6 +4516,7 @@ class SaveSource extends Command {
         twistInstanceId: twistInstanceId,
         enable: enableEntries,
         disable: disableEntries,
+        consentAddon: consentAddon,
       );
 
       // 3. Remove accounts in parallel — each call is an independent HTTP
@@ -4318,23 +4534,34 @@ class SaveSource extends Command {
         }),
       );
 
+      _addonConsentedDrafts.remove(twistInstanceId);
       return CommandMessage('Connection "$name" saved');
     } on ApiException catch (e, t) {
       log.warning('Failed to save source', e, t);
+      // Consented but no card on file: capture a card, then connect again.
+      if (e.needsCard) {
+        return context.mounted
+            ? _handleNeedsCard(context, e)
+            : const CommandSkipped();
+      }
       // The client's usage data can disagree with the server's view of
       // limits — pre-checks in EditSource use cached/stale usage, but the
-      // server tracks live state. When we hit plan_limit_exceeded mid-save
-      // (e.g. enabling a syncable trips a per-channel quota), open the
-      // upgrade page directly so the user has a path forward instead of a
-      // dead-end error toast.
-      if (e.isAddonRequired) {
-        if (context.mounted) {
-          return ConnectionCapacityOffer(
-            teamId: e.isTeam == true ? e.teamId : null,
-            isPremium: isPremium,
-          ).run(context);
+      // server tracks live state. When we hit addon_required mid-save (e.g.
+      // enabling a syncable activates a connection beyond the pool), offer the
+      // add-on / upgrade and, on the web consent path, retry the save with
+      // consentAddon:true so the server charges on enable.
+      if (e.isAddonRequired && !consentAddon) {
+        if (!context.mounted) return const CommandSkipped();
+        final offer = await _offerAddonConsent(
+          context,
+          draftId: twistInstanceId,
+          isPremium: isPremium,
+          teamId: e.isTeam == true ? e.teamId : null,
+        );
+        if (offer.consented && context.mounted) {
+          return _attempt(context, consentAddon: true);
         }
-        return const CommandSkipped();
+        return offer.offerResult;
       }
       if (e.isPlanLimitExceeded) {
         if (context.mounted) {

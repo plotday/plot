@@ -245,12 +245,16 @@ class TwistApi {
   }
 
   /// Activates the draft and enables selected channels.
+  ///
+  /// Pass [consentAddon] = true when the user has explicitly acknowledged that
+  /// activating this draft will trigger a connection add-on charge.
   static Future<void> activateDraft({
     required String draftId,
     required String name,
     Map<String, dynamic>? config,
     List<Map<String, Object>>? channels,
     String? teamId,
+    bool consentAddon = false,
   }) async {
     await api.post<Map<String, dynamic>>(
       '/twist/draft/$draftId/activate',
@@ -259,6 +263,7 @@ class TwistApi {
         'config': ?config,
         'syncables': ?channels,
         'teamId': ?teamId,
+        if (consentAddon) 'consentAddon': true,
       },
     );
   }
@@ -313,15 +318,21 @@ class TwistApi {
     );
   }
 
-  /// Enable a channel resource
+  /// Enable a channel resource.
+  ///
+  /// Pass [consentAddon] = true when the user has explicitly acknowledged that
+  /// enabling this channel will trigger a connection add-on charge.
   static Future<void> enableChannel({
     required String twistInstanceId,
     required String provider,
     required String channelId,
+    bool consentAddon = false,
   }) async {
     await api.post<Map<String, dynamic>>(
       '/twist/$twistInstanceId/syncables/$provider/$channelId/enable',
-      body: const <String, dynamic>{},
+      body: <String, dynamic>{
+        if (consentAddon) 'consentAddon': true,
+      },
     );
   }
 
@@ -341,10 +352,15 @@ class TwistApi {
   /// round-trips and DO spin-ups.
   ///
   /// Each entry is `{ 'provider': ..., 'syncableId': ... }`.
+  ///
+  /// Pass [consentAddon] = true when the user has explicitly acknowledged that
+  /// enabling these channels will trigger a connection add-on charge (the
+  /// server charges on enable, or returns needs_card to capture a card first).
   static Future<void> applyChannelsBatch({
     required String twistInstanceId,
     List<Map<String, String>> enable = const [],
     List<Map<String, String>> disable = const [],
+    bool consentAddon = false,
   }) async {
     if (enable.isEmpty && disable.isEmpty) return;
     await api.post<Map<String, dynamic>>(
@@ -352,6 +368,7 @@ class TwistApi {
       body: <String, dynamic>{
         if (enable.isNotEmpty) 'enable': enable,
         if (disable.isNotEmpty) 'disable': disable,
+        if (consentAddon) 'consentAddon': true,
       },
     );
   }

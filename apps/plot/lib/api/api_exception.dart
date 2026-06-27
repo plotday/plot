@@ -30,6 +30,9 @@ class ApiException implements Exception {
   /// installed (populated when reason == 'twist_addon_required').
   final int? candidateWeight;
 
+  /// The Stripe checkout URL returned when reason == 'needs_card'.
+  final String? checkoutUrl;
+
   ApiException({
     required this.statusCode,
     required this.endpoint,
@@ -43,6 +46,7 @@ class ApiException implements Exception {
     this.teamId,
     this.reason,
     this.candidateWeight,
+    this.checkoutUrl,
   });
 
   /// Returns true if this exception represents a plan limit being exceeded
@@ -55,6 +59,10 @@ class ApiException implements Exception {
   /// Returns true if this exception indicates a twist add-on is required
   bool get isTwistAddonRequired =>
       code == 'plan_limit_exceeded' && reason == 'twist_addon_required';
+
+  /// Returns true when the user consented to an add-on charge but has no
+  /// payment method on file (status 402, reason == 'needs_card').
+  bool get needsCard => statusCode == 402 && reason == 'needs_card';
 
   @override
   String toString() =>

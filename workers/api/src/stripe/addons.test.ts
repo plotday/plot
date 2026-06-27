@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type Stripe from "stripe";
-import { provisionAddonCredit, reconcileAddonQuantityDown, customerHasPaymentMethod, createAddonCheckoutSession, TWIST_ADDON, setTwistAddonQuantity } from "./addons";
+import { provisionAddonCredit, reconcileAddonQuantityDown, customerHasPaymentMethod, createAddonCheckoutSession, createAddonCardSetupSession, TWIST_ADDON, setTwistAddonQuantity } from "./addons";
 
 function stubStripe(over: Record<string, unknown> = {}) {
   return {
@@ -144,6 +144,20 @@ it("createAddonCheckoutSession with TWIST_ADDON uses twist lookup key, metadata.
       metadata: expect.objectContaining({ type: "twist_addon" }),
     }),
   }));
+});
+
+it("createAddonCardSetupSession creates a $0 setup session with card_saved return", async () => {
+  const created: any[] = [];
+  const stripe = { checkout: { sessions: { create: async (a: any) => { created.push(a); return { url: "https://stripe/setup" }; } } } } as any;
+  const url = await createAddonCardSetupSession({
+    stripe, customerId: "cus_1", siteRoot: "https://plot.day", scopeMetadata: { user_id: "u1" },
+  });
+  expect(url).toBe("https://stripe/setup");
+  expect(created[0].mode).toBe("setup");
+  expect(created[0].line_items).toBeUndefined();
+  expect(created[0].success_url).toBe("https://plot.day/upgrade?addon=card_saved");
+  expect(created[0].cancel_url).toBe("https://plot.day/upgrade?addon=canceled");
+  expect(created[0].setup_intent_data.metadata.type).toBe("addon_card");
 });
 
 it("createAddonCheckoutSession defaults to CONNECTION_ADDON (kind omitted) - uses addon lookup key and ?addon= urls", async () => {

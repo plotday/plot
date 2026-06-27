@@ -376,6 +376,11 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             Your card is on file and your connection add-on is active.
           </Alert>
         )}
+        {addonReturn === "card_saved" && (
+          <Alert color="green" title="Card saved" mb="md">
+            Card saved — return to Plot and connect to finish.
+          </Alert>
+        )}
         {twistAddonReturn === "success" && (
           <Alert color="green" title="Twist add-on active" mb="md">
             Your card is on file and your twist add-on is active.

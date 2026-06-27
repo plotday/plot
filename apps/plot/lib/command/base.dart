@@ -33,6 +33,16 @@ class CommandSkipped extends CommandReturn {
   const CommandSkipped();
 }
 
+// The user consented to a connection add-on charge (web/Stripe path) without
+// any upfront charge. The caller should proceed to enable the connection with
+// `consentAddon: true`; the server charges on enable (or returns needs_card to
+// capture a card first). Returned by the connection-capacity consent gate
+// instead of charging upfront. The App Store path does NOT use this — it
+// completes a StoreKit purchase and returns [CommandDone].
+class CommandAddonConsented extends CommandReturn {
+  const CommandAddonConsented();
+}
+
 // Status message from running the command
 class CommandMessage extends CommandReturn {
   const CommandMessage(this.message, {this.title, this.isError = false});

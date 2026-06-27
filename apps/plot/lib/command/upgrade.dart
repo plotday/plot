@@ -146,15 +146,17 @@ Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Purchases exactly one more connection add-on credit.
+/// Captures consent for one more connection add-on credit ($5/month).
 ///
-/// - Team scope ([teamId] set): routes through the web endpoint (Stripe,
-///   admin-managed).
-/// - Personal + App Store build: upgrades to the next StoreKit tier
-///   (immediate, Apple prorates). Capped at [kIapMaxAddons].
-/// - Personal + non-App-Store (web, Android, DMG): calls
-///   POST /upgrade/addons/purchase; on a checkout-required response the
-///   user is directed to their browser to complete payment.
+/// - Personal + App Store build: completes a StoreKit purchase up front
+///   (Apple constraint — the charge happens at purchase, before auth).
+///   Capped at [kIapMaxAddons]. Returns [CommandDone].
+/// - Web / DMG / Android, and all team scopes (Stripe): shows the consent
+///   disclosure but does NOT charge. Returns [CommandAddonConsented] so the
+///   caller proceeds to enable the connection with `consentAddon: true`; the
+///   server charges on enable (or returns needs_card to capture a card first).
+///   The legacy upfront POST /upgrade/addons/purchase endpoint is no longer
+///   used on this path.
 class BuyAddonCommand extends Command {
   BuyAddonCommand({this.teamId})
     : super(
@@ -167,27 +169,44 @@ class BuyAddonCommand extends Command {
   /// When set, the add-on is for this team (managed on the web by an admin).
   final String? teamId;
 
-  // Guards against starting two add-on checkouts at once (a 2nd standalone
+  // Guards against starting two StoreKit purchases at once (a 2nd standalone
   // add-on subscription would orphan and bill forever — see Plan 2 review).
-  // Static so the guard is shared across all instances (the command is
-  // constructed fresh on every tap via _addonNeededCommand).
+  // Only the App Store purchase path needs this; the web path captures consent
+  // (no charge) so it doesn't.
   static bool _addonPurchaseInFlight = false;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    if (_addonPurchaseInFlight) return const CommandSkipped();
-    _addonPurchaseInFlight = true;
-    try {
-      if (teamId != null) {
-        return await _purchaseViaEndpoint(context, teamId);
-      }
-      if (UpgradeUi.isAppStoreBuild) {
+    // App Store personal: StoreKit purchase before auth (Apple constraint).
+    if (teamId == null && UpgradeUi.isAppStoreBuild) {
+      if (_addonPurchaseInFlight) return const CommandSkipped();
+      _addonPurchaseInFlight = true;
+      try {
         return await _runIap(context);
+      } finally {
+        _addonPurchaseInFlight = false;
       }
-      return await _purchaseViaEndpoint(context, null);
-    } finally {
-      _addonPurchaseInFlight = false;
     }
+    // Web / DMG / Android / team: consent only — charge on enable.
+    return _consent(context);
+  }
+
+  /// Web/Stripe consent path: show the add-on disclosure and, on confirmation,
+  /// signal the caller to enable with `consentAddon: true`. No upfront charge.
+  Future<CommandReturn> _consent(BuildContext context) async {
+    final confirmed = await ConfirmModal(
+      title: 'Add a connection add-on',
+      messageWidget: const SubscriptionDisclosure(
+        priceLine: r'Connection add-on — $5/month',
+        note:
+            "You'll be billed when the connection is added. Billed separately "
+            "from your plan; it does not count toward your plan's connection "
+            'limit.',
+      ),
+      confirmLabel: r'Add for $5/month',
+    ).run(context);
+    if (!context.mounted || !confirmed) return const CommandSkipped();
+    return const CommandAddonConsented();
   }
 
   Future<CommandReturn> _runIap(BuildContext context) async {
@@ -277,65 +296,6 @@ class BuyAddonCommand extends Command {
     }
   }
 
-  Future<CommandReturn> _purchaseViaEndpoint(
-    BuildContext context,
-    String? teamId,
-  ) async {
-    // Consent before any charge.
-    final confirmed = await ConfirmModal(
-      title: 'Add a connection add-on',
-      messageWidget: const SubscriptionDisclosure(
-        priceLine: r'Connection add-on — $5/month',
-        note: "Billed separately from your plan. It does not count toward your "
-            "plan's connection limit.",
-      ),
-      confirmLabel: r'Add for $5/month',
-    ).run(context);
-    if (!context.mounted || !confirmed) return const CommandSkipped();
-
-    try {
-      final result = await UpgradeApi.purchaseAddon(teamId: teamId);
-      if (!context.mounted) return const CommandSkipped();
-      if (result.ok) {
-        try {
-          await SubscriptionService.instance.refresh();
-        } catch (e, st) {
-          log.warning('addon refresh after purchase failed', e, st);
-        }
-        if (context.mounted) {
-          context.showToast(
-            message: 'Connection add-on added — connect again to finish.',
-          );
-        }
-        return const CommandDone();
-      }
-      final url = result.checkoutUrl;
-      if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        if (context.mounted) {
-          context.showToast(
-            message: 'Finish checkout in your browser, then connect again.',
-          );
-        }
-        return const CommandSkipped();
-      }
-      return const CommandSkipped();
-    } catch (e, st) {
-      log.warning('Add-on purchase failed', e, st);
-      // 4xx responses are expected business rejections (e.g. non-admin team →
-      // 403, card-less → 400) and should not be reported to error tracking.
-      if (e is! ApiException || e.statusCode >= 500) {
-        Tracker.captureException(e, st);
-      }
-      if (context.mounted) {
-        context.showToast(
-          message: 'Could not add a connection add-on.',
-          isError: true,
-        );
-      }
-      return const CommandSkipped();
-    }
-  }
 }
 
 /// Purchases exactly one more twist add-on credit.
@@ -794,12 +754,16 @@ class ShowUpgradeOptions extends Command {
   }
 }
 
-/// Handles the "need more connection capacity" offer for a regular connector
-/// that is beyond the plan pool.
+/// Handles the "need more connection capacity" offer for a connector that is
+/// beyond the plan pool. On the web/Stripe path this captures CONSENT only and
+/// returns [CommandAddonConsented] — the caller then enables the connection
+/// with `consentAddon: true` and the server charges on enable. On the App
+/// Store path [BuyAddonCommand] completes a StoreKit purchase and returns
+/// [CommandDone].
 ///
 /// - [isPremium] == true (premium connector — LinkedIn, IG, WhatsApp):
 ///   Delegate directly to [BuyAddonCommand]. These connectors always require
-///   an add-on credit, on both platforms.
+///   an add-on credit, on both platforms (no "upgrade instead" alternative).
 /// - [isPremium] == false + non-App-Store: present a choice — add a $5/month
 ///   connection add-on OR upgrade to Pro.
 /// - [isPremium] == false + App Store: go straight to [ShowUpgradeOptions]

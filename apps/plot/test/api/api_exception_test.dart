@@ -37,6 +37,51 @@ void main() {
     );
   });
 
+  test('needsCard is true only for 402 + needs_card reason', () {
+    expect(
+      ApiException(
+        statusCode: 402,
+        endpoint: '/test',
+        title: 'Payment Required',
+        description: 'msg',
+        reason: 'needs_card',
+        checkoutUrl: 'https://x',
+      ).needsCard,
+      isTrue,
+    );
+    expect(
+      ApiException(
+        statusCode: 402,
+        endpoint: '/test',
+        title: 'Payment Required',
+        description: 'msg',
+        reason: 'needs_card',
+        checkoutUrl: 'https://x',
+      ).checkoutUrl,
+      equals('https://x'),
+    );
+    expect(
+      ApiException(
+        statusCode: 403,
+        endpoint: '/test',
+        title: 'Access Denied',
+        description: 'msg',
+        reason: 'needs_card',
+      ).needsCard,
+      isFalse,
+    );
+    expect(
+      ApiException(
+        statusCode: 402,
+        endpoint: '/test',
+        title: 'Payment Required',
+        description: 'msg',
+        reason: 'other_reason',
+      ).needsCard,
+      isFalse,
+    );
+  });
+
   test('isTwistAddonRequired is true only for plan_limit_exceeded + twist_addon_required', () {
     expect(
       ApiException(

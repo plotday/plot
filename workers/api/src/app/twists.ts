@@ -30,7 +30,10 @@ import { extractRequestContext } from "../utils/log-context";
 import { saveSecureOptions } from "../utils/secure-options";
 import { handleValidationError } from "../utils/validation";
 import { notifyUserSync } from "./sync/notify";
-import { reconcileScopeTwistAddonBillingDown } from "./twist-integrations";
+import {
+  chargeConsentedAddonOrError,
+  reconcileScopeTwistAddonBillingDown,
+} from "./twist-integrations";
 import { createStripeClient } from "../stripe/utils";
 
 /**
@@ -99,6 +102,12 @@ const ActivateDraftSchema = z.object({
       })
     )
     .optional(),
+  // Set true when the user has consented to a billable connection add-on charge
+  // (premium connector, or a regular connection beyond the plan pool). The
+  // activate route is the primary "add a new connection" path on web/DMG/Android
+  // (App Store pre-purchases via StoreKit), so it must honor the same consent
+  // gate the channel-enable handlers use.
+  consentAddon: z.boolean().optional(),
 });
 
 /**
@@ -432,6 +441,22 @@ twists.post("/twist/draft/:id/activate", async (c) => {
   }
   const body = parseResult.data;
   try {
+    // Charge-on-enable gate: this is the primary "add a new connection" path
+    // (web/DMG/Android), so before enabling any selected channels we run the
+    // same consent/charge logic the channel-enable handlers use. The draft's
+    // twist_instance_connection row already exists by now (OAuth
+    // storeAuthorization / no-provider /connect inserted it), so the gate's
+    // checkChannelConnectionLimit resolves. Charge-first ordering (money-safe);
+    // see chargeConsentedAddonOrError for the residual orphan-charge note.
+    if (body.syncables && body.syncables.length > 0) {
+      const gate = await chargeConsentedAddonOrError(
+        c,
+        draftId,
+        body.consentAddon
+      );
+      if ("response" in gate) return gate.response;
+    }
+
     const { channelDispatch } = await activateDraft(
       c.var.db,
       c.env,

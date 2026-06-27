@@ -42,6 +42,7 @@ import upgrade, {
   cancelStripeSubscriptionBestEffort,
   purchaseAddonCreditForScope,
   purchaseTwistAddonBlocksForScope,
+  provisionAddonForConsentedEnable,
 } from "./upgrade";
 import { computeTwistBlocksNeeded } from "../utils/limits";
 
@@ -491,6 +492,151 @@ describe.skipIf(!DATABASE_URL)(
       }
 
       expect(result).toEqual({ ok: false, checkout_url: "https://checkout.stripe.com/pay/test" });
+      expect((stripe as any).subscriptions.create).not.toHaveBeenCalled();
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// provisionAddonForConsentedEnable — DB + stub Stripe tests
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "provisionAddonForConsentedEnable",
+  () => {
+    it("consented enable with card on file provisions a credit and writes the row", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const stripe = makeStripeAddonMock(true) as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof provisionAddonForConsentedEnable>> | undefined;
+      let updatedRow:
+        | { stripe_addon_subscription_id: string | null; premium_connection_addons: number }
+        | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "core",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_consented_card",
+              stripe_subscription_id: "sub_plan_consented_card",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 60 * 60 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          result = await provisionAddonForConsentedEnable({
+            stripe,
+            db: trx,
+            customerId: "cus_consented_card",
+            addonSubscriptionId: null,
+            scopeMetadata: { user_id: userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+          });
+
+          updatedRow = await trx
+            .selectFrom("user_subscription")
+            .select(["stripe_addon_subscription_id", "premium_connection_addons"])
+            .where("user_id", "=", userId)
+            .executeTakeFirst();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      expect(result).toEqual({ ok: true, addons: 1 });
+      expect(updatedRow?.premium_connection_addons).toBe(1);
+      expect(updatedRow?.stripe_addon_subscription_id).toBe("sub_new");
+    });
+
+    it("consented enable with no card returns needsCard + setup url and does not charge", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      // Use a custom stub for the no-card path: returns a setup session URL
+      // that includes "addon=card_saved" (matching what createAddonCardSetupSession
+      // passes as success_url, reflected back in the session URL by the mock).
+      const stripe = {
+        customers: {
+          retrieve: vi.fn().mockResolvedValue({ deleted: false, invoice_settings: {} }),
+        },
+        paymentMethods: {
+          list: vi.fn().mockResolvedValue({ data: [] }),
+        },
+        subscriptions: {
+          create: vi.fn(),
+        },
+        checkout: {
+          sessions: {
+            create: vi.fn().mockResolvedValue({
+              url: "https://checkout.stripe.com/pay/setup?addon=card_saved",
+            }),
+          },
+        },
+      } as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof provisionAddonForConsentedEnable>> | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "core",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_consented_nocard",
+              stripe_subscription_id: "sub_plan_consented_nocard",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 60 * 60 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          result = await provisionAddonForConsentedEnable({
+            stripe,
+            db: trx,
+            customerId: "cus_consented_nocard",
+            addonSubscriptionId: null,
+            scopeMetadata: { user_id: userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+          });
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      expect(result).toEqual({
+        ok: false,
+        needsCard: true,
+        checkout_url: expect.stringContaining("addon=card_saved"),
+      });
       expect((stripe as any).subscriptions.create).not.toHaveBeenCalled();
     });
   }
