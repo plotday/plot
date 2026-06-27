@@ -379,6 +379,64 @@ void main() {
     });
   });
 
+  // Search merges the local feed with the server's [remoteSearchExtras]. The
+  // bloc computes those extras once, by subtracting a point-in-time snapshot of
+  // the local feed — but the feed keeps changing afterward (matching notes sync
+  // in; Thread.searchRemote hydrates rows), so a thread can enter the local
+  // feed *after* the snapshot and end up in BOTH lists. [remoteSearchExtrasDeduped]
+  // re-derives the exclusion against the live feed so a thread never renders twice.
+  group('PriorityState.remoteSearchExtrasDeduped', () {
+    PriorityState searchState({
+      required Priority priority,
+      required List<Thread> feed,
+      required List<Thread> extras,
+    }) {
+      final draft = Thread(priority: priority, draft: true);
+      final draftNote = Note(
+        id: Uuid.generate(),
+        threadId: draft.id,
+        authorId: ActorId(Uuid.generate()),
+        draft: true,
+        createdAt: DateTime(2026, 1, 1),
+        sourceCreatedAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      return PriorityState(
+        context: priority,
+        draft: draft,
+        draftNote: draftNote,
+        agendaItems: const [],
+        search: 'competitor',
+        remoteSearchExtras: extras,
+        activityFeedByTab: {
+          ActivityTab.catchUp: ActivityFeedTabData(
+            items: [for (final t in feed) AgendaThreadItem(t)],
+          ),
+        },
+      );
+    }
+
+    test('drops extras already present in the live local feed', () {
+      final p = _testPriority();
+      // X is visible locally (in the feed) AND returned as a remote extra —
+      // the stale-snapshot scenario. Y is genuinely remote-only.
+      final x = Thread(priority: p, title: 'Tell me when');
+      final y = Thread(priority: p, title: 'Browser History Capture');
+      final state = searchState(priority: p, feed: [x], extras: [x, y]);
+
+      final ids = state.remoteSearchExtrasDeduped.map((t) => t.id).toList();
+      expect(ids, [y.id],
+          reason: 'a thread in the local feed must not also appear in extras');
+    });
+
+    test('passes extras through unchanged when the local feed is empty', () {
+      final p = _testPriority();
+      final y = Thread(priority: p, title: 'Browser History Capture');
+      final state = searchState(priority: p, feed: const [], extras: [y]);
+      expect(state.remoteSearchExtrasDeduped.map((t) => t.id), [y.id]);
+    });
+  });
+
   group('PriorityState.hasUnread', () {
     test('hasUnread reflects unread rows in the activity feed', () {
       final priority = _testPriority();

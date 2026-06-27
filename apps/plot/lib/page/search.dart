@@ -262,7 +262,10 @@ class _SearchViewState extends State<_SearchView> {
         if (item is AgendaThreadItem) item.thread,
       // Remote extras: threads the server surfaced that aren't visible
       // locally. Append directly — no section header, mirroring the feed.
-      ...state.remoteSearchExtras,
+      // [remoteSearchExtrasDeduped] drops any thread that has since entered the
+      // local feed (via sync or searchRemote's hydration) so it can't render
+      // both here and above.
+      ...state.remoteSearchExtrasDeduped,
     ];
 
     final isSearching = state.search.isNotEmpty;

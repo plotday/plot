@@ -1289,12 +1289,15 @@ class _PriorityPageState extends State<PriorityPage>
     final List<AgendaItem> displayItems;
     if (isSearching && state.remoteSearchExtras.isNotEmpty) {
       // Remote extras (threads the server surfaced that aren't visible
-      // locally) append directly to the same list — no section header. When
-      // the view is narrowed to a focus, the extras are filtered to it too so
-      // they match the local results.
+      // locally) append directly to the same list — no section header.
+      // [remoteSearchExtrasDeduped] drops any thread that has since entered the
+      // local feed (via sync or searchRemote's hydration) so it can't render
+      // both as a local row and an extra. When the view is narrowed to a focus,
+      // the extras are filtered to it too so they match the local results.
+      final deduped = state.remoteSearchExtrasDeduped;
       final extras = scope == null
-          ? state.remoteSearchExtras
-          : state.remoteSearchExtras.where(
+          ? deduped
+          : deduped.where(
               (t) => t.priority.id == scope.id,
             );
       final merged = <AgendaItem>[...items];

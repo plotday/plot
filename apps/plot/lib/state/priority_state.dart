@@ -376,6 +376,31 @@ class PriorityState extends Equatable {
     return result;
   }
 
+  /// [remoteSearchExtras] with any thread already present in the live local
+  /// feed ([activityFeedViewItems]) removed.
+  ///
+  /// The bloc computes [remoteSearchExtras] once, by subtracting a point-in-time
+  /// snapshot of the local feed taken the instant the remote request resolves.
+  /// But the local feed keeps changing afterward — matching notes/threads stream
+  /// in via sync, and [Thread.searchRemote] itself hydrates matching rows into
+  /// the store — so a thread can enter the local feed *after* the snapshot was
+  /// taken. The frozen extras list then overlaps the updated feed, and since the
+  /// search views simply concatenate (local feed) + (extras) with no further
+  /// dedup, that thread renders twice. Re-deriving the exclusion here, against
+  /// the current feed at render time, keeps a thread from appearing in both the
+  /// local list and the extras regardless of when it synced in.
+  List<Thread> get remoteSearchExtrasDeduped {
+    if (remoteSearchExtras.isEmpty) return remoteSearchExtras;
+    final localIds = <String>{
+      for (final item in activityFeedViewItems)
+        if (item is AgendaThreadItem) item.thread.id.toString(),
+    };
+    if (localIds.isEmpty) return remoteSearchExtras;
+    return remoteSearchExtras
+        .where((t) => !localIds.contains(t.id.toString()))
+        .toList();
+  }
+
   /// Thread ids of the currently visible feed rows, in display order. Drives
   /// shift-click range selection. Derived from [activityFeedViewItems] so it
   /// already respects the muteOnly / global-scope filters and skips section
