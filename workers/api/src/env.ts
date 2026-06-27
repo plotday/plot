@@ -205,6 +205,8 @@ export type Bindings = {
   readonly AUTH_TODOIST_SECRET: string;
   readonly AUTH_AIRTABLE_ID: string;
   readonly AUTH_AIRTABLE_SECRET: string;
+  readonly AUTH_TRELLO_ID: string;
+  readonly AUTH_TRELLO_SECRET: string;
 
   // Sign in with Apple — used to revoke OAuth tokens on account deletion
   // (App Store guideline 5.1.1(v)).

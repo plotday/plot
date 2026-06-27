@@ -1161,7 +1161,14 @@ export async function getNote(
 
     // Always include archived notes (no filter on archived_at)
 
-    const data = await query.limit(1).executeTakeFirst();
+    const data = await query
+      .select([
+        sql<string | null>`note.section_key`.as("section_key"),
+        sql<string | null>`note.section_label`.as("section_label"),
+        sql<string | null>`note.section_position`.as("section_position"),
+        sql<string | null>`note.item_position`.as("item_position"),
+      ])
+      .limit(1).executeTakeFirst();
 
     if (!data) {
       return null;
@@ -1244,6 +1251,11 @@ export async function getNote(
       tags: (tagsData?.tags as Partial<Record<Tag, ActorId[]>> | null) || {},
       reactions: {},
       cta: null,
+      sectionKey: data.section_key ?? null,
+      sectionLabel: data.section_label ?? null,
+      sectionPosition: data.section_position ?? null,
+      itemPosition: data.item_position ?? null,
+      tagActors: {},
     };
   } catch (err) {
     const logger = createLogger({ twist_instance_id: plot.twistInstanceId });

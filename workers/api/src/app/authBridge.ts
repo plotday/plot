@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import superjson from "superjson";
 
+import type { AuthProvider } from "@plotday/twister/tools/integrations";
 import type { Bindings } from "../env";
 import { authRateLimiter } from "../middleware/rate-limit";
 import { Integrations } from "../twist/tools/integrations";
@@ -55,6 +56,23 @@ authBridgeRoutes.get("/auth/bridge", async (c) => {
     }
   }
 
+  // Token-fragment providers (e.g. Trello): the token is in the URL fragment,
+  // which never reaches the server. If there is no ?token= yet, serve a small
+  // capture page that reads location.hash, POSTs {state, token} back to
+  // POST /auth/bridge, and then deep-links to bridgeUri.
+  if (
+    provider &&
+    PROVIDER_CONFIGS[provider as AuthProvider]?.authMode === "token-fragment" &&
+    !query.token &&
+    !error
+  ) {
+    return htmlFragmentCaptureResponse({
+      state: state ?? "",
+      bridgeUri,
+      apiRoot: c.env.API_ROOT,
+    });
+  }
+
   if (installOnly) {
     return handleSlackInstallCallback(c.env, state, query, error);
   }
@@ -99,6 +117,34 @@ authBridgeRoutes.get("/auth/bridge", async (c) => {
       e instanceof Error ? e.message : "Authentication failed",
     );
   }
+});
+
+// POST /auth/bridge — relay endpoint for token-fragment providers (e.g. Trello).
+// The client-side capture page reads the fragment token and POSTs {state, token}
+// here so HandleOauthCallback can complete the exchange server-side.
+authBridgeRoutes.post("/auth/bridge", async (c) => {
+  let body: { state?: string; token?: string };
+  try {
+    body = await c.req.json<{ state?: string; token?: string }>();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const { state, token } = body;
+  if (!state || !token) {
+    return new Response(JSON.stringify({ error: "Missing state or token" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return Integrations.HandleOauthCallback(
+    c.env.STORAGE,
+    { state, token },
+    c.env,
+    c.executionCtx as unknown as { exports: ExecutionContext["exports"] },
+  );
 });
 
 // GET /auth/hosted/success - Unipile hosted-auth success redirect.
@@ -456,6 +502,44 @@ async function handleSlackInstallCallback(
   }
 }
 
+// Token-fragment providers (Trello) deliver the token in the URL fragment,
+// which never reaches the server. This page reads it client-side and POSTs it
+// back so HandleOauthCallback can complete, then deep-links to bridgeUri.
+function htmlFragmentCaptureResponse({
+  state,
+  bridgeUri,
+  apiRoot,
+}: {
+  state: string;
+  bridgeUri: string | null;
+  apiRoot: string;
+}): Response {
+  const cfg = JSON.stringify({ state, bridgeUri, post: `${apiRoot}/auth/bridge` }).replace(/</g, "\\u003c");
+  const body = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Finishing sign-in…</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><p>Finishing sign-in…</p>
+<script>
+  (function () {
+    var cfg = ${cfg};
+    var token = new URLSearchParams((location.hash || "").replace(/^#/, "")).get("token");
+    function done(ok) {
+      if (cfg.bridgeUri) {
+        location.replace(cfg.bridgeUri + (cfg.bridgeUri.indexOf("?") < 0 ? "?" : "&") +
+          "state=" + encodeURIComponent(cfg.state) + (ok ? "&success=1" : "&error=1"));
+      }
+    }
+    if (!token) { done(false); return; }
+    fetch(cfg.post, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: cfg.state, token: token }),
+    }).then(function (r) { done(r.ok); }).catch(function () { done(false); });
+  })();
+</script></body></html>`;
+  return new Response(body, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
 /** Render the bridge HTML response. Escapes all interpolated values. */
 function htmlBridgeResponse({
   bridgeUri,
@@ -478,7 +562,7 @@ function htmlBridgeResponse({
     ? `Authentication failed: ${error}. You can close this window and try again in Plot.`
     : "Authentication complete. You can close this window and return to Plot.";
 
-  const returnUrlJs = returnUrl ? JSON.stringify(returnUrl) : "null";
+  const returnUrlJs = returnUrl ? JSON.stringify(returnUrl).replace(/</g, "\\u003c") : "null";
   const body = `<!DOCTYPE html>
 <html lang="en">
 <head>

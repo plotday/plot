@@ -921,11 +921,15 @@ export type Database = {
           embedding: unknown
           external_content_hash: string | null
           id: string
+          item_position: string | null
           key: string | null
           link_id: string | null
           mentions: string[] | null
           merged_from_thread_id: string | null
           re_note_id: string | null
+          section_key: string | null
+          section_label: string | null
+          section_position: string | null
           seq: unknown
           source_created_at: string
           sync_depth: number | null
@@ -949,11 +953,15 @@ export type Database = {
           embedding?: unknown
           external_content_hash?: string | null
           id?: string
+          item_position?: string | null
           key?: string | null
           link_id?: string | null
           mentions?: string[] | null
           merged_from_thread_id?: string | null
           re_note_id?: string | null
+          section_key?: string | null
+          section_label?: string | null
+          section_position?: string | null
           seq?: unknown
           source_created_at?: string
           sync_depth?: number | null
@@ -977,11 +985,15 @@ export type Database = {
           embedding?: unknown
           external_content_hash?: string | null
           id?: string
+          item_position?: string | null
           key?: string | null
           link_id?: string | null
           mentions?: string[] | null
           merged_from_thread_id?: string | null
           re_note_id?: string | null
+          section_key?: string | null
+          section_label?: string | null
+          section_position?: string | null
           seq?: unknown
           source_created_at?: string
           sync_depth?: number | null
@@ -4232,6 +4244,7 @@ export type Database = {
           created_by: string | null
           draft: boolean | null
           id: string | null
+          item_position: string | null
           key: string | null
           link_channel_id: string | null
           link_id: string | null
@@ -4243,6 +4256,9 @@ export type Database = {
           mentions: string[] | null
           priority_id: string | null
           re_note_id: string | null
+          section_key: string | null
+          section_label: string | null
+          section_position: string | null
           seq: unknown
           source_created_at: string | null
           sync_depth: number | null
@@ -4460,10 +4476,14 @@ export type Database = {
           created_by: string | null
           draft: boolean | null
           id: string | null
+          item_position: string | null
           key: string | null
           mentions: string[] | null
           priority_id: string | null
           re_note_id: string | null
+          section_key: string | null
+          section_label: string | null
+          section_position: string | null
           seq: unknown
           source_created_at: string | null
           sync_depth: number | null
@@ -4598,10 +4618,14 @@ export type Database = {
           created_by: string | null
           draft: boolean | null
           id: string | null
+          item_position: string | null
           key: string | null
           mentions: string[] | null
           priority_id: string | null
           re_note_id: string | null
+          section_key: string | null
+          section_label: string | null
+          section_position: string | null
           seq: unknown
           source_created_at: string | null
           sync_depth: number | null
@@ -5563,9 +5587,13 @@ export type Database = {
           delivery_error: Json | null
           draft: boolean | null
           id: string | null
+          item_position: string | null
           mentions: string[] | null
           merged_from_thread_id: string | null
           re_note_id: string | null
+          section_key: string | null
+          section_label: string | null
+          section_position: string | null
           seq: unknown
           source_created_at: string | null
           thread_id: string | null
@@ -5700,9 +5728,13 @@ export type Database = {
           delivery_error: Json | null
           draft: boolean | null
           id: string | null
+          item_position: string | null
           mentions: string[] | null
           merged_from_thread_id: string | null
           re_note_id: string | null
+          section_key: string | null
+          section_label: string | null
+          section_position: string | null
           seq: unknown
           source_created_at: string | null
           thread_id: string | null

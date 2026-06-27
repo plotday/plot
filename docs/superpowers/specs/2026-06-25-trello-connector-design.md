@@ -4,6 +4,12 @@
 **Status:** Approved (brainstorming) — pending spec review
 **Author:** Kris Braun (with Claude)
 
+> **v2 (2026-06-25):** Checklist sync redesigned from a read-only markdown note into a
+> **generic "structured items as notes" model** with two-way completion + assignment.
+> This adds a third part — a platform/SDK foundation (note section/position fields + actor
+> external-account enrichment) that other products (Google Tasks subtasks, Todoist, etc.)
+> can reuse. See **Part 3**.
+
 ## Summary
 
 Add a **bidirectional Trello connector** so users can sync Trello boards/cards into
@@ -17,12 +23,15 @@ user-authorized token** obtained from the `trello.com/1/authorize` flow, which r
 the token in the URL **fragment** (`#token=…`) — an implicit-grant-style flow with no
 code exchange and no refresh. Atlassian owns Trello but Trello is **not** covered by the
 Atlassian OAuth 2.0 (3LO) provider we already have for Jira (`audience: api.atlassian.com`
-tokens cannot call `api.trello.com`). Therefore this work has two parts:
+tokens cannot call `api.trello.com`). Therefore this work has three parts:
 
 1. **A new native auth provider `AuthProvider.Trello`** in the runtime (`workers/api`) +
    the twister enum (`public/twister`). This is the novel/risky part.
 2. **The connector** in `public/connectors/trello/`, modeled on the canonical
    `connectors/linear/` bidirectional ProjectConnector.
+3. **A generic platform/SDK foundation** for syncing *structured items* (checklists today,
+   any product's subtask/checklist items later) as Plot **notes** with two-way completion +
+   assignment. See **Part 3**.
 
 ## Goals
 
@@ -31,18 +40,28 @@ tokens cannot call `api.trello.com`). Therefore this work has two parts:
 - Full **bidirectional** sync: move card between lists (status), archive card, post/edit
   comments, create new cards from Plot.
 - v1 entity coverage: card title, description, list-status, members (→ contacts),
-  comments (↔ notes), **attachments**, **checklists**.
+  comments (↔ notes), **attachments**, **checklists** (two-way: completion, assignment,
+  rename — see Part 3).
 - Real-time updates via **per-board Trello webhooks** with **HMAC-SHA1 signature
   verification** (`X-Trello-Webhook`).
 - A genuine "Connect" UX (redirect → authorize on trello.com → done), not manual
   key-pasting.
+- A **reusable structured-items model**: the note schema + actor-enrichment additions are
+  designed so future connectors (Google Tasks subtasks, Todoist sub-tasks, Notion to-dos,
+  GitHub task-lists) get two-way checklist sync for free.
 
 ## Non-goals (explicitly out of v1)
 
 - **Due dates** and **labels** sync (deferred — can be added later).
 - OAuth 1.0a (we use the simpler token-authorize flow).
-- Checklist write-back / editing from Plot (checklists render read-only in v1).
 - Token refresh logic (Trello tokens use `expiration=never`).
+- **Grouped/ordered/collapsed checklist UI in the app** — the data model lands now; the
+  app renders checklist-item notes as a (degraded) flat list until Layer 3 ships. See
+  Part 3.
+- **Creating / deleting checklist items from Plot** — deferred until the app has the UI to
+  do so (v1 write-back covers completion, assignment, and rename of existing items).
+- **First-class sub-issues** (Jira sub-tasks, Linear sub-issues) — out of scope of the
+  structured-items model by design; those remain their own threads.
 
 ## Decisions (from brainstorming)
 
@@ -53,6 +72,11 @@ tokens cannot call `api.trello.com`). Therefore this work has two parts:
 | Done detection | List-name heuristic + card archive | Trello has no native "done"; name match `/done\|complete\|closed\|shipped\|finished/i`, plus `closed:true` → Plot archived. |
 | Extra entities | Attachments + Checklists | (Due dates + labels deferred.) |
 | Webhook security | HMAC-SHA1 in v1 | App secret reaches the connector safely (see Security). |
+| Checklist item = | a Plot **note** (keyed `checkitem-{id}`) | Notes are the only primitive that already carries per-actor assignment + completion (`note_tag` Todo/Done), keyed upsert, sync, and `onNoteUpdated` write-back. |
+| Checklist grouping/order | **new generic note fields** (`section_*`, `item_position`) | Captures structure now; app renders grouped/ordered later with no data migration. Degraded interim = flat list. |
+| Outbound assignment | **platform enrichment** of dispatched actors (no connector lookup call) | Symmetric with inbound `NewContact.source.accountId`; reusable by every bidirectional connector; kills the email-cache hack. |
+| Checklist completion | **item-level collapse**: any `Done` ⇔ Trello complete; attribute to assignee, else owner | Trello completion is one bit; Plot `Done` is per-actor. Defined collapse keeps it faithful. |
+| Capability gating | derive from **section-presence** (client render-gate), v1 | No reactions/attachments/links on checklist-item notes; no schema column needed; degradable. |
 
 ---
 
@@ -245,8 +269,8 @@ uses `token.provider.secret`.
   - `key: "description"` — card `desc` (Trello markdown → `contentType: "markdown"`).
   - `key: "comment-{actionId}"` — each `commentCard` action; `created` = action date;
     author = action member → `NewContact`.
-  - `key: "checklists"` — a single structured note rendering all checklists + items
-    (read-only v1).
+  - `key: "checkitem-{checkItemId}"` — one **structured-item note per checklist item**
+    (two-way completion + assignment). Full model in **Part 3**.
   - `key: "attachment-{attachmentId}"` — one note per attachment (name + URL).
 - **Contacts**: card members + comment authors → `NewContact` with
   `source.accountId = trello member id`, `name`, `avatar`.
@@ -270,6 +294,159 @@ Flip `available: true` in:
 
 ---
 
+## Part 3 — Checklist sync as structured note-items (generic foundation)
+
+**Goal:** a reusable model where a *checklist item* (and any future product's
+subtask/checklist item) is a Plot **note** with two-way **completion** and **assignment**,
+plus the metadata the app needs to *later* render a grouped/ordered/collapsed checklist.
+The data model lands now; the polished UI is deferred (degraded interim = flat note list).
+
+### 3.1 Why "item = note" (verified)
+
+A note is the only primitive that already carries everything an assignable, completable
+checklist item needs, on existing rails:
+- **Per-actor assignment + completion**: `note_tag (actor_id, note_id, tag_id)`, `Tag.Todo=1`
+  (assigned-to) / `Tag.Done=3` (completed-by). A note can have many independent assignees.
+- **Keyed idempotent upsert**: `note.key = "checkitem-{checkItemId}"` (immutable Trello id).
+- **Sync + write-back dispatch**: `onNoteUpdated` fires on **tag changes** (user edits only,
+  connector-owned thread; twist writes are skipped → loop-safe).
+- **Interactive in read mode today**: a `Todo`/`Done`-tagged note already renders a tappable
+  checkmark (`note.dart:1282`) — so even before Layer 3, checking an item works and syncs.
+
+What does **not** exist and must be added: a way to (a) order/group items, (b) gate
+capabilities, and (c) resolve a Plot assignee back to an external member without a lookup
+call. Those are the Layer-1 additions below.
+
+### 3.2 Layer 1 — platform/SDK foundation (build first; reusable)
+
+**A. New generic note fields** (additive expand-migration; follows safe-add-column):
+| Field | Type | Meaning |
+|---|---|---|
+| `section_key` | `text` null | Stable id of the group within the thread (Trello checklist id). `NULL` = ordinary note (comment/description). |
+| `section_label` | `text` null | Display name of the group ("QA tasks"). |
+| `section_position` | `text`/`numeric` null | Order of the group among the thread's groups. |
+| `item_position` | `text`/`numeric` null | Order of the item within its group. |
+
+- Expose all four in the `user.note` view; bump note `seq` on change (so they sync).
+- Mirror in Twister `Note` / `NewNote` (**changeset**) and in the Drift `note.dart` entity
+  (safe-add-column, version bump). The client compiles and **ignores** them initially —
+  that's the degraded interim, and it's clean because the data is fully captured.
+- **Capability gating is derived from `section_key IS NOT NULL`** (a "sectioned item" hides
+  reactions/attachments/links/replies) — no separate `kind` column in v1. An explicit
+  discriminator can be added later, additively, if a grouped note ever needs full
+  capabilities. (Restriction itself is a **client render-gate**; in v1 those affordances
+  still show on checklist-item notes — harmless, local-only, ignored by the connector.)
+
+**B. Actor external-account enrichment (closes the outbound-assignment gap).** Today a
+connector receiving `onNoteUpdated` gets bare actor UUIDs in `note.tags` and has **no API**
+to map them back to a Trello member id (`contact_external_account` isn't exposed; existing
+connectors hack it via email caches). Decision: **the platform enriches the dispatched
+payload — no connector lookup call.**
+- Add optional `source?: { accountId: string } | null` to the Twister `Actor` type
+  (symmetric with `NewContact.source` used inbound). **Changeset.**
+- When the runtime builds a dispatch payload for a connector (`onNoteUpdated`,
+  `onNoteCreated`, `onLinkUpdated`, …), it populates each `Actor.source.accountId` from
+  `contact_external_account` for **that connector's** `twist_instance_id`/provider, in a
+  single **batched** join (no N+1) — in `buildNoteAndThread` / the actor-hydration path of
+  `workers/api/src/twist/tools/integrations.ts`.
+- The connector then reads the assignee's `source.accountId` directly off the dispatched
+  note's tag actors. (Surfacing detail for the plan: `note.tags` is `{tagId: ActorId[]}`
+  today; the enriched actor objects are exposed either by upgrading the dispatched tag
+  representation to carry `Actor` objects or via a companion `note.taggedActors` map — pick
+  the backward-compatible option.)
+- **Reusable:** every bidirectional connector that writes back a Plot assignee benefits;
+  this is the principled replacement for the per-connector email cache.
+
+### 3.3 Layer 2 — the Trello connector mapping
+
+- **Sync-in** (`transformCheckItem`, within the card's `syncBatch`): for each checklist's
+  `checkItems`, emit a `NewNote`:
+  - `key: "checkitem-{checkItemId}"`, `content: item.name` (plain text).
+  - `section_key: checklistId`, `section_label: checklistName`,
+    `section_position: checklist.pos`, `item_position: item.pos`.
+  - **Assignment (inbound)**: if `item.idMember`, `tags: { [Tag.Todo]: [{ source: {
+    accountId: idMember }, name }] }` — the runtime resolves the contact via
+    `source.accountId` (verified path: `thread-helpers.ts processNewActorArray`).
+  - **Completion (inbound, item-level collapse)**: if `item.state === "complete"`, mark
+    `Tag.Done` for the assignee (`idMember`); if **unassigned**, attribute `Done` to the
+    **connection owner's contact** so the checkbox reflects "complete".
+- **Write-back** (`onNoteUpdated(note, thread)` for `checkitem-*` keys): reconcile the full
+  note against Trello (`note` has no per-field diff):
+  - `Done` present for any actor ⇒ `PUT /cards/{idCard}/checkItem/{id}?state=complete`;
+    all `Done` cleared ⇒ `state=incomplete`. (**item-level collapse rule**.)
+  - `Todo` actor set changed ⇒ map via the enriched `actor.source.accountId` →
+    `PUT …/checkItem/{id}?idMember={memberId}`. Trello is single-assignee (`idMember`); if
+    Plot has multiple `Todo` actors, write the first/primary. If an assignee has no Trello
+    member id (not a board member), skip with a `deliveryError`.
+  - `content` changed ⇒ `PUT …/checkItem/{id}?name=…` (rename).
+  - Loop-safe: write-backs set `updated_by = twist`, so the resulting webhook re-sync does
+    not re-dispatch.
+- **Create/delete from Plot**: deferred (no app UI yet); `onNoteCreated` for a
+  `checkitem-*` shaped note is a v-next hook.
+
+### 3.4 Layer 3 — app (deferred, incremental, no data migration)
+
+Reads `section_*` / `item_position` to render checklist-item notes **grouped by section,
+ordered by position, collapsible**, with a native checkbox + assignee avatar; and **gates**
+reactions/attachments/links/replies for sectioned notes. Lights up data already flowing from
+Layer 2 — ships independently whenever it's prioritized.
+
+### 3.5 Generality boundary
+
+This model fits **lightweight checklist/subtask items** — `{name, done, assignee, position,
+section}` with no independent lifecycle (Trello checklists, Google Tasks subtasks, Todoist
+sub-tasks, Notion to-dos, GitHub task-lists). It is **not** for **first-class sub-issues**
+(Jira sub-tasks, Linear sub-issues) with their own status workflow/comments — those stay
+their own threads/links.
+
+### 3.6 Risks / open items for the plan
+
+- **Scale**: a board of 100 cards × 20 items = 2 000 item-notes per syncing user (× tags).
+  Skip empty checklists; consider a per-card item ceiling. Notes are high-churn but built
+  for volume — confirm during testing.
+- **Enriched-tags surfacing**: choose the backward-compatible shape for exposing
+  `Actor.source` on `note.tags` (upgrade tag actors vs. companion map).
+- **Owner attribution** for unassigned-complete items: confirm "connection owner's contact"
+  is resolvable in the connector at sync time (it is the auth actor).
+- **Migration ordering**: Layer 1 schema + Twister + Drift land before the connector emits
+  `section_*`; until then, item-notes would carry null sections (still valid, just flat).
+
+### 3.7 Plan 4 decisions (Layer 2 — resolving §3.6, approved 2026-06-26)
+
+Layer 1 shipped in **Plan 3** (note `section_*`/`item_position` columns + `user.note` view,
+Twister `Note`/`NewNote` fields, `Actor.source`, and dispatch-time `tagActors` enrichment).
+Plan 4 is **Layer 2 only** — the Trello connector mapping in `public/connectors/trello/`. The
+following resolve the §3.6 open items and the §3.3 surfacing choices:
+
+- **Enriched-tags surfacing → companion map (resolved in Plan 3).** Connectors read the
+  assignee's external id off `note.tagActors[actorId].source.accountId` (a `Record<ActorId,
+  Actor>` populated by the runtime on dispatch). `note.tags` stays `{tagId: ActorId[]}` —
+  backward compatible. No connector lookup call.
+- **Position type → fractional-index `text` (resolved in Plan 3).** `section_position` /
+  `item_position` are `text`. The connector stringifies Trello's float `pos`
+  (`String(checklist.pos)` / `String(item.pos)`) on sync-in.
+- **Owner attribution for unassigned-complete → fetch + cache `GET /members/me`.** When an
+  item is `state==="complete"` but has no `idMember`, attribute `Tag.Done` to the connection
+  owner so the Plot checkbox reflects "complete". The connector resolves the owner's Trello
+  member id via `GET /members/me`, cached in connector state (`this.set('me_member_id', …)`)
+  to avoid a per-card call.
+- **Deletion → webhook-action driven.** `onWebhook` branches on `action.type`:
+  `deleteCheckItem` archives the single `checkitem-{id}` note; `removeChecklistFromCard`
+  re-fetches the card and archives every `checkitem-*` note whose checklist is gone. Note
+  archival uses `integrations.saveNote({ thread: { source: "trello:card:{id}" }, key:
+  "checkitem-{id}", archived: true })`. **Tradeoff (accepted):** deletions that occur while
+  webhooks are down are not caught up (no full-card delete-reconciliation in v1).
+- **Write-back API.** Sync-in rides the existing `saveLink(transformCard(...))` (atomic with
+  the card). Completion/assignment/rename write-back is a new `updateCheckItem` on `TrelloApi`
+  (`PUT /cards/{idCard}/checkItem/{id}` with `state` / `idMember` / `name`). Trello is
+  **single-assignee**: with multiple Plot `Tag.Todo` actors, write the first/primary; an
+  assignee with no Trello member id is skipped with a `deliveryError` (does not block the
+  completion/rename fields). Loop-safe: write-backs are `updated_by=twist`.
+- **Deferred to v-next (unchanged from §3.3):** create/delete a checkItem *from Plot*
+  (`onNoteCreated` for a `checkitem-*` note) and the Layer-3 app UI (Plan 5).
+
+---
+
 ## Sync baseline (note round-trip) — required
 
 Trello stores comments as plain text. Returning a bare key from `onNoteCreated` would let
@@ -282,19 +459,35 @@ comment (inspect that function and return its output). Same for `onNoteUpdated`.
 - **Unit (local, no provisioning):**
   - `trello-api`: request shaping (`?key=&token=`), HMAC-SHA1 verify helper.
   - `trello.ts` transforms: card → link, list → status, done-heuristic, archived mapping,
-    comment/checklist/attachment notes, `initialSync` initial-vs-incremental, `source`
-    format, contact creation.
+    comment/attachment notes, `initialSync` initial-vs-incremental, `source` format, contact
+    creation.
+  - `trello.ts` **structured-items** (Part 3): `checkItem → NewNote` (`section_*` +
+    `item_position` + inbound `Tag.Todo` via `source.accountId` + item-level `Done`
+    collapse, including the unassigned→owner attribution); `onNoteUpdated` reconciliation
+    (Done⇔state, assignee via enriched `actor.source.accountId`, rename, skip-with-
+    `deliveryError` for non-member assignees).
   - Runtime: `GenerateAuthUrl` token-fragment URL shape; bridge fragment extraction;
     `HandleOauthCallback` token-fragment branch builds the right onAuth payload.
+  - Runtime **enrichment** (Part 3): dispatched `Actor.source.accountId` is populated from
+    `contact_external_account` (scoped to the connector's instance), batched, and `null`
+    when the actor has no external account for that provider.
+  - DB: `user.note` view exposes `section_*`/`item_position`; note `seq` bumps on their
+    change (sync); `pnpm diff-schema-migrations` clean; `types.ts` regenerated.
 - **End-to-end (needs provisioning):** real connect → board enable → backfill → webhook →
   write-back. Gated on the Trello app key.
 
 ## Rollout / finalization
 
-- Two PRs: **`public/`** (twister enum + changeset + connector) merges **first**; then the
-  **main repo** PR (`workers/api` runtime + env + `connections.ts` flips + submodule
-  gitlink bump).
-- `pnpm lint` in `public/twister`, `workers/api`, and `public/connectors/trello`.
+- **`public/` PR (merges first)** — Twister changeset covers **all three** type additions:
+  `AuthProvider.Trello` enum, the `NewNote`/`Note` `section_*`/`item_position` fields, and
+  `Actor.source`. Plus the connector package (`public/connectors/trello/`).
+- **main-repo PR (second)** — `workers/api` runtime (Trello auth provider + dispatch
+  enrichment), the **note schema migration** (`section_*`/`item_position` columns +
+  `user.note` view + seq bump) with regenerated `libs/db/src/types.ts`, the **Drift**
+  `note.dart` columns (safe-add-column + version bump), env wiring, `connections.ts` flips,
+  and the submodule gitlink bump.
+- `pnpm lint` in `public/twister`, `workers/api`, and `public/connectors/trello`;
+  `pnpm --filter @plotday/db run lint` for the migration/types.
 - New `catch` blocks for unexpected errors → `captureException` / `tracker.captureException`.
 - `pnpm updates:new` fragment (user-facing: "Connect Trello to track cards in Plot").
 - Connector deploy via `plot deploy` (reads `plotTwistId`); not npm, no connector changeset.
@@ -309,3 +502,7 @@ comment (inspect that function and return its output). Same for `onNoteUpdated`.
 - Trello `return_url` domain registration requirements for the app.
 - Pagination strategy for boards with very large card counts (batch ceiling ~1000
   requests/execution).
+- **Enriched-tags surfacing shape** (Part 3 §3.6): backward-compatible exposure of
+  `Actor.source` on the dispatched `note.tags`.
+- **`section_position`/`item_position` type**: `numeric` (mirror Trello's float `pos`) vs a
+  fractional-index `text` (stable inserts) — pick during Layer 1.

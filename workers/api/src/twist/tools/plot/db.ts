@@ -134,5 +134,10 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     archived: noteRecord.archived_at !== null,
     actions: noteRecord.actions as Array<Action> | null,
     cta: null,
+    sectionKey: noteRecord.section_key ?? null,
+    sectionLabel: noteRecord.section_label ?? null,
+    sectionPosition: noteRecord.section_position ?? null,
+    itemPosition: noteRecord.item_position ?? null,
+    tagActors: {},
   };
 }

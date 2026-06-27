@@ -29,7 +29,11 @@ SELECT
     n.delivery_error,
     n.mentions,
     n.re_note_id,
-    n.merged_from_thread_id
+    n.merged_from_thread_id,
+    n.section_key,
+    n.section_label,
+    n.section_position,
+    n.item_position
 FROM
     note n
     JOIN thread a ON a.id = n.thread_id
@@ -87,7 +91,11 @@ SELECT
     NULL::jsonb AS delivery_error,
     CAST(NULL AS uuid[]) AS mentions,
     n.re_note_id,
-    n.merged_from_thread_id
+    n.merged_from_thread_id,
+    NULL::text AS section_key,
+    NULL::text AS section_label,
+    NULL::text AS section_position,
+    NULL::text AS item_position
 FROM
     note n
     JOIN thread a ON a.id = n.thread_id

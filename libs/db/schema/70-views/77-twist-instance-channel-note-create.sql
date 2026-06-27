@@ -37,7 +37,11 @@ SELECT DISTINCT ON (ptc.twist_instance_id, n.id)
     t.created_by AS thread_created_by,
     author.name AS author_name,
     author.type AS author_type,
-    nt.tags
+    nt.tags,
+    n.section_key,
+    n.section_label,
+    n.section_position,
+    n.item_position
 FROM
     twist_instance_channel ptc
     JOIN link l ON l.created_by = ptc.source_twist_instance_id

@@ -45,6 +45,12 @@ export type AtlassianProviderData = {
   siteName: string | null;
 };
 
+export type TrelloProviderData = {
+  memberId: string;
+  username: string | null;
+  fullName: string | null;
+};
+
 export type NotionProviderData = {
   workspaceName: string | null;
   workspaceId: string | null;
@@ -93,6 +99,7 @@ export type ProviderData =
   | AsanaProviderData
   | TodoistProviderData
   | AirtableProviderData
+  | TrelloProviderData
   | HostedAccountProviderData;
 
 // Combined storage type
@@ -275,6 +282,29 @@ const parseAtlassianTokenResponse = async (
   };
 };
 
+// Trello returns the token in the authorize fragment (no code exchange), so the
+// "token response" is synthesized by HandleOauthCallback as { access_token, key }.
+// We read the app key from there to call the members API for the account label.
+export const parseTrelloTokenResponse = async (
+  response: any
+): Promise<TrelloProviderData | undefined> => {
+  if (!response.access_token) return undefined;
+  try {
+    const url = `https://api.trello.com/1/members/me?fields=username,fullName&key=${encodeURIComponent(
+      response.key ?? ""
+    )}&token=${encodeURIComponent(response.access_token)}`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) return undefined;
+    const me = (await res.json()) as { id?: string; username?: string; fullName?: string };
+    if (!me.id) return undefined;
+    return { memberId: me.id, username: me.username ?? null, fullName: me.fullName ?? null };
+  } catch (error) {
+    const logger = createLogger({ component: "provider" });
+    logger.error("Error fetching Trello member", error as Error);
+    return undefined;
+  }
+};
+
 const parseNotionTokenResponse = (
   response: any
 ): NotionProviderData | undefined => {
@@ -398,7 +428,7 @@ type ProviderConfig = {
    * LinkedIn, WhatsApp, Instagram) generate the redirect URL via a third-party
    * hosted link API and complete via webhook + polling rather than a code
    * exchange. */
-  authMode?: "oauth" | "hosted";
+  authMode?: "oauth" | "hosted" | "token-fragment";
   // Omitted for non-OAuth providers (e.g. LinkedIn cookie auth). When absent,
   // GenerateAuthUrl / HandleOauthCallback refuse to handle this provider —
   // the client must use the provider's dedicated auth endpoint instead.
@@ -463,6 +493,8 @@ export function extractUserId(provider: AuthProvider, providerData: ProviderData
     // `"linkedin"` as the provider value.
     case "linkedin" as AuthProvider:
       return (providerData as HostedAccountProviderData).userId ?? null;
+    case "trello" as AuthProvider:
+      return (providerData as TrelloProviderData).memberId ?? null;
     // WhatsApp and Instagram are Unipile-backed hosted-auth providers that
     // share the HostedAccountProviderData shape with LinkedIn.
     case "whatsapp" as AuthProvider:
@@ -654,6 +686,20 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     requiresHttpsRedirect: true,
     parseTokenResponse: parseAirtableTokenResponse,
     extractAccountLabel: (d) => (d as AirtableProviderData).email || null,
+  },
+  trello: {
+    name: "Trello",
+    authMode: "token-fragment",
+    authUrl: "https://trello.com/1/authorize",
+    // No tokenUrl: Trello returns the token in the authorize fragment.
+    requiresHttpsRedirect: true,
+    parseTokenResponse: parseTrelloTokenResponse,
+    extractMetadata: (providerData: ProviderData): Record<string, string> | undefined => {
+      const t = providerData as TrelloProviderData;
+      return t.memberId ? { memberId: t.memberId } : undefined;
+    },
+    extractAccountLabel: (d) =>
+      (d as TrelloProviderData).fullName ?? (d as TrelloProviderData).username ?? null,
   },
   // Cast to `AuthProvider` because upstream twister removed
   // `AuthProvider.LinkedIn` along with the OSS LinkedIn-messaging

@@ -144,13 +144,6 @@ const UPCOMING_CONNECTIONS: UpcomingConnection[] = [
 
   // Project Management
   {
-    name: "Trello",
-    logo: "https://api.iconify.design/logos/trello.svg",
-    category: "Project Management",
-    entities: ["Cards", "Boards"],
-    description: "Track cards and boards from Trello",
-  },
-  {
     name: "Monday.com",
     logo: "https://api.iconify.design/logos/monday-icon.svg",
     category: "Project Management",

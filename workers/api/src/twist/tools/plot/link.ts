@@ -767,6 +767,12 @@ export async function getLinks(
             "actor.name as author_name",
             "actor.type as author_type",
           ])
+          .select([
+            sql<string | null>`note.section_key`.as("section_key"),
+            sql<string | null>`note.section_label`.as("section_label"),
+            sql<string | null>`note.section_position`.as("section_position"),
+            sql<string | null>`note.item_position`.as("item_position"),
+          ])
           .where("note.thread_id", "in", threadIds)
           .where("note.draft", "=", false)
           .where("note.archived_at", "is", null)
@@ -858,6 +864,11 @@ export async function getLinks(
       archived: n.archived_at !== null,
       actions: n.actions as any,
       cta: null,
+      sectionKey: n.section_key ?? null,
+      sectionLabel: n.section_label ?? null,
+      sectionPosition: n.section_position ?? null,
+      itemPosition: n.item_position ?? null,
+      tagActors: {},
     }));
 
     results.push({ link, notes });

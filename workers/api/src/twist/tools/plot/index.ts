@@ -938,6 +938,11 @@ export class Plot extends Tool implements IPlot {
       archived: item.archived_at !== null,
       actions: item.actions as any,
       cta: null,
+      sectionKey: item.section_key ?? null,
+      sectionLabel: item.section_label ?? null,
+      sectionPosition: item.section_position ?? null,
+      itemPosition: item.item_position ?? null,
+      tagActors: {},
     };
   }
 
@@ -990,6 +995,12 @@ export class Plot extends Tool implements IPlot {
           "actor.name as author_name",
           "actor.type as author_type",
         ])
+        .select([
+          sql<string | null>`note.section_key`.as("section_key"),
+          sql<string | null>`note.section_label`.as("section_label"),
+          sql<string | null>`note.section_position`.as("section_position"),
+          sql<string | null>`note.item_position`.as("item_position"),
+        ])
         .where("note.thread_id", "=", threadId)
         .where("note.draft", "=", false)
         .where("note.archived_at", "is", null)
@@ -1021,6 +1032,11 @@ export class Plot extends Tool implements IPlot {
         archived: row.archived_at !== null,
         actions: row.actions as any,
         cta: null,
+        sectionKey: row.section_key ?? null,
+        sectionLabel: row.section_label ?? null,
+        sectionPosition: row.section_position ?? null,
+        itemPosition: row.item_position ?? null,
+        tagActors: {},
       }));
     } catch {
       return [];

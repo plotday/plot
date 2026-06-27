@@ -551,6 +551,11 @@ export async function createNote(
       // Default to un-archived for upserts unless archived is explicitly specified
       archived_at: note.archived ? new Date().toISOString() : null,
       re_note_id: note.reNote && "id" in note.reNote ? note.reNote.id : null,
+      // Structured-item section placement fields (Trello checklists, etc.)
+      section_key: note.sectionKey ?? null,
+      section_label: note.sectionLabel ?? null,
+      section_position: note.sectionPosition ?? null,
+      item_position: note.itemPosition ?? null,
     };
 
     // If tool provided an ID, use it instead of letting database generate one
@@ -751,6 +756,10 @@ export async function createNote(
       archived_at: eb.ref("excluded.archived_at"),
       re_note_id: eb.ref("excluded.re_note_id"),
       canonical_source: eb.ref("excluded.canonical_source"),
+      section_key: eb.ref("excluded.section_key"),
+      section_label: eb.ref("excluded.section_label"),
+      section_position: eb.ref("excluded.section_position"),
+      item_position: eb.ref("excluded.item_position"),
     });
 
     const onConflictWhere = (eb: any) =>
@@ -775,6 +784,10 @@ export async function createNote(
         eb("note.cta", "is distinct from", eb.ref("excluded.cta")),
         eb("note.draft", "is distinct from", eb.ref("excluded.draft")),
         eb("note.access_contacts", "is distinct from", eb.ref("excluded.access_contacts")),
+        eb("note.section_key", "is distinct from", eb.ref("excluded.section_key")),
+        eb("note.section_label", "is distinct from", eb.ref("excluded.section_label")),
+        eb("note.section_position", "is distinct from", eb.ref("excluded.section_position")),
+        eb("note.item_position", "is distinct from", eb.ref("excluded.item_position")),
       ]);
 
     let dbResult = dbNote.key
@@ -1495,6 +1508,12 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
         "mentions",
         "re_note_id",
       ])
+      .select([
+        sql<string | null>`section_key`.as("section_key"),
+        sql<string | null>`section_label`.as("section_label"),
+        sql<string | null>`section_position`.as("section_position"),
+        sql<string | null>`item_position`.as("item_position"),
+      ])
       .where("thread_id", "=", activity.id)
       .orderBy("created_at", "asc")
       .execute();
@@ -1573,6 +1592,11 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
           (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) || {},
         reactions: {},
         cta: null,
+        sectionKey: row.section_key ?? null,
+        sectionLabel: row.section_label ?? null,
+        sectionPosition: row.section_position ?? null,
+        itemPosition: row.item_position ?? null,
+        tagActors: {},
       };
     });
   } catch (err) {

@@ -303,6 +303,21 @@ export function boundConnectionsWithoutToken<
   return out;
 }
 
+/**
+ * Trello's app key and app secret are NOT stored in the user's token — they
+ * are server-side credentials read from env. Inject them into the AuthToken
+ * metadata at read time so the connector can authenticate API calls (`?key=&token=`)
+ * and verify webhook HMAC signatures. Never persisted; read fresh on every get().
+ */
+export function withTrelloAppCreds(
+  provider: AuthProvider,
+  meta: Record<string, string> | undefined,
+  env: Bindings,
+): Record<string, string> | undefined {
+  if (provider !== ("trello" as AuthProvider)) return meta;
+  return { ...(meta ?? {}), key: env.AUTH_TRELLO_ID, secret: env.AUTH_TRELLO_SECRET };
+}
+
 // @ts-ignore - class correctly implements IAuth but TS can't verify due to Kysely type differences
 export class Integrations extends Tool implements IAuth {
   private store: Store;
@@ -600,9 +615,13 @@ export class Integrations extends Tool implements IAuth {
         return {
           token: tokenData.access_token,
           scopes: tokenData.scopes,
-          provider: tokenData.providerData
-            ? providerConfig?.extractMetadata?.(tokenData.providerData)
-            : undefined,
+          provider: withTrelloAppCreds(
+            provider,
+            tokenData.providerData
+              ? providerConfig?.extractMetadata?.(tokenData.providerData)
+              : undefined,
+            this.env,
+          ),
         };
       }
     }
@@ -2341,6 +2360,13 @@ export class Integrations extends Tool implements IAuth {
       archived: item.archived_at !== null,
       actions: item.actions,
       cta: null,
+      // Structured-item section placement fields; section/item columns are
+      // exposed by the note-dispatch views (71/72/77).
+      sectionKey: item.section_key ?? null,
+      sectionLabel: item.section_label ?? null,
+      sectionPosition: item.section_position ?? null,
+      itemPosition: item.item_position ?? null,
+      tagActors: {}, // hydrated by enrichTagActors after this builder returns (or {} if enrichment is skipped/fails)
     };
 
     const meta: ThreadMeta = { ...(link?.meta as any ?? {}) };
@@ -2370,6 +2396,58 @@ export class Integrations extends Tool implements IAuth {
     return { note, thread };
   }
 
+  /**
+   * Hydrate note.tagActors (and note.author.source) with each actor's external
+   * account id for THIS connector, from contact_external_account scoped to this
+   * twist instance. One batched query; no per-actor lookup. Lets a connector
+   * resolve an assignee to its external id (e.g. Trello member) on write-back.
+   *
+   * On DB failure, degrades to empty enrichment (note.tagActors = {}) rather
+   * than dropping the dispatch. The failure is logged as an unexpected error.
+   */
+  private async enrichTagActors(note: Note): Promise<void> {
+    const ids = new Set<string>();
+    for (const actorIds of Object.values(note.tags ?? {})) {
+      for (const id of actorIds as string[]) ids.add(id);
+    }
+    if (note.author?.id) ids.add(note.author.id as string);
+    if (ids.size === 0) return;
+
+    let rows: Array<{ id: string | null; account_id: string | null }>;
+    try {
+      rows = await this.db
+        .selectFrom("contact_external_account")
+        .innerJoin("contact", "contact.id", "contact_external_account.contact_id")
+        .where("contact_external_account.twist_instance_id", "=", this.twistInstanceId)
+        .where("contact_external_account.contact_id", "in", [...ids])
+        .select(["contact.id", "contact_external_account.account_id"])
+        .execute() as any;
+    } catch (error) {
+      createLogger({ twist_instance_id: this.twistInstanceId }).error(
+        "enrichTagActors: failed to query contact_external_account",
+        { error }
+      );
+      note.tagActors = {};
+      return;
+    }
+
+    // A contact with multiple external accounts for this connector resolves to an arbitrary (last) one.
+    const byId = new Map(rows.map((r) => [r.id as string, r.account_id as string]));
+    const actorFor = (id: string): Actor => ({
+      id: id as ActorId,
+      type: ActorType.Contact,
+      source: byId.has(id) ? { accountId: byId.get(id)! } : null,
+    });
+
+    const tagActors: Record<string, Actor> = {};
+    for (const id of ids) tagActors[id] = actorFor(id);
+    note.tagActors = tagActors as any;
+    if (note.author?.id) {
+      const acc = byId.get(note.author.id as string);
+      note.author.source = acc ? { accountId: acc } : null;
+    }
+  }
+
   async dispatch(
     dispatchItem: any
   ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; forwardTo?: { functionName: string; prependArgs: any[] }; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
@@ -2396,6 +2474,7 @@ export class Integrations extends Tool implements IAuth {
         if (typeof item.updated_by === "number" && item.updated_by <= 0) return [];
 
         const { note, thread } = await this.buildNoteAndThread(item);
+        await this.enrichTagActors(note);
         return [{
           sourceMethod: "onNoteUpdated",
           args: [note, thread],
@@ -2428,6 +2507,7 @@ export class Integrations extends Tool implements IAuth {
       // from it, so a non-null channelId proves link ownership for the
       // Plot-initiated case.
       const { note, thread } = await this.buildNoteAndThread(item);
+      await this.enrichTagActors(note);
       if (!threadCreatedByThis && thread.meta?.channelId == null) return [];
 
       return [{
@@ -2495,6 +2575,11 @@ export class Integrations extends Tool implements IAuth {
         archived: item.archived_at !== null,
         actions: item.actions,
         cta: null,
+        sectionKey: item.section_key ?? null,
+        sectionLabel: item.section_label ?? null,
+        sectionPosition: item.section_position ?? null,
+        itemPosition: item.item_position ?? null,
+        tagActors: {},
       };
 
       // Build thread with meta populated from link metadata
@@ -2525,6 +2610,7 @@ export class Integrations extends Tool implements IAuth {
         ),
       };
 
+      await this.enrichTagActors(note);
       return [{ sourceMethod: "onNoteCreated", args: [note, thread], deferredNoteKeyUpdate: { noteId: item.id as string } }];
     }
 
@@ -3345,9 +3431,13 @@ export class Integrations extends Tool implements IAuth {
           return {
             token: refreshedToken.access_token,
             scopes: tokenData.scopes,
-            provider: tokenData.providerData
-              ? config?.extractMetadata?.(tokenData.providerData)
-              : undefined,
+            provider: withTrelloAppCreds(
+              provider,
+              tokenData.providerData
+                ? config?.extractMetadata?.(tokenData.providerData)
+                : undefined,
+              this.env,
+            ),
           };
         } catch (error) {
           const logger = createLogger({ twist_instance_id: this.twistInstanceId });
@@ -3415,9 +3505,13 @@ export class Integrations extends Tool implements IAuth {
     return {
       token: tokenData.access_token,
       scopes: tokenData.scopes,
-      provider: tokenData.providerData
-        ? config?.extractMetadata?.(tokenData.providerData)
-        : undefined,
+      provider: withTrelloAppCreds(
+        provider,
+        tokenData.providerData
+          ? config?.extractMetadata?.(tokenData.providerData)
+          : undefined,
+        this.env,
+      ),
     };
   }
 
@@ -3950,6 +4044,11 @@ export class Integrations extends Tool implements IAuth {
     const authToken: AuthToken = {
       token: token.access_token,
       scopes: token.scopes,
+      provider: withTrelloAppCreds(
+        tokenInfo.provider,
+        providerData ? config?.extractMetadata?.(providerData) : undefined,
+        this.env,
+      ),
     };
     const forwardTo = {
       functionName: "setChannels",
@@ -5504,20 +5603,41 @@ export class Integrations extends Tool implements IAuth {
       // fall back to the values captured in authState at GenerateAuthUrl time.
       const clientId = params.clientId ?? authState.clientId;
       const redirectUri = params.redirectUri ?? authState.redirectUri;
-      if (!code) throw new Error("Missing code parameter");
-      if (!clientId) throw new Error("Missing clientId parameter");
-      if (!redirectUri) throw new Error("Missing redirectUri parameter");
+
+      // Determine provider config up front so token-fragment flows (Trello) can
+      // skip the standard code-exchange path.
+      const providerConfig = PROVIDER_CONFIGS[authState.provider];
 
       // Exchange code for tokens using static helper
       // Always include code_verifier if it exists in auth state (PKCE flow)
-      const tokenResponse = await Integrations.exchangeCodeForTokens({
-        clientId,
-        code,
-        codeVerifier: authState.codeVerifier,
-        provider: authState.provider,
-        redirectUri,
-        env,
-      });
+      let tokenResponse: { access_token: string; [key: string]: any };
+      if (providerConfig?.authMode === "token-fragment") {
+        // Trello: the token arrived in the authorize fragment and was relayed by
+        // the bridge into params.token. No code exchange needed. Synthesize the
+        // token response with the app key so parseTrelloTokenResponse can call
+        // the Trello members API in onAuth.
+        if (!clientId) throw new Error("Missing clientId parameter");
+        const relayed = params.token;
+        if (!relayed) {
+          return new Response(JSON.stringify({ error: "Missing Trello token" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        tokenResponse = { access_token: relayed, key: env.AUTH_TRELLO_ID };
+      } else {
+        if (!code) throw new Error("Missing code parameter");
+        if (!clientId) throw new Error("Missing clientId parameter");
+        if (!redirectUri) throw new Error("Missing redirectUri parameter");
+        tokenResponse = await Integrations.exchangeCodeForTokens({
+          clientId,
+          code,
+          codeVerifier: authState.codeVerifier,
+          provider: authState.provider,
+          redirectUri,
+          env,
+        });
+      }
 
       // Scope-grant verification. Google (and other OAuth providers with
       // granular consent screens) lets the user uncheck individual
@@ -5538,7 +5658,6 @@ export class Integrations extends Tool implements IAuth {
       // (sign-in flows, legacy in-flight states) to preserve strict behaviour.
       const enforcedScopes = authState.requiredScopes ?? authState.scopes;
       if (grantedScopes && enforcedScopes?.length) {
-        const providerConfig = PROVIDER_CONFIGS[authState.provider];
         const missing = findMissingRequiredScopes(
           enforcedScopes,
           grantedScopes,
@@ -5884,6 +6003,22 @@ export class Integrations extends Tool implements IAuth {
       bridgeUri,
     };
     await storageObj.set(state, superjson.stringify(authState));
+
+    // Token-fragment providers (Trello) are not OAuth 2.0: the token is returned
+    // in the authorize-redirect fragment, there is no code exchange, and `state`
+    // is not echoed — so we carry it in return_url. Build Trello's own param shape.
+    if (config.authMode === "token-fragment") {
+      const returnUrl = `${effectiveRedirectUri}?state=${encodeURIComponent(state)}`;
+      const trelloParams = new URLSearchParams({
+        key: clientId,
+        response_type: "token",
+        scope: allScopes.join(","),
+        expiration: "never",
+        name: "Plot",
+        return_url: returnUrl,
+      });
+      return { url: `${config.authUrl}?${trelloParams.toString()}`, clientId, state };
+    }
 
     // For sign-in flows (no callback), use simplified Google OAuth params
     // For authorization flows (has callback), use full params from config

@@ -246,7 +246,7 @@ export const CONNECTIONS: Connection[] = [
     logo: "https://api.iconify.design/logos/trello.svg",
     category: "Project Management",
     entities: ["Cards", "Boards"],
-    available: false,
+    available: true,
   },
   {
     name: "Monday.com",

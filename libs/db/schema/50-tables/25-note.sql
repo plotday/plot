@@ -23,6 +23,14 @@ CREATE TABLE "public"."note" (
     "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
     "link_id" uuid REFERENCES public.link (id) ON DELETE SET NULL,
     "canonical_source" text,
+    -- Generic "structured item" fields: a note that belongs to a group within
+    -- its thread (e.g. a Trello checklist) carries section_* + item_position so
+    -- the client can render it grouped/ordered. Null = ordinary note. Set by a
+    -- connector; rendered by the app. See docs/.../structured-items-foundation.
+    "section_key" text,
+    "section_label" text,
+    "section_position" text,
+    "item_position" text,
     "embedding" halfvec(384),
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );

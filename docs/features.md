@@ -59,7 +59,8 @@ Plot gives you the context and clarity to make your next move.
 - One connection = one account linked to Plot (e.g. one Gmail account, one Slack user in one
   workspace, one Linear account).
 - Available today: Google (Gmail, Calendar, Chat, Contacts, Drive), Microsoft (Outlook Calendar,
-  Teams channels + DMs), Slack, Linear, Notion (pages and comments), PostHog, Apple Calendar.
+  Teams channels + DMs), Slack, Linear, Trello (cards, comments, and two-way checklist items),
+  Notion (pages and comments), PostHog, Apple Calendar.
 - Connection add-ons: WhatsApp (two-way DMs and group chats), Instagram (two-way DMs and message
   requests), LinkedIn (two-way messages and connection requests) — read, reply, react, and start new
   conversations. These are provided by a third party and require a $5/month connection add-on on any

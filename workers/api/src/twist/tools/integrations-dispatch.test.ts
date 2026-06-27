@@ -30,6 +30,10 @@ function makeThis(linkRow: unknown) {
     buildNoteAndThread: (Integrations.prototype as any).buildNoteAndThread,
     loadThreadAccessContacts: (Integrations.prototype as any)
       .loadThreadAccessContacts,
+    // dispatch also calls enrichTagActors (hydrates note.tagActors from the DB).
+    // These routing tests don't assert enrichment — that's covered by
+    // integrations.tagactors.test.ts — so stub it as a no-op.
+    enrichTagActors: async () => {},
   } as any;
 }
 
@@ -72,6 +76,8 @@ function makeThisMulti(tables: Parameters<typeof mockDbByTable>[0]) {
     buildNoteAndThread: (Integrations.prototype as any).buildNoteAndThread,
     loadThreadAccessContacts: (Integrations.prototype as any)
       .loadThreadAccessContacts,
+    // See makeThis: dispatch calls enrichTagActors; not asserted here.
+    enrichTagActors: async () => {},
   } as any;
 }
 

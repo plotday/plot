@@ -34,7 +34,11 @@ SELECT
     NULL::jsonb AS thread_meta,
     author.name AS author_name,
     author.type AS author_type,
-    nt.tags
+    nt.tags,
+    n.section_key,
+    n.section_label,
+    n.section_position,
+    n.item_position
 FROM
     twist_instance pt
     JOIN note n ON n.created_by = pt.id
