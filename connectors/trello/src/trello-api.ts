@@ -21,6 +21,21 @@ export type TrelloCommentAction = {
   memberCreator: TrelloMember | null;
   data: { text: string };
 };
+export type TrelloCheckItem = {
+  id: string;
+  name: string;
+  state: "complete" | "incomplete";
+  pos: number;
+  idMember: string | null;
+};
+
+export type TrelloChecklist = {
+  id: string;
+  name: string;
+  pos: number;
+  checkItems: TrelloCheckItem[];
+};
+
 export type TrelloCard = {
   id: string;
   name: string;
@@ -33,6 +48,7 @@ export type TrelloCard = {
   members?: TrelloMember[];
   attachments?: TrelloAttachment[];
   actions?: TrelloCommentAction[];
+  checklists?: TrelloChecklist[];
   dateLastActivity: string;
 };
 
@@ -80,6 +96,10 @@ export class TrelloApi {
       "attachment_fields=id,name,url,bytes,mimeType",
       "actions=commentCard",
       "actions_limit=50",
+      "checklists=all",
+      "checklist_fields=name,pos",
+      "checkItems=all",
+      "checkItem_fields=name,state,pos,idMember",
       `limit=${opts.limit}`,
       ...(opts.before ? [`before=${opts.before}`] : []),
     ].join("&");
@@ -95,6 +115,10 @@ export class TrelloApi {
       "attachment_fields=id,name,url,bytes,mimeType",
       "actions=commentCard",
       "actions_limit=50",
+      "checklists=all",
+      "checklist_fields=name,pos",
+      "checkItems=all",
+      "checkItem_fields=name,state,pos,idMember",
     ].join("&");
     return this.req("GET", `/cards/${cardId}`, q);
   }
@@ -126,6 +150,23 @@ export class TrelloApi {
 
   updateComment(actionId: string, text: string): Promise<{ id: string; data: { text: string } }> {
     return this.req("PUT", `/actions/${actionId}`, `text=${encodeURIComponent(text)}`);
+  }
+
+  updateCheckItem(
+    cardId: string,
+    checkItemId: string,
+    fields: { name?: string; state?: "complete" | "incomplete"; idMember?: string },
+  ): Promise<TrelloCheckItem> {
+    const parts: string[] = [];
+    if (fields.name !== undefined) parts.push(`name=${encodeURIComponent(fields.name)}`);
+    if (fields.state !== undefined) parts.push(`state=${fields.state}`);
+    // Empty-string idMember clears the assignment (verify during e2e).
+    if (fields.idMember !== undefined) parts.push(`idMember=${encodeURIComponent(fields.idMember)}`);
+    return this.req("PUT", `/cards/${cardId}/checkItem/${checkItemId}`, parts.join("&"));
+  }
+
+  me(): Promise<{ id: string; fullName: string | null; username: string | null }> {
+    return this.req("GET", "/members/me", "fields=id,fullName,username");
   }
 
   createWebhook(boardId: string, callbackURL: string): Promise<{ id: string }> {
