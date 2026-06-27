@@ -229,6 +229,59 @@ export async function firstSeenAtFn(
 }
 
 /**
+ * Start of the history window the initial backfill imports: Jan 1 of two
+ * calendar years ago (mirrors the `historyMin` computed when the quick pass
+ * transitions to the full pass). Events scheduled before this were never
+ * imported, so a cancellation for one can only materialise a phantom thread.
+ */
+export function calendarHistoryFloor(now: Date = new Date()): Date {
+  const floor = new Date(now);
+  floor.setFullYear(floor.getFullYear() - 2);
+  floor.setMonth(0, 1);
+  floor.setHours(0, 0, 0, 0);
+  return floor;
+}
+
+/**
+ * A cancellation can only meaningfully UPDATE an event the connector already
+ * imported (archive its schedule, add a "cancelled" note, flag it unread so
+ * the user notices). When the event was never imported, `saveLink` instead
+ * CREATES a brand-new thread — a phantom unread item for an event the user
+ * never saw in Plot.
+ *
+ * This happens because the initial backfill deliberately skips events that are
+ * already cancelled, then Google's incremental sync (syncToken + showDeleted)
+ * later surfaces an old cancelled event — e.g. a years-old recurring master
+ * that was deleted long ago, leaking in outside the backfill's `timeMin`
+ * window. (Observed right after the Google composite-connector cutover, which
+ * starts a fresh sync under a new twist.)
+ *
+ * Returns true when the cancelled event was never imported, by either signal:
+ *  - `event.updated` predates when we first synced this calendar — it was
+ *    already cancelled at backfill time, so we skipped it. Precise; relies on
+ *    the `first_sync_at_<calendarId>` marker written at init.
+ *  - the event's scheduled time is older than the import history floor — it
+ *    falls outside the window the backfill imports. Stateless fallback for
+ *    connector instances initialised before the marker existed.
+ *
+ * Real cancellations of imported, still-relevant events satisfy neither
+ * (recent `updated`, in-window time) and are kept.
+ */
+export async function cancellationIsForUnimportedEventFn(
+  host: CalendarSyncHost,
+  calendarId: string,
+  event: GoogleEvent,
+  eventTime: Date | null
+): Promise<boolean> {
+  const firstSyncRaw = await host.get<string>(`first_sync_at_${calendarId}`);
+  if (firstSyncRaw && event.updated) {
+    if (new Date(event.updated) < new Date(firstSyncRaw)) return true;
+  }
+  if (eventTime && eventTime < calendarHistoryFloor()) return true;
+  return false;
+}
+
+/**
  * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
  * Used on recovery, stopSync, and sync-error paths.
  */
@@ -302,6 +355,26 @@ export async function prepareEventInstanceFn(
       await host.set(pendingKey, cancelledOccurrence);
       console.log(
         `[GoogleCalendar] buffered cancelled instance: ` +
+          `master=${masterCanonicalUrl} ` +
+          `originalStart=${new Date(originalStartTime).toISOString()} ` +
+          `(calendar=${calendarId})`
+      );
+      return null;
+    }
+
+    // Incremental sync: drop the cancellation when the occurrence was never
+    // imported (e.g. a years-old instance leaking through the syncToken),
+    // which would otherwise create a phantom unread thread.
+    if (
+      await cancellationIsForUnimportedEventFn(
+        host,
+        calendarId,
+        event,
+        new Date(originalStartTime)
+      )
+    ) {
+      console.log(
+        `[GoogleCalendar] skipping cancelled occurrence for never-imported ` +
           `master=${masterCanonicalUrl} ` +
           `originalStart=${new Date(originalStartTime).toISOString()} ` +
           `(calendar=${calendarId})`
@@ -506,6 +579,34 @@ export async function processCalendarEventsFn(
 
         if (event.status === "cancelled") {
           if (initialSync) continue;
+
+          // Drop the cancellation when the event was never imported (e.g. an
+          // old cancelled event leaking through the incremental syncToken's
+          // showDeleted results). Creating a thread here would surface a
+          // phantom unread item for an event the user never saw in Plot.
+          const cancelledEventTime = event.start?.dateTime
+            ? new Date(event.start.dateTime)
+            : event.start?.date
+            ? new Date(event.start.date)
+            : event.updated
+            ? new Date(event.updated)
+            : event.created
+            ? new Date(event.created)
+            : null;
+          if (
+            await cancellationIsForUnimportedEventFn(
+              host,
+              calendarId,
+              event,
+              cancelledEventTime
+            )
+          ) {
+            console.log(
+              `[GoogleCalendar] skipping cancellation for never-imported ` +
+                `event=${event.iCalUID ?? event.id} (calendar=${calendarId})`
+            );
+            continue;
+          }
 
           const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
           const cancelFirstSeen = await firstSeenAtFn(
@@ -844,10 +945,7 @@ export async function runSyncBatch(
 
     // Quick pass done: transition to full pass without releasing the lock.
     if (state.phase === "quick") {
-      const historyMin = new Date();
-      historyMin.setFullYear(historyMin.getFullYear() - 2);
-      historyMin.setMonth(0, 1);
-      historyMin.setHours(0, 0, 0, 0);
+      const historyMin = calendarHistoryFloor();
       const fullState: SyncState = {
         calendarId,
         min: historyMin,
@@ -992,6 +1090,14 @@ export async function runCalendarInit(
   );
   if (!acquired) {
     return { done: true };
+  }
+
+  // Record (once) when we first started syncing this calendar. Used later to
+  // drop cancellations of events that were already cancelled before we ever
+  // imported anything — those would otherwise create phantom unread threads.
+  const firstSyncKey = `first_sync_at_${resolvedCalendarId}`;
+  if (!(await host.get<string>(firstSyncKey))) {
+    await host.set(firstSyncKey, new Date().toISOString());
   }
 
   const initialState: SyncState = {

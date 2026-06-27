@@ -12,6 +12,7 @@ import type { CalendarSyncHost } from "./sync";
 import {
   extractRSVPParamsFn,
   getWatchRenewalScheduleFn,
+  processCalendarEventsFn,
   runCalendarInit,
   runSyncBatch,
   setupCalendarWatchFn,
@@ -862,5 +863,152 @@ describe("stopCalendarWatchFn", () => {
     const body = JSON.parse(init?.body as string);
     expect(body.id).toBe("w-123");
     expect(body.resourceId).toBe("r-456");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cancellations of events that were never imported (phantom-thread guard)
+// ---------------------------------------------------------------------------
+
+describe("processCalendarEventsFn — stale cancellations", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("drops a cancellation whose event was last modified before the first sync", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    // This connector first synced the calendar on 2026-06-25.
+    host.store.set(
+      `first_sync_at_${calendarId}`,
+      new Date("2026-06-25T00:00:00.000Z").toISOString()
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    // A 3-year-old recurring master that has been cancelled in Google since
+    // 2023 (event.updated predates our first sync) leaks through the
+    // incremental syncToken's showDeleted results. We never imported it, so
+    // there is no thread to cancel — emitting a link would be a phantom.
+    const staleCancelled = {
+      id: "evt-stale",
+      iCalUID: "70hj@google.com",
+      status: "cancelled" as const,
+      created: "2023-05-09T14:34:19.000Z",
+      updated: "2023-08-04T14:27:58.535Z",
+      summary: "Product 0->1",
+    };
+
+    await processCalendarEventsFn(host, [staleCancelled], calendarId, false);
+
+    expect(host.savedLinks.flat()).toHaveLength(0);
+  });
+
+  it("keeps a cancellation whose event was modified after the first sync", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(
+      `first_sync_at_${calendarId}`,
+      new Date("2026-06-25T00:00:00.000Z").toISOString()
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    // An upcoming event we imported, then cancelled after we started syncing.
+    const freshCancelled = {
+      id: "evt-fresh",
+      iCalUID: "abc@google.com",
+      status: "cancelled" as const,
+      created: "2026-06-01T10:00:00.000Z",
+      updated: "2026-06-26T12:00:00.000Z",
+      start: { dateTime: "2026-07-01T15:00:00.000Z" },
+      end: { dateTime: "2026-07-01T16:00:00.000Z" },
+      summary: "Team sync",
+    };
+
+    await processCalendarEventsFn(host, [freshCancelled], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(
+      saved[0].notes?.some(
+        (n) => (n as { key?: string }).key === "cancellation"
+      )
+    ).toBe(true);
+  });
+
+  it("drops a cancellation for an event older than the history window when no first-sync marker exists", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    // No first_sync_at marker (connector instance predates the marker).
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const oldCancelled = {
+      id: "evt-old-nomarker",
+      iCalUID: "old@google.com",
+      status: "cancelled" as const,
+      created: "2023-05-09T14:34:19.000Z",
+      updated: "2023-08-04T14:27:58.535Z",
+      summary: "Product 0->1",
+    };
+
+    await processCalendarEventsFn(host, [oldCancelled], calendarId, false);
+
+    expect(host.savedLinks.flat()).toHaveLength(0);
+  });
+});
+
+describe("prepareEventInstanceFn — stale occurrence cancellations", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("drops a cancelled recurring occurrence older than the history window", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    // A cancelled occurrence of a recurring master, whose occurrence date is
+    // years before the import window — never imported, so it must not create
+    // a phantom thread.
+    const staleOccurrence = {
+      id: "evt-occ-stale",
+      iCalUID: "master@google.com",
+      recurringEventId: "masterid",
+      originalStartTime: { dateTime: "2023-08-04T14:27:58.000Z" },
+      status: "cancelled" as const,
+      updated: "2023-08-05T00:00:00.000Z",
+    };
+
+    await processCalendarEventsFn(host, [staleOccurrence], calendarId, false);
+
+    expect(host.savedLinks.flat()).toHaveLength(0);
+  });
+
+  it("keeps a cancelled recurring occurrence within the window modified after first sync", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(
+      `first_sync_at_${calendarId}`,
+      new Date("2026-06-25T00:00:00.000Z").toISOString()
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const freshOccurrence = {
+      id: "evt-occ-fresh",
+      iCalUID: "master2@google.com",
+      recurringEventId: "masterid2",
+      originalStartTime: { dateTime: "2026-07-01T15:00:00.000Z" },
+      status: "cancelled" as const,
+      updated: "2026-06-26T12:00:00.000Z",
+    };
+
+    await processCalendarEventsFn(host, [freshOccurrence], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(
+      saved[0].notes?.some((n) =>
+        (n as { key?: string }).key?.startsWith("cancellation-")
+      )
+    ).toBe(true);
   });
 });
