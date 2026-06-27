@@ -219,6 +219,62 @@ describe("comment write-back", () => {
   });
 });
 
+describe("checkItem write-back", () => {
+  const thread = { meta: { cardId: "c1", boardId: "b1" } } as any;
+  function withUpdate(trello: Trello) {
+    const updateCheckItem = vi.fn().mockResolvedValue({ id: "ci1", name: "Renamed", state: "complete", pos: 1, idMember: "m1" });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ updateCheckItem });
+    return updateCheckItem;
+  }
+
+  it("marks complete when a Done actor is present and renames from content", async () => {
+    const trello = makeTrello();
+    const updateCheckItem = withUpdate(trello);
+    const note = { key: "checkitem-ci1", content: "Renamed", tags: { 3: ["a1"] }, tagActors: {} } as any; // Tag.Done = 3
+    const res = await trello.onNoteUpdated(note, thread);
+    expect(updateCheckItem).toHaveBeenCalledWith("c1", "ci1", expect.objectContaining({ state: "complete", name: "Renamed" }));
+    expect(res).toEqual({ externalContent: "Renamed" });
+  });
+
+  it("marks incomplete when no Done actor is present", async () => {
+    const trello = makeTrello();
+    const updateCheckItem = withUpdate(trello);
+    const note = { key: "checkitem-ci1", content: "x", tags: {}, tagActors: {} } as any;
+    await trello.onNoteUpdated(note, thread);
+    expect(updateCheckItem).toHaveBeenCalledWith("c1", "ci1", expect.objectContaining({ state: "incomplete", idMember: "" }));
+  });
+
+  it("resolves the assignee to a Trello member via tagActors.source.accountId", async () => {
+    const trello = makeTrello();
+    const updateCheckItem = withUpdate(trello);
+    const note = { key: "checkitem-ci1", content: "x", tags: { 1: ["a1"] }, tagActors: { a1: { id: "a1", source: { accountId: "m1" } } } } as any; // Tag.Todo = 1
+    const res = await trello.onNoteUpdated(note, thread);
+    expect(updateCheckItem).toHaveBeenCalledWith("c1", "ci1", expect.objectContaining({ idMember: "m1" }));
+    expect((res as { deliveryError?: unknown }).deliveryError).toBeUndefined();
+  });
+
+  it("returns a deliveryError (without blocking completion) when the assignee has no member id", async () => {
+    const trello = makeTrello();
+    const updateCheckItem = withUpdate(trello);
+    const note = { key: "checkitem-ci1", content: "x", tags: { 1: ["a1"], 3: ["a1"] }, tagActors: { a1: { id: "a1" } } } as any;
+    const res = await trello.onNoteUpdated(note, thread);
+    const fields = updateCheckItem.mock.calls[0][2];
+    expect(fields.idMember).toBeUndefined(); // assignee not written
+    expect(fields.state).toBe("complete"); // completion still applied
+    expect((res as { deliveryError?: { code: string } }).deliveryError?.code).toBe("invalid_recipient");
+  });
+
+  it("ignores non-checkitem keys (falls through to existing handling)", async () => {
+    const trello = makeTrello();
+    const updateCheckItem = vi.fn();
+    const updateCard = vi.fn().mockResolvedValue({ desc: "d" });
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ updateCheckItem, updateCard });
+    await trello.onNoteUpdated({ key: "description", content: "d" } as any, thread);
+    expect(updateCheckItem).not.toHaveBeenCalled();
+    expect(updateCard).toHaveBeenCalled();
+  });
+});
+
 describe("onCreateLink", () => {
   it("creates a card in the chosen list and returns the synced link", async () => {
     const trello = makeTrello();

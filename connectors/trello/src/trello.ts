@@ -1,4 +1,4 @@
-import { Connector, type CreateLinkDraft, type Link, type NewLinkWithNotes, type Note, type NoteWriteBackResult, type Thread, type ToolBuilder } from "@plotday/twister";
+import { Connector, Tag, type CreateLinkDraft, type Link, type NewLinkWithNotes, type Note, type NoteWriteBackResult, type Thread, type ToolBuilder } from "@plotday/twister";
 import {
   AuthProvider,
   Integrations,
@@ -233,6 +233,26 @@ export class Trello extends Connector<Trello> {
     const boardId = thread.meta?.boardId as string | undefined;
     if (!cardId || !boardId) return;
     const api = await this.getApi(boardId);
+    const ci = note.key.match(/^checkitem-(.+)$/);
+    if (ci) {
+      const checkItemId = ci[1];
+      const doneActors = note.tags?.[Tag.Done] ?? [];
+      const todoActors = note.tags?.[Tag.Todo] ?? [];
+      const fields: { name?: string; state?: "complete" | "incomplete"; idMember?: string } = {
+        name: note.content ?? "",
+        state: doneActors.length > 0 ? "complete" : "incomplete",
+      };
+      let deliveryError: NoteWriteBackResult["deliveryError"];
+      if (todoActors.length > 0) {
+        const memberId = note.tagActors?.[todoActors[0]]?.source?.accountId;
+        if (memberId) fields.idMember = memberId;
+        else deliveryError = { code: "invalid_recipient", message: "Assignee is not a Trello board member" };
+      } else {
+        fields.idMember = ""; // no assignee → clear
+      }
+      const item = await api.updateCheckItem(cardId, checkItemId, fields);
+      return { externalContent: item.name, ...(deliveryError ? { deliveryError } : {}) };
+    }
     if (note.key === "description") {
       const card = await api.updateCard(cardId, { desc: note.content ?? "" });
       return { externalContent: card.desc ?? note.content ?? "" };
