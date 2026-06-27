@@ -79,6 +79,42 @@ describe("Tool Factory", () => {
       );
     });
 
+    // B4: BYOK removed — these verify the built-in-provider path is always taken
+    it("should create real AI tool when aiEnabled is undefined (no preference row)", () => {
+      const tool = createTool([], "AI", {}, context);
+      expect(tool.constructor.name).toBe("AI");
+    });
+
+    it("should create real AI tool when aiEnabled is true", () => {
+      const tool = createTool([], "AI", {}, { ...context, aiEnabled: true });
+      expect(tool.constructor.name).toBe("AI");
+    });
+
+    it("should create real AI tool when aiEnabled is true, required:false", () => {
+      const tool = createTool([], "AI", { required: false }, { ...context, aiEnabled: true });
+      expect(tool.constructor.name).toBe("AI");
+    });
+
+    it("should return AIDisabledStub when aiEnabled is false (twist_ai_disabled=true)", () => {
+      const tool = createTool([], "AI", {}, { ...context, aiEnabled: false });
+      // The stub is an internal class; verify via available() returning false
+      const caps = (tool as any).available();
+      expect(caps.prompt).toBe(false);
+      expect(caps.embed).toBe(false);
+    });
+
+    it("should return AIDisabledStub for required AI when aiEnabled is false", () => {
+      // Previously only optional (required:false) AI was stubbed; now all AI is stubbed when disabled
+      const tool = createTool([], "AI", { required: true }, { ...context, aiEnabled: false });
+      const caps = (tool as any).available();
+      expect(caps.prompt).toBe(false);
+    });
+
+    it("should create real AI tool with providerConfig undefined (always undefined post-B4)", () => {
+      const tool = createTool([], "AI", {}, { ...context, providerConfig: undefined });
+      expect(tool.constructor.name).toBe("AI");
+    });
+
     it("should pass correct options to tools", () => {
       const plotOptions = {
         activities: { access: ["read", "write"] },

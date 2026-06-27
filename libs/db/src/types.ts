@@ -9,118 +9,39 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      ai_key: {
-        Row: {
-          created_at: string
-          custom_base_url: string | null
-          encrypted_key: string
-          fast_model: string | null
-          id: number
-          iv: string
-          key_suffix: string
-          name: string | null
-          provider: Database["public"]["Enums"]["ai_provider"]
-          team_id: number | null
-          thinking_model: string | null
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          custom_base_url?: string | null
-          encrypted_key: string
-          fast_model?: string | null
-          id?: never
-          iv: string
-          key_suffix: string
-          name?: string | null
-          provider: Database["public"]["Enums"]["ai_provider"]
-          team_id?: number | null
-          thinking_model?: string | null
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          custom_base_url?: string | null
-          encrypted_key?: string
-          fast_model?: string | null
-          id?: never
-          iv?: string
-          key_suffix?: string
-          name?: string | null
-          provider?: Database["public"]["Enums"]["ai_provider"]
-          team_id?: number | null
-          thinking_model?: string | null
-          updated_at?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ai_key_team_id_fkey"
-            columns: ["team_id"]
-            referencedRelation: "team"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "ai_key_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       ai_preference: {
         Row: {
           builtin_ai_disabled: boolean
-          builtin_ai_key_id: number | null
           created_at: string
           id: number
           team_id: number | null
           twist_ai_disabled: boolean
-          twist_ai_key_id: number | null
           updated_at: string
           user_id: string | null
         }
         Insert: {
           builtin_ai_disabled?: boolean
-          builtin_ai_key_id?: number | null
           created_at?: string
           id?: never
           team_id?: number | null
           twist_ai_disabled?: boolean
-          twist_ai_key_id?: number | null
           updated_at?: string
           user_id?: string | null
         }
         Update: {
           builtin_ai_disabled?: boolean
-          builtin_ai_key_id?: number | null
           created_at?: string
           id?: never
           team_id?: number | null
           twist_ai_disabled?: boolean
-          twist_ai_key_id?: number | null
           updated_at?: string
           user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "ai_preference_builtin_ai_key_id_fkey"
-            columns: ["builtin_ai_key_id"]
-            referencedRelation: "ai_key"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "ai_preference_team_id_fkey"
             columns: ["team_id"]
             referencedRelation: "team"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "ai_preference_twist_ai_key_id_fkey"
-            columns: ["twist_ai_key_id"]
-            referencedRelation: "ai_key"
             referencedColumns: ["id"]
           },
           {
@@ -2069,9 +1990,12 @@ export type Database = {
           plan: Database["public"]["Enums"]["subscription_plan"]
           premium_connection_addons: number
           status: Database["public"]["Enums"]["subscription_status"]
+          stripe_addon_subscription_id: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          stripe_twist_addon_subscription_id: string | null
           team_id: number
+          twist_addon_count: number
           updated_at: string
         }
         Insert: {
@@ -2083,9 +2007,12 @@ export type Database = {
           plan?: Database["public"]["Enums"]["subscription_plan"]
           premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_addon_subscription_id?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          stripe_twist_addon_subscription_id?: string | null
           team_id: number
+          twist_addon_count?: number
           updated_at?: string
         }
         Update: {
@@ -2097,9 +2024,12 @@ export type Database = {
           plan?: Database["public"]["Enums"]["subscription_plan"]
           premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_addon_subscription_id?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          stripe_twist_addon_subscription_id?: string | null
           team_id?: number
+          twist_addon_count?: number
           updated_at?: string
         }
         Relationships: [
@@ -2986,6 +2916,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           auto_approve: boolean
+          capacity_weight: number
           category: string | null
           created_at: string
           description: string | null
@@ -3015,6 +2946,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           auto_approve?: boolean
+          capacity_weight?: number
           category?: string | null
           created_at?: string
           description?: string | null
@@ -3044,6 +2976,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           auto_approve?: boolean
+          capacity_weight?: number
           category?: string | null
           created_at?: string
           description?: string | null
@@ -3628,6 +3561,8 @@ export type Database = {
           apple_addon_product_id: string | null
           apple_original_transaction_id: string | null
           apple_product_id: string | null
+          apple_twist_addon_original_transaction_id: string | null
+          apple_twist_addon_product_id: string | null
           billing_cycle_end: string
           billing_cycle_start: string
           created_at: string
@@ -3636,9 +3571,12 @@ export type Database = {
           plan: Database["public"]["Enums"]["subscription_plan"]
           premium_connection_addons: number
           status: Database["public"]["Enums"]["subscription_status"]
+          stripe_addon_subscription_id: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          stripe_twist_addon_subscription_id: string | null
           trial_ends_at: string | null
+          twist_addon_count: number
           updated_at: string
           user_id: string
         }
@@ -3647,6 +3585,8 @@ export type Database = {
           apple_addon_product_id?: string | null
           apple_original_transaction_id?: string | null
           apple_product_id?: string | null
+          apple_twist_addon_original_transaction_id?: string | null
+          apple_twist_addon_product_id?: string | null
           billing_cycle_end: string
           billing_cycle_start: string
           created_at?: string
@@ -3655,9 +3595,12 @@ export type Database = {
           plan?: Database["public"]["Enums"]["subscription_plan"]
           premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_addon_subscription_id?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          stripe_twist_addon_subscription_id?: string | null
           trial_ends_at?: string | null
+          twist_addon_count?: number
           updated_at?: string
           user_id: string
         }
@@ -3666,6 +3609,8 @@ export type Database = {
           apple_addon_product_id?: string | null
           apple_original_transaction_id?: string | null
           apple_product_id?: string | null
+          apple_twist_addon_original_transaction_id?: string | null
+          apple_twist_addon_product_id?: string | null
           billing_cycle_end?: string
           billing_cycle_start?: string
           created_at?: string
@@ -3674,9 +3619,12 @@ export type Database = {
           plan?: Database["public"]["Enums"]["subscription_plan"]
           premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_addon_subscription_id?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          stripe_twist_addon_subscription_id?: string | null
           trial_ends_at?: string | null
+          twist_addon_count?: number
           updated_at?: string
           user_id?: string
         }
@@ -5074,6 +5022,7 @@ export type Database = {
         Returns: {
           archived_at: string | null
           auto_approve: boolean
+          capacity_weight: number
           category: string | null
           created_at: string
           description: string | null

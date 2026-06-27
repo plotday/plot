@@ -1,12 +1,13 @@
 /// Generates the App Store review screenshot for the connection add-on
 /// subscriptions. Renders the REAL purchase confirmation — the `SelectModal`
-/// that `BuyAddonCommand` shows, with the real `SubscriptionDisclosure`
-/// (price + auto-renew + Terms/Privacy) — into a PNG.
+/// that `BuyAddonCommand` shows (via `ConfirmModal`), with the real
+/// `SubscriptionDisclosure` (price + auto-renew + Terms/Privacy) — into a PNG.
 ///
 /// Run: `flutter test test/screenshot/addon_review_screenshot_test.dart`
-/// Output: `build/app_store/addon_review.png` (upload to all three add-on
-/// products in App Store Connect — Apple wants the in-app purchase screen,
-/// not its own StoreKit sheet). Rerun whenever the copy or price changes.
+/// Output: `docs/app-store/screenshots/addon-connection-review.png` (upload to
+/// all three add-on products in App Store Connect — Apple wants the in-app
+/// purchase screen, not its own StoreKit sheet). Rerun and commit the PNG
+/// whenever the copy or price changes.
 library;
 
 import 'dart:io';
@@ -22,7 +23,6 @@ import 'package:provider/provider.dart';
 
 import 'package:plot/command/upgrade.dart' show SubscriptionDisclosure;
 import 'package:plot/style/colors.dart';
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/list_tile.dart';
@@ -65,47 +65,27 @@ void main() {
       brightness: Brightness.light,
     );
 
-    // The same SelectModal BuyAddonCommand._pickAddonCount shows: the quantity
-    // picker (0–3) with the real disclosure subtitle. Prices are hardcoded to
-    // the US amounts here (the live app reads localized prices from StoreKit).
-    const current = 0;
-    const prices = {1: '\$6.99', 2: '\$12.99', 3: '\$17.99'};
-    final modal = SelectModal<int>(
+    // Mirrors what BuyAddonCommand shows via ConfirmModal: a SelectModal<bool>
+    // with the real SubscriptionDisclosure as its subtitle. Cancel is
+    // highlighted by default (selectedValue: false), matching ConfirmModal's
+    // safer-default behaviour.
+    final modal = SelectModal<bool>(
       showFilter: false,
-      title: 'Connection add-ons',
+      title: 'Add a connection add-on',
       subtitleWidget: const SubscriptionDisclosure(
-        note:
-            'Connection add-ons are provided by a third party and bill on top '
-            'of your plan. Each also counts as one of your plan connections.',
+        priceLine: r'Connection add-on — $5/month',
+        note: "Billed separately from your plan. It does not count toward "
+            "your plan's connection limit.",
       ),
-      selectedValue: current,
+      selectedValue: false,
       initialItems: [
-        SelectGroup<int>(items: const [0, 1, 2, 3]),
+        SelectGroup<bool>(items: const [false, true]),
       ],
       items: (_) async => [
-        SelectGroup<int>(items: const [0, 1, 2, 3]),
+        SelectGroup<bool>(items: const [false, true]),
       ],
-      itemBuilder: (count, _) => Builder(
-        builder: (context) {
-          final muted = context.theme.typography.sm.copyWith(
-            color: context.theme.plotColors.muted,
-          );
-          if (count == 0) {
-            return ListTile(
-              title: 'None',
-              details: Text(
-                count == current ? 'Current' : 'Cancel in App Store settings',
-                style: muted,
-              ),
-            );
-          }
-          return ListTile(
-            title:
-                '$count connection add-on${count == 1 ? '' : 's'} — '
-                '${prices[count]}/month',
-            details: count == current ? Text('Current', style: muted) : null,
-          );
-        },
+      itemBuilder: (value, _) => ListTile(
+        title: value ? r'Add for $5/month' : 'Cancel',
       ),
     );
 
@@ -156,20 +136,57 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    // Bounded pumps instead of pumpAndSettle: the modal's filter-hidden branch
+    // reschedules a focus-request post-frame callback every build on platforms
+    // with a physical keyboard (macOS host), so pumpAndSettle never settles.
+    // A few fixed frames are enough to lay out the synchronously-provided
+    // initialItems and the disclosure.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Assert the NEW purchase copy is on screen, so this harness verifies
+    // correctness even when the PNG raster path is flaky in headless CI.
+    expect(find.text('Add a connection add-on'), findsOneWidget);
+    expect(find.text(r'Connection add-on — $5/month'), findsOneWidget);
+    expect(
+      find.text(
+        "Billed separately from your plan. It does not count toward "
+        "your plan's connection limit.",
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(r'Add for $5/month'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.textContaining('auto-renew'), findsOneWidget);
+    expect(find.text('Terms of Service'), findsOneWidget);
+    expect(find.text('Privacy Policy'), findsOneWidget);
+    // The OLD (now false) copy must be gone.
+    expect(find.textContaining('bill on top of your plan'), findsNothing);
+    expect(
+      find.textContaining('counts as one of your plan connections'),
+      findsNothing,
+    );
 
     final boundary =
         boundaryKey.currentContext!.findRenderObject()
             as RenderRepaintBoundary;
     final image = await boundary.toImage(pixelRatio: 2.0);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
     expect(bytes, isNotNull);
 
-    final out = File('build/app_store/addon_review.png');
+    final out = File(
+      'docs/app-store/screenshots/addon-connection-review.png',
+    );
     out.parent.createSync(recursive: true);
     out.writeAsBytesSync(bytes!.buffer.asUint8List());
     expect(out.lengthSync(), greaterThan(0));
     // ignore: avoid_print
     print('Wrote review screenshot: ${out.absolute.path}');
+
+    // Dispose the widget tree so the modal's State.dispose runs (disposing its
+    // focus node / controllers) and the test terminates cleanly instead of
+    // hanging on the rescheduled focus callback.
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }

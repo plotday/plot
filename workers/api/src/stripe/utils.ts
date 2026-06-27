@@ -178,13 +178,13 @@ export async function createInitialTrialSubscription(
   }
 ): Promise<Stripe.Subscription> {
   const prices = await stripe.prices.list({
-    lookup_keys: ["core_monthly"],
+    lookup_keys: ["free_monthly"],
     limit: 1,
   });
 
   if (!prices.data.length) {
     throw new Error(
-      'Price with lookup key "core_monthly" not found in Stripe. Please create it first.'
+      'Price with lookup key "free_monthly" not found in Stripe. Please create it first.'
     );
   }
 
@@ -200,7 +200,7 @@ export async function createInitialTrialSubscription(
     },
     metadata: {
       user_id: userId,
-      plan: "core",
+      plan: "free",
     },
   });
 }

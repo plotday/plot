@@ -192,7 +192,7 @@ Plot supports you working with others in the areas you choose while gathering ev
 We''d love to hear what you''re working on and how Plot can help. Feel free to reply in this thread that includes the Plot team.', 'welcome')
         ON CONFLICT (thread_id, link_id, key) WHERE key IS NOT NULL DO NOTHING;
         INSERT INTO public.note (author_id, created_by, thread_id, source_created_at, content, key)
-            VALUES (c_system_instance_id, c_system_instance_id, v_welcome_thread_id, now() + interval '1 millisecond', 'Your account has been upgraded to the **Core plan** free for 30 days so you can try up to 5 connections and 2 twists. You can choose to keep the upgrade or go **Pro** at any time. Otherwise, after 30 days, you''ll automatically continue on the Free plan, which includes unlimited history and sharing. Any connections or twists over your new limit will be archived.', 'core-trial')
+            VALUES (c_system_instance_id, c_system_instance_id, v_welcome_thread_id, now() + interval '1 millisecond', 'Welcome! For your first 30 days you get unlimited connections on the Free plan — connect as many of your apps as you like. After 30 days you''ll continue on Free with up to 2 connections; add a $5/mo connection add-on for more, or upgrade to Pro for unlimited. Everything you''ve set up stays.', 'core-trial')
         ON CONFLICT (thread_id, link_id, key) WHERE key IS NOT NULL DO NOTHING;
 -- ONBOARDING:END welcome-user
     END IF;

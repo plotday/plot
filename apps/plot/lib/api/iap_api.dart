@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/widgets.dart' show FocusManager;
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import 'package:plot/api/api.dart' as api;
@@ -11,16 +12,16 @@ import 'package:plot/logging.dart';
 /// Product identifiers configured in App Store Connect. Same IDs for iOS
 /// and Mac App Store — StoreKit treats them as the same auto-renewable
 /// subscription across the user's Apple ID.
-const String kIapProductCoreMonthly = 'day.plot.app.core_monthly';
 const String kIapProductProMonthly = 'day.plot.app.pro_monthly';
 
 /// Connection add-on products. A SEPARATE App Store subscription group from
 /// the plans: auto-renewable subscriptions can't be bought in an arbitrary
 /// quantity, so "N connection add-ons" is modeled as tiered products (one
-/// active at a time). Apple prices are $6.99 / $12.99 / $17.99 for 1 / 2 / 3
-/// add-ons (a gentle volume discount that still nets ≥ $5/unit after Apple's
-/// fee — vs $5/unit on web). iOS is capped at 3 tiers because Apple's price
-/// grid has no clean points above that; web/Stripe is unbounded.
+/// active at a time). Apple prices are $5.99 / $11.99 / $17.99 for 1 / 2 / 3
+/// add-ons (flat $5.99/connection — the cleanest `.99` point above web's
+/// $5/unit + Apple's fee). iOS is capped at 3 tiers because Apple's price grid
+/// has no clean points above that; web/Stripe is unbounded. The confirm modal
+/// shows the live StoreKit price, so these comments are documentation only.
 const Map<int, String> kIapAddonProductForCount = {
   1: 'day.plot.app.addon_1',
   2: 'day.plot.app.addon_2',
@@ -30,10 +31,25 @@ const Map<int, String> kIapAddonProductForCount = {
 /// Highest add-on count purchasable in-app (the tier cap on iOS).
 const int kIapMaxAddons = 3;
 
+/// Twist add-on products. A SEPARATE App Store subscription group from the
+/// plan subscriptions and connection add-ons: tiered products (one active at a
+/// time) so "N twist add-ons" is purchasable as a step-up upgrade. Apple prices
+/// are $11.99 / $23.99 / $35.99 for 1 / 2 / 3 add-ons (flat $11.99/block);
+/// web/Stripe is $10/block and unbounded. The confirm modal shows the live
+/// StoreKit price, so these comments are documentation only.
+const Map<int, String> kIapTwistAddonProductForCount = {
+  1: 'day.plot.app.twist_addon_1',
+  2: 'day.plot.app.twist_addon_2',
+  3: 'day.plot.app.twist_addon_3',
+};
+
+/// Highest twist add-on count purchasable in-app (the tier cap on iOS).
+const int kIapMaxTwistAddons = 3;
+
 final Set<String> _kAllProductIds = {
-  kIapProductCoreMonthly,
   kIapProductProMonthly,
   ...kIapAddonProductForCount.values,
+  ...kIapTwistAddonProductForCount.values,
 };
 
 /// Outcome of a purchase attempt surfaced to UI.
@@ -209,6 +225,17 @@ class IapService {
     final completer = Completer<IapResult>();
     _pending[productId] = completer;
 
+    // Release Flutter's keyboard focus before presenting the StoreKit sheet.
+    // On macOS (and iOS) the native purchase/password sheet shares the app
+    // window, so while a Flutter text field still owns the text input
+    // connection the sheet's password field can't become first responder —
+    // anything typed or pasted goes to the field behind the sheet instead.
+    // Dropping focus sends `TextInput.clearClient`; the zero-delay await lets
+    // that platform message flush (focus changes apply on the next microtask)
+    // before the sheet appears, so the native field receives keystrokes.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(Duration.zero);
+
     final purchaseParam = PurchaseParam(productDetails: product);
     try {
       // Subscriptions go through buyNonConsumable on both StoreKit and
@@ -231,6 +258,23 @@ class IapService {
   /// prorates the change).
   Future<IapResult> buyAddon(int count) {
     final productId = kIapAddonProductForCount[count];
+    if (productId == null) {
+      return Future.value(
+        const IapResult(
+          status: IapPurchaseStatus.storeError,
+          message: 'That add-on amount is not available.',
+        ),
+      );
+    }
+    return buy(productId);
+  }
+
+  /// Buy (or change to) the twist add-on tier granting [count] twist add-ons.
+  /// Tiers are mutually exclusive within the App Store twist add-on subscription
+  /// group, so picking a higher tier upgrades the user's add-on count (Apple
+  /// prorates the change).
+  Future<IapResult> buyTwistAddon(int count) {
+    final productId = kIapTwistAddonProductForCount[count];
     if (productId == null) {
       return Future.value(
         const IapResult(

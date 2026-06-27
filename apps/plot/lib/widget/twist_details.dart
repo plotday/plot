@@ -12,27 +12,11 @@ class TwistDetails extends StatelessWidget {
   const TwistDetails({
     required this.twist,
     this.priority,
-    this.hasAiKeys,
     super.key,
   });
 
   final Twist twist;
   final Priority? priority;
-
-  /// Whether the user has any AI API keys configured. Null = not fetched.
-  final bool? hasAiKeys;
-
-  bool get _aiMessageIsWarning => hasAiKeys == false;
-
-  String? get _aiMessage {
-    if (hasAiKeys == null) return null;
-    if (hasAiKeys == false) {
-      return twist.aiRequired
-          ? 'Add API keys in settings to use this twist.'
-          : 'Add API keys in settings to enable AI features.';
-    }
-    return 'AI will use your API keys.';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -167,18 +151,6 @@ class TwistDetails extends StatelessWidget {
                         'AI',
                         twist.aiRequired ? 'Required' : 'Optional',
                       ),
-                      if (_aiMessage != null) ...[
-                        SizedBox(height: theme.spacing.sm),
-                        Text(
-                          _aiMessage!,
-                          style: TextStyle(
-                            fontSize: theme.typography.sm.fontSize,
-                            color: _aiMessageIsWarning
-                                ? theme.colors.destructive
-                                : theme.colors.mutedForeground,
-                          ),
-                        ),
-                      ],
                     ],
                     if (twist.createdAt != null) ...[
                       SizedBox(height: theme.spacing.sm),

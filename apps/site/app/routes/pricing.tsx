@@ -160,7 +160,7 @@ export default function Pricing() {
       <Box className={classes.graySection} pt={40} pb={80}>
         <Container size="lg">
           <Box className={classes.pricingGrid}>
-            {PLANS.filter((plan) => plan.key !== "core").map((plan) => (
+            {PLANS.map((plan) => (
               <div
                 key={plan.key}
                 className={

@@ -197,6 +197,24 @@ async function identifyStripeUser(c: any, stripeCustomerId: string) {
 const ADDON_PRICE_PREFIX = "addon";
 
 /**
+ * Lookup-key prefix identifying the twist add-on price(s) on a standalone
+ * twist add-on subscription (`twist_addon_monthly`). Kept for documentation
+ * and future-proofing; twist add-on subs are identified by `metadata.type`
+ * before `parseSubscriptionItemQuantities` is ever reached.
+ */
+export const TWIST_ADDON_PRICE_PREFIX = "twist_addon";
+
+/** A standalone connection-add-on subscription (separate from the plan sub). */
+export function isAddonSubscription(subscription: Stripe.Subscription): boolean {
+  return subscription.metadata?.type === "addon";
+}
+
+/** A standalone twist add-on subscription (separate from the plan sub). */
+export function isTwistAddonSubscription(subscription: Stripe.Subscription): boolean {
+  return subscription.metadata?.type === "twist_addon";
+}
+
+/**
  * Split a subscription's line items into the plan item's quantity (drives a
  * team's `connection_group_quantity`) and the add-on item's quantity (drives
  * `premium_connection_addons`). The add-on item is absent (→ 0) when the user
@@ -228,6 +246,71 @@ export async function handleSubscriptionUpdate(
 
   const customerId = subscription.customer as string;
 
+  if (isAddonSubscription(subscription)) {
+    // Apple owns the count when an Apple add-on is active — don't clobber it.
+    // Read the quantity directly from the single add-on line item (more robust
+    // if the addon_monthly lookup_key is absent on the payload).
+    const addonQuantity = subscription.items.data[0]?.quantity ?? 0;
+    const updated = await c.var.db
+      .updateTable("user_subscription")
+      .set({
+        premium_connection_addons: addonQuantity,
+        stripe_addon_subscription_id: subscription.id,
+        updated_at: sql`now()`,
+      })
+      .where("stripe_customer_id", "=", customerId)
+      .where("apple_addon_original_transaction_id", "is", null)
+      .executeTakeFirst();
+    // 0 rows: either this is a team customer (no user_subscription row), OR the
+    // Apple guard (apple_addon_original_transaction_id IS NOT NULL) blocked the
+    // personal write. In both cases, try team_subscription — harmless no-op if
+    // the Apple guard was the reason (no matching team row for a personal customer).
+    if (Number(updated?.numUpdatedRows) === 0) {
+      await c.var.db
+        .updateTable("team_subscription")
+        .set({
+          premium_connection_addons: addonQuantity,
+          stripe_addon_subscription_id: subscription.id,
+          updated_at: sql`now()`,
+        })
+        .where("stripe_customer_id", "=", customerId)
+        .execute();
+    }
+    return; // never run the plan path for an add-on sub
+  }
+
+  if (isTwistAddonSubscription(subscription)) {
+    // Apple owns the twist add-on count when an Apple twist add-on is active —
+    // don't clobber it. Read the quantity directly from the single line item.
+    const twistAddonQuantity = subscription.items.data[0]?.quantity ?? 0;
+    const updated = await c.var.db
+      .updateTable("user_subscription")
+      .set({
+        twist_addon_count: twistAddonQuantity,
+        stripe_twist_addon_subscription_id: subscription.id,
+        updated_at: sql`now()`,
+      })
+      .where("stripe_customer_id", "=", customerId)
+      .where("apple_twist_addon_original_transaction_id", "is", null)
+      .executeTakeFirst();
+    // 0 rows: either this is a team customer (no user_subscription row), OR the
+    // Apple guard (apple_twist_addon_original_transaction_id IS NOT NULL) blocked
+    // the personal write. team_subscription has no Apple twist-add-on columns —
+    // no guard needed, and the update is a harmless no-op for personal Apple users.
+    if (Number(updated?.numUpdatedRows) === 0) {
+      await c.var.db
+        .updateTable("team_subscription")
+        .set({
+          twist_addon_count: twistAddonQuantity,
+          stripe_twist_addon_subscription_id: subscription.id,
+          updated_at: sql`now()`,
+        })
+        .where("stripe_customer_id", "=", customerId)
+        .execute();
+    }
+    return; // never run the plan path for a twist add-on sub
+  }
+
   // Cross-platform guard: if this user has flipped to an active App Store
   // entitlement (e.g. the IAP convert path just cancelled their Stripe sub
   // and Stripe fires both subscription.deleted AND subscription.updated with
@@ -243,11 +326,12 @@ export async function handleSubscriptionUpdate(
 
   const { start, end } = getBillingCycleDates(subscription);
   const status = mapStripeStatus(subscription.status);
-  const { planQuantity, addonQuantity } =
+  const { planQuantity } =
     parseSubscriptionItemQuantities(subscription);
 
-  // Determine plan from subscription metadata, validated against known values
-  const validPlans = ["free", "core", "pro", "team"];
+  // Determine plan from subscription metadata, validated against known values.
+  // Legacy 'core' metadata falls back to 'free' (Core plan no longer active).
+  const validPlans = ["free", "pro", "team"];
   const plan = validPlans.includes(subscription.metadata.plan)
     ? (subscription.metadata.plan as PlanKey)
     : ("free" as PlanKey);
@@ -265,7 +349,8 @@ export async function handleSubscriptionUpdate(
     .select(["plan", "user_id", "trial_ends_at"])
     .where("stripe_customer_id", "=", customerId)
     .executeTakeFirst();
-  const oldPlan = (oldUserSub?.plan as PlanKey) ?? "free";
+  const rawOldPlan = (oldUserSub?.plan as string) ?? "free";
+  const oldPlan: PlanKey = (rawOldPlan === "core" ? "free" : rawOldPlan) as PlanKey;
   // Detect trial → active conversion: was trialing in DB, now Stripe says
   // trial is over. Used to gate the upgrade celebration.
   const justEndedTrial =
@@ -283,8 +368,10 @@ export async function handleSubscriptionUpdate(
         billing_cycle_start: start.toISOString(),
         billing_cycle_end: end.toISOString(),
         trial_ends_at: trialEndsAt ? trialEndsAt.toISOString() : null,
-        // Add-on line item quantity (0 when the user has no add-ons).
-        premium_connection_addons: addonQuantity,
+        // NOTE: premium_connection_addons is NOT updated here — it is owned
+        // exclusively by the standalone add-on subscription webhook branch
+        // (isAddonSubscription path above) and by Apple. Updating it on
+        // every plan renewal would clobber the standalone add-on count to 0.
       })
       .where("stripe_customer_id", "=", customerId)
       .executeTakeFirst();
@@ -302,7 +389,8 @@ export async function handleSubscriptionUpdate(
           status,
           billing_cycle_start: start.toISOString(),
           billing_cycle_end: end.toISOString(),
-          premium_connection_addons: addonQuantity,
+          // NOTE: premium_connection_addons is NOT updated here — it is owned
+          // exclusively by the standalone add-on subscription webhook branch.
         })
         .where("stripe_customer_id", "=", customerId)
         .execute();
@@ -490,6 +578,44 @@ export async function handleSubscriptionDeleted(
 
   const customerId = subscription.customer as string;
 
+  if (isAddonSubscription(subscription)) {
+    // Apple guard: if the user's add-on count is owned by an Apple add-on
+    // subscription (apple_addon_original_transaction_id IS NOT NULL), do not
+    // zero the count when a stale Stripe add-on sub is deleted.
+    await c.var.db
+      .updateTable("user_subscription")
+      .set({ premium_connection_addons: 0, stripe_addon_subscription_id: null, updated_at: sql`now()` })
+      .where("stripe_addon_subscription_id", "=", subscription.id)
+      .where("apple_addon_original_transaction_id", "is", null)
+      .execute();
+    // team_subscription has no apple_addon columns — no guard needed.
+    await c.var.db
+      .updateTable("team_subscription")
+      .set({ premium_connection_addons: 0, stripe_addon_subscription_id: null, updated_at: sql`now()` })
+      .where("stripe_addon_subscription_id", "=", subscription.id)
+      .execute();
+    return; // do not revert the plan to free for an add-on sub deletion
+  }
+
+  if (isTwistAddonSubscription(subscription)) {
+    // Apple guard: if the user's twist add-on count is owned by an Apple twist
+    // add-on subscription, do not zero it when a stale Stripe twist add-on
+    // sub is deleted.
+    await c.var.db
+      .updateTable("user_subscription")
+      .set({ twist_addon_count: 0, stripe_twist_addon_subscription_id: null, updated_at: sql`now()` })
+      .where("stripe_twist_addon_subscription_id", "=", subscription.id)
+      .where("apple_twist_addon_original_transaction_id", "is", null)
+      .execute();
+    // team_subscription has no apple_twist_addon columns — no guard needed.
+    await c.var.db
+      .updateTable("team_subscription")
+      .set({ twist_addon_count: 0, stripe_twist_addon_subscription_id: null, updated_at: sql`now()` })
+      .where("stripe_twist_addon_subscription_id", "=", subscription.id)
+      .execute();
+    return; // do not revert the plan to free for a twist add-on sub deletion
+  }
+
   // If the customer still has other active Stripe subscriptions, skip the
   // revert-to-free flow. This prevents a race where cancelling a stale Free
   // sub during an upgrade silently downgrades the just-upgraded paid plan and
@@ -528,9 +654,9 @@ export async function handleSubscriptionDeleted(
   // Trial cancellation path: Stripe is firing this because the trial ended
   // without a payment method (trial_settings.end_behavior='cancel'). Run
   // expireTrial first to post the expiry note, complete trial todos, and
-  // archive excess connections/twists. Safe no-op if the user wasn't on a
-  // trial — expireTrial guards on plan='core' && trial_ends_at.
-  if (subscription.metadata.plan === "core" || subscription.trial_end) {
+  // archive excess connections. Safe no-op if the user wasn't on a trial —
+  // expireTrial guards on trial_ends_at (plan is always 'free' during trial).
+  if (subscription.trial_end) {
     const trialUser = await c.var.db
       .selectFrom("user_subscription")
       .select(["user_id"])

@@ -19,7 +19,7 @@ import {
 import { SignIn, useAuth, useClerk, useUser } from "@clerk/react-router";
 import { IconCheck } from "@tabler/icons-react";
 import { Link, useSearchParams } from "react-router";
-import { ADDON_PRICE, PLANS, PRICES } from "~/lib/plans";
+import { ADDON_PRICE, PLANS, PRICES, TWIST_ADDON_PRICE } from "~/lib/plans";
 import type { Billing } from "~/lib/plans";
 
 import type { Route } from "./+types/upgrade";
@@ -120,9 +120,13 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const [teamQuantity, setTeamQuantity] = useState("50");
   const [orgName, setOrgName] = useState("");
   const [domainAutoJoin, setDomainAutoJoin] = useState(true);
-  // Number of $5/mo connection add-ons on the personal plan (from /usage).
-  const [addonCount, setAddonCount] = useState(0);
-  const [addonBusy, setAddonBusy] = useState(false);
+  // Usage-synced add-on counts (from /usage). These are NOT edited here — they
+  // are driven by what you connect / install in the app (a connection beyond
+  // your pool adds a $5/mo connection add-on; a twist beyond your capacity adds
+  // a $10/mo twist add-on, dropped automatically when you remove it). This page
+  // only summarizes them and links to billing management.
+  const [connectionAddonCount, setConnectionAddonCount] = useState(0);
+  const [twistAddonCount, setTwistAddonCount] = useState(0);
 
   const emailDomain = user?.primaryEmailAddress?.emailAddress
     ?.split("@")[1]
@@ -141,6 +145,10 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const isSuccess = searchParams.get("success") === "true";
   const isCanceled = searchParams.get("canceled") === "true";
   const successOrgId = searchParams.get("org");
+  // Add-on Checkout-session return params (set by createAddonCheckoutSession's
+  // success_url / cancel_url when a user captures a card for their first add-on).
+  const addonReturn = searchParams.get("addon");
+  const twistAddonReturn = searchParams.get("twist_addon");
 
   // Fetch subscription status
   useEffect(() => {
@@ -165,9 +173,13 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         }
         if (usageRes.ok) {
           const usage = (await usageRes.json()) as {
-            personal?: { premium?: { purchased?: number } };
+            personal?: {
+              premium?: { purchased?: number };
+              twistAddonCount?: number;
+            };
           };
-          setAddonCount(usage.personal?.premium?.purchased ?? 0);
+          setConnectionAddonCount(usage.personal?.premium?.purchased ?? 0);
+          setTwistAddonCount(usage.personal?.twistAddonCount ?? 0);
         }
       } catch {
         // Ignore fetch errors, show free plan
@@ -178,7 +190,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     fetchSubscription();
   }, [isSignedIn, emailMismatch, getToken, loaderData.apiUrl]);
 
-  const handleCheckout = async (plan: "core" | "pro" | "team") => {
+  const handleCheckout = async (plan: "pro" | "team") => {
     setLoadingPlan(plan);
     setError(null);
 
@@ -218,39 +230,6 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoadingPlan(null);
-    }
-  };
-
-  // Set the personal plan's connection add-on count. Stripe prorates the
-  // change on the existing subscription; no checkout redirect needed.
-  const handleSetAddons = async (quantity: number) => {
-    if (quantity < 0) return;
-    setAddonBusy(true);
-    setError(null);
-    try {
-      const token = await getToken();
-      const res = await fetch(`${loaderData.apiUrl}/app/upgrade/addons`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ quantity }),
-      });
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
-        throw new Error(
-          data.error === "manage_in_app"
-            ? "Manage add-ons in the Plot app on this device."
-            : data.error || "Failed to update add-ons",
-        );
-      }
-      const { addons } = (await res.json()) as { addons: number };
-      setAddonCount(addons);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setAddonBusy(false);
     }
   };
 
@@ -295,9 +274,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         ? "Plot Team"
         : planParam === "pro"
           ? "Plot Pro"
-          : planParam === "core"
-            ? "Plot Core"
-            : "Plot";
+          : "Plot";
     const clerkRedirect =
       searchParams.get("sign_up_force_redirect_url") ||
       searchParams.get("sign_in_force_redirect_url") ||
@@ -352,15 +329,13 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const activeOrgs = (subscription?.teams ?? []).filter(
     (o) => o.plan !== "free" && o.status === "active",
   );
-  const hasAnySubscription = hasPersonalPaid || activeOrgs.length > 0;
-
-  const PLAN_TIER: Record<string, number> = {
-    free: 0,
-    core: 1,
-    pro: 2,
-    team: 3,
-  };
-  const personalTier = PLAN_TIER[personalPlan] ?? 0;
+  const hasAddons = connectionAddonCount > 0 || twistAddonCount > 0;
+  // The personal Stripe customer exists whenever the user has a paid plan OR any
+  // standalone add-on subscription, so the billing portal is reachable in both
+  // cases (add-ons can live on Free).
+  const hasPersonalBilling = hasPersonalPaid || hasAddons;
+  const hasAnySubscription =
+    hasPersonalPaid || hasAddons || activeOrgs.length > 0;
 
   // Success alert org name lookup
   const successOrg = successOrgId
@@ -368,24 +343,12 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     : null;
 
   const preselectedPlan = searchParams.get("plan");
-  const corePlan = PLANS.find((p) => p.key === "core")!;
   const proPlan = PLANS.find((p) => p.key === "pro")!;
   const teamPlan = PLANS.find((p) => p.key === "team")!;
 
-  const personalPlanButton = (planKey: "core" | "pro") => {
-    const tier = PLAN_TIER[planKey];
-    if (hasPersonalPaid && personalTier >= tier) {
-      return {
-        label:
-          personalPlan === planKey ? "Current plan" : "Included in your plan",
-        disabled: true,
-      };
-    }
-    return {
-      label: `Upgrade to ${planKey === "core" ? "Core" : "Pro"}`,
-      disabled: false,
-    };
-  };
+  const proButton = hasPersonalPaid
+    ? { label: "Current plan", disabled: true }
+    : { label: "Upgrade to Pro", disabled: false };
 
   return (
     <Container size="lg" mt="xl" mb="xl">
@@ -405,10 +368,22 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           <Alert color="green" title="Plan active" mb="md">
             {successOrg
               ? `Your Team plan for ${successOrg.name} is now active.`
-              : `Your plan is now active. Welcome to Plot ${personalPlan === "core" ? "Core" : "Pro"}!`}
+              : "Your plan is now active. Welcome to Plot Pro!"}
           </Alert>
         )}
-        {isCanceled && (
+        {addonReturn === "success" && (
+          <Alert color="green" title="Connection add-on active" mb="md">
+            Your card is on file and your connection add-on is active.
+          </Alert>
+        )}
+        {twistAddonReturn === "success" && (
+          <Alert color="green" title="Twist add-on active" mb="md">
+            Your card is on file and your twist add-on is active.
+          </Alert>
+        )}
+        {(isCanceled ||
+          addonReturn === "canceled" ||
+          twistAddonReturn === "canceled") && (
           <Alert color="yellow" title="Checkout canceled" mb="md">
             Your checkout was canceled. No charges were made.
           </Alert>
@@ -425,48 +400,72 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             <Title order={4}>Active subscriptions</Title>
             <Box className={classes.subscriptionsList}>
               {hasPersonalPaid && (
-                <Stack gap="xs">
-                  <Box className={classes.currentPlan}>
-                    <Text fw={600} size="lg" style={{ flex: 1 }}>
-                      Plot {personalPlan === "core" ? "Core" : "Pro"}
+                <Box className={classes.currentPlan}>
+                  <Text fw={600} size="lg" style={{ flex: 1 }}>
+                    Plot Pro
+                  </Text>
+                  <Badge color="green" variant="light">
+                    Active
+                  </Badge>
+                  <Button
+                    onClick={() => handlePortal()}
+                    loading={loadingPlan === "portal"}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Manage plan
+                  </Button>
+                </Box>
+              )}
+              {/* Usage-synced add-ons — informational. Quantities follow what you
+                  connect / install in the app; manage billing (or cancel) via
+                  the portal. */}
+              {connectionAddonCount > 0 && (
+                <Box className={classes.currentPlan}>
+                  <Stack gap={2} style={{ flex: 1 }}>
+                    <Text fw={600}>Connection add-ons</Text>
+                    <Text c="dimmed" size="sm">
+                      {connectionAddonCount} active · ${ADDON_PRICE}/mo each
                     </Text>
-                    <Badge color="green" variant="light">
-                      Active
-                    </Badge>
-                    <Button
-                      onClick={() => handlePortal()}
-                      loading={loadingPlan === "portal"}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Manage plan
-                    </Button>
-                  </Box>
-                  <Box className={classes.currentPlan}>
-                    <Stack gap={2} style={{ flex: 1 }}>
-                      <Text fw={600}>Connection add-ons</Text>
-                      <Text c="dimmed" size="sm">
-                        {addonCount} active · ${ADDON_PRICE}/mo each
-                      </Text>
-                    </Stack>
-                    <Button
-                      onClick={() => handleSetAddons(addonCount - 1)}
-                      disabled={addonBusy || addonCount <= 0}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Remove
-                    </Button>
-                    <Button
-                      onClick={() => handleSetAddons(addonCount + 1)}
-                      loading={addonBusy}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Add
-                    </Button>
-                  </Box>
-                </Stack>
+                  </Stack>
+                  <Badge color="green" variant="light">
+                    Active
+                  </Badge>
+                </Box>
+              )}
+              {twistAddonCount > 0 && (
+                <Box className={classes.currentPlan}>
+                  <Stack gap={2} style={{ flex: 1 }}>
+                    <Text fw={600}>Twist add-ons</Text>
+                    <Text c="dimmed" size="sm">
+                      {twistAddonCount} active · ${TWIST_ADDON_PRICE}/mo each
+                      (+20 twists each)
+                    </Text>
+                  </Stack>
+                  <Badge color="green" variant="light">
+                    Active
+                  </Badge>
+                </Box>
+              )}
+              {/* Add-on-only users (no paid plan) still have a Stripe customer,
+                  so give them a way to update their card or cancel add-ons. */}
+              {hasAddons && !hasPersonalPaid && hasPersonalBilling && (
+                <Box className={classes.currentPlan}>
+                  <Stack gap={2} style={{ flex: 1 }}>
+                    <Text fw={600}>Billing</Text>
+                    <Text c="dimmed" size="sm">
+                      Update your card or cancel add-ons.
+                    </Text>
+                  </Stack>
+                  <Button
+                    onClick={() => handlePortal()}
+                    loading={loadingPlan === "portal"}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Manage billing
+                  </Button>
+                </Box>
               )}
               {activeOrgs.map((org) => (
                 <Box key={org.id} className={classes.currentPlan}>
@@ -540,45 +539,6 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         </Stack>
 
         <Box className={classes.planGrid}>
-          {/* Core */}
-          <Stack
-            className={
-              preselectedPlan === "core"
-                ? classes.planCardHighlight
-                : classes.planCard
-            }
-            gap="md"
-          >
-            <Text className={classes.planName}>{corePlan.name}</Text>
-            <Text className={classes.bestFor}>{corePlan.bestFor}</Text>
-            <Stack gap="xs" className={classes.featureList}>
-              {corePlan.features.map((f) => (
-                <Box key={f} className={classes.featureItem}>
-                  <IconCheck size={16} color="var(--mantine-color-brand-6)" />
-                  <span>{f}</span>
-                </Box>
-              ))}
-            </Stack>
-            <Box className={classes.priceDivider} />
-            <Box className={classes.priceBox}>
-              <Text className={classes.planPrice}>${PRICES.core[billing]}</Text>
-              <Text className={classes.planPricePeriod}>/mo</Text>
-            </Box>
-            {billing === "annual" && (
-              <Text c="dimmed" size="xs" mt={-8}>
-                Billed annually
-              </Text>
-            )}
-            <Button
-              onClick={() => handleCheckout("core")}
-              loading={loadingPlan === "core"}
-              disabled={personalPlanButton("core").disabled}
-              fullWidth
-            >
-              {personalPlanButton("core").label}
-            </Button>
-          </Stack>
-
           {/* Pro */}
           <Stack
             className={
@@ -611,10 +571,10 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             <Button
               onClick={() => handleCheckout("pro")}
               loading={loadingPlan === "pro"}
-              disabled={personalPlanButton("pro").disabled}
+              disabled={proButton.disabled}
               fullWidth
             >
-              {personalPlanButton("pro").label}
+              {proButton.label}
             </Button>
           </Stack>
 
@@ -686,6 +646,16 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             </Button>
           </Stack>
         </Box>
+
+        {/* Add-on explainer — connection + twist add-ons are usage-synced, added
+            automatically in the app rather than purchased here. */}
+        <Text c="dimmed" size="sm" ta="center" maw={680} mx="auto">
+          Need more than your plan includes? Each connection beyond your plan is a
+          ${ADDON_PRICE}/mo connection add-on, and each ${TWIST_ADDON_PRICE}/mo
+          twist add-on adds +20 twists. They're added automatically as you
+          connect more accounts or install more twists in the app, and you can
+          manage or cancel them anytime from your billing portal above.
+        </Text>
       </Stack>
     </Container>
   );

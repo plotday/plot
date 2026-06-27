@@ -8,13 +8,12 @@ import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
 import {
   BUILTIN_TWIST_PACKAGE_ID,
-  checkTwistLimit,
+  checkTwistCapacity,
   getPersonalPremiumAddons,
   type PlanLimits,
   selectConnectionsToTrim,
   SingleInstanceError,
 } from "../utils/limits";
-import { getEffectivePlan } from "../utils/plan";
 import { disposeRpc } from "../utils/rpc";
 
 /**
@@ -156,7 +155,7 @@ export async function add(
     // Check if twist requires AI and user has it disabled
     const twistRecord = await db
       .selectFrom("twist")
-      .select(["permissions", "is_source", "multiple_instances", "twist_package_id"])
+      .select(["permissions", "is_source", "multiple_instances", "twist_package_id", "capacity_weight"])
       .where("id", "=", String(twist_id))
       .executeTakeFirst();
 
@@ -173,25 +172,17 @@ export async function add(
         if (aiPref?.twist_ai_disabled === true) {
           throw new Error("This twist requires AI features which are disabled in your settings.");
         }
-
-        // Block free users without API keys from adding AI-required twists
-        const effective = await getEffectivePlan(db, userId);
-        if (effective.plan === "free") {
-          const aiKeyCount = await db
-            .selectFrom("ai_key")
-            .select(db.fn.countAll().as("count"))
-            .where("user_id", "=", userId)
-            .executeTakeFirstOrThrow();
-          if (Number(aiKeyCount.count) === 0) {
-            throw new Error("Add an API key in settings to use AI-powered twists.");
-          }
-        }
       }
     }
 
-    // Check plan limits before inserting (sources check limits at channel-enable time)
+    // Check automation capacity before inserting (sources check at channel-enable time)
     if (twistRecord?.is_source !== true) {
-      const limitCheck = await checkTwistLimit(db, userId, team_id ?? null);
+      const limitCheck = await checkTwistCapacity(
+        db,
+        userId,
+        team_id ?? null,
+        twistRecord?.capacity_weight ?? 1
+      );
       if (!limitCheck.allowed) {
         throw limitCheck.error;
       }
@@ -571,7 +562,7 @@ export async function update(
 
     const twistDef = await db
       .selectFrom("twist")
-      .select(["is_source", "multiple_instances", "twist_package_id"])
+      .select(["is_source", "multiple_instances", "twist_package_id", "capacity_weight"])
       .where("id", "=", String(currentTwist.twist_id))
       .executeTakeFirst();
 
@@ -594,10 +585,11 @@ export async function update(
 
       // Check quota limits if owner changes
       if (twistDef?.is_source !== true) {
-        const limitCheck = await checkTwistLimit(
+        const limitCheck = await checkTwistCapacity(
           db,
           currentTwist.owner_id,
-          twist.teamId
+          twist.teamId ?? null,
+          twistDef?.capacity_weight ?? 1
         );
         if (!limitCheck.allowed) {
           throw limitCheck.error;
@@ -952,7 +944,7 @@ export async function activateDraft(
   // Check if twist requires AI and user has it disabled
   const twistRecord = await db
     .selectFrom("twist")
-    .select(["permissions", "is_source", "multiple_instances", "twist_package_id", "name"])
+    .select(["permissions", "is_source", "multiple_instances", "twist_package_id", "name", "capacity_weight"])
     .where("id", "=", String(draft.twist_id))
     .executeTakeFirst();
 
@@ -969,25 +961,17 @@ export async function activateDraft(
       if (aiPref?.twist_ai_disabled === true) {
         throw new Error("This twist requires AI features which are disabled in your settings.");
       }
-
-      // Block free users without API keys from activating AI-required twists
-      const effective = await getEffectivePlan(db, draft.owner_id);
-      if (effective.plan === "free") {
-        const aiKeyCount = await db
-          .selectFrom("ai_key")
-          .select(db.fn.countAll().as("count"))
-          .where("user_id", "=", draft.owner_id)
-          .executeTakeFirstOrThrow();
-        if (Number(aiKeyCount.count) === 0) {
-          throw new Error("Add an API key in settings to use AI-powered twists.");
-        }
-      }
     }
   }
 
-  // Check plan limits before activating (sources check limits at channel-enable time)
+  // Check automation capacity before activating (sources check at channel-enable time)
   if (twistRecord?.is_source !== true) {
-    const limitCheck = await checkTwistLimit(db, draft.owner_id, teamId);
+    const limitCheck = await checkTwistCapacity(
+      db,
+      draft.owner_id,
+      teamId ?? null,
+      twistRecord?.capacity_weight ?? 1
+    );
     if (!limitCheck.allowed) {
       throw limitCheck.error;
     }
@@ -1434,7 +1418,7 @@ export async function enforcePersonalPlanLimits({
   env: Bindings;
   twistFactory: ReturnType<typeof twistFactory>;
   userId: string;
-  limits: Pick<PlanLimits, "connections" | "twists" | "addonsAllowed">;
+  limits: Pick<PlanLimits, "connections" | "twists">;
 }): Promise<{ removedConnections: number; archivedTwists: number }> {
   const logger = createLogger({
     operation: "enforcePersonalPlanLimits",
@@ -1446,10 +1430,9 @@ export async function enforcePersonalPlanLimits({
 
   // Trim connections that exceed the new plan, via each connector's removeAuth
   // callback (which deletes the upstream hosted/Unipile account). Add-on
-  // connections that exceed the purchased add-on credits (e.g. all of them on
-  // Free, which can't buy any) are removed even when they'd fit the regular
-  // connection count, or we keep paying their per-account upstream cost. See
-  // `selectConnectionsToTrim`.
+  // connections beyond purchased credits are trimmed regardless of plan (Free
+  // users can buy add-on credits); regular connections beyond the pool budget
+  // are also trimmed. See `selectConnectionsToTrim`.
   const allConnections = await db
     .selectFrom("twist_instance_connection as ptc")
     .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
@@ -1476,7 +1459,6 @@ export async function enforcePersonalPlanLimits({
     })),
     {
       connections: limits.connections,
-      addonsAllowed: limits.addonsAllowed,
       addonCredits: premiumAddons,
     }
   );

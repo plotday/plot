@@ -6,43 +6,24 @@ import type { Kysely } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
-import { decrypt } from "./encryption";
 import type { AiProviderConfig } from "../twist/tools/ai";
 
 /**
- * Load the user's builtin AI provider config from ai_preference + ai_key.
- * Returns undefined if user prefers Plot AI (default).
+ * BYOK removed in B4 — always returns undefined so callers use the built-in
+ * Plot AI provider. The ai_preference.builtin_ai_key_id column and ai_key table
+ * were dropped in the B4 Task 6 contract migration.
+ *
+ * Callers in summary.ts and sync/threads.ts guard on `if (providerConfig)` before
+ * calling summarizeWithProvider, so returning undefined here routes them to the
+ * default Workers AI path unchanged.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function loadBuiltinProviderConfig(
-  db: Kysely<DB>,
-  userId: string,
-  env: Bindings
+  _db: Kysely<DB>,
+  _userId: string,
+  _env: Bindings
 ): Promise<AiProviderConfig | undefined> {
-  const pref = await db
-    .selectFrom("ai_preference")
-    .select("builtin_ai_key_id")
-    .where("user_id", "=", userId)
-    .executeTakeFirst();
-
-  if (!pref?.builtin_ai_key_id) return undefined;
-
-  const row = await db
-    .selectFrom("ai_key")
-    .select(["provider", "encrypted_key", "iv", "custom_base_url", "fast_model", "thinking_model"])
-    .where("id", "=", pref.builtin_ai_key_id)
-    .executeTakeFirst();
-
-  if (!row) return undefined;
-
-  const apiKey = await decrypt(row.encrypted_key, row.iv, env.AI_KEY_ENCRYPTION_KEY);
-
-  return {
-    provider: row.provider as AiProviderConfig["provider"],
-    apiKey,
-    ...(row.custom_base_url ? { baseUrl: row.custom_base_url } : {}),
-    ...(row.fast_model ? { fastModel: row.fast_model } : {}),
-    ...(row.thinking_model ? { thinkingModel: row.thinking_model } : {}),
-  };
+  return undefined;
 }
 
 /**

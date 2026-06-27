@@ -49,9 +49,9 @@ export async function getExcessConnectionNames(
   userId: string
 ): Promise<{ twistName: string; provider: string }[]> {
   // Mirror what `enforcePersonalPlanLimits` actually trims on downgrade to free
-  // (regular connections beyond the count budget AND premium connections free
-  // blocks), so the "you'll lose access to" preview stays consistent with the
-  // real removal — including premium connectors like LinkedIn.
+  // (regular connections beyond the count budget; add-on connections beyond
+  // purchased credits — add-ons are available on Free but gated by credits),
+  // so the "you'll lose access to" preview stays consistent with the real removal.
   const connections = await db
     .selectFrom("twist_instance_connection as ptc")
     .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
@@ -95,7 +95,6 @@ export async function getExcessConnectionNames(
     })),
     {
       connections: PLAN_LIMITS.free.connections,
-      addonsAllowed: PLAN_LIMITS.free.addonsAllowed,
       addonCredits: premiumAddons,
     }
   );
@@ -140,7 +139,7 @@ export function buildReminderContent(
   siteRoot: string
 ): string {
   const dayWord = daysLeft === 1 ? "day" : "days";
-  let content = `Your free Core trial ends in **${daysLeft} ${dayWord}**. Upgrade to keep all your connections and twists.`;
+  let content = `Your 30-day connections trial ends in **${daysLeft} ${dayWord}**. Upgrade to keep all your connections.`;
 
   const lostItems: string[] = [];
   for (const conn of excessConnections) {
@@ -388,30 +387,22 @@ export async function expireTrial(
 ): Promise<void> {
   const logger = createLogger({ operation: "expireTrial", user_id: userId });
 
-  // Verify user is still on trial
+  // Verify user is still on trial (identified by trial_ends_at, not plan —
+  // users are on Free during the trial so there is no plan change to make)
   const sub = await db
     .selectFrom("user_subscription")
-    .select(["plan", "trial_ends_at"])
+    .select(["trial_ends_at"])
     .where("user_id", "=", userId)
     .executeTakeFirst();
 
-  if (!sub || sub.plan !== "core" || !sub.trial_ends_at) {
+  if (!sub || !sub.trial_ends_at) {
     logger.info("User not on trial, skipping expiry", { user_id: userId });
     return;
   }
 
-  // Get names of what they'll lose before downgrading
+  // Get names of what they'll lose before enforcing limits
   const excessConnections = await getExcessConnectionNames(db, userId);
   const excessTwists = await getExcessTwistNames(db, userId);
-
-  // Downgrade to free. trial_ends_at is left as-is (still useful for "trial
-  // expired on date X" UI); handleSubscriptionDeleted clears stripe_subscription_id
-  // and creates a fresh free_monthly Stripe sub for tracking.
-  await db
-    .updateTable("user_subscription")
-    .set({ plan: "free" })
-    .where("user_id", "=", userId)
-    .execute();
 
   // Enforce the new plan limits using the same archival flow the app uses
   // when a user removes a connection or twist themselves. This ensures the
@@ -432,7 +423,7 @@ export async function expireTrial(
     const siteRoot = env.SITE_ROOT || "https://plot.day";
 
     let content =
-      "Your Core trial has ended and you're now on the Free plan.";
+      "Your 30-day trial has ended. You're on the Free plan with up to 2 connections — add a $5/mo connection add-on or upgrade to Pro to keep more.";
 
     const lostItems: string[] = [];
     for (const conn of excessConnections) {
@@ -450,7 +441,7 @@ export async function expireTrial(
       content += " ";
     }
 
-    content += `You can upgrade anytime to unlock more connections and twists. [Upgrade →](${siteRoot}/upgrade)`;
+    content += `Add a $5/mo connection add-on or upgrade to Pro to keep more connections. [Upgrade →](${siteRoot}/upgrade)`;
 
     await addTrialNote(db, trial.threadId, userId, content, "expired", false, trial.plotTwistInstanceId);
 

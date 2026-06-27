@@ -2,7 +2,13 @@ import 'package:collection/collection.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
-import 'upgrade.dart' show BuyAddonCommand, ShowUpgradeOptions;
+import 'upgrade.dart'
+    show
+        BuyAddonCommand,
+        BuyTwistAddonCommand,
+        ConnectionCapacityOffer,
+        ShowUpgradeOptions,
+        TwistCapacityOffer;
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/analytics/profile.dart';
@@ -901,14 +907,6 @@ Future<UsageData> _freshUsage() async {
 Command _connectionAtLimitCommand() =>
     ShowUpgradeOptions(title: 'Upgrade to add more connections');
 
-/// Returned when a user on a plan that can't have add-ons (Free) taps an
-/// add-on connector — they must move to a paid plan first.
-Command _addonNeedsPaidPlanCommand() => ShowUpgradeOptions(
-  title: 'Upgrade to use connection add-ons',
-  subtitle:
-      'Connection add-ons require a paid plan. Subscribe first, then add one.',
-);
-
 /// Returned when a paid user has used all their connection add-ons and needs
 /// to buy another. Personal scopes purchase in-app (StoreKit) or on the web;
 /// team add-ons are managed by an admin on the web.
@@ -927,24 +925,19 @@ Command? _premiumGateCommand({
 }) {
   if (!isPremium) return null;
   switch (_evaluatePremium(usage: usage, owner: owner)) {
-    case _PremiumGate.allowed:
-      return null;
-    case _PremiumGate.blocked:
-      return _addonNeedsPaidPlanCommand();
-    case _PremiumGate.atLimit:
-      return _addonNeededCommand(owner: owner);
+    case _PremiumGate.allowed:  return null;
+    case _PremiumGate.atLimit:  return _addonNeededCommand(owner: owner);
   }
 }
 
-enum _PremiumGate { allowed, atLimit, blocked }
+enum _PremiumGate { allowed, atLimit }
 
 /// Decide whether the selected scope can accept another connection add-on.
 /// Returns:
 ///   - [_PremiumGate.allowed] when no add-on gating is needed (the regular
 ///     connection-pool check still applies separately).
-///   - [_PremiumGate.atLimit] when the scope is on a paid plan but has used
-///     all its purchased add-on credits (needs to buy another).
-///   - [_PremiumGate.blocked] when the scope's plan can't have add-ons (Free).
+///   - [_PremiumGate.atLimit] when the scope has used all its purchased add-on
+///     credits (needs to buy another).
 _PremiumGate _evaluatePremium({
   required UsageData usage,
   required String owner, // 'personal' or team id
@@ -952,17 +945,19 @@ _PremiumGate _evaluatePremium({
   final PremiumUsage? premium = owner == 'personal'
       ? usage.personal.premium
       : usage.teams.firstWhereOrNull((t) => t.id == owner)?.premium;
-  // Treat a missing payload (older server) as blocked so we never silently
-  // let an add-on slip through pre-rollout.
-  if (premium == null) return _PremiumGate.blocked;
-  if (premium.isBlocked) return _PremiumGate.blocked;
-  if (premium.needsAddon) return _PremiumGate.atLimit;
-  return _PremiumGate.allowed;
+  // Add-ons are available on any plan now; only "out of purchased credits"
+  // requires action. A missing payload (older server) is treated as needing a
+  // purchase rather than blocking outright.
+  if (premium == null) return _PremiumGate.atLimit;
+  return premium.needsAddon ? _PremiumGate.atLimit : _PremiumGate.allowed;
 }
 
 /// Returns the at-limit command for a twist-limit case.
-Command _twistAtLimitCommand() =>
-    ShowUpgradeOptions(title: 'Upgrade to add more twists');
+/// Offers a choice between a twist add-on and a plan upgrade via
+/// [TwistCapacityOffer]. On App Store builds both options are still presented
+/// because Apple supports twist_addon tiers (unlike connection-capacity
+/// add-ons, which are web-only).
+Command _twistAtLimitCommand() => TwistCapacityOffer();
 
 /// Message shown when the server returns plan_limit_exceeded for a connection.
 /// Team limits are admin-driven so we never reference "Upgrade" for
@@ -998,7 +993,7 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
     final personal = usage.personal.connections;
     parts.add(
       personal.isUnlimited
-          ? '${personal.count} personal'
+          ? '${personal.count} of unlimited personal'
           : '${personal.count} of ${personal.limit} personal',
     );
     final premium = usage.personal.premium;
@@ -1011,17 +1006,21 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
     for (final org in usage.teams) {
       parts.add(
         org.connections.isUnlimited
-            ? '${org.connections.count} ${org.name}'
+            ? '${org.connections.count} of unlimited ${org.name}'
             : '${org.connections.count} of ${org.connections.limit} ${org.name}',
       );
     }
   } else {
     final personal = usage.personal.twists;
-    parts.add(
-      personal.isUnlimited
-          ? '${personal.count} personal'
-          : '${personal.count} of ${personal.limit} personal',
-    );
+    // Twist capacity is always a finite weighted number (Free 1 · Pro 10 ·
+    // Team 10/block, plus +20 per twist add-on), so `twists.limit` is never
+    // null here — there's no "unlimited twists" tier to special-case.
+    parts.add('${personal.count} of ${personal.limit} personal');
+    // Surface twist add-on count when the user has purchased some.
+    final twistAddonCount = usage.personal.twistAddonCount;
+    if (twistAddonCount > 0) {
+      parts.add('Twist add-ons: $twistAddonCount');
+    }
   }
 
   return '(${parts.join(', ')})';
@@ -1487,6 +1486,7 @@ class EditSource extends ShowForm {
                   isNewlyActivated: isNewlyActivated,
                   teamId: owner == 'personal' ? null : owner,
                   accountLabel: label.isEmpty ? null : label,
+                  isPremium: integrations.premium,
                 );
               },
             ),
@@ -2134,9 +2134,9 @@ class AddSourceDetail extends ShowForm {
                 buildTeamSelect(refreshed)!,
               ...refreshed.providers.map((provider) {
                 final initialOwner = refreshedDefault;
-                // Premium gate (Free/Core: blocked; Pro: at-limit if used;
-                // Team: at-limit when remaining pool < 3). Falls through to
-                // the regular at-limit logic when premium is allowed.
+                // Premium gate: at-limit when add-on credits are used up;
+                // allowed otherwise (any plan). Falls through to the regular
+                // at-limit logic when premium is allowed.
                 final premiumGate = teams.isEmpty
                     ? _premiumGateCommand(
                         usage: usage,
@@ -3055,13 +3055,6 @@ class ShowTwistDetails extends ShowForm {
   final Twist twist;
 
   static Future<FormData> _buildForm(Twist twist) async {
-    // Only fetch keys info for twists that use AI
-    bool? hasAiKeys;
-    if (twist.permissions?.forDomain('ai') != null) {
-      final aiKeys = await UpgradeApi.getAiKeys();
-      hasAiKeys = aiKeys.isNotEmpty;
-    }
-
     return FormData(
       title: twist.name,
       groups: [
@@ -3070,8 +3063,7 @@ class ShowTwistDetails extends ShowForm {
             FormInfo(
               key: 'details',
               divider: false,
-              builder: (context) =>
-                  TwistDetails(twist: twist, hasAiKeys: hasAiKeys),
+              builder: (context) => TwistDetails(twist: twist),
             ),
           ],
         ),
@@ -3134,24 +3126,15 @@ class ShowTwistInfo extends ShowForm {
   }
 
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
-    // Fetch AI keys and usage in parallel. We no longer gate twists on plan
-    // tier — AI-required twists work for any user who has their own API
-    // keys, regardless of subscription state. Plan-only AI inclusion is
-    // returning in a future Premium AI add-on.
-    final results = await Future.wait([
-      UpgradeApi.getAiKeys(),
-      _freshUsage().then<UsageData?>((r) => r).catchError((_) => null),
-    ]);
-    final aiKeys = results[0] as List<String>;
-    final hasAiKeys = aiKeys.isNotEmpty;
-
-    // Block AI-required twists when the user has no API keys.
-    final blocked = twist.aiRequired && !hasAiKeys;
+    // Fetch usage — twist-limit gating is still enforced.
+    final UsageData? fetchedUsage = await _freshUsage()
+        .then<UsageData?>((r) => r)
+        .catchError((_) => null);
 
     List<StaticFormGroup> buildGroups() {
       // Prefer the live plan so the "Upgrade to add more twists" button flips
       // back to the normal add button the moment the user upgrades.
-      final usage = SubscriptionService.instance.usage ?? results[1] as UsageData?;
+      final usage = SubscriptionService.instance.usage ?? fetchedUsage;
       // Only gate entry when the user has no team to fall back to. If they
       // have teams, let them reach the setup form and pick a scope — the
       // save-time check in SetupTwist will gate against the chosen owner.
@@ -3164,16 +3147,14 @@ class ShowTwistInfo extends ShowForm {
             FormInfo(
               key: 'info',
               divider: true,
-              builder: (context) =>
-                  TwistDetails(twist: twist, hasAiKeys: hasAiKeys),
+              builder: (context) => TwistDetails(twist: twist),
             ),
-            if (!blocked)
-              FormButton(
-                key: 'add',
-                isPrimary: true,
-                buildCommand: (_) =>
-                    atTwistLimit ? _twistAtLimitCommand() : SetupTwist(twist),
-              ),
+            FormButton(
+              key: 'add',
+              isPrimary: true,
+              buildCommand: (_) =>
+                  atTwistLimit ? _twistAtLimitCommand() : SetupTwist(twist),
+            ),
           ],
         ),
       ];
@@ -3556,6 +3537,15 @@ class ActivateTwist extends Command {
       return const CommandDone();
     } on ApiException catch (e, t) {
       log.warning('Failed to activate twist', e, t);
+      if (e.isTwistAddonRequired) {
+        if (context.mounted) {
+          return BuyTwistAddonCommand(
+            candidateWeight: e.candidateWeight,
+            teamId: e.isTeam == true ? e.teamId : null,
+          ).run(context);
+        }
+        return const CommandSkipped();
+      }
       if (e.isPlanLimitExceeded) {
         return CommandMessage(
           _planLimitTwistMessage(
@@ -3850,6 +3840,15 @@ class _ActivateNoProviderSource extends Command {
 
       return const CommandDone();
     } on ApiException catch (e) {
+      if (e.isAddonRequired) {
+        if (context.mounted) {
+          return ConnectionCapacityOffer(
+            teamId: e.isTeam == true ? e.teamId : null,
+            isPremium: isPremium ?? false,
+          ).run(context);
+        }
+        return const CommandSkipped();
+      }
       if (e.isPlanLimitExceeded) {
         return CommandMessage(
           _planLimitConnectionMessage(
@@ -4162,6 +4161,7 @@ class SaveSource extends Command {
     this.isNewlyActivated = false,
     this.teamId,
     this.accountLabel,
+    this.isPremium = false,
   }) : super(
          title: isNewlyActivated ? 'Add connection' : 'Save',
          icon: FontAwesomeIcons.check,
@@ -4185,6 +4185,11 @@ class SaveSource extends Command {
   /// Per-connection disambiguator. Written to twist_instance.account_label
   /// and composed into the actor display name (notes/mentions).
   final String? accountLabel;
+
+  /// Whether this connector is a premium connector (LinkedIn, IG, WhatsApp).
+  /// Used to route the addon_required 403 response to the correct offer:
+  /// premium → always [BuyAddonCommand]; regular → [ConnectionCapacityOffer].
+  final bool isPremium;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -4322,6 +4327,15 @@ class SaveSource extends Command {
       // (e.g. enabling a syncable trips a per-channel quota), open the
       // upgrade page directly so the user has a path forward instead of a
       // dead-end error toast.
+      if (e.isAddonRequired) {
+        if (context.mounted) {
+          return ConnectionCapacityOffer(
+            teamId: e.isTeam == true ? e.teamId : null,
+            isPremium: isPremium,
+          ).run(context);
+        }
+        return const CommandSkipped();
+      }
       if (e.isPlanLimitExceeded) {
         if (context.mounted) {
           await _connectionAtLimitCommand().run(context);

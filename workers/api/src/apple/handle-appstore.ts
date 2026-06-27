@@ -6,7 +6,9 @@ import type { createLogger } from "@plotday/worker-util";
 import {
   applyAppleAddonTransactionToUser,
   applyAppleTransactionToUser,
+  applyAppleTwistAddonTransactionToUser,
   isAddonProduct,
+  isTwistAddonProduct,
 } from "./iap";
 import type {
   JwsNotificationPayload,
@@ -58,6 +60,21 @@ export async function handleAppStoreTransaction(
       notification_type: notif.notificationType,
       subtype: notif.subtype ?? null,
       addon_count: addonResult.addons,
+    });
+    return { ok: true };
+  }
+
+  // Twist add-on subscription notification: update only the twist add-on count.
+  // Never touches the plan fields, connection add-on fields, or free-tier
+  // reinstatement — tracked independently from both plan and connection add-ons.
+  if (isTwistAddonProduct(txn.productId)) {
+    const twistAddonResult = await applyAppleTwistAddonTransactionToUser(db, userId, txn);
+    tracker.capture("[User] Subscription Updated", {
+      plan: txn.productId,
+      origin: "app_store",
+      notification_type: notif.notificationType,
+      subtype: notif.subtype ?? null,
+      twist_addon_count: twistAddonResult.twistAddons,
     });
     return { ok: true };
   }

@@ -6,8 +6,6 @@
 import type { ColumnType } from "kysely";
 import type { IPostgresInterval } from "postgres-interval";
 
-export type AiProvider = "anthropic" | "custom" | "google" | "openai";
-
 export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
   ? U[]
   : ArrayTypeImpl<T>;
@@ -75,32 +73,29 @@ export interface Actor {
   updated_at: Timestamp | null;
 }
 
-export interface AiKey {
-  created_at: Generated<Timestamp>;
-  custom_base_url: string | null;
-  encrypted_key: string;
-  fast_model: string | null;
-  id: Generated<Int8>;
-  iv: string;
-  key_suffix: string;
-  name: string | null;
-  provider: AiProvider;
-  team_id: Int8 | null;
-  thinking_model: string | null;
-  updated_at: Generated<Timestamp>;
-  user_id: string | null;
-}
-
 export interface AiPreference {
   builtin_ai_disabled: Generated<boolean>;
-  builtin_ai_key_id: Int8 | null;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   team_id: Int8 | null;
   twist_ai_disabled: Generated<boolean>;
-  twist_ai_key_id: Int8 | null;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
+}
+
+export interface AtlasContractAtlasSchemaRevisions {
+  applied: Generated<Int8>;
+  description: string;
+  error: string | null;
+  error_stmt: string | null;
+  executed_at: Timestamp;
+  execution_time: Int8;
+  hash: string;
+  operator_version: string;
+  partial_hashes: Json | null;
+  total: Generated<Int8>;
+  type: Generated<Int8>;
+  version: string;
 }
 
 export interface AtlasSchemaRevisionsAtlasSchemaRevisions {
@@ -784,9 +779,12 @@ export interface TeamSubscription {
   plan: Generated<SubscriptionPlan>;
   premium_connection_addons: Generated<number>;
   status: Generated<SubscriptionStatus>;
+  stripe_addon_subscription_id: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  stripe_twist_addon_subscription_id: string | null;
   team_id: Int8;
+  twist_addon_count: Generated<number>;
   updated_at: Generated<Timestamp>;
 }
 
@@ -1090,6 +1088,7 @@ export interface TopicMemberOptout {
 export interface Twist {
   archived_at: Timestamp | null;
   auto_approve: Generated<boolean>;
+  capacity_weight: Generated<number>;
   category: string | null;
   created_at: Generated<Timestamp>;
   description: string | null;
@@ -1809,6 +1808,8 @@ export interface UserSubscription {
   apple_addon_product_id: string | null;
   apple_original_transaction_id: string | null;
   apple_product_id: string | null;
+  apple_twist_addon_original_transaction_id: string | null;
+  apple_twist_addon_product_id: string | null;
   billing_cycle_end: Timestamp;
   billing_cycle_start: Timestamp;
   created_at: Generated<Timestamp>;
@@ -1817,9 +1818,12 @@ export interface UserSubscription {
   plan: Generated<SubscriptionPlan>;
   premium_connection_addons: Generated<number>;
   status: Generated<SubscriptionStatus>;
+  stripe_addon_subscription_id: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  stripe_twist_addon_subscription_id: string | null;
   trial_ends_at: Timestamp | null;
+  twist_addon_count: Generated<number>;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -2028,8 +2032,8 @@ export interface UserTwistConnection {
 
 export interface DB {
   actor: Actor;
-  ai_key: AiKey;
   ai_preference: AiPreference;
+  "atlas_contract.atlas_schema_revisions": AtlasContractAtlasSchemaRevisions;
   "atlas_schema_revisions.atlas_schema_revisions": AtlasSchemaRevisionsAtlasSchemaRevisions;
   channel: Channel;
   classification_decision: ClassificationDecision;

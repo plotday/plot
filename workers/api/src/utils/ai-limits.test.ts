@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Kysely,
   PostgresAdapter,
@@ -8,12 +8,14 @@ import {
   type DatabaseConnection,
 } from "kysely";
 
-import { isAiEnabled } from "./ai-limits";
+import { checkAiLimit, INTERNAL_AI_CAP, isAiEnabled } from "./ai-limits";
 import type { DB } from "../db-types";
+import type { Bindings } from "../env";
 
-// Minimal Kysely fake: each query is answered by a per-table responder keyed on
-// the compiled SQL. isAiEnabled issues exactly two SELECTs (ai_preference and
-// user_settings) in parallel, so we route by table name.
+// ---------------------------------------------------------------------------
+// Kysely fake — used by isAiEnabled tests (two-table SELECT only)
+// ---------------------------------------------------------------------------
+
 function db(
   aiPreference: Record<string, unknown> | null,
   userSettings: Record<string, unknown> | null
@@ -49,6 +51,80 @@ function db(
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Mock UserAiUsage Durable Object
+// ---------------------------------------------------------------------------
+
+const mockCheck = vi.fn<[string, number], Promise<{ allowed: boolean; remaining: number }>>();
+
+vi.mock("../state/user-ai-usage", () => ({
+  UserAiUsage: {
+    Get: () => ({ check: mockCheck }),
+  },
+}));
+
+beforeEach(() => {
+  mockCheck.mockReset();
+});
+
+// ---------------------------------------------------------------------------
+// INTERNAL_AI_CAP — value assertions
+// ---------------------------------------------------------------------------
+
+describe("INTERNAL_AI_CAP", () => {
+  it("is a high ceiling (>= 10 000) — abuse protection only, not a product limit", () => {
+    expect(INTERNAL_AI_CAP.note_processing).toBeGreaterThanOrEqual(10_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkAiLimit — uniform cap (no plan/team bypass)
+// ---------------------------------------------------------------------------
+
+describe("checkAiLimit (uniform cap)", () => {
+  const fakeEnv = {} as Bindings;
+
+  it("allows when under the internal cap", async () => {
+    mockCheck.mockResolvedValue({ allowed: true, remaining: 9_999 });
+    const result = await checkAiLimit(fakeEnv, db(null, null), "user-free", "note_processing");
+    expect(result.allowed).toBe(true);
+  });
+
+  it("blocks when over the internal cap", async () => {
+    mockCheck.mockResolvedValue({ allowed: false, remaining: 0 });
+    const result = await checkAiLimit(fakeEnv, db(null, null), "user-free", "note_processing");
+    expect(result.allowed).toBe(false);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("paid/team users are also subject to the cap — DB is never queried", async () => {
+    // Previously isUserAiUnlimited returned true for paid/team users and they
+    // bypassed the quota entirely. Now ALL users go through the DO check.
+    mockCheck.mockResolvedValue({ allowed: true, remaining: 5_000 });
+
+    // A DB that throws if queried — verifies the plan lookup was removed.
+    const throwingDb = new Proxy({} as Kysely<DB>, {
+      get() {
+        throw new Error("DB should not be queried in checkAiLimit — plan bypass removed");
+      },
+    });
+
+    // Should NOT throw even though the DB proxy throws on any access.
+    const result = await checkAiLimit(fakeEnv, throwingDb, "paid-user-id", "note_processing");
+    expect(result.allowed).toBe(true);
+  });
+
+  it("passes INTERNAL_AI_CAP value to the usage check", async () => {
+    mockCheck.mockResolvedValue({ allowed: true, remaining: 1 });
+    await checkAiLimit(fakeEnv, db(null, null), "user-id", "note_processing");
+    expect(mockCheck).toHaveBeenCalledWith("note_processing", INTERNAL_AI_CAP.note_processing);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isAiEnabled — unchanged behaviour
+// ---------------------------------------------------------------------------
 
 describe("isAiEnabled", () => {
   it("is disabled when ai_preference.builtin_ai_disabled is true", async () => {

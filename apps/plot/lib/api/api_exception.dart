@@ -23,6 +23,13 @@ class ApiException implements Exception {
   /// The team ID associated with the limit, if applicable
   final String? teamId;
 
+  /// The reason the limit was exceeded (e.g. 'addon_required', 'connection_limit')
+  final String? reason;
+
+  /// The automation capacity weight of the candidate twist that would be
+  /// installed (populated when reason == 'twist_addon_required').
+  final int? candidateWeight;
+
   ApiException({
     required this.statusCode,
     required this.endpoint,
@@ -34,10 +41,20 @@ class ApiException implements Exception {
     this.isTeam,
     this.isAdmin,
     this.teamId,
+    this.reason,
+    this.candidateWeight,
   });
 
   /// Returns true if this exception represents a plan limit being exceeded
   bool get isPlanLimitExceeded => code == 'plan_limit_exceeded';
+
+  /// Returns true if this exception indicates an add-on connection is required
+  bool get isAddonRequired =>
+      code == 'plan_limit_exceeded' && reason == 'addon_required';
+
+  /// Returns true if this exception indicates a twist add-on is required
+  bool get isTwistAddonRequired =>
+      code == 'plan_limit_exceeded' && reason == 'twist_addon_required';
 
   @override
   String toString() =>

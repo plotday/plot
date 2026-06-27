@@ -3,8 +3,8 @@ import 'package:forui/forui.dart';
 
 /// Badge identifying a connector as an "Add-on" connection (has a real
 /// per-connection cost — Unipile-backed integrations like LinkedIn, Instagram,
-/// WhatsApp). Enabling one needs a purchased $5/mo add-on and counts as a
-/// regular connection.
+/// WhatsApp). Enabling one needs a purchased $5/mo connection add-on; it does
+/// not count toward your plan's connection limit.
 class ProBadge extends StatelessWidget {
   /// Optional explicit accent for the badge. Callers rendering on a surface
   /// that isn't driven by the ambient forui theme (e.g. the onboarding tiles,

@@ -5,8 +5,9 @@
  * Premium connectors have a real per-connection cost (e.g. Unipile-backed
  * integrations). They are surfaced to users as paid "connection add-ons":
  * enabling one requires a purchased add-on credit AND consumes a regular
- * connection slot — see `PLAN_LIMITS[plan].addonsAllowed` and
- * `checkChannelConnectionLimit()` in `../utils/limits.ts`.
+ * connection slot. The user's active add-on connection count must not exceed
+ * `premium_connection_addons` — see `checkChannelConnectionLimit()` in
+ * `../utils/limits.ts`.
  *
  * This lives in the private API worker, not in the public `@plotday/twister`
  * package or the `Connector` base class. Reasons:

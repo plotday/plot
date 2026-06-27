@@ -425,9 +425,10 @@ export class Integrations extends Tool implements IAuth {
         .select(["plan", "status"])
         .where("team_id", "=", String(twistInstance.team_id))
         .executeTakeFirst();
+      const rawTeamPlan = teamSub?.plan as string;
       plan =
         teamSub?.status === "active"
-          ? (teamSub.plan as PlanKey)
+          ? ((rawTeamPlan === "core" ? "free" : rawTeamPlan) as PlanKey)
           : "free";
     } else {
       const effective = await getEffectivePlan(this.db, twistInstance.owner_id);

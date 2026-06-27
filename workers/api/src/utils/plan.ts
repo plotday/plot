@@ -5,7 +5,7 @@ import type { DB } from "../db-types";
 type PlanSource = "personal" | "team";
 
 type EffectivePlan = {
-  plan: "free" | "core" | "pro" | "team";
+  plan: "free" | "pro" | "team";
   source: PlanSource;
   teamId?: string;
   teamName?: string;
@@ -13,9 +13,8 @@ type EffectivePlan = {
 
 const PLAN_TIER: Record<string, number> = {
   free: 0,
-  core: 1,
-  pro: 2,
-  team: 3,
+  pro: 1,
+  team: 2,
 };
 
 /**
@@ -33,12 +32,13 @@ export async function getEffectivePlan(
     .where("user_id", "=", userId)
     .executeTakeFirst();
 
-  // 'trialing' is the Stripe status for the 30-day Core trial; treat it
-  // exactly like 'active' so trial users get full Core access.
-  const personalPlan =
+  // 'trialing' is treated exactly like 'active'. Map legacy 'core' DB value
+  // to 'free' at the read boundary (Core plan is no longer active).
+  const rawPersonal = personalSub?.plan as string | undefined;
+  const personalPlan: "free" | "pro" | "team" =
     personalSub &&
     (personalSub.status === "active" || personalSub.status === "trialing")
-      ? (personalSub.plan as "free" | "core" | "pro" | "team")
+      ? ((rawPersonal === "core" ? "free" : rawPersonal) as "free" | "pro" | "team")
       : "free";
 
   let result: EffectivePlan = { plan: personalPlan, source: "personal" };
@@ -59,7 +59,9 @@ export async function getEffectivePlan(
     .execute();
 
   for (const teamSub of teamSubs) {
-    const teamPlan = teamSub.plan as "free" | "core" | "pro" | "team";
+    // Map legacy 'core' DB value to 'free' at the read boundary.
+    const rawTeam = teamSub.plan as string;
+    const teamPlan = (rawTeam === "core" ? "free" : rawTeam) as "free" | "pro" | "team";
     if ((PLAN_TIER[teamPlan] ?? 0) > (PLAN_TIER[result.plan] ?? 0)) {
       result = {
         plan: teamPlan,

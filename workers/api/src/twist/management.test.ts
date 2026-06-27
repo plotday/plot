@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 // Importing from ../db sets up the pg bigint type parser as a module side effect.
 import { type DB } from "../db";
 
-import { getAll } from "./management";
+import { add, getAll } from "./management";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -58,6 +58,55 @@ async function seedPublicTwist(
     RETURNING id`.execute(trx);
   return String(res.rows[0].id);
 }
+
+describe.skipIf(!DATABASE_URL)("add: Free plan + AI twist + no API key", () => {
+  it("Free user without an API key can add an AI-required twist (gate removed)", async () => {
+    const { db } = makeCountingDb();
+    const userId = randomUUID();
+    let result: { owner_id: string } | undefined;
+    try {
+      await db.transaction().execute(async (trx) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+        // Seed a publisher (FK checks bypassed by replica role)
+        const pubId = await seedPublisher(trx, {
+          name: `Pub ${userId}`,
+          email: null,
+          url: null,
+        });
+
+        // Seed a public twist requiring AI, with a unique handle
+        const aiPerms = JSON.stringify({ _ai_required: true });
+        const twistRes = await sql<{ id: string }>`
+          INSERT INTO twist
+            (twist_package_id, environment, publisher_id, name, handle, version,
+             is_source, permissions)
+          VALUES (${randomUUID()}::uuid, 'public', ${pubId},
+            'AI Test Twist', ${`ai-twist-${userId}`}, '1.0.0', false,
+            ${aiPerms}::jsonb)
+          RETURNING id`.execute(trx);
+        const twistNumId = Number(twistRes.rows[0].id);
+
+        // No ai_key row inserted → user is key-less.
+        // No subscription row inserted → user is on the Free plan.
+        // Before the gate was removed this would throw
+        // "Add an API key in settings to use AI-powered twists."
+        result = (await add(trx, userId, twistNumId, "public")) as {
+          owner_id: string;
+        };
+
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+
+    expect(result).toBeDefined();
+    expect(result!.owner_id).toBe(userId);
+  });
+});
 
 describe.skipIf(!DATABASE_URL)("getAll twist enrichment", () => {
   it("issues a bounded number of queries regardless of accessible twist count", async () => {

@@ -7,10 +7,17 @@ import type { DB } from "../db-types";
  * for iOS and Mac App Store — Apple treats them as a single auto-
  * renewable subscription across the user's Apple ID.
  */
-export const IAP_PRODUCT_TO_PLAN: Record<string, "core" | "pro"> = {
-  "day.plot.app.core_monthly": "core",
+export const IAP_PRODUCT_TO_PLAN: Record<string, "pro"> = {
   "day.plot.app.pro_monthly": "pro",
 };
+
+/**
+ * Legacy Core plan product ID. Core was dropped from the product lineup (B5)
+ * and is no longer in IAP_PRODUCT_TO_PLAN, but legacy Apple subscribers may
+ * still receive renewal/expiry/refund notifications for it. Resolving it to
+ * "free" (graceful downgrade) prevents a 500-loop on the App Store webhook.
+ */
+const LEGACY_CORE_MONTHLY = "day.plot.app.core_monthly";
 
 /**
  * Connection add-on products, in a SEPARATE App Store subscription group from
@@ -36,9 +43,30 @@ export function isAddonProduct(productId: string): boolean {
   return productId in IAP_ADDON_PRODUCT_TO_COUNT;
 }
 
+/**
+ * Twist add-on products, in a SEPARATE App Store subscription group from both
+ * the plan products and the connection add-on products. Each tier maps to the
+ * number of +20 automation-capacity blocks it grants (N blocks = N×20 capacity).
+ * The web/Stripe path is unbounded; iOS is capped at this tier count.
+ *
+ * Apple prices (vs $10/unit on web) absorb Apple's fee while staying ≥ $10/unit
+ * net: twist_addon_1=$12.99, twist_addon_2=$24.99, twist_addon_3=$35.99.
+ * Prices live in App Store Connect, not here.
+ */
+export const IAP_TWIST_ADDON_PRODUCT_TO_COUNT: Record<string, number> = {
+  "day.plot.app.twist_addon_1": 1,
+  "day.plot.app.twist_addon_2": 2,
+  "day.plot.app.twist_addon_3": 3,
+};
+
+/** True when `productId` is the twist add-on subscription group. */
+export function isTwistAddonProduct(productId: string): boolean {
+  return productId in IAP_TWIST_ADDON_PRODUCT_TO_COUNT;
+}
+
 /** True when `productId` is a recognized plan or add-on IAP product. */
 export function isKnownIapProduct(productId: string): boolean {
-  return productId in IAP_PRODUCT_TO_PLAN || isAddonProduct(productId);
+  return productId in IAP_PRODUCT_TO_PLAN || isAddonProduct(productId) || isTwistAddonProduct(productId);
 }
 
 /** Apple-issued bundle ID Apple's JWS payloads carry; must match
@@ -620,7 +648,7 @@ export async function applyAppleTransactionToUser(
   userId: string,
   txn: JwsTransactionPayload
 ): Promise<{
-  plan: "free" | "core" | "pro";
+  plan: "free" | "pro";
   expiresAt: Date | null;
   previous: {
     origin: string;
@@ -630,7 +658,9 @@ export async function applyAppleTransactionToUser(
     stripeCustomerId: string | null;
   } | null;
 }> {
-  const plan = IAP_PRODUCT_TO_PLAN[txn.productId];
+  const plan: "free" | "pro" | undefined =
+    IAP_PRODUCT_TO_PLAN[txn.productId] ??
+    (txn.productId === LEGACY_CORE_MONTHLY ? "free" : undefined);
   if (!plan) {
     throw new Error(`Unsupported productId: ${txn.productId}`);
   }
@@ -671,7 +701,7 @@ export async function applyAppleTransactionToUser(
     expiresAt ??
     new Date(cycleStart.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  const targetPlan: "free" | "core" | "pro" = isEntitled ? plan : "free";
+  const targetPlan: "free" | "pro" = isEntitled ? plan : "free";
   const status = isEntitled ? "active" : "canceled";
 
   await db
@@ -739,8 +769,9 @@ export async function applyAppleAddonTransactionToUser(
 
   const addons = isEntitled ? tierCount : 0;
 
-  // The user must already have a subscription row (add-ons require a paid plan,
-  // which created it). UPDATE in place; never touch the plan fields.
+  // The user already has a subscription row (created at account activation,
+  // even on Free — add-ons are independent of the plan). UPDATE in place;
+  // never touch the plan fields.
   await db
     .updateTable("user_subscription")
     .set({
@@ -786,6 +817,70 @@ export async function findUserByAddonOriginalTransactionId(
     .selectFrom("user_subscription")
     .select("user_id")
     .where("apple_addon_original_transaction_id", "=", originalTransactionId)
+    .executeTakeFirst();
+  return row?.user_id ?? null;
+}
+
+/**
+ * Apply a verified Apple TWIST ADD-ON transaction to the user's subscription row.
+ *
+ * Twist add-ons live in a separate App Store subscription group from both the
+ * plan and connection add-ons, so this touches ONLY the twist add-on columns
+ * (`twist_addon_count` + `apple_twist_addon_*`) and never the plan fields or
+ * connection add-on fields — a user can hold all three simultaneously.
+ *
+ * When the twist add-on subscription is entitled, `twist_addon_count` is set to
+ * the active product's tier count (a tier change up/down rewrites it); when
+ * expired or revoked it's reset to 0.
+ */
+export async function applyAppleTwistAddonTransactionToUser(
+  db: Kysely<DB>,
+  userId: string,
+  txn: JwsTransactionPayload
+): Promise<{ twistAddons: number; expiresAt: Date | null }> {
+  const tierCount = IAP_TWIST_ADDON_PRODUCT_TO_COUNT[txn.productId];
+  if (tierCount === undefined) {
+    throw new Error(`Unsupported twist add-on productId: ${txn.productId}`);
+  }
+
+  const now = new Date();
+  const expiresAt = txn.expiresDate ? new Date(txn.expiresDate) : null;
+  const isExpired = expiresAt !== null && expiresAt.getTime() < now.getTime();
+  const isRevoked = txn.revocationDate != null;
+  const isEntitled = !isExpired && !isRevoked;
+
+  const twistAddons = isEntitled ? tierCount : 0;
+
+  // The user already has a subscription row (created at account activation,
+  // even on Free — add-ons are independent of the plan). UPDATE in place;
+  // never touch the plan fields or connection add-on fields.
+  await db
+    .updateTable("user_subscription")
+    .set({
+      twist_addon_count: twistAddons,
+      apple_twist_addon_original_transaction_id: txn.originalTransactionId,
+      apple_twist_addon_product_id: txn.productId,
+      updated_at: sql`now()`,
+    })
+    .where("user_id", "=", userId)
+    .execute();
+
+  return { twistAddons, expiresAt };
+}
+
+/**
+ * Locate the Plot user owning a given Apple TWIST ADD-ON original_transaction_id.
+ * Twist add-on renewals/lapses arrive via the same notification webhook but must
+ * be mapped through the separate twist add-on transaction id.
+ */
+export async function findUserByTwistAddonOriginalTransactionId(
+  db: Kysely<DB>,
+  originalTransactionId: string
+): Promise<string | null> {
+  const row = await db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("apple_twist_addon_original_transaction_id", "=", originalTransactionId)
     .executeTakeFirst();
   return row?.user_id ?? null;
 }

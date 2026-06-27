@@ -4,8 +4,6 @@ CREATE TABLE "public"."ai_preference" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid REFERENCES public."user" ON DELETE CASCADE,
     "team_id" bigint REFERENCES public."team" ON DELETE CASCADE,
-    "builtin_ai_key_id" bigint REFERENCES public."ai_key" ON DELETE SET NULL,
-    "twist_ai_key_id" bigint REFERENCES public."ai_key" ON DELETE SET NULL,
     "twist_ai_disabled" boolean NOT NULL DEFAULT false,
     "builtin_ai_disabled" boolean NOT NULL DEFAULT false,
     CONSTRAINT ai_preference_scope_check CHECK (

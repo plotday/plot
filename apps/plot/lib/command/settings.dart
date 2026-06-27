@@ -94,15 +94,12 @@ List<Command> subscriptionCommandsFor({
 ///
 /// [hasTeams] should be true when the user belongs to at least one team
 /// (focuses are team-agnostic, so team membership is sourced from the API's
-/// `/team` list by callers, not from priorities). Accepts optional [adminOrgs]
-/// list (fetched from the API) to include per-org AI preference commands for
-/// teams the user administers.
+/// `/team` list by callers, not from priorities).
 List<StaticCommandGroup> settingsCommandsFromState(
   PrioritiesState? prioritiesState, {
   bool hasTeams = false,
   bool showAllPriorities = false,
   String? email,
-  List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
 }) {
   final rootPriority = prioritiesState?.root;
@@ -111,7 +108,6 @@ List<StaticCommandGroup> settingsCommandsFromState(
     hasTeams: hasTeams,
     rootPriority: rootPriority,
     email: email,
-    adminOrgs: adminOrgs,
     subscription: subscription,
     showAllPriorities: showAllPriorities,
   );
@@ -121,7 +117,6 @@ List<StaticCommandGroup> settingsCommands({
   bool hasTeams = false,
   Priority? rootPriority,
   String? email,
-  List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
   bool showAllPriorities = false,
 }) => [
@@ -139,12 +134,6 @@ List<StaticCommandGroup> settingsCommands({
         EnableNotifications(),
       if (rootPriority != null) ShowNotificationsSettings(),
       ChangeAiPreference(),
-      for (final org in adminOrgs)
-        if (org['plan'] != 'free')
-          OrgAiPreferences(
-            orgId: org['id'] as String,
-            orgName: org['name'] as String,
-          ),
       // Only show Enter Behavior setting on devices with physical keyboards
       if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
       if (hasTeams) ManageTeams(),
@@ -199,7 +188,6 @@ Future<List<StaticCommandGroup>> buildSettingsGroups(
   final showAllPriorities = prefsState?.showAllPriorities ?? false;
 
   // Fetch orgs and subscription in parallel
-  List<Map<String, dynamic>> adminOrgs = [];
   bool hasTeams = false;
   SubscriptionInfo? subscription;
   try {
@@ -208,10 +196,7 @@ Future<List<StaticCommandGroup>> buildSettingsGroups(
       UpgradeApi.getSubscription(),
     ]);
     final allOrgs = (results[0] as List<dynamic>).cast<Map<String, dynamic>>();
-    log.info('Settings: /team returned ${allOrgs.length} orgs: $allOrgs');
     hasTeams = allOrgs.isNotEmpty;
-    adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
-    log.info('Settings: adminOrgs after role filter: $adminOrgs');
     subscription = results[1] as SubscriptionInfo;
   } catch (e, t) {
     // Non-critical — settings still work without these
@@ -224,7 +209,6 @@ Future<List<StaticCommandGroup>> buildSettingsGroups(
         prioritiesState,
         hasTeams: hasTeams,
         email: email,
-        adminOrgs: adminOrgs,
         subscription: subscription,
         showAllPriorities: showAllPriorities,
       ),
@@ -613,91 +597,47 @@ class ChangeAiPreference extends ShowForm {
       );
 
   static Future<FormData> _buildForm(BuildContext context) async {
-    final groups = await _buildGroups(null);
+    final prefs = await _fetchPreference();
+    final builtinAiDisabled = prefs['builtin_ai_disabled'] == true;
+    final twistAiDisabled = prefs['twist_ai_disabled'] == true;
 
     return FormData(
       title: 'AI preferences',
-      groups: groups,
-      onRefresh: () => _buildResolvedGroups(null),
-    );
-  }
-
-  static Future<List<FormGroup>> _buildGroups(String? orgId) async {
-    // Fetch existing providers and preferences
-    final providers = await _fetchProviders(orgId);
-    final prefs = await _fetchPreference(orgId);
-
-    // Provider list items
-    final providerItems = _buildProviderListItems(providers, orgId);
-
-    // Built-in features provider select
-    final builtinSelect = _buildProviderSelect(
-      key: 'builtinAiKeyId',
-      label: 'AI provider for built-in features',
-      providers: providers,
-      initialValue: prefs['builtin_ai_disabled'] == true
-          ? 'disabled'
-          : prefs['builtin_ai_key_id'],
-      includeDisabled: true,
-    );
-
-    // Twist AI provider select
-    final twistSelect = _buildProviderSelect(
-      key: 'twistAiKeyId',
-      label: 'AI provider for twists',
-      providers: providers,
-      initialValue: prefs['twist_ai_disabled'] == true
-          ? 'disabled'
-          : prefs['twist_ai_key_id'],
-      includeDisabled: true,
-    );
-
-    return [
-      StaticFormGroup(items: [builtinSelect, twistSelect]),
-      StaticFormGroup(
-        title: 'AI providers',
-        items: [
-          ...providerItems,
-          FormButton(
-            key: 'addProvider',
-            buildCommand: (_) => _AddAiProvider(orgId: orgId),
-          ),
-        ],
-      ),
-      StaticFormGroup(
-        items: [
-          FormButton(
-            key: 'save',
-            isPrimary: true,
-            buildCommand: (values) => _SaveAiPreference(
-              builtinAiKeyId: values['builtinAiKeyId'],
-              twistAiKeyId: values['twistAiKeyId'],
-              orgId: orgId,
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormSelect<bool>(
+              key: 'builtinAiDisabled',
+              label: 'Built-in AI',
+              initialValue: builtinAiDisabled,
+              hasInitialValue: true,
+              titleBuilder: (v) => v == true ? 'Off' : 'On',
+              items: (_) async => [false, true],
             ),
-          ),
-        ],
-      ),
-    ];
-  }
-
-  static Future<List<StaticFormGroup>> _buildResolvedGroups(
-    String? orgId,
-  ) async {
-    final groups = await _buildGroups(orgId);
-    final resolved = <StaticFormGroup>[];
-    for (final group in groups) {
-      final items = await group.list();
-      if (items.isNotEmpty) {
-        resolved.add(
-          StaticFormGroup(
-            title: group.title,
-            subtitle: group.subtitle,
-            items: items,
-          ),
-        );
-      }
-    }
-    return resolved;
+            FormSelect<bool>(
+              key: 'twistAiDisabled',
+              label: 'Twist AI',
+              initialValue: twistAiDisabled,
+              hasInitialValue: true,
+              titleBuilder: (v) => v == true ? 'Off' : 'On',
+              items: (_) async => [false, true],
+            ),
+          ],
+        ),
+        StaticFormGroup(
+          items: [
+            FormButton(
+              key: 'save',
+              isPrimary: true,
+              buildCommand: (values) => _SaveAiPreference(
+                builtinAiDisabled: values['builtinAiDisabled'] as bool? ?? false,
+                twistAiDisabled: values['twistAiDisabled'] as bool? ?? false,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 
@@ -745,545 +685,47 @@ class EnableNotifications extends Command {
   }
 }
 
-String _providerDisplayName(String provider) {
-  return switch (provider) {
-    'openai' => 'OpenAI',
-    'anthropic' => 'Anthropic',
-    'google' => 'Google',
-    'custom' => 'Custom',
-    _ => provider,
-  };
-}
-
-/// Fetch configured AI providers for a user or team.
-Future<List<Map<String, dynamic>>> _fetchProviders(String? orgId) async {
+/// Fetch AI preference selections for the current user.
+Future<Map<String, dynamic>> _fetchPreference() async {
   try {
-    final path = orgId != null ? '/team/$orgId/ai-keys' : '/ai-keys';
-    final keys = await api.get<List<dynamic>>(path);
-    return keys.cast<Map<String, dynamic>>();
+    return await api.get<Map<String, dynamic>>('/ai-preference');
   } catch (_) {
-    return [];
-  }
-}
-
-/// Fetch AI preference selections for a user or team.
-Future<Map<String, dynamic>> _fetchPreference(String? orgId) async {
-  try {
-    final path = orgId != null
-        ? '/team/$orgId/ai-preference'
-        : '/ai-preference';
-    return await api.get<Map<String, dynamic>>(path);
-  } catch (_) {
-    return {
-      'builtin_ai_key_id': null,
-      'twist_ai_key_id': null,
-      'twist_ai_disabled': false,
-    };
-  }
-}
-
-/// Build FormInfo items showing configured providers with remove buttons.
-List<FormItem> _buildProviderListItems(
-  List<Map<String, dynamic>> providers,
-  String? orgId,
-) {
-  return [
-    for (final p in providers)
-      FormInfo(
-        key: 'provider_${p['id']}',
-        builder: (context) {
-          final provider = p['provider'] as String;
-          final suffix = p['key_suffix'] as String;
-          final name = p['name'] as String?;
-          final label = provider == 'custom'
-              ? (name ?? 'Custom')
-              : _providerDisplayName(provider);
-          return Padding(
-            padding: EdgeInsets.only(
-              left: context.theme.spacing.xl,
-              right: context.theme.spacing.xl,
-              bottom: context.theme.spacing.md,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '$label (...$suffix)',
-                    style: context.theme.typography.md,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () async {
-                    final basePath = orgId != null
-                        ? '/team/$orgId/ai-keys/${p['id']}'
-                        : '/ai-keys/${p['id']}';
-                    try {
-                      await api.delete<Map<String, dynamic>>(basePath);
-                      if (context.mounted) {
-                        context.showToast(message: 'Provider removed');
-                        await FormScope.of(context)?.refresh?.call();
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        context.showToast(
-                          message: 'Failed to remove',
-                          isError: true,
-                        );
-                      }
-                    }
-                  },
-                  child: Icon(
-                    FontAwesomeIcons.xmark,
-                    size: 14,
-                    color: context.theme.colors.mutedForeground,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-  ];
-}
-
-/// Build a provider selection dropdown.
-FormSelect<dynamic> _buildProviderSelect({
-  required String key,
-  required String label,
-  required List<Map<String, dynamic>> providers,
-  required dynamic initialValue,
-  required bool includeDisabled,
-}) {
-  return FormSelect<dynamic>(
-    key: key,
-    label: label,
-    initialValue: initialValue,
-    hasInitialValue: true,
-    titleBuilder: (value) {
-      if (value == null) return 'Plot';
-      if (value == 'disabled') return 'Disabled';
-      // Find the provider by id
-      final p = providers.firstWhereOrNull(
-        (p) => p['id'] == value || p['id'].toString() == value.toString(),
-      );
-      if (p == null) return 'Plot';
-      final provider = p['provider'] as String;
-      final name = p['name'] as String?;
-      return provider == 'custom'
-          ? (name ?? 'Custom')
-          : _providerDisplayName(provider);
-    },
-    items: (_) async => [
-      null, // Plot
-      ...providers.map((p) => p['id']),
-      if (includeDisabled) 'disabled',
-    ],
-  );
-}
-
-/// Command for per-org AI preferences.
-class OrgAiPreferences extends ShowForm {
-  OrgAiPreferences({required this.orgId, required this.orgName})
-    : super(
-        title: '$orgName AI preferences',
-        icon: FontAwesomeIcons.robot,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.opened,
-        form: (context) => _buildOrgForm(context, orgId, orgName),
-      );
-
-  final String orgId;
-  final String orgName;
-
-  static Future<FormData> _buildOrgForm(
-    BuildContext context,
-    String orgId,
-    String orgName,
-  ) async {
-    final groups = await _buildOrgGroups(orgId, orgName);
-
-    return FormData(
-      title: '$orgName AI preferences',
-      groups: groups,
-      onRefresh: () => _buildResolvedOrgGroups(orgId, orgName),
-    );
-  }
-
-  static Future<List<FormGroup>> _buildOrgGroups(
-    String orgId,
-    String orgName,
-  ) async {
-    final providers = await _fetchProviders(orgId);
-    final prefs = await _fetchPreference(orgId);
-
-    final providerItems = _buildProviderListItems(providers, orgId);
-
-    final builtinSelect = _buildProviderSelect(
-      key: 'builtinAiKeyId',
-      label: 'Built-in features',
-      providers: providers,
-      initialValue: prefs['builtin_ai_disabled'] == true
-          ? 'disabled'
-          : prefs['builtin_ai_key_id'],
-      includeDisabled: true,
-    );
-
-    final twistSelect = _buildProviderSelect(
-      key: 'twistAiKeyId',
-      label: 'Twists using AI',
-      providers: providers,
-      initialValue: prefs['twist_ai_disabled'] == true
-          ? 'disabled'
-          : prefs['twist_ai_key_id'],
-      includeDisabled: true,
-    );
-
-    return [
-      StaticFormGroup(
-        title: 'AI providers',
-        subtitle: 'These providers are used for AI in $orgName focuses.',
-        items: [
-          builtinSelect,
-          twistSelect,
-          ...providerItems,
-          FormButton(
-            key: 'addProvider',
-            buildCommand: (_) => _AddAiProvider(orgId: orgId),
-          ),
-        ],
-      ),
-      StaticFormGroup(
-        items: [
-          FormButton(
-            key: 'save',
-            isPrimary: true,
-            buildCommand: (values) => _SaveAiPreference(
-              builtinAiKeyId: values['builtinAiKeyId'],
-              twistAiKeyId: values['twistAiKeyId'],
-              orgId: orgId,
-            ),
-          ),
-        ],
-      ),
-    ];
-  }
-
-  static Future<List<StaticFormGroup>> _buildResolvedOrgGroups(
-    String orgId,
-    String orgName,
-  ) async {
-    final groups = await _buildOrgGroups(orgId, orgName);
-    final resolved = <StaticFormGroup>[];
-    for (final group in groups) {
-      final items = await group.list();
-      if (items.isNotEmpty) {
-        resolved.add(
-          StaticFormGroup(
-            title: group.title,
-            subtitle: group.subtitle,
-            items: items,
-          ),
-        );
-      }
-    }
-    return resolved;
-  }
-}
-
-/// Opens a provider selection list, then shows the configuration form.
-class _AddAiProvider extends Command {
-  _AddAiProvider({this.orgId})
-    : super(
-        title: 'Add provider',
-        icon: FontAwesomeIcons.plus,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.opened,
-      );
-
-  final String? orgId;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final existing = await _fetchProviders(orgId);
-    final configuredStandard = existing
-        .where((p) => p['provider'] != 'custom')
-        .map((p) => p['provider'] as String)
-        .toSet();
-
-    final availableProviders = <String>[
-      if (!configuredStandard.contains('openai')) 'openai',
-      if (!configuredStandard.contains('anthropic')) 'anthropic',
-      if (!configuredStandard.contains('google')) 'google',
-      'custom',
-    ];
-
-    if (!context.mounted) return const CommandSkipped();
-
-    final result = await SelectModal.open<String>(
-      context,
-      showFilter: false,
-      items: (_) async => [SelectGroup(items: availableProviders)],
-      itemBuilder: (provider, _) => Padding(
-        padding: context.theme.spacing.paddingSm,
-        child: Text(
-          provider == 'custom' ? 'Custom' : _providerDisplayName(provider),
-          style: context.theme.typography.md.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-
-    if (!context.mounted || !result.present) return const CommandDone();
-
-    final configResult = await _ConfigureAiProvider(
-      provider: result.value,
-      orgId: orgId,
-    ).run(context);
-
-    // Don't propagate CommandDone — it would pop the parent AI preferences form.
-    // Return CommandSkipped so the user stays in AI preferences.
-    if (configResult is CommandDone) {
-      if (context.mounted) {
-        context.showToast(message: 'Provider added');
-      }
-      return const CommandSkipped();
-    }
-    return configResult;
-  }
-}
-
-/// Configuration form for a specific AI provider.
-class _ConfigureAiProvider extends ShowForm {
-  _ConfigureAiProvider({required this.provider, this.orgId})
-    : super(
-        title: provider == 'custom'
-            ? 'Add custom provider'
-            : 'Add ${_providerDisplayName(provider)}',
-        icon: FontAwesomeIcons.plus,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.opened,
-        form: (context) => _buildForm(provider, orgId),
-      );
-
-  final String provider;
-  final String? orgId;
-
-  static Future<FormData> _buildForm(String provider, String? orgId) async {
-    final isCustom = provider == 'custom';
-    final title = isCustom
-        ? 'Add custom provider'
-        : 'Add ${_providerDisplayName(provider)}';
-
-    return FormData(
-      title: title,
-      groups: [
-        StaticFormGroup(
-          items: [
-            if (isCustom)
-              FormTextInput(
-                key: 'name',
-                label: 'Display name',
-                required: true,
-                placeholder: 'e.g. Local Ollama',
-              ),
-            if (isCustom)
-              FormTextInput(
-                key: 'customBaseUrl',
-                label: 'Base URL',
-                required: true,
-                placeholder: 'e.g. http://localhost:11434/v1',
-              ),
-            FormTextInput(
-              key: 'apiKey',
-              label: 'API key',
-              required: true,
-              placeholder: 'Paste API key',
-            ),
-            if (isCustom)
-              FormTextInput(
-                key: 'fastModel',
-                label: 'Fast model',
-                required: true,
-                placeholder: 'e.g. llama3.2',
-              ),
-            if (isCustom)
-              FormTextInput(
-                key: 'thinkingModel',
-                label: 'Thinking model',
-                required: true,
-                placeholder: 'e.g. qwq',
-              ),
-          ],
-        ),
-        StaticFormGroup(
-          items: [
-            FormButton(
-              key: 'save',
-              isPrimary: true,
-              buildCommand: (values) => _SaveAiProvider(
-                provider: provider,
-                apiKey: values['apiKey'] as String?,
-                name: values['name'] as String?,
-                customBaseUrl: values['customBaseUrl'] as String?,
-                fastModel: values['fastModel'] as String?,
-                thinkingModel: values['thinkingModel'] as String?,
-                orgId: orgId,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// Saves a new AI provider key.
-class _SaveAiProvider extends Command {
-  _SaveAiProvider({
-    required this.provider,
-    required this.apiKey,
-    this.name,
-    this.customBaseUrl,
-    this.fastModel,
-    this.thinkingModel,
-    this.orgId,
-  }) : super(
-         title: 'Save',
-         icon: PlotIcon.save,
-         eventObject: EventObject.settings,
-         eventAction: EventAction.updated,
-       );
-
-  final String? provider;
-  final String? apiKey;
-  final String? name;
-  final String? customBaseUrl;
-  final String? fastModel;
-  final String? thinkingModel;
-  final String? orgId;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    if (provider == null || provider!.isEmpty) {
-      return CommandMessage('Please select a provider', isError: true);
-    }
-    if (apiKey == null || apiKey!.trim().isEmpty) {
-      return CommandMessage('API key is required', isError: true);
-    }
-    if (provider == 'custom') {
-      if (name == null || name!.trim().isEmpty) {
-        return CommandMessage('Display name is required', isError: true);
-      }
-      if (customBaseUrl == null || customBaseUrl!.trim().isEmpty) {
-        return CommandMessage('Base URL is required', isError: true);
-      }
-      if (fastModel == null || fastModel!.trim().isEmpty) {
-        return CommandMessage('Fast model is required', isError: true);
-      }
-      if (thinkingModel == null || thinkingModel!.trim().isEmpty) {
-        return CommandMessage('Thinking model is required', isError: true);
-      }
-    }
-
-    try {
-      final basePath = orgId != null ? '/team/$orgId/ai-keys' : '/ai-keys';
-
-      final body = <String, dynamic>{
-        'provider': provider,
-        'key': apiKey!.trim(),
-      };
-      if (provider == 'custom') {
-        body['name'] = name!.trim();
-        body['customBaseUrl'] = customBaseUrl!.trim();
-        body['fastModel'] = fastModel!.trim();
-        body['thinkingModel'] = thinkingModel!.trim();
-      }
-
-      final result = await api.post<Map<String, dynamic>>(basePath, body: body);
-
-      final warning = result['warning'] as String?;
-      if (warning != null) {
-        return CommandMessage(warning, isError: true);
-      }
-
-      return const CommandDone();
-    } catch (e, t) {
-      log.warning('Failed to save AI provider', e, t);
-      final msg = e.toString();
-      if (msg.contains('Invalid API key')) {
-        return CommandMessage('Invalid API key', isError: true);
-      }
-      return CommandMessage('Failed to save: $msg', isError: true);
-    }
+    return {'builtin_ai_disabled': false, 'twist_ai_disabled': false};
   }
 }
 
 class _SaveAiPreference extends Command {
-  _SaveAiPreference({this.builtinAiKeyId, this.twistAiKeyId, this.orgId})
-    : super(
-        title: 'Save',
-        icon: FontAwesomeIcons.check,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.updated,
-      );
+  _SaveAiPreference({
+    required this.builtinAiDisabled,
+    required this.twistAiDisabled,
+  }) : super(
+         title: 'Save',
+         icon: FontAwesomeIcons.check,
+         eventObject: EventObject.settings,
+         eventAction: EventAction.updated,
+       );
 
-  final dynamic builtinAiKeyId;
-  final dynamic twistAiKeyId;
-
-  /// non-null when saving org keys.
-  final String? orgId;
+  final bool builtinAiDisabled;
+  final bool twistAiDisabled;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // Save provider selections
-      final prefPath = orgId != null
-          ? '/team/$orgId/ai-preference'
-          : '/ai-preference';
+      await api.post<Map<String, dynamic>>(
+        '/ai-preference',
+        body: {
+          'builtinAiDisabled': builtinAiDisabled,
+          'twistAiDisabled': twistAiDisabled,
+        },
+      );
 
-      final prefBody = <String, dynamic>{};
-
-      // builtinAiKeyId: 'disabled' means disabled, null means Plot, int means provider
-      if (builtinAiKeyId == 'disabled') {
-        prefBody['builtinAiKeyId'] = null;
-        prefBody['builtinAiDisabled'] = true;
-      } else if (builtinAiKeyId == null) {
-        prefBody['builtinAiKeyId'] = null;
-        prefBody['builtinAiDisabled'] = false;
-      } else {
-        prefBody['builtinAiKeyId'] = builtinAiKeyId is int
-            ? builtinAiKeyId
-            : int.tryParse(builtinAiKeyId.toString());
-        prefBody['builtinAiDisabled'] = false;
-      }
-
-      // twistAiKeyId: 'disabled' means disabled, null means Plot, int means provider
-      if (twistAiKeyId == 'disabled') {
-        prefBody['twistAiKeyId'] = null;
-        prefBody['twistAiDisabled'] = true;
-      } else if (twistAiKeyId == null) {
-        prefBody['twistAiKeyId'] = null;
-        prefBody['twistAiDisabled'] = false;
-      } else {
-        prefBody['twistAiKeyId'] = twistAiKeyId is int
-            ? twistAiKeyId
-            : int.tryParse(twistAiKeyId.toString());
-        prefBody['twistAiDisabled'] = false;
-      }
-
-      await api.post<Map<String, dynamic>>(prefPath, body: prefBody);
-
-      // Update local AI enabled state (personal preferences only)
-      if (orgId == null && context.mounted) {
-        final builtinDisabled = builtinAiKeyId == 'disabled';
-        final twistDisabled = twistAiKeyId == 'disabled';
+      if (context.mounted) {
         await context.read<SettingsBloc>().setAiEnabled(
-          !(builtinDisabled && twistDisabled),
+          !(builtinAiDisabled && twistAiDisabled),
         );
 
-        // If twist AI was just disabled, archive twists that require AI
-        if (twistDisabled) {
+        // If twist AI was just disabled, archive twists that require AI.
+        if (twistAiDisabled) {
           final archived = await _archiveAiRequiringTwists();
           if (archived > 0) {
             return CommandMessage(
@@ -1296,11 +738,7 @@ class _SaveAiPreference extends Command {
       return const CommandDone();
     } catch (e, t) {
       log.warning('Failed to save AI preferences', e, t);
-      final msg = e.toString();
-      if (msg.contains('Invalid API key')) {
-        return CommandMessage('Invalid API key', isError: true);
-      }
-      return CommandMessage('Failed to save: $msg', isError: true);
+      return CommandMessage('Failed to save: ${e.toString()}', isError: true);
     }
   }
 
@@ -1315,7 +753,7 @@ class _SaveAiPreference extends Command {
     for (final priority in priorities) {
       try {
         final twists = await TwistApi.getAllTwists();
-        // Find twists that require AI (have _ai_required in permissions)
+        // Find twists that require AI (have ai prompt permission)
         final aiTwists = twists.where(
           (t) =>
               t.permissions?.hasPermission(

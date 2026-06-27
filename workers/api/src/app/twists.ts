@@ -30,6 +30,8 @@ import { extractRequestContext } from "../utils/log-context";
 import { saveSecureOptions } from "../utils/secure-options";
 import { handleValidationError } from "../utils/validation";
 import { notifyUserSync } from "./sync/notify";
+import { reconcileScopeTwistAddonBillingDown } from "./twist-integrations";
+import { createStripeClient } from "../stripe/utils";
 
 /**
  * Fire-and-forget deletion of a removed connector's hosted (Unipile) accounts.
@@ -525,6 +527,32 @@ twists.delete("/twist/draft/:id", async (c) => {
   if (!access.ok) return c.json(notFoundResponse, 404);
   try {
     await deleteDraft(c.var.db, draftId);
+    // Drafts have draft=true and don't count toward capacity weight, so the
+    // reconcile is a no-op in practice — but we fire it for correctness.
+    // Drafts are always personal (no team_id at creation time).
+    const reconcileDraftEnv = c.env;
+    const reconcileDraftUserId = c.var.user.id;
+    const reconcileDraftTracker = c.var.tracker;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const bgDb = createDb(reconcileDraftEnv);
+        try {
+          const bgStripe = createStripeClient(reconcileDraftEnv.STRIPE_SECRET_KEY);
+          await reconcileScopeTwistAddonBillingDown({
+            db: bgDb,
+            stripe: bgStripe,
+            scope: { userId: reconcileDraftUserId },
+          });
+        } catch (err) {
+          reconcileDraftTracker.captureException(err as Error, {
+            context: "reconcileScopeTwistAddonBillingDown:deleteDraft",
+            twist_instance_id: draftId,
+          });
+        } finally {
+          await bgDb.destroy();
+        }
+      })()
+    );
     return c.json({ success: true });
   } catch (error) {
     const context = extractRequestContext(c);
@@ -691,10 +719,37 @@ twists.delete("/twist/:id", async (c) => {
     "write"
   );
   if (!access.ok) return c.json(notFoundResponse, 404);
+  let deletedRow: Awaited<ReturnType<typeof deleteTwist>> | undefined;
   await c.var.db.transaction().execute(async (trx) => {
-    await deleteTwist(trx, twistId);
+    deletedRow = await deleteTwist(trx, twistId);
   });
   cleanupHostedAccounts(c, twistId);
+  // Reconcile twist add-on billing down after removal (down-only, background).
+  if (deletedRow) {
+    const reconcileOwnerId = String(deletedRow.owner_id);
+    const reconcileTeamId = deletedRow.team_id ? String(deletedRow.team_id) : null;
+    const reconcileEnv = c.env;
+    const reconcileTracker = c.var.tracker;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const bgDb = createDb(reconcileEnv);
+        try {
+          const bgStripe = createStripeClient(reconcileEnv.STRIPE_SECRET_KEY);
+          const scope = reconcileTeamId
+            ? { teamId: reconcileTeamId }
+            : { userId: reconcileOwnerId };
+          await reconcileScopeTwistAddonBillingDown({ db: bgDb, stripe: bgStripe, scope });
+        } catch (err) {
+          reconcileTracker.captureException(err as Error, {
+            context: "reconcileScopeTwistAddonBillingDown:deleteTwist",
+            twist_instance_id: twistId,
+          });
+        } finally {
+          await bgDb.destroy();
+        }
+      })()
+    );
+  }
   return c.json({ success: true });
 });
 
@@ -907,6 +962,34 @@ twists.delete("/twist/:id/archive-activities", async (c) => {
   }
 
   cleanupHostedAccounts(c, twistId);
+
+  // Reconcile twist add-on billing down after removal (down-only, background).
+  if (result) {
+    const reconcileArchOwnerId = String(result.owner_id);
+    const reconcileArchTeamId = result.team_id ? String(result.team_id) : null;
+    const reconcileArchEnv = c.env;
+    const reconcileArchTracker = c.var.tracker;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const bgDb = createDb(reconcileArchEnv);
+        try {
+          const bgStripe = createStripeClient(reconcileArchEnv.STRIPE_SECRET_KEY);
+          const scope = reconcileArchTeamId
+            ? { teamId: reconcileArchTeamId }
+            : { userId: reconcileArchOwnerId };
+          await reconcileScopeTwistAddonBillingDown({ db: bgDb, stripe: bgStripe, scope });
+        } catch (err) {
+          reconcileArchTracker.captureException(err as Error, {
+            context: "reconcileScopeTwistAddonBillingDown:archiveAndDeleteTwist",
+            twist_instance_id: twistId,
+          });
+        } finally {
+          await bgDb.destroy();
+        }
+      })()
+    );
+  }
+
   return c.json({ success: true });
 });
 

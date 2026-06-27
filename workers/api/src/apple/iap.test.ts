@@ -9,11 +9,14 @@ import {
   APPLE_BUNDLE_ID,
   IAP_ADDON_PRODUCT_TO_COUNT,
   IAP_PRODUCT_TO_PLAN,
+  IAP_TWIST_ADDON_PRODUCT_TO_COUNT,
   applyAppleAddonTransactionToUser,
   applyAppleTransactionToUser,
+  applyAppleTwistAddonTransactionToUser,
   decodeJws,
   decodeTransaction,
   isAddonProduct,
+  isTwistAddonProduct,
   verifyAppleJws,
   type JwsTransactionPayload,
 } from "./iap";
@@ -67,8 +70,9 @@ function makeFakeJws(payload: Record<string, unknown>): string {
 
 describe("apple/iap", () => {
   it("exposes the Plot product ID → plan mapping", () => {
-    expect(IAP_PRODUCT_TO_PLAN["day.plot.app.core_monthly"]).toBe("core");
     expect(IAP_PRODUCT_TO_PLAN["day.plot.app.pro_monthly"]).toBe("pro");
+    // core_monthly is no longer a valid IAP product (Core plan dropped)
+    expect(IAP_PRODUCT_TO_PLAN["day.plot.app.core_monthly"]).toBeUndefined();
   });
 
   it("decodes a well-formed JWS into the expected payload", () => {
@@ -142,6 +146,29 @@ describe("apple/iap", () => {
     expect(isAddonProduct("day.plot.app.pro_monthly")).toBe(false);
   });
 
+  it("exposes the twist add-on product → count mapping", () => {
+    expect(IAP_TWIST_ADDON_PRODUCT_TO_COUNT["day.plot.app.twist_addon_1"]).toBe(1);
+    expect(IAP_TWIST_ADDON_PRODUCT_TO_COUNT["day.plot.app.twist_addon_2"]).toBe(2);
+    expect(IAP_TWIST_ADDON_PRODUCT_TO_COUNT["day.plot.app.twist_addon_3"]).toBe(3);
+    expect(isTwistAddonProduct("day.plot.app.twist_addon_2")).toBe(true);
+    expect(isTwistAddonProduct("day.plot.app.addon_2")).toBe(false);
+    expect(isTwistAddonProduct("day.plot.app.pro_monthly")).toBe(false);
+  });
+
+  it("decodeTransaction accepts a twist add-on product", () => {
+    const payload: Partial<JwsTransactionPayload> = {
+      transactionId: "2000000555555555",
+      originalTransactionId: "2000000555555555",
+      bundleId: APPLE_BUNDLE_ID,
+      productId: "day.plot.app.twist_addon_2",
+      purchaseDate: 1700000000000,
+      originalPurchaseDate: 1700000000000,
+      expiresDate: 1702592000000,
+    };
+    const txn = decodeTransaction(makeFakeJws(payload));
+    expect(txn.productId).toBe("day.plot.app.twist_addon_2");
+  });
+
   it("decodeTransaction accepts an add-on product", () => {
     const payload: Partial<JwsTransactionPayload> = {
       transactionId: "2000000444444444",
@@ -208,6 +235,56 @@ describe("apple/iap", () => {
 describe.skipIf(!DATABASE_URL)(
   "applyAppleTransactionToUser",
   () => {
+    it("resolves legacy core_monthly to plan=free (no throw)", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          // Arrange: seed a minimal user_subscription row so the upsert lands
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "app_store",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 8.64e7
+              ).toISOString(),
+            })
+            .execute();
+
+          // Act: send a legacy core_monthly transaction — must NOT throw
+          const txn = makeTxn({ productId: "day.plot.app.core_monthly" });
+          const result = await applyAppleTransactionToUser(trx, userId, txn);
+
+          await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+
+          // Assert: resolves to free, not a 500-loop throw
+          expect(result.plan).toBe("free");
+
+          const row = await trx
+            .selectFrom("user_subscription")
+            .selectAll()
+            .where("user_id", "=", userId)
+            .executeTakeFirstOrThrow();
+
+          expect(row.plan).toBe("free");
+          expect(row.apple_product_id).toBe("day.plot.app.core_monthly");
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
     it("reports the prior Stripe row and clears stripe_subscription_id on convert", async () => {
       const db = createDb({ DATABASE_URL } as unknown as Bindings);
       const userId = randomUUID();
@@ -216,12 +293,12 @@ describe.skipIf(!DATABASE_URL)(
         await db.transaction().execute(async (trx: Kysely<DB>) => {
           await sql`SET LOCAL session_replication_role = replica`.execute(trx);
 
-          // Arrange: user with a Stripe Core trial row
+          // Arrange: user with a Stripe Pro trial row
           await trx
             .insertInto("user_subscription")
             .values({
               user_id: userId,
-              plan: "core",
+              plan: "pro",
               status: "trialing",
               origin: "stripe",
               stripe_customer_id: "cus_test",
@@ -233,7 +310,7 @@ describe.skipIf(!DATABASE_URL)(
             })
             .execute();
 
-          const txn = makeTxn({ productId: "day.plot.app.core_monthly" });
+          const txn = makeTxn({ productId: "day.plot.app.pro_monthly" });
 
           const result = await applyAppleTransactionToUser(trx, userId, txn);
 
@@ -242,7 +319,7 @@ describe.skipIf(!DATABASE_URL)(
           expect(result.previous).toMatchObject({
             origin: "stripe",
             status: "trialing",
-            plan: "core",
+            plan: "pro",
             stripeSubscriptionId: "sub_test",
             stripeCustomerId: "cus_test",
           });
@@ -337,6 +414,217 @@ describe.skipIf(!DATABASE_URL)("applyAppleAddonTransactionToUser", () => {
       revocationDate: Date.now(),
     });
     expect(row.premium_connection_addons).toBe(0);
+  });
+
+  it("applies an add-on tier to a FREE-plan user (no paid plan required)", async () => {
+    const db = createDb({ DATABASE_URL } as unknown as Bindings);
+    const userId = randomUUID();
+    let addons: number | undefined;
+    let rowAddons: number | null | undefined;
+    try {
+      await db.transaction().execute(async (trx: Kysely<DB>) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await trx
+          .insertInto("user_subscription")
+          .values({
+            user_id: userId,
+            plan: "free",
+            status: "active",
+            origin: "app_store",
+            billing_cycle_start: new Date().toISOString(),
+            billing_cycle_end: new Date(Date.now() + 8.64e7).toISOString(),
+          })
+          .execute();
+
+        const result = await applyAppleAddonTransactionToUser(
+          trx,
+          userId,
+          makeTxn({
+            productId: "day.plot.app.addon_1",
+            originalTransactionId: randomUUID(),
+            expiresDate: Date.now() + 60_000,
+            revocationDate: undefined,
+          })
+        );
+        addons = result.addons;
+
+        const row = await trx
+          .selectFrom("user_subscription")
+          .select("premium_connection_addons")
+          .where("user_id", "=", userId)
+          .executeTakeFirstOrThrow();
+        rowAddons = row.premium_connection_addons;
+
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    expect(addons).toBe(1);
+    expect(rowAddons).toBe(1);
+  });
+});
+
+describe.skipIf(!DATABASE_URL)("applyAppleTwistAddonTransactionToUser", () => {
+  /** Seed a Free subscription row, apply a twist add-on txn, return the row. */
+  async function applyTwistAndRead(
+    txnOverrides: Partial<JwsTransactionPayload> & { productId: string }
+  ) {
+    const db = createDb({ DATABASE_URL } as unknown as Bindings);
+    const userId = randomUUID();
+    let row: Record<string, unknown> | undefined;
+    try {
+      await db.transaction().execute(async (trx: Kysely<DB>) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await trx
+          .insertInto("user_subscription")
+          .values({
+            user_id: userId,
+            plan: "free",
+            status: "active",
+            origin: "app_store",
+            billing_cycle_start: new Date().toISOString(),
+            billing_cycle_end: new Date(Date.now() + 8.64e7).toISOString(),
+          })
+          .execute();
+
+        await applyAppleTwistAddonTransactionToUser(trx, userId, makeTxn(txnOverrides));
+
+        row = await trx
+          .selectFrom("user_subscription")
+          .selectAll()
+          .where("user_id", "=", userId)
+          .executeTakeFirstOrThrow();
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    return row!;
+  }
+
+  it("sets twist_addon_count and tracking columns; leaves plan and connection add-on fields intact", async () => {
+    const row = await applyTwistAndRead({
+      productId: "day.plot.app.twist_addon_2",
+      originalTransactionId: "2000000000000200",
+    });
+    expect(row.twist_addon_count).toBe(2);
+    expect(row.apple_twist_addon_product_id).toBe("day.plot.app.twist_addon_2");
+    expect(row.apple_twist_addon_original_transaction_id).toBe("2000000000000200");
+    // Plan and connection add-on columns untouched.
+    expect(row.plan).toBe("free");
+    expect(row.premium_connection_addons).toBe(0);
+    expect(row.apple_addon_original_transaction_id).toBeNull();
+  });
+
+  it("resets twist_addon_count to 0 when the twist add-on subscription has expired", async () => {
+    const row = await applyTwistAndRead({
+      productId: "day.plot.app.twist_addon_3",
+      expiresDate: Date.now() - 1000,
+    });
+    expect(row.twist_addon_count).toBe(0);
+  });
+
+  it("resets twist_addon_count to 0 when revoked", async () => {
+    const row = await applyTwistAndRead({
+      productId: "day.plot.app.twist_addon_2",
+      revocationDate: Date.now(),
+    });
+    expect(row.twist_addon_count).toBe(0);
+  });
+
+  it("applying a connection add-on does NOT touch twist_addon_count", async () => {
+    const db = createDb({ DATABASE_URL } as unknown as Bindings);
+    const userId = randomUUID();
+    let row: Record<string, unknown> | undefined;
+    try {
+      await db.transaction().execute(async (trx: Kysely<DB>) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await trx
+          .insertInto("user_subscription")
+          .values({
+            user_id: userId,
+            plan: "free",
+            status: "active",
+            origin: "app_store",
+            twist_addon_count: 2,
+            billing_cycle_start: new Date().toISOString(),
+            billing_cycle_end: new Date(Date.now() + 8.64e7).toISOString(),
+          })
+          .execute();
+
+        await applyAppleAddonTransactionToUser(
+          trx,
+          userId,
+          makeTxn({ productId: "day.plot.app.addon_1", expiresDate: Date.now() + 60_000 })
+        );
+
+        row = await trx
+          .selectFrom("user_subscription")
+          .selectAll()
+          .where("user_id", "=", userId)
+          .executeTakeFirstOrThrow();
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    // Connection add-on was applied; twist_addon_count must remain unchanged.
+    expect(row!.premium_connection_addons).toBe(1);
+    expect(row!.twist_addon_count).toBe(2);
+  });
+
+  it("applying a twist add-on does NOT touch premium_connection_addons", async () => {
+    const db = createDb({ DATABASE_URL } as unknown as Bindings);
+    const userId = randomUUID();
+    let row: Record<string, unknown> | undefined;
+    try {
+      await db.transaction().execute(async (trx: Kysely<DB>) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await trx
+          .insertInto("user_subscription")
+          .values({
+            user_id: userId,
+            plan: "free",
+            status: "active",
+            origin: "app_store",
+            premium_connection_addons: 3,
+            billing_cycle_start: new Date().toISOString(),
+            billing_cycle_end: new Date(Date.now() + 8.64e7).toISOString(),
+          })
+          .execute();
+
+        await applyAppleTwistAddonTransactionToUser(
+          trx,
+          userId,
+          makeTxn({ productId: "day.plot.app.twist_addon_1", expiresDate: Date.now() + 60_000 })
+        );
+
+        row = await trx
+          .selectFrom("user_subscription")
+          .selectAll()
+          .where("user_id", "=", userId)
+          .executeTakeFirstOrThrow();
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    // Twist add-on was applied; premium_connection_addons must remain unchanged.
+    expect(row!.twist_addon_count).toBe(1);
+    expect(row!.premium_connection_addons).toBe(3);
   });
 });
 

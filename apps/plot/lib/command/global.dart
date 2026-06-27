@@ -27,7 +27,6 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
     bool showAllPriorities = false,
     String? email,
     SubscriptionInfo? subscription,
-    List<Map<String, dynamic>> adminOrgs = const [],
     bool hasTeams = false,
   }) {
     // When signed out, only show settings commands (and debug commands in debug mode)
@@ -51,7 +50,6 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
         hasTeams: hasTeams,
         showAllPriorities: showAllPriorities,
         email: email,
-        adminOrgs: adminOrgs,
         subscription: subscription,
       ),
     ];
@@ -103,7 +101,6 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
                         showAllPriorities: localPrefsState.showAllPriorities,
                         email: userState.user.primaryEmail,
                         subscription: snapshot.subscription,
-                        adminOrgs: snapshot.adminOrgs,
                         hasTeams: snapshot.hasTeams,
                       ),
                       listenable: DeveloperMode.notifier,

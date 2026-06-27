@@ -21,6 +21,7 @@ import {
   handleSubscriptionDeleted,
   handleSubscriptionUpdate,
   hasActiveAppStoreEntitlement,
+  isTwistAddonSubscription,
   parseSubscriptionItemQuantities,
 } from "./stripe";
 import type Stripe from "stripe";
@@ -366,6 +367,730 @@ describe.skipIf(!DATABASE_URL)(
 );
 
 // ---------------------------------------------------------------------------
+// handleSubscriptionUpdate — add-on subscription routing
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "handleSubscriptionUpdate — add-on subscription routing",
+  () => {
+    function buildFakeContext(db: Kysely<DB>) {
+      return {
+        var: {
+          db,
+          requestId: "test-request-id",
+          tracker: {
+            capture: vi.fn(),
+            captureException: vi.fn(),
+            setDistinctId: vi.fn(),
+            setPersonProperties: vi.fn(),
+          },
+        },
+        req: {
+          path: "/stripe/webhook",
+          method: "POST",
+          url: "http://localhost/stripe/webhook",
+        },
+        env: {
+          STRIPE_SECRET_KEY: "sk_test_fakekeyfortesting",
+        },
+        executionCtx: {
+          waitUntil: (_p: Promise<unknown>) => {},
+        },
+      } as any;
+    }
+
+    it("an addon subscription sets premium_connection_addons + id, leaves plan untouched", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_addon_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          // Keep replica mode throughout: the add-on UPDATE would otherwise
+          // re-validate the FK for the seeded fake user_id and fail.
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_addon1",
+            customer: customerId,
+            status: "active",
+            metadata: { type: "addon" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 2, price: { lookup_key: "addon_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end:
+              Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select([
+              "plan",
+              "stripe_subscription_id",
+              "premium_connection_addons",
+              "stripe_addon_subscription_id",
+            ])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.premium_connection_addons).toBe(2);
+          expect(after!.stripe_addon_subscription_id).toBe("sub_addon1");
+          expect(after!.plan).toBe("free");
+          expect(after!.stripe_subscription_id).toBeNull();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
+    it("a PLAN subscription does NOT clobber a standalone add-on count (regression: fix1)", async () => {
+      // Regression guard: before Fix 1, the plan path set premium_connection_addons
+      // to addonQuantity (0 for a plan sub with no add-on line item), zeroing the
+      // standalone add-on count on every renewal. After Fix 1 the plan path must
+      // leave premium_connection_addons and stripe_addon_subscription_id untouched.
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_plan_noreset_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          // Keep replica mode throughout so that the UPDATE in the plan path
+          // doesn't re-validate the FK for the synthetic user_id and fail.
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              stripe_subscription_id: "sub_plan_existing",
+              stripe_addon_subscription_id: "sub_addon",
+              premium_connection_addons: 2,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          // Simulate a monthly plan renewal (no add-on line item)
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_plan_renewal",
+            customer: customerId,
+            status: "active",
+            metadata: { plan: "pro" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 1, price: { lookup_key: "pro_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end:
+              Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select([
+              "plan",
+              "premium_connection_addons",
+              "stripe_addon_subscription_id",
+            ])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          // premium_connection_addons must NOT be clobbered to 0 by the plan renewal
+          expect(after!.premium_connection_addons).toBe(2);
+          // stripe_addon_subscription_id must remain set
+          expect(after!.stripe_addon_subscription_id).toBe("sub_addon");
+          // plan should have updated normally
+          expect(after!.plan).toBe("pro");
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
+    it("an addon subscription does NOT overwrite an Apple-owned add-on count", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_apple_addon_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          // Keep replica mode: add-on branch may attempt an UPDATE on the row
+          // (which would re-validate the FK for the fake user_id otherwise).
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "app_store",
+              stripe_customer_id: customerId,
+              apple_addon_original_transaction_id: "txn_apple_123",
+              premium_connection_addons: 3,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_addon_stripe",
+            customer: customerId,
+            status: "active",
+            metadata: { type: "addon" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 1, price: { lookup_key: "addon_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end:
+              Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select(["premium_connection_addons", "stripe_addon_subscription_id"])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.premium_connection_addons).toBe(3);
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// handleSubscriptionDeleted — add-on subscription
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "handleSubscriptionDeleted — add-on subscription",
+  () => {
+    function buildFakeContext(db: Kysely<DB>) {
+      return {
+        var: {
+          db,
+          requestId: "test-request-id",
+          tracker: {
+            capture: vi.fn(),
+            captureException: vi.fn(),
+            setDistinctId: vi.fn(),
+            setPersonProperties: vi.fn(),
+          },
+        },
+        req: {
+          path: "/stripe/webhook",
+          method: "POST",
+          url: "http://localhost/stripe/webhook",
+        },
+        env: {
+          STRIPE_SECRET_KEY: "sk_test_fakekeyfortesting",
+        },
+        executionCtx: {
+          waitUntil: (_p: Promise<unknown>) => {},
+        },
+      } as any;
+    }
+
+    it("deleting the addon sub zeroes the count and clears the id", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_addon_del_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          // Keep replica mode: the add-on deletion UPDATE would re-validate
+          // the FK for the fake user_id if we reset to DEFAULT.
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              stripe_addon_subscription_id: "sub_addon1",
+              premium_connection_addons: 2,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionDeleted(fakeC, {
+            id: "sub_addon1",
+            customer: customerId,
+            status: "canceled",
+            metadata: { type: "addon" },
+            trial_end: null,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select([
+              "premium_connection_addons",
+              "stripe_addon_subscription_id",
+              "plan",
+            ])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.premium_connection_addons).toBe(0);
+          expect(after!.stripe_addon_subscription_id).toBeNull();
+          expect(after!.plan).toBe("pro");
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// isTwistAddonSubscription — pure predicate
+// ---------------------------------------------------------------------------
+
+describe("isTwistAddonSubscription", () => {
+  it("returns true for metadata.type === twist_addon", () => {
+    expect(
+      isTwistAddonSubscription({ metadata: { type: "twist_addon" } } as any)
+    ).toBe(true);
+  });
+
+  it("returns false for metadata.type === addon (connection add-on)", () => {
+    expect(
+      isTwistAddonSubscription({ metadata: { type: "addon" } } as any)
+    ).toBe(false);
+  });
+
+  it("returns false when metadata.type is a plan", () => {
+    expect(
+      isTwistAddonSubscription({ metadata: { plan: "pro" } } as any)
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleSubscriptionUpdate — twist add-on subscription routing
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "handleSubscriptionUpdate — twist add-on subscription routing",
+  () => {
+    function buildFakeContext(db: Kysely<DB>) {
+      return {
+        var: {
+          db,
+          requestId: "test-request-id",
+          tracker: {
+            capture: vi.fn(),
+            captureException: vi.fn(),
+            setDistinctId: vi.fn(),
+            setPersonProperties: vi.fn(),
+          },
+        },
+        req: {
+          path: "/stripe/webhook",
+          method: "POST",
+          url: "http://localhost/stripe/webhook",
+        },
+        env: {
+          STRIPE_SECRET_KEY: "sk_test_fakekeyfortesting",
+        },
+        executionCtx: {
+          waitUntil: (_p: Promise<unknown>) => {},
+        },
+      } as any;
+    }
+
+    it("a twist_addon subscription sets twist_addon_count + id, leaves plan/premium_connection_addons untouched", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_twaddon_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              premium_connection_addons: 1,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_twaddon1",
+            customer: customerId,
+            status: "active",
+            metadata: { type: "twist_addon" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 3, price: { lookup_key: "twist_addon_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select([
+              "plan",
+              "stripe_subscription_id",
+              "twist_addon_count",
+              "stripe_twist_addon_subscription_id",
+              "premium_connection_addons",
+            ])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.twist_addon_count).toBe(3);
+          expect(after!.stripe_twist_addon_subscription_id).toBe("sub_twaddon1");
+          expect(after!.plan).toBe("free");
+          expect(after!.stripe_subscription_id).toBeNull();
+          expect(after!.premium_connection_addons).toBe(1); // untouched
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
+    it("a twist_addon subscription does NOT overwrite an Apple-owned twist add-on count", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_apple_twaddon_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "app_store",
+              stripe_customer_id: customerId,
+              apple_twist_addon_original_transaction_id: "txn_twist_apple_123",
+              twist_addon_count: 3,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_twist_addon_stripe",
+            customer: customerId,
+            status: "active",
+            metadata: { type: "twist_addon" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 1, price: { lookup_key: "twist_addon_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select(["twist_addon_count", "stripe_twist_addon_subscription_id"])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.twist_addon_count).toBe(3); // not overwritten by Stripe
+          expect(after!.stripe_twist_addon_subscription_id).toBeNull(); // guard blocked BOTH writes
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
+    it("a PLAN subscription does NOT clobber twist_addon_count", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_plan_notw_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              stripe_subscription_id: "sub_plan_existing",
+              stripe_twist_addon_subscription_id: "sub_twaddon",
+              twist_addon_count: 2,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_plan_renewal",
+            customer: customerId,
+            status: "active",
+            metadata: { plan: "pro" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 1, price: { lookup_key: "pro_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select(["plan", "twist_addon_count", "stripe_twist_addon_subscription_id"])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.twist_addon_count).toBe(2); // untouched by plan renewal
+          expect(after!.stripe_twist_addon_subscription_id).toBe("sub_twaddon"); // untouched
+          expect(after!.plan).toBe("pro"); // updated normally
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
+    it("a connection add-on (metadata.type:addon) does NOT set twist_addon_count", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_conn_notw_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              twist_addon_count: 0,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_conn_addon",
+            customer: customerId,
+            status: "active",
+            metadata: { type: "addon" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 2, price: { lookup_key: "addon_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select(["twist_addon_count", "premium_connection_addons"])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.twist_addon_count).toBe(0); // untouched by connection add-on event
+          expect(after!.premium_connection_addons).toBe(2); // updated by connection add-on
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// handleSubscriptionDeleted — twist add-on subscription
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "handleSubscriptionDeleted — twist add-on subscription",
+  () => {
+    function buildFakeContext(db: Kysely<DB>) {
+      return {
+        var: {
+          db,
+          requestId: "test-request-id",
+          tracker: {
+            capture: vi.fn(),
+            captureException: vi.fn(),
+            setDistinctId: vi.fn(),
+            setPersonProperties: vi.fn(),
+          },
+        },
+        req: {
+          path: "/stripe/webhook",
+          method: "POST",
+          url: "http://localhost/stripe/webhook",
+        },
+        env: {
+          STRIPE_SECRET_KEY: "sk_test_fakekeyfortesting",
+        },
+        executionCtx: {
+          waitUntil: (_p: Promise<unknown>) => {},
+        },
+      } as any;
+    }
+
+    it("deleting the twist_addon sub zeroes twist_addon_count and clears the id", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_twaddon_del_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              stripe_twist_addon_subscription_id: "sub_twaddon1",
+              twist_addon_count: 2,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionDeleted(fakeC, {
+            id: "sub_twaddon1",
+            customer: customerId,
+            status: "canceled",
+            metadata: { type: "twist_addon" },
+            trial_end: null,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select([
+              "twist_addon_count",
+              "stripe_twist_addon_subscription_id",
+              "plan",
+            ])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          expect(after!.twist_addon_count).toBe(0);
+          expect(after!.stripe_twist_addon_subscription_id).toBeNull();
+          expect(after!.plan).toBe("pro"); // untouched
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
 // handleSubscriptionUpdate — guard fires when app_store entitlement exists
 // ---------------------------------------------------------------------------
 
@@ -459,6 +1184,235 @@ describe.skipIf(!DATABASE_URL)(
           expect(after!.plan).toBe(paidPlan);
           expect(after!.status).toBe("active");
           expect(after!.stripe_subscription_id).toBeNull();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// handleSubscriptionDeleted — twist add-on Apple guard
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "handleSubscriptionDeleted — twist add-on Apple guard",
+  () => {
+    function buildFakeContext(db: Kysely<DB>) {
+      return {
+        var: {
+          db,
+          requestId: "test-request-id",
+          tracker: {
+            capture: vi.fn(),
+            captureException: vi.fn(),
+            setDistinctId: vi.fn(),
+            setPersonProperties: vi.fn(),
+          },
+        },
+        req: {
+          path: "/stripe/webhook",
+          method: "POST",
+          url: "http://localhost/stripe/webhook",
+        },
+        env: {
+          STRIPE_SECRET_KEY: "sk_test_fakekeyfortesting",
+        },
+        executionCtx: {
+          waitUntil: (_p: Promise<unknown>) => {},
+        },
+      } as any;
+    }
+
+    it("deleting a twist_addon Stripe sub does NOT zero twist_addon_count when Apple owns the entitlement", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_tw_apple_del_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          // Seed: user has Apple-owned twist add-on entitlement.
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "app_store",
+              stripe_customer_id: customerId,
+              // Match the deleted sub's id so the first WHERE clause selects
+              // this row — the Apple guard is then the ONLY thing preventing the
+              // zero, which is exactly what this test must exercise.
+              stripe_twist_addon_subscription_id: "sub_tw_stripe_stale",
+              apple_twist_addon_original_transaction_id: "txn_abc",
+              twist_addon_count: 2,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          // Stripe fires a twist_addon delete — Apple guard must block the zero.
+          await handleSubscriptionDeleted(fakeC, {
+            id: "sub_tw_stripe_stale",
+            customer: customerId,
+            status: "canceled",
+            metadata: { type: "twist_addon" },
+            trial_end: null,
+          } as unknown as Stripe.Subscription);
+
+          const after = await trx
+            .selectFrom("user_subscription")
+            .select(["twist_addon_count", "plan"])
+            .where("stripe_customer_id", "=", customerId)
+            .executeTakeFirst();
+
+          expect(after).toBeDefined();
+          // Apple entitlement not clobbered by the Stripe delete.
+          expect(after!.twist_addon_count).toBe(2);
+          expect(after!.plan).toBe("pro");
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Trial detection: Task 2 — detected via trial_end only, NOT plan='core'
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "handleSubscriptionDeleted — trial detection uses trial_end (not plan='core')",
+  () => {
+    // expireTrial is already mocked module-level above (vi.mock("../utils/trial"))
+    // We need access to the spy to assert call counts.
+    let expireTrialSpy: ReturnType<typeof vi.fn>;
+
+    function buildFakeContext(db: Kysely<DB>) {
+      return {
+        var: {
+          db,
+          requestId: "test-request-id",
+          tracker: {
+            capture: vi.fn(),
+            captureException: vi.fn(),
+            setDistinctId: vi.fn(),
+            setPersonProperties: vi.fn(),
+          },
+        },
+        req: {
+          path: "/stripe/webhook",
+          method: "POST",
+          url: "http://localhost/stripe/webhook",
+        },
+        env: {
+          STRIPE_SECRET_KEY: "sk_test_fakekeyfortesting",
+        },
+        executionCtx: {
+          waitUntil: (_p: Promise<unknown>) => {},
+        },
+      } as any;
+    }
+
+    it("calls expireTrial when trial_end is set on the subscription", async () => {
+      const { expireTrial } = await import("../utils/trial");
+      expireTrialSpy = expireTrial as ReturnType<typeof vi.fn>;
+      expireTrialSpy.mockClear();
+
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_trd_set_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          // Keep replica mode throughout — handleSubscriptionDeleted's revert
+          // path inserts a fresh user_subscription row and would hit FK otherwise.
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          // subscription with trial_end set — must invoke expireTrial
+          await handleSubscriptionDeleted(fakeC, {
+            id: "sub_trial_ending",
+            customer: customerId,
+            status: "canceled",
+            metadata: { plan: "free" },
+            trial_end: Math.floor(Date.now() / 1000), // trial just ended
+          } as unknown as Stripe.Subscription);
+
+          expect(expireTrialSpy).toHaveBeenCalledOnce();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
+    it("does NOT call expireTrial when trial_end is null (plain subscription delete)", async () => {
+      const { expireTrial } = await import("../utils/trial");
+      expireTrialSpy = expireTrial as ReturnType<typeof vi.fn>;
+      expireTrialSpy.mockClear();
+
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_trd_null_${randomUUID().slice(0, 8)}`;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          // Keep replica mode throughout to bypass FK on the revert path.
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          // No trial_end set — plain cancellation, expireTrial must not be called
+          await handleSubscriptionDeleted(fakeC, {
+            id: "sub_plain_cancel",
+            customer: customerId,
+            status: "canceled",
+            metadata: { plan: "free" },
+            trial_end: null,
+          } as unknown as Stripe.Subscription);
+
+          expect(expireTrialSpy).not.toHaveBeenCalled();
 
           throw new Rollback();
         });

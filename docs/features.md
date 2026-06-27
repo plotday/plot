@@ -293,9 +293,9 @@ yours.
 - It searches the web with cited sources, reads and reasons over your own workspace (threads, notes,
   focuses) to answer questions, and can propose organization plans — moves, renames, archives — for
   your approval.
-- Use AI your way: bring your own key, or point Plot at your own OpenAI-compatible endpoint for
-  local models or proxies.
-- Prefer no AI? There's an option to turn it off.
+- AI is built in on every plan, with nothing to set up — no API keys, no token bills, and no model
+  to choose. When a twist uses AI, the cost is already included in its capacity.
+- Prefer no AI? You can turn it off entirely — for yourself, or for an individual twist.
 
 ### Twists
 
@@ -316,15 +316,19 @@ yours.
 - Simple pricing: you pay for the connections that bring your tools together — plans are sized by
   how many you need. Plot's own collaboration is free: share Plot threads with anyone and work
   together with no history limits and no per-seat fees.
-- **Free** — 2 connections, 1 twist. For individuals and teams using a few core tools.
-- **Core** — 5 connections, 2 twists. $15/mo, or $12/mo billed annually.
-- **Pro** — unlimited connections and twists, no-code twist builder. $25/mo, or $20/mo annually.
-- **Team** — shared org connections (per 50), unlimited twists, no-code twist builder. $124/mo, or
-  $99/mo annually; scales per 50 connections.
-- **Connection add-ons** — third-party integrations with a real per-connection cost. $5/month each
-  ($6.99 via the App Store, with a small volume discount on multiple), addable to any paid plan. An
-  add-on enables the connection and also counts as one of your plan's connections.
-- 30-day Core trial for new signups, with reminders and a graceful downgrade.
+- **Free** — 2 connections, 1 twist. For individuals and small teams using a few tools.
+- **Pro** — unlimited connections, 10 twists, and the no-code twist builder. $25/mo, or $20/mo annually.
+- **Team** — shared org connections (per 50), 10 twists per 50-connection block, and the no-code
+  twist builder. $124/mo, or $99/mo annually; scales per 50 connections.
+- **Connection add-ons** — extra connections beyond your plan, plus the few connectors with a real
+  per-account cost (LinkedIn, Instagram, WhatsApp). $5/month each on the web (a little higher via the
+  App Store to cover Apple's fees), available on any plan including Free. Billed separately — they
+  don't count toward your plan's included connections, and the charge stops when the connection is
+  turned off.
+- **Twist add-ons** — +20 twists each, for when you need more than your plan includes. $10/month each
+  on the web (a little higher via the App Store), available on any plan and billed only while you're
+  using the extra capacity.
+- New signups get a 30-day trial of unlimited connections on the Free plan.
 - Annual billing saves 20%. Stripe-powered checkout and self-service subscription management. On Apple platforms (iPhone, iPad, Mac), subscriptions can also be purchased directly in-app via Apple's in-app purchase (StoreKit), with a single cross-platform entitlement shared between web and native.
 - Plan changes propagate instantly to all devices.
 

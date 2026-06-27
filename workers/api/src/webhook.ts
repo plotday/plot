@@ -9,7 +9,9 @@ import { verifyPubSubToken } from "./utils/pubsub";
 import {
   findUserByAddonOriginalTransactionId,
   findUserByOriginalTransactionId,
+  findUserByTwistAddonOriginalTransactionId,
   isAddonProduct,
+  isTwistAddonProduct,
   verifyAppleJws,
   type JwsNotificationPayload,
   type JwsRenewalInfoPayload,
@@ -1021,10 +1023,15 @@ webhook.post(
     // request-scoped middleware.
     const db = createFrontendDb(c.env);
     try {
-      // Add-on subscriptions are a separate App Store subscription group, so
-      // they map back to the user through the dedicated add-on transaction id.
+      // Add-on and twist add-on subscriptions are separate App Store subscription
+      // groups, so they map back to the user through their dedicated transaction ids.
       const userId = isAddonProduct(txn.productId)
         ? await findUserByAddonOriginalTransactionId(
+            db,
+            txn.originalTransactionId
+          )
+        : isTwistAddonProduct(txn.productId)
+        ? await findUserByTwistAddonOriginalTransactionId(
             db,
             txn.originalTransactionId
           )

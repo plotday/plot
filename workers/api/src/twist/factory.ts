@@ -5,8 +5,6 @@ import { createLogger } from "@plotday/worker-util";
 
 import type { DB } from "../db-types";
 import { type Bindings, type TwistEnvironment } from "../env";
-import { decrypt } from "../utils/encryption";
-import { getEffectivePlan } from "../utils/plan";
 import { resolveSecureOptions } from "../utils/secure-options";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
@@ -172,138 +170,10 @@ export function twistFactory({
       aiEnabled = ownerPref?.twist_ai_disabled !== true;
     }
 
-    // Resolve effective plan at runtime (not during deployment)
-    let effectivePlan: string | undefined;
-    if (
-      checkPermissions &&
-      twistInstanceId &&
-      twistInstanceId !== "__deployment__"
-    ) {
-      // Get owner_id from twist_instance
-      const ptOwner = await db
-        .selectFrom("twist_instance")
-        .select("owner_id")
-        .where("id", "=", twistInstanceId)
-        .executeTakeFirst();
-      if (ptOwner?.owner_id) {
-        const plan = await getEffectivePlan(db, ptOwner.owner_id);
-        effectivePlan = plan.plan;
-      }
-    }
-
-    // Resolve AI provider config at runtime (not during deployment)
-    let providerConfig: AiProviderConfig | undefined;
-    if (
-      checkPermissions &&
-      twistInstanceId &&
-      twistInstanceId !== "__deployment__"
-    ) {
-      // Resolve AI config against the twist's team (if team-owned) or its
-      // owner user (personal).
-      let aiPref;
-      let scopeFilter: { column: "user_id" | "team_id"; value: any };
-
-      const pt = await db
-        .selectFrom("twist_instance")
-        .select(["owner_id", "team_id"])
-        .where("id", "=", twistInstanceId)
-        .executeTakeFirst();
-      if (pt?.team_id) {
-        aiPref = await db
-          .selectFrom("ai_preference")
-          .select(["twist_ai_key_id", "twist_ai_disabled"])
-          .where("team_id", "=", pt.team_id)
-          .executeTakeFirst();
-        scopeFilter = { column: "team_id", value: pt.team_id };
-      } else if (pt?.owner_id) {
-        aiPref = await db
-          .selectFrom("ai_preference")
-          .select(["twist_ai_key_id", "twist_ai_disabled"])
-          .where("user_id", "=", pt.owner_id)
-          .executeTakeFirst();
-        scopeFilter = { column: "user_id", value: pt.owner_id };
-      } else {
-        scopeFilter = { column: "user_id", value: null };
-      }
-
-      // If twist AI is explicitly disabled via preference, we'll handle below in tool creation
-      if (aiPref?.twist_ai_disabled) {
-        // Signal to tool factory that AI is disabled
-        effectivePlan = "free" as any; // Forces AIDisabledStub when no byok keys
-      } else if (aiPref?.twist_ai_key_id) {
-        // Load the specific ai_key row for the selected provider
-        const aiKeyRow = await db
-          .selectFrom("ai_key")
-          .select([
-            "provider",
-            "encrypted_key",
-            "iv",
-            "custom_base_url",
-            "fast_model",
-            "thinking_model",
-          ])
-          .where("id", "=", aiPref.twist_ai_key_id)
-          .executeTakeFirst();
-
-        if (aiKeyRow) {
-          const plainKey = await decrypt(
-            aiKeyRow.encrypted_key,
-            aiKeyRow.iv,
-            env.AI_KEY_ENCRYPTION_KEY
-          );
-          providerConfig = {
-            provider: aiKeyRow.provider as AiProviderConfig["provider"],
-            apiKey: plainKey,
-            ...(aiKeyRow.custom_base_url
-              ? { baseUrl: aiKeyRow.custom_base_url }
-              : {}),
-            ...(aiKeyRow.fast_model ? { fastModel: aiKeyRow.fast_model } : {}),
-            ...(aiKeyRow.thinking_model
-              ? { thinkingModel: aiKeyRow.thinking_model }
-              : {}),
-          };
-        }
-      } else if (!aiPref) {
-        // No preference row: fall back to legacy behavior — check for any ai_key rows
-        // This preserves backward compatibility during migration
-        let aiKeyRows;
-        if (scopeFilter.value) {
-          aiKeyRows = await db
-            .selectFrom("ai_key")
-            .select([
-              "provider",
-              "encrypted_key",
-              "iv",
-              "custom_base_url",
-              "fast_model",
-              "thinking_model",
-            ])
-            .where(scopeFilter.column, "=", scopeFilter.value)
-            .orderBy("updated_at", "desc")
-            .limit(1)
-            .execute();
-        }
-
-        if (aiKeyRows && aiKeyRows.length > 0) {
-          const row = aiKeyRows[0];
-          const plainKey = await decrypt(
-            row.encrypted_key,
-            row.iv,
-            env.AI_KEY_ENCRYPTION_KEY
-          );
-          providerConfig = {
-            provider: row.provider as AiProviderConfig["provider"],
-            apiKey: plainKey,
-            ...(row.custom_base_url ? { baseUrl: row.custom_base_url } : {}),
-            ...(row.fast_model ? { fastModel: row.fast_model } : {}),
-            ...(row.thinking_model
-              ? { thinkingModel: row.thinking_model }
-              : {}),
-          };
-        }
-      }
-      // else: aiPref exists with twist_ai_key_id=null and twist_ai_disabled=false → Plot AI (no providerConfig)
-    }
+    // BYOK removed in B4 — providerConfig is always undefined; all AI uses the built-in provider.
+    // The providerConfig branch in tools/ai.ts is left in place but never reached.
+    // See factory.ts change in pricing-model-product-changes for the removal rationale.
+    const providerConfig: AiProviderConfig | undefined = undefined;
 
     // Resolve secure options at runtime (decrypt secure values from secure_option table)
     let resolvedSecureOptions: Record<string, string> | undefined;
@@ -380,7 +250,6 @@ export function twistFactory({
           sourceProvider,
           aiEnabled,
           providerConfig,
-          effectivePlan,
           secureOptions: resolvedSecureOptions,
         });
       }

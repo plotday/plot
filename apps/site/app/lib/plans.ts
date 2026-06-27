@@ -1,20 +1,20 @@
-// NOTE: This page reflects the NEW pricing model — Free/Pro/Team, à-la-carte
-// connection add-ons, and weighted automation capacity. The API mirror in
-// `workers/api/src/utils/limits.ts` (`PLAN_LIMITS`) still encodes the OLD model
-// and is updated by the product-changes work (Spec B,
-// `docs/superpowers/specs/2026-06-26-pricing-model-product-changes-design.md`),
-// NOT in this PR. Until that lands, the marketing page intentionally runs ahead
-// of the backend. Tracked for extraction into a shared `@plot/plans` package.
+// Plan + add-on pricing shared by the marketing pricing page (pricing.tsx) and
+// the upgrade/checkout page (upgrade.tsx). The model is Free/Pro/Team with
+// à-la-carte connection add-ons and weighted automation (twist) capacity.
 //
-// Core is being dropped: the pricing page hides it (filtered in pricing.tsx),
-// but the `core` entry, `PRICES.core`, and the `PlanKey` value are RETAINED here
-// so `upgrade.tsx` keeps building. Core's full removal (data + upgrade flow +
-// PLAN_LIMITS + subscriber migration) is Spec B.
+// These numbers MIRROR the server's `PLAN_LIMITS`
+// (workers/api/src/utils/limits.ts): Free 2 connections / 1 automation, Pro
+// unlimited / 10, Team 50-connection blocks / 10 automations per block. Keep
+// them in sync when `PLAN_LIMITS` changes. Tracked for extraction into a shared
+// `@plot/plans` package.
+//
+// "Automation" is the marketing word for a twist; the page uses it because
+// readers meet it before they learn the word "twist". (In product UI and code
+// the add-on is the "twist add-on".) Core has been dropped from the model.
 
 export type Billing = "monthly" | "annual";
 
 export const PRICES = {
-  core: { monthly: 15, annual: 12 },
   pro: { monthly: 25, annual: 20 },
   team: { monthly: 124, annual: 99 },
 } as const;
@@ -28,7 +28,16 @@ export const PRICES = {
  */
 export const ADDON_PRICE = 5;
 
-export type PlanKey = "free" | "core" | "pro" | "team";
+/**
+ * Price of one twist (automation) add-on, in USD/month. Each one adds +20 to
+ * your weighted automation capacity. Like connection add-ons it's billed
+ * separately from your plan and usage-synced on the web. (App Store buyers pay
+ * a higher tier price to cover Apple's surcharge — see the StoreKit twist
+ * add-on tiers.)
+ */
+export const TWIST_ADDON_PRICE = 10;
+
+export type PlanKey = "free" | "pro" | "team";
 
 export interface Plan {
   key: PlanKey;
@@ -68,32 +77,6 @@ export const PLANS: Plan[] = [
     cta: "Get started",
     ctaLink: () => "/start",
     ctaVariant: "outline",
-    highlight: false,
-    badge: null,
-    unit: null,
-  },
-  // RETAINED for upgrade.tsx only — hidden on the pricing page (filtered in
-  // pricing.tsx). Core is being dropped; full removal is Spec B.
-  {
-    key: "core",
-    name: "Core",
-    bestFor: "For individuals connecting a handful of tools",
-    price: (billing) => `$${PRICES.core[billing]}`,
-    priceNote: null,
-    period: "/mo",
-    description: "Increase your connections and automations.",
-    features: [
-      "Up to 5 connections",
-      `Connection add-ons $${ADDON_PRICE}/mo each`,
-      "2 Twists (automations and agents)",
-      "Import 30 days of historical items from connections",
-      "Automated organization and prioritization (expanded limits)",
-      "Unlimited collaborators",
-      "Full search and history of all your work in Plot",
-    ],
-    cta: "Get started",
-    ctaLink: (billing) => `/upgrade?plan=core&billing=${billing}`,
-    ctaVariant: "filled",
     highlight: false,
     badge: null,
     unit: null,

@@ -3,39 +3,43 @@ import { sql } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
-import { UserAiUsage } from "../state/user-ai-usage";
-import { FREE_AI_LIMITS } from "./ai-limits";
-export type PlanKey = "free" | "core" | "pro" | "team";
+export type PlanKey = "free" | "pro" | "team";
 
 /** twist.twist_package_id for the built-in Plot twist. */
 export const BUILTIN_TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
 
 /**
  * Connection add-ons ("premium" connectors, e.g. Unipile-backed LinkedIn /
- * Instagram / WhatsApp) cost $5/mo each and can be enabled on any PAID plan.
- *
- * An add-on does two things at once:
- *  1. It still counts as a regular connection against `connections` — the
- *     plan's connection pool (e.g. 2 regular + 3 add-on = 5 of a Core plan).
- *  2. It additionally requires a purchased add-on credit
- *     (`premium_connection_addons`); the number of enabled connection add-ons
- *     may not exceed the number purchased.
- *
- * `addonsAllowed` is false only on Free (which cannot purchase add-ons), so
- * add-on connectors are effectively blocked there.
+ * Instagram / WhatsApp) cost $5/mo each and are independent of the user's
+ * plan — they are available on every plan, including Free. Admission is
+ * governed solely by purchased add-on credits (`premium_connection_addons`):
+ * the number of enabled connection add-ons may not exceed the number
+ * purchased. Add-ons do NOT consume a plan connection-pool slot; they are
+ * billed separately and independent of `connections`.
  */
 export type PlanLimits = {
   connections: number;
+  /**
+   * Legacy flat-count limit used only by the downgrade/trial-expiry twist trim
+   * (`utils/trial.ts` and `twist/management.ts`). NOT used at install/activate
+   * time; `twistCapacity` is the enable-time weighted capacity.
+   */
   twists: number;
+  /**
+   * Enable-time weighted twist-capacity limit. Σ capacity_weight of all
+   * installed non-source non-built-in twists must not exceed this value plus
+   * 20 × purchased twist-add-on blocks. See `checkTwistCapacity`.
+   * Cross-reference: `twists` (above) is the legacy flat-count limit used only
+   * by the downgrade/trial-expiry trim.
+   */
+  twistCapacity: number;
   syncHistoryDays: number;
-  addonsAllowed: boolean;
 };
 
 export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
-  free: { connections: 2, twists: 1, syncHistoryDays: 7, addonsAllowed: false },
-  core: { connections: 5, twists: 2, syncHistoryDays: 30, addonsAllowed: true },
-  pro: { connections: Infinity, twists: Infinity, syncHistoryDays: 365, addonsAllowed: true },
-  team: { connections: Infinity, twists: Infinity, syncHistoryDays: 365, addonsAllowed: true }, // team pool handled separately
+  free: { connections: 2, twists: 1, twistCapacity: 1, syncHistoryDays: 7 },
+  pro: { connections: Infinity, twists: Infinity, twistCapacity: 10, syncHistoryDays: 365 },
+  team: { connections: Infinity, twists: Infinity, twistCapacity: 10, syncHistoryDays: 365 }, // 10 per 50-block; multiplied by connection_group_quantity
 };
 
 export const TEAM_CONNECTIONS_PER_GROUP = 50;
@@ -54,10 +58,9 @@ export function getSyncHistoryMinDate(plan: PlanKey): Date {
 
 export type PlanLimitReason =
   | "connection_limit"
-  // Add-on connector on a plan that can't purchase add-ons (Free).
-  | "addon_unavailable"
-  // Paid plan, but no spare purchased add-on credit — must buy one.
-  | "addon_required";
+  // No spare purchased add-on credit — must buy one.
+  | "addon_required"
+  | "twist_addon_required";
 
 export class PlanLimitError extends Error {
   readonly limitType: "connection" | "twist";
@@ -68,6 +71,14 @@ export class PlanLimitError extends Error {
   readonly isTeam: boolean;
   readonly isAdmin: boolean;
   readonly teamId: string | null;
+  /**
+   * The capacity_weight of the blocked candidate twist. Included only on
+   * `twist_addon_required` errors so the client can echo it back to the
+   * `/upgrade/twist-addons/purchase` endpoint as `candidateWeight`, which
+   * threads the pending weight through `twistAddonBlocksNeeded` to compute
+   * the correct target block count. Optional and absent on connection errors.
+   */
+  readonly candidateWeight?: number;
 
   constructor(opts: {
     limitType: "connection" | "twist";
@@ -78,6 +89,7 @@ export class PlanLimitError extends Error {
     isTeam: boolean;
     isAdmin: boolean;
     teamId: string | null;
+    candidateWeight?: number;
   }) {
     const noun = opts.limitType === "connection" ? "connection" : "twist";
     super(`You've reached your ${noun} limit.`);
@@ -90,6 +102,9 @@ export class PlanLimitError extends Error {
     this.isTeam = opts.isTeam;
     this.isAdmin = opts.isAdmin;
     this.teamId = opts.teamId;
+    if (opts.candidateWeight !== undefined) {
+      this.candidateWeight = opts.candidateWeight;
+    }
   }
 
   toJSON() {
@@ -104,6 +119,7 @@ export class PlanLimitError extends Error {
       is_team: this.isTeam,
       is_admin: this.isAdmin,
       team_id: this.teamId,
+      ...(this.candidateWeight !== undefined ? { candidate_weight: this.candidateWeight } : {}),
     };
   }
 }
@@ -140,9 +156,9 @@ export class SingleInstanceError extends Error {
  * undercount when a source borrows auth from a private auth twist or has
  * had its connection rows pruned while channels remain enabled.
  *
- * Includes add-on (premium) connectors — they consume a regular connection
- * slot like any other connection. (They ALSO require a purchased add-on
- * credit, tracked separately via `getPersonalPremiumConnectionCount`.)
+ * Excludes add-on (premium) connectors — they are billed separately and do not
+ * consume a plan connection slot. The add-on count is tracked independently via
+ * `getPersonalPremiumConnectionCount` + `premium_connection_addons`.
  */
 export async function getPersonalConnectionCount(
   db: Kysely<DB>,
@@ -156,6 +172,7 @@ export async function getPersonalConnectionCount(
     .where("pt.team_id", "is", null)
     .where("pt.archived_at", "is", null)
     .where("tw.is_source", "=", true)
+    .where("tw.premium", "=", false)
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("channel as sc")
@@ -172,8 +189,8 @@ export async function getPersonalConnectionCount(
 /**
  * Count personal connection add-ons (where `twist.premium = true`). The number
  * of enabled connection add-ons may not exceed the user's purchased add-on
- * credits (`getPersonalPremiumAddons`). These connections ALSO count toward the
- * regular pool (see `getPersonalConnectionCount`).
+ * credits (`getPersonalPremiumAddons`). Add-ons do NOT count toward the regular
+ * connection pool.
  */
 export async function getPersonalPremiumConnectionCount(
   db: Kysely<DB>,
@@ -202,6 +219,40 @@ export async function getPersonalPremiumConnectionCount(
 }
 
 /**
+ * Billable connection add-ons for a scope: regular connections beyond the
+ * included pool PLUS active add-on-required (premium) connectors. This is the
+ * usage-synced quantity for the standalone connection add-on subscription
+ * (Stripe). On Pro/Team-unlimited the first term is 0 (∞ pool).
+ */
+export async function getBillableConnectionAddonCount(
+  db: Kysely<DB>,
+  scope: { userId: string } | { teamId: string }
+): Promise<number> {
+  if ("teamId" in scope) {
+    const { teamId } = scope;
+    const regular = await getTeamConnectionCount(db, teamId);
+    // NOTE: getTeamConnectionLimit is NOT status-gated (it returns the purchased
+    // block pool, defaulting to one 50-block when no sub exists — not 0 for a
+    // free/lapsed team). This is safe here only because a free team is
+    // hard-blocked from accruing regular connections upstream in
+    // checkChannelConnectionLimit (the `teamPlan === "free"` branch), so
+    // `regular` is ~0 for such teams and the first term is 0 regardless.
+    const pool = await getTeamConnectionLimit(db, teamId);
+    const addonRequired = await getTeamPremiumConnectionCount(db, teamId);
+    return Math.max(0, regular - pool) + addonRequired;
+  }
+  const { userId } = scope;
+  const { plan, trialActive } = await getPersonalConnectionContext(db, userId);
+  // During an active 30-day trial the connection pool is unlimited (∞), so
+  // no regular connection is "over pool" and the over-pool term is always 0.
+  const pool = trialActive ? Infinity : PLAN_LIMITS[plan].connections;
+  const regular = await getPersonalConnectionCount(db, userId);
+  const addonRequired = await getPersonalPremiumConnectionCount(db, userId);
+  const overPool = pool === Infinity ? 0 : Math.max(0, regular - pool);
+  return overPool + addonRequired;
+}
+
+/**
  * Get the number of purchased connection add-on credits for a user (the
  * `premium_connection_addons` count, populated by Stripe / App Store billing).
  */
@@ -215,6 +266,83 @@ export async function getPersonalPremiumAddons(
     .where("user_id", "=", userId)
     .executeTakeFirst();
   return sub?.premium_connection_addons ?? 0;
+}
+
+/** Purchased twist-add-on blocks for a personal scope (each = +20 capacity). */
+export async function getPersonalTwistAddonCount(
+  db: Kysely<DB>,
+  userId: string
+): Promise<number> {
+  const sub = await db
+    .selectFrom("user_subscription")
+    .select("twist_addon_count")
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  return sub?.twist_addon_count ?? 0;
+}
+
+/**
+ * Pure: how many twist-add-on blocks are needed to cover `weightSum` given
+ * a plan base capacity. Each block adds 20 capacity units.
+ *
+ * `ceil(max(0, weightSum + pendingWeight − base) / 20)`
+ *
+ * `pendingWeight` (default 0) is the capacity_weight of a not-yet-installed
+ * candidate twist whose weight must be included in the overflow calculation.
+ * Pass it when the blocked candidate's weight is known (e.g. from the
+ * `twist_addon_required` error payload) so the purchase computes the correct
+ * target block count rather than under-counting installed-only weight.
+ */
+export function computeTwistBlocksNeeded(weightSum: number, base: number, pendingWeight = 0): number {
+  return Math.ceil(Math.max(0, weightSum + pendingWeight - base) / 20);
+}
+
+/**
+ * How many twist-add-on blocks the given scope needs to cover its installed
+ * twist-weight sum (plus any pending candidate weight) at its current plan.
+ *
+ * - Personal: `base = PLAN_LIMITS[plan].twistCapacity`; plan via
+ *   `getPersonalPlan` (lapsed → "free").
+ * - Team: `base = PLAN_LIMITS.team.twistCapacity × connection_group_quantity`
+ *   when the team sub is active, else 0 (free team has no capacity).
+ *
+ * `pendingWeight` (default 0) is the capacity_weight of a not-yet-installed
+ * candidate twist (draft=true or not yet inserted) that is blocked and needs
+ * add-on coverage. Pass it from the `candidate_weight` field on the
+ * `twist_addon_required` error so the purchase endpoint charges for the right
+ * number of blocks rather than under-counting installed-only weight.
+ *
+ * Returns the number of blocks that must be purchased (0 when already within
+ * capacity). Used by the twist-add-on purchase endpoint and the reconcile-down
+ * path.
+ */
+export async function twistAddonBlocksNeeded(
+  db: Kysely<DB>,
+  scope: { userId: string } | { teamId: string },
+  pendingWeight = 0
+): Promise<number> {
+  if ("teamId" in scope) {
+    const teamId = (scope as { teamId: string }).teamId;
+    const teamSub = await db
+      .selectFrom("team_subscription")
+      .select(["plan", "status", "connection_group_quantity"])
+      .where("team_id", "=", teamId)
+      .executeTakeFirst();
+    const rawPlan = (teamSub?.plan as string) ?? "free";
+    const plan: PlanKey =
+      teamSub && teamSub.status === "active"
+        ? ((rawPlan === "core" ? "free" : rawPlan) as PlanKey)
+        : "free";
+    const blocks = teamSub?.connection_group_quantity ?? 1;
+    const base = plan === "free" ? 0 : PLAN_LIMITS.team.twistCapacity * blocks;
+    const weightSum = await getTeamTwistWeightSum(db, teamId);
+    return computeTwistBlocksNeeded(weightSum, base, pendingWeight);
+  }
+  const userId = (scope as { userId: string }).userId;
+  const plan = await getPersonalPlan(db, userId);
+  const base = PLAN_LIMITS[plan].twistCapacity;
+  const weightSum = await getPersonalTwistWeightSum(db, userId);
+  return computeTwistBlocksNeeded(weightSum, base, pendingWeight);
 }
 
 /**
@@ -234,49 +362,49 @@ export type TrimmableConnection = {
  * Pure decision for downgrade/cancel/trial-expiry trimming: given a user's
  * connections and the new plan's budget, return the connections to remove.
  *
- * Connection add-ons count toward the regular pool AND require a purchased
- * add-on credit, so trimming happens in two passes (newest-first, so the user
- * keeps their most recent connections):
+ * Credits are consumed by premium (add-on-required) connectors first; any
+ * leftover credits extend the regular pool. Oldest-first ordering ensures the
+ * user keeps their most foundational/oldest connections on downgrade.
  *
- *   1. Add-on credits: keep the newest `addonCredits` connection add-ons (0
- *      when `addonsAllowed` is false, e.g. Free — it can't pay for any). Trim
- *      the rest, even when they'd fit the regular pool, otherwise we keep
- *      paying their per-account upstream cost.
- *   2. Regular pool: of the survivors (regulars + kept add-ons), keep the
- *      newest `connections` and trim the rest. `Infinity` never trims.
+ *   1. Add-on credits: keep the oldest `addonCredits` connection add-ons.
+ *      Trim the newest excess — preserves foundational installs on downgrade.
+ *   2. Regular pool: keep the oldest `connections + creditsForRegular` non-add-on
+ *      connections, where `creditsForRegular = max(0, addonCredits − premiumCount)`.
+ *      Credits not consumed by premium connectors spill over to cover over-pool
+ *      regulars, so a user who paid for 3 credits but only has 1 premium connector
+ *      keeps 2 extra regulars. `Infinity` never trims.
  */
 export function selectConnectionsToTrim(
   connections: TrimmableConnection[],
-  budget: { connections: number; addonsAllowed: boolean; addonCredits: number }
+  budget: { connections: number; addonCredits: number }
 ): TrimmableConnection[] {
-  const newestFirst = (a: TrimmableConnection, b: TrimmableConnection) =>
-    new Date(b.connectedAt).getTime() - new Date(a.connectedAt).getTime();
+  const oldestFirst = (a: TrimmableConnection, b: TrimmableConnection) =>
+    new Date(a.connectedAt).getTime() - new Date(b.connectedAt).getTime();
 
   const toTrim: TrimmableConnection[] = [];
 
-  // Pass 1: connection add-ons beyond the purchased credit.
-  const addons = connections.filter((c) => c.premium).sort(newestFirst);
-  const addonKeep = budget.addonsAllowed ? budget.addonCredits : 0;
-  const trimmedAddon = addons.slice(addonKeep);
-  toTrim.push(...trimmedAddon);
+  // Pass 1: connection add-ons beyond the purchased credit — keep the OLDEST,
+  // trim the newest excess (preserve foundational installs).
+  const addons = connections.filter((c) => c.premium).sort(oldestFirst);
+  toTrim.push(...addons.slice(budget.addonCredits));
 
-  // Pass 2: of the survivors (everything not already trimmed), enforce the pool.
+  // Pass 2: regular (non-add-on) connections beyond the pool — keep the OLDEST,
+  // trim the newest. Credits not fully consumed by premium connectors spill over
+  // and extend the regular pool.
   if (budget.connections !== Infinity) {
-    const trimmedIds = new Set(trimmedAddon.map((c) => c.twistInstanceId));
-    const survivors = connections
-      .filter((c) => !trimmedIds.has(c.twistInstanceId))
-      .sort(newestFirst);
-    toTrim.push(...survivors.slice(budget.connections));
+    const regulars = connections.filter((c) => !c.premium).sort(oldestFirst);
+    const creditsForRegular = Math.max(0, budget.addonCredits - addons.length);
+    toTrim.push(...regulars.slice(budget.connections + creditsForRegular));
   }
 
   return toTrim;
 }
 
 /**
- * Count team connections. Every connection — regular or add-on — consumes a
- * single slot from the shared pool; add-on connectors are no longer weighted
- * (they instead require a purchased add-on credit, like personal plans).
- * Mirrors the personal count so the total matches the Connections modal list.
+ * Count team connections (non-premium only). Add-on connectors (`premium =
+ * true`) are excluded from the pool and never pool-trimmed; they require a
+ * purchased add-on credit. Mirrors the personal count so the total matches the
+ * Connections modal list.
  */
 export async function getTeamConnectionCount(
   db: Kysely<DB>,
@@ -289,6 +417,7 @@ export async function getTeamConnectionCount(
     .where("pt.team_id", "=", teamId)
     .where("pt.archived_at", "is", null)
     .where("tw.is_source", "=", true)
+    .where("tw.premium", "=", false)
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("channel as sc")
@@ -336,47 +465,44 @@ export async function getTeamPremiumAddons(
 }
 
 /**
- * Count personal non-source twists: non-archived twist_instance where
- * is_source = false, owner_id = userId, team_id IS NULL.
+ * Σ capacity_weight over a user's installed twists: non-archived,
+ * non-draft, non-source twist instances, excluding the built-in assistant
+ * (which is excluded from capacity sums). Drives the weighted twist-capacity check.
  */
-export async function getPersonalTwistCount(
+export async function getPersonalTwistWeightSum(
   db: Kysely<DB>,
   userId: string
 ): Promise<number> {
-  const result = await db
+  const row = await db
     .selectFrom("twist_instance as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .select(sql<string>`count(DISTINCT pt.id)`.as("count"))
+    .select(sql<string>`sum(t.capacity_weight)`.as("weight"))
     .where("pt.owner_id", "=", userId)
     .where("pt.team_id", "is", null)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)
     .where("pt.draft", "=", false)
     .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
-    .executeTakeFirstOrThrow();
-
-  return Number(result.count);
+    .executeTakeFirst();
+  return Number(row?.weight ?? 0);
 }
 
-/**
- * Count team non-source twists.
- */
-export async function getTeamTwistCount(
+/** Team equivalent of {@link getPersonalTwistWeightSum}. */
+export async function getTeamTwistWeightSum(
   db: Kysely<DB>,
   teamId: string
 ): Promise<number> {
-  const result = await db
+  const row = await db
     .selectFrom("twist_instance as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .select(sql<string>`count(DISTINCT pt.id)`.as("count"))
+    .select(sql<string>`sum(t.capacity_weight)`.as("weight"))
     .where("pt.team_id", "=", teamId)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)
     .where("pt.draft", "=", false)
     .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
-    .executeTakeFirstOrThrow();
-
-  return Number(result.count);
+    .executeTakeFirst();
+  return Number(row?.weight ?? 0);
 }
 
 /**
@@ -440,21 +566,58 @@ export async function getPersonalPlan(
     .where("user_id", "=", userId)
     .executeTakeFirst();
 
-  return sub && (sub.status === "active" || sub.status === "trialing")
-    ? (sub.plan as "free" | "core" | "pro" | "team")
-    : "free";
+  if (sub && (sub.status === "active" || sub.status === "trialing")) {
+    // Map legacy 'core' DB value → 'free' at the read boundary.
+    const raw = sub.plan as string;
+    return (raw === "core" ? "free" : raw) as PlanKey;
+  }
+  return "free";
+}
+
+/**
+ * Fetch the user's personal plan + trial status in one query, for use by
+ * connection-pool checks that need to know whether the 30-day connections trial
+ * is active. `trialActive = trial_ends_at > now()`.
+ *
+ * The plan follows the same status-gating as `getPersonalPlan` (lapsed/absent
+ * subscription → "free"). Legacy "core" DB values are mapped to "free" at
+ * the read boundary (B5 Task 3).
+ */
+export async function getPersonalConnectionContext(
+  db: Kysely<DB>,
+  userId: string
+): Promise<{ plan: PlanKey; trialActive: boolean }> {
+  const sub = await db
+    .selectFrom("user_subscription")
+    .select(["plan", "status", "trial_ends_at"])
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+
+  const rawPlan = sub?.plan as string | undefined;
+  const plan: PlanKey =
+    sub && (sub.status === "active" || sub.status === "trialing")
+      ? ((rawPlan === "core" ? "free" : rawPlan) as PlanKey)
+      : "free";
+
+  const trialActive =
+    sub?.trial_ends_at != null && new Date(sub.trial_ends_at) > new Date();
+
+  return { plan, trialActive };
 }
 
 
 /**
  * Check if enabling a channel would exceed connection limits.
- * Routes to the team-level or personal quota based on
- * `twist_instance.team_id`. Add-on connectors (twist.premium = true) require a
- * purchased add-on credit (`premium_connection_addons`) AND consume a regular
- * connection slot like any other connection:
- * - Free: add-ons can't be purchased → rejected with reason="addon_unavailable"
- * - Paid plan, no spare add-on credit → reason="addon_required"
- * - Every connector (add-on or not) is then checked against the pool limit.
+ * Routes to the team-level or personal quota based on `twist_instance.team_id`.
+ *
+ * Add-on connectors (twist.premium = true) are independent of the plan pool:
+ * - Allowed on ANY plan (including Free) when there is a spare purchased
+ *   add-on credit (`premium_connection_addons`). Resolves immediately on
+ *   success — never falls through to the pool check.
+ * - Rejected with reason="addon_required" when no spare credit exists.
+ *
+ * Regular connectors (twist.premium = false) are checked against the plan's
+ * connection pool only; add-on credits are irrelevant to them.
  */
 export async function checkChannelConnectionLimit(
   db: Kysely<DB>,
@@ -497,12 +660,40 @@ export async function checkChannelConnectionLimit(
       .where("team_id", "=", teamId)
       .executeTakeFirst();
 
-    const teamPlan =
+    const rawTeamPlan = teamSub?.plan as string | undefined;
+    const teamPlan: PlanKey =
       teamSub && teamSub.status === "active"
-        ? (teamSub.plan as "free" | "core" | "pro" | "team")
+        ? ((rawTeamPlan === "core" ? "free" : rawTeamPlan) as PlanKey)
         : "free";
 
-    // Free team plan: no connections allowed at all.
+    // Add-on connector: independent of the team plan. Allowed when there is a
+    // spare purchased add-on credit; never consumes a plan pool slot.
+    // Gate on the BILLABLE formula (overPool regulars + premium) so credits
+    // consumed by over-pool regulars are correctly counted here.
+    if (isAddon) {
+      const purchased = await getTeamPremiumAddons(db, teamId);
+      const addonCount = await getTeamPremiumConnectionCount(db, teamId);
+      const pendingBillable = (await getBillableConnectionAddonCount(db, { teamId })) + 1;
+      if (pendingBillable > purchased) {
+        const admin = await isTeamAdmin(db, userId, teamId);
+        return {
+          allowed: false,
+          error: new PlanLimitError({
+            limitType: "connection",
+            reason: "addon_required",
+            plan: teamPlan,
+            currentCount: addonCount,
+            limit: purchased,
+            isTeam: true,
+            isAdmin: admin,
+            teamId,
+          }),
+        };
+      }
+      return { allowed: true };
+    }
+
+    // Free team plan: no regular connections allowed at all.
     if (teamPlan === "free") {
       const count = await getTeamConnectionCount(db, teamId);
       const admin = await isTeamAdmin(db, userId, teamId);
@@ -520,40 +711,23 @@ export async function checkChannelConnectionLimit(
       };
     }
 
-    // Add-on connector: needs a spare purchased add-on credit (paid team plans
-    // can all buy add-ons).
-    if (isAddon) {
+    // Regular pool: only the `team` plan is pooled (per-50 groups). Team-Pro
+    // has unlimited regular connections. Beyond the pool, regular
+    // connectors require connection-add-on headroom → addon_required.
+    if (teamPlan === "team") {
+      const count = await getTeamConnectionCount(db, teamId);
+      const limit = await getTeamConnectionLimit(db, teamId);
+      const pendingBillable =
+        Math.max(0, count + 1 - limit) +
+        (await getTeamPremiumConnectionCount(db, teamId));
       const purchased = await getTeamPremiumAddons(db, teamId);
-      const addonCount = await getTeamPremiumConnectionCount(db, teamId);
-      if (addonCount >= purchased) {
+      if (pendingBillable > purchased) {
         const admin = await isTeamAdmin(db, userId, teamId);
         return {
           allowed: false,
           error: new PlanLimitError({
             limitType: "connection",
             reason: "addon_required",
-            plan: teamPlan,
-            currentCount: addonCount,
-            limit: purchased,
-            isTeam: true,
-            isAdmin: admin,
-            teamId,
-          }),
-        };
-      }
-    }
-
-    // Regular pool: only the `team` plan is pooled (per-50 groups). Team-Core /
-    // Team-Pro have unlimited regular connections.
-    if (teamPlan === "team") {
-      const count = await getTeamConnectionCount(db, teamId);
-      const limit = await getTeamConnectionLimit(db, teamId);
-      if (count + 1 > limit) {
-        const admin = await isTeamAdmin(db, userId, teamId);
-        return {
-          allowed: false,
-          error: new PlanLimitError({
-            limitType: "connection",
             plan: teamPlan,
             currentCount: count,
             limit,
@@ -583,29 +757,18 @@ export async function checkChannelConnectionLimit(
     return { allowed: true };
   }
 
-  const plan = await getPersonalPlan(db, userId);
+  const { plan, trialActive } = await getPersonalConnectionContext(db, userId);
   const limits = PLAN_LIMITS[plan];
 
-  // Add-on connector enforcement: paid plan + a spare purchased add-on credit.
+  // Add-on connector: independent of the plan. Allowed when there is a spare
+  // purchased add-on credit; never consumes a plan pool slot.
+  // Gate on the BILLABLE formula (overPool regulars + premium) so credits
+  // consumed by over-pool regulars are correctly counted here.
   if (isAddon) {
-    if (!limits.addonsAllowed) {
-      return {
-        allowed: false,
-        error: new PlanLimitError({
-          limitType: "connection",
-          reason: "addon_unavailable",
-          plan,
-          currentCount: 0,
-          limit: 0,
-          isTeam: false,
-          isAdmin: false,
-          teamId: null,
-        }),
-      };
-    }
     const purchased = await getPersonalPremiumAddons(db, userId);
     const addonCount = await getPersonalPremiumConnectionCount(db, userId);
-    if (addonCount >= purchased) {
+    const pendingBillable = (await getBillableConnectionAddonCount(db, { userId })) + 1;
+    if (pendingBillable > purchased) {
       return {
         allowed: false,
         error: new PlanLimitError({
@@ -620,30 +783,44 @@ export async function checkChannelConnectionLimit(
         }),
       };
     }
-  }
-
-  // Regular pool check — applies to every connector, add-on included (an add-on
-  // consumes a regular slot too).
-  if (limits.connections === Infinity) {
     return { allowed: true };
   }
 
-  const count = await getPersonalConnectionCount(db, userId);
-  if (count >= limits.connections) {
+  // Regular connector. Within the effective pool it's free; beyond the pool it
+  // requires connection-add-on headroom (same $5 credit as an add-on-required
+  // connector). The client offers "add-on or upgrade" (web) / "upgrade" (App
+  // Store); the server is platform-agnostic and returns addon_required.
+  //
+  // During an active 30-day trial the effective pool is unlimited (∞) so every
+  // regular connection is allowed without any add-on credit. The trial only
+  // unlocks connections — twistCapacity and syncHistoryDays are unchanged.
+  const effectivePool = trialActive ? Infinity : limits.connections;
+  if (effectivePool === Infinity) {
+    return { allowed: true };
+  }
+  // getBillableConnectionAddonCount counts CURRENTLY-enabled connections; the
+  // one under test is not yet enabled, so adding it pushes regular by 1 when it
+  // is beyond the pool. Recompute with the pending regular connection included:
+  const regularNow = await getPersonalConnectionCount(db, userId);
+  const pendingBillable =
+    Math.max(0, regularNow + 1 - effectivePool) +
+    (await getPersonalPremiumConnectionCount(db, userId));
+  const purchased = await getPersonalPremiumAddons(db, userId);
+  if (pendingBillable > purchased) {
     return {
       allowed: false,
       error: new PlanLimitError({
         limitType: "connection",
+        reason: "addon_required",
         plan,
-        currentCount: count,
-        limit: limits.connections,
+        currentCount: regularNow,
+        limit: effectivePool,
         isTeam: false,
         isAdmin: false,
         teamId: null,
       }),
     };
   }
-
   return { allowed: true };
 }
 
@@ -652,7 +829,7 @@ export async function checkChannelConnectionLimit(
  * purchased add-on credits — the number of enabled connection add-ons may not
  * exceed `team_subscription.premium_connection_addons`.
  */
-async function getTeamPremiumConnectionCount(
+export async function getTeamPremiumConnectionCount(
   db: Kysely<DB>,
   teamId: string
 ): Promise<number> {
@@ -678,77 +855,78 @@ async function getTeamPremiumConnectionCount(
 }
 
 /**
- * Check if adding a non-source twist is allowed. When `teamId` is provided
- * the twist counts against that team's quota; otherwise it counts against
- * the user's personal quota.
+ * Weighted twist-capacity check. Allowed when the scope's installed twist
+ * weight plus the candidate's weight is within capacity. Capacity = plan base
+ * (Free 1 · Pro 10 · Team 10 per 50-block) + 20 × purchased twist-add-on blocks.
+ * Over capacity returns reason "twist_addon_required" (buy a block or upgrade).
  */
-export async function checkTwistLimit(
+export async function checkTwistCapacity(
   db: Kysely<DB>,
   userId: string,
-  teamId?: string | null
+  teamId: string | null,
+  candidateWeight: number
 ): Promise<{ allowed: true } | { allowed: false; error: PlanLimitError }> {
   if (teamId) {
     const teamSub = await db
       .selectFrom("team_subscription")
-      .select(["plan", "status"])
+      .select(["plan", "status", "connection_group_quantity", "twist_addon_count"])
       .where("team_id", "=", teamId)
       .executeTakeFirst();
-
-    const teamPlan =
+    const rawTeamPlan = (teamSub?.plan as string) ?? "free";
+    const plan: PlanKey =
       teamSub && teamSub.status === "active"
-        ? (teamSub.plan as "free" | "core" | "pro" | "team")
+        ? ((rawTeamPlan === "core" ? "free" : rawTeamPlan) as PlanKey)
         : "free";
-
-    // Paid team plans have unlimited twists
-    if (teamPlan !== "free") return { allowed: true };
-
-    const count = await getTeamTwistCount(db, teamId);
-    const admin = await isTeamAdmin(db, userId, teamId);
+    const blocks = teamSub?.connection_group_quantity ?? 1;
+    const addons = teamSub?.twist_addon_count ?? 0;
+    const capacity =
+      plan === "free"
+        ? 0
+        : PLAN_LIMITS.team.twistCapacity * blocks + 20 * addons;
+    const used = await getTeamTwistWeightSum(db, teamId);
+    if (used + candidateWeight <= capacity) return { allowed: true };
     return {
       allowed: false,
       error: new PlanLimitError({
         limitType: "twist",
-        plan: teamPlan,
-        currentCount: count,
-        limit: 0,
+        reason: "twist_addon_required",
+        plan,
+        currentCount: used,
+        limit: capacity,
         isTeam: true,
-        isAdmin: admin,
+        isAdmin: false,
         teamId,
+        candidateWeight,
       }),
     };
   }
 
   const plan = await getPersonalPlan(db, userId);
-  const limits = PLAN_LIMITS[plan];
-
-  if (limits.twists === Infinity) {
-    return { allowed: true };
-  }
-
-  const count = await getPersonalTwistCount(db, userId);
-  if (count >= limits.twists) {
-    return {
-      allowed: false,
-      error: new PlanLimitError({
-        limitType: "twist",
-        plan,
-        currentCount: count,
-        limit: limits.twists,
-        isTeam: false,
-        isAdmin: false,
-        teamId: null,
-      }),
-    };
-  }
-
-  return { allowed: true };
+  const addons = await getPersonalTwistAddonCount(db, userId);
+  const capacity = PLAN_LIMITS[plan].twistCapacity + 20 * addons;
+  const used = await getPersonalTwistWeightSum(db, userId);
+  if (used + candidateWeight <= capacity) return { allowed: true };
+  return {
+    allowed: false,
+    error: new PlanLimitError({
+      limitType: "twist",
+      reason: "twist_addon_required",
+      plan,
+      currentCount: used,
+      limit: capacity,
+      isTeam: false,
+      isAdmin: false,
+      teamId: null,
+      candidateWeight,
+    }),
+  };
 }
 
 /**
  * Connection add-on usage for a personal or team scope.
  *
- * - `allowed`: whether the scope's plan can have connection add-ons (true on
- *   any paid plan; false on Free).
+ * - `allowed`: always true — add-ons are available on every plan, including
+ *   Free. Retained for backwards compatibility with older clients.
  * - `count`: connection add-ons currently enabled.
  * - `purchased`: add-on credits purchased (`premium_connection_addons`).
  *
@@ -762,11 +940,15 @@ export type PremiumUsage = {
 
 async function personalPremiumUsage(
   db: Kysely<DB>,
-  userId: string,
-  plan: PlanKey
+  userId: string
 ): Promise<PremiumUsage> {
-  const allowed = PLAN_LIMITS[plan].addonsAllowed;
-  const count = await getPersonalPremiumConnectionCount(db, userId);
+  // Add-ons are available on every plan now; `allowed` is retained in the
+  // payload only for backwards compatibility with older clients.
+  // `count` is the BILLABLE quantity (overPool regulars + premium) so the
+  // client's "spare credit" check (count >= purchased) is consistent with the
+  // enable gate in checkChannelConnectionLimit.
+  const allowed = true;
+  const count = await getBillableConnectionAddonCount(db, { userId });
   const purchased = await getPersonalPremiumAddons(db, userId);
   return { allowed, count, purchased };
 }
@@ -789,6 +971,7 @@ async function getTeamConnectionCounts(
     .where("pt.team_id", "in", teamIds)
     .where("pt.archived_at", "is", null)
     .where("tw.is_source", "=", true)
+    .where("tw.premium", "=", false)
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("channel as sc")
@@ -837,15 +1020,16 @@ async function getTeamPremiumConnectionCounts(
  * Shape a team's add-on usage payload from pre-fetched counts (no DB access),
  * mirroring {@link personalPremiumUsage}, so getUsage can resolve every team
  * from batched aggregates instead of per-team queries.
+ *
+ * `billableCount` is the BILLABLE quantity (overPool regulars + premium) so the
+ * client's "spare credit" check (count >= purchased) matches the enable gate.
  */
-function shapeTeamPremiumUsage(
-  plan: PlanKey,
-  premiumCount: number,
-  purchased: number
-): PremiumUsage {
+function shapeTeamPremiumUsage(billableCount: number, purchased: number): PremiumUsage {
   return {
-    allowed: PLAN_LIMITS[plan].addonsAllowed,
-    count: premiumCount,
+    // Add-ons are available on every plan now; `allowed` is retained in the
+    // payload only for backwards compatibility with older clients.
+    allowed: true,
+    count: billableCount,
     purchased,
   };
 }
@@ -856,14 +1040,16 @@ function shapeTeamPremiumUsage(
 export async function getUsage(
   db: Kysely<DB>,
   userId: string,
-  env?: Bindings
+  _env?: Bindings
 ) {
-  const plan = await getPersonalPlan(db, userId);
+  const { plan, trialActive } = await getPersonalConnectionContext(db, userId);
   const limits = PLAN_LIMITS[plan];
 
   const connectionCount = await getPersonalConnectionCount(db, userId);
-  const twistCount = await getPersonalTwistCount(db, userId);
-  const premium = await personalPremiumUsage(db, userId, plan);
+  const twistWeightSum = await getPersonalTwistWeightSum(db, userId);
+  const twistAddonCount = await getPersonalTwistAddonCount(db, userId);
+  const twistCapacity = limits.twistCapacity + 20 * twistAddonCount;
+  const premium = await personalPremiumUsage(db, userId);
 
   // Get team memberships with connection counts. `premium_connection_addons`
   // is pulled in via the existing subscription join so the per-team add-on
@@ -884,14 +1070,15 @@ export async function getUsage(
     .execute();
 
   // Resolve every team's connection/add-on counts in batched grouped queries
-  // rather than two queries per team. The add-on aggregate is only needed when
-  // at least one team is on a plan that can have add-ons (i.e. a paid plan).
+  // rather than two queries per team. The add-on aggregate is fetched whenever
+  // the user has any team, since add-ons are available on every plan.
   const teamIds = teamMemberships.map((team) => String(team.team_id));
-  const teamPlanOf = (team: (typeof teamMemberships)[number]): PlanKey =>
-    (team.team_plan as PlanKey | null | undefined) ?? "free";
-  const anyPremiumTeam = teamMemberships.some(
-    (team) => PLAN_LIMITS[teamPlanOf(team)].addonsAllowed
-  );
+  // Map legacy 'core' DB value to 'free' at the read boundary.
+  const teamPlanOf = (team: (typeof teamMemberships)[number]): PlanKey => {
+    const raw = (team.team_plan as string | null | undefined) ?? "free";
+    return (raw === "core" ? "free" : raw) as PlanKey;
+  };
+  const anyPremiumTeam = teamIds.length > 0;
   const [teamConnectionCounts, teamPremiumCounts] = await Promise.all([
     getTeamConnectionCounts(db, teamIds),
     anyPremiumTeam
@@ -908,23 +1095,32 @@ export async function getUsage(
     // and Save would 403 with plan_limit_exceeded.
     const teamPlan = teamPlanOf(team);
     const teamConnectionLimit =
-      teamPlan === "pro" || teamPlan === "core"
+      teamPlan === "pro"
         ? null
         : teamPlan === "team"
           ? team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP
           : 0;
-    const teamPremium = shapeTeamPremiumUsage(
-      teamPlan,
-      teamPremiumCounts.get(teamId) ?? 0,
-      team.premium_connection_addons ?? 0
-    );
+
+    // Compute billable count for the team: overPool regulars + premium connections.
+    // Mirrors getBillableConnectionAddonCount but uses the pre-fetched batched counts.
+    const teamRegCount = teamConnectionCounts.get(teamId) ?? 0;
+    const teamPremCount = teamPremiumCounts.get(teamId) ?? 0;
+    const teamPool =
+      teamPlan === "pro"
+        ? Infinity
+        : teamPlan === "team"
+          ? (team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP)
+          : 0; // free teams reject all connections, so regular count is ~0
+    const teamBillableCount =
+      (teamPool === Infinity ? 0 : Math.max(0, teamRegCount - teamPool)) + teamPremCount;
+    const teamPremium = shapeTeamPremiumUsage(teamBillableCount, team.premium_connection_addons ?? 0);
 
     return {
       id: teamId,
       name: team.team_name,
       plan: teamPlan,
       connections: {
-        count: teamConnectionCounts.get(teamId) ?? 0,
+        count: teamRegCount,
         limit: teamConnectionLimit,
       },
       premium: teamPremium,
@@ -932,31 +1128,21 @@ export async function getUsage(
     };
   });
 
-  // Get AI usage for free plan users
-  let ai = undefined;
-  if (plan === "free" && env) {
-    const aiUsage = await UserAiUsage.Get(env, userId).getUsage();
-    ai = {
-      note_processing: {
-        count: aiUsage.note_processing ?? 0,
-        limit: FREE_AI_LIMITS.note_processing,
-      },
-    };
-  }
-
   return {
     personal: {
       connections: {
         count: connectionCount,
-        limit: limits.connections === Infinity ? null : limits.connections,
+        // Report null (unlimited) when the user has an active 30-day trial OR
+        // is on a plan with an inherently unlimited connection pool (Pro/Team).
+        limit: trialActive || limits.connections === Infinity ? null : limits.connections,
       },
       twists: {
-        count: twistCount,
-        limit: limits.twists === Infinity ? null : limits.twists,
+        count: twistWeightSum,
+        limit: twistCapacity,
       },
       premium,
+      twistAddonCount,
       syncHistoryDays: limits.syncHistoryDays,
-      ...(ai ? { ai } : {}),
     },
     teams,
   };

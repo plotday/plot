@@ -72,12 +72,12 @@ class ResourceUsage extends Equatable {
 
 /// Connection add-on usage for a scope, mirroring the backend's add-on model.
 ///
-/// An "connection add-on" (LinkedIn / Instagram / WhatsApp) costs $5/mo and can
-/// be enabled on any paid plan. It requires a purchased add-on credit AND
-/// consumes a regular connection slot like any other connection.
+/// An "connection add-on" (LinkedIn / Instagram / WhatsApp) costs $5/mo and is
+/// available on every plan. It requires a purchased add-on credit and does NOT
+/// consume a regular connection slot — it is billed and counted separately.
 ///
-/// - [allowed]: whether this scope's plan can have connection add-ons (true on
-///   any paid plan; false on Free).
+/// - [allowed]: whether add-ons are available on this scope's plan. Kept for
+///   back-compat; always true on current server responses.
 /// - [count]: connection add-ons currently enabled in this scope.
 /// - [purchased]: add-on credits purchased ($5/mo each).
 class PremiumUsage extends Equatable {
@@ -101,7 +101,9 @@ class PremiumUsage extends Equatable {
     );
   }
 
-  /// Add-on connectors can't be enabled on this plan at all (Free).
+  /// Vestigial — [allowed] is always true on current server responses
+  /// (add-ons are available on every plan). Kept for back-compat with callers
+  /// that check [isBlocked] before offering the add-on purchase flow.
   bool get isBlocked => !allowed;
 
   /// On a paid plan, but every purchased add-on credit is already in use — the
@@ -118,13 +120,18 @@ class PersonalUsage extends Equatable {
   final ResourceUsage twists;
 
   /// Premium-connection policy + usage. Null when the server predates the
-  /// premium-connections rollout — treat as blocked for safety.
+  /// premium-connections rollout — treat as needing a purchase for safety.
   final PremiumUsage? premium;
+
+  /// Number of purchased twist add-on blocks (each adds +20 twist capacity).
+  /// Defaults to 0 when the server predates the twist add-on rollout.
+  final int twistAddonCount;
 
   const PersonalUsage({
     required this.connections,
     required this.twists,
     this.premium,
+    this.twistAddonCount = 0,
   });
 
   factory PersonalUsage.fromJson(Map<String, dynamic> json) {
@@ -136,11 +143,12 @@ class PersonalUsage extends Equatable {
       premium: json['premium'] != null
           ? PremiumUsage.fromJson(json['premium'] as Map<String, dynamic>)
           : null,
+      twistAddonCount: json['twistAddonCount'] as int? ?? 0,
     );
   }
 
   @override
-  List<Object?> get props => [connections, twists, premium];
+  List<Object?> get props => [connections, twists, premium, twistAddonCount];
 }
 
 /// Usage data for a team the current user belongs to
@@ -265,6 +273,14 @@ class SubscriptionInfo extends Equatable {
   List<Object?> get props => [plan, effectivePlan, effectiveSource, origin, status];
 }
 
+/// Result of provisioning one more connection add-on credit.
+class AddonPurchase {
+  const AddonPurchase({required this.ok, this.addons, this.checkoutUrl});
+  final bool ok;
+  final int? addons;
+  final String? checkoutUrl;
+}
+
 /// API methods for subscription and usage
 class UpgradeApi {
   /// Fetch current usage counts and limits for the authenticated user
@@ -285,11 +301,48 @@ class UpgradeApi {
     return response['url'] as String;
   }
 
-  /// Fetch configured AI provider names (e.g. ['openai', 'anthropic'])
-  static Future<List<String>> getAiKeys() async {
-    final response = await api.get<List<dynamic>>('/ai-keys');
-    return response
-        .map((item) => (item as Map<String, dynamic>)['provider'] as String)
-        .toList();
+  /// Purchase one more connection add-on credit.
+  ///
+  /// Personal (non-App-Store) and team purchases go through this endpoint.
+  /// Returns [AddonPurchase.ok] true when the add-on was provisioned
+  /// immediately (Stripe customer with a payment method on file), or
+  /// [AddonPurchase.checkoutUrl] when the server needs a new Stripe Checkout
+  /// session to collect payment.
+  static Future<AddonPurchase> purchaseAddon({String? teamId}) async {
+    final response = await api.post<Map<String, dynamic>>(
+      '/upgrade/addons/purchase',
+      body: {'teamId': ?teamId},
+    );
+    return AddonPurchase(
+      ok: response['ok'] == true,
+      addons: response['addons'] as int?,
+      checkoutUrl: response['checkout_url'] as String?,
+    );
   }
+
+  /// Purchase one more twist add-on credit.
+  ///
+  /// Personal (non-App-Store) and team purchases go through this endpoint.
+  /// Returns [AddonPurchase.ok] true when the add-on was provisioned
+  /// immediately (Stripe customer with a payment method on file), or
+  /// [AddonPurchase.checkoutUrl] when the server needs a new Stripe Checkout
+  /// session to collect payment.
+  ///
+  /// [candidateWeight] is the automation-capacity weight of the twist being
+  /// installed, forwarded to the server so it can select the right tier.
+  static Future<AddonPurchase> purchaseTwistAddon({
+    String? teamId,
+    int? candidateWeight,
+  }) async {
+    final response = await api.post<Map<String, dynamic>>(
+      '/upgrade/twist-addons/purchase',
+      body: {'teamId': ?teamId, 'candidateWeight': ?candidateWeight},
+    );
+    return AddonPurchase(
+      ok: response['ok'] == true,
+      addons: response['twist_addons'] as int?,
+      checkoutUrl: response['checkout_url'] as String?,
+    );
+  }
+
 }

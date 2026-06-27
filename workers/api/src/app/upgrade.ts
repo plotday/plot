@@ -11,24 +11,32 @@ import {
   isCustomerDeletedError,
 } from "../stripe/utils";
 import {
+  customerHasPaymentMethod,
+  provisionAddonCredit,
+  createAddonCheckoutSession,
+  setTwistAddonQuantity,
+  TWIST_ADDON,
+} from "../stripe/addons";
+import {
   applyAppleAddonTransactionToUser,
   applyAppleTransactionToUser,
+  applyAppleTwistAddonTransactionToUser,
   isAddonProduct,
+  isTwistAddonProduct,
   verifyTransaction,
 } from "../apple/iap";
 import { createLogger, type Logger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
-import { getUsage } from "../utils/limits";
+import { getUsage, twistAddonBlocksNeeded } from "../utils/limits";
 import { createTeamSetupTask } from "./team";
 import { notifySync } from "./sync/notify";
 import type { DB } from "../db-types";
 
 const upgrade = new Hono<{ Bindings: Bindings }>();
 
-function planFromLookupKey(key: string): "core" | "pro" | "team" {
+function planFromLookupKey(key: string): "pro" | "team" {
   if (key.startsWith("team")) return "team";
-  if (key.startsWith("core")) return "core";
   return "pro";
 }
 
@@ -597,6 +605,13 @@ upgrade.post("/upgrade/portal", async (c) => {
 // line item on the same subscription; Stripe prorates the quantity change.
 // iOS App Store plans manage add-ons via StoreKit instead (see /upgrade/iap/
 // verify) and get `manage_in_app` here.
+//
+// DEPRECATED (pricing model change): add-ons are now usage-synced — provisioned
+// per-connection via POST /upgrade/addons/purchase and reconciled down on
+// disable, rather than set as an absolute quantity. No current client calls
+// this absolute-quantity endpoint (the web upgrade page no longer has a stepper;
+// the Flutter app uses /addons/purchase). Kept for backwards compatibility; safe
+// to retire in a follow-up once we're confident no old client hits it.
 upgrade.post("/upgrade/addons", async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
@@ -801,6 +816,26 @@ upgrade.post("/upgrade/iap/verify", async (c) => {
     });
   }
 
+  // Twist add-on subscription: update only the twist add-on count; no plan change
+  // and no Stripe plan-subscription reconciliation.
+  if (isTwistAddonProduct(txn.productId)) {
+    const twistAddonResult = await applyAppleTwistAddonTransactionToUser(
+      c.var.db,
+      user.id,
+      txn
+    );
+    c.var.tracker.capture("[User] Subscription Updated", {
+      origin: "app_store",
+      apple_product_id: txn.productId,
+      twist_addon_count: twistAddonResult.twistAddons,
+    });
+    return c.json({
+      twist_addons: twistAddonResult.twistAddons,
+      expires_at: twistAddonResult.expiresAt?.toISOString() ?? null,
+      origin: "app_store",
+    });
+  }
+
   const result = await applyAppleTransactionToUser(c.var.db, user.id, txn);
 
   // Reconcile: cancel the now-superseded Stripe subscription (the Core trial
@@ -828,6 +863,342 @@ upgrade.post("/upgrade/iap/verify", async (c) => {
     expires_at: result.expiresAt?.toISOString() ?? null,
     origin: "app_store",
   });
+});
+
+/**
+ * Core purchase logic for one add-on credit. Extracted for unit testability.
+ *
+ * If the customer has a payment method on file, charges off-session via
+ * `provisionAddonCredit` and immediately reflects the new quantity + sub ID in
+ * the DB, then returns `{ ok: true, addons }`. Otherwise creates a Stripe
+ * Checkout session to capture a card and returns `{ ok: false, checkout_url }`.
+ */
+export async function purchaseAddonCreditForScope(args: {
+  stripe: Stripe;
+  db: Kysely<DB>;
+  customerId: string;
+  addonSubscriptionId: string | null;
+  scopeMetadata: Record<string, string>;
+  siteRoot: string;
+  table: "user_subscription" | "team_subscription";
+  idVal: string;
+  captureException: (e: unknown) => void;
+}): Promise<{ ok: true; addons: number } | { ok: false; checkout_url: string }> {
+  const {
+    stripe,
+    db,
+    customerId,
+    addonSubscriptionId,
+    scopeMetadata,
+    siteRoot,
+    table,
+    idVal,
+    captureException,
+  } = args;
+
+  if (await customerHasPaymentMethod(stripe, customerId)) {
+    const { subscriptionId, quantity } = await provisionAddonCredit({
+      stripe,
+      customerId,
+      addonSubscriptionId,
+      scopeMetadata,
+    });
+    // Reflect immediately; the webhook re-syncs the same values.
+    // Wrap in try/catch: a write failure after a successful charge must NOT
+    // surface as an error to the caller — the webhook will reconcile the DB.
+    try {
+      if (table === "team_subscription") {
+        await db
+          .updateTable("team_subscription")
+          .set({
+            premium_connection_addons: quantity,
+            stripe_addon_subscription_id: subscriptionId,
+          })
+          .where("team_id", "=", idVal)
+          .execute();
+      } else {
+        await db
+          .updateTable("user_subscription")
+          .set({
+            premium_connection_addons: quantity,
+            stripe_addon_subscription_id: subscriptionId,
+          })
+          .where("user_id", "=", idVal)
+          .execute();
+      }
+    } catch (e) {
+      captureException(e);
+    }
+    return { ok: true, addons: quantity };
+  }
+
+  const checkout_url = await createAddonCheckoutSession({
+    stripe,
+    customerId,
+    siteRoot,
+    scopeMetadata,
+  });
+  return { ok: false, checkout_url };
+}
+
+// POST /upgrade/addons/purchase - Provision one add-on connection credit.
+// If the customer has a card on file, charges off-session immediately and
+// returns { ok: true, addons }. Otherwise returns { ok: false, checkout_url }
+// pointing to a Stripe Checkout session that captures a card and creates the
+// add-on subscription in one step.
+upgrade.post("/upgrade/addons/purchase", async (c) => {
+  const user = c.var.user;
+  const body = await c.req.json<{ teamId?: string }>().catch(
+    () => ({} as { teamId?: string })
+  );
+  const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+  const siteRoot = c.env.SITE_ROOT || "https://plot.day";
+
+  const isTeam = !!body.teamId;
+
+  if (isTeam) {
+    const member = await c.var.db
+      .selectFrom("team_user")
+      .select("role")
+      .where("team_id", "=", body.teamId!)
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+    if (!member || member.role !== "admin") {
+      return c.json({ error: "Must be team admin to purchase add-ons" }, 403);
+    }
+  }
+
+  const row = isTeam
+    ? await c.var.db
+        .selectFrom("team_subscription")
+        .select(["stripe_customer_id", "stripe_addon_subscription_id"])
+        .where("team_id", "=", body.teamId!)
+        .executeTakeFirst()
+    : await c.var.db
+        .selectFrom("user_subscription")
+        .select(["stripe_customer_id", "stripe_addon_subscription_id"])
+        .where("user_id", "=", user.id)
+        .executeTakeFirst();
+
+  if (!row?.stripe_customer_id) {
+    return c.json({ error: "No billing account found" }, 400);
+  }
+
+  const scopeMetadata: Record<string, string> = isTeam
+    ? { team_id: body.teamId! }
+    : { user_id: user.id };
+
+  try {
+    return c.json(
+      await purchaseAddonCreditForScope({
+        stripe,
+        db: c.var.db,
+        customerId: row.stripe_customer_id,
+        addonSubscriptionId: row.stripe_addon_subscription_id ?? null,
+        scopeMetadata,
+        siteRoot,
+        table: isTeam ? "team_subscription" : "user_subscription",
+        idVal: isTeam ? body.teamId! : user.id,
+        captureException: (e) => c.var.tracker.captureException(e as Error),
+      })
+    );
+  } catch (error) {
+    c.var.tracker.captureException(error as Error);
+    return c.json({ error: "Failed to purchase add-on" }, 500);
+  }
+});
+
+/**
+ * Core purchase logic for a twist-add-on block set. Extracted for unit testability.
+ *
+ * Computes the target block count (`twistAddonBlocksNeeded`) for the scope,
+ * including any `pendingWeight` for a blocked candidate twist not yet installed.
+ * If the scope already has enough purchased blocks, returns `{ ok: true,
+ * twist_addons: currentTwistAddonCount }` without touching Stripe (idempotent).
+ *
+ * If the customer has a payment method on file, sets the Stripe twist-add-on
+ * subscription to the target quantity off-session and immediately reflects the
+ * new count + sub ID in the DB, then returns `{ ok: true, twist_addons }`.
+ * Otherwise creates a Stripe Checkout session to capture a card and returns
+ * `{ ok: false, checkout_url }`.
+ *
+ * `pendingWeight` (default 0): the capacity_weight of the blocked candidate
+ * twist. Pass the `candidate_weight` from the `twist_addon_required` 403 error
+ * so the target accounts for the twist that is waiting to be enabled.
+ */
+export async function purchaseTwistAddonBlocksForScope(args: {
+  stripe: Stripe;
+  db: Kysely<DB>;
+  customerId: string;
+  twistAddonSubscriptionId: string | null;
+  currentTwistAddonCount: number;
+  scope: { userId: string } | { teamId: string };
+  siteRoot: string;
+  table: "user_subscription" | "team_subscription";
+  idVal: string;
+  captureException: (e: unknown) => void;
+  pendingWeight?: number;
+}): Promise<{ ok: true; twist_addons: number } | { ok: false; checkout_url: string }> {
+  const {
+    stripe,
+    db,
+    customerId,
+    twistAddonSubscriptionId,
+    currentTwistAddonCount,
+    scope,
+    siteRoot,
+    table,
+    idVal,
+    captureException,
+    pendingWeight = 0,
+  } = args;
+
+  const target = await twistAddonBlocksNeeded(db, scope, pendingWeight);
+
+  // Already have enough headroom — idempotent, no charge.
+  if (target <= currentTwistAddonCount) {
+    return { ok: true, twist_addons: currentTwistAddonCount };
+  }
+
+  const scopeMetadata: Record<string, string> =
+    "userId" in scope ? { user_id: scope.userId } : { team_id: scope.teamId };
+
+  if (await customerHasPaymentMethod(stripe, customerId)) {
+    const { subscriptionId, quantity } = await setTwistAddonQuantity({
+      stripe,
+      customerId,
+      twistAddonSubscriptionId,
+      scopeMetadata,
+      quantity: target,
+    });
+    // Reflect immediately; the webhook re-syncs the same values.
+    // Wrap in try/catch: a write failure after a successful charge must NOT
+    // surface as an error to the caller — the webhook will reconcile the DB.
+    try {
+      if (table === "team_subscription") {
+        await db
+          .updateTable("team_subscription")
+          .set({
+            twist_addon_count: quantity,
+            stripe_twist_addon_subscription_id: subscriptionId,
+          })
+          .where("team_id", "=", idVal)
+          .execute();
+      } else {
+        await db
+          .updateTable("user_subscription")
+          .set({
+            twist_addon_count: quantity,
+            stripe_twist_addon_subscription_id: subscriptionId,
+          })
+          .where("user_id", "=", idVal)
+          .execute();
+      }
+    } catch (e) {
+      captureException(e);
+    }
+    return { ok: true, twist_addons: quantity };
+  }
+
+  const checkout_url = await createAddonCheckoutSession({
+    kind: TWIST_ADDON,
+    stripe,
+    customerId,
+    siteRoot,
+    scopeMetadata,
+  });
+  return { ok: false, checkout_url };
+}
+
+// POST /upgrade/twist-addons/purchase - Purchase twist-add-on blocks.
+// Computes the target block count for the scope and, if the customer has a
+// card on file, charges off-session and returns { ok: true, twist_addons }.
+// Otherwise returns { ok: false, checkout_url } for a Stripe Checkout session.
+//
+// Optional body field `candidateWeight` (non-negative finite number, default
+// 0): the capacity_weight of the blocked candidate twist that triggered the
+// purchase flow. Echo the `candidate_weight` from the `twist_addon_required`
+// 403 error payload so the target block count includes the pending twist's
+// weight, not just the already-installed weight sum.
+upgrade.post("/upgrade/twist-addons/purchase", async (c) => {
+  const user = c.var.user;
+  const body = await c.req.json<{ teamId?: string; candidateWeight?: unknown }>().catch(
+    () => ({} as { teamId?: string; candidateWeight?: unknown })
+  );
+  // Validate candidateWeight: must be a non-negative finite number; default 0
+  // if absent, null, or invalid so existing callers without the field are unaffected.
+  const rawCandidateWeight = body.candidateWeight;
+  const candidateWeight =
+    typeof rawCandidateWeight === "number" &&
+    Number.isFinite(rawCandidateWeight) &&
+    rawCandidateWeight >= 0
+      ? rawCandidateWeight
+      : 0;
+  const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+  const siteRoot = c.env.SITE_ROOT || "https://plot.day";
+
+  const isTeam = !!body.teamId;
+
+  if (isTeam) {
+    const member = await c.var.db
+      .selectFrom("team_user")
+      .select("role")
+      .where("team_id", "=", body.teamId!)
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+    if (!member || member.role !== "admin") {
+      return c.json({ error: "Must be team admin to purchase add-ons" }, 403);
+    }
+  }
+
+  const row = isTeam
+    ? await c.var.db
+        .selectFrom("team_subscription")
+        .select([
+          "stripe_customer_id",
+          "stripe_twist_addon_subscription_id",
+          "twist_addon_count",
+        ])
+        .where("team_id", "=", body.teamId!)
+        .executeTakeFirst()
+    : await c.var.db
+        .selectFrom("user_subscription")
+        .select([
+          "stripe_customer_id",
+          "stripe_twist_addon_subscription_id",
+          "twist_addon_count",
+        ])
+        .where("user_id", "=", user.id)
+        .executeTakeFirst();
+
+  if (!row?.stripe_customer_id) {
+    return c.json({ error: "No billing account found" }, 400);
+  }
+
+  const scope: { userId: string } | { teamId: string } = isTeam
+    ? { teamId: body.teamId! }
+    : { userId: user.id };
+
+  try {
+    return c.json(
+      await purchaseTwistAddonBlocksForScope({
+        stripe,
+        db: c.var.db,
+        customerId: row.stripe_customer_id,
+        twistAddonSubscriptionId: row.stripe_twist_addon_subscription_id ?? null,
+        currentTwistAddonCount: row.twist_addon_count ?? 0,
+        scope,
+        siteRoot,
+        table: isTeam ? "team_subscription" : "user_subscription",
+        idVal: isTeam ? body.teamId! : user.id,
+        captureException: (e) => c.var.tracker.captureException(e as Error),
+        pendingWeight: candidateWeight,
+      })
+    );
+  } catch (error) {
+    c.var.tracker.captureException(error as Error);
+    return c.json({ error: "Failed to purchase twist add-on" }, 500);
+  }
 });
 
 export default upgrade;

@@ -28,17 +28,22 @@
 
 import { randomUUID } from "node:crypto";
 
+import { Hono } from "hono";
 import { sql, type Kysely } from "kysely";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type Stripe from "stripe";
 
 import { createDb, type DB } from "../db";
 import type { Bindings } from "../env";
-import {
+import upgrade, {
   ADDON_PRORATION_BEHAVIOR,
   buildAddonItemUpdate,
   hasActivePaidStripeSubscription,
   cancelStripeSubscriptionBestEffort,
+  purchaseAddonCreditForScope,
+  purchaseTwistAddonBlocksForScope,
 } from "./upgrade";
+import { computeTwistBlocksNeeded } from "../utils/limits";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -289,5 +294,714 @@ describe("add-on quantity changes", () => {
 
   it("throws if asked to add a new add-on item without a price", () => {
     expect(() => buildAddonItemUpdate(null, 1, null)).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// purchaseAddonCreditForScope — DB + stub Stripe tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal Stripe stub for purchaseAddonCreditForScope tests.
+ * `hasCard` controls whether the customer has a default payment method.
+ */
+function makeStripeAddonMock(hasCard: boolean) {
+  return {
+    customers: {
+      retrieve: vi.fn().mockResolvedValue(
+        hasCard
+          ? { deleted: false, invoice_settings: { default_payment_method: "pm_card" } }
+          : { deleted: false, invoice_settings: {} }
+      ),
+    },
+    paymentMethods: {
+      list: vi.fn().mockResolvedValue({ data: [] }),
+    },
+    prices: {
+      list: vi.fn().mockResolvedValue({ data: [{ id: "price_addon_monthly" }] }),
+    },
+    subscriptions: {
+      create: vi.fn().mockResolvedValue({
+        id: "sub_new",
+        items: { data: [{ id: "si_1", quantity: 1 }] },
+      }),
+      retrieve: vi.fn(),
+      update: vi.fn(),
+    },
+    checkout: {
+      sessions: {
+        create: vi.fn().mockResolvedValue({ url: "https://checkout.stripe.com/pay/test" }),
+      },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// purchaseAddonCreditForScope — write-back atomicity (pure unit, no DB needed)
+// ---------------------------------------------------------------------------
+
+describe("purchaseAddonCreditForScope write-back atomicity", () => {
+  it("returns ok:true and calls captureException when write-back fails after a successful charge", async () => {
+    const stripe = makeStripeAddonMock(true) as unknown as Stripe;
+    const captureException = vi.fn();
+
+    // Minimal DB stub whose write path always rejects — simulates a transient
+    // DB failure after the Stripe charge has already been processed.
+    const failingDb = {
+      updateTable: () => ({
+        set: () => ({
+          where: () => ({
+            execute: () => Promise.reject(new Error("simulated write failure")),
+          }),
+        }),
+      }),
+    } as unknown as Kysely<DB>;
+
+    const result = await purchaseAddonCreditForScope({
+      stripe,
+      db: failingDb,
+      customerId: "cus_write_fail",
+      addonSubscriptionId: null,
+      scopeMetadata: { user_id: "user_write_fail" },
+      siteRoot: "https://plot.day",
+      table: "user_subscription",
+      idVal: "user_write_fail",
+      captureException,
+    });
+
+    // The charge succeeded; must report ok despite the write failure.
+    expect(result).toEqual({ ok: true, addons: 1 });
+    // The write failure must be captured so it surfaces in error tracking.
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe.skipIf(!DATABASE_URL)(
+  "purchaseAddonCreditForScope",
+  () => {
+    it("purchase with a card on file provisions a credit (ok:true)", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const stripe = makeStripeAddonMock(true) as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof purchaseAddonCreditForScope>> | undefined;
+      let updatedRow:
+        | { stripe_addon_subscription_id: string | null; premium_connection_addons: number }
+        | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "core",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_test_purchase",
+              stripe_subscription_id: "sub_plan_purchase",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 60 * 60 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          // Keep replica mode so the helper's UPDATE doesn't re-trigger FK
+          // checks on the synthetic userId (no matching row in the user table).
+          result = await purchaseAddonCreditForScope({
+            stripe,
+            db: trx,
+            customerId: "cus_test_purchase",
+            addonSubscriptionId: null,
+            scopeMetadata: { user_id: userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+          });
+
+          updatedRow = await trx
+            .selectFrom("user_subscription")
+            .select(["stripe_addon_subscription_id", "premium_connection_addons"])
+            .where("user_id", "=", userId)
+            .executeTakeFirst();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      expect(result).toEqual({ ok: true, addons: 1 });
+      expect(updatedRow?.stripe_addon_subscription_id).toBe("sub_new");
+    });
+
+    it("purchase with no card returns a checkout_url (ok:false)", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const stripe = makeStripeAddonMock(false) as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof purchaseAddonCreditForScope>> | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "core",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_test_nopay",
+              stripe_subscription_id: "sub_plan_nopay",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 60 * 60 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          // Keep replica mode so the helper's Stripe call (no DB writes on
+          // no-card path) doesn't trigger FK checks on the synthetic userId.
+          result = await purchaseAddonCreditForScope({
+            stripe,
+            db: trx,
+            customerId: "cus_test_nopay",
+            addonSubscriptionId: null,
+            scopeMetadata: { user_id: userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+          });
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      expect(result).toEqual({ ok: false, checkout_url: "https://checkout.stripe.com/pay/test" });
+      expect((stripe as any).subscriptions.create).not.toHaveBeenCalled();
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// computeTwistBlocksNeeded — pure math tests (no DB needed)
+// ---------------------------------------------------------------------------
+
+describe("computeTwistBlocksNeeded", () => {
+  it("returns 0 when weightSum equals base (no overflow)", () => {
+    expect(computeTwistBlocksNeeded(1, 1)).toBe(0);
+  });
+
+  it("returns 0 when weightSum is less than base", () => {
+    expect(computeTwistBlocksNeeded(0, 1)).toBe(0);
+  });
+
+  it("returns 1 when weightSum exceeds base by exactly 20 (Free base=1, weightSum=21)", () => {
+    expect(computeTwistBlocksNeeded(21, 1)).toBe(1);
+  });
+
+  it("returns 2 when weightSum exceeds base by exactly 40 (Free base=1, weightSum=41)", () => {
+    expect(computeTwistBlocksNeeded(41, 1)).toBe(2);
+  });
+
+  it("rounds up: 1 block for any overflow 1–20 above base", () => {
+    // weightSum=2, base=1 → overflow=1 → ceil(1/20)=1
+    expect(computeTwistBlocksNeeded(2, 1)).toBe(1);
+  });
+
+  it("uses team base of 10*blocks — weightSum=1, base=10 → 0 blocks", () => {
+    expect(computeTwistBlocksNeeded(1, 10)).toBe(0);
+  });
+
+  it("needs 1 block when weightSum=11 and team base=10", () => {
+    // overflow=1, ceil(1/20)=1
+    expect(computeTwistBlocksNeeded(11, 10)).toBe(1);
+  });
+
+  // pendingWeight tests — ensures blocked candidate weight is factored in
+  it("pendingWeight: Free base=1, weightSum=1, pending=2 → 1 block (ceil((1+2-1)/20))", () => {
+    expect(computeTwistBlocksNeeded(1, 1, 2)).toBe(1);
+  });
+
+  it("pendingWeight: weightSum=0, base=1, pending=1 → 0 blocks (no overflow)", () => {
+    // (0 + 1 - 1) = 0 → ceil(0/20) = 0
+    expect(computeTwistBlocksNeeded(0, 1, 1)).toBe(0);
+  });
+
+  it("pendingWeight: weightSum=1, base=1, pending=20 → 1 block (ceil(20/20))", () => {
+    expect(computeTwistBlocksNeeded(1, 1, 20)).toBe(1);
+  });
+
+  it("pendingWeight: weightSum=21, base=1, pending=0 → 1 block (unchanged no-arg behavior)", () => {
+    expect(computeTwistBlocksNeeded(21, 1, 0)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// purchaseTwistAddonBlocksForScope — write-back atomicity (no DB needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal Stripe stub for purchaseTwistAddonBlocksForScope tests.
+ * `hasCard` controls whether the customer has a default payment method.
+ */
+function makeTwistStripeAddonMock(hasCard: boolean) {
+  return {
+    customers: {
+      retrieve: vi.fn().mockResolvedValue(
+        hasCard
+          ? { deleted: false, invoice_settings: { default_payment_method: "pm_card" } }
+          : { deleted: false, invoice_settings: {} }
+      ),
+    },
+    paymentMethods: {
+      list: vi.fn().mockResolvedValue({ data: [] }),
+    },
+    prices: {
+      list: vi.fn().mockResolvedValue({ data: [{ id: "price_twist_addon_monthly" }] }),
+    },
+    subscriptions: {
+      create: vi.fn().mockResolvedValue({
+        id: "sub_twist_new",
+        items: { data: [{ id: "si_t1", quantity: 1 }] },
+      }),
+      retrieve: vi.fn(),
+      update: vi.fn(),
+    },
+    checkout: {
+      sessions: {
+        create: vi.fn().mockResolvedValue({ url: "https://checkout.stripe.com/pay/twist_test" }),
+      },
+    },
+  };
+}
+
+describe("purchaseTwistAddonBlocksForScope write-back atomicity", () => {
+  it("returns ok:true and calls captureException when write-back fails after a successful charge", async () => {
+    const stripe = makeTwistStripeAddonMock(true) as unknown as Stripe;
+    const captureException = vi.fn();
+
+    // Chainable Kysely stub — every chaining method returns `self` so the deep
+    // .where().where()... calls in getPersonalTwistWeightSum are satisfied.
+    // The two terminal `executeTakeFirst()` calls return their respective stubs:
+    //   • user_subscription → plan=free (base=1)
+    //   • twist_instance join → weight=21 → target = ceil(20/20) = 1
+    function makeChainable(result: unknown): unknown {
+      const self: Record<string, unknown> = {};
+      const ret = () => makeChainable(result);
+      self.select = ret;
+      self.where = ret;
+      self.innerJoin = ret;
+      self.executeTakeFirst = () => Promise.resolve(result);
+      self.executeTakeFirstOrThrow = () => Promise.resolve(result);
+      return self;
+    }
+
+    const failingDb = {
+      selectFrom: (table: string) =>
+        table === "user_subscription"
+          ? makeChainable({ plan: "free", status: "active", twist_addon_count: null })
+          : makeChainable({ weight: "21" }),
+      updateTable: () => ({
+        set: () => ({
+          where: () => ({
+            execute: () => Promise.reject(new Error("simulated write failure")),
+          }),
+        }),
+      }),
+    } as unknown as Kysely<DB>;
+
+    const result = await purchaseTwistAddonBlocksForScope({
+      stripe,
+      db: failingDb,
+      customerId: "cus_twist_write_fail",
+      twistAddonSubscriptionId: null,
+      currentTwistAddonCount: 0,
+      scope: { userId: "user_twist_write_fail" },
+      siteRoot: "https://plot.day",
+      table: "user_subscription",
+      idVal: "user_twist_write_fail",
+      captureException,
+    });
+
+    // The charge succeeded; must report ok despite the write failure.
+    expect(result).toEqual({ ok: true, twist_addons: 1 });
+    // The write failure must be captured so it surfaces in error tracking.
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe.skipIf(!DATABASE_URL)(
+  "purchaseTwistAddonBlocksForScope",
+  () => {
+    it("already enough headroom — idempotent, no Stripe call", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const stripe = makeTwistStripeAddonMock(true) as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof purchaseTwistAddonBlocksForScope>> | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_twist_idem",
+              stripe_subscription_id: "sub_twist_idem",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+              // Already 5 blocks purchased — more than enough for a user with
+              // no installed non-draft twists (weightSum=0, target=0).
+              twist_addon_count: 5,
+            })
+            .execute();
+
+          result = await purchaseTwistAddonBlocksForScope({
+            stripe,
+            db: trx,
+            customerId: "cus_twist_idem",
+            twistAddonSubscriptionId: "sub_twist_existing",
+            currentTwistAddonCount: 5,
+            scope: { userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+          });
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      // No Stripe charge — already within capacity.
+      expect(result).toEqual({ ok: true, twist_addons: 5 });
+      expect((stripe as any).subscriptions.create).not.toHaveBeenCalled();
+      expect((stripe as any).subscriptions.update).not.toHaveBeenCalled();
+    });
+
+    it("purchase with a card on file sets twist quantity and writes twist_addon_count", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      // Has card; subscriptions.create returns sub_twist_new with quantity=1.
+      const stripe = makeTwistStripeAddonMock(true) as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof purchaseTwistAddonBlocksForScope>> | undefined;
+      let updatedRow:
+        | { stripe_twist_addon_subscription_id: string | null; twist_addon_count: number }
+        | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          // Seed a non-source, non-builtin twist with capacity_weight=21.
+          // Free plan base=1, so weightSum=21 → target=ceil(20/20)=1 block needed.
+          const twistRow = await sql<{ id: string }>`
+            INSERT INTO twist
+              (twist_package_id, environment, user_id, name, handle, version,
+               is_source, premium, capacity_weight)
+            VALUES (${randomUUID()}::uuid, 'personal', ${userId}::uuid,
+              'TestTwist', 'testtwist', '1.0.0', false, false, 21)
+            RETURNING id`.execute(trx);
+          const twistId = twistRow.rows[0].id;
+
+          // Seed an active (non-draft) personal twist_instance for that twist.
+          await sql`
+            INSERT INTO twist_instance (id, twist_id, owner_id, name, draft)
+            VALUES (${randomUUID()}::uuid, ${twistId}, ${userId}::uuid,
+              'TestTwist', false)`.execute(trx);
+
+          // Seed the user subscription (Free plan, no existing twist add-on blocks).
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_twist_card",
+              stripe_subscription_id: "sub_twist_plan",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            })
+            .execute();
+
+          // Keep replica mode so the helper's UPDATE doesn't re-trigger FK
+          // checks on the synthetic userId.
+          result = await purchaseTwistAddonBlocksForScope({
+            stripe,
+            db: trx,
+            customerId: "cus_twist_card",
+            twistAddonSubscriptionId: null,
+            currentTwistAddonCount: 0,
+            scope: { userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+          });
+
+          updatedRow = await trx
+            .selectFrom("user_subscription")
+            .select(["stripe_twist_addon_subscription_id", "twist_addon_count"])
+            .where("user_id", "=", userId)
+            .executeTakeFirst();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      // target=1 (ceil(20/20)); Stripe create returns sub_twist_new with quantity=1.
+      expect(result).toEqual({ ok: true, twist_addons: 1 });
+      expect(updatedRow?.stripe_twist_addon_subscription_id).toBe("sub_twist_new");
+      // Fix 1: verify twist_addon_count is written back correctly.
+      expect(updatedRow?.twist_addon_count).toBe(1);
+      // Fix 2: verify Stripe received the absolute target quantity (not +1 delta).
+      expect((stripe as any).subscriptions.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({ quantity: 1 }),
+          ]),
+        })
+      );
+    });
+
+    it("purchase with no card returns a checkout_url", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const stripe = makeTwistStripeAddonMock(false) as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof purchaseTwistAddonBlocksForScope>> | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          // Seed a non-source twist with capacity_weight=21 so target=1 (> 0 current).
+          const twistRow2 = await sql<{ id: string }>`
+            INSERT INTO twist
+              (twist_package_id, environment, user_id, name, handle, version,
+               is_source, premium, capacity_weight)
+            VALUES (${randomUUID()}::uuid, 'personal', ${userId}::uuid,
+              'TestTwist2', 'testtwist2', '1.0.0', false, false, 21)
+            RETURNING id`.execute(trx);
+          const twistId2 = twistRow2.rows[0].id;
+
+          await sql`
+            INSERT INTO twist_instance (id, twist_id, owner_id, name, draft)
+            VALUES (${randomUUID()}::uuid, ${twistId2}, ${userId}::uuid,
+              'TestTwist2', false)`.execute(trx);
+
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_twist_nocard",
+              stripe_subscription_id: "sub_twist_nocard_plan",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            })
+            .execute();
+
+          // target=1 (ceil(20/20)), currentTwistAddonCount=0 → triggers purchase.
+          // No card on file → checkout_url returned.
+          result = await purchaseTwistAddonBlocksForScope({
+            stripe,
+            db: trx,
+            customerId: "cus_twist_nocard",
+            twistAddonSubscriptionId: null,
+            currentTwistAddonCount: 0,
+            scope: { userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+          });
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      expect(result).toEqual({ ok: false, checkout_url: "https://checkout.stripe.com/pay/twist_test" });
+      expect((stripe as any).subscriptions.create).not.toHaveBeenCalled();
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// purchaseTwistAddonBlocksForScope — candidateWeight regression
+//
+// Regression: before the fix, calling the purchase endpoint for a Free user
+// at capacity (installedWeightSum=base, currentAddons=0) with a blocked
+// candidateWeight would compute target=0 (installed-only) and immediately
+// early-return { ok:true, twist_addons:0 } without charging. The fix threads
+// pendingWeight into twistAddonBlocksNeeded so target accounts for the
+// candidate, forcing a charge.
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DATABASE_URL)(
+  "purchaseTwistAddonBlocksForScope — candidateWeight regression",
+  () => {
+    it("charges when installedWeightSum=base but candidateWeight would overflow", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const stripe = makeTwistStripeAddonMock(true) as unknown as Stripe;
+
+      let result: Awaited<ReturnType<typeof purchaseTwistAddonBlocksForScope>> | undefined;
+      let updatedRow:
+        | { stripe_twist_addon_subscription_id: string | null; twist_addon_count: number }
+        | undefined;
+
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+          // Seed a weight-1 installed twist (Free plan base=1, so weightSum=1 is
+          // exactly at capacity, currentAddons=0). The candidate has weight=2, which
+          // would overflow: (1+2-1)=2 → ceil(2/20)=1 block needed.
+          const twistRow = await sql<{ id: string }>`
+            INSERT INTO twist
+              (twist_package_id, environment, user_id, name, handle, version,
+               is_source, premium, capacity_weight)
+            VALUES (${randomUUID()}::uuid, 'personal', ${userId}::uuid,
+              'InstalledTwist', 'installedtwist', '1.0.0', false, false, 1)
+            RETURNING id`.execute(trx);
+          const twistId = twistRow.rows[0].id;
+
+          await sql`
+            INSERT INTO twist_instance (id, twist_id, owner_id, name, draft)
+            VALUES (${randomUUID()}::uuid, ${twistId}, ${userId}::uuid,
+              'InstalledTwist', false)`.execute(trx);
+
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: "cus_twist_candidate",
+              stripe_subscription_id: "sub_twist_candidate_plan",
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+              // No twist add-on blocks purchased yet.
+              twist_addon_count: 0,
+            })
+            .execute();
+
+          // Call with candidateWeight=2: installed(1) + pending(2) − base(1) = 2
+          // → ceil(2/20) = 1 block needed. Before the fix this returned { ok:true,
+          // twist_addons:0 } (early-return). After the fix it must charge.
+          result = await purchaseTwistAddonBlocksForScope({
+            stripe,
+            db: trx,
+            customerId: "cus_twist_candidate",
+            twistAddonSubscriptionId: null,
+            currentTwistAddonCount: 0,
+            scope: { userId },
+            siteRoot: "https://plot.day",
+            table: "user_subscription",
+            idVal: userId,
+            captureException: vi.fn(),
+            pendingWeight: 2,
+          });
+
+          updatedRow = await trx
+            .selectFrom("user_subscription")
+            .select(["stripe_twist_addon_subscription_id", "twist_addon_count"])
+            .where("user_id", "=", userId)
+            .executeTakeFirst();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+
+      // Must charge: target=1, not 0.
+      expect(result).toEqual({ ok: true, twist_addons: 1 });
+      expect(updatedRow?.stripe_twist_addon_subscription_id).toBe("sub_twist_new");
+      expect(updatedRow?.twist_addon_count).toBe(1);
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /upgrade/twist-addons/purchase — HTTP route: non-admin team rejection
+// ---------------------------------------------------------------------------
+
+describe("POST /upgrade/twist-addons/purchase — team admin gate", () => {
+  it("returns 403 when the requesting user is a non-admin team member", async () => {
+    // Build a minimal chainable DB stub whose team_user query returns role="member".
+    function makeChainableDb(result: unknown) {
+      const chain: Record<string, unknown> = {};
+      const ret = () => chain;
+      chain.selectFrom = ret;
+      chain.select = ret;
+      chain.where = ret;
+      chain.innerJoin = ret;
+      chain.executeTakeFirst = () => Promise.resolve(result);
+      chain.executeTakeFirstOrThrow = () => Promise.resolve(result);
+      return chain;
+    }
+
+    const app = new Hono<any>();
+    app.use("*", async (c: any, next: any) => {
+      c.set("user", { id: "test-user-id" });
+      c.set("db", makeChainableDb({ role: "member" }));
+      c.set("tracker", { captureException: vi.fn() });
+      await next();
+    });
+    app.route("/", upgrade);
+
+    const res = await app.request(
+      "/upgrade/twist-addons/purchase",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ teamId: "team-123" }),
+      },
+      { STRIPE_SECRET_KEY: "sk_test_dummy", SITE_ROOT: "https://plot.day" }
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("Must be team admin to purchase add-ons");
   });
 });

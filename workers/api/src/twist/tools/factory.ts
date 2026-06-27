@@ -149,7 +149,6 @@ export function createTool(
     sourceProvider,
     aiEnabled,
     providerConfig,
-    effectivePlan,
     secureOptions,
   }: {
     twistId: string;
@@ -165,8 +164,6 @@ export function createTool(
     aiEnabled?: boolean;
     /** AI provider configuration. When set, uses this provider instead of Plot AI. */
     providerConfig?: AiProviderConfig;
-    /** The user's effective plan (e.g. "free", "pro", "team"). Undefined during deployment. */
-    effectivePlan?: string;
     /** Pre-resolved decrypted secure option values. */
     secureOptions?: Record<string, string>;
   }
@@ -187,12 +184,11 @@ export function createTool(
         sourceProvider,
       });
     case "AI":
-      // Return disabled stub when AI is off and twist declared AI as optional
-      if (aiEnabled === false && (options as any)?.required === false) {
-        return new AIDisabledStub();
-      }
-      // Return disabled stub for free users without a provider configured
-      if (effectivePlan === "free" && !providerConfig) {
+      // Return disabled stub when the user has opted out of twist AI.
+      // BYOK removed in B4: providerConfig is always undefined (built-in provider only).
+      // DEAD: the effectivePlan==="free" && !providerConfig stub path has been removed;
+      //       disabled state is now driven exclusively by aiEnabled (twist_ai_disabled).
+      if (aiEnabled === false) {
         return new AIDisabledStub();
       }
       return new AI({ env, twistInstanceId, providerConfig });

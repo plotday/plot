@@ -49,6 +49,12 @@ CREATE TABLE "public"."twist" (
     "logo_url" text,
     "logo_url_dark" text,
     "execution_limit" integer,
+    -- Twist-capacity weight: how many capacity slots this twist consumes when
+    -- installed (Σ weights of a scope's installed twists ≤ its capacity).
+    -- Plot-curated; the SDK may declare it (B6). The built-in assistant is
+    -- excluded from capacity sums (see getPersonalTwistWeightSum), so its
+    -- stored weight is irrelevant.
+    "capacity_weight" integer NOT NULL DEFAULT 1,
     "multiple_instances" boolean NOT NULL DEFAULT false,
     "reaction_capabilities" jsonb,
     "auto_approve" boolean NOT NULL DEFAULT FALSE,

@@ -90,7 +90,7 @@ function makeTxn(
     transactionId: `txn_${randomUUID()}`,
     originalTransactionId,
     bundleId: "day.plot.app",
-    productId: "day.plot.app.core_monthly",
+    productId: "day.plot.app.pro_monthly",
     purchaseDate: Date.now() - 60_000,
     originalPurchaseDate: Date.now() - 60_000,
     expiresDate,
@@ -139,7 +139,7 @@ async function seedSubscription(
     .insertInto("user_subscription")
     .values({
       user_id: opts.userId,
-      plan: (opts.plan ?? "core") as "free" | "core" | "pro",
+      plan: (opts.plan ?? "pro") as "free" | "pro" | "team",
       status: (opts.status ?? "active") as
         | "active"
         | "canceled"
@@ -176,7 +176,7 @@ describe.skipIf(!DATABASE_URL)(
         await db.transaction().execute(async (trx: Kysely<DB>) => {
           await seedSubscription(trx, {
             userId,
-            plan: "core",
+            plan: "pro",
             status: "active",
             origin: "app_store",
             appleOriginalTransactionId: otxId,
@@ -208,7 +208,7 @@ describe.skipIf(!DATABASE_URL)(
             .executeTakeFirst();
 
           expect(row?.origin).toBe("app_store");
-          expect(row?.plan).toBe("core");
+          expect(row?.plan).toBe("pro");
 
           throw new Rollback();
         });
@@ -228,7 +228,7 @@ describe.skipIf(!DATABASE_URL)(
         await db.transaction().execute(async (trx: Kysely<DB>) => {
           await seedSubscription(trx, {
             userId,
-            plan: "core",
+            plan: "pro",
             status: "active",
             origin: "app_store",
             appleOriginalTransactionId: otxId,

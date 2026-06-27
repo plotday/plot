@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/iap_api.dart';
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/state/subscription_service.dart';
@@ -30,20 +31,19 @@ const String _appStoreManageSubscriptionsUrl =
 /// web upgrade flow.
 class BuyPlanCommand extends Command {
   BuyPlanCommand({required this.plan, String? title})
-    : super(
+    : assert(plan != 'core', "Core is dropped — never offer it as a purchase"),
+      super(
         title: title ?? _titleFor(plan),
         icon: PlotIcon.sparkles,
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
       );
 
-  /// 'core' or 'pro'.
+  /// 'pro' (or 'team'). 'core' is dropped — never offered as a new purchase.
   final String plan;
 
   static String _titleFor(String plan) {
     switch (plan) {
-      case 'core':
-        return 'Subscribe to Core';
       case 'pro':
         return 'Subscribe to Pro';
       default:
@@ -51,15 +51,12 @@ class BuyPlanCommand extends Command {
     }
   }
 
-  static String _productIdFor(String plan) {
-    switch (plan) {
-      case 'core':
-        return kIapProductCoreMonthly;
-      case 'pro':
-      default:
-        return kIapProductProMonthly;
-    }
-  }
+  /// StoreKit product for an IAP-buyable plan tier, or null when the plan isn't
+  /// purchasable in-app. Only 'pro' has a StoreKit product — 'team' is
+  /// Stripe/web-only and 'core' is dropped — so anything else returns null and
+  /// the App Store path falls back to the web flow instead of mispurchasing Pro.
+  static String? _productIdFor(String plan) =>
+      plan == 'pro' ? kIapProductProMonthly : null;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -71,6 +68,11 @@ class BuyPlanCommand extends Command {
 
   Future<CommandReturn> _runIap(BuildContext context) async {
     final productId = _productIdFor(plan);
+    if (productId == null) {
+      // Not an in-app-buyable tier (a stray 'core'/'team' reached the App Store
+      // path) — never silently buy Pro; route to the web upgrade flow instead.
+      return _runWeb(context);
+    }
     if (!IapService.instance.isReady) {
       // Lazy init in case the app hadn't reached the entitlement-aware
       // codepath yet (e.g. first-launch upgrade).
@@ -144,12 +146,15 @@ Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Manage $5/mo connection add-ons. On App Store builds this opens a quantity
-/// picker (0–[kIapMaxAddons]): choosing more upgrades in-app (immediate,
-/// prorated); choosing fewer or none routes to Apple's Manage Subscriptions
-/// screen (apps can't downgrade/cancel an auto-renewable sub directly).
-/// Elsewhere it opens web add-on management. Team add-ons ([teamId] set) are
-/// managed by an admin on the web.
+/// Purchases exactly one more connection add-on credit.
+///
+/// - Team scope ([teamId] set): routes through the web endpoint (Stripe,
+///   admin-managed).
+/// - Personal + App Store build: upgrades to the next StoreKit tier
+///   (immediate, Apple prorates). Capped at [kIapMaxAddons].
+/// - Personal + non-App-Store (web, Android, DMG): calls
+///   POST /upgrade/addons/purchase; on a checkout-required response the
+///   user is directed to their browser to complete payment.
 class BuyAddonCommand extends Command {
   BuyAddonCommand({this.teamId})
     : super(
@@ -162,15 +167,27 @@ class BuyAddonCommand extends Command {
   /// When set, the add-on is for this team (managed on the web by an admin).
   final String? teamId;
 
+  // Guards against starting two add-on checkouts at once (a 2nd standalone
+  // add-on subscription would orphan and bill forever — see Plan 2 review).
+  // Static so the guard is shared across all instances (the command is
+  // constructed fresh on every tap via _addonNeededCommand).
+  static bool _addonPurchaseInFlight = false;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Team add-ons ride the team's Stripe subscription — admin-managed on the
-    // web. Personal add-ons off the App Store are managed on the web too.
-    if (teamId != null || !UpgradeUi.isAppStoreBuild) {
-      await openWebUpgrade(context);
-      return const CommandSkipped();
+    if (_addonPurchaseInFlight) return const CommandSkipped();
+    _addonPurchaseInFlight = true;
+    try {
+      if (teamId != null) {
+        return await _purchaseViaEndpoint(context, teamId);
+      }
+      if (UpgradeUi.isAppStoreBuild) {
+        return await _runIap(context);
+      }
+      return await _purchaseViaEndpoint(context, null);
+    } finally {
+      _addonPurchaseInFlight = false;
     }
-    return _runIap(context);
   }
 
   Future<CommandReturn> _runIap(BuildContext context) async {
@@ -191,44 +208,51 @@ class BuyAddonCommand extends Command {
     final current =
         SubscriptionService.instance.usage?.personal.premium?.purchased ?? 0;
 
-    // Picker of total add-on counts (0 = none). Selecting MORE upgrades in-app
-    // (immediate, Apple prorates); selecting FEWER or none routes to Apple's
-    // Manage Subscriptions screen — an app can't cancel or downgrade an
-    // auto-renewable subscription directly, the system handles that.
-    final result = await _pickAddonCount(context, current);
-    if (result == null || !context.mounted || result == current) {
+    if (current >= kIapMaxAddons) {
+      context.showToast(
+        message:
+            "You've reached the maximum connection add-ons on this device.",
+      );
       return const CommandSkipped();
     }
 
-    if (result < current) {
-      try {
-        await launchUrl(
-          Uri.parse(_appStoreManageSubscriptionsUrl),
-          mode: LaunchMode.externalApplication,
-        );
-      } catch (e, st) {
-        log.warning('Failed to open App Store subscriptions URL', e, st);
-      }
-      if (context.mounted) {
-        context.showToast(
-          message: result == 0
-              ? 'Cancel your connection add-ons in App Store settings.'
-              : 'Reduce your connection add-ons in App Store settings.',
-        );
-      }
-      return const CommandDone();
-    }
+    // Confirm before purchase. Every IAP-triggering screen must carry the
+    // auto-renew + Terms/Privacy disclosure (Apple guideline 3.1.2).
+    //
+    // Show the live StoreKit price for the tier we're about to buy, not the
+    // $5 web price: Apple's tiers ($5.99…) differ from the Stripe price, vary
+    // by storefront, and would go silently stale if hardcoded. Falls back to a
+    // price-less prompt when StoreKit hasn't loaded the product yet (the native
+    // sheet still shows the exact amount).
+    final productId = kIapAddonProductForCount[current + 1];
+    final livePrice =
+        productId == null ? null : IapService.instance.productFor(productId)?.price;
+    final confirmed = await ConfirmModal(
+      title: 'Add a connection add-on',
+      messageWidget: SubscriptionDisclosure(
+        priceLine: livePrice == null ? null : 'Connection add-on — $livePrice/month',
+        note: "Billed separately from your plan. It does not count toward your "
+            "plan's connection limit.",
+      ),
+      confirmLabel:
+          livePrice == null ? 'Add a connection add-on' : 'Add for $livePrice/month',
+    ).run(context);
+    if (!context.mounted || !confirmed) return const CommandSkipped();
 
-    // Upgrade or first purchase — in-app.
-    final purchase = await IapService.instance.buyAddon(result);
+    final purchase = await IapService.instance.buyAddon(current + 1);
     if (!context.mounted) return const CommandSkipped();
 
     switch (purchase.status) {
       case IapPurchaseStatus.purchased:
-        await SubscriptionService.instance.refresh();
-        SubscriptionService.instance.acknowledgeBaseline();
+        try {
+          await SubscriptionService.instance.refresh();
+        } catch (e, st) {
+          log.warning('addon refresh after purchase failed', e, st);
+        }
         if (context.mounted) {
-          context.showToast(message: 'Connection add-ons updated.');
+          context.showToast(
+            message: 'Connection add-on added — connect again to finish.',
+          );
         }
         return const CommandDone();
       case IapPurchaseStatus.canceled:
@@ -253,53 +277,275 @@ class BuyAddonCommand extends Command {
     }
   }
 
-  /// The total-quantity picker (0..[kIapMaxAddons]). Returns the chosen count,
-  /// or null if dismissed. Prices come live from StoreKit so each storefront
-  /// shows its own localized amount.
-  Future<int?> _pickAddonCount(BuildContext context, int current) async {
-    String? priceFor(int n) =>
-        IapService.instance.productFor(kIapAddonProductForCount[n]!)?.price;
+  Future<CommandReturn> _purchaseViaEndpoint(
+    BuildContext context,
+    String? teamId,
+  ) async {
+    // Consent before any charge.
+    final confirmed = await ConfirmModal(
+      title: 'Add a connection add-on',
+      messageWidget: const SubscriptionDisclosure(
+        priceLine: r'Connection add-on — $5/month',
+        note: "Billed separately from your plan. It does not count toward your "
+            "plan's connection limit.",
+      ),
+      confirmLabel: r'Add for $5/month',
+    ).run(context);
+    if (!context.mounted || !confirmed) return const CommandSkipped();
 
-    final result = await SelectModal.open<int>(
-      context,
-      showFilter: false,
-      title: 'Connection add-ons',
-      // Carries the auto-renew + Terms/Privacy disclosure required on any
-      // IAP-triggering screen (3.1.2). Per-tier prices are on the rows.
-      subtitleWidget: const SubscriptionDisclosure(
+    try {
+      final result = await UpgradeApi.purchaseAddon(teamId: teamId);
+      if (!context.mounted) return const CommandSkipped();
+      if (result.ok) {
+        try {
+          await SubscriptionService.instance.refresh();
+        } catch (e, st) {
+          log.warning('addon refresh after purchase failed', e, st);
+        }
+        if (context.mounted) {
+          context.showToast(
+            message: 'Connection add-on added — connect again to finish.',
+          );
+        }
+        return const CommandDone();
+      }
+      final url = result.checkoutUrl;
+      if (url != null) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        if (context.mounted) {
+          context.showToast(
+            message: 'Finish checkout in your browser, then connect again.',
+          );
+        }
+        return const CommandSkipped();
+      }
+      return const CommandSkipped();
+    } catch (e, st) {
+      log.warning('Add-on purchase failed', e, st);
+      // 4xx responses are expected business rejections (e.g. non-admin team →
+      // 403, card-less → 400) and should not be reported to error tracking.
+      if (e is! ApiException || e.statusCode >= 500) {
+        Tracker.captureException(e, st);
+      }
+      if (context.mounted) {
+        context.showToast(
+          message: 'Could not add a connection add-on.',
+          isError: true,
+        );
+      }
+      return const CommandSkipped();
+    }
+  }
+}
+
+/// Purchases exactly one more twist add-on credit.
+///
+/// - Team scope ([teamId] set): routes through the web endpoint (Stripe,
+///   admin-managed).
+/// - Personal + App Store build: upgrades to the next StoreKit tier
+///   (immediate, Apple prorates). Capped at [kIapMaxTwistAddons].
+/// - Personal + non-App-Store (web, Android, DMG): calls
+///   POST /upgrade/twist-addons/purchase; on a checkout-required response the
+///   user is directed to their browser to complete payment.
+class BuyTwistAddonCommand extends Command {
+  BuyTwistAddonCommand({this.candidateWeight, this.teamId})
+    : super(
+        title: 'Add a twist add-on',
+        icon: PlotIcon.sparkles,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  /// Twist-capacity weight of the candidate twist being installed.
+  /// Forwarded to the server so it can select the right tier.
+  final int? candidateWeight;
+
+  /// When set, the add-on is for this team (managed on the web by an admin).
+  final String? teamId;
+
+  // Guards against starting two twist add-on checkouts at once (a 2nd
+  // standalone subscription would orphan and bill forever).
+  // Static so the guard is shared across all instances.
+  static bool _twistAddonPurchaseInFlight = false;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (_twistAddonPurchaseInFlight) return const CommandSkipped();
+    _twistAddonPurchaseInFlight = true;
+    try {
+      if (teamId != null) {
+        return await _purchaseViaEndpoint(context, teamId);
+      }
+      if (UpgradeUi.isAppStoreBuild) {
+        return await _runIap(context);
+      }
+      return await _purchaseViaEndpoint(context, null);
+    } finally {
+      _twistAddonPurchaseInFlight = false;
+    }
+  }
+
+  Future<CommandReturn> _runIap(BuildContext context) async {
+    if (!IapService.instance.isReady) {
+      await IapService.instance.init();
+    }
+    if (!IapService.instance.isReady) {
+      if (context.mounted) {
+        context.showToast(
+          message: 'In-app purchases are not available right now.',
+          isError: true,
+        );
+      }
+      return const CommandSkipped();
+    }
+    if (!context.mounted) return const CommandSkipped();
+
+    final current =
+        SubscriptionService.instance.usage?.personal.twistAddonCount ?? 0;
+
+    if (current >= kIapMaxTwistAddons) {
+      context.showToast(
+        message:
+            "You've reached the maximum twist add-ons. "
+            'Manage your subscriptions in App Store settings.',
+      );
+      return const CommandSkipped();
+    }
+
+    // Show the live StoreKit price for the tier we're about to buy, not the $10
+    // web price: Apple's tiers differ from Stripe, vary by storefront, and would
+    // go silently stale if hardcoded. Falls back to a price-less prompt when
+    // StoreKit hasn't loaded the product yet (the native sheet still shows it).
+    final productId = kIapTwistAddonProductForCount[current + 1];
+    final livePrice =
+        productId == null ? null : IapService.instance.productFor(productId)?.price;
+    final confirmed = await ConfirmModal(
+      title: 'Add a twist add-on',
+      messageWidget: SubscriptionDisclosure(
+        priceLine: livePrice == null ? null : 'Twist add-on — $livePrice/month',
+        note: 'Adds +20 twists. Billed separately from your plan.',
+      ),
+      confirmLabel:
+          livePrice == null ? 'Add a twist add-on' : 'Add for $livePrice/month',
+    ).run(context);
+    if (!context.mounted || !confirmed) return const CommandSkipped();
+
+    final purchase = await IapService.instance.buyTwistAddon(current + 1);
+    if (!context.mounted) return const CommandSkipped();
+
+    switch (purchase.status) {
+      case IapPurchaseStatus.purchased:
+        try {
+          await SubscriptionService.instance.refresh();
+        } catch (e, st) {
+          log.warning('Twist add-on refresh after purchase failed', e, st);
+        }
+        if (context.mounted) {
+          context.showToast(
+            message:
+                'Twist add-on added — install the twist again to finish.',
+          );
+        }
+        return const CommandDone();
+      case IapPurchaseStatus.canceled:
+        return const CommandSkipped();
+      case IapPurchaseStatus.pending:
+        context.showToast(message: 'Purchase is pending approval.');
+        return const CommandSkipped();
+      case IapPurchaseStatus.serverError:
+        context.showToast(
+          message:
+              'Purchase succeeded but we could not confirm it. '
+              'Try Restore Purchases in Settings.',
+          isError: true,
+        );
+        return const CommandSkipped();
+      case IapPurchaseStatus.storeError:
+        context.showToast(
+          message: purchase.message ?? 'Purchase failed.',
+          isError: true,
+        );
+        return const CommandSkipped();
+    }
+  }
+
+  Future<CommandReturn> _purchaseViaEndpoint(
+    BuildContext context,
+    String? teamId,
+  ) async {
+    // Consent before any charge.
+    final confirmed = await ConfirmModal(
+      title: 'Add a twist add-on',
+      messageWidget: const SubscriptionDisclosure(
+        priceLine: r'Twist add-on — $10/month',
         note:
-            'Connection add-ons are provided by a third party and bill on top '
-            'of your plan. Each also counts as one of your plan connections.',
+            'Adds +20 twists — billed to your card on file, prorated.',
       ),
-      selectedValue: current,
-      items: (_) async => [
-        SelectGroup<int>(items: [for (var n = 0; n <= kIapMaxAddons; n++) n]),
-      ],
-      itemBuilder: (count, _) => Builder(
-        builder: (context) {
-          final muted = context.theme.typography.sm.copyWith(
-            color: context.theme.plotColors.muted,
+      confirmLabel: r'Add for $10/month',
+    ).run(context);
+    if (!context.mounted || !confirmed) return const CommandSkipped();
+
+    // Snapshot the prior count so we can tell a real purchase from a no-op.
+    // A proactive at-capacity offer (no candidateWeight) can resolve to the
+    // server's idempotent branch (target <= current), which returns ok:true
+    // without charging or granting — claiming "added" there would mislead.
+    final previousCount =
+        SubscriptionService.instance.usage?.personal.twistAddonCount ?? 0;
+
+    try {
+      final result = await UpgradeApi.purchaseTwistAddon(
+        teamId: teamId,
+        candidateWeight: candidateWeight,
+      );
+      if (!context.mounted) return const CommandSkipped();
+      if (result.ok) {
+        try {
+          await SubscriptionService.instance.refresh();
+        } catch (e, st) {
+          log.warning('Twist add-on refresh after purchase failed', e, st);
+        }
+        // `addons` is the resulting twist-add-on count. If it didn't increase,
+        // nothing was charged/granted (the user is already at capacity and we
+        // couldn't size the purchase without a specific twist) — guide them to
+        // the install path, which carries the real weight and grants capacity.
+        final granted = result.addons == null || result.addons! > previousCount;
+        if (context.mounted) {
+          context.showToast(
+            message: granted
+                ? 'Twist add-on added — install the twist again to finish.'
+                : "You're at your twist capacity. Open the twist you want to "
+                      'add and confirm there to buy more.',
           );
-          if (count == 0) {
-            return ListTile(
-              title: 'None',
-              details: Text(
-                count == current ? 'Current' : 'Cancel in App Store settings',
-                style: muted,
-              ),
-            );
-          }
-          final price = priceFor(count);
-          return ListTile(
-            title:
-                '$count connection add-on${count == 1 ? '' : 's'}'
-                '${price == null ? '' : ' — $price/month'}',
-            details: count == current ? Text('Current', style: muted) : null,
+        }
+        return granted ? const CommandDone() : const CommandSkipped();
+      }
+      final url = result.checkoutUrl;
+      if (url != null) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        if (context.mounted) {
+          context.showToast(
+            message:
+                'Finish checkout in your browser, then install the twist.',
           );
-        },
-      ),
-    );
-    return result.present ? result.value : null;
+        }
+        return const CommandSkipped();
+      }
+      return const CommandSkipped();
+    } catch (e, st) {
+      log.warning('Twist add-on purchase failed', e, st);
+      // 4xx responses are expected business rejections (e.g. non-admin team →
+      // 403, card-less → 400) and should not be reported to error tracking.
+      if (e is! ApiException || e.statusCode >= 500) {
+        Tracker.captureException(e, st);
+      }
+      if (context.mounted) {
+        context.showToast(
+          message: 'Could not add a twist add-on.',
+          isError: true,
+        );
+      }
+      return const CommandSkipped();
+    }
   }
 }
 
@@ -401,15 +647,15 @@ class SubscriptionDisclosure extends StatelessWidget {
   }
 }
 
-/// Live StoreKit price for a plan ('core'/'pro'), or null when StoreKit hasn't
-/// loaded the product yet. Never hardcode the amount: it varies by storefront,
-/// would silently go stale on any price change (no code rollout updates it),
-/// and would never match what the native StoreKit sheet actually charges.
-String? _livePlanPrice(String plan) => IapService.instance
-    .productFor(plan == 'pro' ? kIapProductProMonthly : kIapProductCoreMonthly)
-    ?.price;
+/// Live StoreKit price for a plan (currently only 'pro'), or null when StoreKit
+/// hasn't loaded the product yet. Never hardcode the amount: it varies by
+/// storefront, would silently go stale on any price change (no code rollout
+/// updates it), and would never match what the native StoreKit sheet actually
+/// charges.
+String? _livePlanPrice(String plan) =>
+    IapService.instance.productFor(kIapProductProMonthly)?.price;
 
-/// Surfaces a plan picker (Core vs Pro) then routes to [BuyPlanCommand].
+/// Surfaces a plan picker (Pro) then routes to [BuyPlanCommand].
 /// Used as the entry point for "Upgrade your plan" and the at-limit toasts.
 ///
 /// When [availablePlans] is omitted the plan list is resolved at [run] time
@@ -441,12 +687,12 @@ class ShowUpgradeOptions extends Command {
   final List<String>? _availablePlans;
 
   /// Which tiers to offer for [sub]'s current state on App Store builds.
-  /// Mirrors the gating matrix: free/trial → both; app_store-core → pro only;
-  /// paid Stripe / pro / team → none.
+  /// Mirrors the gating matrix: free/trial → [pro]; paid/legacy-core → none.
+  /// Core is dropped server-side; a user already on a legacy 'core' plan is
+  /// treated as paid — no upgrade offered, same as pro/team.
   static List<String> plansFor(SubscriptionInfo sub) {
-    if (sub.isPaidStripe || sub.canBuildTwists) return const [];
-    if (sub.isAppStore && sub.isCore) return const ['pro'];
-    return const ['core', 'pro'];
+    if (sub.isPaidStripe || sub.canBuildTwists || sub.isCore) return const [];
+    return const ['pro'];
   }
 
   @override
@@ -485,7 +731,7 @@ class ShowUpgradeOptions extends Command {
         _availablePlans ??
         (sub != null
             ? ShowUpgradeOptions.plansFor(sub)
-            : const ['core', 'pro']);
+            : const ['pro']);
 
     if (plans.isEmpty) {
       // The user is already on a paid plan with no upgradeable tiers.
@@ -504,7 +750,7 @@ class ShowUpgradeOptions extends Command {
       // in its subtitle; the single-plan upgrade path would otherwise jump
       // straight to StoreKit, so surface the disclosure in a confirmation
       // first (keeps every IAP-triggering screen compliant with 3.1.2).
-      final planName = plan == 'pro' ? 'Pro' : 'Core';
+      final planName = 'Pro';
       final price = _livePlanPrice(plan);
       final confirmed = await ConfirmModal(
         title: _title,
@@ -527,16 +773,12 @@ class ShowUpgradeOptions extends Command {
       items: (_) async => [SelectGroup<String>(items: plans)],
       itemBuilder: (plan, _) => Builder(
         builder: (context) {
-          final isCore = plan == 'core';
-          final name = isCore ? 'Core' : 'Pro';
           final price = _livePlanPrice(plan);
           return ListTile(
-            title: price == null ? name : '$name — $price/month',
-            icon: isCore ? PlotIcon.connection : PlotIcon.sparkles,
+            title: price == null ? 'Pro' : 'Pro — $price/month',
+            icon: PlotIcon.sparkles,
             details: Text(
-              isCore
-                  ? 'Up to five connections'
-                  : 'Unlimited connections',
+              'Unlimited connections',
               style: context.theme.typography.sm.copyWith(
                 color: context.theme.plotColors.muted,
               ),
@@ -549,6 +791,160 @@ class ShowUpgradeOptions extends Command {
     if (!context.mounted || !result.present) return const CommandSkipped();
     final plan = result.value;
     return BuyPlanCommand(plan: plan).run(context);
+  }
+}
+
+/// Handles the "need more connection capacity" offer for a regular connector
+/// that is beyond the plan pool.
+///
+/// - [isPremium] == true (premium connector — LinkedIn, IG, WhatsApp):
+///   Delegate directly to [BuyAddonCommand]. These connectors always require
+///   an add-on credit, on both platforms.
+/// - [isPremium] == false + non-App-Store: present a choice — add a $5/month
+///   connection add-on OR upgrade to Pro.
+/// - [isPremium] == false + App Store: go straight to [ShowUpgradeOptions]
+///   (Pro-only). Apple has no connection-capacity add-on tier; addon_1/2/3
+///   are reserved for premium connectors.
+class ConnectionCapacityOffer extends Command {
+  ConnectionCapacityOffer({this.teamId, required this.isPremium})
+    : super(
+        title: 'Add a connection',
+        icon: PlotIcon.connection,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  final String? teamId;
+  final bool isPremium;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Premium connectors always require the add-on on all platforms.
+    if (isPremium) {
+      return BuyAddonCommand(teamId: teamId).run(context);
+    }
+
+    // App Store: no connection-capacity add-on available — go straight to Pro.
+    if (UpgradeUi.isAppStoreBuild) {
+      return ShowUpgradeOptions(
+        title: 'Upgrade to add more connections',
+      ).run(context);
+    }
+
+    // Web / DMG / Android: offer a choice between the add-on and a plan upgrade.
+    final result = await SelectModal.open<String>(
+      context,
+      showFilter: false,
+      title: 'Add more connections',
+      items: (_) async => [SelectGroup<String>(items: ['addon', 'upgrade'])],
+      itemBuilder: (option, _) => Builder(
+        builder: (context) {
+          if (option == 'addon') {
+            return ListTile(
+              title: r'Add a connection — $5/month',
+              icon: PlotIcon.connection,
+              details: Text(
+                'Billed separately from your plan',
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.plotColors.muted,
+                ),
+              ),
+            );
+          }
+          return ListTile(
+            title: 'Upgrade to Pro',
+            icon: PlotIcon.sparkles,
+            details: Text(
+              'Unlimited connections',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.plotColors.muted,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (!context.mounted || !result.present) return const CommandSkipped();
+    if (result.value == 'addon') {
+      return BuyAddonCommand(teamId: teamId).run(context);
+    }
+    return ShowUpgradeOptions(
+      title: 'Upgrade to add more connections',
+    ).run(context);
+  }
+}
+
+/// Handles the "need more twist capacity" offer when the user is at the twist
+/// limit.
+///
+/// Unlike [ConnectionCapacityOffer], Apple DOES have twist add-on tiers
+/// (twist_addon_1/2/3), so on both platforms the user sees a choice between
+/// buying more twist capacity and upgrading to Pro.
+///
+/// - non-App-Store: "Add 20 twists — $10/month" (→ [BuyTwistAddonCommand])
+///   OR "Upgrade to Pro" (→ [ShowUpgradeOptions]).
+/// - App Store: same two options (Apple supports twist add-on tiers).
+class TwistCapacityOffer extends Command {
+  TwistCapacityOffer({this.candidateWeight, this.teamId})
+    : super(
+        title: 'Add more twists',
+        icon: PlotIcon.sparkles,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  /// Twist-capacity weight of the candidate twist being installed.
+  /// Forwarded to [BuyTwistAddonCommand] so the server can select the right
+  /// tier.
+  final int? candidateWeight;
+
+  /// When set, the add-on is for this team (managed on the web by an admin).
+  final String? teamId;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final result = await SelectModal.open<String>(
+      context,
+      showFilter: false,
+      title: 'Add more twists',
+      items: (_) async => [SelectGroup<String>(items: ['addon', 'upgrade'])],
+      itemBuilder: (option, _) => Builder(
+        builder: (context) {
+          if (option == 'addon') {
+            return ListTile(
+              title: r'Add 20 twists — $10/month',
+              icon: PlotIcon.twist,
+              details: Text(
+                'Billed separately from your plan',
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.plotColors.muted,
+                ),
+              ),
+            );
+          }
+          return ListTile(
+            title: 'Upgrade to Pro',
+            icon: PlotIcon.sparkles,
+            details: Text(
+              // Pro's twist capacity is 10 (PLAN_LIMITS.pro.twistCapacity),
+              // not unlimited — don't overpromise.
+              '10 twists',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.plotColors.muted,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (!context.mounted || !result.present) return const CommandSkipped();
+    if (result.value == 'addon') {
+      return BuyTwistAddonCommand(
+        candidateWeight: candidateWeight,
+        teamId: teamId,
+      ).run(context);
+    }
+    return ShowUpgradeOptions(title: 'Upgrade to add more twists').run(context);
   }
 }
 

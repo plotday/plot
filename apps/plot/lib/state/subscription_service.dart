@@ -13,18 +13,16 @@ import 'subscription_plan.dart';
 class SubscriptionSnapshot extends Equatable {
   final SubscriptionInfo? subscription;
   final UsageData? usage;
-  final List<Map<String, dynamic>> adminOrgs;
   final bool hasTeams;
 
   const SubscriptionSnapshot({
     this.subscription,
     this.usage,
-    this.adminOrgs = const [],
     this.hasTeams = false,
   });
 
   @override
-  List<Object?> get props => [subscription, usage, adminOrgs, hasTeams];
+  List<Object?> get props => [subscription, usage, hasTeams];
 }
 
 typedef SubscriptionFetcher = Future<SubscriptionInfo> Function();
@@ -133,7 +131,6 @@ class SubscriptionService with WidgetsBindingObserver {
       notifier.value = SubscriptionSnapshot(
         subscription: sub,
         usage: usage,
-        adminOrgs: orgs.where((o) => o['role'] == 'admin').toList(),
         hasTeams: orgs.isNotEmpty,
       );
       if (!_baselineInitialized) {

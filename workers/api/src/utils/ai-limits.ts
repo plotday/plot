@@ -3,77 +3,49 @@ import type { Kysely } from "kysely";
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { UserAiUsage } from "../state/user-ai-usage";
-import { getPersonalPlan, isUserInAnyTeam } from "./limits";
 
-export const FREE_AI_LIMITS = {
-  // Per 30-day window, shared across importance analysis (note-analysis),
-  // thread summaries, and notification copy. 100 was far too low for a busy
-  // inbox: a heavy free user exhausts it within the first day's mail, after
-  // which importance scoring stops running and every thread keeps the default
-  // importance of 50 (above the notify gate) — so promos/newsletters notify.
-  //
-  // Cost analysis (@cf/meta/llama-3.3-70b-instruct-fp8-fast, ~$0.29/M input +
-  // ~$2.25/M output tokens): one analysis call is ~1.8k input + ~150 output
-  // tokens ≈ $0.0009. So this ceiling costs ~$0.45/user/mo AT THE CAP, and the
-  // median free user stays well under it. Cheap insurance for correct
-  // notifications. NOTE: facet-based suppression (fallbackImportanceFromFacets)
-  // now keeps obvious promos/bulk quiet even when this budget IS exhausted, so
-  // this cap no longer gates the promo-spam fix — it only governs how much
-  // importance/summary discrimination a heavy inbox gets.
-  //
-  // Follow-up (not yet implemented): exclude initial-sync backfill from this
-  // budget so a one-time import doesn't consume a month's steady-state
-  // allowance. Backfilled mail is marked read and never notifies, so it gets no
-  // value from importance scoring anyway.
-  note_processing: 500,
+/**
+ * INTERNAL, UNPUBLISHED abuse safeguard — never surfaced to users and not a
+ * product limit. Applied uniformly to ALL users regardless of plan.
+ *
+ * Raise freely if legitimate heavy usage approaches this ceiling; it exists
+ * only to catch runaway automation loops.
+ *
+ * Cost context (@cf/meta/llama-3.3-70b-instruct-fp8-fast ≈ $0.0009/call):
+ * 10 000 calls ≈ $9/user/mo — a clear abuse signal, not normal heavy usage.
+ * The per-30-day window is enforced by the UserAiUsage Durable Object.
+ */
+export const INTERNAL_AI_CAP = {
+  note_processing: 10_000,
 } as const;
 
-export type AiOperation = keyof typeof FREE_AI_LIMITS;
+export type AiOperation = keyof typeof INTERNAL_AI_CAP;
 
 /**
- * Single source of truth for "who gets unlimited AI". A user is unlimited if
- * they're on a paid personal plan OR a member of any team. All AI quota
- * checks (checkAiLimit, checkAiLimitForContacts) route through this so the
- * rule can't drift between callsites.
- */
-export async function isUserAiUnlimited(
-  db: Kysely<DB>,
-  userId: string
-): Promise<boolean> {
-  const [plan, inTeam] = await Promise.all([
-    getPersonalPlan(db, userId),
-    isUserInAnyTeam(db, userId),
-  ]);
-  return plan !== "free" || inTeam;
-}
-
-/**
- * Check if a user is allowed to perform an AI operation. Unlimited users
- * (see isUserAiUnlimited) bypass the cap; everyone else is capped per
- * 30-day window (see FREE_AI_LIMITS).
+ * Check if a user is allowed to perform an AI operation. The cap is applied
+ * uniformly to ALL users — no plan or team bypass. This is an unpublished
+ * internal abuse safeguard (see INTERNAL_AI_CAP), not a product limit.
+ *
+ * `db` is kept in the signature for call-site compatibility but is no longer
+ * queried; plan lookups were removed with the per-plan bypass.
  */
 export async function checkAiLimit(
   env: Bindings,
-  db: Kysely<DB>,
+  _db: Kysely<DB>,
   userId: string,
   operation: AiOperation
 ): Promise<{ allowed: boolean; remaining: number }> {
-  if (await isUserAiUnlimited(db, userId)) {
-    return { allowed: true, remaining: Infinity };
-  }
-
   const usage = UserAiUsage.Get(env, userId);
-  return usage.check(operation, FREE_AI_LIMITS[operation]);
+  return usage.check(operation, INTERNAL_AI_CAP[operation]);
 }
 
 /**
- * AI limit check for a set of contacts. AI is free if ANY of the users
- * linked to these contacts is unlimited (paid or team member).
+ * AI limit check for a set of contacts. Picks the syncing user as the charge
+ * target; falls back to any other linked user who still has quota.
  *
- * Otherwise, it uses available free quota from any member, prioritizing
- * the syncing user.
- *
- * Returns the userId to charge usage against (null if skipped).
+ * The cap is uniform (no unlimited bypass for paid/team users) — see
+ * INTERNAL_AI_CAP. Returns the userId to charge usage against (null if
+ * no one has remaining quota).
  */
 export async function checkAiLimitForContacts(
   env: Bindings,
@@ -99,20 +71,13 @@ export async function checkAiLimitForContacts(
 
   const userIds = [...new Set(users.map((u) => u.user_id))];
 
-  // 1. Skip quota if any linked user has unlimited AI
-  for (const userId of userIds) {
-    if (await isUserAiUnlimited(db, userId)) {
-      return { allowed: true, chargeUserId: null };
-    }
-  }
-
-  // 2. Otherwise, check if syncing user has free quota
+  // 1. Check if syncing user has quota
   const syncingResult = await checkAiLimit(env, db, syncingUserId, operation);
   if (syncingResult.allowed) {
     return { allowed: true, chargeUserId: syncingUserId };
   }
 
-  // 3. Check if any other user has free quota
+  // 2. Check if any other linked user has quota
   for (const userId of userIds) {
     if (userId === syncingUserId) continue;
     const result = await checkAiLimit(env, db, userId, operation);

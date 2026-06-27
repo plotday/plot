@@ -42,7 +42,7 @@ const FEATURES: Feature[] = [
     icon: IconSparkles,
     label: "AI your way",
     description:
-      "Use AI as much or as little as you want. You can bring your own key, point it at your own model, or turn it off entirely.",
+      "Use AI as much or as little as you want. It's built in — no API keys, no token bills, nothing to configure — and you can turn it off entirely.",
   },
   {
     icon: IconPuzzle,

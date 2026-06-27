@@ -53,7 +53,7 @@ void main() {
       expect(calls, 1);
     });
 
-    test('derives adminOrgs and hasTeams from the team payload', () async {
+    test('derives hasTeams from the team payload', () async {
       final svc = SubscriptionService(
         fetchSubscription: () async => _sub('free'),
         fetchUsage: () async => _usage(),
@@ -65,8 +65,6 @@ void main() {
       );
       await svc.refresh();
       expect(svc.notifier.value.hasTeams, true);
-      expect(svc.notifier.value.adminOrgs.length, 1);
-      expect(svc.notifier.value.adminOrgs.single['id'], 't1');
     });
 
     test('first load sets the baseline so resume does not toast it', () async {

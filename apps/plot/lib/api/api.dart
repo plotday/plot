@@ -74,6 +74,8 @@ typedef _ErrorFields = ({
   bool? isTeam,
   bool? isAdmin,
   String? teamId,
+  String? reason,
+  int? candidateWeight,
 });
 
 /// Extracts structured error fields from API response JSON
@@ -88,6 +90,8 @@ _ErrorFields _parseErrorFields(http.Response response) {
           isTeam: json['is_team'] as bool?,
           isAdmin: json['is_admin'] as bool?,
           teamId: json['team_id'] as String?,
+          reason: json['reason'] as String?,
+          candidateWeight: json['candidate_weight'] as int?,
         );
       }
     }
@@ -100,6 +104,8 @@ _ErrorFields _parseErrorFields(http.Response response) {
     isTeam: null,
     isAdmin: null,
     teamId: null,
+    reason: null,
+    candidateWeight: null,
   );
 }
 
@@ -243,6 +249,8 @@ Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
         isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
         teamId: errorFields.teamId,
+        reason: errorFields.reason,
+        candidateWeight: errorFields.candidateWeight,
       );
     }
     return _parseResponse(response);
@@ -281,6 +289,8 @@ Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
         isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
         teamId: errorFields.teamId,
+        reason: errorFields.reason,
+        candidateWeight: errorFields.candidateWeight,
       );
     }
     return _parseResponse(response);
@@ -319,6 +329,8 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
         isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
         teamId: errorFields.teamId,
+        reason: errorFields.reason,
+        candidateWeight: errorFields.candidateWeight,
       );
     }
     return _parseResponse(response);
@@ -356,6 +368,8 @@ Future<T> get<T>(String url) async {
         isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
         teamId: errorFields.teamId,
+        reason: errorFields.reason,
+        candidateWeight: errorFields.candidateWeight,
       );
     }
     return _parseResponse(response);
@@ -393,6 +407,8 @@ Future<T> delete<T>(String url) async {
         isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
         teamId: errorFields.teamId,
+        reason: errorFields.reason,
+        candidateWeight: errorFields.candidateWeight,
       );
     }
     return _parseResponse(response);
@@ -434,6 +450,8 @@ Future<T> deleteWithBody<T>(
         isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
         teamId: errorFields.teamId,
+        reason: errorFields.reason,
+        candidateWeight: errorFields.candidateWeight,
       );
     }
     return _parseResponse(response);

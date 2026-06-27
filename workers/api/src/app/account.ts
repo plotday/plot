@@ -502,7 +502,7 @@ account.post("/activate", async (c) => {
 
   // Step 6: Upsert user_subscription record with whatever Stripe data we have
   // Use upsert to make this idempotent in case of retries after failed activations
-  // New users get a 30-day Core trial (reverse trial)
+  // New users get a 30-day connections trial on Free
   const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   try {
     await c.var.db
@@ -511,7 +511,7 @@ account.post("/activate", async (c) => {
         user_id: user.id,
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,
-        plan: "core",
+        plan: "free",
         status: "active",
         billing_cycle_start: billingStart.toISOString(),
         billing_cycle_end: billingEnd.toISOString(),
