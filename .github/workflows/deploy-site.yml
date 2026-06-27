@@ -38,8 +38,12 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
+      # Use the `...` filter suffix so pnpm also installs the dev deps of
+      # workspace packages the site depends on (e.g. @plotday/pricing needs
+      # @plotday/tsconfig to type-check during the build). Name-based filter
+      # (not path-based) — pnpm only honors `...` on name filters.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter="." --filter=./apps/site
+        run: pnpm install --frozen-lockfile --filter="." --filter="@plotday/site..."
 
       - name: Build
         run: pnpm exec nx build @plotday/site
