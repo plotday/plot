@@ -62,8 +62,8 @@ Plot gives you the context and clarity to make your next move.
   Teams channels + DMs), Slack, Linear, Notion (pages and comments), PostHog, Apple Calendar.
 - Connection add-ons: WhatsApp (two-way DMs and group chats), Instagram (two-way DMs and message
   requests), LinkedIn (two-way messages and connection requests) — read, reply, react, and start new
-  conversations. These are provided by a third party and cost $5/month each on top of any paid plan;
-  each also counts as one of your plan's connections.
+  conversations. These are provided by a third party and require a $5/month connection add-on on any
+  plan, including Team.
 - Add private notes on any shared thread, visible only to you.
 - Auto-threading (opt-in per connection): for tools that carry a conversation as a run of separate
   messages — like Slack channels — Plot can fold related messages into a single thread instead of
@@ -316,18 +316,19 @@ yours.
 - Simple pricing: you pay for the connections that bring your tools together — plans are sized by
   how many you need. Plot's own collaboration is free: share Plot threads with anyone and work
   together with no history limits and no per-seat fees.
-- **Free** — 2 connections, 1 twist. For individuals and small teams using a few tools.
-- **Pro** — unlimited connections, 10 twists, and the no-code twist builder. $25/mo, or $20/mo annually.
-- **Team** — shared org connections (per 50), 10 twists per 50-connection block, and the no-code
-  twist builder. $124/mo, or $99/mo annually; scales per 50 connections.
-- **Connection add-ons** — extra connections beyond your plan, plus the few connectors with a real
-  per-account cost (LinkedIn, Instagram, WhatsApp). $5/month each on the web (a little higher via the
-  App Store to cover Apple's fees), available on any plan including Free. Billed separately — they
-  don't count toward your plan's included connections, and the charge stops when the connection is
-  turned off.
-- **Twist add-ons** — +20 twists each, for when you need more than your plan includes. $10/month each
-  on the web (a little higher via the App Store), available on any plan and billed only while you're
-  using the extra capacity.
+- **Free** — 2 connections, 1 twist automation. For individuals and small teams using a few tools.
+- **Pro** — unlimited connections, 3 twist automations, and the no-code twist builder. $25/mo, or $20/mo annually.
+- **Team** — one shared org pool of 50 slots (connections and twist automations count toward the
+  same pool), plus the no-code twist builder. Add more 50-slot blocks anytime. $124/mo, or $99/mo
+  annually; scales per 50-slot block.
+- **Connection add-ons** — extra connections beyond your plan. $5/month each on the web (a little
+  higher via the App Store to cover Apple's fees), available on Free and Pro. Billed separately —
+  they don't count toward your plan's included connections, and the charge stops when the connection
+  is turned off. LinkedIn, Instagram, and WhatsApp require a connection add-on ($5/month) on any
+  plan, including Team.
+- **Twist add-ons** — +5 twist automations each, for when you need more than your plan includes.
+  $10/month each on the web (a little higher via the App Store), available on Free and Pro, billed
+  only while you're using the extra capacity.
 - New signups get a 30-day trial of unlimited connections on the Free plan.
 - Annual billing saves 20%. Stripe-powered checkout and self-service subscription management. On Apple platforms (iPhone, iPad, Mac), subscriptions can also be purchased directly in-app via Apple's in-app purchase (StoreKit), with a single cross-platform entitlement shared between web and native.
 - Plan changes propagate instantly to all devices.

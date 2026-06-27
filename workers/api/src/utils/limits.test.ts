@@ -9,11 +9,13 @@ import type { Bindings } from "../env";
 import {
   checkChannelConnectionLimit,
   checkTwistCapacity,
+  computeTwistBlocksNeeded,
   getBillableConnectionAddonCount,
   getPersonalConnectionCount,
   getPersonalTwistWeightSum,
   getTeamConnectionCount,
   getUsage,
+  PLAN_LIMITS,
   selectConnectionsToTrim,
   type PlanKey,
   type TrimmableConnection,
@@ -440,7 +442,7 @@ describe.skipIf(!DATABASE_URL)("weighted automation capacity", () => {
     ).toEqual({ allowed: true });
   });
 
-  it("lapsed team (status=canceled, plan=team) gets capacity 0 → twist_addon_required", async () => {
+  it("lapsed team (status=canceled, plan=team) gets pool 0 → team_block_required", async () => {
     const db = createDb({ DATABASE_URL } as unknown as Bindings);
     const userId = randomUUID();
     let result: { allowed: boolean; reason?: string } = { allowed: false };
@@ -468,7 +470,7 @@ describe.skipIf(!DATABASE_URL)("weighted automation capacity", () => {
     } finally {
       await db.destroy();
     }
-    expect(result).toEqual({ allowed: false, reason: "twist_addon_required" });
+    expect(result).toEqual({ allowed: false, reason: "team_block_required" });
   });
 });
 
@@ -830,6 +832,29 @@ describe.skipIf(!DATABASE_URL)("getUsage personal payload excludes AI limits", (
   });
 });
 
+// ─── pricing field exposed in getUsage ───────────────────────────────────────
+describe.skipIf(!DATABASE_URL)("getUsage exposes web add-on prices", () => {
+  it("pricing.connectionAddonPrice === 5 and pricing.twistAddonPrice === 10", async () => {
+    const db = createDb({ DATABASE_URL } as unknown as Bindings);
+    const userId = randomUUID();
+    let usage: any;
+    try {
+      await db.transaction().execute(async (trx: Kysely<DB>) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+        usage = await getUsage(trx, userId);
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    expect(usage.pricing.connectionAddonPrice).toBe(5);
+    expect(usage.pricing.twistAddonPrice).toBe(10);
+  });
+});
+
 // ─── 30-day trial: unlimited connections (connections ONLY) ───────────────────
 describe.skipIf(!DATABASE_URL)("30-day trial — unlimited connections (connections only)", () => {
   /**
@@ -1027,5 +1052,184 @@ describe("selectConnectionsToTrim credit spill-over (Issue 2)", () => {
     const r3 = conn({ twistInstanceId: "spill-r3c", premium: false, connectedAt: "2026-04-04T00:00:00Z" });
     const trimmed = selectConnectionsToTrim([prem, r1, r2, r3], { connections: 2, addonCredits: 2 });
     expect(trimmed).toEqual([]);
+  });
+});
+
+describe("pricing constants wired", () => {
+  it("Pro includes 3 twist automations", () => {
+    expect(PLAN_LIMITS.pro.twistCapacity).toBe(3);
+    expect(PLAN_LIMITS.free.twistCapacity).toBe(1);
+  });
+  it("twist add-on blocks are packs of 5", () => {
+    // base 3 (Pro), weightSum 8 → overflow 5 → 1 block of 5
+    expect(computeTwistBlocksNeeded(8, 3)).toBe(1);
+    // overflow 6 → 2 blocks
+    expect(computeTwistBlocksNeeded(9, 3)).toBe(2);
+    // within capacity → 0
+    expect(computeTwistBlocksNeeded(3, 3)).toBe(0);
+    // pendingWeight included
+    expect(computeTwistBlocksNeeded(3, 3, 5)).toBe(1);
+  });
+});
+
+// ─── Team interchangeable slot pool (Task 3) ─────────────────────────────────
+// Regular (non-premium) connections + twist weight share the pool:
+// pool = TEAM_SLOTS_PER_GROUP × connection_group_quantity.
+// Over-pool returns team_block_required; under-pool is allowed.
+describe.skipIf(!DATABASE_URL)("Team interchangeable slot pool", () => {
+  /**
+   * Seeds a team with an active 'team' subscription (1 block = pool of 50),
+   * seeds `regularCount` regular connections + a twist with `twistWeight`, then
+   * returns allowed/reason for checkTwistCapacity(candidateWeight) and
+   * checkChannelConnectionLimit for a new regular connector.
+   * All inside a rolled-back transaction.
+   */
+  async function seedTeamPoolAndCheck(opts: {
+    regularCount: number;
+    twistWeight: number;
+    candidateTwistWeight: number;
+  }): Promise<{
+    twistCheck: { allowed: boolean; reason?: string };
+    connCheck: { allowed: boolean; reason?: string };
+  }> {
+    const db = createDb({ DATABASE_URL } as unknown as Bindings);
+    const userId = randomUUID();
+    let twistCheck: { allowed: boolean; reason?: string } = { allowed: false };
+    let connCheck: { allowed: boolean; reason?: string } = { allowed: false };
+    try {
+      await db.transaction().execute(async (trx: Kysely<DB>) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+        // Create team and add user as admin
+        const teamRow = await sql<{ id: string }>`
+          INSERT INTO team (name) VALUES ('Test Team')
+          RETURNING id`.execute(trx);
+        const teamId = Number(teamRow.rows[0].id);
+        await sql`INSERT INTO team_user (team_id, user_id, role)
+          VALUES (${teamId}, ${userId}::uuid, 'admin')`.execute(trx);
+
+        // Active team subscription: plan='team', 1 block → pool = 50
+        await sql`INSERT INTO team_subscription
+            (team_id, plan, status, connection_group_quantity,
+             billing_cycle_start, billing_cycle_end)
+          VALUES (${teamId}, 'team', 'active', 1,
+            now(), now() + interval '1 month')`.execute(trx);
+
+        // Seed regular connections (each counts as 1 slot)
+        for (let i = 0; i < opts.regularCount; i++) {
+          const twist = await sql<{ id: string }>`
+            INSERT INTO twist
+              (twist_package_id, environment, user_id, name, handle, version,
+               is_source, premium, capacity_weight)
+            VALUES (${randomUUID()}::uuid, 'personal', ${userId}::uuid,
+              ${`Google ${i}`}, ${`google${i}`}, '1.0.0', true, false, 0)
+            RETURNING id`.execute(trx);
+          const tiId = randomUUID();
+          await sql`INSERT INTO twist_instance (id, twist_id, owner_id, name, team_id)
+            VALUES (${tiId}::uuid, ${twist.rows[0].id}, ${userId}::uuid,
+              ${`Google ${i}`}, ${teamId})`.execute(trx);
+          await sql`INSERT INTO channel (twist_instance_id, channel_id, title, enabled)
+            VALUES (${tiId}::uuid, ${`google${i}`}, ${`Google ${i}`}, true)`.execute(trx);
+        }
+
+        // Seed a twist with capacity_weight (counts toward the slot pool)
+        if (opts.twistWeight > 0) {
+          const twist = await sql<{ id: string }>`
+            INSERT INTO twist
+              (twist_package_id, environment, user_id, name, handle, version,
+               is_source, premium, capacity_weight)
+            VALUES (${randomUUID()}::uuid, 'personal', ${userId}::uuid,
+              'Automation', 'auto', '1.0.0', false, false, ${opts.twistWeight})
+            RETURNING id`.execute(trx);
+          await sql`INSERT INTO twist_instance
+              (id, twist_id, owner_id, name, team_id, draft)
+            VALUES (${randomUUID()}::uuid, ${twist.rows[0].id}, ${userId}::uuid,
+              'Automation', ${teamId}, false)`.execute(trx);
+        }
+
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+
+        // Check twist capacity for the candidate twist
+        const twistRes = await checkTwistCapacity(trx, userId, String(teamId), opts.candidateTwistWeight);
+        twistCheck = twistRes.allowed ? { allowed: true } : { allowed: false, reason: twistRes.error.reason };
+
+        // Seed a new regular connector (no channel yet) for the connection check
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        const newTwist = await sql<{ id: string }>`
+          INSERT INTO twist
+            (twist_package_id, environment, user_id, name, handle, version,
+             is_source, premium, capacity_weight)
+          VALUES (${randomUUID()}::uuid, 'personal', ${userId}::uuid,
+            'NewConn', 'newconn', '1.0.0', true, false, 0)
+          RETURNING id`.execute(trx);
+        const newTiId = randomUUID();
+        await sql`INSERT INTO twist_instance (id, twist_id, owner_id, name, team_id)
+          VALUES (${newTiId}::uuid, ${newTwist.rows[0].id}, ${userId}::uuid,
+            'NewConn', ${teamId})`.execute(trx);
+        await sql`INSERT INTO twist_instance_connection
+            (twist_instance_id, user_id, provider, actor_id)
+          VALUES (${newTiId}::uuid, ${userId}::uuid, 'newconn',
+            ${randomUUID()}::uuid)`.execute(trx);
+        await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+
+        const connRes = await checkChannelConnectionLimit(trx, userId, newTiId);
+        connCheck = connRes.allowed ? { allowed: true } : { allowed: false, reason: connRes.error.reason };
+
+        throw new Rollback();
+      });
+    } catch (e) {
+      if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await db.destroy();
+    }
+    return { twistCheck, connCheck };
+  }
+
+  it("connections + twist weight share the 50-slot pool: full pool blocks with team_block_required", async () => {
+    // 49 regular connections + 1 twist weight = 50 used (pool full).
+    // Candidate twist weight 1 → overflow → team_block_required.
+    // New regular connection → overflow → team_block_required.
+    const { twistCheck, connCheck } = await seedTeamPoolAndCheck({
+      regularCount: 49,
+      twistWeight: 1,
+      candidateTwistWeight: 1,
+    });
+    expect(twistCheck).toEqual({ allowed: false, reason: "team_block_required" });
+    expect(connCheck).toEqual({ allowed: false, reason: "team_block_required" });
+  });
+
+  it("connections + twist weight under pool: candidate is allowed", async () => {
+    // 48 regular connections + 1 twist weight = 49 used (1 slot free).
+    // Candidate twist weight 1 → fits → allowed.
+    // New regular connection → fits → allowed.
+    const { twistCheck, connCheck } = await seedTeamPoolAndCheck({
+      regularCount: 48,
+      twistWeight: 1,
+      candidateTwistWeight: 1,
+    });
+    expect(twistCheck).toEqual({ allowed: true });
+    expect(connCheck).toEqual({ allowed: true });
+  });
+
+  it("connections alone filling the 50-slot pool blocks a new twist", async () => {
+    // 50 regular connections, no twist weight → pool full.
+    // Candidate twist weight 1 → blocked.
+    const { twistCheck } = await seedTeamPoolAndCheck({
+      regularCount: 50,
+      twistWeight: 0,
+      candidateTwistWeight: 1,
+    });
+    expect(twistCheck).toEqual({ allowed: false, reason: "team_block_required" });
+  });
+
+  it("twist weight alone filling the 50-slot pool blocks a new connection", async () => {
+    // 0 regular connections, twist weight 50 → pool full.
+    // New regular connection → blocked.
+    const { connCheck } = await seedTeamPoolAndCheck({
+      regularCount: 0,
+      twistWeight: 50,
+      candidateTwistWeight: 0,
+    });
+    expect(connCheck).toEqual({ allowed: false, reason: "team_block_required" });
   });
 });

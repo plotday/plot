@@ -22,6 +22,7 @@
     "@clerk/themes": "^2.4.57",
     "@mantine/core": "8.3.11",
     "@mantine/hooks": "8.3.11",
+    "@plotday/pricing": "workspace:*",
     "@react-router/node": "^7.17.0",
     "@react-router/serve": "^7.17.0",
     "@tabler/icons-react": "^3.44.0",

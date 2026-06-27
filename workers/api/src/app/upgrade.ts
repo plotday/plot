@@ -1218,44 +1218,25 @@ upgrade.post("/upgrade/twist-addons/purchase", async (c) => {
   const isTeam = !!body.teamId;
 
   if (isTeam) {
-    const member = await c.var.db
-      .selectFrom("team_user")
-      .select("role")
-      .where("team_id", "=", body.teamId!)
-      .where("user_id", "=", user.id)
-      .executeTakeFirst();
-    if (!member || member.role !== "admin") {
-      return c.json({ error: "Must be team admin to purchase add-ons" }, 403);
-    }
+    // Twist add-ons are personal-only; teams scale via 50-slot capacity blocks.
+    return c.json({ error: "twist_add_ons_personal_only" }, 400);
   }
 
-  const row = isTeam
-    ? await c.var.db
-        .selectFrom("team_subscription")
-        .select([
-          "stripe_customer_id",
-          "stripe_twist_addon_subscription_id",
-          "twist_addon_count",
-        ])
-        .where("team_id", "=", body.teamId!)
-        .executeTakeFirst()
-    : await c.var.db
-        .selectFrom("user_subscription")
-        .select([
-          "stripe_customer_id",
-          "stripe_twist_addon_subscription_id",
-          "twist_addon_count",
-        ])
-        .where("user_id", "=", user.id)
-        .executeTakeFirst();
+  const row = await c.var.db
+    .selectFrom("user_subscription")
+    .select([
+      "stripe_customer_id",
+      "stripe_twist_addon_subscription_id",
+      "twist_addon_count",
+    ])
+    .where("user_id", "=", user.id)
+    .executeTakeFirst();
 
   if (!row?.stripe_customer_id) {
     return c.json({ error: "No billing account found" }, 400);
   }
 
-  const scope: { userId: string } | { teamId: string } = isTeam
-    ? { teamId: body.teamId! }
-    : { userId: user.id };
+  const scope = { userId: user.id };
 
   try {
     return c.json(
@@ -1267,8 +1248,8 @@ upgrade.post("/upgrade/twist-addons/purchase", async (c) => {
         currentTwistAddonCount: row.twist_addon_count ?? 0,
         scope,
         siteRoot,
-        table: isTeam ? "team_subscription" : "user_subscription",
-        idVal: isTeam ? body.teamId! : user.id,
+        table: "user_subscription",
+        idVal: user.id,
         captureException: (e) => c.var.tracker.captureException(e as Error),
         pendingWeight: candidateWeight,
       })

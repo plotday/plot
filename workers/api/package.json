@@ -36,6 +36,7 @@
     "@plotday/classifier-runtime": "workspace:^",
     "@plotday/db": "workspace:^",
     "@plotday/email": "workspace:^",
+    "@plotday/pricing": "workspace:*",
     "@plotday/twister": "workspace:*",
     "@plotday/unipile": "workspace:^",
     "@plotday/worker-util": "workspace:^",

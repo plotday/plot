@@ -655,12 +655,14 @@ describe("computeTwistBlocksNeeded", () => {
     expect(computeTwistBlocksNeeded(0, 1)).toBe(0);
   });
 
-  it("returns 1 when weightSum exceeds base by exactly 20 (Free base=1, weightSum=21)", () => {
-    expect(computeTwistBlocksNeeded(21, 1)).toBe(1);
+  it("returns 4 when weightSum exceeds base by exactly 20 (Free base=1, weightSum=21, block_size=5)", () => {
+    // overflow=20, ceil(20/5)=4 blocks
+    expect(computeTwistBlocksNeeded(21, 1)).toBe(4);
   });
 
-  it("returns 2 when weightSum exceeds base by exactly 40 (Free base=1, weightSum=41)", () => {
-    expect(computeTwistBlocksNeeded(41, 1)).toBe(2);
+  it("returns 8 when weightSum exceeds base by exactly 40 (Free base=1, weightSum=41, block_size=5)", () => {
+    // overflow=40, ceil(40/5)=8 blocks
+    expect(computeTwistBlocksNeeded(41, 1)).toBe(8);
   });
 
   it("rounds up: 1 block for any overflow 1–20 above base", () => {
@@ -687,12 +689,12 @@ describe("computeTwistBlocksNeeded", () => {
     expect(computeTwistBlocksNeeded(0, 1, 1)).toBe(0);
   });
 
-  it("pendingWeight: weightSum=1, base=1, pending=20 → 1 block (ceil(20/20))", () => {
-    expect(computeTwistBlocksNeeded(1, 1, 20)).toBe(1);
+  it("pendingWeight: weightSum=1, base=1, pending=20 → 4 blocks (ceil(20/5))", () => {
+    expect(computeTwistBlocksNeeded(1, 1, 20)).toBe(4);
   });
 
-  it("pendingWeight: weightSum=21, base=1, pending=0 → 1 block (unchanged no-arg behavior)", () => {
-    expect(computeTwistBlocksNeeded(21, 1, 0)).toBe(1);
+  it("pendingWeight: weightSum=21, base=1, pending=0 → 4 blocks (ceil(20/5), unchanged no-arg behavior)", () => {
+    expect(computeTwistBlocksNeeded(21, 1, 0)).toBe(4);
   });
 });
 
@@ -783,8 +785,9 @@ describe("purchaseTwistAddonBlocksForScope write-back atomicity", () => {
       captureException,
     });
 
-    // The charge succeeded; must report ok despite the write failure.
-    expect(result).toEqual({ ok: true, twist_addons: 1 });
+    // target=4 (weightSum=21, base=1, block_size=5 → ceil(20/5)=4); charge
+    // succeeded even though write failed.
+    expect(result).toEqual({ ok: true, twist_addons: 4 });
     // The write failure must be captured so it surfaces in error tracking.
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
@@ -924,16 +927,16 @@ describe.skipIf(!DATABASE_URL)(
         await db.destroy();
       }
 
-      // target=1 (ceil(20/20)); Stripe create returns sub_twist_new with quantity=1.
-      expect(result).toEqual({ ok: true, twist_addons: 1 });
+      // target=4 (weightSum=21, base=1, block_size=5 → ceil(20/5)=4 blocks).
+      expect(result).toEqual({ ok: true, twist_addons: 4 });
       expect(updatedRow?.stripe_twist_addon_subscription_id).toBe("sub_twist_new");
       // Fix 1: verify twist_addon_count is written back correctly.
-      expect(updatedRow?.twist_addon_count).toBe(1);
+      expect(updatedRow?.twist_addon_count).toBe(4);
       // Fix 2: verify Stripe received the absolute target quantity (not +1 delta).
       expect((stripe as any).subscriptions.create).toHaveBeenCalledWith(
         expect.objectContaining({
           items: expect.arrayContaining([
-            expect.objectContaining({ quantity: 1 }),
+            expect.objectContaining({ quantity: 4 }),
           ]),
         })
       );
@@ -1109,12 +1112,14 @@ describe.skipIf(!DATABASE_URL)(
 );
 
 // ---------------------------------------------------------------------------
-// POST /upgrade/twist-addons/purchase — HTTP route: non-admin team rejection
+// POST /upgrade/twist-addons/purchase — HTTP route: team scope rejected
+// (twist add-ons are personal-only; the old admin gate is superseded)
 // ---------------------------------------------------------------------------
 
-describe("POST /upgrade/twist-addons/purchase — team admin gate", () => {
-  it("returns 403 when the requesting user is a non-admin team member", async () => {
-    // Build a minimal chainable DB stub whose team_user query returns role="member".
+describe("POST /upgrade/twist-addons/purchase — team admin gate (now superseded)", () => {
+  it("returns 400 twist_add_ons_personal_only for any team member (admin check removed)", async () => {
+    // The handler now rejects ALL team requests before reaching the admin check.
+    // A non-admin member still gets 400 (not 403), because the early-exit fires first.
     function makeChainableDb(result: unknown) {
       const chain: Record<string, unknown> = {};
       const ret = () => chain;
@@ -1146,8 +1151,54 @@ describe("POST /upgrade/twist-addons/purchase — team admin gate", () => {
       { STRIPE_SECRET_KEY: "sk_test_dummy", SITE_ROOT: "https://plot.day" }
     );
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(400);
     const body = await res.json() as { error: string };
-    expect(body.error).toBe("Must be team admin to purchase add-ons");
+    expect(body.error).toBe("twist_add_ons_personal_only");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /upgrade/twist-addons/purchase — team scope must be rejected (personal-only)
+// ---------------------------------------------------------------------------
+
+describe("POST /upgrade/twist-addons/purchase — team scope rejected", () => {
+  it("returns 400 twist_add_ons_personal_only for any teamId request (even as admin)", async () => {
+    // Stub a DB that would return an admin role — the handler must reject before
+    // ever reaching the admin check or team_subscription query.
+    function makeChainableDb(result: unknown) {
+      const chain: Record<string, unknown> = {};
+      const ret = () => chain;
+      chain.selectFrom = ret;
+      chain.select = ret;
+      chain.where = ret;
+      chain.innerJoin = ret;
+      chain.executeTakeFirst = () => Promise.resolve(result);
+      chain.executeTakeFirstOrThrow = () => Promise.resolve(result);
+      return chain;
+    }
+
+    const app = new Hono<any>();
+    app.use("*", async (c: any, next: any) => {
+      c.set("user", { id: "test-user-id" });
+      // Would succeed as admin — but the handler must reject before this matters.
+      c.set("db", makeChainableDb({ role: "admin" }));
+      c.set("tracker", { captureException: vi.fn() });
+      await next();
+    });
+    app.route("/", upgrade);
+
+    const res = await app.request(
+      "/upgrade/twist-addons/purchase",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ teamId: "team-abc" }),
+      },
+      { STRIPE_SECRET_KEY: "sk_test_dummy", SITE_ROOT: "https://plot.day" }
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("twist_add_ons_personal_only");
   });
 });

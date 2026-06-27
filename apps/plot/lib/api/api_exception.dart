@@ -60,6 +60,12 @@ class ApiException implements Exception {
   bool get isTwistAddonRequired =>
       code == 'plan_limit_exceeded' && reason == 'twist_addon_required';
 
+  /// Returns true when the team's shared capacity block (connections + twists)
+  /// is full. Admins should open web team billing to buy a 50-slot block;
+  /// non-admin members should be told to ask their admin.
+  bool get isTeamBlockRequired =>
+      code == 'plan_limit_exceeded' && reason == 'team_block_required';
+
   /// Returns true when the user consented to an add-on charge but has no
   /// payment method on file (status 402, reason == 'needs_card').
   bool get needsCard => statusCode == 402 && reason == 'needs_card';

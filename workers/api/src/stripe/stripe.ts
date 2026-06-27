@@ -283,7 +283,7 @@ export async function handleSubscriptionUpdate(
     // Apple owns the twist add-on count when an Apple twist add-on is active —
     // don't clobber it. Read the quantity directly from the single line item.
     const twistAddonQuantity = subscription.items.data[0]?.quantity ?? 0;
-    const updated = await c.var.db
+    await c.var.db
       .updateTable("user_subscription")
       .set({
         twist_addon_count: twistAddonQuantity,
@@ -292,22 +292,10 @@ export async function handleSubscriptionUpdate(
       })
       .where("stripe_customer_id", "=", customerId)
       .where("apple_twist_addon_original_transaction_id", "is", null)
-      .executeTakeFirst();
-    // 0 rows: either this is a team customer (no user_subscription row), OR the
-    // Apple guard (apple_twist_addon_original_transaction_id IS NOT NULL) blocked
-    // the personal write. team_subscription has no Apple twist-add-on columns —
-    // no guard needed, and the update is a harmless no-op for personal Apple users.
-    if (Number(updated?.numUpdatedRows) === 0) {
-      await c.var.db
-        .updateTable("team_subscription")
-        .set({
-          twist_addon_count: twistAddonQuantity,
-          stripe_twist_addon_subscription_id: subscription.id,
-          updated_at: sql`now()`,
-        })
-        .where("stripe_customer_id", "=", customerId)
-        .execute();
-    }
+      .execute();
+    // If the Apple guard (apple_twist_addon_original_transaction_id IS NOT NULL)
+    // blocked the write, that is the correct behaviour — Apple owns the count.
+    // Teams never buy twist add-ons, so there is no team_subscription fallback.
     return; // never run the plan path for a twist add-on sub
   }
 
@@ -607,12 +595,7 @@ export async function handleSubscriptionDeleted(
       .where("stripe_twist_addon_subscription_id", "=", subscription.id)
       .where("apple_twist_addon_original_transaction_id", "is", null)
       .execute();
-    // team_subscription has no apple_twist_addon columns — no guard needed.
-    await c.var.db
-      .updateTable("team_subscription")
-      .set({ twist_addon_count: 0, stripe_twist_addon_subscription_id: null, updated_at: sql`now()` })
-      .where("stripe_twist_addon_subscription_id", "=", subscription.id)
-      .execute();
+    // Teams never buy twist add-ons; no team_subscription update needed.
     return; // do not revert the plan to free for a twist add-on sub deletion
   }
 

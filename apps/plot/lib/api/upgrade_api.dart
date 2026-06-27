@@ -123,7 +123,7 @@ class PersonalUsage extends Equatable {
   /// premium-connections rollout — treat as needing a purchase for safety.
   final PremiumUsage? premium;
 
-  /// Number of purchased twist add-on blocks (each adds +20 twist capacity).
+  /// Number of purchased twist add-on blocks (each adds +5 twist capacity per pack).
   /// Defaults to 0 when the server predates the twist add-on rollout.
   final int twistAddonCount;
 
@@ -162,6 +162,11 @@ class TeamUsage extends Equatable {
   final PremiumUsage? premium;
   final bool isAdmin;
 
+  /// Combined capacity pool for connections + twists on team plans.
+  /// Each block of 50 slots is shared between connections and twist automations.
+  /// Null when the server predates this field or the team is on a free plan.
+  final ResourceUsage? slots;
+
   const TeamUsage({
     required this.id,
     required this.name,
@@ -169,9 +174,11 @@ class TeamUsage extends Equatable {
     required this.connections,
     this.premium,
     required this.isAdmin,
+    this.slots,
   });
 
   factory TeamUsage.fromJson(Map<String, dynamic> json) {
+    final slotsJson = json['slots'] as Map<String, dynamic>?;
     return TeamUsage(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -183,11 +190,17 @@ class TeamUsage extends Equatable {
           ? PremiumUsage.fromJson(json['premium'] as Map<String, dynamic>)
           : null,
       isAdmin: json['is_admin'] as bool? ?? false,
+      slots: slotsJson != null
+          ? ResourceUsage(
+              count: slotsJson['used'] as int? ?? 0,
+              limit: slotsJson['limit'] as int?,
+            )
+          : null,
     );
   }
 
   @override
-  List<Object?> get props => [id, name, plan, connections, premium, isAdmin];
+  List<Object?> get props => [id, name, plan, connections, premium, isAdmin, slots];
 }
 
 /// Combined usage data for the current user
@@ -195,9 +208,23 @@ class UsageData extends Equatable {
   final PersonalUsage personal;
   final List<TeamUsage> teams;
 
-  const UsageData({required this.personal, required this.teams});
+  /// Web (Stripe) price for one connection add-on credit, in dollars.
+  /// Null when the server predates this field — callers should default to 5.
+  final int? connectionAddonPrice;
+
+  /// Web (Stripe) price for one twist add-on credit, in dollars.
+  /// Null when the server predates this field — callers should default to 10.
+  final int? twistAddonPrice;
+
+  const UsageData({
+    required this.personal,
+    required this.teams,
+    this.connectionAddonPrice,
+    this.twistAddonPrice,
+  });
 
   factory UsageData.fromJson(Map<String, dynamic> json) {
+    final pricingJson = json['pricing'] as Map<String, dynamic>?;
     return UsageData(
       personal: PersonalUsage.fromJson(
         json['personal'] as Map<String, dynamic>,
@@ -209,11 +236,13 @@ class UsageData extends Equatable {
                     TeamUsage.fromJson(org as Map<String, dynamic>),
               )
               .toList(),
+      connectionAddonPrice: pricingJson?['connectionAddonPrice'] as int?,
+      twistAddonPrice: pricingJson?['twistAddonPrice'] as int?,
     );
   }
 
   @override
-  List<Object?> get props => [personal, teams];
+  List<Object?> get props => [personal, teams, connectionAddonPrice, twistAddonPrice];
 }
 
 /// Subscription info including the effective plan across personal + org

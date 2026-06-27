@@ -8,7 +8,8 @@ import 'upgrade.dart'
         BuyTwistAddonCommand,
         ConnectionCapacityOffer,
         ShowUpgradeOptions,
-        TwistCapacityOffer;
+        TwistCapacityOffer,
+        openWebUpgrade;
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/analytics/profile.dart';
@@ -926,6 +927,27 @@ final Set<String> _addonConsentedDrafts = {};
 
 bool _hasAddonConsent(String draftId) => _addonConsentedDrafts.contains(draftId);
 
+/// After an enable returned team_block_required (403): route admins to the web
+/// team billing page to add a 50-slot capacity block; inform non-admin members
+/// to contact their team admin. No purchase is offered in-app for teams.
+Future<CommandReturn> _handleTeamBlockRequired(
+  BuildContext context,
+  ApiException e,
+) async {
+  if (e.isAdmin == true) {
+    // Admin: open the web billing page so they can add a block.
+    await openWebUpgrade(context);
+  } else {
+    // Non-admin member: informational only — no in-app purchase.
+    context.showToast(
+      message:
+          'Your team is out of capacity — ask a team admin to add more '
+          'connections or twist automations.',
+    );
+  }
+  return const CommandSkipped();
+}
+
 /// After an enable returned needs_card (402, [ApiException.needsCard]): open
 /// the $0 Stripe setup session to capture a card, then tell the user to
 /// connect again (the next enable charges). No charge happens here. Keeps the
@@ -1092,10 +1114,10 @@ String _planLimitConnectionMessage({
 String _planLimitTwistMessage({required bool isTeam, required bool isAdmin}) {
   if (isTeam) {
     return isAdmin
-        ? 'Your team has reached its twist limit.'
-        : 'Your team has reached its twist limit. Contact your team admin.';
+        ? 'Your team has reached its twist automation limit.'
+        : 'Your team has reached its twist automation limit. Contact your team admin.';
   }
-  return "You've reached your twist limit.";
+  return "You've reached your twist automation limit.";
 }
 
 /// Builds a usage suffix for group titles, e.g. "(1 of 2 personal, 40 Acme Co)".
@@ -1117,22 +1139,46 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
       parts.add('Add-ons: ${premium.count} of ${premium.purchased}');
     }
     for (final org in usage.teams) {
-      parts.add(
-        org.connections.isUnlimited
-            ? '${org.connections.count} of unlimited ${org.name}'
-            : '${org.connections.count} of ${org.connections.limit} ${org.name}',
-      );
+      // Team plan: show combined slot pool (connections + twists together).
+      // Falls back to connections-only count when slots is absent (free teams /
+      // older server responses).
+      final slots = org.slots;
+      if (slots != null) {
+        parts.add(
+          slots.isUnlimited
+              ? '${slots.count} of unlimited ${org.name}'
+              : '${slots.count} of ${slots.limit} ${org.name}',
+        );
+      } else {
+        parts.add(
+          org.connections.isUnlimited
+              ? '${org.connections.count} of unlimited ${org.name}'
+              : '${org.connections.count} of ${org.connections.limit} ${org.name}',
+        );
+      }
     }
   } else {
     final personal = usage.personal.twists;
-    // Twist capacity is always a finite weighted number (Free 1 · Pro 10 ·
-    // Team 10/block, plus +20 per twist add-on), so `twists.limit` is never
+    // Twist automation capacity is a finite weighted number (Free 1 · Pro 3 ·
+    // Team 50-slot interchangeable pool per block, plus +5 per twist add-on),
+    // so `twists.limit` is never
     // null here — there's no "unlimited twists" tier to special-case.
     parts.add('${personal.count} of ${personal.limit} personal');
     // Surface twist add-on count when the user has purchased some.
     final twistAddonCount = usage.personal.twistAddonCount;
     if (twistAddonCount > 0) {
       parts.add('Twist add-ons: $twistAddonCount');
+    }
+    for (final org in usage.teams) {
+      // Team plan: show combined slot pool for the team (connections + twists).
+      final slots = org.slots;
+      if (slots != null) {
+        parts.add(
+          slots.isUnlimited
+              ? '${slots.count} of unlimited ${org.name}'
+              : '${slots.count} of ${slots.limit} ${org.name}',
+        );
+      }
     }
   }
 
@@ -3698,11 +3744,19 @@ class ActivateTwist extends Command {
       return const CommandDone();
     } on ApiException catch (e, t) {
       log.warning('Failed to activate twist', e, t);
+      // Team shared-pool full: route admin to web billing; inform non-admin.
+      // Must be checked BEFORE isTwistAddonRequired/isAddonRequired because
+      // team_block_required replaces both of those for team scope.
+      if (e.isTeamBlockRequired) {
+        return context.mounted
+            ? _handleTeamBlockRequired(context, e)
+            : const CommandSkipped();
+      }
+      // Personal twist add-on required (personal-only; teams use team_block_required).
       if (e.isTwistAddonRequired) {
         if (context.mounted) {
           return BuyTwistAddonCommand(
             candidateWeight: e.candidateWeight,
-            teamId: e.isTeam == true ? e.teamId : null,
           ).run(context);
         }
         return const CommandSkipped();
@@ -4031,6 +4085,14 @@ class _ActivateNoProviderSource extends Command {
 
       return const CommandDone();
     } on ApiException catch (e) {
+      // Team shared-pool full: route admin to web billing; inform non-admin.
+      // Must be checked BEFORE isAddonRequired because team_block_required
+      // replaces addon_required for team regular connections.
+      if (e.isTeamBlockRequired) {
+        return context.mounted
+            ? _handleTeamBlockRequired(context, e)
+            : const CommandSkipped();
+      }
       // Consented but no card on file: capture a card, then connect again.
       if (e.needsCard) {
         return context.mounted
@@ -4538,6 +4600,14 @@ class SaveSource extends Command {
       return CommandMessage('Connection "$name" saved');
     } on ApiException catch (e, t) {
       log.warning('Failed to save source', e, t);
+      // Team shared-pool full: route admin to web billing; inform non-admin.
+      // Must be checked BEFORE isAddonRequired because team_block_required
+      // replaces addon_required for team regular connections.
+      if (e.isTeamBlockRequired) {
+        return context.mounted
+            ? _handleTeamBlockRequired(context, e)
+            : const CommandSkipped();
+      }
       // Consented but no card on file: capture a card, then connect again.
       if (e.needsCard) {
         return context.mounted

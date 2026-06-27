@@ -354,13 +354,10 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     <Container size="lg" mt="xl" mb="xl">
       <Stack gap="lg">
         <Stack align="center" ta="center" gap="xs">
-          <Title order={2}>
-            {hasAnySubscription ? "Your plans" : "Choose your plan"}
-          </Title>
+          <Title order={2}>Do more with Plot</Title>
           <Text c="dimmed">
-            {hasAnySubscription
-              ? "Manage your subscriptions or add a new plan."
-              : "Upgrade for unlimited connections."}
+            Add connections and twist automations to bring all your work
+            together.
           </Text>
         </Stack>
 
@@ -444,7 +441,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
                     <Text fw={600}>Twist add-ons</Text>
                     <Text c="dimmed" size="sm">
                       {twistAddonCount} active · ${TWIST_ADDON_PRICE}/mo each
-                      (+20 twists each)
+                      (+5 twist automations each)
                     </Text>
                   </Stack>
                   <Badge color="green" variant="light">
@@ -657,9 +654,9 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         <Text c="dimmed" size="sm" ta="center" maw={680} mx="auto">
           Need more than your plan includes? Each connection beyond your plan is a
           ${ADDON_PRICE}/mo connection add-on, and each ${TWIST_ADDON_PRICE}/mo
-          twist add-on adds +20 twists. They're added automatically as you
-          connect more accounts or install more twists in the app, and you can
-          manage or cancel them anytime from your billing portal above.
+          twist add-on adds +5 twist automations. They're added automatically as
+          you connect more accounts or install more twists in the app, and you
+          can manage or cancel them anytime from your billing portal above.
         </Text>
       </Stack>
     </Container>

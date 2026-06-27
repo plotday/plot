@@ -2,22 +2,28 @@
 // the upgrade/checkout page (upgrade.tsx). The model is Free/Pro/Team with
 // à-la-carte connection add-ons and weighted automation (twist) capacity.
 //
-// These numbers MIRROR the server's `PLAN_LIMITS`
-// (workers/api/src/utils/limits.ts): Free 2 connections / 1 automation, Pro
-// unlimited / 10, Team 50-connection blocks / 10 automations per block. Keep
-// them in sync when `PLAN_LIMITS` changes. Tracked for extraction into a shared
-// `@plot/plans` package.
+// Numbers are imported from `@plotday/pricing` — the single source of truth
+// shared with the API worker. Do NOT add local numeric literals; update
+// `libs/pricing/src/index.ts` instead and rebuild.
 //
 // "Automation" is the marketing word for a twist; the page uses it because
 // readers meet it before they learn the word "twist". (In product UI and code
 // the add-on is the "twist add-on".) Core has been dropped from the model.
+//
+// Add-on availability: connection and twist add-ons are available on individual
+// plans (Free and Pro). LinkedIn, Instagram, and WhatsApp always need a
+// connection add-on on any plan.
+
+import {
+  CONNECTION_ADDON_PRICE,
+  PLAN,
+  PLAN_PRICES,
+  TWIST_ADDON_PRICE,
+} from "@plotday/pricing";
 
 export type Billing = "monthly" | "annual";
 
-export const PRICES = {
-  pro: { monthly: 25, annual: 20 },
-  team: { monthly: 124, annual: 99 },
-} as const;
+export const PRICES = PLAN_PRICES;
 
 /**
  * Price of one connection add-on, in USD/month. Every connection beyond a
@@ -26,16 +32,9 @@ export const PRICES = {
  * NOT count toward a plan's included connections. (App Store buyers pay a higher
  * tier price to cover Apple's surcharge — see the StoreKit add-on tiers.)
  */
-export const ADDON_PRICE = 5;
+export const ADDON_PRICE = CONNECTION_ADDON_PRICE;
 
-/**
- * Price of one twist (automation) add-on, in USD/month. Each one adds +20 to
- * your weighted automation capacity. Like connection add-ons it's billed
- * separately from your plan and usage-synced on the web. (App Store buyers pay
- * a higher tier price to cover Apple's surcharge — see the StoreKit twist
- * add-on tiers.)
- */
-export const TWIST_ADDON_PRICE = 10;
+export { TWIST_ADDON_PRICE };
 
 export type PlanKey = "free" | "pro" | "team";
 
@@ -71,7 +70,7 @@ export const PLANS: Plan[] = [
       "Unlimited history and full search of everything in Plot",
       "Collaborate free with anyone on Plot",
       "Built-in Plot assistant (with some limits)",
-      "1 automation",
+      `${PLAN.free.twistCapacity} twist automation`,
       "Import 1 week of history from your connections",
     ],
     cta: "Get started",
@@ -93,7 +92,7 @@ export const PLANS: Plan[] = [
       "Unlimited connections",
       "Everything in Free",
       "Built-in Plot assistant",
-      "10 automations",
+      `${PLAN.pro.twistCapacity} twist automations`,
       "No-code automation builder",
       "Import 1 year of history from your connections",
     ],
@@ -113,10 +112,9 @@ export const PLANS: Plan[] = [
     period: "/mo",
     description: "Shared connections and automation for your whole team.",
     features: [
-      "50 connections shared across your team (add as many as your team needs)",
+      "50 connections or twist automations, shared across your team (add 50 more anytime)",
       "Unlimited members — collaborate free",
       "Built-in Plot assistant",
-      "10 automations per 50 connections",
       "No-code automation builder",
       "Import 1 year of history from your connections",
       "Team-level controls",
@@ -126,6 +124,6 @@ export const PLANS: Plan[] = [
     ctaVariant: "filled",
     highlight: false,
     badge: null,
-    unit: "per 50 connections",
+    unit: "per 50 connections or twist automations",
   },
 ];

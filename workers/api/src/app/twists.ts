@@ -760,10 +760,10 @@ twists.delete("/twist/:id", async (c) => {
         const bgDb = createDb(reconcileEnv);
         try {
           const bgStripe = createStripeClient(reconcileEnv.STRIPE_SECRET_KEY);
-          const scope = reconcileTeamId
-            ? { teamId: reconcileTeamId }
-            : { userId: reconcileOwnerId };
-          await reconcileScopeTwistAddonBillingDown({ db: bgDb, stripe: bgStripe, scope });
+          // Teams never buy twist add-ons; only reconcile for personal twists.
+          if (!reconcileTeamId) {
+            await reconcileScopeTwistAddonBillingDown({ db: bgDb, stripe: bgStripe, scope: { userId: reconcileOwnerId } });
+          }
         } catch (err) {
           reconcileTracker.captureException(err as Error, {
             context: "reconcileScopeTwistAddonBillingDown:deleteTwist",
@@ -999,10 +999,10 @@ twists.delete("/twist/:id/archive-activities", async (c) => {
         const bgDb = createDb(reconcileArchEnv);
         try {
           const bgStripe = createStripeClient(reconcileArchEnv.STRIPE_SECRET_KEY);
-          const scope = reconcileArchTeamId
-            ? { teamId: reconcileArchTeamId }
-            : { userId: reconcileArchOwnerId };
-          await reconcileScopeTwistAddonBillingDown({ db: bgDb, stripe: bgStripe, scope });
+          // Teams never buy twist add-ons; only reconcile for personal twists.
+          if (!reconcileArchTeamId) {
+            await reconcileScopeTwistAddonBillingDown({ db: bgDb, stripe: bgStripe, scope: { userId: reconcileArchOwnerId } });
+          }
         } catch (err) {
           reconcileArchTracker.captureException(err as Error, {
             context: "reconcileScopeTwistAddonBillingDown:archiveAndDeleteTwist",

@@ -45,7 +45,7 @@ const FAQS = [
   {
     question: "What happens when I reach my connection limit?",
     answer:
-      "On Free, add connections for $5/month each, or upgrade to Pro for unlimited. On Team, add another block of 50 connections anytime; on annual billing, added blocks are prorated for the rest of your cycle.",
+      "On Free, add connections for $5/month each, or upgrade to Pro for unlimited. On Team, add another block of 50 connections or twist automations anytime; on annual billing, added blocks are prorated for the rest of your cycle.",
   },
   {
     question: "What's an automation?",
@@ -55,7 +55,7 @@ const FAQS = [
   {
     question: "How does automation capacity work?",
     answer:
-      "Your plan includes a number of automation slots — 1 on Free, 10 on Pro. Most automations use one slot; heavier ones use more (a 2× automation uses two). It's based on what you have turned on, so you can free up room by turning one off — or add 20 slots for $10/month.",
+      "Your plan includes a number of twist automation slots — 1 on Free, 3 on Pro. Most twist automations use one slot; heavier ones use more (a 2× twist automation uses two). It's based on what you have turned on, so you can free up room by turning one off — or add 5 twist automations for $10/month.",
   },
   {
     question: "How does AI work, and what does it cost?",
@@ -338,10 +338,10 @@ export default function Pricing() {
               All automations are hosted and run securely within Plot.
             </Text>
             <Text className={classes.sectionBody}>
-              Your plan includes automation capacity — Free includes 1, Pro
-              includes 10. A heavier automation uses more: a 2× automation takes
-              2 of your capacity. Turn one off to free up room, or add 20 more
-              for $10/mo.
+              Your plan includes twist automation capacity — Free includes 1,
+              Pro includes 3. A heavier twist automation uses more: a 2× twist
+              automation takes 2 of your capacity. Turn one off to free up room,
+              or add 5 more twist automations for $10/mo.
             </Text>
             <Text className={classes.sectionBody}>
               When an automation uses AI, that cost is already included in its

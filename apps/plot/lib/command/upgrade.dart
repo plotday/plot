@@ -194,16 +194,20 @@ class BuyAddonCommand extends Command {
   /// Web/Stripe consent path: show the add-on disclosure and, on confirmation,
   /// signal the caller to enable with `consentAddon: true`. No upfront charge.
   Future<CommandReturn> _consent(BuildContext context) async {
+    // Use the live price from /usage if available; fall back to $5.
+    final price =
+        SubscriptionService.instance.usage?.connectionAddonPrice ?? 5;
+
     final confirmed = await ConfirmModal(
       title: 'Add a connection add-on',
-      messageWidget: const SubscriptionDisclosure(
-        priceLine: r'Connection add-on — $5/month',
+      messageWidget: SubscriptionDisclosure(
+        priceLine: 'Connection add-on — \$$price/month',
         note:
             "You'll be billed when the connection is added. Billed separately "
             "from your plan; it does not count toward your plan's connection "
             'limit.',
       ),
-      confirmLabel: r'Add for $5/month',
+      confirmLabel: 'Add for \$$price/month',
     ).run(context);
     if (!context.mounted || !confirmed) return const CommandSkipped();
     return const CommandAddonConsented();
@@ -298,17 +302,18 @@ class BuyAddonCommand extends Command {
 
 }
 
-/// Purchases exactly one more twist add-on credit.
+/// Purchases exactly one more personal twist add-on credit.
 ///
-/// - Team scope ([teamId] set): routes through the web endpoint (Stripe,
-///   admin-managed).
+/// Team-scope twist capacity is managed on the web via the team billing page
+/// (team_block_required reason) — this command is personal-only.
+///
 /// - Personal + App Store build: upgrades to the next StoreKit tier
 ///   (immediate, Apple prorates). Capped at [kIapMaxTwistAddons].
 /// - Personal + non-App-Store (web, Android, DMG): calls
 ///   POST /upgrade/twist-addons/purchase; on a checkout-required response the
 ///   user is directed to their browser to complete payment.
 class BuyTwistAddonCommand extends Command {
-  BuyTwistAddonCommand({this.candidateWeight, this.teamId})
+  BuyTwistAddonCommand({this.candidateWeight})
     : super(
         title: 'Add a twist add-on',
         icon: PlotIcon.sparkles,
@@ -320,9 +325,6 @@ class BuyTwistAddonCommand extends Command {
   /// Forwarded to the server so it can select the right tier.
   final int? candidateWeight;
 
-  /// When set, the add-on is for this team (managed on the web by an admin).
-  final String? teamId;
-
   // Guards against starting two twist add-on checkouts at once (a 2nd
   // standalone subscription would orphan and bill forever).
   // Static so the guard is shared across all instances.
@@ -333,13 +335,10 @@ class BuyTwistAddonCommand extends Command {
     if (_twistAddonPurchaseInFlight) return const CommandSkipped();
     _twistAddonPurchaseInFlight = true;
     try {
-      if (teamId != null) {
-        return await _purchaseViaEndpoint(context, teamId);
-      }
       if (UpgradeUi.isAppStoreBuild) {
         return await _runIap(context);
       }
-      return await _purchaseViaEndpoint(context, null);
+      return await _purchaseViaEndpoint(context);
     } finally {
       _twistAddonPurchaseInFlight = false;
     }
@@ -383,7 +382,7 @@ class BuyTwistAddonCommand extends Command {
       title: 'Add a twist add-on',
       messageWidget: SubscriptionDisclosure(
         priceLine: livePrice == null ? null : 'Twist add-on — $livePrice/month',
-        note: 'Adds +20 twists. Billed separately from your plan.',
+        note: 'Adds +5 twist automations. Billed separately from your plan.',
       ),
       confirmLabel:
           livePrice == null ? 'Add a twist add-on' : 'Add for $livePrice/month',
@@ -429,19 +428,19 @@ class BuyTwistAddonCommand extends Command {
     }
   }
 
-  Future<CommandReturn> _purchaseViaEndpoint(
-    BuildContext context,
-    String? teamId,
-  ) async {
+  Future<CommandReturn> _purchaseViaEndpoint(BuildContext context) async {
+    // Use the live price from /usage if available; fall back to $10.
+    final price =
+        SubscriptionService.instance.usage?.twistAddonPrice ?? 10;
+
     // Consent before any charge.
     final confirmed = await ConfirmModal(
       title: 'Add a twist add-on',
-      messageWidget: const SubscriptionDisclosure(
-        priceLine: r'Twist add-on — $10/month',
-        note:
-            'Adds +20 twists — billed to your card on file, prorated.',
+      messageWidget: SubscriptionDisclosure(
+        priceLine: 'Twist add-on — \$$price/month',
+        note: 'Adds +5 twist automations — billed to your card on file, prorated.',
       ),
-      confirmLabel: r'Add for $10/month',
+      confirmLabel: 'Add for \$$price/month',
     ).run(context);
     if (!context.mounted || !confirmed) return const CommandSkipped();
 
@@ -454,7 +453,6 @@ class BuyTwistAddonCommand extends Command {
 
     try {
       final result = await UpgradeApi.purchaseTwistAddon(
-        teamId: teamId,
         candidateWeight: candidateWeight,
       );
       if (!context.mounted) return const CommandSkipped();
@@ -796,6 +794,10 @@ class ConnectionCapacityOffer extends Command {
     }
 
     // Web / DMG / Android: offer a choice between the add-on and a plan upgrade.
+    // Use the live price from /usage if available; fall back to $5.
+    final connPrice =
+        SubscriptionService.instance.usage?.connectionAddonPrice ?? 5;
+
     final result = await SelectModal.open<String>(
       context,
       showFilter: false,
@@ -805,7 +807,7 @@ class ConnectionCapacityOffer extends Command {
         builder: (context) {
           if (option == 'addon') {
             return ListTile(
-              title: r'Add a connection — $5/month',
+              title: 'Add a connection — \$$connPrice/month',
               icon: PlotIcon.connection,
               details: Text(
                 'Billed separately from your plan',
@@ -838,20 +840,23 @@ class ConnectionCapacityOffer extends Command {
   }
 }
 
-/// Handles the "need more twist capacity" offer when the user is at the twist
-/// limit.
+/// Handles the "need more twist capacity" offer when a personal user is at the
+/// twist limit.
+///
+/// Team capacity is managed via the team billing page (team_block_required
+/// reason) — this offer is personal-only.
 ///
 /// Unlike [ConnectionCapacityOffer], Apple DOES have twist add-on tiers
 /// (twist_addon_1/2/3), so on both platforms the user sees a choice between
-/// buying more twist capacity and upgrading to Pro.
+/// buying more twist automations capacity and upgrading to Pro.
 ///
-/// - non-App-Store: "Add 20 twists — $10/month" (→ [BuyTwistAddonCommand])
-///   OR "Upgrade to Pro" (→ [ShowUpgradeOptions]).
+/// - non-App-Store: "Add 5 twist automations — $10/month"
+///   (→ [BuyTwistAddonCommand]) OR "Upgrade to Pro" (→ [ShowUpgradeOptions]).
 /// - App Store: same two options (Apple supports twist add-on tiers).
 class TwistCapacityOffer extends Command {
-  TwistCapacityOffer({this.candidateWeight, this.teamId})
+  TwistCapacityOffer({this.candidateWeight})
     : super(
-        title: 'Add more twists',
+        title: 'Add more twist automations',
         icon: PlotIcon.sparkles,
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
@@ -862,21 +867,22 @@ class TwistCapacityOffer extends Command {
   /// tier.
   final int? candidateWeight;
 
-  /// When set, the add-on is for this team (managed on the web by an admin).
-  final String? teamId;
-
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Use the live price from /usage if available; fall back to $10.
+    final price =
+        SubscriptionService.instance.usage?.twistAddonPrice ?? 10;
+
     final result = await SelectModal.open<String>(
       context,
       showFilter: false,
-      title: 'Add more twists',
+      title: 'Add more twist automations',
       items: (_) async => [SelectGroup<String>(items: ['addon', 'upgrade'])],
       itemBuilder: (option, _) => Builder(
         builder: (context) {
           if (option == 'addon') {
             return ListTile(
-              title: r'Add 20 twists — $10/month',
+              title: 'Add 5 twist automations — \$$price/month',
               icon: PlotIcon.twist,
               details: Text(
                 'Billed separately from your plan',
@@ -890,9 +896,9 @@ class TwistCapacityOffer extends Command {
             title: 'Upgrade to Pro',
             icon: PlotIcon.sparkles,
             details: Text(
-              // Pro's twist capacity is 10 (PLAN_LIMITS.pro.twistCapacity),
+              // Pro's twist capacity is 3 (PLAN_LIMITS.pro.twistCapacity),
               // not unlimited — don't overpromise.
-              '10 twists',
+              '3 twist automations',
               style: context.theme.typography.sm.copyWith(
                 color: context.theme.plotColors.muted,
               ),
@@ -903,12 +909,9 @@ class TwistCapacityOffer extends Command {
     );
     if (!context.mounted || !result.present) return const CommandSkipped();
     if (result.value == 'addon') {
-      return BuyTwistAddonCommand(
-        candidateWeight: candidateWeight,
-        teamId: teamId,
-      ).run(context);
+      return BuyTwistAddonCommand(candidateWeight: candidateWeight).run(context);
     }
-    return ShowUpgradeOptions(title: 'Upgrade to add more twists').run(context);
+    return ShowUpgradeOptions(title: 'Upgrade to add more twist automations').run(context);
   }
 }
 
