@@ -74,6 +74,28 @@ describe("TrelloApi request shaping", () => {
     expect(url).toContain("checklists=all");
     expect(url).toContain("checkItem_fields=name,state,pos,idMember");
   });
+
+  it("updateCheckItem PUTs state/name/idMember to the card checkItem endpoint", async () => {
+    const f = mockFetchOnce({ id: "ci1", name: "Buy milk", state: "complete", pos: 1, idMember: "m1" });
+    const item = await api.updateCheckItem("c1", "ci1", { state: "complete", name: "Buy milk", idMember: "m1" });
+    expect(item.state).toBe("complete");
+    const url = f.mock.calls[0][0] as string;
+    const init = f.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("PUT");
+    expect(url).toContain("/cards/c1/checkItem/ci1");
+    expect(url).toContain("state=complete");
+    expect(url).toContain("name=Buy%20milk");
+    expect(url).toContain("idMember=m1");
+  });
+
+  it("me fetches /members/me with id,fullName,username", async () => {
+    const f = mockFetchOnce({ id: "me1", fullName: "Owner", username: "owner" });
+    const me = await api.me();
+    expect(me.id).toBe("me1");
+    const url = f.mock.calls[0][0] as string;
+    expect(url).toContain("/members/me");
+    expect(url).toContain("fields=id,fullName,username");
+  });
 });
 
 describe("cardCreatedAt", () => {

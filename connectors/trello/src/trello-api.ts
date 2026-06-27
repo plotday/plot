@@ -152,6 +152,23 @@ export class TrelloApi {
     return this.req("PUT", `/actions/${actionId}`, `text=${encodeURIComponent(text)}`);
   }
 
+  updateCheckItem(
+    cardId: string,
+    checkItemId: string,
+    fields: { name?: string; state?: "complete" | "incomplete"; idMember?: string },
+  ): Promise<TrelloCheckItem> {
+    const parts: string[] = [];
+    if (fields.name !== undefined) parts.push(`name=${encodeURIComponent(fields.name)}`);
+    if (fields.state !== undefined) parts.push(`state=${fields.state}`);
+    // Empty-string idMember clears the assignment (verify during e2e).
+    if (fields.idMember !== undefined) parts.push(`idMember=${encodeURIComponent(fields.idMember)}`);
+    return this.req("PUT", `/cards/${cardId}/checkItem/${checkItemId}`, parts.join("&"));
+  }
+
+  me(): Promise<{ id: string; fullName: string | null; username: string | null }> {
+    return this.req("GET", "/members/me", "fields=id,fullName,username");
+  }
+
   createWebhook(boardId: string, callbackURL: string): Promise<{ id: string }> {
     const body = `idModel=${encodeURIComponent(boardId)}&callbackURL=${encodeURIComponent(callbackURL)}&description=${encodeURIComponent("Plot Trello sync")}`;
     return this.req("POST", "/webhooks", "", body);
