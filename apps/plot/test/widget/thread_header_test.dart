@@ -1,5 +1,29 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rrule/rrule.dart';
+
+import 'package:plot/store/store.dart';
 import 'package:plot/widget/thread.dart';
+
+Priority _testPriority() {
+  final row = PriorityRow(
+    id: Uuid.generate(),
+    createdBy: Uuid.generate(),
+    createdAt: DateTime(2026, 1, 1),
+    updatedAt: DateTime(2026, 1, 1),
+    title: 'Test',
+    path: Path('test'),
+    order: Order(0),
+    unread: false,
+    role: 'member',
+    isInbox: false,
+    isFyi: false,
+    attentionWindowSet: false,
+    seeWithinSet: false,
+    earlyNotificationsEnabledSet: false,
+    notifyWindowSet: false,
+  );
+  return Priority.fromStore(row, draft: true);
+}
 
 /// Regression test for empty participant-header bands on thread rows.
 ///
@@ -161,6 +185,78 @@ void main() {
         ),
         0.0,
       );
+    });
+  });
+
+  // The header band surfaces the occurrence date (and time, when the event is
+  // timed) for calendar-event threads. Timed events used to be suppressed here
+  // because the agenda's block header rendered the time — but in the flat feed
+  // there is no block header, so the date vanished. These lock the re-added
+  // display and the "nearest occurrence" (next, else most recent past) pick.
+  group('threadScheduleLabelDate', () {
+    final priority = _testPriority();
+    final today = Date(2026, 6, 26);
+
+    test('surfaces a timed event\'s own date and time '
+        '(regression: was hidden)', () {
+      final event = Thread(
+        priority: priority,
+        title: 'Standup',
+        at: DateTimeRange(DateTime(2026, 6, 30, 14), DateTime(2026, 6, 30, 15)),
+      );
+      expect(
+        threadScheduleLabelDate(event, isTodoBase: false, today: today),
+        DateTime(2026, 6, 30, 14),
+      );
+    });
+
+    test('surfaces an all-day event\'s date with no time', () {
+      final event = Thread(
+        priority: priority,
+        title: 'Holiday',
+        on: CustomDateRange(Date(2026, 6, 30), null),
+      );
+      final result =
+          threadScheduleLabelDate(event, isTodoBase: false, today: today);
+      expect(result?.toDate(), Date(2026, 6, 30));
+      expect(result?.toTimeOfDay().isMidnight, isTrue);
+    });
+
+    test('hides the label for a plain todo with no schedule', () {
+      final todo = Thread(priority: priority, title: 'Buy milk');
+      expect(
+        threadScheduleLabelDate(todo, isTodoBase: true, today: today),
+        isNull,
+      );
+    });
+
+    test('recurring: targets the next upcoming occurrence, not the anchor', () {
+      // Weekly series anchored in the past; the nearest upcoming instance
+      // (2026-06-29), not the 2026-06-22 anchor, is shown.
+      final series = Thread(
+        priority: priority,
+        title: 'Weekly sync',
+        at: DateTimeRange(DateTime(2026, 6, 22, 14), DateTime(2026, 6, 22, 15)),
+        recurrenceRule: RecurrenceRule(frequency: Frequency.weekly),
+      );
+      final result =
+          threadScheduleLabelDate(series, isTodoBase: false, today: today);
+      expect(result?.toDate(), Date(2026, 6, 29));
+    });
+
+    test('recurring: falls back to the most recent past occurrence', () {
+      // A finished weekly series (COUNT=2) whose occurrences are all in the
+      // past still anchors to its latest occurrence (2026-06-08) rather than
+      // vanishing.
+      final series = Thread(
+        priority: priority,
+        title: 'Old standup',
+        at: DateTimeRange(DateTime(2026, 6, 1, 9), DateTime(2026, 6, 1, 10)),
+        recurrenceRule: RecurrenceRule(frequency: Frequency.weekly, count: 2),
+      );
+      final result =
+          threadScheduleLabelDate(series, isTodoBase: false, today: today);
+      expect(result?.toDate(), Date(2026, 6, 8));
     });
   });
 }

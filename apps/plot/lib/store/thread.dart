@@ -4695,6 +4695,11 @@ SELECT
     bool draft = false,
     DateTimeRange? at,
     DateRange? on,
+
+    /// Recurrence rule for the schedule. Exposed so tests can construct a
+    /// recurring series; production paths populate it from synced schedule
+    /// rows. Requires `at` or `on` to anchor the series start.
+    RecurrenceRule? recurrenceRule,
     List<Note>? notes,
 
     /// Optional per-user thread-state fields. Production paths populate
@@ -4760,6 +4765,7 @@ SELECT
             endAt: at?.end,
             startOn: at == null ? on?.start : null,
             endOn: at == null ? on?.end : null,
+            recurrenceRule: recurrenceRule,
           )
         : null;
     return Thread._fromStore(

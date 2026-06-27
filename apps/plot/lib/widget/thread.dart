@@ -79,6 +79,47 @@ double trailingClusterInset({
   return (trailingIsBareAvatar || trailingIsBareChip) ? ghostIconPadding : 0.0;
 }
 
+/// The date — and time, when the occurrence is timed — shown in a thread
+/// row's header band for calendar-event and scheduled-todo threads, or null
+/// when the row should carry no schedule label.
+///
+/// Calendar-event rows in the feed are handed their representative occurrence
+/// (see [Thread.loadRepresentativeForFeed]), so [Thread.at] / [Thread.on]
+/// already point at the nearest occurrence and the non-recurring path simply
+/// surfaces it — including timed events, which were previously suppressed here
+/// because the agenda's block header rendered the time (the flat feed has no
+/// such header, so the date went missing). For a bare recurring series (no
+/// resolved occurrence) this re-derives that nearest occurrence: the next
+/// upcoming instance, or — failing that — the most recent past one, so a
+/// finished series still anchors to a real date.
+DateTime? threadScheduleLabelDate(
+  Thread activity, {
+  required bool isTodoBase,
+  required Date today,
+}) {
+  // User-scheduled todos only show the label when a linked event provides the
+  // date (e.g. a calendar event); plain todos hide it.
+  if (isTodoBase && !activity.hasLinkSchedule) return null;
+  if (activity.recurring) {
+    final time =
+        activity.at?.start?.toTimeOfDay() ??
+        const TimeOfDay(hour: 0, minute: 0);
+    final next = activity.nextOccurrence(
+      CustomBoundedDateRange(today, today.addDays(365)),
+    );
+    if (next != null) return next.toDateTime(time: time);
+    // No upcoming occurrence: anchor to the most recent past one so a
+    // finished series still shows when it last happened.
+    final previous = activity.nextOccurrence(
+      CustomBoundedDateRange(today.addDays(-365), today),
+      reverse: true,
+    );
+    if (previous != null) return previous.toDateTime(time: time);
+    return activity.at?.start;
+  }
+  return activity.at?.start;
+}
+
 /// How a plain row tap should be interpreted (see [_rowClickIntent]).
 enum _RowClickIntent { open, toggle, range }
 
@@ -464,10 +505,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             (priorityContext != null &&
                 activity.priority.id != priorityContext!.id));
 
-    final hasEventTime =
-        activity.at?.start != null &&
-        !activity.at!.start!.toTimeOfDay().isMidnight;
-
     final isTodoBase = activity.todo && !activity.isLinkScheduleInstance;
 
     // Channel breadcrumb (e.g. "Acme Co › #general") shown in all lists when
@@ -494,28 +531,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     final hasBodyLabel =
         hasChannelLabel || hasContactsLabel || hasSubPriorityLabel;
 
-    final scheduleDate = () {
-      // User-scheduled todos only show the label when a linked event provides
-      // the date (e.g. a calendar event); plain todos hide it.
-      if (isTodoBase && !activity.hasLinkSchedule) return null;
-      // Events with their own start time never show a schedule label here;
-      // the agenda's AgendaTile carries the time and the activity feed
-      // shows it via the priority-hover row below.
-      if (!isTodoBase && hasEventTime) return null;
-      if (activity.recurring) {
-        final nextDate = activity.nextOccurrence(
-          CustomBoundedDateRange(Date.today(), Date.today().addDays(365)),
-        );
-        if (nextDate != null) {
-          final time =
-              activity.at?.start?.toTimeOfDay() ??
-              const TimeOfDay(hour: 0, minute: 0);
-          return nextDate.toDateTime(time: time);
-        }
-        return activity.at?.start;
-      }
-      return activity.at?.start;
-    }();
+    final scheduleDate = threadScheduleLabelDate(
+      activity,
+      isTodoBase: isTodoBase,
+      today: Date.today(),
+    );
 
     final hasScheduleLabel = scheduleDate != null;
     final hasTopLabel = hasBodyLabel || hasScheduleLabel;
