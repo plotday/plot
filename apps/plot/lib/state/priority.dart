@@ -797,6 +797,14 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// (transitional state during the per-tab migration).
   StreamSubscription<void>? _activeTabSubscription;
 
+  /// Deferred compose-draft resolution for the in-flight focus switch. Set in
+  /// [setPriority] and fired from [_rebuildActiveTabSection] on the feed's
+  /// first post-switch emit, so the draft's DB query runs *after* the thread
+  /// list the user is looking at — not contending with / ahead of it. A later
+  /// switch overwrites this (older one is dropped); a backstop timer in
+  /// [setPriority] fires it if the feed somehow never emits. See the call site.
+  void Function()? _pendingDraftResolve;
+
   /// Which tab the [_activeTabSubscription] is currently feeding. `null`
   /// when the active tab still routes through the legacy build.
   ActivityTab? _activeTabSubscriptionTab;
@@ -1252,6 +1260,17 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedLoaded: true,
       ),
     );
+    // The feed has emitted its first post-switch content (we only reach here
+    // with `_activeTabHeadReceived == true`, i.e. after the head listener
+    // fired). Now run the compose-draft resolution deferred in [setPriority]
+    // so its DB query no longer contends with the list the user is looking at.
+    // `scheduleMicrotask` lets this emit's synchronous listeners (the feed
+    // rebuild) run first; the draft populates a beat after.
+    final pendingDraft = _pendingDraftResolve;
+    if (pendingDraft != null) {
+      _pendingDraftResolve = null;
+      scheduleMicrotask(pendingDraft);
+    }
     // Auto-off: if the filter is on but nothing is unread any more (e.g. the
     // last unread was read on another device and synced in), release it so we
     // never show an empty filtered feed behind a disabled toggle.
@@ -2962,14 +2981,53 @@ class PriorityBloc extends Cubit<PriorityState> {
     // tab reloads for the new priority.
     _restartActiveTabSubscription();
 
-    // Look up the chain draft so the new-thread input shows the right
-    // content. We deliberately DO NOT call `Priority.get(archived: null)` to
-    // re-enrich the priority — the profile data showed it cost ~1100ms
-    // (including a `pullArchived` call) and the only fields it adds
-    // (`active`/`unreadComputed`) are recomputed elsewhere by PrioritiesBloc;
-    // nothing in this bloc reads them off `state.context`. Priority.watchOne
-    // (registered inside _loadPriority) keeps state.context in sync with the
-    // raw row, which is enough.
+    // Defer the compose-draft resolution until the feed has emitted. The
+    // profiler showed the feed's three section queries don't fire until this
+    // chain-draft lookup (and its background note load) finish — i.e. the
+    // thread list the user is actually looking at was queued behind the
+    // new-thread input's draft. Resolving it from [_rebuildActiveTabSection]
+    // on the feed's first post-switch emit lets the list queries hit the DB
+    // uncontended; the compose box populates a beat later (it mounts with an
+    // in-memory draft and patches in the saved note when ready, so typing is
+    // never blocked). A long backstop guarantees the draft still resolves if
+    // the feed somehow never emits — set well above the worst observed feed
+    // time so it never reintroduces the contention this is removing.
+    _pendingDraftResolve = () => unawaited(
+          _resolveSwitchDraft(newPriority, profile, myGen).catchError((
+            Object e,
+            StackTrace st,
+          ) {
+            // Fire-and-forget now (microtask/backstop), so a DB error here
+            // would otherwise be an unhandled async error. Report it; the
+            // compose box just keeps the previous draft until the next switch.
+            Tracker.captureException(e, st);
+          }),
+        );
+    Future<void>.delayed(const Duration(milliseconds: 1500), () {
+      final pending = _pendingDraftResolve;
+      if (pending != null && myGen == _priorityLoadGeneration) {
+        _pendingDraftResolve = null;
+        pending();
+      }
+    });
+  }
+
+  /// Resolve the chain draft for [newPriority] and emit it into the new-thread
+  /// input, then finish the draft note in the background. Extracted from
+  /// [setPriority] and deferred until the feed emits (see [_pendingDraftResolve]
+  /// and its call site) so this lookup no longer races the feed's queries.
+  ///
+  /// We deliberately DO NOT call `Priority.get(archived: null)` to re-enrich
+  /// the priority — the profile data showed it cost ~1100ms (including a
+  /// `pullArchived` call) and the only fields it adds (`active`/
+  /// `unreadComputed`) are recomputed elsewhere by PrioritiesBloc; nothing in
+  /// this bloc reads them off `state.context`. Priority.watchOne (registered
+  /// inside _loadPriority) keeps state.context in sync with the raw row.
+  Future<void> _resolveSwitchDraft(
+    Priority newPriority,
+    _PriorityLoadProfile profile,
+    int myGen,
+  ) async {
     final existingDraft = await Thread.getDraftInChain(newPriority);
     profile.mark('chain draft lookup done (found=${existingDraft != null})');
 

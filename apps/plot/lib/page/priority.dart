@@ -1162,14 +1162,30 @@ class _PriorityPageState extends State<PriorityPage>
                             // in the unscoped Everything view (null context).
                             final feedScrollFocusId =
                                 state.activeTabContext?.id ?? widget.priorityId;
-                            return _buildActivityFeed(
-                              context,
-                              state,
-                              items,
-                              listController,
-                              ScrollControllerContext.of(context),
-                              scrollStorageKey: PageStorageKey(
-                                'priority_feed_$feedScrollFocusId',
+                            // Subtle switch transition: while the route's focus
+                            // is ahead of the focus the displayed items belong
+                            // to — the bloc holds the outgoing list for a beat
+                            // until the new focus's items stream in (~200ms) —
+                            // dim the feed. This gives immediate feedback that
+                            // the tap registered and softens the content swap.
+                            // Opacity only: it never touches layout or scroll
+                            // offset, so it can't disturb the displayed-content
+                            // scroll restoration above.
+                            final switchingFocus =
+                                state.context?.id != state.activeTabContext?.id;
+                            return AnimatedOpacity(
+                              opacity: switchingFocus ? 0.55 : 1.0,
+                              duration: const Duration(milliseconds: 150),
+                              curve: Curves.easeOut,
+                              child: _buildActivityFeed(
+                                context,
+                                state,
+                                items,
+                                listController,
+                                ScrollControllerContext.of(context),
+                                scrollStorageKey: PageStorageKey(
+                                  'priority_feed_$feedScrollFocusId',
+                                ),
                               ),
                             );
                           },
