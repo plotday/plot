@@ -256,3 +256,40 @@ describe("onChannelDisabled", () => {
     expect(store.map.has("sync_enabled_b1")).toBe(false);
   });
 });
+
+describe("checklist sync wiring", () => {
+  const bid = "b1";
+
+  it("fetches+caches the owner member id and passes it to transformCard", async () => {
+    const store = makeStore({ [`sync_state_${bid}`]: { before: null, batchNumber: 1, initialSync: true } });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const trello = makeTrello({ store, integrations: { saveLink, channelSyncCompleted: vi.fn().mockResolvedValue(undefined) } });
+    const me = vi.fn().mockResolvedValue({ id: "owner1", fullName: "Owner", username: "owner" });
+    const getCards = vi.fn().mockResolvedValue([
+      { id: "c1", name: "C", desc: "", idList: "l1", idBoard: bid, closed: false, url: "u", idMembers: [], dateLastActivity: "2026-01-01T00:00:00Z",
+        checklists: [{ id: "cl1", name: "QA", pos: 1, checkItems: [{ id: "ci1", name: "x", state: "complete", pos: 1, idMember: null }] }] },
+    ]);
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ me, getCards });
+
+    await (trello as unknown as { syncBatch: (b: string) => Promise<void> }).syncBatch(bid);
+
+    expect(me).toHaveBeenCalledTimes(1);
+    expect(await store.get("me_member_id")).toBe("owner1");
+    // owner-attributed Done lands on the saved note
+    const savedNotes = saveLink.mock.calls[0][0].notes as Array<{ key: string; tags?: Record<number, Array<{ source?: { accountId?: string } }>> }>;
+    const ci1 = savedNotes.find((n) => n.key === "checkitem-ci1")!;
+    expect(ci1.tags?.[3]?.[0].source?.accountId).toBe("owner1"); // Tag.Done = 3
+    // per-card checklist map persisted for later deletion handling
+    expect(await store.get("checklist_items_c1")).toEqual({ cl1: ["ci1"] });
+  });
+
+  it("reuses the cached owner id without a second me() call", async () => {
+    const store = makeStore({ me_member_id: "ownerX", [`sync_state_${bid}`]: { before: null, batchNumber: 1, initialSync: false } });
+    const trello = makeTrello({ store, integrations: { saveLink: vi.fn().mockResolvedValue("t1") } });
+    const me = vi.fn();
+    const getCards = vi.fn().mockResolvedValue([]);
+    (trello as unknown as { getApi: unknown }).getApi = vi.fn().mockResolvedValue({ me, getCards });
+    await (trello as unknown as { syncBatch: (b: string) => Promise<void> }).syncBatch(bid);
+    expect(me).not.toHaveBeenCalled();
+  });
+});

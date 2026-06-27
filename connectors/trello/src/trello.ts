@@ -9,7 +9,7 @@ import {
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { TrelloApi, cardCreatedAt, verifyTrelloWebhook } from "./trello-api";
+import { TrelloApi, cardCreatedAt, verifyTrelloWebhook, type TrelloCard } from "./trello-api";
 import { buildCardLinkType } from "./trello-channels";
 import { transformCard } from "./trello-sync";
 
@@ -243,6 +243,32 @@ export class Trello extends Connector<Trello> {
     return { externalContent: updated.data.text };
   }
 
+  /** The connection owner's Trello member id, cached for Done-attribution on unassigned-complete items. */
+  private async getOwnerMemberId(boardId: string): Promise<string | undefined> {
+    const cached = await this.get<string>("me_member_id");
+    if (cached) return cached;
+    try {
+      const api = await this.getApi(boardId);
+      const me = await api.me();
+      if (me?.id) {
+        await this.set("me_member_id", me.id);
+        return me.id;
+      }
+    } catch (error) {
+      console.warn("Failed to fetch Trello member id for owner attribution:", error);
+    }
+    return undefined;
+  }
+
+  /** Persist the card's checklist→checkItem-id map so checklist removal can archive the right notes. */
+  private async recordChecklistItems(cardId: string, card: TrelloCard): Promise<void> {
+    const map: Record<string, string[]> = {};
+    for (const cl of card.checklists ?? []) {
+      map[cl.id] = cl.checkItems.map((i) => i.id);
+    }
+    await this.set(`checklist_items_${cardId}`, map);
+  }
+
   private async syncBatch(boardId: string): Promise<void> {
     const state = await this.get<TrelloSyncState>(`sync_state_${boardId}`);
     if (!state) throw new Error(`Trello sync state not found for board ${boardId}`);
@@ -253,8 +279,10 @@ export class Trello extends Connector<Trello> {
       before: state.before ?? undefined,
     });
 
+    const ownerMemberId = await this.getOwnerMemberId(boardId);
     for (const card of cards) {
-      await this.tools.integrations.saveLink(transformCard(card, boardId, state.initialSync));
+      await this.tools.integrations.saveLink(transformCard(card, boardId, state.initialSync, ownerMemberId));
+      await this.recordChecklistItems(card.id, card);
     }
 
     if (cards.length === CARDS_PER_PAGE) {
