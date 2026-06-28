@@ -135,6 +135,13 @@ dependencies:
   # imported so non-Apple platforms never pull this in. See
   # lib/api/upgrade_api.dart `UpgradeUi.isAppStoreBuild`.
   in_app_purchase: ^3.2.0
+  # StoreKit-specific purchase details. iap_api.dart reads the raw
+  # `SKPaymentTransactionStateWrapper` to tell `.purchasing` (the native
+  # purchase/password sheet is on screen) from `.deferred` (Ask-to-Buy: sheet
+  # dismissed) — both of which collapse to `PurchaseStatus.pending` in the
+  # cross-platform API. Already pulled in transitively by `in_app_purchase`;
+  # declared directly because we import it.
+  in_app_purchase_storekit: ^0.4.9
 
 dependency_overrides:
   # ⚠️  PATCHED LOCAL FORK — see third_party/sqlite3/hook/build.dart

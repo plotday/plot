@@ -1138,7 +1138,7 @@ packages:
     source: hosted
     version: "1.4.0"
   in_app_purchase_storekit:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: in_app_purchase_storekit
       sha256: f2cf3a6c5233f8f43b4bb148e658be881441f33c3d285fe6ae8348c4994e1a75

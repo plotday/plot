@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb, ValueNotifier;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, ValueNotifier, visibleForTesting;
 import 'package:flutter/widgets.dart' show FocusManager;
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart'
+    show AppStorePurchaseDetails;
+import 'package:in_app_purchase_storekit/store_kit_wrappers.dart'
+    show SKPaymentTransactionStateWrapper;
 
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/upgrade_api.dart';
@@ -107,13 +112,45 @@ class IapService {
   /// (e.g. pasting a password) instead of being captured by Flutter's menu —
   /// Flutter's `PlatformMenuBar` items match their key equivalents app-wide,
   /// ahead of the native first responder. Set just before StoreKit presents and
-  /// cleared on the first transaction update (the sheet has been dismissed). See
-  /// RootMenuBar. Also used to retire the purchase loading bridge if the buy()
-  /// future itself never resolves (Ask-to-Buy / deferred). Always false off the
-  /// App Store path (StoreKit purchases never start).
+  /// cleared once no in-flight transaction is still `.purchasing` — i.e. the
+  /// sheet has actually been dismissed (terminal state, or `.deferred` for
+  /// Ask-to-Buy). Crucially it is NOT cleared on the *first* transaction update:
+  /// StoreKit delivers `.purchasing` the instant the payment is queued, while
+  /// the sheet is still on screen, so clearing then would re-arm the Edit-menu
+  /// Paste accelerator before the user could paste. See RootMenuBar and
+  /// [storeKitSheetIsUp]. Also used to retire the purchase loading bridge (it
+  /// closes when this goes true→false). Always false off the App Store path
+  /// (StoreKit purchases never start).
   static final ValueNotifier<bool> nativeSheetActive = ValueNotifier<bool>(
     false,
   );
+
+  /// Whether StoreKit's purchase/password sheet is still on screen for a
+  /// transaction in the given [state]. The sheet is up only while the
+  /// transaction is `.purchasing`; every other state means it has been
+  /// dismissed — `.deferred` (Ask-to-Buy, awaiting approval) as well as the
+  /// terminal `.purchased` / `.failed` / `.restored`. `.purchasing` and
+  /// `.deferred` both surface as `PurchaseStatus.pending` in the cross-platform
+  /// API, so the raw StoreKit state is the only thing that distinguishes
+  /// "sheet up" from "sheet dismissed" while pending.
+  @visibleForTesting
+  static bool storeKitSheetIsUp(SKPaymentTransactionStateWrapper state) =>
+      state == SKPaymentTransactionStateWrapper.purchasing;
+
+  /// Whether [purchase] indicates StoreKit's sheet is still on screen, so the
+  /// [nativeSheetActive] flag must stay set. On iOS/macOS purchases are
+  /// [AppStorePurchaseDetails] and we read the precise transaction state; for
+  /// any other shape (e.g. a future StoreKit 2 details type) fall back to the
+  /// cross-platform status and treat a still-`pending` transaction as sheet-up,
+  /// so Cmd+V keeps reaching the password field. The worst case of that
+  /// fallback is the rare Ask-to-Buy path holding the flag until a later
+  /// update — never the paste regression.
+  static bool _sheetStillUp(PurchaseDetails purchase) {
+    if (purchase is AppStorePurchaseDetails) {
+      return storeKitSheetIsUp(purchase.skPaymentTransaction.transactionState);
+    }
+    return purchase.status == PurchaseStatus.pending;
+  }
 
   final InAppPurchase _iap = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
@@ -242,8 +279,9 @@ class IapService {
     // The native StoreKit sheet is about to appear. Flag it so the macOS menu
     // bar drops its Edit-menu accelerators (so Cmd+V etc. reach the sheet's
     // password field). Set before the focus flush below so the menu rebuilds
-    // before the sheet shows; cleared on the first transaction update (sheet
-    // dismissed) or if the launch throws.
+    // before the sheet shows; cleared in `_onPurchaseUpdates` once the sheet is
+    // dismissed (no transaction still `.purchasing`), or here if the launch
+    // throws.
     nativeSheetActive.value = true;
 
     // Release Flutter's keyboard focus before presenting the StoreKit sheet.
@@ -320,11 +358,17 @@ class IapService {
   }
 
   Future<void> _onPurchaseUpdates(List<PurchaseDetails> purchases) async {
-    // Any transaction update means StoreKit's sheet has been acted on and
-    // dismissed (purchased / cancelled / deferred / error) — restore the menu
-    // accelerators. Background renewals/restores arrive here too with no sheet
-    // up, where this is a harmless no-op (already false).
-    if (nativeSheetActive.value) nativeSheetActive.value = false;
+    // Lower the menu-suppression flag once StoreKit's purchase/password sheet
+    // is no longer on screen, but NOT before. The sheet is up only while a
+    // transaction is `.purchasing`; `.deferred` (Ask-to-Buy) and every terminal
+    // state mean it has been dismissed. The earlier "clear on the first update"
+    // logic re-armed the Edit-menu Paste accelerator on the `.purchasing`
+    // update — delivered while the sheet was still showing — so Cmd+V never
+    // reached the password field. Background renewals/restores arrive here too
+    // with no sheet up, where this is a harmless no-op (already false).
+    if (nativeSheetActive.value && !purchases.any(_sheetStillUp)) {
+      nativeSheetActive.value = false;
+    }
     for (final purchase in purchases) {
       await _handlePurchase(purchase);
     }
