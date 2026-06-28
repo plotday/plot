@@ -413,8 +413,19 @@ class _AuthButtonState extends State<AuthButton>
         });
         return;
       }
-      log.warning('Google sign-in failed', e, t);
-      Tracker.captureException(e, t);
+      if (shouldReportGoogleSignInFailure(e.code)) {
+        log.warning('Google sign-in failed', e, t);
+        Tracker.captureException(e, t);
+      } else {
+        // Environmental failure (e.g. providerConfigurationError): the device's
+        // auth SDK / Google Play Services is unavailable or has no registered
+        // credential provider. The user sees the message below, so don't report
+        // it as a bug — it's noise in error tracking.
+        log.info('Google sign-in unavailable', {
+          'code': e.code.toString(),
+          'description': e.description,
+        });
+      }
       final message = 'Unable to connect with Google. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
@@ -1127,6 +1138,28 @@ Future<T> runWithPopupSpinnerGrace<T>({
     timer.cancel();
   }
 }
+
+/// Whether a [GoogleSignInException] with this code should be reported to error
+/// tracking.
+///
+/// Some sign-in failures are environmental or user-driven conditions on the
+/// device, not bugs in Plot. The user is already shown an error, so capturing
+/// these just adds noise:
+///
+/// - [GoogleSignInExceptionCode.canceled]: the user dismissed the picker.
+/// - [GoogleSignInExceptionCode.providerConfigurationError]: the device's
+///   underlying auth SDK (Google Play Services / the Android Credential
+///   Manager) is unavailable or has no registered credential provider. Seen in
+///   the wild on Android as "getCredentialAsync no provider dependencies
+///   found".
+///
+/// All other codes (e.g. [GoogleSignInExceptionCode.clientConfigurationError],
+/// which signals an app-side misconfiguration) are genuine bugs worth
+/// reporting.
+@visibleForTesting
+bool shouldReportGoogleSignInFailure(GoogleSignInExceptionCode code) =>
+    code != GoogleSignInExceptionCode.canceled &&
+    code != GoogleSignInExceptionCode.providerConfigurationError;
 
 FButtonStyle buildAuthButtonStyle(
   BuildContext context,
