@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 
+import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -976,6 +977,59 @@ class SecondaryTabBackScope extends StatelessWidget {
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
             returnFromSecondaryTab(context);
+          },
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+/// Wraps the **Focus home** bottom-nav tab (tab 0) so the Android back gesture
+/// *exits the app* from there instead of no-op'ing with a haptic. The Focus
+/// home is the back target every other tab and the priority feed funnel into
+/// ([returnFromSecondaryTab] / [returnFromPriorityToSourceTab]), so it's the
+/// terminal "one more back exits" step — but on its own it had nothing wired
+/// to actually exit.
+///
+/// Why an explicit [SystemNavigator.pop] is needed rather than relying on the
+/// platform default: the bottom-nav tabs live in an [AutoTabsRouter]
+/// [IndexedStack] that keeps every visited tab mounted. The Activity/Search/
+/// secondary tabs each mount a `PopScope(canPop: false)`, and Flutter reports
+/// `SystemNavigator.setFrameworkHandlesBack(true)` whenever *any* mounted route
+/// blocks pop — including an offstage IndexedStack tab. So once the user has
+/// opened a focus feed, the framework permanently claims to handle back; on the
+/// Focus home tab (a leaf route with nothing to pop) the system back is then
+/// swallowed into a no-op haptic instead of backgrounding the app. Handling the
+/// pop here and calling [SystemNavigator.pop] makes the exit deterministic
+/// regardless of that stale state.
+///
+/// Tab 0 ([PriorityTabs.priorities] / `PrioritiesRoute`) is a leaf — drilling
+/// into a focus navigates to the Activity tab, never within this tab's own
+/// navigator — so when this scope's [PopScope] fires there is never an inner
+/// route to pop first; exiting is always the correct action.
+///
+/// Single-panel only: multi-panel (desktop) hides the bottom nav and has no
+/// Android back gesture, so it must pass through untouched. Mirrors
+/// [SecondaryTabBackScope].
+class FocusHomeBackScope extends StatelessWidget {
+  const FocusHomeBackScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<LayoutBloc, LayoutState>(
+      buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
+      builder: (context, layoutState) {
+        if (layoutState.multiPanel) return child;
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            // Top of the home stack — nothing left to navigate back to, so
+            // background the app like the native root back gesture would.
+            SystemNavigator.pop();
           },
           child: child,
         );

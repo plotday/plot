@@ -37,35 +37,41 @@ class PrioritiesPage extends StatelessWidget {
     // the empty-title bar entirely — its only menu item (toggle archived)
     // now lives in the bottom-nav More menu. Multi-panel layouts hoist
     // UnifiedHeader to the priority page above this one.
-    return Scaffold(
-      header: null,
-      childPad: false,
-      scrollable: false,
-      body: context.isMultiPanel
-          ? const PrioritiesPanelContent()
-          : SafeArea(
-              top: true,
-              bottom: false,
-              left: false,
-              right: false,
-              // The bottom nav is overlaid on top of the page (see
-              // _MobileShellChrome's Stack), so reserve its measured height
-              // as bottom padding. Otherwise the pinned Inbox/Everything
-              // tiles at the bottom of the focuses Column are painted under
-              // the nav and become unreachable when many focuses fill the
-              // list. The inset already includes the bottom safe-area, which
-              // is why SafeArea keeps bottom: false.
-              child: Padding(
-                padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
-                child: const Column(
-                  children: [
-                    // Desktop (macOS) traffic-light clearance; nothing on mobile.
-                    WindowControlsInset(),
-                    Expanded(child: PrioritiesPanelContent()),
-                  ],
+    //
+    // Wrap in [FocusHomeBackScope] so the Android back gesture exits the app
+    // from this (home) tab instead of no-op'ing — see its doc for why an
+    // explicit exit is needed. Self-gates to single-panel.
+    return FocusHomeBackScope(
+      child: Scaffold(
+        header: null,
+        childPad: false,
+        scrollable: false,
+        body: context.isMultiPanel
+            ? const PrioritiesPanelContent()
+            : SafeArea(
+                top: true,
+                bottom: false,
+                left: false,
+                right: false,
+                // The bottom nav is overlaid on top of the page (see
+                // _MobileShellChrome's Stack), so reserve its measured height
+                // as bottom padding. Otherwise the pinned Inbox/Everything
+                // tiles at the bottom of the focuses Column are painted under
+                // the nav and become unreachable when many focuses fill the
+                // list. The inset already includes the bottom safe-area, which
+                // is why SafeArea keeps bottom: false.
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: BottomNavInset.of(context)),
+                  child: const Column(
+                    children: [
+                      // Desktop (macOS) traffic-light clearance; nothing on mobile.
+                      WindowControlsInset(),
+                      Expanded(child: PrioritiesPanelContent()),
+                    ],
+                  ),
                 ),
               ),
-            ),
+      ),
     );
   }
 }
