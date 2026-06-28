@@ -3104,6 +3104,21 @@ class EditTwist extends ShowForm {
             PermissionFlag.read,
           );
 
+      // When the edit form would have no editable content — no name, team,
+      // channels, or options — and the twist can't be removed (builtin), there
+      // is nothing to configure. Skip the empty edit form and show the twist
+      // details directly, so tapping an auto-installed twist in Manage Twists
+      // goes straight to its details and popping returns to that list.
+      final nothingToConfigure =
+          !matchingTwist.multipleInstances &&
+          teams.isEmpty &&
+          !hasLinkPermission &&
+          !hasOptions &&
+          twistInstance.isBuiltin;
+      if (nothingToConfigure) {
+        return ShowTwistDetails._buildForm(matchingTwist);
+      }
+
       // Track link channel changes
       var linkChannelSelection = const LinkChannelSelection();
       final linkChannelListController = FormChannelListController();
