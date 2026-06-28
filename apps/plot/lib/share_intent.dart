@@ -116,21 +116,40 @@ String? _extractUrl(SharedMedia? media) {
   return extractHttpUrl(media.content);
 }
 
-/// Extracts an HTTP/HTTPS URL from a raw shared text blob. Handles plain URLs
-/// as well as "Title\nURL" formats used by some share sources.
+/// Matches a run of an http/https URL: the scheme followed by any run of
+/// non-whitespace. Case-insensitive because a few share sources upper-case the
+/// scheme. Greedy `\S+` deliberately over-captures trailing punctuation/quotes
+/// so [extractHttpUrl] can trim them off afterward.
+final _urlPattern = RegExp(r'https?://\S+', caseSensitive: false);
+
+/// Trailing characters that read as prose punctuation rather than part of a
+/// shared link (the period in "see https://x.com/y.", a closing quote/bracket
+/// around a quoted URL). Trimmed from the captured run so the link chip is
+/// clean. Anything inside the URL is untouched — only a trailing run is cut.
+const _trailingUrlJunk = '.,;:!?)]}>"\'';
+
+/// Extracts an HTTP/HTTPS URL from a raw shared text blob.
+///
+/// Handles a bare URL, "Title\nURL" payloads, AND — the case that matters most
+/// on Android — a URL sitting inline with descriptive text on the same line
+/// ("Check out this article https://…", "https://… shared via YouTube"). Many
+/// share sources (YouTube, news, social apps, plain text-selection shares)
+/// bundle the link with surrounding prose on one line; scanning line-by-line
+/// for a URL *alone* on its line missed those, dropping the share entirely so
+/// the app just opened to its home tab instead of composing.
 String? extractHttpUrl(String? raw) {
   final content = raw?.trim();
   if (content == null || content.isEmpty) return null;
 
-  if (_isHttpUrl(content)) return content;
+  final match = _urlPattern.firstMatch(content);
+  if (match == null) return null;
 
-  final lines = content.split('\n');
-  for (final line in lines) {
-    final trimmed = line.trim();
-    if (_isHttpUrl(trimmed)) return trimmed;
+  var url = match.group(0)!;
+  while (url.isNotEmpty && _trailingUrlJunk.contains(url[url.length - 1])) {
+    url = url.substring(0, url.length - 1);
   }
 
-  return null;
+  return _isHttpUrl(url) ? url : null;
 }
 
 bool _isHttpUrl(String text) {
