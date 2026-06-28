@@ -1485,9 +1485,19 @@ class PickScheduleThread extends Command {
       bloc = context.read<PriorityBloc>();
     } catch (_) {}
 
+    // Hold on to the scoped launcher context. ScheduleThread.run must run
+    // against a context that has PriorityBloc/NowBloc/LayoutBloc and the router
+    // in scope: when it reschedules the *open* thread it delegates to
+    // ChangeCurrentThread.run() to open the next one, and that command does an
+    // unguarded context.read<PriorityBloc>(). The modal's builder context is
+    // outside the priority-page scope, so passing it there throws
+    // ProviderNotFoundException. ScheduleThread guards on `context.mounted`, so
+    // using the launcher context safely no-ops if it unmounts.
+    final pageContext = context;
+
     final actionReturn = await Modal(
       constraints: const BoxConstraints(maxWidth: 380, maxHeight: 640),
-      builder: (context) => SingleChildScrollView(
+      builder: (dialogContext) => SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1495,7 +1505,7 @@ class PickScheduleThread extends Command {
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 'Do later',
-                style: context.theme.typography.xl2.copyWith(
+                style: dialogContext.theme.typography.xl2.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1505,8 +1515,8 @@ class PickScheduleThread extends Command {
               child: Text(
                 'Schedule the day you plan to act on this next.',
                 style: TextStyle(
-                  color: context.theme.plotColors.veryMuted,
-                  fontSize: context.theme.typography.sm.fontSize,
+                  color: dialogContext.theme.plotColors.veryMuted,
+                  fontSize: dialogContext.theme.typography.sm.fontSize,
                 ),
               ),
             ),
@@ -1541,9 +1551,12 @@ class PickScheduleThread extends Command {
                     when: date.toDate(),
                     onUpdate: _onUpdate,
                     priorityBloc: bloc,
-                  ).run(context),
+                  ).run(pageContext),
                 );
-                Modal.pop(context, Value<CommandReturn>(const CommandDone()));
+                Modal.pop(
+                  dialogContext,
+                  Value<CommandReturn>(const CommandDone()),
+                );
               },
             ),
             const SizedBox(height: 12),
@@ -1556,10 +1569,10 @@ class PickScheduleThread extends Command {
                     when: Thread.todoNowDate,
                     onUpdate: _onUpdate,
                     priorityBloc: bloc,
-                  ).run(context),
+                  ).run(pageContext),
                 );
                 Modal.pop(
-                  context,
+                  dialogContext,
                   Value<CommandReturn>(const CommandDone()),
                 );
               },
