@@ -1,3 +1,21 @@
+## 1.5.0+370 — 2026-06-28
+
+### Subscriptions
+
+- When you add more to a twist or connection add-on on iPhone, iPad, or Mac, the screen now shows the new total and its price, so it's clear what you're getting before you confirm.
+- The upgrade screen on iPhone, iPad, and Mac now spells out what Pro includes — unlimited connections, more automations, a longer history import, and more — so it's clear what you're subscribing to before you buy.
+
+### Connections
+
+- When a connection that needs a connection add-on (like LinkedIn) prompts you to buy one, the screen now names the connection so it's clear what the add-on unlocks.
+
+### Fixes
+
+- On Android, the back gesture now closes Plot from the Focus home screen instead of doing nothing — so a final back swipe leaves the app as expected.
+- Sharing a link to Plot on Android now reliably opens a new thread with the link attached, even when the link arrives alongside other text (for example a title or "shared via" note).
+- Choosing "Do later" on the thread you're currently viewing now smoothly opens the next thread instead of leaving you stuck on the one you just rescheduled.
+- Signing in with Google on the web no longer shows an error when you were already signed in — Plot now just takes you straight to your workspace.
+
 ## 1.5.0+369 — 2026-06-27
 
 ### AI
