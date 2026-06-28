@@ -189,6 +189,14 @@ class TwistInstance extends TwistInstanceRow {
   }
 
   static Future<List<TwistInstance>> get({bool? archived = false}) async {
+    // Defensive check: the Store is deregistered from the injector during
+    // sign-out. A reactive caller (e.g. ComposeTargetsBloc.refresh, whose entry
+    // Store.isAvailable guard can pass and then go stale across an await) can
+    // reach here after teardown, where Store.get throws `The type "Store" is
+    // not defined!`. Mirror the guard in [watch] and degrade to an empty list.
+    if (!Injector.appInstance.exists<Store>()) {
+      return const [];
+    }
     final query = _get(archived: archived);
     final rows = await query.get();
     final twists = rows.map((row) => TwistInstance(row)).toList();

@@ -404,6 +404,20 @@ void main() {
     });
 
     test(
+        'TwistInstance.get degrades to [] when the store is deregistered '
+        '(sign-out teardown) instead of throwing NotDefinedException', () async {
+      // Reproduces the compose-refresh teardown race: ComposeTargetsBloc.refresh
+      // clears its entry Store.isAvailable guard, then sign-out removes the
+      // Store from the injector while _materializeBaseList is mid-await.
+      // _twistTargets then calls TwistInstance.get(), whose Store.get hit a
+      // deregistered injector and threw `The type "Store" is not defined!`.
+      // get() must mirror watch()'s guard and degrade to an empty list.
+      Injector.appInstance.removeByKey<Store>();
+      expect(Injector.appInstance.exists<Store>(), isFalse);
+      expect(await TwistInstance.get(), isEmpty);
+    });
+
+    test(
         'base list surfaces per-connection templates; used combos (rostered '
         'chat + connector DM) rank ahead by recency', () async {
       final self = Uuid.generate();
