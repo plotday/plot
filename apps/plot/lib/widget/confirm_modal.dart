@@ -14,6 +14,12 @@ enum ConfirmOutcome { confirmed, cancelled, dismissed }
 /// keyboard navigation (↑/↓/Enter/Esc) for free.
 ///
 /// [run] returns `true` when confirmed, `false` when cancelled or dismissed.
+///
+/// Set [showCancel] to false to drop the explicit "Cancel" row, leaving only
+/// the confirm action. The modal is still dismissible (Esc, the X, tapping
+/// outside, or the back gesture), so the user can always back out — this just
+/// removes the redundant button on screens where dismissal is the obvious way
+/// out (e.g. the App Store subscription confirmations).
 class ConfirmModal {
   const ConfirmModal({
     required this.title,
@@ -22,6 +28,7 @@ class ConfirmModal {
     required this.confirmLabel,
     this.cancelLabel = 'Cancel',
     this.destructive = false,
+    this.showCancel = true,
   }) : assert(
          message != null || messageWidget != null,
          'ConfirmModal needs a message or a messageWidget',
@@ -37,18 +44,24 @@ class ConfirmModal {
   final String cancelLabel;
   final bool destructive;
 
+  /// Whether to render the explicit "Cancel" row. When false, only the confirm
+  /// action is shown; dismissal still works via Esc / the X / tapping outside.
+  final bool showCancel;
+
   Future<ConfirmOutcome> runDetailed(BuildContext context) async {
     // Cancel (false) is listed first so it starts highlighted — the safer
-    // default, especially for destructive confirmations.
+    // default, especially for destructive confirmations. When [showCancel] is
+    // false the row is dropped entirely and the confirm action is the only
+    // (and highlighted) item; the user backs out by dismissing the modal.
     final result = await SelectModal.open<bool>(
       context,
       showFilter: false,
       title: title,
       subtitle: messageWidget == null ? message : null,
       subtitleWidget: messageWidget,
-      selectedValue: false,
+      selectedValue: showCancel ? false : true,
       items: (_) async => [
-        SelectGroup<bool>(items: const [false, true]),
+        SelectGroup<bool>(items: showCancel ? const [false, true] : const [true]),
       ],
       itemBuilder: (value, _) => Builder(
         builder: (context) {

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, ValueNotifier;
 import 'package:flutter/widgets.dart' show FocusManager;
 import 'package:in_app_purchase/in_app_purchase.dart';
 
@@ -100,6 +100,20 @@ class IapService {
   IapService._();
 
   static final IapService instance = IapService._();
+
+  /// True while a StoreKit purchase/password sheet is being presented. The macOS
+  /// menu bar watches this to drop its Edit-menu Cmd+V/C/X/A key equivalents
+  /// while the sheet is up, so those shortcuts reach the native sheet's fields
+  /// (e.g. pasting a password) instead of being captured by Flutter's menu —
+  /// Flutter's `PlatformMenuBar` items match their key equivalents app-wide,
+  /// ahead of the native first responder. Set just before StoreKit presents and
+  /// cleared on the first transaction update (the sheet has been dismissed). See
+  /// RootMenuBar. Also used to retire the purchase loading bridge if the buy()
+  /// future itself never resolves (Ask-to-Buy / deferred). Always false off the
+  /// App Store path (StoreKit purchases never start).
+  static final ValueNotifier<bool> nativeSheetActive = ValueNotifier<bool>(
+    false,
+  );
 
   final InAppPurchase _iap = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
@@ -225,6 +239,13 @@ class IapService {
     final completer = Completer<IapResult>();
     _pending[productId] = completer;
 
+    // The native StoreKit sheet is about to appear. Flag it so the macOS menu
+    // bar drops its Edit-menu accelerators (so Cmd+V etc. reach the sheet's
+    // password field). Set before the focus flush below so the menu rebuilds
+    // before the sheet shows; cleared on the first transaction update (sheet
+    // dismissed) or if the launch throws.
+    nativeSheetActive.value = true;
+
     // Release Flutter's keyboard focus before presenting the StoreKit sheet.
     // On macOS (and iOS) the native purchase/password sheet shares the app
     // window, so while a Flutter text field still owns the text input
@@ -244,6 +265,7 @@ class IapService {
     } catch (e, st) {
       log.warning('IAP: buyNonConsumable threw', e, st);
       _pending.remove(productId);
+      nativeSheetActive.value = false;
       return IapResult(
         status: IapPurchaseStatus.storeError,
         message: e.toString(),
@@ -298,6 +320,11 @@ class IapService {
   }
 
   Future<void> _onPurchaseUpdates(List<PurchaseDetails> purchases) async {
+    // Any transaction update means StoreKit's sheet has been acted on and
+    // dismissed (purchased / cancelled / deferred / error) — restore the menu
+    // accelerators. Background renewals/restores arrive here too with no sheet
+    // up, where this is a harmless no-op (already false).
+    if (nativeSheetActive.value) nativeSheetActive.value = false;
     for (final purchase in purchases) {
       await _handlePurchase(purchase);
     }

@@ -65,27 +65,31 @@ void main() {
       brightness: Brightness.light,
     );
 
-    // Mirrors what BuyAddonCommand shows via ConfirmModal: a SelectModal<bool>
-    // with the real SubscriptionDisclosure as its subtitle. Cancel is
-    // highlighted by default (selectedValue: false), matching ConfirmModal's
-    // safer-default behaviour.
+    // Mirrors what BuyAddonCommand shows via ConfirmModal on the App Store: a
+    // SelectModal<bool> with the real SubscriptionDisclosure as its subtitle.
+    // On the App Store the add-on modal is only ever reached for a premium
+    // connector (LinkedIn / Instagram / WhatsApp — the connectors the
+    // addon_1/2/3 products exist for), so it leads with "<connector> requires a
+    // connection add-on.", labels the button "Purchase a connection add-on", and
+    // shows no Cancel row (showCancel: false — dismiss via Esc / X).
     final modal = SelectModal<bool>(
       showFilter: false,
       title: 'Add a connection add-on',
       subtitleWidget: const SubscriptionDisclosure(
         priceLine: r'Connection add-on — $5/month',
-        note: "Billed separately from your plan. It does not count toward "
-            "your plan's connection limit.",
+        note: 'LinkedIn requires a connection add-on. It is billed separately '
+            "from your plan and does not count toward your plan's connection "
+            'limit.',
       ),
-      selectedValue: false,
+      selectedValue: true,
       initialItems: [
-        SelectGroup<bool>(items: const [false, true]),
+        SelectGroup<bool>(items: const [true]),
       ],
       items: (_) async => [
-        SelectGroup<bool>(items: const [false, true]),
+        SelectGroup<bool>(items: const [true]),
       ],
       itemBuilder: (value, _) => ListTile(
-        title: value ? r'Add for $5/month' : 'Cancel',
+        title: 'Purchase a connection add-on',
       ),
     );
 
@@ -150,17 +154,20 @@ void main() {
     expect(find.text(r'Connection add-on — $5/month'), findsOneWidget);
     expect(
       find.text(
-        "Billed separately from your plan. It does not count toward "
-        "your plan's connection limit.",
+        'LinkedIn requires a connection add-on. It is billed separately '
+        "from your plan and does not count toward your plan's connection "
+        'limit.',
       ),
       findsOneWidget,
     );
-    expect(find.text(r'Add for $5/month'), findsOneWidget);
-    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Purchase a connection add-on'), findsOneWidget);
+    // No Cancel row (showCancel: false) — the user dismisses via Esc / X.
+    expect(find.text('Cancel'), findsNothing);
     expect(find.textContaining('auto-renew'), findsOneWidget);
     expect(find.text('Terms of Service'), findsOneWidget);
     expect(find.text('Privacy Policy'), findsOneWidget);
-    // The OLD (now false) copy must be gone.
+    // The OLD copy must be gone.
+    expect(find.text(r'Add for $5/month'), findsNothing);
     expect(find.textContaining('bill on top of your plan'), findsNothing);
     expect(
       find.textContaining('counts as one of your plan connections'),

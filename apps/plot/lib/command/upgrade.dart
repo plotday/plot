@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
@@ -12,11 +14,14 @@ import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/confirm_modal.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
+import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/select_modal.dart';
+import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
 import 'command.dart';
 
@@ -88,7 +93,11 @@ class BuyPlanCommand extends Command {
       return const CommandSkipped();
     }
 
-    final result = await IapService.instance.buy(productId);
+    if (!context.mounted) return const CommandSkipped();
+    final result = await _withStoreKitLoading(
+      context,
+      () => IapService.instance.buy(productId),
+    );
     if (!context.mounted) return const CommandSkipped();
 
     switch (result.status) {
@@ -158,7 +167,7 @@ Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
 ///   The legacy upfront POST /upgrade/addons/purchase endpoint is no longer
 ///   used on this path.
 class BuyAddonCommand extends Command {
-  BuyAddonCommand({this.teamId})
+  BuyAddonCommand({this.teamId, this.connectionName})
     : super(
         title: 'Add a connection add-on',
         icon: PlotIcon.connection,
@@ -168,6 +177,12 @@ class BuyAddonCommand extends Command {
 
   /// When set, the add-on is for this team (managed on the web by an admin).
   final String? teamId;
+
+  /// Display name of the connector that needs the add-on (e.g. "LinkedIn"),
+  /// when known. On the App Store purchase modal it's surfaced as
+  /// "LinkedIn requires a connection add-on." so it's clear which connection the
+  /// purchase unlocks. Null on the generic / proactive path.
+  final String? connectionName;
 
   // Guards against starting two StoreKit purchases at once (a 2nd standalone
   // add-on subscription would orphan and bill forever — see Plan 2 review).
@@ -250,19 +265,37 @@ class BuyAddonCommand extends Command {
     final productId = kIapAddonProductForCount[current + 1];
     final livePrice =
         productId == null ? null : IapService.instance.productFor(productId)?.price;
+    // When we know which connector needs the add-on (the premium connectors —
+    // LinkedIn, Instagram, WhatsApp), lead with "<name> requires a connection
+    // add-on." and label the button "Purchase a connection add-on" so it's
+    // clear what's being bought and why.
+    final note = connectionName == null
+        ? "Billed separately from your plan. It does not count toward your "
+              "plan's connection limit."
+        : '$connectionName requires a connection add-on. It is billed '
+              "separately from your plan and does not count toward your plan's "
+              'connection limit.';
+    final confirmLabel = connectionName != null
+        ? 'Purchase a connection add-on'
+        : (livePrice == null
+              ? 'Add a connection add-on'
+              : 'Add for $livePrice/month');
     final confirmed = await ConfirmModal(
       title: 'Add a connection add-on',
       messageWidget: SubscriptionDisclosure(
         priceLine: livePrice == null ? null : 'Connection add-on — $livePrice/month',
-        note: "Billed separately from your plan. It does not count toward your "
-            "plan's connection limit.",
+        note: note,
       ),
-      confirmLabel:
-          livePrice == null ? 'Add a connection add-on' : 'Add for $livePrice/month',
+      confirmLabel: confirmLabel,
+      // The X / Esc / back already dismiss; drop the redundant Cancel row.
+      showCancel: false,
     ).run(context);
     if (!context.mounted || !confirmed) return const CommandSkipped();
 
-    final purchase = await IapService.instance.buyAddon(current + 1);
+    final purchase = await _withStoreKitLoading(
+      context,
+      () => IapService.instance.buyAddon(current + 1),
+    );
     if (!context.mounted) return const CommandSkipped();
 
     switch (purchase.status) {
@@ -386,10 +419,15 @@ class BuyTwistAddonCommand extends Command {
       ),
       confirmLabel:
           livePrice == null ? 'Add a twist add-on' : 'Add for $livePrice/month',
+      // The X / Esc / back already dismiss; drop the redundant Cancel row.
+      showCancel: false,
     ).run(context);
     if (!context.mounted || !confirmed) return const CommandSkipped();
 
-    final purchase = await IapService.instance.buyTwistAddon(current + 1);
+    final purchase = await _withStoreKitLoading(
+      context,
+      () => IapService.instance.buyTwistAddon(current + 1),
+    );
     if (!context.mounted) return const CommandSkipped();
 
     switch (purchase.status) {
@@ -605,6 +643,149 @@ class SubscriptionDisclosure extends StatelessWidget {
   }
 }
 
+/// The Pro plan's marketing feature list, shown in the App Store upgrade
+/// confirmation so it's clear what the subscription includes. Mirrors the Pro
+/// plan on the marketing site (apps/site/app/lib/plans.ts) — keep the two in
+/// sync. ("Everything in Free" is intentionally omitted: it only reads clearly
+/// next to the Free card on the pricing page, not on its own in a modal.)
+const List<String> _kProFeatures = [
+  'Unlimited connections',
+  'Built-in Plot assistant',
+  '10 automations',
+  'No-code automation builder',
+  'Import 1 year of history from your connections',
+];
+
+/// What the user is buying, shown in the App Store "Upgrade your plan"
+/// confirmation: the Pro price, a one-line summary, the feature list, and the
+/// auto-renew + Terms/Privacy disclosure Apple requires (3.1.2). Replaces the
+/// bare price line so the modal makes clear what Pro includes.
+class ProUpgradeDetails extends StatelessWidget {
+  const ProUpgradeDetails({this.price, super.key});
+
+  /// Live StoreKit price (e.g. "$34.99"), or null when StoreKit hasn't loaded
+  /// the product yet (the native sheet still shows the exact amount).
+  final String? price;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final body = theme.typography.sm.copyWith(
+      color: theme.colors.mutedForeground,
+      height: 1.4,
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          price == null ? 'Pro' : 'Pro — $price/month',
+          style: theme.typography.sm.copyWith(fontWeight: FontWeight.w600),
+        ),
+        SizedBox(height: theme.spacing.xs),
+        Text('Unlimited connections and more automation.', style: body),
+        SizedBox(height: theme.spacing.sm),
+        for (final feature in _kProFeatures)
+          Padding(
+            padding: EdgeInsets.only(bottom: theme.spacing.xs),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(top: 3, right: theme.spacing.sm),
+                  child: Icon(
+                    PlotIcon.done,
+                    size: theme.iconSizes.xs,
+                    color: theme.colors.primary,
+                  ),
+                ),
+                Expanded(child: Text(feature, style: body)),
+              ],
+            ),
+          ),
+        SizedBox(height: theme.spacing.sm),
+        const SubscriptionDisclosure(),
+      ],
+    );
+  }
+}
+
+/// Runs [buy] (a StoreKit purchase) while keeping a small "Contacting the App
+/// Store…" modal on screen, so the modal beneath — e.g. the connections list or
+/// the upgrade prompt — doesn't flash into view during the second or two before
+/// StoreKit presents its native sheet.
+///
+/// The loader is pushed synchronously, before [buy]'s first await, so it swaps
+/// in during the same frame the confirm modal pops — no flash. StoreKit's native
+/// sheet then appears on top of it, and the loader pops itself once [buy]
+/// settles (purchased / cancelled / error).
+Future<T> _withStoreKitLoading<T>(
+  BuildContext context,
+  Future<T> Function() buy,
+) async {
+  final done = Completer<void>();
+  void closeLoader() {
+    if (!done.isCompleted) done.complete();
+  }
+
+  // Normally the loader retires when buy() returns. But on the Ask-to-Buy /
+  // deferred path buy()'s future never resolves, so also close once StoreKit's
+  // sheet has appeared and then been dismissed — IapService.nativeSheetActive
+  // goes true when the sheet shows and false on the first transaction update.
+  var sawSheet = false;
+  void onSheet() {
+    if (IapService.nativeSheetActive.value) {
+      sawSheet = true;
+    } else if (sawSheet) {
+      closeLoader();
+    }
+  }
+
+  IapService.nativeSheetActive.addListener(onSheet);
+  unawaited(
+    Modal(
+      showCloseButton: false,
+      builder: (_) => _StoreKitLoadingContent(done: done.future),
+    ).show<void>(context),
+  );
+  try {
+    return await buy();
+  } finally {
+    IapService.nativeSheetActive.removeListener(onSheet);
+    closeLoader();
+  }
+}
+
+/// Spinner body for the [_withStoreKitLoading] bridge modal. Pops itself when
+/// [done] settles; if the user dismisses it first, the late pop is a no-op
+/// (guarded by `mounted`).
+class _StoreKitLoadingContent extends StatefulWidget {
+  const _StoreKitLoadingContent({required this.done});
+
+  final Future<void> done;
+
+  @override
+  State<_StoreKitLoadingContent> createState() => _StoreKitLoadingContentState();
+}
+
+class _StoreKitLoadingContentState extends State<_StoreKitLoadingContent> {
+  @override
+  void initState() {
+    super.initState();
+    widget.done.whenComplete(() {
+      if (mounted) Modal.pop<dynamic>(context, Value<dynamic>.absent());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Center(child: Spinner.message('Contacting the App Store…')),
+    );
+  }
+}
+
 /// Live StoreKit price for a plan (currently only 'pro'), or null when StoreKit
 /// hasn't loaded the product yet. Never hardcode the amount: it varies by
 /// storefront, would silently go stale on any price change (no code rollout
@@ -712,10 +893,12 @@ class ShowUpgradeOptions extends Command {
       final price = _livePlanPrice(plan);
       final confirmed = await ConfirmModal(
         title: _title,
-        messageWidget: SubscriptionDisclosure(
-          priceLine: price == null ? null : '$planName — $price/month',
-        ),
+        // Show what Pro includes (price + feature list + disclosure) so it's
+        // clear what the subscription buys, not just the price.
+        messageWidget: ProUpgradeDetails(price: price),
         confirmLabel: 'Subscribe to $planName',
+        // The X / Esc / back already dismiss; drop the redundant Cancel row.
+        showCancel: false,
       ).run(context);
       if (!context.mounted || !confirmed) return const CommandSkipped();
       return BuyPlanCommand(plan: plan).run(context);
@@ -768,22 +951,33 @@ class ShowUpgradeOptions extends Command {
 ///   (Pro-only). Apple has no connection-capacity add-on tier; addon_1/2/3
 ///   are reserved for premium connectors.
 class ConnectionCapacityOffer extends Command {
-  ConnectionCapacityOffer({this.teamId, required this.isPremium})
-    : super(
-        title: 'Add a connection',
-        icon: PlotIcon.connection,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.clicked,
-      );
+  ConnectionCapacityOffer({
+    this.teamId,
+    required this.isPremium,
+    this.connectionName,
+  }) : super(
+         title: 'Add a connection',
+         icon: PlotIcon.connection,
+         eventObject: EventObject.settings,
+         eventAction: EventAction.clicked,
+       );
 
   final String? teamId;
   final bool isPremium;
+
+  /// Display name of the connector being added (e.g. "LinkedIn"), forwarded to
+  /// [BuyAddonCommand] so the App Store add-on modal can say which connection
+  /// needs the add-on. Null when unknown.
+  final String? connectionName;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     // Premium connectors always require the add-on on all platforms.
     if (isPremium) {
-      return BuyAddonCommand(teamId: teamId).run(context);
+      return BuyAddonCommand(
+        teamId: teamId,
+        connectionName: connectionName,
+      ).run(context);
     }
 
     // App Store: no connection-capacity add-on available — go straight to Pro.
@@ -832,7 +1026,10 @@ class ConnectionCapacityOffer extends Command {
     );
     if (!context.mounted || !result.present) return const CommandSkipped();
     if (result.value == 'addon') {
-      return BuyAddonCommand(teamId: teamId).run(context);
+      return BuyAddonCommand(
+        teamId: teamId,
+        connectionName: connectionName,
+      ).run(context);
     }
     return ShowUpgradeOptions(
       title: 'Upgrade to add more connections',

@@ -983,10 +983,12 @@ Future<({bool consented, CommandReturn offerResult})> _offerAddonConsent(
   required String draftId,
   required bool isPremium,
   String? teamId,
+  String? connectionName,
 }) async {
   final result = await ConnectionCapacityOffer(
     teamId: teamId,
     isPremium: isPremium,
+    connectionName: connectionName,
   ).run(context);
   if (result is CommandAddonConsented) {
     _addonConsentedDrafts.add(draftId);
@@ -1004,6 +1006,7 @@ Command? _premiumGateCommand({
   required String owner, // 'personal' or team id
   required bool isPremium,
   required String draftId,
+  String? connectionName,
 }) {
   if (!isPremium) return null;
   // Consent already captured before auth — let the auth/enable proceed; the
@@ -1017,6 +1020,7 @@ Command? _premiumGateCommand({
         draftId: draftId,
         isPremium: true,
         teamId: owner == 'personal' ? null : owner,
+        connectionName: connectionName,
       );
   }
 }
@@ -1031,23 +1035,32 @@ enum _PremiumGate { allowed, atLimit }
 /// purchase up front and we likewise refresh. No charge happens in this command
 /// on the web path — the money is the server's job on enable.
 class _ConsentGate extends Command {
-  _ConsentGate({required this.draftId, required this.isPremium, this.teamId})
-    : super(
-        title: 'Add a connection',
-        icon: PlotIcon.connection,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.clicked,
-      );
+  _ConsentGate({
+    required this.draftId,
+    required this.isPremium,
+    this.teamId,
+    this.connectionName,
+  }) : super(
+         title: 'Add a connection',
+         icon: PlotIcon.connection,
+         eventObject: EventObject.settings,
+         eventAction: EventAction.clicked,
+       );
 
   final String draftId;
   final bool isPremium;
   final String? teamId;
+
+  /// Display name of the connector needing the add-on (e.g. "LinkedIn"),
+  /// forwarded to [ConnectionCapacityOffer] for the App Store add-on modal copy.
+  final String? connectionName;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final result = await ConnectionCapacityOffer(
       teamId: teamId,
       isPremium: isPremium,
+      connectionName: connectionName,
     ).run(context);
     if (result is CommandAddonConsented) {
       // Web/Stripe: consent captured (no charge). Record it so the auth/enable
@@ -1624,6 +1637,7 @@ class EditSource extends ShowForm {
                     owner: owner,
                     isPremium: integrations.premium,
                     draftId: twistInstanceId,
+                    connectionName: name,
                   );
                   if (premiumGate != null) return premiumGate;
                   final team = live.teams.firstWhereOrNull((t) => t.id == owner);
@@ -2312,6 +2326,7 @@ class AddSourceDetail extends ShowForm {
                         owner: initialOwner,
                         isPremium: twist.premium,
                         draftId: draftId,
+                        connectionName: twist.name,
                       )
                     : null;
                 if (premiumGate != null) {
@@ -2430,6 +2445,7 @@ class AddSourceDetail extends ShowForm {
                       owner: owner,
                       isPremium: twist.premium,
                       draftId: draftId,
+                      connectionName: twist.name,
                     );
                     if (premiumGate != null) return premiumGate;
                     final team = live.teams.firstWhereOrNull(
@@ -2571,6 +2587,7 @@ class AddSourceDetail extends ShowForm {
                         owner: initialOwner,
                         isPremium: twist.premium,
                         draftId: draftId,
+                        connectionName: twist.name,
                       )
                     : null;
                 if (premiumGate != null) {
@@ -2691,6 +2708,7 @@ class AddSourceDetail extends ShowForm {
                       owner: owner,
                       isPremium: twist.premium,
                       draftId: draftId,
+                      connectionName: twist.name,
                     );
                     if (premiumGate != null) return premiumGate;
                     final team = live.teams.firstWhereOrNull(
@@ -3561,6 +3579,7 @@ class SetupTwist extends ShowForm {
                     owner: owner,
                     isPremium: twist.premium,
                     draftId: draftId,
+                    connectionName: twist.name,
                   );
                   if (premiumGate != null) return premiumGate;
                   final team = live.teams.firstWhereOrNull((t) => t.id == owner);
@@ -3775,6 +3794,7 @@ class ActivateTwist extends Command {
           draftId: draftId,
           isPremium: isPremium ?? false,
           teamId: e.isTeam == true ? e.teamId : null,
+          connectionName: name,
         );
         if (offer.consented && context.mounted) {
           return _attempt(context, consentAddon: true);
@@ -4109,6 +4129,7 @@ class _ActivateNoProviderSource extends Command {
           draftId: draftId,
           isPremium: isPremium ?? false,
           teamId: e.isTeam == true ? e.teamId : null,
+          connectionName: twistName,
         );
         if (offer.consented && context.mounted) {
           return _attempt(context, consentAddon: true);
@@ -4627,6 +4648,7 @@ class SaveSource extends Command {
           draftId: twistInstanceId,
           isPremium: isPremium,
           teamId: e.isTeam == true ? e.teamId : null,
+          connectionName: name,
         );
         if (offer.consented && context.mounted) {
           return _attempt(context, consentAddon: true);

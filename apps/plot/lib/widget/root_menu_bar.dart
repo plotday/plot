@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/api/iap_api.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/user.dart';
@@ -116,7 +117,14 @@ class RootMenuBar extends StatelessWidget {
     }
   }
 
-  List<PlatformMenuItem> _buildEditMenu() {
+  /// When [suppressShortcuts] is true, the Edit items keep their labels but drop
+  /// their key equivalents. macOS matches a `PlatformMenuBar` item's shortcut
+  /// app-wide (ahead of the native first responder), so an active Cmd+V/C/X/A
+  /// accelerator is captured by Flutter even while a native StoreKit sheet is
+  /// up — breaking paste into its password field. Dropping the accelerators
+  /// while the sheet is present lets those keys fall through to the native
+  /// field. See [IapService.nativeSheetActive].
+  List<PlatformMenuItem> _buildEditMenu({bool suppressShortcuts = false}) {
     return <PlatformMenuItem>[
       PlatformMenuItemGroup(
         members: <PlatformMenuItem>[
@@ -125,7 +133,9 @@ class RootMenuBar extends StatelessWidget {
               (e) => e.performUndo(),
               const UndoTextIntent(SelectionChangedCause.keyboard),
             ),
-            shortcut: platformSingleActivator(LogicalKeyboardKey.keyZ),
+            shortcut: suppressShortcuts
+                ? null
+                : platformSingleActivator(LogicalKeyboardKey.keyZ),
             label: 'Undo',
           ),
           PlatformMenuItem(
@@ -133,8 +143,9 @@ class RootMenuBar extends StatelessWidget {
               (e) => e.performRedo(),
               const RedoTextIntent(SelectionChangedCause.keyboard),
             ),
-            shortcut:
-                platformSingleActivator(LogicalKeyboardKey.keyZ, shift: true),
+            shortcut: suppressShortcuts
+                ? null
+                : platformSingleActivator(LogicalKeyboardKey.keyZ, shift: true),
             label: 'Redo',
           ),
         ],
@@ -146,7 +157,9 @@ class RootMenuBar extends StatelessWidget {
               (e) => e.performCut(),
               const CopySelectionTextIntent.cut(SelectionChangedCause.keyboard),
             ),
-            shortcut: platformSingleActivator(LogicalKeyboardKey.keyX),
+            shortcut: suppressShortcuts
+                ? null
+                : platformSingleActivator(LogicalKeyboardKey.keyX),
             label: 'Cut',
           ),
           PlatformMenuItem(
@@ -154,7 +167,9 @@ class RootMenuBar extends StatelessWidget {
               (e) => e.performCopy(),
               CopySelectionTextIntent.copy,
             ),
-            shortcut: platformSingleActivator(LogicalKeyboardKey.keyC),
+            shortcut: suppressShortcuts
+                ? null
+                : platformSingleActivator(LogicalKeyboardKey.keyC),
             label: 'Copy',
           ),
           PlatformMenuItem(
@@ -162,7 +177,9 @@ class RootMenuBar extends StatelessWidget {
               (e) => e.performPaste(),
               const PasteTextIntent(SelectionChangedCause.keyboard),
             ),
-            shortcut: platformSingleActivator(LogicalKeyboardKey.keyV),
+            shortcut: suppressShortcuts
+                ? null
+                : platformSingleActivator(LogicalKeyboardKey.keyV),
             label: 'Paste',
           ),
           PlatformMenuItem(
@@ -170,7 +187,9 @@ class RootMenuBar extends StatelessWidget {
               (e) => e.performSelectAll(),
               const SelectAllTextIntent(SelectionChangedCause.keyboard),
             ),
-            shortcut: platformSingleActivator(LogicalKeyboardKey.keyA),
+            shortcut: suppressShortcuts
+                ? null
+                : platformSingleActivator(LogicalKeyboardKey.keyA),
             label: 'Select all',
           ),
         ],
@@ -275,25 +294,33 @@ class RootMenuBar extends StatelessWidget {
           builder: (context, _) {
             final showDebug = kDebugMode || DeveloperMode.isEnabled;
             return BlocBuilder<NowBloc, NowState>(
-              builder: (context, nowState) => PlatformMenuBar(
-                menus: <PlatformMenuItem>[
-                  PlatformMenu(
-                    label: 'Plot',
-                    menus: _buildAppMenu(showUserMenus),
-                  ),
-                  PlatformMenu(label: 'Edit', menus: _buildEditMenu()),
-                  if (showUserMenus)
-                    PlatformMenu(label: 'View', menus: _buildViewMenu()),
-                  if (showUserMenus)
+              builder: (context, nowState) => ValueListenableBuilder<bool>(
+                // Drop the Edit accelerators while a native StoreKit sheet is up
+                // so Cmd+V etc. reach its password field (see _buildEditMenu).
+                valueListenable: IapService.nativeSheetActive,
+                builder: (context, sheetActive, _) => PlatformMenuBar(
+                  menus: <PlatformMenuItem>[
                     PlatformMenu(
-                      label: 'Timer',
-                      menus: _buildTimerMenu(nowState),
+                      label: 'Plot',
+                      menus: _buildAppMenu(showUserMenus),
                     ),
-                  PlatformMenu(label: 'Window', menus: _buildWindowMenu()),
-                  if (showDebug)
-                    PlatformMenu(label: 'Debug', menus: _buildDebugMenu()),
-                ],
-                child: child,
+                    PlatformMenu(
+                      label: 'Edit',
+                      menus: _buildEditMenu(suppressShortcuts: sheetActive),
+                    ),
+                    if (showUserMenus)
+                      PlatformMenu(label: 'View', menus: _buildViewMenu()),
+                    if (showUserMenus)
+                      PlatformMenu(
+                        label: 'Timer',
+                        menus: _buildTimerMenu(nowState),
+                      ),
+                    PlatformMenu(label: 'Window', menus: _buildWindowMenu()),
+                    if (showDebug)
+                      PlatformMenu(label: 'Debug', menus: _buildDebugMenu()),
+                  ],
+                  child: child,
+                ),
               ),
             );
           },
