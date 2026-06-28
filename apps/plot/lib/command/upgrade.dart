@@ -265,21 +265,32 @@ class BuyAddonCommand extends Command {
     final productId = kIapAddonProductForCount[current + 1];
     final livePrice =
         productId == null ? null : IapService.instance.productFor(productId)?.price;
-    // When we know which connector needs the add-on (the premium connectors —
-    // LinkedIn, Instagram, WhatsApp), lead with "<name> requires a connection
-    // add-on." and label the button "Purchase a connection add-on" so it's
-    // clear what's being bought and why.
-    final note = connectionName == null
-        ? "Billed separately from your plan. It does not count toward your "
-              "plan's connection limit."
-        : '$connectionName requires a connection add-on. It is billed '
-              "separately from your plan and does not count toward your plan's "
-              'connection limit.';
+    final total = current + 1;
+    final isUpgrade = current >= 1;
+    const tail = "Billed separately from your plan; it does not count toward "
+        "your plan's connection limit.";
+    // When a premium connector (LinkedIn/Instagram/WhatsApp) triggered the
+    // add-on, lead with "<name> requires a connection add-on." and keep the
+    // "Purchase a connection add-on" button. On upgrades, state the increment
+    // and the new total so the (live, total) price reads correctly.
+    final String note;
+    if (connectionName != null) {
+      note = isUpgrade
+          ? '$connectionName requires a connection add-on. '
+                'Adds 1 more ($total total). $tail'
+          : '$connectionName requires a connection add-on. $tail';
+    } else {
+      note = isUpgrade
+          ? 'Adds 1 more connection ($total total). $tail'
+          : 'Adds 1 connection. $tail';
+    }
     final confirmLabel = connectionName != null
         ? 'Purchase a connection add-on'
         : (livePrice == null
               ? 'Add a connection add-on'
-              : 'Add for $livePrice/month');
+              : (isUpgrade
+                    ? 'Upgrade to $livePrice/month'
+                    : 'Add for $livePrice/month'));
     final confirmed = await ConfirmModal(
       title: 'Add a connection add-on',
       messageWidget: SubscriptionDisclosure(
@@ -408,17 +419,27 @@ class BuyTwistAddonCommand extends Command {
     // web price: Apple's tiers differ from Stripe, vary by storefront, and would
     // go silently stale if hardcoded. Falls back to a price-less prompt when
     // StoreKit hasn't loaded the product yet (the native sheet still shows it).
-    final productId = kIapTwistAddonProductForCount[current + 1];
+    final blockSize =
+        SubscriptionService.instance.usage?.twistAddonBlockSize ?? 5;
+    final blocks = current + 1;
+    final total = blocks * blockSize;
+    final productId = kIapTwistAddonProductForCount[blocks];
     final livePrice =
         productId == null ? null : IapService.instance.productFor(productId)?.price;
+    final isUpgrade = current >= 1;
+    final note = isUpgrade
+        ? 'Adds $blockSize more twist automations ($total total). '
+              'Billed separately from your plan.'
+        : 'Adds $blockSize twist automations. Billed separately from your plan.';
     final confirmed = await ConfirmModal(
       title: 'Add a twist add-on',
       messageWidget: SubscriptionDisclosure(
         priceLine: livePrice == null ? null : 'Twist add-on — $livePrice/month',
-        note: 'Adds +5 twist automations. Billed separately from your plan.',
+        note: note,
       ),
-      confirmLabel:
-          livePrice == null ? 'Add a twist add-on' : 'Add for $livePrice/month',
+      confirmLabel: livePrice == null
+          ? 'Add a twist add-on'
+          : (isUpgrade ? 'Upgrade to $livePrice/month' : 'Add for $livePrice/month'),
       // The X / Esc / back already dismiss; drop the redundant Cancel row.
       showCancel: false,
     ).run(context);
@@ -1066,9 +1087,39 @@ class TwistCapacityOffer extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Use the live price from /usage if available; fall back to $10.
-    final price =
-        SubscriptionService.instance.usage?.twistAddonPrice ?? 10;
+    final usage = SubscriptionService.instance.usage;
+    final blockSize = usage?.twistAddonBlockSize ?? 5;
+
+    // Add-on tile copy. On App Store the add-on is a tiered StoreKit product, so
+    // show the live price for the *next* tier (not the $10 web price) and mirror
+    // the confirm modal's increment+total framing. On web it's a flat
+    // incremental $10/block.
+    String addonTitle;
+    String addonDetails = 'Billed separately from your plan';
+    if (UpgradeUi.isAppStoreBuild) {
+      if (!IapService.instance.isReady) {
+        await IapService.instance.init();
+      }
+      if (!context.mounted) return const CommandSkipped();
+      final current = usage?.personal.twistAddonCount ?? 0;
+      final blocks = current + 1;
+      final total = blocks * blockSize;
+      final productId = kIapTwistAddonProductForCount[blocks];
+      final livePrice = productId == null
+          ? null
+          : IapService.instance.productFor(productId)?.price;
+      final isUpgrade = current >= 1;
+      final priceSuffix = livePrice == null ? '' : ' — $livePrice/month';
+      addonTitle = isUpgrade
+          ? 'Add $blockSize more twist automations$priceSuffix'
+          : 'Add $blockSize twist automations$priceSuffix';
+      if (isUpgrade) {
+        addonDetails = '$total total · billed separately from your plan';
+      }
+    } else {
+      final price = usage?.twistAddonPrice ?? 10;
+      addonTitle = 'Add $blockSize twist automations — \$$price/month';
+    }
 
     final result = await SelectModal.open<String>(
       context,
@@ -1079,10 +1130,10 @@ class TwistCapacityOffer extends Command {
         builder: (context) {
           if (option == 'addon') {
             return ListTile(
-              title: 'Add 5 twist automations — \$$price/month',
+              title: addonTitle,
               icon: PlotIcon.twist,
               details: Text(
-                'Billed separately from your plan',
+                addonDetails,
                 style: context.theme.typography.sm.copyWith(
                   color: context.theme.plotColors.muted,
                 ),

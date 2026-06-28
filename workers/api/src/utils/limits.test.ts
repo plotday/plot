@@ -834,7 +834,7 @@ describe.skipIf(!DATABASE_URL)("getUsage personal payload excludes AI limits", (
 
 // ─── pricing field exposed in getUsage ───────────────────────────────────────
 describe.skipIf(!DATABASE_URL)("getUsage exposes web add-on prices", () => {
-  it("pricing.connectionAddonPrice === 5 and pricing.twistAddonPrice === 10", async () => {
+  it("pricing exposes connectionAddonPrice 5, twistAddonPrice 10, twistAddonBlockSize 5", async () => {
     const db = createDb({ DATABASE_URL } as unknown as Bindings);
     const userId = randomUUID();
     let usage: any;
@@ -852,6 +852,7 @@ describe.skipIf(!DATABASE_URL)("getUsage exposes web add-on prices", () => {
     }
     expect(usage.pricing.connectionAddonPrice).toBe(5);
     expect(usage.pricing.twistAddonPrice).toBe(10);
+    expect(usage.pricing.twistAddonBlockSize).toBe(5);
   });
 });
 

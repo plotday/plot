@@ -1129,6 +1129,7 @@ export async function getUsage(
     pricing: {
       connectionAddonPrice: CONNECTION_ADDON_PRICE,
       twistAddonPrice: TWIST_ADDON_PRICE,
+      twistAddonBlockSize: TWIST_ADDON_BLOCK_SIZE,
     },
   };
 }

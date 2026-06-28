@@ -216,11 +216,17 @@ class UsageData extends Equatable {
   /// Null when the server predates this field — callers should default to 10.
   final int? twistAddonPrice;
 
+  /// Twist add-on block size (twist automations granted per add-on block),
+  /// from @plotday/pricing. Null when the server predates this field —
+  /// callers should default to 5.
+  final int? twistAddonBlockSize;
+
   const UsageData({
     required this.personal,
     required this.teams,
     this.connectionAddonPrice,
     this.twistAddonPrice,
+    this.twistAddonBlockSize,
   });
 
   factory UsageData.fromJson(Map<String, dynamic> json) {
@@ -238,11 +244,13 @@ class UsageData extends Equatable {
               .toList(),
       connectionAddonPrice: pricingJson?['connectionAddonPrice'] as int?,
       twistAddonPrice: pricingJson?['twistAddonPrice'] as int?,
+      twistAddonBlockSize: pricingJson?['twistAddonBlockSize'] as int?,
     );
   }
 
   @override
-  List<Object?> get props => [personal, teams, connectionAddonPrice, twistAddonPrice];
+  List<Object?> get props =>
+      [personal, teams, connectionAddonPrice, twistAddonPrice, twistAddonBlockSize];
 }
 
 /// Subscription info including the effective plan across personal + org
