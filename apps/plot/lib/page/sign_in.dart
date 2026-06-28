@@ -46,6 +46,32 @@ class _SignInPageState extends State<SignInPage> {
     return Base.auth.isSignedIn;
   }
 
+  /// Clerk already has a live session (a prior OAuth redirect completed,
+  /// another tab signed in, or a sign-in that succeeded after its caller
+  /// timed out) but the app is still on the sign-in page because the Plot
+  /// identity hasn't been resolved. Don't surface this as an error — resolve
+  /// identity so UserBloc transitions to ready and the app navigates into the
+  /// workspace.
+  Future<void> _resolveExistingSession() async {
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+    try {
+      await Base.resolveIdentityResilient();
+      // On success UserBloc emits and this page is replaced — nothing more
+      // to do here.
+    } catch (e, t) {
+      // Resolution genuinely failed (e.g. the session token is invalid).
+      // Drop back to the sign-in buttons so the user can retry instead of
+      // being stranded on a spinner. Transient backend stalls are already
+      // absorbed by resolveIdentityResilient's retries, so this isn't a
+      // surprising failure worth reporting.
+      log.warning('Failed to resolve existing Clerk session', e, t);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
+  }
+
   void _showGenericError(Object error, StackTrace? stackTrace) {
     Tracker.captureException(error, stackTrace);
     if (!mounted) return;
@@ -63,6 +89,18 @@ class _SignInPageState extends State<SignInPage> {
     super.initState();
     if (PendingInvite.token != null && PendingInvite.email == null) {
       _fetchInviteInfo();
+    }
+    // If Clerk already has a live session but we've landed on the sign-in
+    // page (e.g. an OAuth redirect completed yet the running app never
+    // resolved the Plot identity), don't strand the user here — resolve
+    // identity and move on. Skip when the session was force-expired so the
+    // "session expired" banner shows and the user re-authenticates
+    // deliberately.
+    if (Base.auth.isSignedIn && !Base.wasForceSignedOut) {
+      _isLoading = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resolveExistingSession();
+      });
     }
   }
 
@@ -123,16 +161,7 @@ class _SignInPageState extends State<SignInPage> {
       if (_isAlreadySignedIn(e)) {
         // Clerk already has a session (e.g. a prior attempt timed out after
         // sign-in succeeded) — just resolve identity, with the same retries.
-        try {
-          await Base.resolveIdentityResilient();
-          return;
-        } catch (activateError) {
-          log.warning('Failed to activate existing session', activateError);
-        }
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-        });
+        await _resolveExistingSession();
         return;
       }
       log.warning('Error signing in with OAuth', e, t);
@@ -303,6 +332,15 @@ class _SignInPageState extends State<SignInPage> {
                               );
                             },
                             onRedirectAuth: () async {
+                              // If Clerk already has a session (a prior
+                              // redirect completed, or another tab signed in),
+                              // starting another redirect throws "You're
+                              // already signed in." Resolve identity and
+                              // navigate in instead of erroring.
+                              if (Base.auth.isSignedIn) {
+                                await _resolveExistingSession();
+                                return;
+                              }
                               // Don't swap the page for LoadingPage here —
                               // Google's OAuth brand policy expects the flow
                               // from click → consent screen to be direct, and
@@ -314,6 +352,14 @@ class _SignInPageState extends State<SignInPage> {
                                   provider: IdTokenProvider.google,
                                 );
                               } on AuthError catch (e, t) {
+                                // A session can appear between the check above
+                                // and the redirect call (Clerk rejects the
+                                // redirect because one already exists). Treat
+                                // that as success, not an error.
+                                if (_isAlreadySignedIn(e)) {
+                                  await _resolveExistingSession();
+                                  return;
+                                }
                                 log.warning(
                                   'Google redirect sign-in failed',
                                   e,
