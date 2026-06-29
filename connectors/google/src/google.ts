@@ -39,7 +39,9 @@ import {
   getEnabledChannelsFn,
   addEnabledChannelFn,
   removeEnabledChannelFn,
+  processWriteBackRetryFn,
   SELF_HEAL_INTERVAL_MS,
+  WRITEBACK_RETRY_DELAY_MS,
 } from "@plotday/connector-gmail";
 import {
   type TasksSyncHost,
@@ -636,6 +638,7 @@ export class Google extends Connector<Google> {
         scheduleSelfHealCheck: () => self.mailScheduleSelfHeal(),
         cancelScheduledTask: (key) => self.cancelScheduledTask(key),
         queueIncrementalSync: () => self.mailQueueIncrementalSync(),
+        queueWriteBackRetry: () => self.mailQueueWriteBackRetry(),
       },
     };
   }
@@ -763,6 +766,27 @@ export class Google extends Connector<Google> {
   private async mailQueueIncrementalSync(): Promise<void> {
     const callback = await this.callback(this.mailIncrementalSyncBatch);
     await this.runTask(callback);
+  }
+
+  /**
+   * Drain deferred (quota-exhausted) Gmail write-backs. Delegates to
+   * {@link processWriteBackRetryFn}, which re-queues itself while work remains.
+   */
+  async mailWriteBackRetryBatch(): Promise<void> {
+    await processWriteBackRetryFn(this.makeMailHost());
+  }
+
+  /**
+   * Schedule the deferred write-back drain (host scheduler hook). Keyed +
+   * delayed via `scheduleTask` so repeated enqueues during a quota burst
+   * collapse to one task that fires after the per-minute window clears, instead
+   * of hot-looping.
+   */
+  private async mailQueueWriteBackRetry(): Promise<void> {
+    const callback = await this.callback(this.mailWriteBackRetryBatch);
+    await this.scheduleTask("mailbox-writeback-retry", callback, {
+      runAt: new Date(Date.now() + WRITEBACK_RETRY_DELAY_MS),
+    });
   }
 
   // --- Mail framework callbacks: webhook + outbound write-back ---------------

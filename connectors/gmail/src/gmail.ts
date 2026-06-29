@@ -38,6 +38,7 @@ import {
   onThreadReadFn,
   onThreadToDoFn,
   processEmailThreadsFn,
+  processWriteBackRetryFn,
   removeEnabledChannelFn,
   renewMailboxWatchFn,
   selfHealCheckFn,
@@ -45,6 +46,7 @@ import {
   teardownMailboxWebhookFn,
   SELF_HEAL_INTERVAL_MS,
   SYSTEM_LABEL_ORDER,
+  WRITEBACK_RETRY_DELAY_MS,
 } from "./sync";
 
 // Re-export the pure recipient helper so existing imports (and tests that
@@ -165,6 +167,7 @@ export class Gmail extends Connector<Gmail> {
         scheduleSelfHealCheck: () => self.scheduleSelfHealCheck(),
         cancelScheduledTask: (key) => self.cancelScheduledTask(key),
         queueIncrementalSync: () => self.queueIncrementalSync(),
+        queueWriteBackRetry: () => self.queueWriteBackRetry(),
       },
     };
   }
@@ -632,6 +635,27 @@ export class Gmail extends Connector<Gmail> {
   private async queueIncrementalSync(): Promise<void> {
     const callback = await this.callback(this.incrementalSyncBatch);
     await this.runTask(callback);
+  }
+
+  /**
+   * Drain deferred (quota-exhausted) write-backs. Delegates to
+   * {@link processWriteBackRetryFn}, which re-queues itself while work remains.
+   */
+  async writeBackRetryBatch(): Promise<void> {
+    await processWriteBackRetryFn(this.makeHost());
+  }
+
+  /**
+   * Schedule the deferred write-back drain (host scheduler hook). Keyed +
+   * delayed via `scheduleTask` so repeated enqueues during a quota burst
+   * collapse to a single task that fires after the per-minute window clears —
+   * it never hot-loops the way an immediate `runTask` self-chain would.
+   */
+  private async queueWriteBackRetry(): Promise<void> {
+    const callback = await this.callback(this.writeBackRetryBatch);
+    await this.scheduleTask("gmail-writeback-retry", callback, {
+      runAt: new Date(Date.now() + WRITEBACK_RETRY_DELAY_MS),
+    });
   }
 
   /**
