@@ -180,6 +180,15 @@ class Base {
   static Future<void> clearForceSignedOut() =>
       ProfilePreferences.instance.remove(_forceSignedOutKey);
 
+  /// Whether the user explicitly signed out and has not explicitly signed in
+  /// since (the [_signedOut] latch). The sign-in page checks this before
+  /// auto-resolving a still-cached Clerk session in `initState`: `signOut()`
+  /// awaits Clerk sign-out last, so the page can momentarily observe
+  /// `auth.isSignedIn == true` right after an explicit sign-out — auto-
+  /// resolving then would lift the latch and resurrect the dead session.
+  static bool get wasExplicitlySignedOut =>
+      Injector.appInstance.get<Base>()._signedOut;
+
   static Future<void> init() async {
     log.info("Initializing Clerk auth");
 
@@ -311,12 +320,15 @@ class Base {
 
   /// Called after successful Clerk sign-in to activate and set identity.
   static Future<void> activate() async {
+    final base = Injector.appInstance.get<Base>();
+    final authEpoch = base._authEpoch;
     final result = await api.post<Map<String, dynamic>>('/activate');
-    await Injector.appInstance.get<Base>().setIdentity(
+    await base.setIdentity(
       userId: result['userId'] as String,
       email: result['email'] as String?,
       name: result['name'] as String?,
       contactId: result['contactId'] as String?,
+      authEpoch: authEpoch,
     );
   }
 
@@ -383,10 +395,12 @@ class Base {
     // sync wedged. Only triggers when local identity was already restored
     // (returning user pointing at a stale or otherwise-different backend);
     // first-time sign-ins have `_userId == null` here and are unaffected.
-    final localUserIdBeforeActivate = Injector.appInstance
-        .get<Base>()
-        ._userId
-        ?.toString();
+    final base = Injector.appInstance.get<Base>();
+    final localUserIdBeforeActivate = base._userId?.toString();
+    // Snapshot the auth epoch before the network round-trip. If an explicit
+    // sign-out advances it while `/activate` is in flight, setIdentity() drops
+    // the result rather than resurrecting the signed-out session.
+    final authEpoch = base._authEpoch;
 
     // Try /activate first — server is the source of truth for user identity.
     try {
@@ -405,11 +419,12 @@ class Base {
         return;
       }
 
-      await Injector.appInstance.get<Base>().setIdentity(
+      await base.setIdentity(
         userId: userId,
         email: result['email'] as String?,
         name: result['name'] as String?,
         contactId: result['contactId'] as String?,
+        authEpoch: authEpoch,
       );
 
       // Reconcile the cached Clerk JWT against the server's resolved userId.
@@ -468,11 +483,12 @@ class Base {
     // Fallback: use JWT claims directly (original fast path)
     final jwtUser = await identityFromJwt();
     if (jwtUser != null) {
-      await Injector.appInstance.get<Base>().setIdentity(
+      await base.setIdentity(
         userId: jwtUser.id,
         email: jwtUser.primaryEmail,
         name: jwtUser.name,
         contactId: jwtUser.contactId,
+        authEpoch: authEpoch,
       );
       return;
     }
@@ -496,11 +512,20 @@ class Base {
   static Future<void> resolveIdentityResilient({
     Duration attemptTimeout = const Duration(seconds: 15),
     int maxAttempts = 3,
-  }) => retryAsync(
-    () => resolveIdentity().timeout(attemptTimeout),
-    maxAttempts: maxAttempts,
-    isRetryable: isTransientSignInError,
-  );
+  }) {
+    // Every explicit sign-in funnels through here (the sign-in pages and
+    // auto-sign-in), and only here — background/startup validation uses the
+    // plain [resolveIdentity]. So this is the one place a deliberate sign-in
+    // intent exists: lift the post-sign-out latch so this resolution is
+    // allowed to restore identity. If a sign-out then races this in-flight
+    // sign-in it re-latches and bumps the epoch, and [setIdentity] discards.
+    Injector.appInstance.get<Base>()._signedOut = false;
+    return retryAsync(
+      () => resolveIdentity().timeout(attemptTimeout),
+      maxAttempts: maxAttempts,
+      isRetryable: isTransientSignInError,
+    );
+  }
 
   /// Signs out the current user explicitly.
   /// This is the only place that clears _userId - auth events like token
@@ -510,6 +535,16 @@ class Base {
     final currentUser = base._currentUserController.valueOrNull;
 
     log.info('Processing explicit sign out (user: ${currentUser?.id})');
+
+    // Invalidate any in-flight identity resolution. A `resolveIdentity()` /
+    // `activate()` whose `/activate` round-trip is still pending captured the
+    // previous epoch; bumping here before any await guarantees it sees the
+    // change and discards its result rather than re-persisting identity and
+    // re-emitting the user after we've signed out. The latch additionally
+    // blocks resolutions that *start* during sign-out (snapshotting the bumped
+    // epoch) until an explicit sign-in lifts it.
+    base._authEpoch++;
+    base._signedOut = true;
 
     // Send any in-flight "SENDING" note under the still-authenticated session
     // before clearing identity.
@@ -558,6 +593,45 @@ class Base {
   DateTime? _signInTime;
   bool _freshSignIn = false;
   bool _reAuthSignaled = false;
+
+  /// Bumped by every explicit [signOut]. An identity resolution
+  /// (`/activate`) snapshots this before its network round-trip; if the epoch
+  /// has advanced by the time it completes, the user signed out mid-flight and
+  /// the resolved identity is discarded instead of resurrecting the dead
+  /// session (which left the app "signed in" but 401ing on every request).
+  int _authEpoch = 0;
+
+  /// Latched true by [signOut] and lifted only when an explicit sign-in begins
+  /// (see [resolveIdentityResilient]). While set, [setIdentity] refuses to
+  /// restore identity. The [_authEpoch] check alone is insufficient: a
+  /// *background* resolution (e.g. a priority reload's `resolveIdentity`, or a
+  /// connectivity-triggered one) can START during sign-out — after the epoch
+  /// bump but while Clerk's cached token still lets `/activate` succeed — and
+  /// thus snapshot the already-bumped epoch, slipping past the epoch guard and
+  /// resurrecting the just-signed-out session. This latch closes that window:
+  /// only an explicit sign-in may bring the user back.
+  bool _signedOut = false;
+
+  /// Whether an identity resolution that snapshotted [capturedEpoch] before its
+  /// `/activate` round-trip has been superseded by an explicit [signOut]
+  /// (which advances [_authEpoch]) that landed while the request was in flight.
+  /// A null [capturedEpoch] opts out of the epoch check — used by paths that
+  /// cannot race a sign-out (e.g. startup restore).
+  @visibleForTesting
+  static bool authEpochSuperseded(int? capturedEpoch, int currentEpoch) =>
+      capturedEpoch != null && capturedEpoch != currentEpoch;
+
+  /// The full guard [setIdentity] applies before restoring identity: discard
+  /// when the sign-out latch is set ([signedOut]) — a background resolution
+  /// that began during/after sign-out — OR when this resolution's snapshotted
+  /// epoch was superseded by a sign-out mid-flight. Either condition means
+  /// applying the result would resurrect a dead session.
+  @visibleForTesting
+  static bool shouldDiscardIdentity(
+    bool signedOut,
+    int? capturedEpoch,
+    int currentEpoch,
+  ) => signedOut || authEpochSuperseded(capturedEpoch, currentEpoch);
   final _currentUserController = BehaviorSubject<User?>();
   final _needsReAuthController = StreamController<void>.broadcast();
 
@@ -601,12 +675,34 @@ class Base {
 
   /// Called after successful /activate to store identity locally and emit user.
   /// This is the ONLY place that creates and emits a User after sign-in.
+  ///
+  /// [authEpoch] is the [_authEpoch] snapshotted by the caller before its
+  /// `/activate` round-trip. If an explicit [signOut] advanced the epoch while
+  /// that request was in flight, the resolution is stale: persisting and
+  /// emitting would resurrect the just-signed-out session, leaving the app
+  /// "signed in" while every request 401s. In that case we bail before
+  /// touching any state. Omit (null) to skip the epoch check — used by paths
+  /// that cannot race a sign-out.
+  ///
+  /// The [_signedOut] latch is honored regardless of [authEpoch]: once the
+  /// user explicitly signs out, only an explicit sign-in (which lifts the
+  /// latch via [resolveIdentityResilient]) may restore identity. This blocks
+  /// background resolutions that begin *during* sign-out and would otherwise
+  /// snapshot the already-bumped epoch and slip through.
   Future<void> setIdentity({
     required String userId,
     required String? email,
     required String? name,
     required String? contactId,
+    int? authEpoch,
   }) async {
+    if (shouldDiscardIdentity(_signedOut, authEpoch, _authEpoch)) {
+      log.info(
+        'Discarding identity resolution after sign-out '
+        '(signedOut=$_signedOut, epoch $authEpoch → $_authEpoch)',
+      );
+      return;
+    }
     _userId = Uuid.fromString(userId);
     _actorId = contactId != null ? ActorId.fromString(contactId) : null;
     _signInTime = DateTime.now();
@@ -651,6 +747,18 @@ class Base {
       );
     }
     await Tracker.trackSession(EventAction.signedIn);
+
+    // Re-check: an explicit sign-out may have landed during the awaits above
+    // (prefs/analytics). signOut() clears stored identity after bumping the
+    // epoch, so skipping the emit here keeps the signed-out UI authoritative
+    // without re-emitting a user over the top of UserSignedOut.
+    if (shouldDiscardIdentity(_signedOut, authEpoch, _authEpoch)) {
+      log.info(
+        'Sign-out raced identity restoration; not emitting user '
+        '(signedOut=$_signedOut, epoch $authEpoch → $_authEpoch)',
+      );
+      return;
+    }
 
     _currentUserController.add(user);
   }

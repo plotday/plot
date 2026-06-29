@@ -95,8 +95,12 @@ class _SignInPageState extends State<SignInPage> {
     // resolved the Plot identity), don't strand the user here — resolve
     // identity and move on. Skip when the session was force-expired so the
     // "session expired" banner shows and the user re-authenticates
-    // deliberately.
-    if (Base.auth.isSignedIn && !Base.wasForceSignedOut) {
+    // deliberately. Also skip right after an explicit sign-out: signOut()
+    // awaits Clerk sign-out last, so isSignedIn can still read true here, and
+    // auto-resolving would lift the sign-out latch and resurrect the session.
+    if (Base.auth.isSignedIn &&
+        !Base.wasForceSignedOut &&
+        !Base.wasExplicitlySignedOut) {
       _isLoading = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _resolveExistingSession();
