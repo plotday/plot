@@ -8,10 +8,38 @@ import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/last_open_focus.dart';
 import 'package:plot/store/store.dart';
 
 part 'now_state.dart';
+
+/// Captured when [NowBloc.start] hasn't produced its first [NowLoaded] within
+/// the start-stall timeout of foreground time.
+///
+/// `combineLatest6` only produces a value once EVERY source stream has emitted
+/// at least once; [pending] lists the streams still withholding their first
+/// value — i.e. exactly what is wedging the app on the bootstrap LoadingPage.
+/// The usual culprit is `defaultPriority`: `Priority.watchDefault()` suppresses
+/// its first emission until a non-archived priority exists locally, which never
+/// lands for a user whose priorities table stays empty after a partial or
+/// failed critical sync. NowBloc then sits in [NowLoading] forever (it has no
+/// timeout of its own), and the only signal is the generic 60s
+/// `StuckLoadingPageException` — whose route is null above the router, so it
+/// can't say which stream hung. Reporting this names the wedged stream so the
+/// otherwise-silent deadlock is actually diagnosable.
+class NowBlocStartStalledException implements Exception {
+  NowBlocStartStalledException({required this.pending});
+
+  /// Names of the [NowBloc.start] source streams that had not yet emitted a
+  /// first value when the watchdog fired.
+  final List<String> pending;
+
+  @override
+  String toString() =>
+      'NowBlocStartStalledException: NowBloc.start stalled in NowLoading '
+      '(pending: ${pending.isEmpty ? 'none' : pending.join(', ')})';
+}
 
 class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListener {
   NowBloc() : super(const NowLoading()) {
@@ -56,6 +84,17 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
 
   StreamSubscription<void>? _subscription;
   Timer? _trackTick;
+
+  /// How long [start] waits for its combined subscription to produce a first
+  /// value before reporting a [NowBlocStartStalledException]. Comfortably under
+  /// the 60s `StuckLoadingPageException` watchdog so the precise NowBloc-stall
+  /// diagnostic lands first, yet long enough to clear a merely-slow cold-start
+  /// sync.
+  static const _startStallReport = Duration(seconds: 45);
+
+  /// One-shot watchdog for the bootstrap deadlock. Armed in [start], retired
+  /// the instant the combined subscription first emits, cancelled in [stop].
+  Timer? _startStallTimer;
 
   /// Loaded once at [start] from device-local prefs; seeds the "last open
   /// focus" rung of `NowLoaded.priority`. See [loadLastOpenFocusId].
@@ -108,19 +147,39 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
       nowSubscriptionStart.day,
     );
     final completer = Completer<void>();
+
+    // combineLatest6 only produces its first value once EVERY source stream
+    // has emitted at least once. If any single one never does, NowBloc stays
+    // in NowLoading forever (it has no timeout) and the app wedges on the
+    // bootstrap LoadingPage with no error. Track each stream's first emission
+    // so the stall watchdog below can name whichever ones are still
+    // outstanding. See [NowBlocStartStalledException].
+    final pending = <String>{
+      'defaultPriority',
+      'scheduledDay',
+      'session',
+      'priorities',
+      'priorityBlocks',
+      'userSettings',
+    };
+    Stream<T> track<T>(String name, Stream<T> source) =>
+        source.doOnData((_) => pending.remove(name));
+
+    _armStartStallReport(pending, completer);
+
     _subscription =
         Rx.combineLatest6(
-          Priority.watchDefault(),
-          ScheduledDay.watchToday(),
-          Session.watchCurrent(),
+          track('defaultPriority', Priority.watchDefault()),
+          track('scheduledDay', ScheduledDay.watchToday()),
+          track('session', Session.watchCurrent()),
           // Raw watch: [NowLoaded.priorities] only resolves focus-block
           // priority ids to Priority objects (identity/display fields). The
           // enriched [Priority.watch] adds three thread-table scans that
           // re-run on every thread write — wasted SQLite-connection load
           // (the sidebar's enriched list comes from PrioritiesBloc).
-          Priority.watchRaw(archived: false),
-          streamPriorityBlocksGroupedByPriority(),
-          UserSettingsEntity.watch(),
+          track('priorities', Priority.watchRaw(archived: false)),
+          track('priorityBlocks', streamPriorityBlocksGroupedByPriority()),
+          track('userSettings', UserSettingsEntity.watch()),
           (priority, day, session, priorities, blocksByPriority, settings) {
             final prior = state is NowLoaded ? (state as NowLoaded) : null;
             return NowLoaded(
@@ -145,6 +204,10 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
           },
         ).listen(
           (state) async {
+            // First combined value arrived — the bootstrap is no longer
+            // wedged, so retire the stall watchdog.
+            _startStallTimer?.cancel();
+            _startStallTimer = null;
             final ctx = state.context;
             final generation = ++_pausedFocusGeneration;
             final pausedFocus =
@@ -184,8 +247,37 @@ class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListene
     return completer.future;
   }
 
+  /// Arm a one-shot watchdog that reports a [NowBlocStartStalledException] if
+  /// [start]'s combined subscription hasn't produced its first value within
+  /// [_startStallReport]. It only *reports* — when the user genuinely has zero
+  /// local priorities there is no state to fall back to, so the cure is sync
+  /// landing a default focus; this just makes the wait observable instead of a
+  /// silent infinite hang. Re-arms (rather than firing) while the app is
+  /// backgrounded, mirroring the foreground-only accounting of the
+  /// `StuckLoadingPageException` so a user who simply left the app mid-sign-in
+  /// doesn't produce a false report.
+  void _armStartStallReport(Set<String> pending, Completer<void> completer) {
+    _startStallTimer?.cancel();
+    _startStallTimer = Timer(_startStallReport, () {
+      if (completer.isCompleted || isClosed) return;
+      if (WidgetsBinding.instance.lifecycleState !=
+          AppLifecycleState.resumed) {
+        _armStartStallReport(pending, completer);
+        return;
+      }
+      final outstanding = pending.toList();
+      Tracker.captureException(
+        NowBlocStartStalledException(pending: outstanding),
+        StackTrace.current,
+        properties: {'pending_streams': outstanding},
+      );
+    });
+  }
+
   void stop() {
     _subscription?.cancel();
+    _startStallTimer?.cancel();
+    _startStallTimer = null;
     _trackTick?.cancel();
     _trackTick = null;
     // Reset state to prevent stale data from persisting across user sessions
