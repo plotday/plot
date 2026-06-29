@@ -130,10 +130,10 @@ importers:
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.42.0
-        version: 1.42.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(workerd@1.20260625.1)(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+        version: 1.42.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(workerd@1.20260625.1)(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))
       '@react-router/dev':
         specifier: ^7.17.0
-        version: 7.17.0(@react-router/serve@7.17.0(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.2))(@types/node@20.19.13)(babel-plugin-macros@3.1.0)(jiti@1.21.7)(lightningcss@1.32.0)(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))(yaml@2.9.0)
+        version: 7.17.0(@react-router/serve@7.17.0(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.2))(@types/node@20.19.13)(babel-plugin-macros@3.1.0)(jiti@1.21.7)(lightningcss@1.32.0)(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))(yaml@2.9.0)
       '@types/node':
         specifier: ^20.19.13
         version: 20.19.13
@@ -145,16 +145,16 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       autoprefixer:
         specifier: ^10.5.0
-        version: 10.5.0(postcss@8.5.15)
+        version: 10.5.0(postcss@8.5.16)
       postcss:
-        specifier: ^8.5.15
-        version: 8.5.15
+        specifier: ^8.5.16
+        version: 8.5.16
       postcss-preset-mantine:
         specifier: ^1.18.0
-        version: 1.18.0(postcss@8.5.15)
+        version: 1.18.0(postcss@8.5.16)
       postcss-simple-vars:
         specifier: ^7.0.1
-        version: 7.0.1(postcss@8.5.15)
+        version: 7.0.1(postcss@8.5.16)
       tailwindcss:
         specifier: ^3.4.1
         version: 3.4.18(tsx@4.20.6)(yaml@2.9.0)
@@ -163,10 +163,10 @@ importers:
         version: 5.9.2
       vite:
         specifier: ^8.1.0
-        version: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
+        version: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
       vite-tsconfig-paths:
         specifier: ^5.1.4
-        version: 5.1.4(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))
+        version: 5.1.4(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))
       ws:
         specifier: ^8.21.0
         version: 8.21.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
@@ -8212,8 +8212,8 @@ packages:
     resolution: {integrity: sha512-yTW+2okrElHiH4fsiz/+/zc0EDo9BDDoC3iKk8dpv1GeRc9nUWzUZHx6TofMWErchhUQR8hY9/Eu1Uja9x1nqA==}
     engines: {node: '>=20.17'}
 
-  nanoid@3.3.12:
-    resolution: {integrity: sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==}
+  nanoid@3.3.15:
+    resolution: {integrity: sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -8800,10 +8800,6 @@ packages:
 
   postcss@8.4.31:
     resolution: {integrity: sha512-PS08Iboia9mts/2ygV3eLpY5ghnUcfLV/EXTOW1E2qYxJKGGBUtNjN76FYHnMs36RmARn41bC0AZmn+rR0OVpQ==}
-    engines: {node: ^10 || ^12 || >=14}
-
-  postcss@8.5.15:
-    resolution: {integrity: sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==}
     engines: {node: ^10 || ^12 || >=14}
 
   postcss@8.5.16:
@@ -12114,12 +12110,12 @@ snapshots:
     optionalDependencies:
       workerd: 1.20250906.0
 
-  '@cloudflare/vite-plugin@1.42.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(workerd@1.20260625.1)(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))':
+  '@cloudflare/vite-plugin@1.42.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(workerd@1.20260625.1)(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))':
     dependencies:
       '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260625.1)
       miniflare: 4.20260617.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
       unenv: 2.0.0-rc.24
-      vite: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
+      vite: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
       wrangler: 4.105.0(@cloudflare/workers-types@4.20260617.1)(bufferutil@4.0.8)(utf-8-validate@6.0.4)
       ws: 8.21.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
     transitivePeerDependencies:
@@ -13770,7 +13766,7 @@ snapshots:
     dependencies:
       react: 19.2.7
 
-  '@react-router/dev@7.17.0(@react-router/serve@7.17.0(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.2))(@types/node@20.19.13)(babel-plugin-macros@3.1.0)(jiti@1.21.7)(lightningcss@1.32.0)(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))(yaml@2.9.0)':
+  '@react-router/dev@7.17.0(@react-router/serve@7.17.0(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.2))(@types/node@20.19.13)(babel-plugin-macros@3.1.0)(jiti@1.21.7)(lightningcss@1.32.0)(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0))(wrangler@4.105.0(bufferutil@4.0.8)(utf-8-validate@6.0.4))(yaml@2.9.0)':
     dependencies:
       '@babel/core': 7.28.4
       '@babel/generator': 7.28.3
@@ -13800,8 +13796,8 @@ snapshots:
       semver: 7.7.3
       tinyglobby: 0.2.16
       valibot: 1.4.1(typescript@5.9.2)
-      vite: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
-      vite-node: 3.2.4(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
+      vite: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
+      vite-node: 3.2.4(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
     optionalDependencies:
       '@react-router/serve': 7.17.0(react-router@7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.2)
       typescript: 5.9.2
@@ -15023,13 +15019,13 @@ snapshots:
       stubborn-fs: 2.0.0
       when-exit: 2.1.5
 
-  autoprefixer@10.5.0(postcss@8.5.15):
+  autoprefixer@10.5.0(postcss@8.5.16):
     dependencies:
       browserslist: 4.28.2
       caniuse-lite: 1.0.30001787
       fraction.js: 5.3.4
       picocolors: 1.1.1
-      postcss: 8.5.15
+      postcss: 8.5.16
       postcss-value-parser: 4.2.0
 
   available-typed-arrays@1.0.5: {}
@@ -18486,7 +18482,7 @@ snapshots:
 
   nano-spawn@2.1.0: {}
 
-  nanoid@3.3.12: {}
+  nanoid@3.3.15: {}
 
   nanospinner@1.2.2:
     dependencies:
@@ -19108,50 +19104,50 @@ snapshots:
 
   possible-typed-array-names@1.1.0: {}
 
-  postcss-import@15.1.0(postcss@8.5.15):
+  postcss-import@15.1.0(postcss@8.5.16):
     dependencies:
-      postcss: 8.5.15
+      postcss: 8.5.16
       postcss-value-parser: 4.2.0
       read-cache: 1.0.0
       resolve: 1.22.10
 
-  postcss-js@4.0.1(postcss@8.5.15):
+  postcss-js@4.0.1(postcss@8.5.16):
     dependencies:
       camelcase-css: 2.0.1
-      postcss: 8.5.15
+      postcss: 8.5.16
 
-  postcss-load-config@6.0.1(jiti@1.21.7)(postcss@8.5.15)(tsx@4.20.6)(yaml@2.9.0):
+  postcss-load-config@6.0.1(jiti@1.21.7)(postcss@8.5.16)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       lilconfig: 3.1.3
     optionalDependencies:
       jiti: 1.21.7
-      postcss: 8.5.15
+      postcss: 8.5.16
       tsx: 4.20.6
       yaml: 2.9.0
 
-  postcss-mixins@12.1.2(postcss@8.5.15):
+  postcss-mixins@12.1.2(postcss@8.5.16):
     dependencies:
-      postcss: 8.5.15
-      postcss-js: 4.0.1(postcss@8.5.15)
-      postcss-simple-vars: 7.0.1(postcss@8.5.15)
-      sugarss: 5.0.1(postcss@8.5.15)
+      postcss: 8.5.16
+      postcss-js: 4.0.1(postcss@8.5.16)
+      postcss-simple-vars: 7.0.1(postcss@8.5.16)
+      sugarss: 5.0.1(postcss@8.5.16)
       tinyglobby: 0.2.17
 
-  postcss-nested@6.2.0(postcss@8.5.15):
+  postcss-nested@6.2.0(postcss@8.5.16):
     dependencies:
-      postcss: 8.5.15
+      postcss: 8.5.16
       postcss-selector-parser: 6.1.2
 
-  postcss-nested@7.0.2(postcss@8.5.15):
+  postcss-nested@7.0.2(postcss@8.5.16):
     dependencies:
-      postcss: 8.5.15
+      postcss: 8.5.16
       postcss-selector-parser: 7.1.0
 
-  postcss-preset-mantine@1.18.0(postcss@8.5.15):
+  postcss-preset-mantine@1.18.0(postcss@8.5.16):
     dependencies:
-      postcss: 8.5.15
-      postcss-mixins: 12.1.2(postcss@8.5.15)
-      postcss-nested: 7.0.2(postcss@8.5.15)
+      postcss: 8.5.16
+      postcss-mixins: 12.1.2(postcss@8.5.16)
+      postcss-nested: 7.0.2(postcss@8.5.16)
 
   postcss-selector-parser@6.1.2:
     dependencies:
@@ -19163,27 +19159,21 @@ snapshots:
       cssesc: 3.0.0
       util-deprecate: 1.0.2
 
-  postcss-simple-vars@7.0.1(postcss@8.5.15):
+  postcss-simple-vars@7.0.1(postcss@8.5.16):
     dependencies:
-      postcss: 8.5.15
+      postcss: 8.5.16
 
   postcss-value-parser@4.2.0: {}
 
   postcss@8.4.31:
     dependencies:
-      nanoid: 3.3.12
-      picocolors: 1.1.1
-      source-map-js: 1.2.1
-
-  postcss@8.5.15:
-    dependencies:
-      nanoid: 3.3.12
+      nanoid: 3.3.15
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
   postcss@8.5.16:
     dependencies:
-      nanoid: 3.3.12
+      nanoid: 3.3.15
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
@@ -20291,14 +20281,9 @@ snapshots:
       pirates: 4.0.7
       ts-interface-checker: 0.1.13
 
-  sugarss@5.0.1(postcss@8.5.15):
-    dependencies:
-      postcss: 8.5.15
-
   sugarss@5.0.1(postcss@8.5.16):
     dependencies:
       postcss: 8.5.16
-    optional: true
 
   superjson@2.2.6:
     dependencies:
@@ -20341,11 +20326,11 @@ snapshots:
       normalize-path: 3.0.0
       object-hash: 3.0.0
       picocolors: 1.1.1
-      postcss: 8.5.15
-      postcss-import: 15.1.0(postcss@8.5.15)
-      postcss-js: 4.0.1(postcss@8.5.15)
-      postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.15)(tsx@4.20.6)(yaml@2.9.0)
-      postcss-nested: 6.2.0(postcss@8.5.15)
+      postcss: 8.5.16
+      postcss-import: 15.1.0(postcss@8.5.16)
+      postcss-js: 4.0.1(postcss@8.5.16)
+      postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.16)(tsx@4.20.6)(yaml@2.9.0)
+      postcss-nested: 6.2.0(postcss@8.5.16)
       postcss-selector-parser: 6.1.2
       resolve: 1.22.10
       sucrase: 3.35.0
@@ -20939,13 +20924,13 @@ snapshots:
       - tsx
       - yaml
 
-  vite-node@3.2.4(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
+  vite-node@3.2.4(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
-      vite: 7.3.6(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
+      vite: 7.3.6(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -21002,13 +20987,13 @@ snapshots:
       - tsx
       - yaml
 
-  vite-tsconfig-paths@5.1.4(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)):
+  vite-tsconfig-paths@5.1.4(typescript@5.9.2)(vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)):
     dependencies:
       debug: 4.3.5
       globrex: 0.1.2
       tsconfck: 3.1.4(typescript@5.9.2)
     optionalDependencies:
-      vite: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
+      vite: 8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0)
     transitivePeerDependencies:
       - supports-color
       - typescript
@@ -21042,7 +21027,7 @@ snapshots:
       esbuild: 0.25.4
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
-      postcss: 8.5.15
+      postcss: 8.5.16
       rollup: 4.52.4
       tinyglobby: 0.2.15
     optionalDependencies:
@@ -21073,7 +21058,7 @@ snapshots:
       tsx: 4.20.6
       yaml: 2.9.0
 
-  vite@7.3.6(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
+  vite@7.3.6(@types/node@20.19.13)(jiti@1.21.7)(lightningcss@1.32.0)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.4)
@@ -21086,7 +21071,7 @@ snapshots:
       fsevents: 2.3.3
       jiti: 1.21.7
       lightningcss: 1.32.0
-      sugarss: 5.0.1(postcss@8.5.15)
+      sugarss: 5.0.1(postcss@8.5.16)
       terser: 5.37.0
       tsx: 4.20.6
       yaml: 2.9.0
@@ -21127,7 +21112,7 @@ snapshots:
       tsx: 4.20.6
       yaml: 2.9.0
 
-  vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.15))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
+  vite@8.1.0(@types/node@20.19.13)(esbuild@0.28.1)(jiti@1.21.7)(sugarss@5.0.1(postcss@8.5.16))(terser@5.37.0)(tsx@4.20.6)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.4
@@ -21139,7 +21124,7 @@ snapshots:
       esbuild: 0.28.1
       fsevents: 2.3.3
       jiti: 1.21.7
-      sugarss: 5.0.1(postcss@8.5.15)
+      sugarss: 5.0.1(postcss@8.5.16)
       terser: 5.37.0
       tsx: 4.20.6
       yaml: 2.9.0
