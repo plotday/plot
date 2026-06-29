@@ -1040,7 +1040,8 @@ async function syncGmailChannelFull(
 export async function syncGmailMailboxIncremental(
   api: GmailApi,
   historyId: string,
-  retryThreadIds: string[] = []
+  retryThreadIds: string[] = [],
+  maxThreads: number = Infinity
 ): Promise<
   | { expired: true }
   | {
@@ -1048,6 +1049,17 @@ export async function syncGmailMailboxIncremental(
       historyId: string;
       threads: GmailThread[];
       failedThreadIds: string[];
+      /**
+       * Thread ids that changed in this history window but were NOT fetched
+       * this pass because the per-pass `maxThreads` budget was reached. The
+       * caller carries these forward (see {@link mergePendingThreads}) and
+       * schedules a continuation to drain them. Unbounded fetching here is what
+       * let a large window (e.g. a cursor reseed after the Google re-home) load
+       * thousands of full threads into one isolate and exceed the Worker memory
+       * limit, which then tore down the in-flight DB connection mid-save
+       * ("driver has already been destroyed").
+       */
+      deferredThreadIds: string[];
     }
 > {
   let historyResult;
@@ -1075,9 +1087,17 @@ export async function syncGmailMailboxIncremental(
     }
   }
 
+  // Bound how many full threads we pull into memory per pass. `retryThreadIds`
+  // are inserted into the Set first, so prior-deferred (and previously-failed)
+  // threads sit at the front of iteration order and drain ahead of newly
+  // changed ones. Everything past the cap is returned as `deferredThreadIds`.
+  const ordered = [...changedThreadIds];
+  const toFetch = ordered.slice(0, maxThreads);
+  const deferredThreadIds = ordered.slice(toFetch.length);
+
   const threads: GmailThread[] = [];
   const failedThreadIds: string[] = [];
-  for (const threadId of changedThreadIds) {
+  for (const threadId of toFetch) {
     try {
       threads.push(await api.getThread(threadId));
     } catch (error) {
@@ -1091,6 +1111,7 @@ export async function syncGmailMailboxIncremental(
     historyId: historyResult.historyId,
     threads,
     failedThreadIds,
+    deferredThreadIds,
   };
 }
 
