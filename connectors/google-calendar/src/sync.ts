@@ -282,6 +282,41 @@ export async function cancellationIsForUnimportedEventFn(
 }
 
 /**
+ * A cancellation is "fully in the past" when the cancelled event has already
+ * ended. Surfacing it adds a "cancelled" note and flips the thread unread for a
+ * meeting that already happened — noise, especially when the cancellation syncs
+ * in long after the fact (an occurrence cancelled weeks after it occurred).
+ *
+ * Events that have started but not yet finished (ongoing) and future events are
+ * kept, so the user still learns an upcoming/in-progress meeting won't happen.
+ *
+ * The end is taken from the event's explicit `end` when present (a timed
+ * `dateTime`, or an all-day `date` which is already the exclusive next-day
+ * boundary). Otherwise it's derived from the start — recurring occurrences
+ * usually carry only `originalStartTime` — treating a timed start as the end
+ * (duration unknown) and an all-day start as running to the end of its day. An
+ * event with no time information at all cannot be judged past and is kept.
+ */
+export function cancellationIsForPastEventFn(
+  event: GoogleEvent,
+  now: Date = new Date()
+): boolean {
+  // Explicit end is the most precise signal.
+  if (event.end?.dateTime) return new Date(event.end.dateTime) < now;
+  if (event.end?.date) return new Date(event.end.date) < now;
+
+  // No explicit end: derive from the start (or the occurrence's original slot).
+  const start = event.start ?? event.originalStartTime;
+  if (start?.dateTime) return new Date(start.dateTime) < now;
+  if (start?.date) {
+    const dayEnd = new Date(start.date);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1); // all-day end = next-day midnight
+    return dayEnd < now;
+  }
+  return false;
+}
+
+/**
  * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
  * Used on recovery, stopSync, and sync-error paths.
  */
@@ -375,6 +410,19 @@ export async function prepareEventInstanceFn(
     ) {
       console.log(
         `[GoogleCalendar] skipping cancelled occurrence for never-imported ` +
+          `master=${masterCanonicalUrl} ` +
+          `originalStart=${new Date(originalStartTime).toISOString()} ` +
+          `(calendar=${calendarId})`
+      );
+      return null;
+    }
+
+    // Drop the cancellation when the occurrence has already ended — a past
+    // occurrence's cancellation is just noise (and would flip the thread
+    // unread for a meeting that already happened).
+    if (cancellationIsForPastEventFn(event)) {
+      console.log(
+        `[GoogleCalendar] skipping cancelled occurrence fully in the past ` +
           `master=${masterCanonicalUrl} ` +
           `originalStart=${new Date(originalStartTime).toISOString()} ` +
           `(calendar=${calendarId})`
@@ -603,6 +651,17 @@ export async function processCalendarEventsFn(
           ) {
             console.log(
               `[GoogleCalendar] skipping cancellation for never-imported ` +
+                `event=${event.iCalUID ?? event.id} (calendar=${calendarId})`
+            );
+            continue;
+          }
+
+          // Drop the cancellation when the event has already ended — a past
+          // event's cancellation is just noise (and would flip the thread
+          // unread for a meeting that already happened).
+          if (cancellationIsForPastEventFn(event)) {
+            console.log(
+              `[GoogleCalendar] skipping cancellation fully in the past ` +
                 `event=${event.iCalUID ?? event.id} (calendar=${calendarId})`
             );
             continue;
