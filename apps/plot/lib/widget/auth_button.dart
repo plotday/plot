@@ -691,10 +691,13 @@ class _AuthButtonState extends State<AuthButton>
   /// routing back to the app.
   static const _appCallbackUrl = 'plotday://auth/callback';
 
-  /// Desktop Google sign-in uses a localhost callback with FlutterWebAuth2's
+  /// Desktop Google flows use a localhost callback with FlutterWebAuth2's
   /// server mode. Custom URL schemes (plotday://) don't work on Windows because
   /// the OS launches a new app instance instead of routing to the existing one.
-  /// Google allows http://localhost with any port for desktop OAuth clients.
+  /// The desktop OAuth client (used by the connect/authorize flows) accepts
+  /// loopback on any port natively; the web client (used by sign-in — see
+  /// [_startGoogleAuthDesktop]) must list this exact URL as an authorized
+  /// redirect URI in the Google Cloud console.
   static const _desktopCallbackPort = 23522;
   static const _desktopCallbackUrl = 'http://localhost:$_desktopCallbackPort';
 
@@ -704,12 +707,25 @@ class _AuthButtonState extends State<AuthButton>
       // Use the server to generate the auth URL with state + PKCE.
       // This is an unauthenticated call (user hasn't signed in yet),
       // so use http.get directly instead of api.get which attaches a Bearer token.
+      //
+      // Deliberately omit `platform: 'desktop'` so the server uses the base
+      // web Google client (AUTH_GOOGLE_ID) rather than the desktop client
+      // (AUTH_GOOGLE_DESKTOP_ID). The resulting id_token must be `aud`-ienced
+      // to a Google client that Clerk trusts: Clerk's `idTokenSignIn`
+      // (google_one_tap strategy) validates the token's audience against the
+      // single web client configured in the Clerk dashboard. A desktop-client
+      // token is rejected as "The provided Google One Tap token is invalid",
+      // which is why this Windows sign-in path failed while macOS/iOS/Android
+      // (google_sign_in's `serverClientId` = web client) and web (Clerk JS)
+      // succeed. The web client must list http://localhost:$_desktopCallbackPort
+      // as an authorized redirect URI. The connect/authorize flows
+      // (_startOAuth / _startTwistAuth) still use the desktop client — they
+      // fetch Google API tokens and never go through Clerk.
       final authUrlRequest = Uri.parse('${Env.apiRoot}/auth').replace(
         queryParameters: {
           'provider': 'google',
           'scopes': ['openid', 'profile', 'email'],
           'redirectUri': _desktopCallbackUrl,
-          'platform': 'desktop',
         },
       );
       final authUrlResponse = await http.get(authUrlRequest);
