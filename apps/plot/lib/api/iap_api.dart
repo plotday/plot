@@ -84,6 +84,25 @@ class IapResult {
   final String? message;
 }
 
+/// Outcome of a user-initiated "Restore purchases", surfaced to the UI so it
+/// can give honest feedback instead of an unconditional "restored" toast.
+enum IapRestoreStatus {
+  /// At least one past purchase was restored from the App Store and confirmed
+  /// by our server (the user's entitlement is now up to date).
+  restored,
+
+  /// StoreKit reported no past purchases for this Apple ID to restore.
+  nothingToRestore,
+
+  /// A purchase was restored from the App Store but the server could not
+  /// confirm it (verification failed). Worth a retry.
+  serverError,
+
+  /// Restore isn't possible in this context — not an App Store build, or
+  /// StoreKit is unavailable on this device.
+  unavailable,
+}
+
 /// StoreKit-backed IAP service. Initialized once at app startup on
 /// App Store builds; no-op elsewhere.
 ///
@@ -163,6 +182,21 @@ class IapService {
   /// result. The same product may be acted on by Apple via background
   /// renewals — those have no awaiting completer and are processed silently.
   final Map<String, Completer<IapResult>> _pending = {};
+
+  /// True while [_onPurchaseUpdates] is processing a batch of stream events.
+  /// [restorePurchases] watches this (plus [_restoreActivity]) to know when
+  /// restored-transaction delivery has settled.
+  bool _processingUpdates = false;
+
+  /// Restore-session bookkeeping. [_restoreInProgress] gates collection so
+  /// background renewals arriving outside a restore are ignored. [_restoreReceived]
+  /// counts restored transactions delivered during the session; [_restoreVerified]
+  /// counts those the server confirmed. [_restoreActivity] measures the quiet
+  /// gap since the last restored transaction so the settle loop can finish.
+  bool _restoreInProgress = false;
+  int _restoreReceived = 0;
+  int _restoreVerified = 0;
+  final Stopwatch _restoreActivity = Stopwatch();
 
   /// True only when the running binary is an App Store build *and*
   /// StoreKit reports availability. False on the web, Android, Windows,
@@ -346,15 +380,69 @@ class IapService {
     return buy(productId);
   }
 
-  /// Trigger a restore of all past purchases tied to the user's Apple
-  /// ID. Returns once StoreKit has finished re-delivering them via the
-  /// purchase stream. Apple requires every app with subscriptions to
+  /// Trigger a restore of all past purchases tied to the user's Apple ID and
+  /// report what happened. Apple requires every app with subscriptions to
   /// surface a "Restore Purchases" affordance.
-  Future<void> restorePurchases() async {
-    if (!isSupported) return;
+  ///
+  /// StoreKit re-delivers restored transactions asynchronously on the purchase
+  /// stream after [InAppPurchase.restorePurchases] resolves; each is verified
+  /// with the server in [_handlePurchase]. We collect those outcomes for the
+  /// duration of the call so the caller can tell the user whether anything was
+  /// actually restored (and confirmed) instead of showing an unconditional
+  /// success — the prior behavior, which reported "restored" even when there
+  /// was nothing to restore or the server rejected the receipt.
+  Future<IapRestoreStatus> restorePurchases() async {
+    if (!isSupported) return IapRestoreStatus.unavailable;
     if (!_initialized) await init();
-    if (!_available) return;
-    await _iap.restorePurchases();
+    if (!_available) return IapRestoreStatus.unavailable;
+
+    _restoreInProgress = true;
+    _restoreReceived = 0;
+    _restoreVerified = 0;
+    try {
+      await _iap.restorePurchases();
+      await _settleRestore();
+    } finally {
+      _restoreInProgress = false;
+    }
+
+    return restoreStatusFor(
+      received: _restoreReceived,
+      verified: _restoreVerified,
+    );
+  }
+
+  /// Map the restore-session counts to a [IapRestoreStatus]. Pure so the
+  /// reporting policy can be unit-tested without StoreKit.
+  @visibleForTesting
+  static IapRestoreStatus restoreStatusFor({
+    required int received,
+    required int verified,
+  }) {
+    if (verified > 0) return IapRestoreStatus.restored;
+    if (received > 0) return IapRestoreStatus.serverError;
+    return IapRestoreStatus.nothingToRestore;
+  }
+
+  /// Wait for restored-transaction delivery + verification to settle so the
+  /// counts are final. Restored transactions arrive on the purchase stream
+  /// after [InAppPurchase.restorePurchases] resolves, and each verification is
+  /// a server round trip, so we wait until no new restored transaction has
+  /// arrived for a quiet window AND the stream handler is idle. Bounded by an
+  /// overall cap so a slow or stuck verification can never hang the Settings UI.
+  Future<void> _settleRestore() async {
+    const quiet = Duration(milliseconds: 800);
+    const cap = Duration(seconds: 10);
+    // Measure the first quiet window from here so just-delivered transactions
+    // get a chance to register even when none arrived during the restore call.
+    _restoreActivity
+      ..reset()
+      ..start();
+    final overall = Stopwatch()..start();
+    while (overall.elapsed < cap) {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!_processingUpdates && _restoreActivity.elapsed >= quiet) return;
+    }
   }
 
   Future<void> _onPurchaseUpdates(List<PurchaseDetails> purchases) async {
@@ -369,8 +457,15 @@ class IapService {
     if (nativeSheetActive.value && !purchases.any(_sheetStillUp)) {
       nativeSheetActive.value = false;
     }
-    for (final purchase in purchases) {
-      await _handlePurchase(purchase);
+    // Mark the handler busy so an in-flight restore waits for the whole batch
+    // (each purchase is verified sequentially) before deciding it has settled.
+    _processingUpdates = true;
+    try {
+      for (final purchase in purchases) {
+        await _handlePurchase(purchase);
+      }
+    } finally {
+      _processingUpdates = false;
     }
   }
 
@@ -421,6 +516,17 @@ class IapService {
       case PurchaseStatus.purchased:
       case PurchaseStatus.restored:
         final verified = await _verifyWithServer(purchase);
+        // Tally restored transactions for an in-flight restorePurchases() so it
+        // can report an accurate outcome. Only `.restored` updates count —
+        // `.purchased` is a fresh buy, and renewals arriving outside a restore
+        // session are ignored (_restoreInProgress is false).
+        if (purchase.status == PurchaseStatus.restored && _restoreInProgress) {
+          _restoreReceived++;
+          if (verified) _restoreVerified++;
+          _restoreActivity
+            ..reset()
+            ..start();
+        }
         // Always finish the transaction. Apple keeps re-delivering until
         // we complete it; the server has its receipt now and renewals
         // will arrive via App Store Server Notifications V2.

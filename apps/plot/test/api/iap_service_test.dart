@@ -52,4 +52,37 @@ void main() {
       }
     });
   });
+
+  // "Restore Purchases" must give honest feedback: the shipped build showed an
+  // unconditional "Restored from App Store." even when StoreKit had nothing to
+  // restore or the server rejected the receipt. restoreStatusFor encodes the
+  // reporting policy from the (received, verified) tallies the purchase stream
+  // collects during a restore.
+  group('IapService.restoreStatusFor', () {
+    test('reports restored when at least one purchase was verified', () {
+      expect(
+        IapService.restoreStatusFor(received: 1, verified: 1),
+        IapRestoreStatus.restored,
+      );
+      // A verified restore wins even if another restored txn failed to verify.
+      expect(
+        IapService.restoreStatusFor(received: 2, verified: 1),
+        IapRestoreStatus.restored,
+      );
+    });
+
+    test('reports nothingToRestore when no transactions arrived', () {
+      expect(
+        IapService.restoreStatusFor(received: 0, verified: 0),
+        IapRestoreStatus.nothingToRestore,
+      );
+    });
+
+    test('reports serverError when restored but none verified', () {
+      expect(
+        IapService.restoreStatusFor(received: 1, verified: 0),
+        IapRestoreStatus.serverError,
+      );
+    });
+  });
 }

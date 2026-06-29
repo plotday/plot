@@ -1229,11 +1229,35 @@ class RestorePurchasesCommand extends Command {
       return const CommandSkipped();
     }
     try {
-      await IapService.instance.restorePurchases();
-      if (context.mounted) {
-        context.showToast(message: 'Restored from App Store.');
+      final status = await IapService.instance.restorePurchases();
+      // A confirmed restore writes entitlement on the server; refresh so the
+      // Settings UI reflects the recovered subscription immediately rather than
+      // waiting for the next websocket broadcast.
+      if (status == IapRestoreStatus.restored) {
+        await SubscriptionService.instance.refresh();
       }
-      return const CommandDone();
+      if (!context.mounted) return const CommandDone();
+      switch (status) {
+        case IapRestoreStatus.restored:
+          context.showToast(message: 'Your subscription has been restored.');
+          return const CommandDone();
+        case IapRestoreStatus.nothingToRestore:
+          context.showToast(message: 'No purchases to restore.');
+          return const CommandDone();
+        case IapRestoreStatus.serverError:
+          context.showToast(
+            message: "We found a purchase but couldn't confirm it. "
+                'Please try again.',
+            isError: true,
+          );
+          return const CommandSkipped();
+        case IapRestoreStatus.unavailable:
+          context.showToast(
+            message: 'In-app purchases are not available right now.',
+            isError: true,
+          );
+          return const CommandSkipped();
+      }
     } catch (e, st) {
       log.warning('IAP: restorePurchases failed', e, st);
       if (context.mounted) {
