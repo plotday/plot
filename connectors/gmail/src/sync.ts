@@ -117,6 +117,19 @@ export const WATCH_PREEMPTIVE_RENEW_MS = 36 * 60 * 60 * 1000;
 export const MAX_THREAD_FETCH_ATTEMPTS = 5;
 
 /**
+ * Max full threads to fetch+process in a single incremental-sync pass. A large
+ * history window (e.g. the cursor reseed after the Google composite re-home, or
+ * a high-volume burst) used to load every changed thread into one isolate at
+ * once and exceed the Cloudflare Worker memory limit; the isolate kill then
+ * tore down the in-flight DB connection mid-save ("driver has already been
+ * destroyed") and dropped mail. Bounding each pass keeps memory flat and the
+ * overflow is carried in `pendingThreadIds` and drained on a scheduled
+ * continuation. Sized to match the initial-backfill page (`getThreads`
+ * maxResults = 20), the proven-safe per-isolate batch.
+ */
+export const MAX_INCREMENTAL_THREADS_PER_BATCH = 20;
+
+/**
  * Idempotency window for `onCreateLink`. A compose draft carries no stable
  * id, so we dedupe by a content hash; two dispatches with identical content
  * within this window are treated as a callback retry (suppress the resend),
@@ -332,19 +345,33 @@ export function pickChannelForThread(
 }
 
 /**
- * Merges newly-failed thread fetches into the prior pending set, bumping a
- * per-thread attempt counter and dropping threads that have exhausted
- * {@link MAX_THREAD_FETCH_ATTEMPTS} retries (logged, since that change is
- * effectively lost). Threads that succeeded this round are simply absent
- * from `failedIds` and therefore fall out of the pending set.
+ * Merges thread fetches that must be retried into the prior pending set.
+ *
+ * Two distinct inputs:
+ * - `failedIds` — threads we *attempted* to fetch and that failed. Each bumps a
+ *   per-thread attempt counter and is dropped once it exhausts
+ *   {@link MAX_THREAD_FETCH_ATTEMPTS} retries (logged, since that change is then
+ *   effectively lost).
+ * - `deferredIds` — threads we *did not attempt* this pass because the per-pass
+ *   fetch budget was reached (see {@link syncGmailMailboxIncremental}). These
+ *   carry forward at their existing attempt count WITHOUT a bump — they were
+ *   only postponed, not tried — so a large backlog drains across continuations
+ *   instead of being abandoned after a few passes.
+ *
+ * Threads that succeeded this round appear in neither list and therefore fall
+ * out of the pending set.
  */
 export function mergePendingThreads(
   prior: PendingThread[],
-  failedIds: string[]
+  failedIds: string[],
+  deferredIds: string[] = []
 ): PendingThread[] {
   const attemptsById = new Map(prior.map((p) => [p.id, p.attempts]));
   const merged: PendingThread[] = [];
+  const seen = new Set<string>();
   for (const id of failedIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
     const attempts = (attemptsById.get(id) ?? 0) + 1;
     if (attempts > MAX_THREAD_FETCH_ATTEMPTS) {
       console.error(
@@ -353,6 +380,11 @@ export function mergePendingThreads(
       continue;
     }
     merged.push({ id, attempts });
+  }
+  for (const id of deferredIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push({ id, attempts: attemptsById.get(id) ?? 0 });
   }
   return merged;
 }
@@ -875,7 +907,8 @@ export async function selfHealCheckFn(host: GmailSyncHost): Promise<void> {
         const result = await syncGmailMailboxIncremental(
           api,
           incremental.historyId,
-          pending.map((p) => p.id)
+          pending.map((p) => p.id),
+          MAX_INCREMENTAL_THREADS_PER_BATCH
         );
         if (result.expired) {
           // History window expired; reseed cursor (same fallback as
@@ -899,16 +932,23 @@ export async function selfHealCheckFn(host: GmailSyncHost): Promise<void> {
             // broken. Force a fresh watch setup below.
             action = "missed_history";
           }
-          // Always advance the cursor and carry forward failed fetches so
-          // we neither re-walk the whole window nor lose unfetched mail.
+          // Always advance the cursor and carry forward failed AND deferred
+          // fetches so we neither re-walk the whole window nor lose unfetched
+          // mail. A large window discovered here is bounded the same way the
+          // webhook path is (MAX_INCREMENTAL_THREADS_PER_BATCH); the overflow
+          // drains on a queued continuation below.
           await host.set("incremental_state", {
             historyId: result.historyId,
             lastSyncTime: now,
             pendingThreadIds: mergePendingThreads(
               pending,
-              result.failedThreadIds
+              result.failedThreadIds,
+              result.deferredThreadIds
             ),
           });
+          if (result.deferredThreadIds.length > 0) {
+            await host.scheduler.queueIncrementalSync();
+          }
         }
       }
     } catch (error) {
@@ -1107,7 +1147,8 @@ export async function incrementalSyncBatchFn(
     const result = await syncGmailMailboxIncremental(
       api,
       state.historyId,
-      pending.map((p) => p.id)
+      pending.map((p) => p.id),
+      MAX_INCREMENTAL_THREADS_PER_BATCH
     );
     if (result.expired) {
       // Recover by reseeding from the watch's most recent historyId.
@@ -1131,12 +1172,28 @@ export async function incrementalSyncBatchFn(
     }
 
     // Advance the cursor, but carry forward any thread fetches that failed
-    // so the next sync retries them — otherwise moving past them loses mail.
+    // (so the next sync retries them) and any that were deferred to stay under
+    // the per-pass memory budget — otherwise moving past either loses mail.
     await host.set("incremental_state", {
       historyId: result.historyId,
       lastSyncTime: new Date(),
-      pendingThreadIds: mergePendingThreads(pending, result.failedThreadIds),
+      pendingThreadIds: mergePendingThreads(
+        pending,
+        result.failedThreadIds,
+        result.deferredThreadIds
+      ),
     });
+
+    // Drain the rest on a scheduled continuation when threads were deferred for
+    // the per-pass cap. Self-chain exit condition: each pass processes up to
+    // MAX_INCREMENTAL_THREADS_PER_BATCH threads (deferred ones first), so the
+    // backlog strictly shrinks and the chain terminates once nothing is
+    // deferred. Failed-only pending does NOT re-queue here — those retry on the
+    // next webhook/self-heal — so a permanently-unfetchable thread can't spin a
+    // hot loop.
+    if (result.deferredThreadIds.length > 0) {
+      await host.scheduler.queueIncrementalSync();
+    }
   } catch (error) {
     console.error("Error in Gmail incremental sync batch:", error);
     throw error;
