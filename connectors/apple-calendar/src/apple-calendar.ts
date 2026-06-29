@@ -48,6 +48,34 @@ function buildEventSources(uid: string | null | undefined): string[] {
   return [`apple-calendar:${uid}`, `icaluid:${uid}`];
 }
 
+/**
+ * A cancellation is "fully in the past" when the cancelled event has already
+ * ended. Surfacing it adds a "cancelled" note (or bumps the master thread for a
+ * cancelled occurrence) and flips the thread unread for a meeting that already
+ * happened — noise, especially when the cancellation syncs in long after the
+ * fact. Events that have started but not yet finished (ongoing) and future
+ * events are kept, so the user still learns an upcoming/in-progress meeting
+ * won't happen.
+ *
+ * `start`/`end` are the parsed ICS values (a Date for timed events, a
+ * "YYYY-MM-DD" string for all-day events). An all-day DTEND is the exclusive
+ * end (already the end boundary); with no end, a timed start is treated as the
+ * end (duration unknown) and an all-day start runs to the end of its day.
+ */
+export function cancellationIsForPastEventFn(
+  start: Date | string,
+  end: Date | string | null,
+  now: Date = new Date()
+): boolean {
+  const toDate = (v: Date | string): Date =>
+    v instanceof Date ? v : new Date(`${v}T00:00:00Z`);
+  if (end) return toDate(end) < now;
+  if (start instanceof Date) return start < now;
+  const dayEnd = toDate(start);
+  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1); // all-day end = next-day midnight
+  return dayEnd < now;
+}
+
 type SyncState = {
   calendarHref: string;
   initialSync: boolean;
@@ -1194,6 +1222,14 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     // Handle cancelled events
     if (isCancelled) {
+      // Drop the cancellation when the event has already ended — a past event's
+      // cancellation is just noise (and would flip the thread unread for a
+      // meeting that already happened). Incremental only: initial-sync
+      // cancellations already returned above.
+      if (cancellationIsForPastEventFn(start, end)) {
+        return null;
+      }
+
       const cancelNote = {
         key: "cancellation" as const,
         content: icsEvent.organizer?.name
@@ -1436,6 +1472,12 @@ export class AppleCalendar extends Connector<AppleCalendar> {
             : new Date(originalStart).toISOString();
         const pendingKey = `pending_occ:${calendarHref}:${masterSource}:${occurrenceTs}`;
         await this.set(pendingKey, cancelledOccurrence);
+        return null;
+      }
+
+      // Drop the cancellation when the occurrence has already ended — bumping
+      // the master thread for a past occurrence's cancellation is just noise.
+      if (cancellationIsForPastEventFn(start, end)) {
         return null;
       }
 

@@ -32,12 +32,42 @@ import type {
 } from "@plotday/twister/schedule";
 
 import {
+  fromMsDate,
   GraphApi,
   type OutlookEvent,
   type SyncState,
   syncOutlookCalendar,
   transformOutlookEvent,
 } from "./graph-api";
+
+/**
+ * A cancellation is "fully in the past" when the cancelled event has already
+ * ended. Surfacing it adds a "cancelled" note (or bumps the master thread for a
+ * cancelled occurrence) and flips the thread unread for a meeting that already
+ * happened — noise, especially when the cancellation syncs in long after the
+ * fact. Events that have started but not yet finished (ongoing) and future
+ * events are kept, so the user still learns an upcoming/in-progress meeting
+ * won't happen.
+ *
+ * The connector fetches events in UTC (via the Graph `Prefer` header), so
+ * `fromMsDate` yields correct instants. End is taken from the event's explicit
+ * `end`, else its `start`, else the occurrence's `originalStart`. An event with
+ * no time data — e.g. a delta-removed (`@removed`) event, which Graph returns
+ * with only an id — cannot be judged past and is kept.
+ */
+export function cancellationIsForPastEventFn(
+  event: OutlookEvent,
+  now: Date = new Date()
+): boolean {
+  if (event.end?.dateTime) return fromMsDate(event.end)! < now;
+  const start = event.start?.dateTime
+    ? fromMsDate(event.start)!
+    : event.originalStart
+    ? new Date(event.originalStart)
+    : null;
+  if (!start) return false;
+  return start < now;
+}
 
 // ---------------------------------------------------------------------------
 // Host interface
@@ -487,6 +517,18 @@ export async function prepareEventInstanceFn(
       return null;
     }
 
+    // Drop the cancellation when the occurrence has already ended — bumping the
+    // master thread for a past occurrence's cancellation is just noise.
+    if (cancellationIsForPastEventFn(event)) {
+      console.log(
+        `[OutlookCalendar] skipping cancelled occurrence fully in the past ` +
+          `master=${masterCanonicalUrl} ` +
+          `originalStart=${new Date(originalStart).toISOString()} ` +
+          `(calendar=${calendarId})`
+      );
+      return null;
+    }
+
     return {
       type: "event",
       title: "",
@@ -649,6 +691,16 @@ export async function processOutlookEventsFn(
         if (initialSync) {
           continue;
         }
+        // Drop the cancellation when the event has already ended — a past
+        // event's cancellation is just noise (and would flip the thread unread
+        // for a meeting that already happened). Best-effort: Graph delta
+        // returns `@removed` items with only an id, so time data is usually
+        // absent and the event is kept (the guard fires only if Graph ever
+        // includes start/end on the removal).
+        if (cancellationIsForPastEventFn(outlookEvent)) {
+          continue;
+        }
+
         // Graph event ids are mailbox-local, so qualify with calendarId
         // to keep source globally unique across users.
         const source = `outlook-calendar:${calendarId}:${outlookEvent.id}`;

@@ -913,14 +913,21 @@ describe("processCalendarEventsFn — stale cancellations", () => {
     vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
 
     // An upcoming event we imported, then cancelled after we started syncing.
+    // Use a future start/end so this stays a "keep" case regardless of when the
+    // test runs (a past event would be dropped by the past-cancellation guard).
+    const futureStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const freshCancelled = {
       id: "evt-fresh",
       iCalUID: "abc@google.com",
       status: "cancelled" as const,
       created: "2026-06-01T10:00:00.000Z",
       updated: "2026-06-26T12:00:00.000Z",
-      start: { dateTime: "2026-07-01T15:00:00.000Z" },
-      end: { dateTime: "2026-07-01T16:00:00.000Z" },
+      start: { dateTime: futureStart.toISOString() },
+      end: {
+        dateTime: new Date(
+          futureStart.getTime() + 60 * 60 * 1000
+        ).toISOString(),
+      },
       summary: "Team sync",
     };
 
@@ -992,16 +999,157 @@ describe("prepareEventInstanceFn — stale occurrence cancellations", () => {
     );
     vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
 
+    // Future occurrence so this stays a "keep" case regardless of run date.
     const freshOccurrence = {
       id: "evt-occ-fresh",
       iCalUID: "master2@google.com",
       recurringEventId: "masterid2",
-      originalStartTime: { dateTime: "2026-07-01T15:00:00.000Z" },
+      originalStartTime: {
+        dateTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      },
       status: "cancelled" as const,
       updated: "2026-06-26T12:00:00.000Z",
     };
 
     await processCalendarEventsFn(host, [freshOccurrence], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(
+      saved[0].notes?.some((n) =>
+        (n as { key?: string }).key?.startsWith("cancellation-")
+      )
+    ).toBe(true);
+  });
+});
+
+describe("processCalendarEventsFn — past cancellations", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+  const dateDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  it("drops a cancelled standalone event that has already ended", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    // Synced a month ago; the event was imported then cancelled — but it has
+    // already happened, so surfacing the cancellation only flips unread noise.
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const pastCancelled = {
+      id: "evt-past",
+      iCalUID: "past@google.com",
+      status: "cancelled" as const,
+      created: isoDaysFromNow(-10),
+      updated: isoDaysFromNow(-1), // recent edit, so the unimported guard keeps it
+      start: { dateTime: isoDaysFromNow(-2) },
+      end: { dateTime: isoDaysFromNow(-2) }, // ended ~2 days ago
+      summary: "Old standup",
+    };
+
+    await processCalendarEventsFn(host, [pastCancelled], calendarId, false);
+
+    expect(host.savedLinks.flat()).toHaveLength(0);
+  });
+
+  it("keeps a cancelled standalone event that has started but not finished", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const ongoingCancelled = {
+      id: "evt-ongoing",
+      iCalUID: "ongoing@google.com",
+      status: "cancelled" as const,
+      created: isoDaysFromNow(-10),
+      updated: isoDaysFromNow(0),
+      start: { dateTime: isoDaysFromNow(-1) }, // started yesterday
+      end: { dateTime: isoDaysFromNow(1) }, // ends tomorrow — still running
+      summary: "Multi-day workshop",
+    };
+
+    await processCalendarEventsFn(host, [ongoingCancelled], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(
+      saved[0].notes?.some(
+        (n) => (n as { key?: string }).key === "cancellation"
+      )
+    ).toBe(true);
+  });
+
+  it("keeps a cancelled standalone event in the future", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const futureCancelled = {
+      id: "evt-future",
+      iCalUID: "future@google.com",
+      status: "cancelled" as const,
+      created: isoDaysFromNow(-10),
+      updated: isoDaysFromNow(-1),
+      start: { dateTime: isoDaysFromNow(7) },
+      end: { dateTime: isoDaysFromNow(7) },
+      summary: "Upcoming review",
+    };
+
+    await processCalendarEventsFn(host, [futureCancelled], calendarId, false);
+
+    expect(host.savedLinks.flat()).toHaveLength(1);
+  });
+
+  it("drops a cancelled recurring occurrence whose occurrence is in the past", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-60));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    // Mirrors the prod bug: a recurring occurrence cancelled ~weeks after it
+    // already happened. originalStartTime is within the 2-year history window
+    // and updated is recent (so the unimported guard keeps it), but the
+    // occurrence is fully in the past — surfacing it just flips unread noise.
+    const pastOccurrence = {
+      id: "evt-occ-past",
+      iCalUID: "recurring@google.com",
+      recurringEventId: "recurringid",
+      originalStartTime: { dateTime: isoDaysFromNow(-30) },
+      status: "cancelled" as const,
+      updated: isoDaysFromNow(-1),
+    };
+
+    await processCalendarEventsFn(host, [pastOccurrence], calendarId, false);
+
+    expect(host.savedLinks.flat()).toHaveLength(0);
+  });
+
+  it("keeps a cancelled all-day recurring occurrence happening today", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-60));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    // An all-day occurrence carries only a date (no time). Today's all-day
+    // event has started but not finished — it runs until end of day — so its
+    // cancellation must still surface.
+    const todayAllDay = {
+      id: "evt-occ-allday-today",
+      iCalUID: "recurring-allday@google.com",
+      recurringEventId: "recurringid-allday",
+      originalStartTime: { date: dateDaysFromNow(0) },
+      status: "cancelled" as const,
+      updated: isoDaysFromNow(0),
+    };
+
+    await processCalendarEventsFn(host, [todayAllDay], calendarId, false);
 
     const saved = host.savedLinks.flat();
     expect(saved).toHaveLength(1);
