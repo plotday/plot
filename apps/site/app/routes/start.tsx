@@ -28,8 +28,7 @@ const PLATFORMS: PlatformInfo[] = [
     label: "Mac",
     icon: IconBrandApple,
     available: true,
-    href: "https://testflight.apple.com/join/WyVQ2GgV",
-    note: "TestFlight beta",
+    href: "https://apps.apple.com/us/app/plot-all-your-work-organized/id6756905242?mt=12",
   },
   {
     key: "windows",
