@@ -70,6 +70,38 @@ bool reserveEmptyTopBar({
   required bool hasSharing,
 }) => !linksLoaded && hasSharing;
 
+/// Whether [NoteEditorState.didUpdateWidget] should reset the SuperEditor when
+/// the draft note id changes ([draftIdChanged]).
+///
+/// Two regimes:
+///
+/// - **After a send** ([clearAfterSendPending]) the composer must ALWAYS be
+///   cleared to the fresh (empty) draft. This is the race fix: an interleaved
+///   `ThreadBloc` emit — e.g. the notes-watch firing when the just-sent note is
+///   saved — can rebuild this widget with the OLD draft id and reset
+///   [lastSavedContent] to `''` *before* the fresh empty draft arrives. The
+///   content-proxy check below would then see `'' == ''` and skip the reset,
+///   stranding the just-sent reply on screen. A boolean send flag can't be
+///   clobbered by that same-id emit, so it survives until the fresh draft lands.
+///
+/// - **Otherwise** (background draft reloads during initial load, which mint a
+///   fresh note id for unchanged content) reset only when the content actually
+///   differs — both to avoid a flicker and to never wipe in-progress typing
+///   whose content the proxy already reflects.
+///
+/// Pure so the decision can be unit-tested without a mounted editor.
+@visibleForTesting
+bool shouldResetComposerOnDraftChange({
+  required bool draftIdChanged,
+  required bool clearAfterSendPending,
+  required String incomingContent,
+  required String lastSavedContent,
+}) {
+  if (!draftIdChanged) return false;
+  if (clearAfterSendPending) return true;
+  return incomingContent != lastSavedContent;
+}
+
 class NoteEditor extends StatefulWidget {
   const NoteEditor({
     required this.draft,
@@ -167,6 +199,12 @@ class NoteEditorState extends State<NoteEditor> {
   bool _saving = false;
   String _lastSavedContent = '';
   Uuid? _lastDraftNoteId;
+  // Set when a note is sent (normal mode). Consumed by the next draft-id change
+  // in didUpdateWidget to force-clear the composer to the fresh empty draft —
+  // robust against an interleaved same-id ThreadBloc emit that would otherwise
+  // clobber the _lastSavedContent proxy and skip the reset (the just-sent reply
+  // would linger on screen). See [shouldResetComposerOnDraftChange].
+  bool _clearComposerOnNextDraft = false;
   FocusNode? _currentFocusNode;
   // Used only when widget.bodyOnly is true. EditableArea owns the
   // FocusNode in the normal path; here we own it.
@@ -279,7 +317,12 @@ class NoteEditorState extends State<NoteEditor> {
     // call triggers a setState inside the SuperEditor that briefly clears
     // and re-renders the document — visible as a flicker.
     if (newDraftNoteId != _lastDraftNoteId) {
-      if (newContent != _lastSavedContent) {
+      if (shouldResetComposerOnDraftChange(
+        draftIdChanged: true,
+        clearAfterSendPending: _clearComposerOnNextDraft,
+        incomingContent: newContent,
+        lastSavedContent: _lastSavedContent,
+      )) {
         if (widget.isNewThreadMode &&
             _lastDraftNoteId != null &&
             newDraftNoteId == null) {
@@ -293,6 +336,9 @@ class NoteEditorState extends State<NoteEditor> {
           _editorKey.currentState?.reset(newContent);
         }
       }
+      // Consume the send flag on any draft-id change: the fresh empty draft has
+      // arrived (or a different draft superseded the pending send).
+      _clearComposerOnNextDraft = false;
       _lastDraftNoteId = newDraftNoteId;
       _lastSavedContent = newContent;
     } else if (newContent != _lastSavedContent) {
@@ -1687,9 +1733,13 @@ class NoteEditorState extends State<NoteEditor> {
     // persisted to the draft — usually '' — not what the user actually
     // typed. didUpdateWidget's reset-skip optimization treats
     // _lastSavedContent as a proxy for the editor's current content;
-    // without bumping it here, the empty post-add() draft and the stale
-    // empty _lastSavedContent compare equal, the SuperEditor reset is
-    // skipped, and the just-submitted text stays on screen.
+    // bumping it here makes the empty post-send draft differ from the proxy
+    // so the SuperEditor reset fires. This proxy bump is NOT reliable on its
+    // own: an interleaved same-id ThreadBloc emit can reset _lastSavedContent
+    // back to '' before the fresh draft lands, which intermittently stranded
+    // the just-sent reply on screen. The robust clear is the
+    // _clearComposerOnNextDraft flag set in the normal-mode branch below; this
+    // bump remains as a secondary signal and for the editing branch.
     _lastSavedContent = body;
 
     final activityBloc = context.read<ThreadBloc>();
@@ -1735,9 +1785,21 @@ class NoteEditorState extends State<NoteEditor> {
       setState(() {
         _saving = true;
       });
+      var sent = false;
+      // Arm the composer clear before sending: ThreadBloc.sendWithUndo emits a
+      // fresh empty draft, and the next draft-id change in didUpdateWidget must
+      // clear the just-sent text. A boolean flag (rather than the
+      // _lastSavedContent proxy) survives an interleaved same-id emit — e.g. the
+      // notes-watch firing when the sent note is saved — that would otherwise
+      // reset the proxy and skip the clear, leaving the reply on screen.
+      _clearComposerOnNextDraft = true;
       try {
         await context.run(AddNote(note, linkType: threadCfg));
+        sent = true;
       } finally {
+        // If the send threw before emitting the fresh draft, drop the pending
+        // clear so a later unrelated draft reload can't wipe the retained text.
+        if (!sent) _clearComposerOnNextDraft = false;
         if (mounted) {
           setState(() {
             _saving = false;
