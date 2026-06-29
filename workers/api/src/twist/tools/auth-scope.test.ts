@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PROVIDER_CONFIGS } from "../../provider";
 import {
   findMissingRequiredScopes,
   isInsufficientScopeError,
@@ -176,5 +177,35 @@ describe("findMissingRequiredScopes", () => {
 
   it("never flags optional scopes (they are not passed in requiredScopes)", () => {
     expect(findMissingRequiredScopes(["s.events"], ["s.events"])).toEqual([]);
+  });
+
+  it("does not flag Google's `profile` when it is returned in canonical form (desktop sign-in regression)", () => {
+    // The desktop Google sign-in (Windows/Linux) requests the short identity
+    // scopes and runs server-side scope enforcement (the native and web flows
+    // do not). Google's token response echoes identity scopes in CANONICAL URL
+    // form — `openid` stays literal, but `profile`/`email` become userinfo.*
+    // URLs — so an exact-match enforcement can never find the literal
+    // "profile". Google's `emailScopes` allowlist must therefore include every
+    // identity scope (openid/email/profile); omitting `profile` made every
+    // desktop sign-in fail with a spurious 400 "access wasn't fully granted".
+    const requested = ["openid", "profile", "email"];
+    const granted = [
+      "openid",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+    ];
+    const emailScopes = PROVIDER_CONFIGS.google.emailScopes ?? [];
+    expect(
+      findMissingRequiredScopes(requested, granted, emailScopes)
+    ).toEqual([]);
+  });
+
+  it("Google's emailScopes allowlist covers every identity scope it requests", () => {
+    // Guards the config itself: identity scopes Google returns canonically must
+    // all be allowlisted so enforcement never trips over short-vs-canonical.
+    const emailScopes = PROVIDER_CONFIGS.google.emailScopes ?? [];
+    expect(emailScopes).toEqual(
+      expect.arrayContaining(["openid", "email", "profile"])
+    );
   });
 });

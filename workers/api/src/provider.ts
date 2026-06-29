@@ -510,7 +510,15 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Google",
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
-    emailScopes: ["openid", "email"],
+    // Identity scopes the runtime always appends and excludes from grant
+    // enforcement. ALL of openid/email/profile must be listed: Google echoes
+    // granted scopes in canonical URL form (e.g. `profile` →
+    // `https://www.googleapis.com/auth/userinfo.profile`), so the exact-match
+    // enforcement in findMissingRequiredScopes can never match the short form.
+    // Omitting `profile` made every desktop Google sign-in (the only sign-in
+    // path that runs server-side scope enforcement) fail with a spurious 400
+    // "access wasn't fully granted".
+    emailScopes: ["openid", "email", "profile"],
     parseTokenResponse: parseGoogleTokenResponse,
     extractAccountLabel: (d) => (d as GoogleProviderData).email || null,
     additionalParams: {
