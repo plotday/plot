@@ -78,6 +78,39 @@ export class GmailApiError extends Error {
   }
 }
 
+/**
+ * True when a {@link GmailApiError} is a Gmail rate-limit / quota rejection:
+ * an HTTP 429, or a 403 carrying one of Gmail's unambiguous quota markers
+ * (`rateLimitExceeded` / `userRateLimitExceeded` / `Quota exceeded`). These are
+ * expected under load and self-resolve once the per-user-per-minute window
+ * clears, so callers retry/defer them rather than dropping the write-back or
+ * paging error tracking. Gated on the markers — NOT a bare 403 — so genuine
+ * permission failures (`Insufficient Permission`) still surface.
+ */
+export function isGmailRateLimitError(error: unknown): boolean {
+  if (!(error instanceof GmailApiError)) return false;
+  if (error.status === 429) return true;
+  return (
+    error.status === 403 &&
+    /rateLimitExceeded|userRateLimitExceeded|Quota exceeded/i.test(error.message)
+  );
+}
+
+/**
+ * In-process retry budget for {@link GmailApi.call}. Kept small and short so a
+ * brief blip (a momentary 429, a 5xx, a dropped connection) is absorbed inside
+ * the current execution without risking the worker's wall-clock budget. Sustained
+ * rate-limits exceed this and throw, so the caller (deferred write-back drain,
+ * incremental-sync pending list) can reschedule past the quota window.
+ */
+const GMAIL_CALL_MAX_ATTEMPTS = 3;
+const GMAIL_CALL_BACKOFF_MS = [500, 1500];
+/**
+ * Honor a server `Retry-After` only up to this bound; a longer wait belongs in a
+ * scheduled retry, not an in-flight isolate, so we throw and let the caller defer.
+ */
+const GMAIL_RETRY_AFTER_MAX_MS = 3000;
+
 export class GmailApi {
   private baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me";
 
@@ -114,25 +147,96 @@ export class GmailApi {
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(url.toString(), {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    // Bounded in-process retry for transient failures (rate-limit / 5xx /
+    // dropped connection). A momentary blip is absorbed here; a sustained one
+    // exceeds the budget and throws so the caller can defer past the quota
+    // window (see deferred write-back drain / incremental-sync pending list).
+    let lastError: unknown;
+    for (let attempt = 0; attempt < GMAIL_CALL_MAX_ATTEMPTS; attempt++) {
+      let response: Response;
+      try {
+        response = await fetch(url.toString(), {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      } catch (networkError) {
+        // fetch() rejects on a dropped/aborted connection — transient.
+        lastError = networkError;
+        if (attempt < GMAIL_CALL_MAX_ATTEMPTS - 1) {
+          await this.sleep(GMAIL_CALL_BACKOFF_MS[attempt] ?? 0);
+          continue;
+        }
+        throw networkError;
+      }
 
-    if (!response.ok) {
+      if (response.ok) {
+        // Some Gmail endpoints — notably users.stop (POST /stop, used by
+        // stopWatch) — return 204 No Content with an EMPTY body. Calling
+        // response.json() on an empty body throws "SyntaxError: Unexpected end
+        // of JSON input"; this escaped through setupWatch()'s unguarded
+        // stopWatch() recovery path and surfaced as an unhandled twist
+        // exception. Read the body as text and only parse it when non-empty.
+        const text = await response.text();
+        return text ? JSON.parse(text) : undefined;
+      }
+
       const errorText = await response.text();
-      throw new GmailApiError(response.status, response.statusText, errorText);
+      const error = new GmailApiError(
+        response.status,
+        response.statusText,
+        errorText
+      );
+      lastError = error;
+
+      const retryable = isGmailRateLimitError(error) || response.status >= 500;
+      if (!retryable || attempt >= GMAIL_CALL_MAX_ATTEMPTS - 1) {
+        throw error;
+      }
+
+      const delayMs = this.retryDelayMs(response, attempt);
+      // A long server-requested wait belongs in a scheduled retry, not here.
+      if (delayMs === null) throw error;
+      await this.sleep(delayMs);
     }
 
-    // Some Gmail endpoints — notably users.stop (POST /stop, used by
-    // stopWatch) — return 204 No Content with an EMPTY body. Calling
-    // response.json() on an empty body throws "SyntaxError: Unexpected end of
-    // JSON input"; this escaped through setupWatch()'s unguarded stopWatch()
-    // recovery path and surfaced as an unhandled twist exception. Read the
-    // body as text and only parse it when non-empty.
-    const text = await response.text();
-    return text ? JSON.parse(text) : undefined;
+    // Unreachable in practice (the loop returns or throws), but satisfies the
+    // type checker and surfaces any logic error rather than returning undefined.
+    throw lastError instanceof Error
+      ? lastError
+      : new GmailApiError(0, "Retry loop exhausted", String(lastError));
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Backoff for a retryable response. Honors a `Retry-After` header (seconds or
+   * HTTP date) up to {@link GMAIL_RETRY_AFTER_MAX_MS}; returns null when the
+   * server asks for longer than that, signalling the caller to throw and defer
+   * rather than block the isolate. Falls back to a fixed backoff schedule.
+   */
+  private retryDelayMs(response: Response, attempt: number): number | null {
+    const retryAfter = response.headers.get("Retry-After");
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      let ms: number;
+      if (Number.isFinite(seconds)) {
+        ms = seconds * 1000;
+      } else {
+        const when = Date.parse(retryAfter);
+        ms = Number.isNaN(when) ? NaN : when - Date.now();
+      }
+      if (Number.isFinite(ms)) {
+        if (ms > GMAIL_RETRY_AFTER_MAX_MS) return null;
+        return Math.max(0, ms);
+      }
+    }
+    return (
+      GMAIL_CALL_BACKOFF_MS[attempt] ??
+      GMAIL_CALL_BACKOFF_MS[GMAIL_CALL_BACKOFF_MS.length - 1]
+    );
   }
 
   public async getLabels(): Promise<GmailLabel[]> {

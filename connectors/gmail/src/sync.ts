@@ -42,6 +42,7 @@ import {
   buildNewEmailMessage,
   buildReplyMessage,
   getHeader,
+  isGmailRateLimitError,
   parseEmailAddresses,
   syncGmailChannel,
   syncGmailMailboxIncremental,
@@ -128,6 +129,55 @@ export const MAX_THREAD_FETCH_ATTEMPTS = 5;
  * maxResults = 20), the proven-safe per-isolate batch.
  */
 export const MAX_INCREMENTAL_THREADS_PER_BATCH = 20;
+
+/**
+ * Max deferred write-backs drained per retry pass. A burst of to-do/read
+ * changes that hit Gmail's per-user-per-minute quota is queued and drained in
+ * bounded passes, mirroring the incremental-sync batch cap so one drain
+ * execution stays well inside the worker memory + request budget.
+ */
+export const MAX_WRITEBACK_RETRY_PER_BATCH = 20;
+
+/**
+ * Max times a single deferred write-back is re-attempted before it is abandoned
+ * with a log line. Bounds the retry so a permanently-failing write-back (e.g. a
+ * thread deleted in Gmail) can't loop forever. The state still lives in Plot;
+ * only the Gmail label mirror is given up.
+ */
+export const MAX_WRITEBACK_ATTEMPTS = 5;
+
+/**
+ * Cap on the persisted deferred-write-back queue. A sustained quota outage must
+ * not grow connector storage without bound; past this, the oldest pending
+ * write-backs are dropped (the freshest user intent is the most worth keeping).
+ */
+export const MAX_PENDING_WRITEBACKS = 500;
+
+/**
+ * Delay before a deferred write-back drain runs. Sized to clear Gmail's
+ * per-user-per-minute quota window so the retry lands after the limit resets
+ * rather than immediately re-hitting it. The drain is scheduled with a stable
+ * key (`scheduleTask`) so repeated enqueues collapse to one and it never
+ * hot-loops.
+ */
+export const WRITEBACK_RETRY_DELAY_MS = 60 * 1000;
+
+/**
+ * A to-do/read write-back to Gmail that was deferred because the per-user
+ * Gmail quota was exhausted. Persisted in `writeback_pending` and re-applied by
+ * {@link processWriteBackRetryFn} once the quota window clears, so a quota burst
+ * never silently drops a star/read sync.
+ */
+export type PendingWriteBack = {
+  /** `todo` mirrors the STARRED label; `read` mirrors the UNREAD label. */
+  kind: "todo" | "read";
+  threadId: string;
+  channelId: string;
+  /** todo: target starred state; read: target unread state. */
+  value: boolean;
+  /** Re-attempt counter; bounded by {@link MAX_WRITEBACK_ATTEMPTS}. */
+  attempts: number;
+};
 
 /**
  * Idempotency window for `onCreateLink`. A compose draft carries no stable
@@ -244,6 +294,12 @@ export interface GmailSyncHost {
     cancelScheduledTask(key: string): Promise<void>;
     /** Queue the mailbox-wide incremental sync as a task. */
     queueIncrementalSync(): Promise<void>;
+    /**
+     * Schedule the deferred write-back drain as a keyed, delayed one-shot task
+     * (so repeated enqueues collapse and it never hot-loops). Drains
+     * `writeback_pending` via {@link processWriteBackRetryFn}.
+     */
+    queueWriteBackRetry(): Promise<void>;
   };
 }
 
@@ -1600,10 +1656,30 @@ export async function onThreadReadFn(
   // Cache the new unread state before modifying Gmail to prevent echo loops
   await host.set(`unread:${threadId}`, unread);
 
-  if (unread) {
-    await api.modifyThread(threadId, ["UNREAD"]);
-  } else {
-    await api.modifyThread(threadId, undefined, ["UNREAD"]);
+  try {
+    if (unread) {
+      await api.modifyThread(threadId, ["UNREAD"]);
+    } else {
+      await api.modifyThread(threadId, undefined, ["UNREAD"]);
+    }
+  } catch (error) {
+    if (isGmailRateLimitError(error)) {
+      // Gmail's per-user quota is exhausted even after GmailApi.call's in-process
+      // backoff. Defer the write-back rather than drop it — the read state
+      // already lives in Plot; the drain re-applies the UNREAD label once the
+      // quota window clears.
+      console.warn(
+        `[gmail] onThreadRead: Gmail quota hit, deferring read write-back for thread ${threadId}`
+      );
+      await deferWriteBackFn(host, {
+        kind: "read",
+        threadId,
+        channelId,
+        value: unread,
+      });
+      return;
+    }
+    throw error;
   }
 }
 
@@ -1636,12 +1712,149 @@ export async function onThreadToDoFn(
   // own write sees isStarred === wasStarred and doesn't re-propagate.
   await host.set(`starred:${threadId}`, todo);
 
-  if (todo) {
-    // Add STARRED, and re-add INBOX so an archived email returns to the
-    // inbox when the user adds it to their agenda in Plot.
-    await api.modifyThread(threadId, ["STARRED", "INBOX"]);
+  try {
+    if (todo) {
+      // Add STARRED, and re-add INBOX so an archived email returns to the
+      // inbox when the user adds it to their agenda in Plot.
+      await api.modifyThread(threadId, ["STARRED", "INBOX"]);
+    } else {
+      await api.modifyThread(threadId, undefined, ["STARRED"]);
+    }
+  } catch (error) {
+    if (isGmailRateLimitError(error)) {
+      // Gmail's per-user quota is exhausted even after GmailApi.call's in-process
+      // backoff. Defer the write-back rather than drop it — the to-do state
+      // already lives in Plot; the drain re-applies the STARRED label once the
+      // quota window clears.
+      console.warn(
+        `[gmail] onThreadToDo: Gmail quota hit, deferring star write-back for thread ${threadId}`
+      );
+      await deferWriteBackFn(host, {
+        kind: "todo",
+        threadId,
+        channelId,
+        value: todo,
+      });
+      return;
+    }
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deferred write-back retry (quota-exhaustion drain)
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge a freshly-deferred write-back into the persisted queue. Dedupes by
+ * (kind, threadId) — a newer change to the same thread supersedes an older
+ * pending one (last-write-wins) and resets its attempt counter (it is a fresh
+ * intent, not a continued retry). Bounds the queue to
+ * {@link MAX_PENDING_WRITEBACKS}, dropping the oldest entries first.
+ */
+export function mergePendingWriteBack(
+  pending: PendingWriteBack[],
+  next: Omit<PendingWriteBack, "attempts">
+): PendingWriteBack[] {
+  const deduped = pending.filter(
+    (p) => !(p.kind === next.kind && p.threadId === next.threadId)
+  );
+  deduped.push({ ...next, attempts: 0 });
+  return deduped.length > MAX_PENDING_WRITEBACKS
+    ? deduped.slice(deduped.length - MAX_PENDING_WRITEBACKS)
+    : deduped;
+}
+
+/**
+ * Persist a deferred write-back and schedule the drain. Called from the
+ * write-back callbacks when Gmail's quota is exhausted, so a star/read change is
+ * retried later instead of silently lost.
+ */
+async function deferWriteBackFn(
+  host: GmailSyncHost,
+  next: Omit<PendingWriteBack, "attempts">
+): Promise<void> {
+  const pending =
+    (await host.get<PendingWriteBack[]>("writeback_pending")) ?? [];
+  await host.set("writeback_pending", mergePendingWriteBack(pending, next));
+  await host.scheduler.queueWriteBackRetry();
+}
+
+/** Apply one pending write-back to Gmail (STARRED / UNREAD label mirror). */
+function applyWriteBack(api: GmailApi, item: PendingWriteBack): Promise<void> {
+  if (item.kind === "todo") {
+    return item.value
+      ? api.modifyThread(item.threadId, ["STARRED", "INBOX"])
+      : api.modifyThread(item.threadId, undefined, ["STARRED"]);
+  }
+  return item.value
+    ? api.modifyThread(item.threadId, ["UNREAD"])
+    : api.modifyThread(item.threadId, undefined, ["UNREAD"]);
+}
+
+/**
+ * Drain the deferred write-back queue in one bounded pass. Applies up to
+ * {@link MAX_WRITEBACK_RETRY_PER_BATCH} pending write-backs:
+ *  - success → removed from the queue;
+ *  - still rate-limited → kept with a bumped attempt, until
+ *    {@link MAX_WRITEBACK_ATTEMPTS} is reached, then abandoned with a log;
+ *  - lost auth (no token) → dropped (the state already lives in Plot, and the
+ *    re-auth need is surfaced in the connections UI);
+ *  - any other error → dropped with a log, so one bad thread can't wedge the
+ *    queue (the state remains correct in Plot).
+ *
+ * Self-terminating: re-queues only while work remains. The connector schedules
+ * the continuation with a stable key + delay (see `WRITEBACK_RETRY_DELAY_MS`),
+ * so a persistent quota outage retries on a slow cadence rather than hot-looping.
+ */
+export async function processWriteBackRetryFn(
+  host: GmailSyncHost
+): Promise<void> {
+  const pending =
+    (await host.get<PendingWriteBack[]>("writeback_pending")) ?? [];
+  if (pending.length === 0) return;
+
+  const batch = pending.slice(0, MAX_WRITEBACK_RETRY_PER_BATCH);
+  const overflow = pending.slice(MAX_WRITEBACK_RETRY_PER_BATCH);
+  const keep: PendingWriteBack[] = [];
+
+  for (const item of batch) {
+    const api = await tryGetApiFn(host, item.channelId);
+    if (!api) {
+      console.warn(
+        `[gmail] writeback drain: channel ${item.channelId} has no token, dropping ${item.kind} write-back for thread ${item.threadId}`
+      );
+      continue;
+    }
+    try {
+      await applyWriteBack(api, item);
+    } catch (error) {
+      if (isGmailRateLimitError(error)) {
+        const attempts = item.attempts + 1;
+        if (attempts >= MAX_WRITEBACK_ATTEMPTS) {
+          console.error(
+            `[gmail] writeback drain: giving up on ${item.kind} write-back for thread ${item.threadId} after ${attempts} attempts`
+          );
+          continue;
+        }
+        keep.push({ ...item, attempts });
+        continue;
+      }
+      console.error(
+        `[gmail] writeback drain: dropping ${item.kind} write-back for thread ${item.threadId}:`,
+        error
+      );
+    }
+  }
+
+  const remaining = [...keep, ...overflow];
+  if (remaining.length > 0) {
+    await host.set("writeback_pending", remaining);
+    // More to do (rate-limited retries and/or overflow) — schedule the next
+    // delayed pass. Keyed scheduling in the connector collapses duplicates.
+    await host.scheduler.queueWriteBackRetry();
   } else {
-    await api.modifyThread(threadId, undefined, ["STARRED"]);
+    await host.clear("writeback_pending");
   }
 }
 
