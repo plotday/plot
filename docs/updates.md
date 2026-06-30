@@ -1,3 +1,15 @@
+## 1.5.0+372 — 2026-06-30
+
+### Fixes
+
+- When a calendar event that has already finished is cancelled, it no longer pops back up as unread.
+- Newsletters, receipts, and other automated bulk email no longer set off notifications — only mail worth your attention does.
+- Tapping a notification now reliably opens the thread it's about, instead of sometimes landing on whatever you had open last.
+- Fixed sign-out sometimes flashing you back in and getting stuck with errors before landing on the sign-in screen. Signing out now takes you straight there.
+- Fixed signing in with Google on the Windows (and Linux) desktop app, which was failing with a "could not connect to Google" error.
+- "Restore purchases" now tells you what actually happened — whether your subscription was restored, there was nothing to restore, or it couldn't be confirmed — instead of always reporting success.
+- Fixed a rare case where pressing Enter to send a reply sent it but left the typed text sitting in the composer.
+
 ## 1.5.0+370 — 2026-06-28
 
 ### Subscriptions
