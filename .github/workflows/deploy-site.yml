@@ -63,8 +63,17 @@ jobs:
             echo "DEPLOY_VARS=$SITE_VARS" >> $GITHUB_ENV
           fi
 
-      - name: Deploy
+      # Deploy as a NON-LIVE version, smoke its preview URL, and only promote to
+      # 100% if healthy. A bundle that crashes the worker at module init (the
+      # vite 8.1.0 Clerk `setErrorThrowerOptions` class of outage) is caught on
+      # the preview and never serves production — the previously-live version
+      # keeps serving. This runs the real version with real secrets, so it also
+      # catches crashes that only appear with production config (which the local
+      # PR build-boot gate, on placeholders, can't see). See deploy-with-smoke.sh.
+      - name: Deploy (preview → smoke → promote)
+        working-directory: apps/site
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-        run: pnpm exec nx deploy:site
+          VERSION_TAG: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/deploy-with-smoke.sh
