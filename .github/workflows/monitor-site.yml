@@ -1,0 +1,64 @@
+name: Monitor Site
+
+# Runs the site smoke test against https://plot.day on a schedule. Catches a
+# fully-broken site between deploys (a bundling regression, an expired key, a
+# CDN/edge issue) that the site's client-side-only PostHog can't report —
+# because when the worker throws, no client JS ever runs. This is the
+# marketing-site counterpart to monitor-app.yml (which watches app.plot.day).
+
+on:
+  schedule:
+    # Every 10 minutes
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: monitor-site
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke test plot.day
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Run smoke test
+        run: node apps/site/scripts/smoke-test-site.mjs --url https://plot.day --expect-status 200
+
+      - name: Notify PostHog on failure
+        if: failure()
+        env:
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${POSTHOG_API_KEY:-}" ]; then
+            echo "::warning::POSTHOG_API_KEY not set; skipping PostHog notification"
+            exit 0
+          fi
+          host="${POSTHOG_HOST:-https://us.i.posthog.com}"
+          curl -sS -X POST "$host/capture/" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+                  --arg key "$POSTHOG_API_KEY" \
+                  --arg url "$RUN_URL" \
+                  '{
+                    api_key: $key,
+                    event: "site_monitor_failed",
+                    distinct_id: "ci-monitor",
+                    properties: {
+                      run_url: $url,
+                      target: "https://plot.day"
+                    }
+                  }')" \
+            || echo "::warning::Failed to post failure event to PostHog"

@@ -1,0 +1,101 @@
+name: Build Site
+
+# Builds AND boots the marketing site worker on every PR that can affect it, so
+# a bundle that compiles cleanly but crashes the worker at runtime (e.g. the
+# vite 8.1.0 Clerk `setErrorThrowerOptions is not defined` regression that took
+# plot.day down site-wide) fails the PR check instead of shipping.
+#
+# `wrangler deploy` never executes the bundle and `tsc`/`eslint` never run it,
+# so the lint job was green for the breaking dependency bump. This gate closes
+# that hole — and because Dependabot's native auto-merge waits on required
+# checks, making this a required check also blocks auto-merging a bad bundler bump.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: build-site-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NX_NO_CLOUD: true
+
+jobs:
+  # Cheap path gate. The heavy job is guarded with job-level `if` (not a
+  # workflow-level `paths:` filter) so the check context always reports — a
+  # job skipped via `if` reports "skipped", which branch protection treats as
+  # success, so a PR that doesn't touch the site is never blocked.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      site: ${{ steps.changes.outputs.site }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect site-affecting changes
+        id: changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF" >/dev/null 2>&1 || true
+          BASE=$(git merge-base "origin/$BASE_REF" HEAD)
+          FILES=$(git diff --name-only "$BASE" HEAD)
+          echo "Changed files vs $BASE:"; echo "$FILES"
+          match() { echo "$FILES" | grep -qE "$1"; }
+          site=false
+          # Lockfile / workspace roots feed every build (a dependency bump like
+          # the one this guards against lives here); apps/site and its workspace
+          # deps (libs/*, public/* twister types) feed the site directly; and the
+          # workflow + its scripts themselves.
+          if match '^(pnpm-lock\.yaml|package\.json|pnpm-workspace\.yaml|nx\.json|tsconfig.*\.json)$'; then site=true; fi
+          if match '^(apps/site/|libs/|public/)'; then site=true; fi
+          if match '^\.github/workflows/build-site\.yml$'; then site=true; fi
+          echo "site=$site" >> "$GITHUB_OUTPUT"
+          echo "Decision: site=$site"
+
+  build-boot:
+    needs: detect
+    if: needs.detect.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    name: Build & boot
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # public/ provides the Twister types the site's workspace deps build against.
+          submodules: true
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      # Mirror deploy-site.yml: the `...` suffix on a name filter pulls in the
+      # dev deps of workspace packages the site build needs (e.g. @plotday/pricing
+      # -> @plotday/tsconfig).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter="." --filter="@plotday/site..."
+
+      - name: Build
+        run: pnpm exec nx build @plotday/site
+
+      - name: Boot built worker and smoke-test it
+        working-directory: apps/site
+        run: bash scripts/ci-boot-and-smoke.sh
+
+      - name: Upload wrangler log on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-site-wrangler-log-${{ github.run_id }}
+          path: apps/site/.wrangler-dev.log
+          if-no-files-found: ignore
+          retention-days: 7

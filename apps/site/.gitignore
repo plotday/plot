@@ -11,4 +11,5 @@
 # Cloudflare
 .mf
 .wrangler
+.wrangler-dev.log
 /app/lib/internal-docs/
