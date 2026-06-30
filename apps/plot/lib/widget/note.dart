@@ -249,180 +249,186 @@ class _NoteWidgetState extends State<NoteWidget> {
             _DeliveryErrorBanner(note: widget.note),
           SizedBox(
             height: 30,
-            child: widget.sending
-                ? Align(
-                    alignment: Alignment.centerRight,
-                    // Ghost buttons inset their content by the button's
-                    // padding, so the label would sit left of the author /
-                    // timestamp (which is flush at `right: 0`). Shift the button
-                    // right by that padding so `sending` lines up with the
-                    // timestamps. Mirrors NoteCommands' left-edge compensation.
-                    child: Transform.translate(
-                      offset: Offset(
-                        context
-                            .theme
-                            .buttonStyles
-                            .ghost
-                            .md
-                            .iconContentStyle
-                            .padding
-                            .resolve(TextDirection.ltr)
-                            .right,
-                        0,
-                      ),
-                      child: FTooltip(
-                        tipBuilder: (context, controller) => Column(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Right slot, normal state: author/timestamp.
+                if (!widget.sending)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Builder(
+                      builder: (context) {
+                        final mutedXs = context.theme.typography.xs
+                            .copyWith(color: context.colour.muted);
+                        final timeAgo = FTooltip(
+                          tipBuilder: (context, controller) => Text(
+                            widget.note.sourceCreatedAt.toLocal().format(
+                              'MMM d, yyyy, h:mm a',
+                            ),
+                          ),
+                          child: Text(
+                            widget.note.sourceCreatedAt.toTimeAgo(),
+                            style: mutedXs,
+                          ),
+                        );
+                        Widget withPending(Widget child) => Row(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Cancel'),
-                            Text(
-                              formatShortcut(
-                                const SingleActivator(
-                                  LogicalKeyboardKey.escape,
+                            _PendingSyncIndicator(note: widget.note),
+                            child,
+                          ],
+                        );
+                        if (!widget.showAuthor) return withPending(timeAgo);
+                        return FutureBuilder<Actor?>(
+                          future: widget.note.getAuthor(),
+                          builder: (context, snapshot) {
+                            final actor = snapshot.data;
+                            final authorName = actor == null
+                                ? null
+                                : (widget.note.authorId.isCurrentUser
+                                      ? 'You'
+                                      : actor.nameOrEmail);
+                            if (authorName == null || authorName.isEmpty) {
+                              return withPending(timeAgo);
+                            }
+                            Widget authorText = Text(
+                              authorName,
+                              style: mutedXs,
+                            );
+                            if (actor?.email != null &&
+                                actor!.email != authorName) {
+                              authorText = FTooltip(
+                                tipBuilder: (context, controller) =>
+                                    Text(actor.email!),
+                                child: authorText,
+                              );
+                            }
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _PendingSyncIndicator(note: widget.note),
+                                if (actor != null) ...[
+                                  Avatar(actor: actor, tooltip: false),
+                                  const SizedBox(width: 4),
+                                ],
+                                authorText,
+                                const SizedBox(width: 4),
+                                Text('•', style: mutedXs),
+                                const SizedBox(width: 4),
+                                timeAgo,
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                // Right slot, send window: `sending ✕` cancel button. Ghost
+                // buttons inset their content by the button's padding, so shift
+                // right by that padding so the label lines up with where the
+                // timestamps sit (flush at right: 0). Mirrors NoteCommands'
+                // left-edge compensation.
+                if (widget.sending)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Transform.translate(
+                        offset: Offset(
+                          context
+                              .theme
+                              .buttonStyles
+                              .ghost
+                              .md
+                              .iconContentStyle
+                              .padding
+                              .resolve(TextDirection.ltr)
+                              .right,
+                          0,
+                        ),
+                        child: FTooltip(
+                          tipBuilder: (context, controller) => Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Cancel'),
+                              Text(
+                                formatShortcut(
+                                  const SingleActivator(
+                                    LogicalKeyboardKey.escape,
+                                  ),
+                                ),
+                                style: context.theme.typography.xs.copyWith(
+                                  color: context.theme.colors.mutedForeground,
                                 ),
                               ),
-                              style: context.theme.typography.xs.copyWith(
-                                color: context.theme.colors.mutedForeground,
-                              ),
-                            ),
-                          ],
-                        ),
-                        child: FButton(
-                          onPress: widget.onUndoSend,
-                          variant: FButtonVariant.ghost,
-                          style: ghostSizedStyleDelta(
-                            context,
-                            textStyle: context.theme.typography.xs,
-                          ),
-                          mainAxisSize: MainAxisSize.min,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: .center,
-                            spacing: 4,
-                            children: [
-                              const Text('sending'),
-                              Icon(
-                                FontAwesomeIcons.xmark,
-                                size: context.theme.iconSizes.xs,
-                              ),
                             ],
+                          ),
+                          child: FButton(
+                            onPress: widget.onUndoSend,
+                            variant: FButtonVariant.ghost,
+                            style: ghostSizedStyleDelta(
+                              context,
+                              textStyle: context.theme.typography.xs,
+                            ),
+                            mainAxisSize: MainAxisSize.min,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: .center,
+                              spacing: 4,
+                              children: [
+                                const Text('sending'),
+                                Icon(
+                                  FontAwesomeIcons.xmark,
+                                  size: context.theme.iconSizes.xs,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  )
-                : Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Author/timestamp positioned on the right, overlapping if needed
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                        child: Builder(
-                          builder: (context) {
-                            final mutedXs = context.theme.typography.xs
-                                .copyWith(color: context.colour.muted);
-                            final timeAgo = FTooltip(
-                              tipBuilder: (context, controller) => Text(
-                                widget.note.sourceCreatedAt.toLocal().format(
-                                  'MMM d, yyyy, h:mm a',
-                                ),
-                              ),
-                              child: Text(
-                                widget.note.sourceCreatedAt.toTimeAgo(),
-                                style: mutedXs,
-                              ),
-                            );
-                            Widget withPending(Widget child) => Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _PendingSyncIndicator(note: widget.note),
-                                child,
-                              ],
-                            );
-                            if (!widget.showAuthor) return withPending(timeAgo);
-                            return FutureBuilder<Actor?>(
-                              future: widget.note.getAuthor(),
-                              builder: (context, snapshot) {
-                                final actor = snapshot.data;
-                                final authorName = actor == null
-                                    ? null
-                                    : (widget.note.authorId.isCurrentUser
-                                          ? 'You'
-                                          : actor.nameOrEmail);
-                                if (authorName == null || authorName.isEmpty) {
-                                  return withPending(timeAgo);
-                                }
-                                Widget authorText = Text(
-                                  authorName,
-                                  style: mutedXs,
-                                );
-                                if (actor?.email != null &&
-                                    actor!.email != authorName) {
-                                  authorText = FTooltip(
-                                    tipBuilder: (context, controller) =>
-                                        Text(actor.email!),
-                                    child: authorText,
-                                  );
-                                }
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _PendingSyncIndicator(note: widget.note),
-                                    if (actor != null) ...[
-                                      Avatar(actor: actor, tooltip: false),
-                                      const SizedBox(width: 4),
-                                    ],
-                                    authorText,
-                                    const SizedBox(width: 4),
-                                    Text('•', style: mutedXs),
-                                    const SizedBox(width: 4),
-                                    timeAgo,
-                                  ],
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                      // NoteCommands overlays the author row with a solid
-                      // background and gradient fade so the author/timestamp
-                      // truncates cleanly rather than bleeding through the
-                      // icons. Mirrors the ThreadCommands treatment.
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Transform.translate(
-                          offset: Offset(
-                            6 -
-                                context
-                                    .theme
-                                    .buttonStyles
-                                    .ghost
-                                    .md
-                                    .iconContentStyle
-                                    .padding
-                                    .resolve(TextDirection.ltr)
-                                    .left,
-                            0,
-                          ),
-                          child: NoteCommands(
-                            note: widget.note,
-                            showCommands: _hovered,
-                            tileBg: widget.selected
-                                ? context.theme.colors.primaryForeground
-                                : hasFocus
-                                ? Color.alphaBlend(
-                                    context.theme.plotColors.highlight,
-                                    context.theme.colors.background,
-                                  )
-                                : context.theme.colors.background,
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
+                // Left slot: note commands, in BOTH states — so a note can be
+                // marked to-do / reacted to while its send is still pending.
+                // NoteCommands overlays the right slot with a solid background
+                // and gradient fade so right-side content truncates cleanly.
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Transform.translate(
+                    offset: Offset(
+                      6 -
+                          context
+                              .theme
+                              .buttonStyles
+                              .ghost
+                              .md
+                              .iconContentStyle
+                              .padding
+                              .resolve(TextDirection.ltr)
+                              .left,
+                      0,
+                    ),
+                    child: NoteCommands(
+                      note: widget.note,
+                      showCommands: _hovered,
+                      tileBg: widget.selected
+                          ? context.theme.colors.primaryForeground
+                          : hasFocus
+                          ? Color.alphaBlend(
+                              context.theme.plotColors.highlight,
+                              context.theme.colors.background,
+                            )
+                          : context.theme.colors.background,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1510,7 +1510,10 @@ class Store extends _$Store {
     }
 
     // Tag tables that share id with their parent
-    if (name == 'note_tags') {
+    // note_tags / note_reactions share the parent note's id, so exclude any
+    // whose note is a draft — covers a reaction added during a note's undo-send
+    // window that is then undone (the note flips to draft + archived).
+    if (name == 'note_tags' || name == 'note_reactions') {
       return ' AND id NOT IN (SELECT id FROM notes WHERE draft = 1)';
     }
     if (name == 'thread_tags') {
@@ -1519,6 +1522,11 @@ class Store extends _$Store {
 
     return '';
   }
+
+  /// Test-only access to [_buildDraftFilter].
+  @visibleForTesting
+  static String buildDraftFilter(TableInfo<Table, DataClass> table) =>
+      _buildDraftFilter(table);
 
   /// Pulls data from the remote database and syncs it to the local store.
   ///
