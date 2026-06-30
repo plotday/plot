@@ -747,6 +747,19 @@ class _AuthButtonState extends State<AuthButton>
       );
 
       final responseUri = Uri.parse(result);
+      // Google redirects back to the loopback with `?error=...` when consent
+      // fails (e.g. `access_denied` if the user declines). A redirect-URI
+      // mismatch, by contrast, never reaches this callback at all — Google
+      // shows its own error page and the loopback server times out (surfaced
+      // as a cancel in the catch below).
+      final oauthError = responseUri.queryParameters['error'];
+      if (oauthError != null) {
+        if (oauthError == 'access_denied') {
+          log.info('Google sign-in (desktop) declined by user');
+          return;
+        }
+        throw Exception('Google returned an OAuth error: $oauthError');
+      }
       final code = responseUri.queryParameters['code'];
       if (code == null) {
         throw Exception('No authorization code received from Google');
@@ -782,12 +795,39 @@ class _AuthButtonState extends State<AuthButton>
         accessToken: tokens['access_token'] as String?,
       );
     } catch (e, t) {
-      log.warning('Google sign-in failed (desktop)', e, t);
-      final message = 'Unable to connect with Google. Please try again.';
-      if (widget.onError != null) {
-        widget.onError!(message);
-      } else if (mounted) {
-        context.showToast(message: message, isError: true);
+      if (isAuthUserCanceled(e) || isAuthCallbackTimeout(e)) {
+        // On Windows/Linux, flutter_web_auth_2's loopback server throws
+        // CANCELED both when the user dismisses the browser AND when no
+        // callback arrives before the timeout — the two are indistinguishable
+        // here (see flutter_web_auth_2 server.dart). A missing callback most
+        // often means a redirect_uri_mismatch (the web Google client must list
+        // http://localhost:$_desktopCallbackPort as an authorized redirect URI)
+        // or localhost being blocked; both surface in the browser, so don't
+        // report them as bugs. Emit a breadcrumb so a field-wide spike in
+        // never-completed desktop sign-ins (e.g. a redirect-URI regression)
+        // stays visible without polluting error tracking.
+        log.info('Google sign-in (desktop) did not complete (cancel/timeout)');
+        Tracker.track('google_signin_desktop_incomplete');
+      } else {
+        // Surfaces the steps that only run on Windows/Linux — auth-URL
+        // generation, the browser OAuth round-trip, and the server-side token
+        // exchange — where there's no debugger and stdout is invisible in a
+        // release build, so PostHog is the only channel. The thrown messages
+        // embed the failing step and HTTP status/body. (The Clerk
+        // signInWithIdToken leg lives in onComplete, which handles its own
+        // errors and never rethrows here, so this won't double-report it.)
+        log.warning('Google sign-in failed (desktop)', e, t);
+        Tracker.captureException(
+          e,
+          t,
+          properties: const <String, dynamic>{'flow': 'google_signin_desktop'},
+        );
+        final message = 'Unable to connect with Google. Please try again.';
+        if (widget.onError != null) {
+          widget.onError!(message);
+        } else if (mounted) {
+          context.showToast(message: message, isError: true);
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
