@@ -1,34 +1,5 @@
--- Archive links from the given twist_instance (p_created_by) that match the
--- filter, and, for each affected thread, mark the twist_instance OWNER's
--- thread_priority row as archived — a PER-USER archive.
---
--- Removal strategy (see docs/superpowers/specs/2026-06-02-link-removal-sync-design.md):
---   ALWAYS SOFT-delete (set archived_at). Every removed link is delivered to
---   the owner per-link via user.link_redacted, and the client hard-deletes the
---   link + its schedules. This holds for ALL removal kinds — item-specific
---   (meta/type/status on a live instance), channel-disable, AND whole-instance
---   uninstall.
---
---   Why not hard-delete the bulk cases (the prior design): a bare DELETE emits
---   no per-row signal, so it relied on the client purging via the synced
---   twist_instance.archived_at / channel.enabled transition. That purge is
---   fire-once and only removes links already local at that instant — a link (or
---   its schedule) arriving on a later sync cursor strands forever. Soft-delete
---   gives every link a durable, re-delivered seq-cursor tombstone instead, so
---   stragglers can't strand. user.link_redacted emits archived-instance links
---   too (deleteTwist soft-archives the twist_instance, so the ti row survives).
---
--- p_hard is accepted for signature compatibility with existing callers but is
--- now IGNORED — removal is always soft.
---
--- Returns affected priority IDs for sync notification.
-CREATE OR REPLACE FUNCTION public.archive_links (
-    p_created_by uuid,
-    p_filter jsonb DEFAULT '{}' ::jsonb,
-    p_hard boolean DEFAULT NULL
-) RETURNS uuid[]
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "archive_links" function
+CREATE OR REPLACE FUNCTION "public"."archive_links" ("p_created_by" uuid, "p_filter" jsonb DEFAULT '{}', "p_hard" boolean DEFAULT NULL::boolean) RETURNS uuid[] LANGUAGE plpgsql AS $$
 DECLARE
     v_owner_user_id uuid;
     v_affected_priority_ids uuid[];
@@ -99,4 +70,69 @@ BEGIN
 
     RETURN COALESCE(v_affected_priority_ids, ARRAY[]::uuid[]);
 END;
-$function$;
+$$;
+-- Modify "link_redacted" view
+CREATE OR REPLACE VIEW "user"."link_redacted" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "seq",
+  "thread_id",
+  "source",
+  "source_created_at",
+  "author_id",
+  "twist_id",
+  "created_by",
+  "updated_by",
+  "sync_depth",
+  "title",
+  "preview",
+  "assignee_id",
+  "type",
+  "status",
+  "priority",
+  "note_scoped",
+  "actions",
+  "meta",
+  "source_url",
+  "channel_id",
+  "logo",
+  "priority_id",
+  "merged_from_thread_id",
+  "priority_path",
+  "revoked"
+) AS SELECT ti.owner_id AS user_id,
+    l.id,
+    l.created_at,
+    l.archived_at AS updated_at,
+    l.seq,
+    l.thread_id,
+    NULL::text AS source,
+    l.source_created_at,
+    NULL::uuid AS author_id,
+    l.twist_id,
+    l.created_by,
+    l.updated_by,
+    l.sync_depth,
+    NULL::text AS title,
+    NULL::text AS preview,
+    NULL::uuid AS assignee_id,
+    NULL::text AS type,
+    NULL::text AS status,
+    l.priority,
+    l.note_scoped,
+    NULL::jsonb AS actions,
+    NULL::jsonb AS meta,
+    NULL::text AS source_url,
+    NULL::text AS channel_id,
+    NULL::text AS logo,
+    "user".effective_priority_id(tp.priority_id, ti.owner_id) AS priority_id,
+    NULL::uuid AS merged_from_thread_id,
+    upe.path AS priority_path,
+    true AS revoked
+   FROM public.link l
+     JOIN public.twist_instance ti ON ti.id = l.created_by AND l.twist_id IS NOT NULL
+     LEFT JOIN public.thread_priority tp ON tp.thread_id = l.thread_id AND tp.user_id = ti.owner_id
+     LEFT JOIN "user".priority_expanded upe ON upe.user_id = ti.owner_id AND upe.priority_id = "user".effective_priority_id(tp.priority_id, ti.owner_id)
+  WHERE l.archived_at IS NOT NULL;

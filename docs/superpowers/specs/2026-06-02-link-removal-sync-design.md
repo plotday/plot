@@ -5,6 +5,45 @@
 - **Area:** core sync (server `archive_links` / `user.link` + Flutter Drift client)
 - **Branch:** TBD (`fix/link-removal-sync` suggested)
 
+> ## Update 2026-06-30 — uninstall/channel-disable now also soft-delete
+>
+> The original design (below) kept **hard-delete** for the two *bulk* removal
+> cases (whole-instance uninstall, channel-disable) and relied on the client
+> purging the orphans via the synced `twist_instance.archived_at` /
+> `channel.enabled` transition (`Link.hardDeleteForInstance` /
+> `hardDeleteForChannel`, driven by `TwistInstancesBase` /
+> `ChannelsBase.processPulledRows`).
+>
+> **That client purge is fire-once and races sync-cursor ordering.** It runs
+> only at the instant the archived/disabled signal is *processed*, and deletes
+> only links already local at that moment. Links (and their schedules) travel on
+> a *different* sync cursor than the instance/channel row, so a link that arrives
+> in a later pull — after the transition was processed — is never re-purged and
+> strands **permanently**. Observed in prod as a duplicate recurring event on the
+> agenda: a connector reconnect uninstalled the old instance (hard-deleting its
+> calendar link + the link's base recurring `schedule`), the client kept the
+> stale `schedule`, and the agenda materialised one occurrence from the stale
+> series *and* one from the live re-synced series.
+>
+> **Resolution: `archive_links` now ALWAYS soft-deletes**, for every filter kind
+> (uninstall `{}`, `{channelId}`, and item-specific `{meta/type/status}`). Every
+> removed link gets a durable, seq-re-delivered `user.link_redacted` tombstone —
+> the same per-row mechanism the per-item case already used — so a straggler can
+> no longer strand. `user.link_redacted` drops its `ti.archived_at IS NULL` gate
+> so an archived instance's soft-deleted links still emit (`deleteTwist`
+> soft-archives the `twist_instance`, so the `ti` row survives). `p_hard` is
+> retained on the function signature for deploy-window compatibility but is now
+> ignored; the `management.ts` uninstall caller no longer passes it. The
+> fire-once client purges (`hardDeleteForInstance` / `hardDeleteForChannel`)
+> become a redundant backstop. **Note:** this fixes *future* removals only —
+> links already hard-deleted server-side leave no row to soft-archive, so
+> existing client strands still require a separate one-time cleanup.
+>
+> Tables S3–S6 below describe the superseded hard-vs-soft split; read them as
+> historical. The current behaviour is "always soft" with the redacted view as
+> the single removal signal. See `libs/db/schema/60-functions/archive_links.sql`
+> and the `archive-links-soft-delete.test.ts` regression test.
+
 ## Problem
 
 Plot is local-first: the Flutter client pulls incrementally via `GET /sync/<entity>?seq_since=<horizon>` (rows where `seq >= horizon`, merged by primary key). A bare `DELETE` on a synced table is **invisible** to this protocol — the row simply stops being returned, so any client that already synced it keeps its local copy forever (see `libs/db/AGENTS.md` → "CRITICAL: Removing Rows from Synced Tables").

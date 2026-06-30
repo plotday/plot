@@ -1896,14 +1896,13 @@ export class Integrations extends Tool implements IAuth {
    * For each archived link's thread, if no other active links remain,
    * the thread is also archived. Notifies sync DOs for affected priorities.
    */
-  // archive_links self-derives hard vs soft delete from the filter:
-  //  - {channelId} on a channel whose `enabled` is already false → hard-delete
-  //    (disableSync sets channel.enabled=false BEFORE dispatching
-  //    onChannelDisabled, so the flag is reliably false here). The client
-  //    purges via the synced channel.enabled signal.
-  //  - {meta}/{type}/{status} (item-specific) → soft-delete, delivered per-link
-  //    via user.link_redacted.
-  // No p_hard is passed here; the SQL function decides.
+  // archive_links always SOFT-deletes, for every filter kind ({channelId},
+  // {meta}/{type}/{status}, or whole-instance). Each removed link is delivered
+  // to the owner per-link via user.link_redacted; the client hard-deletes the
+  // link + its schedules. (Bulk removals used to hard-delete and lean on the
+  // synced channel.enabled / twist_instance.archived_at purge, but that
+  // fire-once client purge raced sync-cursor ordering and stranded straggler
+  // links/schedules.) p_hard is no longer passed.
   async archiveLinks(filter: ArchiveLinkFilter): Promise<void> {
     const filterJson: Record<string, unknown> = {};
     if (filter.channelId !== undefined) filterJson.channelId = filter.channelId;

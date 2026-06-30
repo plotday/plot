@@ -1362,14 +1362,18 @@ export async function archiveAndDeleteTwist(
         .executeTakeFirst();
 
       if (pt?.is_source) {
-        // Connector: archive links and threads with no remaining active links.
-        // Uninstall is a whole-instance removal: hard-delete the links and rely
-        // on the synced twist_instance.archived_at signal to purge them on
-        // clients.
+        // Connector: soft-archive every link this instance created (empty
+        // filter = whole-instance uninstall). archive_links always soft-deletes
+        // now, so each link emits a durable per-row tombstone via
+        // user.link_redacted that the client uses to hard-delete the link + its
+        // schedules. deleteTwist (below) only soft-archives the twist_instance,
+        // so the ti row survives and link_redacted can still resolve the owner.
+        // (We no longer hard-delete + rely on the fire-once instance-archived
+        // purge, which raced sync-cursor ordering and stranded straggler
+        // links/schedules — see the archive_links header.)
         await rpc(trx, "archive_links", {
           p_created_by: twist_instance_id,
           p_filter: {},
-          p_hard: true,
         });
       } else {
         // Twist: archive threads directly (twists create threads, not links)

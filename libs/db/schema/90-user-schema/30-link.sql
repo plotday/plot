@@ -72,13 +72,20 @@ WHERE
     l.archived_at IS NULL
     AND (tp.user_id IS NOT NULL OR p.user_id IS NOT NULL);
 
--- Per-link access-loss tombstone for SOFT-deleted links (per-item removals on
--- a still-live instance). Mirrors user.thread_redacted: owner-scoped, frozen
--- identity timestamps + frozen seq (the link is not mutated after soft-delete,
--- so l.seq is stable and the row emits exactly once), sensitive fields NULLed,
--- revoked = TRUE. Bulk removals hard-delete, so uninstall/channel-disable links
--- never appear here (instance archived → excluded by the ti join; channel
--- disabled → no soft-deleted rows exist). Column list MUST match user.link.
+-- Per-link access-loss tombstone for SOFT-deleted links. Mirrors
+-- user.thread_redacted: owner-scoped, frozen identity timestamps + frozen seq
+-- (the link is not mutated after soft-delete, so l.seq is stable and the row
+-- emits exactly once), sensitive fields NULLed, revoked = TRUE. Column list
+-- MUST match user.link.
+--
+-- This is now the ONE removal signal for ALL connector link removals —
+-- item-specific, channel-disable, AND whole-instance uninstall — because
+-- archive_links always soft-deletes (see 60-functions/archive_links.sql). The
+-- ti join deliberately does NOT filter on ti.archived_at: deleteTwist
+-- soft-archives the twist_instance, so on uninstall the ti row survives and its
+-- (now archived) links must still emit their tombstones here. The main
+-- user.link view keeps `ti.archived_at IS NULL`, so an archived instance's
+-- links appear ONLY here, never as live.
 CREATE OR REPLACE VIEW "user"."link_redacted" AS
 SELECT
     ti.owner_id AS user_id,
@@ -112,10 +119,11 @@ SELECT
     TRUE AS revoked
 FROM
     link l
+    -- No ti.archived_at filter: uninstall soft-archives the instance, and its
+    -- soft-deleted links must still emit tombstones here (see view comment).
     JOIN twist_instance ti
         ON ti.id = l.created_by
         AND l.twist_id IS NOT NULL
-        AND ti.archived_at IS NULL
     LEFT JOIN thread_priority tp
         ON tp.thread_id = l.thread_id
         AND tp.user_id = ti.owner_id
