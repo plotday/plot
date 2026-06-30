@@ -155,8 +155,10 @@ printf "%s" "$injected" | awk '
   END { if (acc != "") print acc }
 '
 
-# Generate key.properties for Android production builds
-if [ "$ENV" = "production" ]; then
+# Generate key.properties and fetch Android/Apple/Firebase/Windows signing
+# assets for local production builds. Skipped when GEN_ENV_SKIP_LOCAL_FILES is
+# set (the secret sync only needs the stdout env text above, not these files).
+if [ "$ENV" = "production" ] && [ -z "${GEN_ENV_SKIP_LOCAL_FILES:-}" ]; then
   KEY_PROPERTIES_TEMPLATE="$WORKSPACE_PATH/apps/plot/android/key.properties.template"
   KEY_PROPERTIES_OUTPUT="$WORKSPACE_PATH/apps/plot/android/key.properties"
 
