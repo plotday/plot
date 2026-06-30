@@ -23,6 +23,7 @@ import { sql, type Kysely } from "kysely";
 import type { DB } from "../../../db-types";
 import { rpc, rpcUser } from "../../../rpc";
 import { logClassificationDecision } from "../../../state/classify-thread";
+import { fallbackImportanceFromFacets } from "../../../state/importance/band";
 import {
   cleanTitle,
   handleDbOperationError,
@@ -140,6 +141,31 @@ export async function markThreadUnreadForUsers(
 
   if (priorityUsers.length === 0) return;
 
+  // Deterministic importance from the thread's connector facets (no LLM). The
+  // createLink ingest path never invokes the band scorer, and the
+  // thread_state.importance column defaults to 50 — exactly the
+  // `importance >= 50` notify gate — so without this every connector-ingested
+  // newsletter/receipt/promo would push. fallbackImportanceFromFacets maps
+  // obvious bulk mail (automation=automated + reach=list, or format=promotion)
+  // below the gate while leaving facet-less threads at the historical 50.
+  // Passed as p_importance with p_set_importance:false so it seeds a *new*
+  // thread_state row (the INSERT branch always uses p_importance) but never
+  // clobbers an existing score — e.g. a band the analyzer later set from a
+  // reply — when this re-runs on a connector re-sync (the UPDATE branch keeps
+  // the stored importance).
+  const threadFacets = await db
+    .selectFrom("thread")
+    .select("facets")
+    .where("id", "=", threadId)
+    .executeTakeFirst();
+  const importance = fallbackImportanceFromFacets(
+    (threadFacets?.facets as {
+      format: string | null;
+      automation: "human" | "automated" | null;
+      reach: "direct" | "list" | null;
+    } | null) ?? null,
+  );
+
   // Race guard: don't clobber a read_at the user just set if it's after the
   // most recent note's created timestamp.
   const noteCreatedAt = new Date().toISOString();
@@ -211,12 +237,15 @@ export async function markThreadUnreadForUsers(
         p_thread_id: threadId,
         p_active: false,
         p_urgent: false,
-        p_importance: 50,
+        p_importance: importance,
         // p_read_at omitted → defaults to NULL; combined with
         // p_set_read_at: true this marks the thread unread (race-safe
         // when p_note_created_at is set).
         p_set_active: false,
         p_set_urgent: false,
+        // p_set_importance:false → the INSERT branch seeds a new row with the
+        // facet-derived p_importance above, while the UPDATE branch leaves an
+        // existing row's importance untouched (never clobbers a later score).
         p_set_importance: false,
         p_set_read_at: true,
         p_note_created_at: noteCreatedAt,

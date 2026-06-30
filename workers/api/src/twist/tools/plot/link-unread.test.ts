@@ -344,4 +344,45 @@ describe.skipIf(!DATABASE_URL)("createLink unread on arrival", () => {
     // The connector reported the thread read; Plot must reflect that.
     expect(rows.after.unread).toBe(false);
   });
+
+  it("scores automated bulk/list mail below the notify gate from connector facets", async () => {
+    // A newsletter the owner did not author arrives via a connector. No LLM
+    // scorer runs on the createLink ingest path, so importance comes from the
+    // deterministic facet fallback. `automation=automated` + `reach=list` maps
+    // to "low" (45) — below the `importance >= 50` notify gate — so the
+    // newsletter must NOT be notify-worthy. Before the fix, markThreadUnreadForUsers
+    // left importance at the thread_state default of 50 (exactly the gate), so
+    // every newsletter pushed. (The facet → importance mapping itself, including
+    // that facet-less mail stays at 50, is unit-tested in importance/band.test.ts;
+    // this asserts the createLink wiring end-to-end.)
+    //
+    // Read importance from the `user.thread` view (COALESCE(ts.importance, 0)),
+    // not thread_state directly, so the assertion stays robust under the
+    // harness's non-transactional, parallel-DB timing: a missing row reads 0
+    // (still < 50), while a regression that left importance at 50 reads 50.
+    const importance = await withConnectorPlot(async (plot, db, { userId }) => {
+      const senderId = randomUUID();
+      await sql`
+        INSERT INTO contact (id, name, email)
+        VALUES (${senderId}::uuid, 'Newsletter', ${`news-${senderId}@example.test`})
+      `.execute(db);
+
+      const threadId = await plot.createLink({
+        title: "Weekly Newsletter",
+        source: `gmail:${randomUUID()}`,
+        author: { id: senderId },
+        preview: "This week's news",
+        facets: { automation: "automated", reach: "list", format: "promotion" },
+        notes: [{ content: "This week's news", author: { id: senderId } }],
+      } as any);
+
+      const res = await sql<{ importance: number }>`
+        SELECT importance FROM "user".thread
+        WHERE id = ${threadId}::uuid AND user_id = ${userId}::uuid
+      `.execute(db);
+      return res.rows[0]?.importance;
+    });
+
+    expect(importance).toBeLessThan(50);
+  });
 });

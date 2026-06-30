@@ -420,7 +420,50 @@ class RootProviderState extends State<RootProvider> {
     );
   }
 
+  /// Navigate to a notification's target, but only once the router has settled
+  /// on a real leaf route.
+  ///
+  /// On a cold-start tap the router first resolves its own initial navigation —
+  /// the restored last-open focus (and, with OS route restoration, the
+  /// previously-open thread) — through several frames of nested-shell
+  /// resolution. A `replaceAll` issued before that settles races it: auto_route
+  /// can consolidate our route away, leaving the user on whatever the cold start
+  /// restored (e.g. the thread they last had open) instead of the notified
+  /// thread. This is the same race [PendingShare.onReady] guards against. Wait
+  /// for a stable, non-"/" path first so the notification navigation reliably
+  /// wins. (On a warm tap the path is already settled, so this runs on the first
+  /// frame — no added latency.)
   void _navigateToNotificationTarget(NotificationTapTarget target) {
+    String previousPath = '';
+    void attempt(int tries) {
+      final ctx = navigatorKey?.currentContext;
+      final mounted = ctx?.mounted == true;
+      final currentPath = mounted ? router.currentPath : '';
+      final settled = mounted &&
+          currentPath.isNotEmpty &&
+          currentPath != '/' &&
+          currentPath == previousPath;
+      if (settled) {
+        _applyNotificationTarget(target);
+      } else if (tries < 30) {
+        previousPath = currentPath;
+        WidgetsBinding.instance.addPostFrameCallback((_) => attempt(tries + 1));
+      } else {
+        // Unlike PendingShare (which drops on give-up), a dropped notification
+        // target leaves the user stranded on the wrong route — the exact bug.
+        // Navigate best-effort instead.
+        log.warning(
+          'Notification nav: router never settled after $tries attempts '
+          '(last path="$currentPath") — navigating anyway',
+        );
+        _applyNotificationTarget(target);
+      }
+    }
+
+    attempt(1);
+  }
+
+  void _applyNotificationTarget(NotificationTapTarget target) {
     // Single new thread → open it directly so the user lands in the
     // thread instead of having to find it in the activity feed.
     // ThreadLookupPage handles "row not local yet" by prefetching the
