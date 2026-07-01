@@ -944,7 +944,16 @@ class _AuthButtonState extends State<AuthButton>
         return;
       }
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
-      Tracker.captureException(e, t);
+      // Only report codes that point at a real, fixable defect (a misconfigured
+      // client/provider). The rest — unknownError (native SDK hiccups such as
+      // Android GIS code 8 INTERNAL_ERROR), interrupted, uiUnavailable, and
+      // userMismatch — are transient or user-driven failures the user already
+      // sees via the toast below, so capturing them only adds noise to error
+      // tracking.
+      if (e.code == GoogleSignInExceptionCode.clientConfigurationError ||
+          e.code == GoogleSignInExceptionCode.providerConfigurationError) {
+        Tracker.captureException(e, t);
+      }
       if (mounted) _showTwistAuthError();
     } on ApiException catch (e, t) {
       // Surface server-provided messages for client errors (e.g. 409 when the
