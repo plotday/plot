@@ -32,9 +32,16 @@ export type Serializable =
   | SerializableSet;
 
 /**
- * Array of serializable values
+ * Array of serializable values.
+ *
+ * Extends `ReadonlyArray` (not `Array`) so that `readonly` tuples/arrays —
+ * e.g. a connector's `reactionCapabilities.allowed` declared with `as const`
+ * and reached through `LinkTypeConfig` — still satisfy `Serializable` when the
+ * value is stored. A `readonly` array is fully JSON-serializable; the runtime
+ * (SuperJSON) never mutates it. Mutable arrays remain assignable, since
+ * `Array<T>` extends `ReadonlyArray<T>`.
  */
-export interface SerializableArray extends Array<Serializable> {}
+export interface SerializableArray extends ReadonlyArray<Serializable> {}
 
 /**
  * Object with string keys and serializable values

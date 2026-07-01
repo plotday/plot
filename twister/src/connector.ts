@@ -193,6 +193,12 @@ export type CreateLinkDraft = {
    * when constructing the recipient list (e.g. `To:` header for Gmail).
    */
   inviteEmails?: string[];
+  /**
+   * File actions on the composed thread's first note, for link types whose
+   * compose creates media (e.g. a LinkedIn post with an image). Empty/undefined
+   * when the composer attached no files. Read the bytes via the Files tool.
+   */
+  attachments?: Array<{ fileId: string; fileName: string; mimeType: string; fileSize: number | null }>;
 };
 
 /** An optional OAuth scope group the user can toggle at connect time. */
