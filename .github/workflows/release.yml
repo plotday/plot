@@ -479,8 +479,8 @@ jobs:
       # review. Best-effort (continue-on-error): the binary is already in
       # TestFlight, so a review-submission hiccup (build still processing, a
       # version already In Review, missing compliance answers) must not fail the
-      # release. wait_for_uploaded_build inside the lane bridges the altool
-      # processing delay.
+      # release. deliver waits out the altool processing delay automatically
+      # when submit_for_review is set.
       - name: Submit to App Store for review
         id: submit
         if: ${{ inputs.submit_for_review }}
@@ -490,6 +490,16 @@ jobs:
         run: |
           cd apps/plot/ios
           fastlane submit
+
+      # The submit step is continue-on-error so a review-submission hiccup can't
+      # fail an otherwise-successful binary release, but that also makes a
+      # failure invisible in the job status. Surface it as a warning annotation
+      # so a silent breakage (e.g. a fastlane option that stopped being valid)
+      # is caught instead of shipping as a green run that never submitted.
+      - name: Warn if review submission failed
+        if: ${{ inputs.submit_for_review && steps.submit.outcome == 'failure' }}
+        run: |
+          echo "::warning title=iOS review submission failed::Binary uploaded to App Store Connect but 'fastlane submit' failed — submit by hand in App Store Connect. See the 'Submit to App Store for review' step logs."
 
       # Push the listing text and/or screenshots — only when explicitly
       # requested via the update_metadata / update_screenshots inputs (a regular
@@ -784,6 +794,14 @@ jobs:
         run: |
           cd apps/plot/android
           fastlane submit_production
+
+      # continue-on-error hides a failed promotion from the job status; surface
+      # it as a warning annotation so a silent breakage is caught rather than
+      # shipping as a green run that never reached Production review.
+      - name: Warn if promotion failed
+        if: ${{ inputs.submit_for_review && steps.submit.outcome == 'failure' }}
+        run: |
+          echo "::warning title=Google Play promotion failed::AAB uploaded to internal testing but 'fastlane submit_production' failed — promote by hand in Play Console. See the 'Promote to Google Play production' step logs."
 
       # Push the listing text and/or screenshots — only when explicitly
       # requested via the update_metadata / update_screenshots inputs (a regular
@@ -1143,6 +1161,15 @@ jobs:
         run: |
           cd apps/plot/macos
           fastlane submit
+
+      # continue-on-error hides a failed submission from the job status; surface
+      # it as a warning annotation so a silent breakage (e.g. a fastlane option
+      # that stopped being valid) is caught rather than shipping as a green run
+      # that never submitted.
+      - name: Warn if review submission failed
+        if: ${{ inputs.submit_for_review && steps.submit.outcome == 'failure' }}
+        run: |
+          echo "::warning title=macOS review submission failed::Binary uploaded to App Store Connect but 'fastlane submit' failed — submit by hand in App Store Connect. See the 'Submit to Mac App Store for review' step logs."
 
       # Push the listing text and/or screenshots — only when explicitly
       # requested via the update_metadata / update_screenshots inputs (a regular
@@ -1707,6 +1734,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/ms-store-screenshots.sh"
 
       - name: Submit Microsoft Store submission for review
+        id: submit
         if: steps.ms-store.outputs.enabled == 'true' && inputs.submit_for_review
         continue-on-error: true
         shell: bash
@@ -1715,6 +1743,15 @@ jobs:
           # certification. Skipped when submit_for_review is false, leaving the
           # draft in Partner Center.
           msstore submission publish 9PKTCSN8SNZF
+
+      # continue-on-error hides a failed submission from the job status; surface
+      # it as a warning annotation so a silent breakage is caught rather than
+      # shipping as a green run that never submitted for certification.
+      - name: Warn if review submission failed
+        if: ${{ steps.ms-store.outputs.enabled == 'true' && inputs.submit_for_review && steps.submit.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::warning title=Microsoft Store submission failed::Package uploaded to Partner Center but 'msstore submission publish' failed — submit by hand in Partner Center. See the 'Submit Microsoft Store submission for review' step logs."
 
       - name: Tag store submission
         shell: bash

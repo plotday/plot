@@ -135,6 +135,28 @@ problem above. (The probe does **not** send the Seller ID, so it isolates the
 app-association: a passing probe means publishing will work even before the
 Seller ID is corrected.)
 
+### Checking the currently-published version
+
+To read the exact version live to the public (reusing `$TOKEN` from above):
+
+```bash
+# The application object points at the last *published* submission
+SUB_ID=$(curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://manage.devcenter.microsoft.com/v1.0/my/applications/9PKTCSN8SNZF" \
+  | jq -r '.lastPublishedApplicationSubmission.id')
+
+# Pull that submission and read its package version(s). LC_ALL=C is required on
+# macOS — see the control-character hazard under "How text works" below.
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://manage.devcenter.microsoft.com/v1.0/my/applications/9PKTCSN8SNZF/submissions/$SUB_ID" \
+  | LC_ALL=C tr -d '\000-\037' \
+  | jq -r '.status, (.applicationPackages[]? | "\(.version)  [\(.fileStatus)]  \(.architecture)  \(.fileName)")'
+```
+
+A `Published` status with e.g. `1.5.375.0  [Uploaded]  x64  Plot-1.5.1+375.msix`
+means `1.5.1+375` is live. (The Store collapses the `1.5.1+375` semver into the
+4-part MSIX version `1.5.375.0`; the marketing string is in the filename.)
+
 ## Caveats
 
 - **Free products only (currently).** Microsoft's GitHub Actions path supports
@@ -179,7 +201,10 @@ screenshots and every other field pass through. Two hazards baked into the step:
 
 - The fetched JSON is run through `tr -d '\000-\037'` before jq, because the
   Store can return a stray control character in a previously UI-authored field
-  that jq rejects (`control characters must be escaped`, exit 5).
+  that jq rejects (`control characters must be escaped`, exit 5). On macOS this
+  **must** be `LC_ALL=C tr -d '\000-\037'` — under a UTF-8 locale BSD `tr` chokes
+  on the non-UTF-8 bytes and passes the control chars straight through, so jq
+  still fails with the same `exit 5`. Linux/CI (C locale) is unaffected.
 - The step is **`continue-on-error`**, so a failure here does **not** fail the
   release and is easy to miss — check the job's build summary line and the step
   log, not just the green checkmark.

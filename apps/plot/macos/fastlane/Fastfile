@@ -158,7 +158,11 @@ platform :mac do
       submit_for_review: true,
       automatic_release: false,
       force: true,
-      wait_for_uploaded_build: true,
+      # deliver waits for App Store Connect to finish processing the
+      # altool-uploaded build automatically when submit_for_review is set
+      # (BuildWatcher.wait_for_build_processing_to_be_complete), so no explicit
+      # wait option is needed. The old wait_for_uploaded_build option was
+      # removed from deliver and now hard-errors if passed.
       precheck_include_in_app_purchases: false,
       submission_information: { add_id_info_uses_idfa: false },
       platform: "osx",

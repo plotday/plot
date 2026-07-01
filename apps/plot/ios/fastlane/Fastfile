@@ -169,9 +169,11 @@ platform :ios do
       # User retains the go-live click after approval (see plan Global Constraints).
       automatic_release: false,
       force: true,
-      # The inline path submits seconds after altool upload; wait for App Store
-      # Connect to finish processing the build before attaching + submitting it.
-      wait_for_uploaded_build: true,
+      # The inline path submits seconds after altool upload. deliver waits for
+      # App Store Connect to finish processing the build automatically when
+      # submit_for_review is set (BuildWatcher.wait_for_build_processing_to_be_complete),
+      # so no explicit wait option is needed. The old wait_for_uploaded_build
+      # option was removed from deliver and now hard-errors if passed.
       precheck_include_in_app_purchases: false,
       # Plot does not use the advertising identifier; answer the IDFA question
       # non-interactively so deliver never blocks in CI.

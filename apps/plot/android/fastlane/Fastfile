@@ -94,6 +94,13 @@ platform :android do
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
+      # Release notes are not managed here and there is no
+      # metadata/android/en-US/changelogs dir. Without this, supply tries to
+      # upload a changelog and — on the inline release path, where
+      # SUBMIT_VERSION_CODE is unset — aborts with "Cannot find changelog
+      # because no version code given", so the promotion never lands. Mirrors
+      # the :metadata lane.
+      skip_upload_changelogs: true,
     }
 
     # Promote a specific build when asked (standalone submit workflow); else
