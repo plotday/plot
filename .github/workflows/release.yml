@@ -20,7 +20,7 @@ on:
         type: boolean
         default: true
       submit_for_review:
-        description: 'Submit uploaded store builds for review/certification (currently Windows only; off = upload as draft)'
+        description: 'Submit uploaded builds for review on every released store (Apple App Store iOS+macOS, Google Play production, Microsoft Store); off = stage as draft (TestFlight / Play internal / Store draft) to finish by hand'
         type: boolean
         default: false
       update_metadata:
@@ -57,6 +57,9 @@ jobs:
     runs-on: ubuntu-latest
     concurrency:
       group: version-bump
+    env:
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
     outputs:
       release_version: ${{ steps.version.outputs.release_version }}
       version_name: ${{ steps.version.outputs.version_name }}
@@ -85,14 +88,65 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      - name: Read current version
+      - name: Set up Ruby + fastlane (for ASC version query)
+        run: sudo gem install fastlane --no-document
+
+      - name: Write ASC API key
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+          chmod 0600 "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+
+      - name: Read current version and auto-bump marketing version after approval
         id: version
         run: |
+          set -euo pipefail
           cd apps/plot
           RELEASE_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
           VERSION_NAME=$(echo "$RELEASE_VERSION" | cut -d'+' -f1)
           BUILD_NUMBER=$(echo "$RELEASE_VERSION" | cut -d'+' -f2)
 
+          # Query App Store Connect for the highest already-approved marketing
+          # version across iOS + macOS. The query is load-bearing (no separate
+          # pre-flight check): retry transient failures, then fail the release if
+          # it never succeeds, rather than risk Apple error 90062. An empty
+          # APPROVED after a SUCCESSFUL lane run means "no approved version yet"
+          # (brand-new app) — a valid no-bump case.
+          APPROVED=""
+          QUERY_OK=false
+          for attempt in 1 2 3 4 5; do
+            if OUT=$(cd ios && fastlane latest_approved_version 2>&1); then
+              APPROVED=$(echo "$OUT" | sed -ne 's/.*LATEST_APPROVED_VERSION=\([0-9][0-9.]*\).*/\1/p' | tail -1)
+              QUERY_OK=true
+              break
+            fi
+            echo "ASC version query attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+            sleep "$((attempt * 10))"
+          done
+
+          if [ "$QUERY_OK" != "true" ]; then
+            echo "ERROR: could not reach App Store Connect to determine the approved version. Aborting to avoid Apple error 90062." >&2
+            exit 1
+          fi
+
+          # Bump VERSION_NAME to APPROVED's patch+1 when the current marketing
+          # version is not strictly higher than the approved one.
+          if [ -n "$APPROVED" ]; then
+            higher=$(printf '%s\n%s\n' "$APPROVED" "$VERSION_NAME" | sort -V | tail -1)
+            if [ "$VERSION_NAME" = "$APPROVED" ] || [ "$higher" = "$APPROVED" ]; then
+              IFS='.' read -r MA MI PA <<< "$APPROVED"
+              VERSION_NAME="${MA}.${MI}.$((PA + 1))"
+              echo "Marketing version <= approved ($APPROVED); bumped to $VERSION_NAME"
+            else
+              echo "Marketing version $VERSION_NAME already > approved ($APPROVED); no bump"
+            fi
+          else
+            echo "No approved App Store version found; keeping $VERSION_NAME"
+          fi
+
+          RELEASE_VERSION="${VERSION_NAME}+${BUILD_NUMBER}"
           {
             echo "release_version=$RELEASE_VERSION"
             echo "version_name=$VERSION_NAME"
@@ -107,6 +161,21 @@ jobs:
         run: |
           RELEASE_BRANCH="${{ steps.version.outputs.release_branch }}"
           git checkout -b "$RELEASE_BRANCH"
+          # Ensure the release commit's pubspec carries the (possibly auto-bumped)
+          # marketing version, so the built binaries' CFBundleShortVersionString
+          # matches what we submit. Without this, an auto-bump would leave the
+          # build on the old, already-approved version and Apple rejects it (90062).
+          # Idempotent: when no bump happened this rewrites pubspec to the same
+          # value, git diff stays clean, and no commit is made (release_sha
+          # unchanged, preserving existing behavior). Anchored on ^version: so the
+          # msix_version: line is untouched.
+          sed -i "s/^version: .*/version: ${{ steps.version.outputs.release_version }}/" apps/plot/pubspec.yaml
+          if ! git diff --quiet apps/plot/pubspec.yaml; then
+            git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
+            git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+            git add apps/plot/pubspec.yaml
+            git commit -m "Release ${{ steps.version.outputs.release_version }}: set marketing version [skip ci]"
+          fi
           git push origin "$RELEASE_BRANCH"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "Created release branch: $RELEASE_BRANCH"
@@ -406,6 +475,22 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
+      # When submit_for_review is set, push the just-uploaded build to App Store
+      # review. Best-effort (continue-on-error): the binary is already in
+      # TestFlight, so a review-submission hiccup (build still processing, a
+      # version already In Review, missing compliance answers) must not fail the
+      # release. wait_for_uploaded_build inside the lane bridges the altool
+      # processing delay.
+      - name: Submit to App Store for review
+        id: submit
+        if: ${{ inputs.submit_for_review }}
+        continue-on-error: true
+        env:
+          SUBMIT_APP_VERSION: ${{ needs.prepare-release.outputs.version_name }}
+        run: |
+          cd apps/plot/ios
+          fastlane submit
+
       # Push the listing text and/or screenshots — only when explicitly
       # requested via the update_metadata / update_screenshots inputs (a regular
       # release uploads the binary only). continue-on-error so a listing whose
@@ -476,6 +561,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect (TestFlight)"
+            echo "**Review submission:** ${{ inputs.submit_for_review && (steps.submit.outcome == 'success' && 'submitted for App Store review' || 'submit FAILED — see the Submit step logs (build may still be processing or a version is already In Review)') || 'not requested (TestFlight only; submit by hand in App Store Connect)' }}"
             echo "**Metadata + screenshots:** ${{ (inputs.update_metadata || inputs.update_screenshots) && (steps.metadata.outcome == 'success' && 'uploaded to App Store listing' || 'upload failed — see the metadata step logs (listing may be locked while a version is in review)') || 'not requested (set update_metadata / update_screenshots to push)' }}"
             echo ""
             echo "### Admin"
@@ -684,7 +770,20 @@ jobs:
       - name: Upload to Google Play (internal testing)
         run: |
           cd apps/plot/android
-          fastlane beta aab:$GITHUB_WORKSPACE/apps/plot/build/app/outputs/bundle/release/app-release.aab
+          fastlane beta "aab:$GITHUB_WORKSPACE/apps/plot/build/app/outputs/bundle/release/app-release.aab"
+
+      # When submit_for_review is set, promote the build just uploaded to the
+      # internal track up to Production (release_status completed => submitted
+      # for review). Best-effort: the AAB is already on internal testing, so a
+      # promotion hiccup (a halted rollout, changes pending review) must not
+      # fail the release.
+      - name: Promote to Google Play production
+        id: submit
+        if: ${{ inputs.submit_for_review }}
+        continue-on-error: true
+        run: |
+          cd apps/plot/android
+          fastlane submit_production
 
       # Push the listing text and/or screenshots — only when explicitly
       # requested via the update_metadata / update_screenshots inputs (a regular
@@ -759,6 +858,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** Google Play (internal testing)"
+            echo "**Review submission:** ${{ inputs.submit_for_review && (steps.submit.outcome == 'success' && 'promoted to Production for review' || 'promote FAILED — see the Promote step logs (rollout may be halted or changes pending review)') || 'not requested (internal testing only; promote by hand in Play Console)' }}"
             echo "**Metadata + screenshots:** ${{ (inputs.update_metadata || inputs.update_screenshots) && (steps.metadata.outcome == 'success' && 'uploaded to Google Play listing' || 'upload failed — see the metadata step logs (listing may be locked while changes are pending review)') || 'not requested (set update_metadata / update_screenshots to push)' }}"
             echo ""
             echo "### Admin"
@@ -1034,6 +1134,16 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
+      - name: Submit to Mac App Store for review
+        id: submit
+        if: ${{ inputs.submit_for_review }}
+        continue-on-error: true
+        env:
+          SUBMIT_APP_VERSION: ${{ needs.prepare-release.outputs.version_name }}
+        run: |
+          cd apps/plot/macos
+          fastlane submit
+
       # Push the listing text and/or screenshots — only when explicitly
       # requested via the update_metadata / update_screenshots inputs (a regular
       # release uploads the binary only). continue-on-error so a listing whose
@@ -1095,6 +1205,7 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect"
+            echo "**Review submission:** ${{ inputs.submit_for_review && (steps.submit.outcome == 'success' && 'submitted for Mac App Store review' || 'submit FAILED — see the Submit step logs (build may still be processing or a version is already In Review)') || 'not requested (TestFlight only; submit by hand in App Store Connect)' }}"
             echo "**Metadata + screenshots:** ${{ (inputs.update_metadata || inputs.update_screenshots) && (steps.metadata.outcome == 'success' && 'uploaded to Mac App Store listing' || 'upload failed — see the metadata step logs (listing may be locked while a version is in review)') || 'not requested (set update_metadata / update_screenshots to push)' }}"
             echo ""
             echo "### Admin"

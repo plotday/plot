@@ -149,6 +149,37 @@ platform :mac do
     UI.success("Release uploaded to Mac App Store Connect!")
   end
 
+  desc "Submit an already-uploaded build to Mac App Store review (no binary upload)"
+  lane :submit do
+    options = {
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: true,
+      automatic_release: false,
+      force: true,
+      wait_for_uploaded_build: true,
+      precheck_include_in_app_purchases: false,
+      submission_information: { add_id_info_uses_idfa: false },
+      platform: "osx",
+    }
+
+    options[:build_number] = ENV["SUBMIT_BUILD_NUMBER"] if ENV["SUBMIT_BUILD_NUMBER"] && !ENV["SUBMIT_BUILD_NUMBER"].empty?
+    options[:app_version] = ENV["SUBMIT_APP_VERSION"] if ENV["SUBMIT_APP_VERSION"] && !ENV["SUBMIT_APP_VERSION"].empty?
+
+    if ENV["ASC_API_KEY_ID"] && ENV["ASC_API_ISSUER_ID"]
+      options[:api_key] = app_store_connect_api_key(
+        key_id: ENV["ASC_API_KEY_ID"],
+        issuer_id: ENV["ASC_API_ISSUER_ID"],
+        key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{ENV['ASC_API_KEY_ID']}.p8")
+      )
+    end
+
+    upload_to_app_store(options)
+
+    UI.success("macOS build submitted for Mac App Store review!")
+  end
+
   desc "Create GitHub release with DMG (integrates with existing workflow)"
   lane :release_dmg do
     UI.message("DMG releases are handled by GitHub Actions workflow")

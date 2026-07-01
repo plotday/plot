@@ -30,6 +30,39 @@ platform :ios do
     UI.success("iOS build completed successfully!")
   end
 
+  desc "Print the highest already-approved App Store marketing version across iOS + macOS"
+  lane :latest_approved_version do
+    require "spaceship"
+
+    token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV["ASC_API_KEY_ID"],
+      issuer_id: ENV["ASC_API_ISSUER_ID"],
+      filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{ENV['ASC_API_KEY_ID']}.p8"),
+    )
+    Spaceship::ConnectAPI.token = token
+
+    app = Spaceship::ConnectAPI::App.find("day.plot.app")
+    if app.nil?
+      UI.user_error!("Could not find app day.plot.app in App Store Connect")
+    end
+
+    versions = []
+    [
+      Spaceship::ConnectAPI::Platform::IOS,
+      Spaceship::ConnectAPI::Platform::MAC_OS,
+    ].each do |platform|
+      # The live (READY_FOR_SALE) version is exactly what Apple compares a new
+      # upload against for error 90062. nil before the first-ever release.
+      live = app.get_live_app_store_version(platform: platform)
+      versions << live.version_string if live && live.version_string
+    end
+
+    latest = versions.max_by { |s| Gem::Version.new(s) }
+    # Stable, greppable marker for the workflow to parse.
+    UI.message("LATEST_APPROVED_VERSION=#{latest}")
+    latest
+  end
+
   desc "Build and archive the iOS app"
   lane :archive do
     # Ensure we have the latest provisioning profiles
@@ -124,6 +157,45 @@ platform :ios do
     )
 
     UI.success("Release uploaded to App Store Connect!")
+  end
+
+  desc "Submit an already-uploaded build to App Store review (no binary upload)"
+  lane :submit do
+    options = {
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: true,
+      # User retains the go-live click after approval (see plan Global Constraints).
+      automatic_release: false,
+      force: true,
+      # The inline path submits seconds after altool upload; wait for App Store
+      # Connect to finish processing the build before attaching + submitting it.
+      wait_for_uploaded_build: true,
+      precheck_include_in_app_purchases: false,
+      # Plot does not use the advertising identifier; answer the IDFA question
+      # non-interactively so deliver never blocks in CI.
+      submission_information: { add_id_info_uses_idfa: false },
+    }
+
+    # Target a specific build when asked (standalone submit workflow), else
+    # deliver picks the latest processed build for the current version.
+    options[:build_number] = ENV["SUBMIT_BUILD_NUMBER"] if ENV["SUBMIT_BUILD_NUMBER"] && !ENV["SUBMIT_BUILD_NUMBER"].empty?
+    # Target the right "Prepare for Submission" marketing version (deliver
+    # creates it if needed) rather than letting deliver guess.
+    options[:app_version] = ENV["SUBMIT_APP_VERSION"] if ENV["SUBMIT_APP_VERSION"] && !ENV["SUBMIT_APP_VERSION"].empty?
+
+    if ENV["ASC_API_KEY_ID"] && ENV["ASC_API_ISSUER_ID"]
+      options[:api_key] = app_store_connect_api_key(
+        key_id: ENV["ASC_API_KEY_ID"],
+        issuer_id: ENV["ASC_API_ISSUER_ID"],
+        key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{ENV['ASC_API_KEY_ID']}.p8")
+      )
+    end
+
+    upload_to_app_store(options)
+
+    UI.success("iOS build submitted for App Store review!")
   end
 
   desc "Run tests"

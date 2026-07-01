@@ -1,0 +1,152 @@
+name: Submit Release (no rebuild)
+
+# Submits an ALREADY-BUILT release to each store for review/certification,
+# without rebuilding. Use after a draft release run (submit_for_review=false)
+# once you have finished reviewing the staged listing on each store, or to
+# re-submit after fixing listing text. The binary must already be uploaded by a
+# prior Release run (TestFlight / Play internal / Microsoft Store draft).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Full release version to submit, e.g. 1.5.0+373. Marketing version (1.5.0) and build number (373) are derived from it.'
+        type: string
+        required: true
+      ios:
+        description: 'Submit iOS to App Store review'
+        type: boolean
+        default: false
+      macos:
+        description: 'Submit macOS to Mac App Store review'
+        type: boolean
+        default: false
+      android:
+        description: 'Promote Android to Google Play production (review)'
+        type: boolean
+        default: false
+      windows:
+        description: 'Submit Windows to Microsoft Store certification'
+        type: boolean
+        default: false
+
+concurrency:
+  group: native-release
+  cancel-in-progress: false
+
+jobs:
+  submit-ios:
+    if: inputs.ios
+    runs-on: ubuntu-latest
+    env:
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install fastlane
+        run: sudo gem install fastlane --no-document
+      - name: Write ASC API key
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+          chmod 0600 "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+      - name: Submit to App Store for review
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$VERSION" != *+* ]]; then
+            echo "ERROR: version must be like 1.5.0+373 (X.Y.Z+build)" >&2
+            exit 1
+          fi
+          export SUBMIT_APP_VERSION="${VERSION%%+*}"
+          export SUBMIT_BUILD_NUMBER="${VERSION##*+}"
+          cd apps/plot/ios
+          fastlane submit
+
+  submit-macos:
+    if: inputs.macos
+    runs-on: ubuntu-latest
+    env:
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install fastlane
+        run: sudo gem install fastlane --no-document
+      - name: Write ASC API key
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+          chmod 0600 "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+      - name: Submit to Mac App Store for review
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$VERSION" != *+* ]]; then
+            echo "ERROR: version must be like 1.5.0+373 (X.Y.Z+build)" >&2
+            exit 1
+          fi
+          export SUBMIT_APP_VERSION="${VERSION%%+*}"
+          export SUBMIT_BUILD_NUMBER="${VERSION##*+}"
+          cd apps/plot/macos
+          fastlane submit
+
+  submit-android:
+    if: inputs.android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install fastlane
+        run: sudo gem install fastlane --no-document
+      - name: Write Play service key
+        env:
+          PLAY_STORE_SERVICE_KEY: ${{ secrets.PLAY_STORE_SERVICE_KEY }}
+        run: |
+          echo "$PLAY_STORE_SERVICE_KEY" | base64 --decode > "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json"
+          chmod 0600 "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json"
+      - name: Promote to Google Play production
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$VERSION" != *+* ]]; then
+            echo "ERROR: version must be like 1.5.0+373 (X.Y.Z+build)" >&2
+            exit 1
+          fi
+          export SUBMIT_VERSION_CODE="${VERSION##*+}"
+          cd apps/plot/android
+          fastlane submit_production
+
+  submit-windows:
+    if: inputs.windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Microsoft Store Developer CLI
+        uses: microsoft/setup-msstore-cli@v1.3
+      - name: Configure Microsoft Store CLI
+        shell: bash
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+        run: |
+          msstore reconfigure \
+            --tenantId "$AZURE_AD_TENANT_ID" \
+            --sellerId "$SELLER_ID" \
+            --clientId "$AZURE_AD_APPLICATION_CLIENT_ID" \
+            --clientSecret "$AZURE_AD_APPLICATION_SECRET"
+      - name: Submit Windows MSIX to Microsoft Store
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$VERSION" != *+* ]]; then
+            echo "ERROR: version must be like 1.5.0+373 (X.Y.Z+build)" >&2
+            exit 1
+          fi
+          bash "$GITHUB_WORKSPACE/scripts/ms-store-submit.sh" "$VERSION"

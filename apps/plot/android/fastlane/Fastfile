@@ -81,19 +81,30 @@ platform :android do
     UI.success("Metadata uploaded to Google Play Console!")
   end
 
-  desc "Promote beta to production"
-  lane :promote_to_production do
-    upload_to_play_store(
+  desc "Promote the internal-testing build to Production for review (submit)"
+  lane :submit_production do
+    options = {
       track: 'internal',
       track_promote_to: 'production',
+      # 'completed' submits the production release for review / rollout; the
+      # internal 'beta' upload stages it as 'draft' first (see :beta lane).
+      release_status: 'completed',
       skip_upload_apk: true,
       skip_upload_aab: true,
       skip_upload_metadata: true,
       skip_upload_images: true,
-      skip_upload_screenshots: true
-    )
+      skip_upload_screenshots: true,
+    }
 
-    UI.success("Beta promoted to production!")
+    # Promote a specific build when asked (standalone submit workflow); else
+    # supply promotes the latest release currently on the internal track.
+    if ENV["SUBMIT_VERSION_CODE"] && !ENV["SUBMIT_VERSION_CODE"].empty?
+      options[:version_code] = ENV["SUBMIT_VERSION_CODE"].to_i
+    end
+
+    upload_to_play_store(options)
+
+    UI.success("Android build promoted to Google Play Production for review!")
   end
 
   desc "Deploy a new version to the Google Play (Production)"
