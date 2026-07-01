@@ -19,6 +19,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/api/upgrade_api.dart';
+import 'package:plot/api/iap_api.dart' show IapService, kIapAddonProductForCount;
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart' show PermissionFlag;
 import 'package:plot/state/subscription_service.dart';
@@ -1100,6 +1101,83 @@ _PremiumGate _evaluatePremium({
   return premium.needsAddon ? _PremiumGate.atLimit : _PremiumGate.allowed;
 }
 
+/// Copy for the passive connection-add-on notice, or null when no notice
+/// applies. Pure so it can be unit-tested without a widget pump; the platform
+/// price is resolved by the caller via [_connectionAddonPriceLabel] and passed
+/// in as [priceLabel].
+///
+/// - Not premium → null (regular connectors handle their own limit UI).
+/// - Spare credit on hand (purchased > count) → "uses one of your add-ons"
+///   (enabling consumes an already-paid credit; no new charge).
+/// - Otherwise (needs a new add-on, or an older server sent no payload) →
+///   the charge notice, naming the connection and the price when known.
+@visibleForTesting
+String? addonNoticeText({
+  required bool isPremium,
+  required PremiumUsage? premium,
+  required String connectionName,
+  required String? priceLabel,
+}) {
+  if (!isPremium) return null;
+  final hasSpareCredit = premium != null && premium.purchased > premium.count;
+  if (hasSpareCredit) {
+    return '$connectionName uses one of your connection add-ons — '
+        'no additional charge.';
+  }
+  final priceSuffix = priceLabel == null ? '' : ' — $priceLabel';
+  return '$connectionName requires a connection add-on$priceSuffix, billed '
+      "separately from your plan. You won't be charged until you add the "
+      'connection.';
+}
+
+/// Platform-aware price string for the connection add-on, or null when the
+/// price can't be resolved yet (App Store products not loaded). Web/DMG/Android
+/// uses the Stripe price from /usage; App Store uses the live StoreKit tier
+/// price (never the $5 web price).
+String? _connectionAddonPriceLabel(UsageData usage) {
+  if (UpgradeUi.isAppStoreBuild) {
+    final current = usage.personal.premium?.purchased ?? 0;
+    final productId = kIapAddonProductForCount[current + 1];
+    final price = productId == null
+        ? null
+        : IapService.instance.productFor(productId)?.price;
+    return price == null ? null : '$price/month';
+  }
+  final price = usage.connectionAddonPrice ?? 5;
+  return '\$$price/month';
+}
+
+/// Passive, non-blocking inline notice that a connection needs a paid add-on.
+/// Rendered before the auth CTA and above the "Add connection" button. Purely
+/// informational — it never blocks the flow.
+class _AddonNotice extends StatelessWidget {
+  const _AddonNotice({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final muted = theme.plotColors.muted;
+    return Padding(
+      padding: EdgeInsets.only(bottom: theme.spacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(FontAwesomeIcons.circleInfo, size: 14, color: muted),
+          SizedBox(width: theme.spacing.sm),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.typography.sm.copyWith(color: muted, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Returns the at-limit command for a twist-limit case.
 /// Offers a choice between a twist add-on and a plan upgrade via
 /// [TwistCapacityOffer]. On App Store builds both options are still presented
@@ -1511,6 +1589,23 @@ class EditSource extends ShowForm {
         integrationChanges,
       );
 
+      // Passive add-on notice above the save button, shown only when this
+      // save will activate a new premium connection (so the user sees the
+      // charge disclosure before tapping "Add connection").
+      final owner = initialTeamId;
+      final saveNoticeText = (isNewlyActivated && integrations.premium)
+          ? addonNoticeText(
+              isPremium: true,
+              premium: owner == 'personal'
+                  ? usage.personal.premium
+                  : usage.teams
+                      .firstWhereOrNull((t) => t.id == owner)
+                      ?.premium,
+              connectionName: name,
+              priceLabel: _connectionAddonPriceLabel(usage),
+            )
+          : null;
+
       return [
         StaticFormGroup(
           items: _buildStandardSourceItems(
@@ -1539,6 +1634,17 @@ class EditSource extends ShowForm {
         ),
         StaticFormGroup(
           items: [
+            if (saveNoticeText != null)
+              FormInfo(
+                key: 'addon_notice',
+                divider: false,
+                builder: (formContext) => Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: formContext.theme.spacing.xl,
+                  ),
+                  child: _AddonNotice(text: saveNoticeText),
+                ),
+              ),
             // ── Composite re-auth CTA (gated) ────────────────────────────────
             // For composite connections, when ≥1 products are staged for
             // re-auth the form's primary action switches from Save to a single
@@ -1632,22 +1738,13 @@ class EditSource extends ShowForm {
                 // already count toward their current scope.
                 if (isNewlyActivated || owner != initialTeamId) {
                   final live = _liveUsage(usage);
-                  final premiumGate = _premiumGateCommand(
-                    usage: live,
-                    owner: owner,
-                    isPremium: integrations.premium,
-                    draftId: twistInstanceId,
-                    connectionName: name,
-                  );
-                  if (premiumGate != null) return premiumGate;
                   final team = live.teams.firstWhereOrNull((t) => t.id == owner);
                   final atLimit = team != null
                       ? team.connections.isAtLimit
                       : live.personal.connections.isAtLimit;
-                  // Billable regular connection beyond the pool: offer the
-                  // add-on (web) or Pro and capture consent before saving.
-                  // Once consented, fall through so SaveSource enables with
-                  // consentAddon (the server charges on enable).
+                  // Regular connection beyond the pool: offer add-on/Pro and
+                  // capture consent before saving (premium relies on the
+                  // reactive addon_required path in SaveSource instead).
                   if (atLimit && !_hasAddonConsent(twistInstanceId)) {
                     return _ConsentGate(
                       draftId: twistInstanceId,
@@ -2316,26 +2413,6 @@ class AddSourceDetail extends ShowForm {
                 buildTeamSelect(refreshed)!,
               ...refreshed.providers.map((provider) {
                 final initialOwner = refreshedDefault;
-                // Premium gate: consent before auth when add-on credits are
-                // used up; allowed otherwise (any plan). Falls through to the
-                // regular at-limit logic when premium is allowed or already
-                // consented.
-                final premiumGate = teams.isEmpty
-                    ? _premiumGateCommand(
-                        usage: usage,
-                        owner: initialOwner,
-                        isPremium: twist.premium,
-                        draftId: draftId,
-                        connectionName: twist.name,
-                      )
-                    : null;
-                if (premiumGate != null) {
-                  return FormButton(
-                    key: 'upgrade_premium_${provider.provider.name}',
-                    isPrimary: true,
-                    buildCommand: (_) => premiumGate,
-                  );
-                }
                 // Gate preemptively only when the user has no team to fall
                 // back to. When teams exist, let them authenticate — the
                 // save/connect path checks the selected team's limit. Once the
@@ -2391,6 +2468,12 @@ class AddSourceDetail extends ShowForm {
                   key: 'auth_${provider.provider.name}',
                   divider: false,
                   builder: (formContext) {
+                    final noticeText = addonNoticeText(
+                      isPremium: twist.premium,
+                      premium: usage.personal.premium,
+                      connectionName: twist.name,
+                      priceLabel: _connectionAddonPriceLabel(usage),
+                    );
                     return Padding(
                       // Match the xl horizontal padding every other form item
                       // (and the description above) uses, so the bullets,
@@ -2400,27 +2483,36 @@ class AddSourceDetail extends ShowForm {
                         right: formContext.theme.spacing.xl,
                         bottom: formContext.theme.spacing.lg,
                       ),
-                      child: _AuthWithScopeToggles(
-                        provider: provider,
-                        twistInstanceId: draftId,
-                        initialEnabledGroups:
-                            scopeGroupSelections[provider.provider.name],
-                        onScopeGroupsChanged: (groups) {
-                          scopeGroupSelections[provider.provider.name] = groups;
-                        },
-                        // Initial connect hands off to the channel-setup modal,
-                        // which keeps this modal displayed while it loads. Keep
-                        // the spinner on until that swap.
-                        keepSpinnerOnSuccess: true,
-                        onSuccess: () async {
-                          await _connectedAfterOAuth(
-                            formContext,
-                            draftId,
-                            twist.name,
-                            teams,
-                            fallbackOwner: initialOwner,
-                          );
-                        },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (noticeText != null)
+                            _AddonNotice(text: noticeText),
+                          _AuthWithScopeToggles(
+                            provider: provider,
+                            twistInstanceId: draftId,
+                            initialEnabledGroups:
+                                scopeGroupSelections[provider.provider.name],
+                            onScopeGroupsChanged: (groups) {
+                              scopeGroupSelections[provider.provider.name] =
+                                  groups;
+                            },
+                            // Initial connect hands off to the channel-setup
+                            // modal, which keeps this modal displayed while it
+                            // loads. Keep the spinner on until that swap.
+                            keepSpinnerOnSuccess: true,
+                            onSuccess: () async {
+                              await _connectedAfterOAuth(
+                                formContext,
+                                draftId,
+                                twist.name,
+                                teams,
+                                fallbackOwner: initialOwner,
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -2580,23 +2672,6 @@ class AddSourceDetail extends ShowForm {
                 buildTeamSelect(integrations)!,
               ...integrations.providers.map((provider) {
                 final initialOwner = defaultTeamFor(integrations);
-                // Premium gate (see twin block above for the variant flow).
-                final premiumGate = teams.isEmpty
-                    ? _premiumGateCommand(
-                        usage: usage,
-                        owner: initialOwner,
-                        isPremium: twist.premium,
-                        draftId: draftId,
-                        connectionName: twist.name,
-                      )
-                    : null;
-                if (premiumGate != null) {
-                  return FormButton(
-                    key: 'upgrade_premium_${provider.provider.name}',
-                    isPrimary: true,
-                    buildCommand: (_) => premiumGate,
-                  );
-                }
                 // Gate preemptively only when the user has no team to fall
                 // back to. When teams exist, let them authenticate — the
                 // save/connect path checks the selected team's limit. Once
@@ -2652,6 +2727,12 @@ class AddSourceDetail extends ShowForm {
                   key: 'auth_${provider.provider.name}',
                   divider: false,
                   builder: (formContext) {
+                    final noticeText = addonNoticeText(
+                      isPremium: twist.premium,
+                      premium: usage.personal.premium,
+                      connectionName: twist.name,
+                      priceLabel: _connectionAddonPriceLabel(usage),
+                    );
                     return Padding(
                       // Match the xl horizontal padding every other form item
                       // (and the description above) uses, so the bullets,
@@ -2661,27 +2742,36 @@ class AddSourceDetail extends ShowForm {
                         right: formContext.theme.spacing.xl,
                         bottom: formContext.theme.spacing.lg,
                       ),
-                      child: _AuthWithScopeToggles(
-                        provider: provider,
-                        twistInstanceId: draftId,
-                        initialEnabledGroups:
-                            scopeGroupSelections[provider.provider.name],
-                        onScopeGroupsChanged: (groups) {
-                          scopeGroupSelections[provider.provider.name] = groups;
-                        },
-                        // Initial connect hands off to the channel-setup modal,
-                        // which keeps this modal displayed while it loads. Keep
-                        // the spinner on until that swap.
-                        keepSpinnerOnSuccess: true,
-                        onSuccess: () async {
-                          await _connectedAfterOAuth(
-                            formContext,
-                            draftId,
-                            twist.name,
-                            teams,
-                            fallbackOwner: initialOwner,
-                          );
-                        },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (noticeText != null)
+                            _AddonNotice(text: noticeText),
+                          _AuthWithScopeToggles(
+                            provider: provider,
+                            twistInstanceId: draftId,
+                            initialEnabledGroups:
+                                scopeGroupSelections[provider.provider.name],
+                            onScopeGroupsChanged: (groups) {
+                              scopeGroupSelections[provider.provider.name] =
+                                  groups;
+                            },
+                            // Initial connect hands off to the channel-setup
+                            // modal, which keeps this modal displayed while it
+                            // loads. Keep the spinner on until that swap.
+                            keepSpinnerOnSuccess: true,
+                            onSuccess: () async {
+                              await _connectedAfterOAuth(
+                                formContext,
+                                draftId,
+                                twist.name,
+                                teams,
+                                fallbackOwner: initialOwner,
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     );
                   },
