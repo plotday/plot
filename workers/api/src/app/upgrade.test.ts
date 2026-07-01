@@ -45,6 +45,7 @@ import upgrade, {
   provisionAddonForConsentedEnable,
 } from "./upgrade";
 import { computeTwistBlocksNeeded } from "../utils/limits";
+import * as limits from "../utils/limits";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -346,6 +347,10 @@ describe("purchaseAddonCreditForScope write-back atomicity", () => {
     const stripe = makeStripeAddonMock(true) as unknown as Stripe;
     const captureException = vi.fn();
 
+    // No active credits — currentAddons:0 keeps the idempotency short-circuit
+    // from firing (0 > 0 is false), so this still exercises the charge path.
+    vi.spyOn(limits, "getBillableConnectionAddonCount").mockResolvedValue(0);
+
     // Minimal DB stub whose write path always rejects — simulates a transient
     // DB failure after the Stripe charge has already been processed.
     const failingDb = {
@@ -363,6 +368,8 @@ describe("purchaseAddonCreditForScope write-back atomicity", () => {
       db: failingDb,
       customerId: "cus_write_fail",
       addonSubscriptionId: null,
+      currentAddons: 0,
+      scope: { userId: "user_write_fail" },
       scopeMetadata: { user_id: "user_write_fail" },
       siteRoot: "https://plot.day",
       table: "user_subscription",
@@ -410,6 +417,8 @@ describe.skipIf(!DATABASE_URL)(
             })
             .execute();
 
+          // No active credits for this fresh synthetic user — currentAddons:0
+          // keeps the idempotency short-circuit from firing.
           // Keep replica mode so the helper's UPDATE doesn't re-trigger FK
           // checks on the synthetic userId (no matching row in the user table).
           result = await purchaseAddonCreditForScope({
@@ -417,6 +426,8 @@ describe.skipIf(!DATABASE_URL)(
             db: trx,
             customerId: "cus_test_purchase",
             addonSubscriptionId: null,
+            currentAddons: 0,
+            scope: { userId },
             scopeMetadata: { user_id: userId },
             siteRoot: "https://plot.day",
             table: "user_subscription",
@@ -469,6 +480,8 @@ describe.skipIf(!DATABASE_URL)(
             })
             .execute();
 
+          // No active credits for this fresh synthetic user — currentAddons:0
+          // keeps the idempotency short-circuit from firing.
           // Keep replica mode so the helper's Stripe call (no DB writes on
           // no-card path) doesn't trigger FK checks on the synthetic userId.
           result = await purchaseAddonCreditForScope({
@@ -476,6 +489,8 @@ describe.skipIf(!DATABASE_URL)(
             db: trx,
             customerId: "cus_test_nopay",
             addonSubscriptionId: null,
+            currentAddons: 0,
+            scope: { userId },
             scopeMetadata: { user_id: userId },
             siteRoot: "https://plot.day",
             table: "user_subscription",
@@ -565,12 +580,13 @@ describe.skipIf(!DATABASE_URL)(
       expect(updatedRow?.stripe_addon_subscription_id).toBe("sub_new");
     });
 
-    it("consented enable with no card returns needsCard + setup url and does not charge", async () => {
+    it("consented enable with no card returns needsCard + coupon checkout url and does not charge", async () => {
       const db = createDb({ DATABASE_URL } as unknown as Bindings);
       const userId = randomUUID();
-      // Use a custom stub for the no-card path: returns a setup session URL
-      // that includes "addon=card_saved" (matching what createAddonCardSetupSession
-      // passes as success_url, reflected back in the session URL by the mock).
+      // Use a custom stub for the no-card path: since Task 2 this now routes
+      // through createAddonCheckoutSession (mode:"subscription",
+      // allow_promotion_codes:true) instead of the removed card-setup-only
+      // session, so coupons work even on the enable-gate path.
       const stripe = {
         customers: {
           retrieve: vi.fn().mockResolvedValue({ deleted: false, invoice_settings: {} }),
@@ -578,13 +594,16 @@ describe.skipIf(!DATABASE_URL)(
         paymentMethods: {
           list: vi.fn().mockResolvedValue({ data: [] }),
         },
+        prices: {
+          list: vi.fn().mockResolvedValue({ data: [{ id: "price_addon" }] }),
+        },
         subscriptions: {
           create: vi.fn(),
         },
         checkout: {
           sessions: {
             create: vi.fn().mockResolvedValue({
-              url: "https://checkout.stripe.com/pay/setup?addon=card_saved",
+              url: "https://checkout.stripe.com/pay/cs_coupon?addon=success",
             }),
           },
         },
@@ -635,9 +654,13 @@ describe.skipIf(!DATABASE_URL)(
       expect(result).toEqual({
         ok: false,
         needsCard: true,
-        checkout_url: expect.stringContaining("addon=card_saved"),
+        checkout_url: expect.stringContaining("addon=success"),
       });
       expect((stripe as any).subscriptions.create).not.toHaveBeenCalled();
+      expect((stripe as any).checkout.sessions.create.mock.calls[0][0]).toMatchObject({
+        mode: "subscription",
+        allow_promotion_codes: true,
+      });
     });
   }
 );
@@ -1200,5 +1223,112 @@ describe("POST /upgrade/twist-addons/purchase — team scope rejected", () => {
     expect(res.status).toBe(400);
     const body = await res.json() as { error: string };
     expect(body.error).toBe("twist_add_ons_personal_only");
+  });
+});
+
+describe("purchaseAddonCreditForScope idempotency", () => {
+  it("reuses an unused credit without charging when purchased > active", async () => {
+    vi.spyOn(limits, "getBillableConnectionAddonCount").mockResolvedValue(0);
+    const stripe = {
+      customers: { retrieve: vi.fn() },
+      subscriptions: { update: vi.fn(), create: vi.fn(), retrieve: vi.fn() },
+      checkout: { sessions: { create: vi.fn() } },
+      paymentMethods: { list: vi.fn() },
+    } as any;
+
+    const res = await purchaseAddonCreditForScope({
+      stripe,
+      db: {} as any,
+      customerId: "cus_1",
+      addonSubscriptionId: "sub_addon_1",
+      currentAddons: 1, // one purchased, zero active → unused credit
+      scope: { userId: "u1" },
+      scopeMetadata: { user_id: "u1" },
+      siteRoot: "https://plot.day",
+      table: "user_subscription",
+      idVal: "u1",
+      captureException: () => {},
+    });
+
+    expect(res).toEqual({ ok: true, addons: 1 });
+    expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(stripe.subscriptions.create).not.toHaveBeenCalled();
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  it("returns a coupon-capable checkout_url when a new credit is needed and no card is on file", async () => {
+    vi.spyOn(limits, "getBillableConnectionAddonCount").mockResolvedValue(1);
+    const sessionCreate = vi
+      .fn()
+      .mockResolvedValue({ url: "https://checkout.test/cs_coupon" });
+    const stripe = {
+      customers: { retrieve: vi.fn().mockResolvedValue({ deleted: false, invoice_settings: {} }) },
+      paymentMethods: { list: vi.fn().mockResolvedValue({ data: [] }) },
+      prices: { list: vi.fn().mockResolvedValue({ data: [{ id: "price_addon" }] }) },
+      subscriptions: { update: vi.fn(), create: vi.fn() },
+      checkout: { sessions: { create: sessionCreate } },
+    } as any;
+
+    const res = await purchaseAddonCreditForScope({
+      stripe,
+      db: {} as any,
+      customerId: "cus_1",
+      addonSubscriptionId: null,
+      currentAddons: 1, // one purchased, one active → need a new credit
+      scope: { userId: "u1" },
+      scopeMetadata: { user_id: "u1" },
+      siteRoot: "https://plot.day",
+      table: "user_subscription",
+      idVal: "u1",
+      captureException: () => {},
+    });
+
+    expect(res).toEqual({ ok: false, checkout_url: "https://checkout.test/cs_coupon" });
+    expect(sessionCreate.mock.calls[0][0]).toMatchObject({
+      mode: "subscription",
+      allow_promotion_codes: true,
+    });
+  });
+});
+
+describe("provisionAddonForConsentedEnable — live-Stripe idempotency", () => {
+  it("reuses a spare live-Stripe credit without charging when the DB count is stale", async () => {
+    // Simulates: a confirm-time charge succeeded (Stripe qty bumped to N+1)
+    // but the DB write for it failed, so getBillableConnectionAddonCount
+    // (derived from the DB) still reports N. The enable gate must NOT charge
+    // a second time — it should see the live Stripe quantity already covers
+    // one more than active and reuse it.
+    vi.spyOn(limits, "getBillableConnectionAddonCount").mockResolvedValue(2);
+    const subscriptionsRetrieve = vi.fn().mockResolvedValue({
+      items: { data: [{ quantity: 3 }] },
+    });
+    const stripe = {
+      customers: { retrieve: vi.fn() },
+      paymentMethods: { list: vi.fn() },
+      subscriptions: {
+        retrieve: subscriptionsRetrieve,
+        update: vi.fn(),
+        create: vi.fn(),
+      },
+      checkout: { sessions: { create: vi.fn() } },
+    } as any;
+
+    const res = await provisionAddonForConsentedEnable({
+      stripe,
+      db: {} as any,
+      customerId: "cus_1",
+      addonSubscriptionId: "sub_addon_1",
+      scopeMetadata: { user_id: "u1" },
+      siteRoot: "https://plot.day",
+      table: "user_subscription",
+      idVal: "u1",
+      captureException: () => {},
+    });
+
+    expect(res).toEqual({ ok: true, addons: 3 });
+    expect(subscriptionsRetrieve).toHaveBeenCalledWith("sub_addon_1");
+    expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(stripe.subscriptions.create).not.toHaveBeenCalled();
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
   });
 });

@@ -63,6 +63,8 @@ import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
 import { reconcileMissingEmbeddings } from "./scheduled/reconcile-embeddings";
 import { purgeDeletedAccounts } from "./scheduled/purge-deleted-accounts";
 import { runSweep as runClassifySweep } from "./state/classify-thread";
+import { createStripeClient } from "./stripe/utils";
+import { reconcileAddonsAtPeriodEnd } from "./stripe/addon-period-reconcile";
 // Import webhook routes
 import webhook from "./webhook";
 import hookMessaging from "./app/hook-messaging";
@@ -489,6 +491,29 @@ async function scheduled(
       logger.error("Error in daily twist stats sweep", error as Error);
     } finally {
       await postHog.shutdown();
+    }
+  }
+
+  // Add-on period-boundary reconcile: drop unused connection add-on credits at
+  // each billing period end (down-only). Runs hourly (gated to the first 5
+  // minutes of each hour since the cron fires every 5 min); a 65-minute
+  // window ensures each period end is covered by at least one run.
+  if (scheduledMinutes < 5) {
+    try {
+      const stripeClient = createStripeClient(env.STRIPE_SECRET_KEY);
+      await withDb(env, async (db) => {
+        const res = await reconcileAddonsAtPeriodEnd({
+          db,
+          stripe: stripeClient,
+          nowMs: Date.now(),
+          windowMs: 65 * 60 * 1000,
+        });
+        if (res.reconciled > 0) {
+          logger.info("Add-on period reconcile", { count: res.reconciled });
+        }
+      });
+    } catch (error) {
+      logger.error("Error in add-on period reconcile", error as Error);
     }
   }
 }

@@ -160,12 +160,13 @@ Future<void> openWebUpgrade(BuildContext context, {String? plan}) async {
 /// - Personal + App Store build: completes a StoreKit purchase up front
 ///   (Apple constraint — the charge happens at purchase, before auth).
 ///   Capped at [kIapMaxAddons]. Returns [CommandDone].
-/// - Web / DMG / Android, and all team scopes (Stripe): shows the consent
-///   disclosure but does NOT charge. Returns [CommandAddonConsented] so the
-///   caller proceeds to enable the connection with `consentAddon: true`; the
-///   server charges on enable (or returns needs_card to capture a card first).
-///   The legacy upfront POST /upgrade/addons/purchase endpoint is no longer
-///   used on this path.
+/// - Web / DMG / Android, and all team scopes (Stripe): `_consent` shows the
+///   consent disclosure and, on confirmation, provisions the credit at
+///   confirm via `POST /upgrade/addons/purchase` (`UpgradeApi.purchaseAddon`).
+///   That call is idempotent — if the scope already has an unused credit it's
+///   reused without a new charge — and if there's no card on file it opens a
+///   coupon-or-card Stripe Checkout instead of charging directly. Returns
+///   [CommandAddonConsented] on success so the caller proceeds to connect.
 class BuyAddonCommand extends Command {
   BuyAddonCommand({this.teamId, this.connectionName})
     : super(
@@ -186,8 +187,9 @@ class BuyAddonCommand extends Command {
 
   // Guards against starting two StoreKit purchases at once (a 2nd standalone
   // add-on subscription would orphan and bill forever — see Plan 2 review).
-  // Only the App Store purchase path needs this; the web path captures consent
-  // (no charge) so it doesn't.
+  // Only the App Store purchase path needs this; the web path goes through
+  // the idempotent server purchase endpoint (a double-tap reuses the
+  // already-provisioned credit instead of charging again), so it doesn't.
   static bool _addonPurchaseInFlight = false;
 
   @override
@@ -202,12 +204,12 @@ class BuyAddonCommand extends Command {
         _addonPurchaseInFlight = false;
       }
     }
-    // Web / DMG / Android / team: consent only — charge on enable.
+    // Web / DMG / Android / team: consent, then charge at confirm.
     return _consent(context);
   }
 
   /// Web/Stripe consent path: show the add-on disclosure and, on confirmation,
-  /// signal the caller to enable with `consentAddon: true`. No upfront charge.
+  /// charge at confirm via `POST /upgrade/addons/purchase`.
   Future<CommandReturn> _consent(BuildContext context) async {
     // Use the live price from /usage if available; fall back to $5.
     final price =
@@ -227,7 +229,42 @@ class BuyAddonCommand extends Command {
       showCancel: false,
     ).run(context);
     if (!context.mounted || !confirmed) return const CommandSkipped();
-    return const CommandAddonConsented();
+
+    // Charge at confirm. The server is idempotent: an unused credit is reused
+    // without a new charge. No card on file → a coupon-or-card Checkout URL.
+    try {
+      final result = await UpgradeApi.purchaseAddon(teamId: teamId);
+      final url = result.checkoutUrl;
+      if (!result.ok && url != null) {
+        try {
+          await launchUrl(
+            Uri.parse(url),
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (err, st) {
+          log.warning('Failed to open add-on checkout', err, st);
+        }
+        if (context.mounted) {
+          context.showToast(
+            message:
+                'Add a payment method or coupon in your browser, then connect '
+                'again.',
+          );
+        }
+        return const CommandSkipped();
+      }
+      // Provisioned (or already had an unused credit) — proceed to connect.
+      return const CommandAddonConsented();
+    } catch (e, st) {
+      Tracker.captureException(e, st);
+      if (context.mounted) {
+        context.showToast(
+          message: 'Could not add the connection add-on. Please try again.',
+          isError: true,
+        );
+      }
+      return const CommandSkipped();
+    }
   }
 
   Future<CommandReturn> _runIap(BuildContext context) async {

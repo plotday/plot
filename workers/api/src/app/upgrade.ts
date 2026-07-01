@@ -14,7 +14,6 @@ import {
   customerHasPaymentMethod,
   provisionAddonCredit,
   createAddonCheckoutSession,
-  createAddonCardSetupSession,
   setTwistAddonQuantity,
   TWIST_ADDON,
 } from "../stripe/addons";
@@ -29,7 +28,7 @@ import {
 import { createLogger, type Logger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
-import { getUsage, twistAddonBlocksNeeded } from "../utils/limits";
+import { getUsage, twistAddonBlocksNeeded, getBillableConnectionAddonCount } from "../utils/limits";
 import { createTeamSetupTask } from "./team";
 import { notifySync } from "./sync/notify";
 import type { DB } from "../db-types";
@@ -869,16 +868,23 @@ upgrade.post("/upgrade/iap/verify", async (c) => {
 /**
  * Core purchase logic for one add-on credit. Extracted for unit testability.
  *
- * If the customer has a payment method on file, charges off-session via
+ * Idempotent: if the scope already has an unused credit
+ * (`premium_connection_addons` > `getBillableConnectionAddonCount`), returns
+ * `{ ok: true, addons }` immediately without any Stripe call. Otherwise, if
+ * the customer has a payment method on file, charges off-session via
  * `provisionAddonCredit` and immediately reflects the new quantity + sub ID in
- * the DB, then returns `{ ok: true, addons }`. Otherwise creates a Stripe
- * Checkout session to capture a card and returns `{ ok: false, checkout_url }`.
+ * the DB, then returns `{ ok: true, addons }`. Without a card on file, creates
+ * a `mode: "subscription"` Stripe Checkout session (`allow_promotion_codes`,
+ * so a coupon can substitute for a card) and returns
+ * `{ ok: false, checkout_url }`.
  */
 export async function purchaseAddonCreditForScope(args: {
   stripe: Stripe;
   db: Kysely<DB>;
   customerId: string;
   addonSubscriptionId: string | null;
+  currentAddons: number;
+  scope: { userId: string } | { teamId: string };
   scopeMetadata: Record<string, string>;
   siteRoot: string;
   table: "user_subscription" | "team_subscription";
@@ -890,12 +896,22 @@ export async function purchaseAddonCreditForScope(args: {
     db,
     customerId,
     addonSubscriptionId,
+    currentAddons,
+    scope,
     scopeMetadata,
     siteRoot,
     table,
     idVal,
     captureException,
   } = args;
+
+  // Idempotent: if the scope already has an unused credit (purchased > active),
+  // reuse it — no Stripe call, no charge. Handles confirm→back-out→retry and
+  // archive-one-add-another within a billing period.
+  const active = await getBillableConnectionAddonCount(db, scope);
+  if (currentAddons > active) {
+    return { ok: true, addons: currentAddons };
+  }
 
   if (await customerHasPaymentMethod(stripe, customerId)) {
     const { subscriptionId, quantity } = await provisionAddonCredit({
@@ -948,8 +964,9 @@ export async function purchaseAddonCreditForScope(args: {
  * Called when a user has already consented to an add-on charge and is enabling
  * a connection. If the customer has a card on file, charges immediately via
  * `provisionAddonCredit` and writes the new quantity + sub ID to the scope row,
- * returning `{ ok: true, addons }`. Otherwise returns a Stripe Setup session
- * URL (no charge, card capture only) as `{ ok: false, needsCard: true, checkout_url }`.
+ * returning `{ ok: true, addons }`. Otherwise returns a `mode: "subscription"`
+ * Stripe Checkout URL that accepts a coupon or a card (`allow_promotion_codes:
+ * true`) as `{ ok: false, needsCard: true, checkout_url }`.
  */
 export async function provisionAddonForConsentedEnable(args: {
   stripe: Stripe;
@@ -973,6 +990,21 @@ export async function provisionAddonForConsentedEnable(args: {
     idVal,
     captureException,
   } = args;
+
+  const scope = table === "team_subscription" ? { teamId: idVal } : { userId: idVal };
+
+  // Live-state idempotency: if the add-on subscription already carries a spare
+  // credit (e.g. a confirm-time charge succeeded but its DB write failed and the
+  // webhook hasn't re-synced yet), reuse it — never charge twice for one
+  // connection. The subscription webhook reconciles the DB count.
+  if (addonSubscriptionId) {
+    const sub = await stripe.subscriptions.retrieve(addonSubscriptionId);
+    const qty = sub.items.data[0]?.quantity ?? 0;
+    const active = await getBillableConnectionAddonCount(db, scope);
+    if (qty > active) {
+      return { ok: true, addons: qty };
+    }
+  }
 
   if (await customerHasPaymentMethod(stripe, customerId)) {
     const { subscriptionId, quantity } = await provisionAddonCredit({
@@ -1010,7 +1042,7 @@ export async function provisionAddonForConsentedEnable(args: {
     return { ok: true, addons: quantity };
   }
 
-  const checkout_url = await createAddonCardSetupSession({
+  const checkout_url = await createAddonCheckoutSession({
     stripe,
     customerId,
     siteRoot,
@@ -1022,8 +1054,9 @@ export async function provisionAddonForConsentedEnable(args: {
 // POST /upgrade/addons/purchase - Provision one add-on connection credit.
 // If the customer has a card on file, charges off-session immediately and
 // returns { ok: true, addons }. Otherwise returns { ok: false, checkout_url }
-// pointing to a Stripe Checkout session that captures a card and creates the
-// add-on subscription in one step.
+// pointing to a coupon-or-card subscription Stripe Checkout session
+// (allow_promotion_codes: true) that creates the add-on subscription in one
+// step.
 upgrade.post("/upgrade/addons/purchase", async (c) => {
   const user = c.var.user;
   const body = await c.req.json<{ teamId?: string }>().catch(
@@ -1049,12 +1082,12 @@ upgrade.post("/upgrade/addons/purchase", async (c) => {
   const row = isTeam
     ? await c.var.db
         .selectFrom("team_subscription")
-        .select(["stripe_customer_id", "stripe_addon_subscription_id"])
+        .select(["stripe_customer_id", "stripe_addon_subscription_id", "premium_connection_addons"])
         .where("team_id", "=", body.teamId!)
         .executeTakeFirst()
     : await c.var.db
         .selectFrom("user_subscription")
-        .select(["stripe_customer_id", "stripe_addon_subscription_id"])
+        .select(["stripe_customer_id", "stripe_addon_subscription_id", "premium_connection_addons"])
         .where("user_id", "=", user.id)
         .executeTakeFirst();
 
@@ -1065,6 +1098,7 @@ upgrade.post("/upgrade/addons/purchase", async (c) => {
   const scopeMetadata: Record<string, string> = isTeam
     ? { team_id: body.teamId! }
     : { user_id: user.id };
+  const scope = isTeam ? { teamId: body.teamId! } : { userId: user.id };
 
   try {
     return c.json(
@@ -1073,6 +1107,8 @@ upgrade.post("/upgrade/addons/purchase", async (c) => {
         db: c.var.db,
         customerId: row.stripe_customer_id,
         addonSubscriptionId: row.stripe_addon_subscription_id ?? null,
+        currentAddons: row.premium_connection_addons ?? 0,
+        scope,
         scopeMetadata,
         siteRoot,
         table: isTeam ? "team_subscription" : "user_subscription",

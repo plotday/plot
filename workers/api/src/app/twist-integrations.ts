@@ -4,7 +4,6 @@ import type { Context } from "hono";
 import { z } from "zod";
 
 import type { DB } from "../db";
-import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
 import { PROVIDER_CONFIGS } from "../provider";
@@ -290,9 +289,15 @@ function collectOptionalScopeGroups(providers: any[]): ProductScopeGroup[] {
 }
 
 /**
- * After any connection is disabled or removed, reconcile the scope's Stripe
- * add-on subscription quantity down to the new billable connection count.
- * Cancels the subscription when the count reaches zero.
+ * Reconciles the scope's Stripe add-on subscription quantity down to the
+ * current billable connection count. Cancels the subscription when the count
+ * reaches zero.
+ *
+ * Invoked by the period-boundary reconcile cron (`reconcileAddonsAtPeriodEnd`
+ * in `stripe/addon-period-reconcile.ts`) at each Stripe billing-period
+ * boundary — NOT eagerly when a connection is disabled or removed. Disabling
+ * a connection leaves the credit purchased (and reusable) until the next
+ * period boundary triggers this function.
  *
  * The billable count is `getBillableConnectionAddonCount`: regular connections
  * beyond the plan pool PLUS active add-on-required (premium) connectors. This
@@ -496,10 +501,13 @@ export async function resolveAddonScope(
  * enables the connection — the money-safe direction, consistent across all call
  * sites. Residual orphan-charge window (finding I2): if the subsequent enable
  * throws or the request is abandoned after a successful charge, the credit
- * persists for that billing cycle. This self-heals — a retry consumes the
- * already-provisioned credit (the Stripe quantity sync is idempotent), and a
- * later disable reconciles the quantity back down via
- * `reconcileScopeAddonBillingDown`. No behavior change here; comment only.
+ * persists for that billing cycle. This self-heals — a retry reuses the
+ * already-provisioned credit (the Stripe quantity sync is idempotent), and
+ * any unused credit is reconciled back down by the period-boundary reconcile
+ * cron (`reconcileAddonsAtPeriodEnd`, which calls `reconcileScopeAddonBillingDown`)
+ * at the scope's next Stripe billing-period boundary — not eagerly on
+ * disable, so the true-up can be up to a billing period away. No behavior
+ * change here; comment only.
  */
 export async function chargeConsentedAddonOrError(
   c: Context<{ Bindings: Bindings }>,
@@ -1441,36 +1449,6 @@ twistIntegrations.post(
         channel_id: channelId,
       });
 
-      // When any connection's channel is disabled, reconcile the add-on
-      // subscription quantity down to the new billable connection count
-      // (regular-beyond-pool + premium). The helper no-ops when the scope
-      // has no stripe_addon_subscription_id.
-      {
-        const disableUserId = c.var.user.id;
-        const disableTeamId = twistInfo.teamId ?? null;
-        const disableEnv = c.env;
-        const disableTracker = c.var.tracker;
-        c.executionCtx.waitUntil(
-          (async () => {
-            const bgDb = createDb(disableEnv);
-            try {
-              const bgStripe = createStripeClient(disableEnv.STRIPE_SECRET_KEY);
-              const scope = disableTeamId
-                ? { teamId: String(disableTeamId) }
-                : { userId: disableUserId };
-              await reconcileScopeAddonBillingDown({ db: bgDb, stripe: bgStripe, scope });
-            } catch (err) {
-              disableTracker.captureException(err, {
-                context: "reconcileScopeAddonBillingDown:disable",
-                twist_instance_id: twistInstanceId,
-              });
-            } finally {
-              await bgDb.destroy();
-            }
-          })()
-        );
-      }
-
       return c.json({ success: true });
     } catch (error) {
       logger.error("Error disabling channel", error as Error, {
@@ -1657,36 +1635,6 @@ twistIntegrations.post(
       disabled_count: disabled.length,
       error_count: errors.length,
     });
-
-    // When any connection's channels were disabled, reconcile the add-on
-    // subscription quantity down to the new billable connection count
-    // (regular-beyond-pool + premium). The helper no-ops when the scope
-    // has no stripe_addon_subscription_id.
-    if (disabled.length > 0) {
-      const batchUserId = c.var.user.id;
-      const batchTeamId = twistInfo.teamId ?? null;
-      const batchEnv = c.env;
-      const batchTracker = c.var.tracker;
-      c.executionCtx.waitUntil(
-        (async () => {
-          const bgDb = createDb(batchEnv);
-          try {
-            const bgStripe = createStripeClient(batchEnv.STRIPE_SECRET_KEY);
-            const scope = batchTeamId
-              ? { teamId: String(batchTeamId) }
-              : { userId: batchUserId };
-            await reconcileScopeAddonBillingDown({ db: bgDb, stripe: bgStripe, scope });
-          } catch (err) {
-            batchTracker.captureException(err, {
-              context: "reconcileScopeAddonBillingDown:batch-disable",
-              twist_instance_id: twistInstanceId,
-            });
-          } finally {
-            await bgDb.destroy();
-          }
-        })()
-      );
-    }
 
     return c.json({
       success: errors.length === 0,
@@ -2051,36 +1999,6 @@ twistIntegrations.delete(
         provider,
         actor_id: actorId,
       });
-
-      // When any connection account is removed, reconcile the add-on
-      // subscription quantity down to the new billable connection count
-      // (regular-beyond-pool + premium). The helper no-ops when the scope
-      // has no stripe_addon_subscription_id.
-      {
-        const removeUserId = c.var.user.id;
-        const removeTeamId = twistInfo.teamId ?? null;
-        const removeEnv = c.env;
-        const removeTracker = c.var.tracker;
-        c.executionCtx.waitUntil(
-          (async () => {
-            const bgDb = createDb(removeEnv);
-            try {
-              const bgStripe = createStripeClient(removeEnv.STRIPE_SECRET_KEY);
-              const scope = removeTeamId
-                ? { teamId: String(removeTeamId) }
-                : { userId: removeUserId };
-              await reconcileScopeAddonBillingDown({ db: bgDb, stripe: bgStripe, scope });
-            } catch (err) {
-              removeTracker.captureException(err, {
-                context: "reconcileScopeAddonBillingDown:removeAuth",
-                twist_instance_id: twistInstanceId,
-              });
-            } finally {
-              await bgDb.destroy();
-            }
-          })()
-        );
-      }
 
       return c.json({ success: true });
     } catch (error) {

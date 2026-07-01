@@ -326,7 +326,7 @@ yours.
   higher via the App Store to cover Apple's fees), available on Free and Pro. Billed separately —
   they don't count toward your plan's included connections, and the charge stops when the connection
   is turned off. LinkedIn, Instagram, and WhatsApp require a connection add-on ($5/month) on any
-  plan, including Team.
+  plan, including Team. Coupons can be applied when adding connection add-ons at checkout.
 - **Twist add-ons** — +5 twist automations each, for when you need more than your plan includes.
   $10/month each on the web (a little higher via the App Store), available on Free and Pro, billed
   only while you're using the extra capacity.

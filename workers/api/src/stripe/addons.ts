@@ -104,21 +104,6 @@ export async function setTwistAddonQuantity(args: {
   return { subscriptionId: sub.id, quantity };
 }
 
-export async function createAddonCardSetupSession(args: {
-  stripe: Stripe; customerId: string; siteRoot: string; scopeMetadata: Record<string, string>;
-}): Promise<string> {
-  const { stripe, customerId, siteRoot, scopeMetadata } = args;
-  const session = await stripe.checkout.sessions.create({
-    customer: customerId,
-    mode: "setup",
-    success_url: `${siteRoot}/upgrade?addon=card_saved`,
-    cancel_url: `${siteRoot}/upgrade?addon=canceled`,
-    setup_intent_data: { metadata: { type: "addon_card", ...scopeMetadata } },
-  });
-  if (!session.url) throw new Error("Setup session has no url");
-  return session.url;
-}
-
 export async function createAddonCheckoutSession(args: {
   kind?: AddonKind; stripe: Stripe; customerId: string; siteRoot: string; scopeMetadata: Record<string, string>;
 }): Promise<string> {
@@ -129,6 +114,7 @@ export async function createAddonCheckoutSession(args: {
     customer: customerId,
     line_items: [{ price, quantity: 1 }],
     mode: "subscription",
+    allow_promotion_codes: true,
     success_url: `${siteRoot}/upgrade?${param}=success`,
     cancel_url: `${siteRoot}/upgrade?${param}=canceled`,
     subscription_data: { metadata: { type: kind.metadataType, ...scopeMetadata } },

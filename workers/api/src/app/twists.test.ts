@@ -126,6 +126,9 @@ function makeNoCardStripe() {
     paymentMethods: {
       list: vi.fn().mockResolvedValue({ data: [] }),
     },
+    prices: {
+      list: vi.fn().mockResolvedValue({ data: [{ id: "price_addon_monthly" }] }),
+    },
     subscriptions: { create: vi.fn() },
     checkout: {
       sessions: {

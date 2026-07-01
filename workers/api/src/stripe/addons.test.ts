@@ -1,6 +1,6 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
-import { provisionAddonCredit, reconcileAddonQuantityDown, customerHasPaymentMethod, createAddonCheckoutSession, createAddonCardSetupSession, TWIST_ADDON, setTwistAddonQuantity } from "./addons";
+import { provisionAddonCredit, reconcileAddonQuantityDown, customerHasPaymentMethod, createAddonCheckoutSession, TWIST_ADDON, CONNECTION_ADDON, setTwistAddonQuantity } from "./addons";
 
 function stubStripe(over: Record<string, unknown> = {}) {
   return {
@@ -146,20 +146,6 @@ it("createAddonCheckoutSession with TWIST_ADDON uses twist lookup key, metadata.
   }));
 });
 
-it("createAddonCardSetupSession creates a $0 setup session with card_saved return", async () => {
-  const created: any[] = [];
-  const stripe = { checkout: { sessions: { create: async (a: any) => { created.push(a); return { url: "https://stripe/setup" }; } } } } as any;
-  const url = await createAddonCardSetupSession({
-    stripe, customerId: "cus_1", siteRoot: "https://plot.day", scopeMetadata: { user_id: "u1" },
-  });
-  expect(url).toBe("https://stripe/setup");
-  expect(created[0].mode).toBe("setup");
-  expect(created[0].line_items).toBeUndefined();
-  expect(created[0].success_url).toBe("https://plot.day/upgrade?addon=card_saved");
-  expect(created[0].cancel_url).toBe("https://plot.day/upgrade?addon=canceled");
-  expect(created[0].setup_intent_data.metadata.type).toBe("addon_card");
-});
-
 it("createAddonCheckoutSession defaults to CONNECTION_ADDON (kind omitted) - uses addon lookup key and ?addon= urls", async () => {
   const s = stubStripe({
     checkout: { sessions: { create: vi.fn().mockResolvedValue({ url: "https://checkout.test/abc" }) } },
@@ -176,4 +162,29 @@ it("createAddonCheckoutSession defaults to CONNECTION_ADDON (kind omitted) - use
       metadata: expect.objectContaining({ type: "addon" }),
     }),
   }));
+});
+
+describe("createAddonCheckoutSession", () => {
+  it("allows promotion codes so coupon-only customers can apply a coupon", async () => {
+    const create = vi.fn().mockResolvedValue({ url: "https://checkout.test/cs_1" });
+    const stripe = {
+      prices: { list: vi.fn().mockResolvedValue({ data: [{ id: "price_addon" }] }) },
+      checkout: { sessions: { create } },
+    } as any;
+
+    const url = await createAddonCheckoutSession({
+      kind: CONNECTION_ADDON,
+      stripe,
+      customerId: "cus_1",
+      siteRoot: "https://plot.day",
+      scopeMetadata: { user_id: "u1" },
+    });
+
+    expect(url).toBe("https://checkout.test/cs_1");
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0]).toMatchObject({
+      mode: "subscription",
+      allow_promotion_codes: true,
+    });
+  });
 });

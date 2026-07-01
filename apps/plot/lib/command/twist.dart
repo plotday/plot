@@ -1064,8 +1064,9 @@ class _ConsentGate extends Command {
       connectionName: connectionName,
     ).run(context);
     if (result is CommandAddonConsented) {
-      // Web/Stripe: consent captured (no charge). Record it so the auth/enable
-      // path carries consentAddon, then refresh so the gate clears.
+      // Web/Stripe: the credit was provisioned/charged at confirm via the
+      // purchase endpoint. Record that consent so the auth/enable path
+      // carries consentAddon, then refresh so the gate clears.
       _addonConsentedDrafts.add(draftId);
       return const CommandRefresh();
     }
