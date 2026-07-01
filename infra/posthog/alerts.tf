@@ -262,7 +262,7 @@ resource "posthog_alert" "site_down" {
 
 resource "posthog_insight" "site_worker_exception" {
   name        = "Site worker exceptions (site_worker_exception / hour)"
-  description = "Worker-level exceptions caught by apps/site/workers/app.ts in production (the branded-503 path) per hour. Baseline is ~0 — React Router renders its own loader/render errors and returns a 500 *response*, so reaching that catch means something escaped the framework (a bundling/module-init crash, a missing prod secret, etc.). A sustained nonzero rate means the worker is crashing and users are seeing the error page."
+  description = "Worker-level exceptions caught by apps/site/workers/app.ts in production (the branded-503 path) per hour. Baseline is ~0 — React Router returns its own 500 *response* for loader/render errors, so reaching that catch means something escaped the framework (a bundling/module-init crash, a missing prod secret, etc.). A sustained nonzero rate means the worker is crashing and users see the error page."
 
   query_json = jsonencode({
     kind = "InsightVizNode"
