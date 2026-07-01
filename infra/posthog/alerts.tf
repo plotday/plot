@@ -175,3 +175,137 @@ resource "posthog_alert" "push_transient_sustained" {
 
   enabled = true
 }
+
+# Site availability alerting (plot.day marketing site).
+#
+# Context: a vite 8.1.0 bundler regression crashed the site worker at module
+# init and Cloudflare-1101'd every request for ~4 hours before a human noticed
+# (PR #519). The site's PostHog is CLIENT-side only, so a worker crash — which
+# happens before any client JS runs — produced ZERO PostHog signal. PRs
+# #521/#523 added server-side detection (an external uptime monitor, a worker
+# try/catch, and a deploy preview gate); these two alerts are the email/page
+# layer on top, in the same mold as bg.deferred / push.transient above:
+#
+#   - Server-side (PostHog evaluates the event stream) => independent of the
+#     site worker's health, which is the whole point when the worker is the
+#     thing that's down.
+#   - In-repo + Terraform-managed => can't silently drift; the infra-plan drift
+#     check fails if someone edits/deletes them in the PostHog UI.
+#
+# Two independent signals:
+#   - site_monitor_failed   — emitted by .github/workflows/monitor-site.yml, a
+#     scheduled (every 10 min) external smoke test of https://plot.day. The
+#     "site is unreachable/broken from the outside" signal.
+#   - site_worker_exception — emitted by apps/site/workers/app.ts when the
+#     worker catches a worker-level throw in production (the branded-503 path).
+#     The "the worker itself is crashing" signal.
+#
+# GitHub also emails on each failed monitor run, so a fast path exists
+# regardless; these are the centralized, drift-checked, IaC-managed layer.
+
+resource "posthog_insight" "site_monitor_failed" {
+  name        = "Site monitor failures (site_monitor_failed / hour)"
+  description = "External uptime smoke test of https://plot.day (.github/workflows/monitor-site.yml, every 10 min) failures per hour. Baseline is 0. A single failure can be a transient network blip; >1 in an hour means >=2 consecutive monitor runs failed — a real, sustained outage. The site's client-only PostHog can't report a worker crash, which is exactly why this external check exists (PR #519)."
+
+  # InsightVizNode + TrendsQuery counting the `site_monitor_failed` counter per
+  # hour. Single series, no breakdown, so the alert's series_index=0 is an
+  # unambiguous total.
+  query_json = jsonencode({
+    kind = "InsightVizNode"
+    source = {
+      kind     = "TrendsQuery"
+      interval = "hour"
+      dateRange = {
+        date_from = "-7d"
+      }
+      series = [
+        {
+          kind  = "EventsNode"
+          event = "site_monitor_failed"
+          name  = "site_monitor_failed"
+          math  = "total"
+        }
+      ]
+      trendsFilter = {
+        display = "ActionsLineGraph"
+      }
+    }
+  })
+}
+
+resource "posthog_alert" "site_down" {
+  name = "plot.day is down (site monitor failing)"
+
+  insight      = posthog_insight.site_monitor_failed.id
+  series_index = 0
+
+  condition_type = "absolute_value"
+  threshold_type = "absolute"
+
+  # Fire when MORE THAN ONE monitor run failed in the hour (>=2 of the 10-min
+  # runs) — a sustained outage, not a single transient blip. The 4-hour outage
+  # this guards against would trip this within the first ~20 minutes. Set to 0
+  # to page on any single failure (noisier). Editing this is a reviewed,
+  # plan-previewed change.
+  threshold_upper = 1
+
+  calculation_interval = "hourly"
+  # Evaluate the in-progress hour too, so a live outage pages within the hour
+  # instead of only after it completes. Safe here: with this threshold a partial
+  # hour can only over-count toward a real outage, never false-fire.
+  check_ongoing_interval = true
+
+  subscribed_users = [157794] # kris@plot.day
+
+  enabled = true
+}
+
+resource "posthog_insight" "site_worker_exception" {
+  name        = "Site worker exceptions (site_worker_exception / hour)"
+  description = "Worker-level exceptions caught by apps/site/workers/app.ts in production (the branded-503 path) per hour. Baseline is ~0 — React Router renders its own loader/render errors and returns a 500 *response*, so reaching that catch means something escaped the framework (a bundling/module-init crash, a missing prod secret, etc.). A sustained nonzero rate means the worker is crashing and users are seeing the error page."
+
+  query_json = jsonencode({
+    kind = "InsightVizNode"
+    source = {
+      kind     = "TrendsQuery"
+      interval = "hour"
+      dateRange = {
+        date_from = "-7d"
+      }
+      series = [
+        {
+          kind  = "EventsNode"
+          event = "site_worker_exception"
+          name  = "site_worker_exception"
+          math  = "total"
+        }
+      ]
+      trendsFilter = {
+        display = "ActionsLineGraph"
+      }
+    }
+  })
+}
+
+resource "posthog_alert" "site_worker_crashing" {
+  name = "Site worker crashing (sustained worker exceptions)"
+
+  insight      = posthog_insight.site_worker_exception.id
+  series_index = 0
+
+  condition_type = "absolute_value"
+  threshold_type = "absolute"
+
+  # Baseline is ~0. A handful of one-off exceptions an hour shouldn't page, but a
+  # worker crashing on requests emits these by the hundreds, so a total outage
+  # trips this near-instantly. Conservative first cut — RE-TUNE from the
+  # site_worker_exception baseline once it's been in production for a bit.
+  threshold_upper = 10
+
+  calculation_interval   = "hourly"
+  check_ongoing_interval = true
+
+  subscribed_users = [157794] # kris@plot.day
+
+  enabled = true
+}
