@@ -42,8 +42,7 @@ const PLATFORMS: PlatformInfo[] = [
     label: "iOS",
     icon: IconBrandApple,
     available: true,
-    href: "https://testflight.apple.com/join/B9gCus7k",
-    note: "TestFlight beta",
+    href: "https://apps.apple.com/us/app/plot-all-your-work-organized/id6756905242",
   },
   {
     key: "android",

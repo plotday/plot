@@ -1,0 +1,16 @@
+# Precheck rule configuration for the macOS App Store submit lane.
+#
+# deliver runs precheck before submitting (run_precheck_before_submit). Its
+# Runner calls load_configuration_file("Precheckfile"), so this file is honored
+# on that path even though deliver builds the rest of the precheck config
+# itself.
+#
+# Silence the over-broad `other_platforms` rule. Its word list flags the bare
+# word "Google" (allowing only "google analytics" / "google drive"), so naming
+# integrations such as "Google Calendar" and "Google Chat" in the description
+# trips it. Those are integration services, not competing mobile platforms, and
+# are permitted under App Review guideline 2.3.10 — the flag is a false
+# positive. Skipping keeps release logs clean without editing the public
+# listing. The listing contains no actual other-platform (Android/BlackBerry)
+# references; a real one would still be caught by Apple's own review.
+other_platforms(level: :skip)
