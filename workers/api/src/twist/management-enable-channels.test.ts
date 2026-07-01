@@ -41,6 +41,49 @@ describe("enableActivatedChannels", () => {
     ]);
   });
 
+  it("uses the connection-bound actor per provider, overriding the fallback", async () => {
+    // Regression: a multi-contact user's channel must be enabled under the SAME
+    // actor the auth token was stored under (twist_instance_connection.actor_id),
+    // not a freshly-guessed owner contact. Otherwise channel_config.enabledBy
+    // diverges from `auth_token:{provider}:{actor}` and every sync throws
+    // "has no stored credentials — reconnect".
+    const { wrapper, calls } = spyWrapper();
+    const syncables = [{ provider: "linkedin", syncableId: "acc_123" }];
+    const descriptors = await enableActivatedChannels(
+      wrapper as any,
+      { linkedin: "tools:integrations" },
+      syncables,
+      "fallback-contact",
+      console,
+      undefined,
+      { linkedin: "bound-actor" }
+    );
+
+    const batch = calls.filter((c) => c.method === "enableSyncBatch");
+    expect(batch).toHaveLength(1);
+    // 3rd positional arg (index 2) is the actorId passed to enableSyncBatch.
+    expect(batch[0].args[2]).toBe("bound-actor");
+    // Auto-enable/threading defaults must use the same bound actor.
+    expect(calls.find((c) => c.method === "initAutoEnableDefault")?.args[1]).toBe("bound-actor");
+    expect(calls.find((c) => c.method === "initAutoThreadingDefault")?.args[1]).toBe("bound-actor");
+    expect(descriptors[0].actorId).toBe("bound-actor");
+  });
+
+  it("falls back to the passed actor when no connection actor is mapped", async () => {
+    const { wrapper, calls } = spyWrapper();
+    await enableActivatedChannels(
+      wrapper as any,
+      { google: "tools:integrations" },
+      [{ provider: "google", syncableId: "mail:INBOX" }],
+      "actor-1",
+      console,
+      undefined,
+      { linkedin: "bound-actor" } // no entry for google
+    );
+    const batch = calls.filter((c) => c.method === "enableSyncBatch");
+    expect(batch[0].args[2]).toBe("actor-1");
+  });
+
   it("skips providers with no integrations path", async () => {
     const { wrapper, calls } = spyWrapper();
     await enableActivatedChannels(wrapper as any, {}, [{ provider: "google", syncableId: "mail:INBOX" }], "actor-1", { warn: () => {} });

@@ -14,6 +14,7 @@ import {
   selectConnectionsToTrim,
   SingleInstanceError,
 } from "../utils/limits";
+import { resolveOwnerContact } from "../utils/owner-contact";
 import { disposeRpc } from "../utils/rpc";
 
 /**
@@ -837,7 +838,14 @@ export async function enableActivatedChannels(
   syncables: Array<{ provider: string; syncableId: string }>,
   actorId: string,
   logger: { warn: (msg: string, meta?: any) => void },
-  captureException?: (error: unknown, context: { provider: string; operation: string }) => void
+  captureException?: (error: unknown, context: { provider: string; operation: string }) => void,
+  // Per-provider override mapping a provider to the actor its connection was
+  // bound to (`twist_instance_connection.actor_id` — the contact the auth token
+  // is stored under). The channel MUST be enabled under this actor so
+  // `channel_config.enabledBy` matches `auth_token:{provider}:{actor}`; otherwise
+  // sync throws "has no stored credentials — reconnect". Falls back to `actorId`
+  // for providers without a connection row (e.g. key-based connectors).
+  actorByProvider?: Record<string, string>
 ): Promise<Array<{ provider: string; actorId: string; channelIds: string[]; integrationsPath: string }>> {
   const byProvider = new Map<string, string[]>();
   for (const { provider, syncableId } of syncables) {
@@ -858,12 +866,15 @@ export async function enableActivatedChannels(
       continue;
     }
     const path = integrationsPath.split(":");
+    // Enable under the actor the connection is bound to, not a re-guessed owner
+    // contact. See `actorByProvider` above.
+    const providerActorId = actorByProvider?.[provider] ?? actorId;
 
     try {
       disposeRpcResult(
-        await twistWrapper.callCallback(path, "enableSyncBatch", provider, channelIds, actorId, undefined, { dispatch: false })
+        await twistWrapper.callCallback(path, "enableSyncBatch", provider, channelIds, providerActorId, undefined, { dispatch: false })
       );
-      descriptors.push({ provider, actorId, channelIds, integrationsPath });
+      descriptors.push({ provider, actorId: providerActorId, channelIds, integrationsPath });
     } catch (error) {
       logger.warn("Failed to enable channels during activation", {
         provider,
@@ -873,7 +884,7 @@ export async function enableActivatedChannels(
     }
 
     try {
-      disposeRpcResult(await twistWrapper.callCallback(path, "initAutoEnableDefault", provider, actorId));
+      disposeRpcResult(await twistWrapper.callCallback(path, "initAutoEnableDefault", provider, providerActorId));
     } catch (error) {
       logger.warn("Failed to seed auto-enable default during activation", {
         provider,
@@ -882,7 +893,7 @@ export async function enableActivatedChannels(
       captureException?.(error, { provider, operation: "initAutoEnableDefault" });
     }
     try {
-      disposeRpcResult(await twistWrapper.callCallback(path, "initAutoThreadingDefault", provider, actorId));
+      disposeRpcResult(await twistWrapper.callCallback(path, "initAutoThreadingDefault", provider, providerActorId));
     } catch (error) {
       logger.warn("Failed to seed auto-threading default during activation", {
         provider,
@@ -1179,16 +1190,35 @@ export async function activateDraft(
       integrations_map: integrationsMap,
     });
 
-    // Get current user's contact for the actor ID
-    const contact = await db
-      .selectFrom("contact")
-      .select("id")
+    // Resolve the actor each provider's connection is bound to
+    // (`twist_instance_connection.actor_id` — the contact the auth token was
+    // stored under by onAuth). Channels MUST be enabled under this actor so
+    // `channel_config.enabledBy` matches `auth_token:{provider}:{actor}`.
+    // Guessing a fresh owner contact here (which is non-deterministic for a
+    // multi-contact user) is what previously left the channel's `enabledBy`
+    // diverged from the token, breaking every sync with
+    // "has no stored credentials — reconnect".
+    const connectionRows = await db
+      .selectFrom("twist_instance_connection")
+      .select(["provider", "actor_id"])
+      .where("twist_instance_id", "=", draftId)
       .where("user_id", "=", draft.owner_id)
-      .executeTakeFirst();
+      .execute();
+    const actorByProvider: Record<string, string> = {};
+    for (const row of connectionRows) {
+      actorByProvider[row.provider] = row.actor_id;
+    }
+
+    // Fallback actor for providers without a connection row (e.g. key-based
+    // connectors that never run onAuth). Resolved deterministically (primary
+    // contact) so it can't diverge from the token actor for a multi-contact
+    // user — see resolveOwnerContact.
+    const contact = await resolveOwnerContact(db, draft.owner_id);
 
     logger.info("activateDraft: contact lookup", {
       owner_id: draft.owner_id,
       contact_id: contact?.id,
+      actor_by_provider: actorByProvider,
     });
 
     if (contact) {
@@ -1206,7 +1236,7 @@ export async function activateDraft(
         );
         void postHog.shutdown();
       };
-      channelDispatch = await enableActivatedChannels(twistWrapper, integrationsMap, syncables, contact.id, logger, captureActivateError);
+      channelDispatch = await enableActivatedChannels(twistWrapper, integrationsMap, syncables, contact.id, logger, captureActivateError, actorByProvider);
     }
   } else {
     logger.info("activateDraft: no channels to enable", {

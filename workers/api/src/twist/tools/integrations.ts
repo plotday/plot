@@ -63,6 +63,7 @@ import { notifyUserSyncByEnv } from "../../app/sync/notify";
 import { flagConnectionNeedsReauth } from "./needs-reauth";
 import { getEffectivePlan } from "../../utils/plan";
 import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
+import { resolveOwnerContact } from "../../utils/owner-contact";
 import { disposeRpc } from "../../utils/rpc";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
@@ -3744,12 +3745,14 @@ export class Integrations extends Tool implements IAuth {
           .select("owner_id")
           .where("id", "=", this.twistInstanceId)
           .executeTakeFirst();
+        // Resolve the owner's PRIMARY contact deterministically (see
+        // resolveOwnerContact) so the token binding matches the contact
+        // activateDraft/getCurrentActorId enable the channel under. A
+        // non-deterministic lookup here is what stored the token under a
+        // contact the channel's enabledBy never matched — the
+        // "has no stored credentials — reconnect" bug.
         const ownerContact = owner?.owner_id
-          ? await this.db
-              .selectFrom("contact")
-              .select(["id", "name"])
-              .where("user_id", "=", owner.owner_id)
-              .executeTakeFirst()
+          ? await resolveOwnerContact(this.db, owner.owner_id)
           : null;
         actor = ownerContact?.id
           ? {

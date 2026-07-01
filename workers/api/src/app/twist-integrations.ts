@@ -12,6 +12,7 @@ import { Store } from "../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
 import { enqueueChannelRouter } from "../state/channel-router";
 import type { ProviderDeclaration } from "../twist/tools/factory";
+import { resolveOwnerContact } from "../utils/owner-contact";
 import { disposeRpc } from "../utils/rpc";
 import {
   checkChannelConnectionLimit,
@@ -167,19 +168,18 @@ async function loadTwistConfig(
 }
 
 /**
- * Find the current user's contact ID (any contact linked to their user account).
+ * Find the current user's canonical contact ID. Resolves the PRIMARY contact
+ * deterministically (see {@link resolveOwnerContact}) so the actor used to
+ * enable a channel here matches the actor the connection's auth token is bound
+ * under — otherwise sync throws "has no stored credentials — reconnect" for
+ * users with more than one linked contact.
  */
 async function getCurrentActorId(
   db: Kysely<DB>,
   userId: string
 ): Promise<string | null> {
-  const row = await db
-    .selectFrom("contact")
-    .select("id")
-    .where("user_id", "=", userId)
-    .executeTakeFirst();
-
-  return row?.id ?? null;
+  const contact = await resolveOwnerContact(db, userId);
+  return contact?.id ?? null;
 }
 
 /**
