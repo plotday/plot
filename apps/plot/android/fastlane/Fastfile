@@ -12,6 +12,30 @@
 
 default_platform(:android)
 
+# Play Console "release name" for a track release. supply leaves this blank
+# unless `version_name` is set, and on promotion it copies the source track's
+# release object — name included — straight to Production. So a blank/stale name
+# on the internal upload is exactly what surfaces in Production (e.g. an old
+# "1.1.6" label riding on a current build). Pin it to the marketing version so
+# the Play release name always tracks the app's real version.
+#
+# Prefer an explicit SUBMIT_APP_VERSION override (set by the standalone submit
+# workflow); otherwise read the marketing half of pubspec's `version: X.Y.Z+build`
+# (the release workflow stamps pubspec before building). This only labels the
+# Play release — it never touches the AAB's own versionName. Returns nil on any
+# problem so supply falls back to its prior behavior rather than failing.
+def marketing_release_name
+  override = ENV["SUBMIT_APP_VERSION"].to_s.strip
+  return override unless override.empty?
+
+  pubspec_path = File.expand_path("../../pubspec.yaml", __dir__)
+  version_line = File.read(pubspec_path)[/^version:\s*(.+)$/, 1]
+  version_line&.strip&.split("+")&.first
+rescue StandardError => e
+  UI.important("Could not derive marketing version for Play release name: #{e.message}")
+  nil
+end
+
 platform :android do
   desc "Build the Android app (App Bundle)"
   lane :build do
@@ -51,6 +75,10 @@ platform :android do
     upload_to_play_store(
       track: 'internal',
       aab: aab_path,
+      # Name the internal release after the marketing version. submit_production
+      # promotes this exact release (name and all) to Production, so setting it
+      # here is what keeps the Production release name from going stale.
+      version_name: marketing_release_name,
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
@@ -103,6 +131,11 @@ platform :android do
       skip_upload_changelogs: true,
     }
 
+    # The Production release name is NOT set here: supply's promote copies the
+    # internal release object (name included) to Production, so the name comes
+    # from whatever the :beta upload assigned (see marketing_release_name). A
+    # version_name here would be ignored by the promote path.
+
     # Promote a specific build when asked (standalone submit workflow); else
     # supply promotes the latest release currently on the internal track.
     if ENV["SUBMIT_VERSION_CODE"] && !ENV["SUBMIT_VERSION_CODE"].empty?
@@ -123,6 +156,8 @@ platform :android do
     upload_to_play_store(
       track: 'production',
       aab: '../../build/app/outputs/bundle/release/app-release.aab',
+      # Keep the Production release name aligned with the marketing version.
+      version_name: marketing_release_name,
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,

@@ -778,6 +778,12 @@ jobs:
           sudo gem install fastlane --no-document
 
       - name: Upload to Google Play (internal testing)
+        env:
+          # Names the Play internal release after the marketing version, which
+          # submit_production then promotes (name and all) to Production. Feeds
+          # the Fastfile's marketing_release_name override so the release name
+          # is deterministic in CI (no dependency on pubspec-path resolution).
+          SUBMIT_APP_VERSION: ${{ needs.prepare-release.outputs.version_name }}
         run: |
           cd apps/plot/android
           fastlane beta "aab:$GITHUB_WORKSPACE/apps/plot/build/app/outputs/bundle/release/app-release.aab"
