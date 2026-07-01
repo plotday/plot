@@ -48,6 +48,7 @@ import {
 } from "./auth-scope";
 import { hashExternalContent } from "./hash-external-content";
 import { isPlotSelfMail } from "./plot-self-mail";
+import { deriveScheduleTodo } from "./schedule-todo";
 import { ThreadFilingSkippedError } from "./plot/thread-helpers";
 import { deleteUnipileAccount } from "./unipile/account-cleanup";
 import { UnipileClient } from "./unipile/client";
@@ -2668,11 +2669,13 @@ export class Integrations extends Tool implements IAuth {
         }
       }
 
-      // todo=true if schedule is active (on/at set) and not archived; false
-      // if cleared. Archived schedules are emitted by the view so connectors
-      // learn when a thread leaves the agenda (e.g. to remove the Slack star).
-      const todo =
-        item.archived_at == null && (item.on != null || item.at != null);
+      // `active` is the source of truth: a thread is a to-do when it carries a
+      // scheduling intent (on/at) and has not been completed. deriveScheduleTodo
+      // handles both the polling view row (completion = active===false) and the
+      // direct schedule-table row (completion = archived_at set). Rows are
+      // emitted on any change so connectors learn when a thread leaves the
+      // agenda (e.g. to remove the Slack star / Gmail star).
+      const todo = deriveScheduleTodo(item);
 
       // Extract date from schedule's on (daterange) or at (tstzrange).
       // Only meaningful when todo=true; omit otherwise.

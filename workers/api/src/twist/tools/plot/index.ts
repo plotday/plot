@@ -61,6 +61,7 @@ import type {
   ScheduleContactChange,
 } from "../../view-types";
 import { AI } from "../ai";
+import { deriveScheduleTodo } from "../schedule-todo";
 import { Tool } from "../tool";
 import * as threadOps from "./thread";
 import * as linkOps from "./link";
@@ -792,13 +793,13 @@ export class Plot extends Tool implements IPlot {
               linkSource: link?.source ?? null,
             };
 
-            // todo=true if the per-user thread_state has a date/time intent
-            // and the thread hasn't been marked read. The view emits a row
-            // any time those fields change, so sources learn when items
-            // leave the agenda (read_at gets set or on/at gets cleared).
-            const todo =
-              item.read_at == null &&
-              (item.on != null || item.at != null);
+            // `active` is the source of truth: a thread is a to-do when the
+            // per-user thread_state carries a date/time intent (on/at) and has
+            // not been completed (active===false). The view emits a row any
+            // time those fields change, so sources learn when items leave the
+            // agenda. Note: reading a thread (read_at) does NOT clear a to-do
+            // that is still active — only completion does.
+            const todo = deriveScheduleTodo(item);
 
             // Extract date from schedule's on (daterange) or at (tstzrange).
             // Only meaningful when todo=true; omit otherwise.
