@@ -1,3 +1,14 @@
+## 1.5.1+375 — 2026-07-01
+
+### Connections
+
+- You can now apply a coupon when adding a connection add-on, and adding one
+  with no card on file takes you straight to checkout instead of stalling.
+
+### Fixes
+
+- Connections that need a paid add-on (like LinkedIn) now tell you the cost before you sign in and again before you add them — no more surprises at the last step.
+
 ## 1.5.0+373 — 2026-06-30
 
 ### Notes
