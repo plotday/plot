@@ -126,13 +126,14 @@ account must be able to read them). These are also what the capacity work needs:
   (Hyperdrive Edit + DNS Edit + Zone Read).
 - `op://Production/PostHog Terraform/credential` — **read-scoped** PostHog personal
   API key (scopes `insight:read`, `alert:read`), used by the plan/drift workflow.
-- `op://Production/PostHog Terraform Edit/credential` — **write-scoped** PostHog
+- `op://Production/PostHog Terraform/edit credential` — **write-scoped** PostHog
   personal API key (scopes `insight:read`, `insight:write`, `alert:read`,
-  `alert:write`), scoped to the Plot org/project, used by `apply`.
+  `alert:write`), scoped to the Plot org/project, used by `apply`. Same item as the
+  read key above, in the `edit credential` field.
 
 (The read-scoped CF token at `op://Production/Cloudflare Terraform`, the R2 state
-token, and `OP_SERVICE_ACCOUNT_TOKEN` already exist; the two PostHog items do not
-yet — see below.) Prefer Workload Identity Federation over long-lived GCP keys if
+token, and `OP_SERVICE_ACCOUNT_TOKEN` already exist; the `PostHog Terraform` item
+and its two fields do not yet — see below.) Prefer Workload Identity Federation over long-lived GCP keys if
 you want to avoid storing keys at all.
 
 ## Activating the posthog alerts
@@ -141,17 +142,17 @@ The `posthog/` module is committed but inert until its credentials exist and it'
 wired into CI. One-time, by a human with PostHog org access:
 
 1. **Create two PostHog personal API keys** (PostHog → Settings → Personal API
-   keys), both scoped to the Plot organization/project:
-   - read key → `op://Production/PostHog Terraform/credential` (`insight:read`,
-     `alert:read`).
-   - write key → `op://Production/PostHog Terraform Edit/credential`
+   keys), both scoped to the Plot organization/project, both stored in the one
+   `op://Production/PostHog Terraform` item:
+   - read key → `credential` field (`insight:read`, `alert:read`).
+   - write key → `edit credential` field
      (`insight:read`+`write`, `alert:read`+`write`).
-   The op service account must be able to read both items.
+   The op service account must be able to read the item.
 2. **Apply once, manually**, with the write key, to create the insight + alert:
    ```bash
-   TF_POSTHOG_OP_ITEM="op://Production/PostHog Terraform Edit" \
+   TF_POSTHOG_OP_FIELD="edit credential" \
      pnpm tf posthog init
-   TF_POSTHOG_OP_ITEM="op://Production/PostHog Terraform Edit" \
+   TF_POSTHOG_OP_FIELD="edit credential" \
      pnpm tf posthog apply
    ```
    (Plain `pnpm tf posthog plan` uses the read key and previews without changes.)
@@ -159,7 +160,7 @@ wired into CI. One-time, by a human with PostHog org access:
    `posthog` to the module loops in `.github/workflows/infra-plan.yml` (both the
    `plan` and summary `for m in …` loops) and to the default `modules` input in
    `.github/workflows/deploy-infra.yml`, and add
-   `TF_POSTHOG_OP_ITEM: "op://Production/PostHog Terraform Edit"` to the
+   `TF_POSTHOG_OP_FIELD: "edit credential"` to the
    `deploy-infra.yml` apply step's `env:` (mirroring `TF_CF_OP_ITEM`). Do this
    **only after** step 1 — the wrapper hard-fails without the key.
 4. **Tune the threshold.** `threshold_upper` in `infra/posthog/alerts.tf` is a

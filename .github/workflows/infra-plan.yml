@@ -50,7 +50,7 @@ jobs:
           trap 'rm -f "$RUNNER_TEMP/gcp-ro.json"' EXIT
 
           drift=0
-          for m in cloud-sql hyperdrive cloudflare-dns; do
+          for m in cloud-sql hyperdrive cloudflare-dns posthog; do
             echo "::group::terraform plan $m"
             bash scripts/terraform "$m" init -reconfigure -input=false
             set +e
@@ -67,7 +67,7 @@ jobs:
 
           {
             echo "## Terraform plan"
-            for m in cloud-sql hyperdrive cloudflare-dns; do
+            for m in cloud-sql hyperdrive cloudflare-dns posthog; do
               echo "### $m"
               echo '```'
               tail -n 25 "$RUNNER_TEMP/$m.plan.txt"

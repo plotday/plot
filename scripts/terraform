@@ -72,14 +72,16 @@ hyperdrive | cloudflare-dns)
   ;;
 esac
 
-# PostHog personal API key (posthog module). Read-scoped by default; point
-# TF_POSTHOG_OP_ITEM at a write-scoped key (e.g. "op://Production/PostHog
-# Terraform Edit") for a deliberate apply.
+# PostHog personal API key (posthog module). Both keys live in the one
+# "PostHog Terraform" item: read-scoped in the "credential" field (default),
+# write-scoped in the "edit credential" field. For a deliberate apply, point
+# TF_POSTHOG_OP_FIELD at the write field (TF_POSTHOG_OP_FIELD="edit credential").
 case "$MODULE" in
 posthog)
   if [ -z "${POSTHOG_API_KEY:-}" ]; then
     OP_PH_ITEM="${TF_POSTHOG_OP_ITEM:-op://Production/PostHog Terraform}"
-    export POSTHOG_API_KEY="$(op_read "$OP_PH_ITEM/credential")"
+    OP_PH_FIELD="${TF_POSTHOG_OP_FIELD:-credential}"
+    export POSTHOG_API_KEY="$(op_read "$OP_PH_ITEM/$OP_PH_FIELD")"
   fi
   ;;
 esac

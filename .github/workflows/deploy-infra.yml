@@ -9,6 +9,7 @@ name: Deploy Infra (Terraform)
 # Credentials (provisioned in 1Password; the op service account must read them):
 #   - op://Production/GCP Terraform/credential        — writable SA key (JSON) for cloud-sql
 #   - op://Production/Cloudflare Terraform Edit/...    — edit-scoped CF token for hyperdrive/dns
+#   - op://Production/PostHog Terraform/edit credential — write-scoped PostHog key for posthog
 #   - op://Production/R2 Terraform State/...           — R2 state creds (read/write)
 
 on:
@@ -17,7 +18,7 @@ on:
       modules:
         description: "Space-separated infra modules to apply, in order"
         type: string
-        default: "cloud-sql hyperdrive cloudflare-dns"
+        default: "cloud-sql hyperdrive cloudflare-dns posthog"
 
 concurrency:
   group: deploy-infra
@@ -48,6 +49,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           # Writable Cloudflare token (Hyperdrive + DNS edit) for the cloudflare modules.
           TF_CF_OP_ITEM: "op://Production/Cloudflare Terraform Edit"
+          # Write-scoped PostHog key field (same item as read) for the posthog module.
+          TF_POSTHOG_OP_FIELD: "edit credential"
           # Use ADC (the writable SA key below) directly, no readonly impersonation.
           GOOGLE_IMPERSONATE_SERVICE_ACCOUNT: ""
         run: |
