@@ -4,6 +4,7 @@ import {
   type NewContact,
   type NewLinkWithNotes,
   type NewNote,
+  type ReactionCapabilities,
   ITool,
 } from "..";
 import type { JSONValue } from "../utils/types";
@@ -229,6 +230,14 @@ export type LinkTypeConfig = {
    * explicitly (never NULL).
    */
   sharingModel?: "thread" | "channel" | "message" | "none";
+  /**
+   * Per-link-type reaction capabilities. Overrides the connector-level
+   * {@link Connector.reactionCapabilities} for threads of this link type — used
+   * when one connector has link types with different reaction vocabularies
+   * (e.g. LinkedIn DMs' 7-emoji set vs. posts' fixed post-reaction set). Omit to
+   * inherit the connector-level value.
+   */
+  reactionCapabilities?: ReactionCapabilities;
 };
 
 /**
