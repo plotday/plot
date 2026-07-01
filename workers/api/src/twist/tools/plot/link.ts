@@ -412,7 +412,13 @@ export async function createLink(
         linkId,
         isNewThread,
       };
-    });
+    },
+    // Guarantee the 5s background-lane lock_timeout applies inside the txn even
+    // when Hyperdrive hands back a reused backend that dropped the `-c` GUC (no
+    // DB-level default for lock_timeout). Without this, upsert_thread waits the
+    // full 30s statement_timeout on contention and one holder pileups 58×
+    // (PostHog 019f1aec). 5000 matches createDb()'s background-lane intent.
+    5000);
 
     const { threadId, threadPriorityId, linkId, isNewThread } = committed;
 

@@ -360,15 +360,39 @@ export { retryOnTxnConflict };
  * safe. The callback must therefore be idempotent across attempts (it runs
  * entirely inside the transaction, so any DB writes are discarded on rollback;
  * avoid relying on non-transactional side effects firing exactly once).
+ *
+ * `lockTimeoutMs`: when provided, re-asserts `lock_timeout` via `SET LOCAL` as
+ * the first statement of every transaction attempt. The lane's `lock_timeout`
+ * is normally set via the libpq `-c` connection option in createDbForLane, but
+ * — unlike `statement_timeout`, which also has a database-level default
+ * (`ALTER DATABASE plot SET statement_timeout=30s`) — `lock_timeout` has NO
+ * database default, so if Hyperdrive hands back a pooled backend that already
+ * finished startup (the same reuse case withDbForLane guards `statement_timeout`
+ * against), `lock_timeout` silently reverts to 0 (wait forever). A row-lock wait
+ * then runs to the 30s statement_timeout (57014) instead of fast-failing at the
+ * lane's lock_timeout (55P03). This is exactly how the connector `upsert_thread`
+ * write path — which uses a raw createDb() connection with no `SET` fallback —
+ * amplified a single lock holder into 58×30s pileups (PostHog 019f1aec). Callers
+ * on that path pass their lane's value so the fast-fail is guaranteed regardless
+ * of connection reuse. `SET LOCAL` is scoped to the transaction, so it re-applies
+ * on every retryOnTxnConflict attempt and never leaks to a pooled peer.
  */
 export async function withUserDb<T>(
   db: Kysely<DB>,
   userId: string,
-  fn: (trx: Kysely<DB>) => Promise<T>
+  fn: (trx: Kysely<DB>) => Promise<T>,
+  lockTimeoutMs?: number
 ): Promise<T> {
   void userId;
   return retryOnTxnConflict(() =>
-    db.transaction().execute(async (trx) => fn(trx))
+    db.transaction().execute(async (trx) => {
+      if (lockTimeoutMs !== undefined) {
+        await sql`SET LOCAL lock_timeout = ${sql.lit(`${lockTimeoutMs}ms`)}`.execute(
+          trx
+        );
+      }
+      return fn(trx);
+    })
   );
 }
 

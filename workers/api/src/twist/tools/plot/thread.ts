@@ -22,6 +22,7 @@ import { createLogger } from "@plotday/worker-util";
 import { sql, type Kysely } from "kysely";
 import type { DB } from "../../../db-types";
 import { rpc, rpcUser } from "../../../rpc";
+import { isLockContentionError, withUserDb } from "../../../db";
 import { logClassificationDecision } from "../../../state/classify-thread";
 import { fallbackImportanceFromFacets } from "../../../state/importance/band";
 import {
@@ -404,14 +405,51 @@ export async function createThread(
       // Use database function for source-based upsert
       // RPC returns full activity row directly
       const userId = await plot.getUserId();
+      const upsertArgs = {
+        user_id: userId,
+        p_thread: prep.upsert as Json,
+        p_defaults: { ...prep.defaults, priority_id: priorityId } as Json,
+      };
       try {
-        dbResult = await rpcUser(db, "upsert_thread", {
-          user_id: userId,
-          p_thread: prep.upsert as Json,
-          p_defaults: { ...prep.defaults, priority_id: priorityId } as Json,
-        });
+        // The atomic createLink path passes its open transaction (opts.db),
+        // which is already a withUserDb txn carrying the 5s lock_timeout, so
+        // call directly on it. The standalone createThread path runs on
+        // plot.db as a single autocommit statement whose lock_timeout comes
+        // only from the `-c` GUC — droppable on a reused Hyperdrive backend
+        // (PostHog 019f1aec), leaving upsert_thread to wait the 30s
+        // statement_timeout on contention. Wrap that one call in a withUserDb
+        // txn that re-asserts lock_timeout via SET LOCAL (semantically
+        // identical to the prior autocommit — upsert_thread is one atomic
+        // function call) so it fast-fails at 5s and the run-queue retries.
+        dbResult = db.isTransaction
+          ? await rpcUser(db, "upsert_thread", upsertArgs)
+          : await withUserDb(
+              db,
+              userId,
+              (trx) => rpcUser(trx, "upsert_thread", upsertArgs),
+              5000
+            );
       } catch (error) {
         const logger = createLogger({ component: "plot_tool" });
+        // Row-lock contention surfacing as a canceled statement (57014
+        // statement_timeout / 55P03 lock_timeout): a concurrent long
+        // transaction held a per-user hot row (e.g. user_sync, which every
+        // thread write bumps) so upsert_thread blocked past statement_timeout.
+        // This is transient and self-healing — the connector re-syncs and the
+        // thread lands next cycle — so log a warning and rethrow WITHOUT paging
+        // Error Tracking. Capturing it flooded PostHog 019f1aec with 58 events
+        // for a single ~10-minute burst, mirroring the twist_instance_sync
+        // cursor path already guarded by isLockContentionError (019ed540).
+        if (isLockContentionError(error)) {
+          logger.warn(
+            "upsert_thread contended on a row lock; retrying next sync cycle",
+            {
+              twist_instance_id: plot.twistInstanceId,
+              pg_code: (error as { code?: string })?.code,
+            }
+          );
+          throw error;
+        }
         logger.error("upsert_activity failed", error as Error, {
           upsert: JSON.stringify(prep.upsert),
           defaults: JSON.stringify(prep.defaults),

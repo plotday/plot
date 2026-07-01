@@ -223,6 +223,8 @@ class BuyAddonCommand extends Command {
             'limit.',
       ),
       confirmLabel: 'Add for \$$price/month',
+      // The X / Esc / back already dismiss; drop the redundant Cancel row.
+      showCancel: false,
     ).run(context);
     if (!context.mounted || !confirmed) return const CommandSkipped();
     return const CommandAddonConsented();
@@ -500,6 +502,8 @@ class BuyTwistAddonCommand extends Command {
         note: 'Adds +5 twist automations — billed to your card on file, prorated.',
       ),
       confirmLabel: 'Add for \$$price/month',
+      // The X / Esc / back already dismiss; drop the redundant Cancel row.
+      showCancel: false,
     ).run(context);
     if (!context.mounted || !confirmed) return const CommandSkipped();
 
@@ -875,6 +879,8 @@ class ShowUpgradeOptions extends Command {
           title: _title,
           message: subtitle,
           confirmLabel: 'Continue',
+          // The X / Esc / back already dismiss; drop the redundant Cancel row.
+          showCancel: false,
         ).run(context);
         if (!context.mounted || !proceed) return const CommandSkipped();
       }

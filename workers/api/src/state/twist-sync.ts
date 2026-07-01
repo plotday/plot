@@ -3,7 +3,12 @@ import { PostHog } from "posthog-node";
 
 import { sql } from "kysely";
 
-import { withDb, createDb, isLockContentionError } from "../db";
+import {
+  withDb,
+  createDb,
+  isLockContentionError,
+  isTransientDbError,
+} from "../db";
 import type { ThreadTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { processTwistBatch } from "../queue/updates";
@@ -45,6 +50,12 @@ const MAX_CONSECUTIVE_EMPTY_ALARMS = 5;
 
 export class TwistSync extends DurableObject<Bindings> {
   private twistInstanceId: string | null = null;
+  // Owning user of this twist_instance, cached for PostHog exception
+  // attribution. The Flutter app identifies this user_id with their email/name
+  // on login, so passing it as the captureException distinctId makes errors
+  // resolve to a real person (email) instead of a random per-event UUID.
+  // Immutable per twist_instance (see prevent_twist_instance_immutable_changes).
+  private ownerId: string | null = null;
   private state: TwistSyncState;
   private lastFingerprint: string | null = null;
   private repeatCount: number = 0;
@@ -65,7 +76,7 @@ export class TwistSync extends DurableObject<Bindings> {
       flushAt: 1,
       flushInterval: 0,
     });
-    postHog.captureException(error, undefined, {
+    postHog.captureException(error, this.ownerId ?? undefined, {
       durable_object: "TwistSync",
       twist_instance_id: this.twistInstanceId,
       ...properties,
@@ -204,6 +215,14 @@ export class TwistSync extends DurableObject<Bindings> {
       }
     }
 
+    // Restore the cached owning user for exception attribution. A re-hydrated
+    // DO loses the in-memory field; reloading it here means even an exception
+    // thrown by this run's first DB query (before the twist_instance read
+    // below) is still attributed to the right user.
+    if (!this.ownerId) {
+      this.ownerId = (await this.ctx.storage.get<string>("ownerId")) ?? null;
+    }
+
     try {
       const now = Date.now();
 
@@ -214,11 +233,34 @@ export class TwistSync extends DurableObject<Bindings> {
         .selectFrom("twist_instance")
         .select([
           "twist_instance.twist_id",
+          "twist_instance.owner_id",
           "twist_instance.archived_at",
           "twist_instance.suspended_at",
         ])
         .where("twist_instance.id", "=", twistInstanceId)
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
+
+      // The twist_instance is gone — hard-deleted while this DO still had a
+      // scheduled alarm (an abandoned draft is hard-deleted; an uninstall
+      // cascades the row away). There is nothing to sync, so stop quietly.
+      // This is an expected lifecycle race, not a fault: previously
+      // executeTakeFirstOrThrow() surfaced it as a captured Kysely
+      // "no result" NoResultError (PostHog 019c4dff), inflating the error
+      // count with noise the retry layer can never fix (the row won't return).
+      if (!twistInstance) {
+        logger.info("TwistSync twist_instance no longer exists; stopping sync", {
+          twist_instance_id: twistInstanceId,
+        });
+        return;
+      }
+
+      // Cache the owning user for PostHog exception attribution (immutable per
+      // twist_instance). Persist so a later cold-start alarm can attribute an
+      // error from its very first query without re-reading this row.
+      if (this.ownerId !== twistInstance.owner_id) {
+        this.ownerId = twistInstance.owner_id;
+        await this.ctx.storage.put("ownerId", twistInstance.owner_id);
+      }
 
       // Skip sync for archived twist_instances
       if (twistInstance.archived_at) {
@@ -730,12 +772,22 @@ export class TwistSync extends DurableObject<Bindings> {
               .execute();
           });
         } catch (error) {
-          // Contention with a concurrent write-path transaction is expected and
-          // self-healing (next alarm re-advances) — log it but don't report it as
-          // a bug. Anything else is a genuine fault worth capturing.
-          if (isLockContentionError(error)) {
+          // Two expected, self-healing failure modes here — log but don't report
+          // either as a bug (the advance is idempotent, so on a bail the cursor
+          // stays stale, SyncRecovery re-notifies within ~30s, and the next alarm
+          // retries):
+          //   1. Row-lock contention with a concurrent write-path transaction
+          //      (isLockContentionError).
+          //   2. Transient Hyperdrive pool exhaustion / connection recycling
+          //      (isTransientDbError). This transaction runs on the withDb pool
+          //      but OUTSIDE withDb's retry (the error is caught here, not
+          //      rethrown), so a single "open slot in the pool" timeout was being
+          //      captured immediately — the dominant source of PostHog 019ed540.
+          //      These bursts are expected and drain on their own.
+          // Anything else is a genuine fault worth capturing.
+          if (isLockContentionError(error) || isTransientDbError(error)) {
             logger.warn(
-              "Cursor advance contended on twist_instance_sync lock; retrying next alarm",
+              "Cursor advance hit expected transient contention on twist_instance_sync; retrying next alarm",
               {
                 twist_instance_id: twistInstanceId!,
                 cursor_count: cursorRows.length,

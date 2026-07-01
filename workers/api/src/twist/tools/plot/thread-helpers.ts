@@ -15,7 +15,7 @@ import type {
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { createLogger } from "@plotday/worker-util";
-import { isTransientDbError } from "../../../db";
+import { isTransientDbError, isLockContentionError } from "../../../db";
 import {
   classifyThreadForUser,
   type PendingDecision,
@@ -72,6 +72,44 @@ export async function handleDbOperationError(
   // saturation noise — so the transient class propagates to saveLinks /
   // processQueue for the quiet queue-level retry.
   if (isTransientDbError(error)) {
+    throw error;
+  }
+  // Row-lock contention surfacing as a canceled statement (55P03 lock_timeout /
+  // 57014 statement_timeout). A concurrent long transaction holding a per-user
+  // hot row (e.g. user_sync, bumped by every thread write) makes upsert_thread
+  // block past its lock/statement timeout. It is transient and self-healing —
+  // the run-queue re-runs the idempotent task and the thread lands on the next
+  // sync — so rethrow WITHOUT paging Error Tracking (captureException). Doing so
+  // floods PostHog 019f1aec with expected contention noise (58 events for one
+  // ~10m burst), exactly as the twist_instance_sync cursor path guards against
+  // (019ed540). But DON'T go fully silent: emit ONE low-cardinality analytics
+  // event so a *sustained* burst (a genuinely wedged holder stalling a user's
+  // writes) is still visible on a chart. Dimensions are bounded — operation,
+  // pg_code, and connector provider (gmail/slack/...), never per-thread payload
+  // or twist_instance_id — so this is a countable metric, not error spam. This
+  // is the single funnel every connector write op passes through, so contention
+  // is counted once regardless of which statement inside the op blocked.
+  if (isLockContentionError(error)) {
+    try {
+      const postHog = new PostHog(plot.env.POSTHOG_API_KEY, {
+        host: plot.env.POSTHOG_HOST,
+        flushAt: 1,
+        flushInterval: 0,
+      });
+      const userId = await plot.getUserId().catch(() => undefined);
+      postHog.capture({
+        distinctId: userId ?? "system",
+        event: "db.lock_contention_timeout",
+        properties: {
+          operation,
+          pg_code: (error as { code?: string })?.code ?? null,
+          provider: plot.sourceProvider?.provider ?? null,
+        },
+      });
+      await postHog.shutdown();
+    } catch {
+      // Never let a telemetry failure mask the original error.
+    }
     throw error;
   }
   if (error instanceof DbError) {

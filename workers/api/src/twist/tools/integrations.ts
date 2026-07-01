@@ -4687,23 +4687,38 @@ export class Integrations extends Tool implements IAuth {
             channelAccessByCurrentUser.add(`${provider}:${s.id}`);
           }
 
-          // Self-heal: backfill twist_instance_connection for pre-existing connections
+          // Self-heal: backfill twist_instance_connection for pre-existing
+          // connections. A FK violation here means the twist_instance was
+          // deleted out from under stale DO storage (same failure mode the
+          // mirrorChannelsToDb self-heal above guards against) — this is a
+          // read path, so a failed backfill must never fail the read.
           if (contactUserId) {
-            await this.db
-              .insertInto("twist_instance_connection")
-              .values({
+            try {
+              await this.db
+                .insertInto("twist_instance_connection")
+                .values({
+                  twist_instance_id: this.twistInstanceId,
+                  user_id: contactUserId,
+                  provider,
+                  actor_id: actorId,
+                  connected_at: new Date().toISOString(),
+                })
+                .onConflict((oc) =>
+                  oc
+                    .columns(["twist_instance_id", "user_id", "provider"])
+                    .doNothing()
+                )
+                .execute();
+            } catch (error) {
+              const logger = createLogger({
                 twist_instance_id: this.twistInstanceId,
-                user_id: contactUserId,
+              });
+              logger.warn("twist_instance_connection self-heal backfill failed", {
                 provider,
                 actor_id: actorId,
-                connected_at: new Date().toISOString(),
-              })
-              .onConflict((oc) =>
-                oc
-                  .columns(["twist_instance_id", "user_id", "provider"])
-                  .doNothing()
-              )
-              .execute();
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         }
 

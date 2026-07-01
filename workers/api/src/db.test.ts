@@ -553,3 +553,54 @@ describe.skipIf(!DATABASE_URL)("createDb connection GUCs", () => {
     }
   });
 });
+
+describe.skipIf(!DATABASE_URL)("withUserDb lock_timeout", () => {
+  it("re-asserts lock_timeout via SET LOCAL inside the txn even when the connection default was dropped", async () => {
+    // Simulates a Hyperdrive-reused backend that lost the `-c lock_timeout` GUC:
+    // force the session default to 0 (wait forever), then confirm withUserDb's
+    // lockTimeoutMs re-applies the bound inside the transaction. Without this,
+    // the connector upsert_thread path waits the 30s statement_timeout on
+    // contention (57014) instead of fast-failing at 5s (55P03) — PostHog 019f1aec.
+    const db = createDb({ DATABASE_URL } as any);
+    try {
+      await sql`SET lock_timeout = 0`.execute(db);
+
+      const inside = await withUserDb(
+        db,
+        "user-1",
+        async (trx) => {
+          const r = await sql<{ v: string }>`
+            SELECT current_setting('lock_timeout') AS v
+          `.execute(trx);
+          return r.rows[0]?.v;
+        },
+        5000
+      );
+      expect(inside).toBe("5s");
+
+      // SET LOCAL is transaction-scoped: the session default is untouched after.
+      const after = await sql<{ v: string }>`
+        SELECT current_setting('lock_timeout') AS v
+      `.execute(db);
+      expect(after.rows[0]?.v).toBe("0");
+    } finally {
+      await db.destroy();
+    }
+  });
+
+  it("leaves lock_timeout at the connection default when no lockTimeoutMs is passed", async () => {
+    const db = createDb({ DATABASE_URL } as any);
+    try {
+      const inside = await withUserDb(db, "user-1", async (trx) => {
+        const r = await sql<{ v: string }>`
+          SELECT current_setting('lock_timeout') AS v
+        `.execute(trx);
+        return r.rows[0]?.v;
+      });
+      // createDb's `-c` option sets 5s; withUserDb must not alter it.
+      expect(inside).toBe("5s");
+    } finally {
+      await db.destroy();
+    }
+  });
+});
