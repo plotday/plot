@@ -89,6 +89,11 @@ class LinkTypeConfig {
   /// Verb shown on the reply submit button (e.g. "Send"). Null falls back to
   /// a generic default.
   final String? replyVerb;
+  /// Reaction capabilities declared for this link type (e.g. the LinkedIn
+  /// post reaction set), overriding the connector-level
+  /// `TwistInstance.reactionCapabilities` when present. Null falls back to
+  /// the connector-level value. See `Channel.reactionCapabilitiesFor`.
+  final Map<String, dynamic>? reactionCapabilities;
 
   const LinkTypeConfig({
     required this.type,
@@ -111,6 +116,7 @@ class LinkTypeConfig {
     this.composeVerb,
     this.replyPlaceholder,
     this.replyVerb,
+    this.reactionCapabilities,
   });
 
   factory LinkTypeConfig.fromJson(Map<String, dynamic> json) {
@@ -163,6 +169,9 @@ class LinkTypeConfig {
           json['reply_placeholder'] as String?,
       replyVerb:
           json['replyVerb'] as String? ?? json['reply_verb'] as String?,
+      reactionCapabilities:
+          json['reactionCapabilities'] as Map<String, dynamic>? ??
+          json['reaction_capabilities'] as Map<String, dynamic>?,
     );
   }
 

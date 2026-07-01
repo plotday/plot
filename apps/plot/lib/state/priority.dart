@@ -4028,12 +4028,14 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Stashes a pending create_link payload keyed by thread id so
   /// [ThreadsBase.toBase] spreads it into the thread push body when the
-  /// thread is saved. Mirrors the inline block in [add] lines 3920–3937.
+  /// thread is saved.
   void _stashPendingCreateLink(ThreadId threadId, Note? note) {
     final createAction = note?.actions
         ?.whereType<CreateLinkUserAction>()
         .firstOrNull;
     if (createAction != null) {
+      final fileActions =
+          note?.actions?.whereType<FileUserAction>().toList() ?? [];
       ThreadsBase.pendingCreateLinks[threadId.toString()] = {
         'create_link': {
           'twist_instance_id': createAction.twistInstanceId,
@@ -4042,6 +4044,8 @@ class PriorityBloc extends Cubit<PriorityState> {
           'status': createAction.status,
         },
         if (note?.content != null) 'note_content': note!.content,
+        if (fileActions.isNotEmpty)
+          'note_actions': fileActions.map((a) => a.toJson()).toList(),
       };
     }
   }

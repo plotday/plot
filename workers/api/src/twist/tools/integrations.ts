@@ -3042,6 +3042,12 @@ export class Integrations extends Tool implements IAuth {
           }>;
           recipients?: ResolvedRecipient[];
           inviteEmails?: string[];
+          attachments?: Array<{
+            fileId: string;
+            fileName: string;
+            mimeType: string;
+            fileSize: number | null;
+          }>;
         };
       };
       if (!threadId || !draft) return [];

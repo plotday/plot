@@ -5,6 +5,9 @@ import {
   normalizeInvitation,
   normalizeProfile,
   normalizeRelation,
+  normalizePost,
+  normalizeComment,
+  normalizePostReaction,
 } from "./normalize";
 
 describe("normalize (v2)", () => {
@@ -253,5 +256,54 @@ describe("normalize (v2)", () => {
     expect(profile.name).toBe("anon");
     expect(profile.subtitle).toBeNull();
     expect(profile.pictureUrl).toBeNull();
+  });
+});
+
+describe("normalizePost", () => {
+  it("uses social_id as id and parses date", () => {
+    const post = normalizePost(
+      {
+        social_id: "urn:li:activity:7",
+        text: "Hello world",
+        date: "2026-06-20T12:00:00Z",
+        share_url: "https://www.linkedin.com/feed/update/urn:li:activity:7/",
+        author: { object: "User", id: "auth1", display_name: "Kris Braun", public_identifier: "krisbraun" },
+      },
+      "linkedin"
+    );
+    expect(post.id).toBe("urn:li:activity:7");
+    expect(post.text).toBe("Hello world");
+    expect(post.createdAt.toISOString()).toBe("2026-06-20T12:00:00.000Z");
+    expect(post.author.name).toBe("Kris Braun");
+    expect(post.url).toBe("https://www.linkedin.com/feed/update/urn:li:activity:7/");
+  });
+});
+
+describe("normalizeComment", () => {
+  it("top-level comment has null parent", () => {
+    const c = normalizeComment(
+      { id: "c1", text: "nice", date: "2026-06-20T12:05:00Z", author: { object: "User", id: "u2", display_name: "Ada", public_identifier: null } },
+      "linkedin"
+    );
+    expect(c.id).toBe("c1");
+    expect(c.parentCommentId).toBeNull();
+    expect(c.author.name).toBe("Ada");
+  });
+  it("reply carries parent_comment_id", () => {
+    const c = normalizeComment(
+      { id: "c2", text: "thanks", parent_comment_id: "c1", author: { object: "User", id: "u3", display_name: "Bo", public_identifier: null } },
+      "linkedin"
+    );
+    expect(c.parentCommentId).toBe("c1");
+  });
+});
+
+describe("normalizePostReaction", () => {
+  it("maps reactor + type", () => {
+    const r = normalizePostReaction(
+      { reaction_type: "like", author: { object: "User", id: "u9", display_name: "Cy", public_identifier: null, public_picture_url: "http://x/y.jpg" } },
+      "linkedin"
+    );
+    expect(r).toEqual({ reactorId: "u9", reactorName: "Cy", reactorPictureUrl: "http://x/y.jpg", reactionType: "like" });
   });
 });

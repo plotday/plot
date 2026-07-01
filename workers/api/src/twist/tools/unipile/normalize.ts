@@ -5,6 +5,9 @@ import type {
   ChatProfile,
   ChatThread,
   LinkedInInvitation,
+  LinkedInPost,
+  LinkedInComment,
+  LinkedInPostReaction,
 } from "@plotday/unipile";
 
 import type {
@@ -15,6 +18,9 @@ import type {
   UnipileReactionCounter,
   UnipileRelation,
   UnipileUser,
+  UnipilePostRaw,
+  UnipileCommentRaw,
+  UnipilePostReactionRaw,
 } from "./types";
 
 export function normalizeProfile(
@@ -132,4 +138,44 @@ export function normalizeInvitation(inv: UnipileInvitation): LinkedInInvitation 
  */
 export function normalizeRelation(rel: UnipileRelation): ChatProfile {
   return normalizeProfile(rel.user, "linkedin", false);
+}
+
+export function normalizePost(raw: UnipilePostRaw, provider: string): LinkedInPost {
+  const id = raw.social_id ?? raw.id ?? "";
+  const when = raw.date ?? raw.parsed_datetime;
+  const author = raw.author
+    ? normalizeProfile(raw.author, provider, true)
+    : { id: "", isSelf: true, handle: null, name: "You", subtitle: null, email: null, phone: null, pictureUrl: null, profileUrl: null };
+  return {
+    id,
+    text: raw.text ?? "",
+    createdAt: when ? new Date(when) : new Date(0),
+    author,
+    url: raw.share_url ?? raw.author?.public_profile_url ?? null,
+  };
+}
+
+export function normalizeComment(raw: UnipileCommentRaw, provider: string): LinkedInComment {
+  const when = raw.date ?? raw.parsed_datetime;
+  const author = raw.author
+    ? normalizeProfile(raw.author, provider, false)
+    : { id: "", isSelf: false, handle: null, name: "Unknown", subtitle: null, email: null, phone: null, pictureUrl: null, profileUrl: null };
+  return {
+    id: raw.id,
+    text: raw.text ?? "",
+    createdAt: when ? new Date(when) : new Date(0),
+    author,
+    parentCommentId: raw.parent_comment_id ?? raw.parent ?? null,
+  };
+}
+
+export function normalizePostReaction(raw: UnipilePostReactionRaw, provider: string): LinkedInPostReaction {
+  const a = raw.author;
+  const profile = a ? normalizeProfile(a, provider, false) : null;
+  return {
+    reactorId: profile?.id ?? "",
+    reactorName: profile?.name ?? null,
+    reactorPictureUrl: profile?.pictureUrl ?? null,
+    reactionType: raw.reaction_type ?? raw.value ?? "like",
+  };
 }

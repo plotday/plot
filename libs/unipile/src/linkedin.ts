@@ -1,4 +1,10 @@
 import { UnipileMessaging, type ChatProfile } from "./messaging";
+import type {
+  LinkedInComment,
+  LinkedInPost,
+  LinkedInPostReaction,
+  PostAttachment,
+} from "./linkedin-posts";
 
 /** LinkedIn connection request (invitation). */
 export type LinkedInInvitation = {
@@ -49,4 +55,62 @@ export abstract class LinkedInMessaging extends UnipileMessaging {
     channelId: string;
     invitationId: string;
   }): Promise<void>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createPost(params: {
+    channelId: string;
+    text: string;
+    attachments?: PostAttachment[];
+  }): Promise<{ postId: string }>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract listOwnPosts(params: {
+    channelId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{ posts: LinkedInPost[]; nextCursor: string | null }>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getPost(params: {
+    channelId: string;
+    postId: string;
+  }): Promise<LinkedInPost | null>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract listComments(params: {
+    channelId: string;
+    postId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{ comments: LinkedInComment[]; nextCursor: string | null }>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createComment(params: {
+    channelId: string;
+    postId: string;
+    text: string;
+    parentCommentId?: string | null;
+    attachments?: PostAttachment[];
+  }): Promise<{ commentId: string }>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract reactToPost(params: {
+    channelId: string;
+    socialId: string;
+    reactionType: string;
+  }): Promise<void>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract unreactToPost(params: {
+    channelId: string;
+    socialId: string;
+  }): Promise<void>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract listPostReactions(params: {
+    channelId: string;
+    socialId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{ reactions: LinkedInPostReaction[]; nextCursor: string | null }>;
 }

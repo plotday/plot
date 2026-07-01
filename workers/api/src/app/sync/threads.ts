@@ -41,6 +41,7 @@ import {
 import {
   resolveCreateLinkContacts,
   dispatchCreateLink,
+  noteActionsToAttachments,
 } from "./create-link-dispatch";
 
 /** Client-supplied request to create an external item via a connector. */
@@ -644,6 +645,11 @@ threads.post("/sync/threads", async (c) => {
   // also clear `body.create_link` if we didn't snapshot here.
   const createLinkSpec = body.create_link as CreateLinkSpec | undefined;
   const noteContent = (body.note_content as string | null | undefined) ?? null;
+  // Client sends the composed thread's first note's file actions inline
+  // (the note isn't reliably persisted yet at dispatch time — see
+  // note_content above for the same reasoning). Read defensively: this is a
+  // no-op (empty array) until the client actually sends `note_actions`.
+  const noteAttachments = noteActionsToAttachments(body.note_actions);
 
   const threadData = body.thread || body;
 
@@ -717,10 +723,12 @@ threads.post("/sync/threads", async (c) => {
   // by upsert_thread and the peer-promotion logic.
   delete threadData.twist_id;
   delete threadData.pending_contacts;
-  // create_link and note_content are client→server control fields for the
-  // connector-backed create-new-item flow; they are not thread columns.
+  // create_link, note_content, and note_actions are client→server control
+  // fields for the connector-backed create-new-item flow; they are not
+  // thread columns.
   delete threadData.create_link;
   delete threadData.note_content;
+  delete threadData.note_actions;
 
   // Translate legacy `topics` field (apiVersion < 3) to `groups` so
   // upsert_thread sees the new shape. If both are present, `groups` wins.
@@ -1154,6 +1162,7 @@ threads.post("/sync/threads", async (c) => {
             noteContent,
             contacts,
             inviteEmails: dispatchInviteEmails,
+            attachments: noteAttachments,
           };
 
           // Stash the spec so a failed send can be retried (cleared once

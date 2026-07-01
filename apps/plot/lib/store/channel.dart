@@ -98,6 +98,22 @@ class Channel extends Equatable {
     return null;
   }
 
+  /// Reaction capabilities declared for [type] on any of [ptId]'s channels, or
+  /// null when none declares them (caller falls back to the connection-level
+  /// value).
+  static Map<String, dynamic>? reactionCapabilitiesFor(Uuid ptId, String type) {
+    final prefix = '${ptId.toString()}:';
+    for (final entry in _cache.entries) {
+      if (!entry.key.startsWith(prefix)) continue;
+      for (final lt in entry.value.parsedLinkTypes ?? const <LinkTypeConfig>[]) {
+        if (lt.type == type && lt.reactionCapabilities != null) {
+          return lt.reactionCapabilities;
+        }
+      }
+    }
+    return null;
+  }
+
   /// Populate the cache from a list of channels.
   static void populateCache(List<Channel> channels) {
     for (final sc in channels) {

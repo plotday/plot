@@ -4,9 +4,15 @@ import type {
   UnipileChat,
   UnipileChatList,
   UnipileChatStarted,
+  UnipileCommentListRaw,
+  UnipileCreatedCommentRaw,
+  UnipileCreatedPostRaw,
   UnipileHostedAuthLink,
   UnipileInvitationList,
   UnipileMessageList,
+  UnipilePostListRaw,
+  UnipilePostRaw,
+  UnipilePostReactionListRaw,
   UnipileRelationList,
   UnipileSendResult,
   UnipileUser,
@@ -494,6 +500,133 @@ export class UnipileClient {
   }): Promise<UnipileUser> {
     return this.get<UnipileUser>(
       `/v2/${encodeURIComponent(input.accountId)}/users/${encodeURIComponent(input.providerId)}`
+    );
+  }
+
+  // ---------- Posts / comments / reactions (v2, LIVE-CONFIRM) ----------
+
+  /** Create a post. v1 is `POST /api/v1/posts` (account_id in body); v2 moves
+   * account_id into the path. `attachments` are base64 JSON like message sends. */
+  createPost(input: {
+    accountId: string;
+    text: string;
+    visibility?: "public" | "connections";
+    attachments?: Array<{ buffer: Uint8Array; filename: string; mimeType: string }>;
+  }): Promise<UnipileCreatedPostRaw> {
+    const attachments = (input.attachments ?? []).map((a) => ({
+      filename: a.filename,
+      content_type: a.mimeType,
+      data: base64FromBytes(a.buffer),
+    }));
+    return this.post<UnipileCreatedPostRaw>(
+      `/v2/${encodeURIComponent(input.accountId)}/posts`,
+      {
+        text: input.text,
+        visibility: input.visibility ?? "public",
+        ...(attachments.length > 0 ? { attachments } : {}),
+      }
+    );
+  }
+
+  /** The connected account's own posts. Mirrors users/me/relations paging. */
+  listOwnPosts(input: {
+    accountId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<UnipilePostListRaw> {
+    return this.get<UnipilePostListRaw>(
+      `/v2/${encodeURIComponent(input.accountId)}/users/me/posts`,
+      {
+        ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      }
+    );
+  }
+
+  getPost(input: { accountId: string; postId: string }): Promise<UnipilePostRaw> {
+    return this.get<UnipilePostRaw>(
+      `/v2/${encodeURIComponent(input.accountId)}/posts/${encodeURIComponent(input.postId)}`
+    );
+  }
+
+  listComments(input: {
+    accountId: string;
+    postId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<UnipileCommentListRaw> {
+    return this.get<UnipileCommentListRaw>(
+      `/v2/${encodeURIComponent(input.accountId)}/posts/${encodeURIComponent(input.postId)}/comments`,
+      {
+        ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      }
+    );
+  }
+
+  /** Comment on a post. `commentId` nests the comment as a reply to that comment. */
+  createComment(input: {
+    accountId: string;
+    postId: string;
+    text: string;
+    commentId?: string | null;
+    attachments?: Array<{ buffer: Uint8Array; filename: string; mimeType: string }>;
+  }): Promise<UnipileCreatedCommentRaw> {
+    const attachments = (input.attachments ?? []).map((a) => ({
+      filename: a.filename,
+      content_type: a.mimeType,
+      data: base64FromBytes(a.buffer),
+    }));
+    return this.post<UnipileCreatedCommentRaw>(
+      `/v2/${encodeURIComponent(input.accountId)}/posts/${encodeURIComponent(input.postId)}/comments`,
+      {
+        text: input.text,
+        ...(input.commentId ? { comment_id: input.commentId } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
+      }
+    );
+  }
+
+  async addPostReaction(input: {
+    accountId: string;
+    socialId: string;
+    reactionType: string;
+  }): Promise<void> {
+    await this.post<unknown>(
+      `/v2/${encodeURIComponent(input.accountId)}/posts/${encodeURIComponent(input.socialId)}/reactions`,
+      { reaction_type: input.reactionType }
+    );
+  }
+
+  /** Best-effort clear (mirrors removeMessageReaction: try empty, then DELETE). */
+  async removePostReaction(input: { accountId: string; socialId: string }): Promise<void> {
+    const path = `/v2/${encodeURIComponent(input.accountId)}/posts/${encodeURIComponent(input.socialId)}/reactions`;
+    try {
+      await this.post<unknown>(path, { reaction_type: "" });
+      return;
+    } catch (e) {
+      if (!(e instanceof UnipileApiError) || (e.status !== 400 && e.status !== 404 && e.status !== 405)) throw e;
+    }
+    try {
+      await this.request(path, { method: "DELETE" });
+    } catch (e) {
+      if (e instanceof UnipileApiError && (e.status === 404 || e.status === 405)) return;
+      throw e;
+    }
+  }
+
+  listPostReactions(input: {
+    accountId: string;
+    socialId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<UnipilePostReactionListRaw> {
+    return this.get<UnipilePostReactionListRaw>(
+      `/v2/${encodeURIComponent(input.accountId)}/posts/${encodeURIComponent(input.socialId)}/reactions`,
+      {
+        ...(input.limit ? { limit: String(input.limit) } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      }
     );
   }
 

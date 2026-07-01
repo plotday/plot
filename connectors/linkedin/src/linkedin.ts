@@ -30,10 +30,23 @@ import {
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import {
+  accountIdFromChannel,
+  adaptivePollDelayMs,
   backfillChats,
+  buildCommentNote,
   buildLinkForChat,
+  buildPostBodyNote,
+  buildPostLink,
+  commentNoteKey,
+  type LinkedInComment,
   type LinkedInInvitation,
+  type LinkedInPost,
+  type LinkedInPostReaction,
+  LINKEDIN_POST_REACTIONS,
   LinkedInMessaging,
+  mapEmojiToPostReactionType,
+  postBodyNoteKey,
+  postsChannelId,
   profileToContact,
   reconcilePerUserReaction,
 } from "@plotday/unipile";
@@ -44,6 +57,19 @@ import {
 // LinkedIn messaging — a chat is just its participant set — so multi-person
 // chats are `conversation` links whose `accessContacts` has >1 entry.
 const TYPE_CONVERSATION = "conversation";
+
+// Public Post channel: a `post` link is the connected account's own LinkedIn
+// post plus its comments/reactions. Distinct link type from `conversation`
+// since posts have no chat/invitation semantics.
+const TYPE_POST = "post";
+// Number of comments/reactions fetched per poll page.
+const COMMENT_PAGE_LIMIT = 50;
+// Discovery poll cadence for natively-created posts (jittered).
+const DISCOVER_MIN_MS = 60 * 60 * 1000; // 1h
+const DISCOVER_MAX_MS = 2 * 60 * 60 * 1000; // 2h
+// Initial import + discovery look-back window.
+const IMPORT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // past week (initial)
+const DISCOVER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (ongoing)
 
 // Only two statuses model real LinkedIn invitation state: `pending` (an
 // inbound connection request awaiting the user's decision) and `inbox`
@@ -90,6 +116,27 @@ const RELATIONS_PAGE_ERROR_MAX_DELAY_MS = 8 * 60 * 60 * 1000;
 // The runtime stored value is still the string `"linkedin"`.
 const LINKEDIN_PROVIDER = "linkedin" as AuthProvider;
 
+// Link type config for the Public Post channel. `sharingModel: "thread"`
+// (rather than "channel") is used so the single-participant (self) roster
+// the connector sets is respected; there is no external membership to
+// derive.
+const POST_LINK_TYPE = {
+  type: TYPE_POST,
+  label: "Post",
+  sourceName: "LinkedIn",
+  sharingModel: "thread" as const,
+  noteLabel: "Comment",
+  replyPlaceholder: "Add a comment",
+  replyVerb: "Comment",
+  composePlaceholder: "Write a public LinkedIn post",
+  composeVerb: "Post",
+  supportsFileAttachments: true,
+  reactionCapabilities: { mode: "fixed" as const, allowed: LINKEDIN_POST_REACTIONS },
+  logo: "https://api.iconify.design/logos/linkedin-icon.svg",
+  logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
+  compose: { targets: "channels" as const },
+};
+
 export class LinkedIn extends Connector<LinkedIn> {
   static readonly PROVIDER = LINKEDIN_PROVIDER;
   static readonly SCOPES: string[] = [];
@@ -101,7 +148,6 @@ export class LinkedIn extends Connector<LinkedIn> {
     "Reads your LinkedIn messages and conversations",
     "Sends messages and replies you write in Plot",
   ];
-  readonly singleChannel = true;
   readonly reactionCapabilities: ReactionCapabilities = {
     mode: "fixed",
     allowed: LINKEDIN_REACTIONS,
@@ -149,11 +195,27 @@ export class LinkedIn extends Connector<LinkedIn> {
     token: AuthToken | null
   ): Promise<Channel[]> {
     if (!token?.token) return [];
-    const title = auth?.actor.name ?? "LinkedIn";
-    return [{ id: token.token, title }];
+    const accountId = token.token;
+    const name = auth?.actor.name ?? "LinkedIn";
+    return [
+      // Messages: unchanged id (accountId) + connector-level `conversation` type.
+      { id: accountId, title: name },
+      // Public Post: opt-in, its own `post` link type.
+      {
+        id: postsChannelId(accountId),
+        title: "Public Post",
+        enabledByDefault: false,
+        linkTypes: [POST_LINK_TYPE],
+      },
+    ];
   }
 
   async onChannelEnabled(channel: Channel): Promise<void> {
+    if (channel.id.endsWith("#posts")) {
+      await this.onPostChannelEnabled(channel.id);
+      return;
+    }
+
     // Register the webhook callback first so steady-state new-message,
     // invitation, and relation events flow as soon as the account is live.
     const webhookCallback = await this.tools.callbacks.createFromParent(
@@ -185,9 +247,168 @@ export class LinkedIn extends Connector<LinkedIn> {
     await this.runTask(firstRelationsPage);
   }
 
+  /**
+   * Public Post channel enable: import the past week of the account's own
+   * posts (with comments), mark the channel's sync complete, then kick off
+   * per-post comment polling and the ongoing discovery loop.
+   */
+  private async onPostChannelEnabled(channelId: string): Promise<void> {
+    await this.set(`posts_enabled_${channelId}`, true);
+
+    // Initial import: the past week of the account's own posts, with comments.
+    const cutoff = Date.now() - IMPORT_WINDOW_MS;
+    let cursor: string | null = null;
+    const recentPostIds: string[] = [];
+    for (let page = 0; page < 10; page++) {
+      const { posts, nextCursor } = await this.tools.linkedin.listOwnPosts({ channelId, cursor, limit: 20 });
+      let reachedOld = false;
+      for (const post of posts) {
+        if (post.createdAt.getTime() < cutoff) { reachedOld = true; continue; }
+        await this.importPost(channelId, post, true);
+        recentPostIds.push(post.id);
+      }
+      cursor = nextCursor;
+      if (!cursor || reachedOld) break;
+    }
+
+    await this.tools.integrations.channelSyncCompleted(channelId);
+
+    // Kick off each imported post's comment poll, then the discovery loop.
+    for (const postId of recentPostIds) {
+      const t = await this.callback(this.pollPostComments, channelId, postId);
+      await this.runTask(t);
+    }
+    const discover = await this.callback(this.discoverPosts, channelId);
+    await this.runTask(discover, { runAt: new Date(Date.now() + DISCOVER_MIN_MS) });
+  }
+
   async onChannelDisabled(channel: Channel): Promise<void> {
+    if (channel.id.endsWith("#posts")) {
+      await this.clear(`posts_enabled_${channel.id}`);
+      return;
+    }
+
     await this.clear(`webhook_callback_${channel.id}`);
     await this.clear(`relations_state_${channel.id}`);
+  }
+
+  /**
+   * Fetch a post's comments and save it as a thread. `known_post_${id}` marks
+   * it discovered so the discovery loop doesn't re-import.
+   */
+  private async importPost(channelId: string, post: LinkedInPost, initialSync: boolean): Promise<void> {
+    const accountId = accountIdFromChannel(channelId);
+    const comments = await this.fetchAllComments(channelId, post.id);
+    const link = buildPostLink({ accountId, channelId, post, comments, initialSync });
+    await this.tools.integrations.saveLinks([link]);
+    await this.set(`known_post_${post.id}`, { createdAt: post.createdAt.getTime() });
+  }
+
+  private async fetchAllComments(channelId: string, postId: string): Promise<LinkedInComment[]> {
+    const out: LinkedInComment[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 20; page++) {
+      const { comments, nextCursor } = await this.tools.linkedin.listComments({ channelId, postId, cursor, limit: COMMENT_PAGE_LIMIT });
+      out.push(...comments);
+      cursor = nextCursor;
+      if (!cursor) break;
+    }
+    return out;
+  }
+
+  /** Fetch up to 50 reactors for a post or comment. Bounded so a viral post
+   * can't materialize thousands of contacts. Best-effort — returns [] on error. */
+  private async fetchReactions(channelId: string, socialId: string): Promise<LinkedInPostReaction[]> {
+    try {
+      const { reactions } = await this.tools.linkedin.listPostReactions({ channelId, socialId, limit: 50 });
+      return reactions;
+    } catch (error) {
+      console.warn(`LinkedIn reaction fetch failed for ${socialId}`, error);
+      return [];
+    }
+  }
+
+  /** Find natively-created posts (Unipile has no post webhook) and import any
+   * not already known. Reschedules itself on a 1–2h jitter while enabled. */
+  async discoverPosts(channelId: string): Promise<void> {
+    if (!(await this.get(`posts_enabled_${channelId}`))) return; // channel disabled → stop
+    try {
+      const cutoff = Date.now() - DISCOVER_WINDOW_MS;
+      let cursor: string | null = null;
+      const newPostIds: string[] = [];
+      for (let page = 0; page < 10; page++) {
+        const { posts, nextCursor } = await this.tools.linkedin.listOwnPosts({ channelId, cursor, limit: 20 });
+        let reachedOld = false;
+        for (const post of posts) {
+          if (post.createdAt.getTime() < cutoff) { reachedOld = true; continue; }
+          if (await this.get(`known_post_${post.id}`)) continue;
+          await this.importPost(channelId, post, false);
+          newPostIds.push(post.id);
+        }
+        cursor = nextCursor;
+        if (!cursor || reachedOld) break;
+      }
+      for (const postId of newPostIds) {
+        const t = await this.callback(this.pollPostComments, channelId, postId);
+        await this.runTask(t);
+      }
+    } catch (error) {
+      console.warn(`LinkedIn post discovery failed for ${channelId}`, error);
+    }
+    // Reschedule regardless (unless disabled, checked at top of next run).
+    const delay = DISCOVER_MIN_MS + Math.random() * (DISCOVER_MAX_MS - DISCOVER_MIN_MS);
+    const next = await this.callback(this.discoverPosts, channelId);
+    await this.runTask(next, { runAt: new Date(Date.now() + delay) });
+  }
+
+  /** Poll one post's comments, upsert new ones, and reschedule by post age.
+   * Retires (no reschedule) once the post is >30 days old. */
+  async pollPostComments(channelId: string, postId: string): Promise<void> {
+    if (!(await this.get(`posts_enabled_${channelId}`))) return; // channel disabled → stop
+
+    const known = await this.get<{ createdAt: number }>(`known_post_${postId}`);
+    const createdAt = known ? new Date(known.createdAt) : new Date();
+
+    try {
+      const comments = await this.fetchAllComments(channelId, postId);
+      const postReactions = await this.fetchReactions(channelId, postId);
+
+      const notes: NewNote[] = [];
+      if (postReactions.length > 0) {
+        // Reflect post reactions onto the post-body note. Emit the FULL body
+        // note (content + author + created via getPost) — NOT a content-less
+        // note — so the upsert's is-distinct checks stay false and only the
+        // reactions merge. A content-less note would omit author/created and
+        // clobber them on every poll.
+        const post = await this.tools.linkedin.getPost({ channelId, postId });
+        if (post) notes.push(buildPostBodyNote(post, postReactions));
+      }
+      for (const c of comments) {
+        const cr = await this.fetchReactions(channelId, c.id);
+        notes.push(buildCommentNote(postId, c, cr));
+      }
+
+      if (notes.length > 0) {
+        await this.tools.integrations.saveLinks([
+          {
+            source: `linkedin:post:${postId}`,
+            sources: [`linkedin:post:${postId}`],
+            type: TYPE_POST,
+            channelId,
+            meta: { syncProvider: PROVIDER_KEY, accountId: accountIdFromChannel(channelId), channelId, postId },
+            notes,
+          },
+        ]);
+      }
+    } catch (error) {
+      console.warn(`LinkedIn comment poll failed for post ${postId}`, error);
+    }
+
+    const delay = adaptivePollDelayMs(createdAt, new Date());
+    if (delay === null) return; // retire
+    const jittered = delay + Math.random() * delay * 0.2;
+    const next = await this.callback(this.pollPostComments, channelId, postId);
+    await this.runTask(next, { runAt: new Date(Date.now() + jittered) });
   }
 
   /**
@@ -387,6 +608,60 @@ export class LinkedIn extends Connector<LinkedIn> {
   override async onCreateLink(
     draft: CreateLinkDraft
   ): Promise<NewLinkWithNotes | null> {
+    if (draft.type === TYPE_POST) {
+      const text = markdownToPlainText((draft.noteContent ?? draft.title ?? "").trim());
+      if (!text) {
+        console.error("[linkedin] onCreateLink(post): empty body; cannot post.");
+        return null;
+      }
+      const channelId = draft.channelId;
+      const attachments: Array<{
+        buffer: Uint8Array;
+        filename: string;
+        mimeType: string;
+      }> = [];
+      for (const a of draft.attachments ?? []) {
+        try {
+          const file = await this.tools.files.read(a.fileId);
+          attachments.push({
+            buffer: file.data,
+            filename: file.fileName,
+            mimeType: file.mimeType,
+          });
+        } catch (e) {
+          console.error("LinkedIn post attachment read failed", a.fileId, e);
+        }
+      }
+      const { postId } = await this.tools.linkedin.createPost({
+        channelId,
+        text,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      });
+      if (!postId) {
+        console.error("[linkedin] onCreateLink(post): no post id returned.");
+        return null;
+      }
+      const accountId = accountIdFromChannel(channelId);
+      await this.set(`known_post_${postId}`, { createdAt: Date.now() });
+      // Start this post's comment poll.
+      const t = await this.callback(this.pollPostComments, channelId, postId);
+      await this.runTask(t, { runAt: new Date(Date.now() + 5 * 60 * 1000) });
+      return {
+        source: `linkedin:post:${postId}`,
+        sources: [`linkedin:post:${postId}`],
+        type: TYPE_POST,
+        title: draft.title,
+        created: new Date(),
+        channelId,
+        // Rekey the composed thread's opening note to the post-body key so the
+        // skip guard in onNoteCreated recognizes it and doesn't re-post the body
+        // as a comment. (saveCreatedLink → updateNoteBaseline sets the key; same
+        // pattern as the Slack connector's createChannelPost.)
+        originatingNote: { key: postBodyNoteKey(postId), externalContent: text },
+        meta: { syncProvider: PROVIDER_KEY, accountId, channelId, postId },
+      } satisfies NewLinkWithNotes;
+    }
+
     if (draft.type !== TYPE_CONVERSATION) return null;
 
     // Resolve recipient ids (LinkedIn provider_id / URN) from the
@@ -450,6 +725,54 @@ export class LinkedIn extends Connector<LinkedIn> {
     note: Note,
     thread: Thread
   ): Promise<NoteWriteBackResult | void> {
+    const meta0 = (thread.meta ?? {}) as Record<string, unknown>;
+    const postId = meta0.postId as string | undefined;
+    if (postId) {
+      const channelId = meta0.channelId as string | undefined;
+      if (!channelId) return;
+      // The post body note is authored via onCreateLink's returned link, not a
+      // reply — skip it so we don't comment our own post text.
+      if (note.key === postBodyNoteKey(postId)) return;
+      const text = markdownToPlainText(note.content ?? "");
+      if (!text) return;
+
+      // reNoteKey (runtime-resolved) is the key of the note this reply targets.
+      // A comment key → nested reply; the post-body key or absent → top-level.
+      const reNoteKey = meta0.reNoteKey as string | undefined;
+      let parentCommentId: string | null = null;
+      if (reNoteKey && reNoteKey.startsWith("comment-")) {
+        parentCommentId = reNoteKey.slice("comment-".length);
+      }
+
+      const fileActions = (note.actions ?? []).filter(
+        (a): a is Extract<Action, { type: typeof ActionType.file }> =>
+          a.type === ActionType.file,
+      );
+      const attachments: Array<{
+        buffer: Uint8Array;
+        filename: string;
+        mimeType: string;
+      }> = [];
+      for (const action of fileActions) {
+        try {
+          const file = await this.tools.files.read(action.fileId);
+          attachments.push({
+            buffer: file.data,
+            filename: file.fileName,
+            mimeType: file.mimeType,
+          });
+        } catch (e) {
+          console.error("LinkedIn comment attachment read failed", action.fileId, e);
+        }
+      }
+
+      const { commentId } = await this.tools.linkedin.createComment({
+        channelId, postId, text, parentCommentId,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      });
+      return { key: `comment-${commentId}`, externalContent: text };
+    }
+
     const meta = (thread.meta ?? {}) as Record<string, unknown>;
     const chatId = meta.chatId as string | undefined;
     const channelId = meta.channelId as string | undefined;
@@ -511,6 +834,36 @@ export class LinkedIn extends Connector<LinkedIn> {
     emoji: string,
     added: boolean
   ): Promise<void> {
+    const pmeta = (thread.meta ?? {}) as Record<string, unknown>;
+    const postId = pmeta.postId as string | undefined;
+    if (postId) {
+      const channelId = pmeta.channelId as string | undefined;
+      if (!channelId) return;
+      // socialId: the comment id for a comment note, else the post id.
+      const socialId = note.key && note.key.startsWith("comment-")
+        ? note.key.slice("comment-".length)
+        : postId;
+
+      const stateKey = `post_reaction_sent:${socialId}`;
+      const lastSent = (await this.get<string>(stateKey)) ?? null;
+      const decision = reconcilePerUserReaction(lastSent, emoji, added, LINKEDIN_POST_REACTIONS);
+      if (decision.action === "none") return;
+      try {
+        if (decision.action === "set") {
+          const reactionType = mapEmojiToPostReactionType(decision.emoji);
+          if (!reactionType) return;
+          await this.tools.linkedin.reactToPost({ channelId, socialId, reactionType });
+          await this.set(stateKey, decision.emoji);
+        } else {
+          await this.tools.linkedin.unreactToPost({ channelId, socialId });
+          await this.clear(stateKey);
+        }
+      } catch (error) {
+        console.warn(`LinkedIn post reaction write-back failed for ${socialId}`, error);
+      }
+      return;
+    }
+
     const meta = (thread.meta ?? {}) as Record<string, unknown>;
     const channelId = meta.channelId as string | undefined;
     const chatId = meta.chatId as string | undefined;

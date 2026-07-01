@@ -196,3 +196,71 @@ export type UnipileRelationList = {
   data: UnipileRelation[];
   next_cursor?: string | null;
 };
+
+// ---------- Posts / comments / reactions (v2, LIVE-CONFIRM shapes) ----------
+
+/** A post returned by GET /v2/:acc/users/me/posts or GET /v2/:acc/posts/:id. */
+export type UnipilePostRaw = {
+  id?: string;
+  /** urn:li:activity:… — the id all post interactions key on. */
+  social_id?: string;
+  share_url?: string;
+  text?: string | null;
+  date?: string;
+  parsed_datetime?: string;
+  author?: UnipileUser & { public_profile_url?: string };
+};
+export type UnipilePostListRaw = {
+  object?: string;
+  items?: UnipilePostRaw[];
+  data?: UnipilePostRaw[];
+  cursor?: string | null;
+  next_cursor?: string | null;
+};
+
+/** A comment or reply on a post. */
+export type UnipileCommentRaw = {
+  id: string;
+  text?: string | null;
+  date?: string;
+  parsed_datetime?: string;
+  author?: UnipileUser & { public_profile_url?: string };
+  /** Set on replies; identifies the top-level comment they hang under. */
+  parent_comment_id?: string | null;
+  parent?: string | null;
+};
+export type UnipileCommentListRaw = {
+  object?: string;
+  items?: UnipileCommentRaw[];
+  data?: UnipileCommentRaw[];
+  cursor?: string | null;
+  next_cursor?: string | null;
+};
+
+/** Echo returned by POST .../posts (create post). */
+export type UnipileCreatedPostRaw = {
+  object?: string;
+  post_id?: string;
+  social_id?: string;
+  id?: string;
+};
+/** Echo returned by POST .../posts/:id/comments (create comment). */
+export type UnipileCreatedCommentRaw = {
+  object?: string;
+  comment_id?: string;
+  id?: string;
+};
+
+/** A single reactor entry from GET .../posts/:id/reactions. */
+export type UnipilePostReactionRaw = {
+  value?: string;
+  reaction_type?: string;
+  author?: UnipileUser & { public_profile_url?: string };
+};
+export type UnipilePostReactionListRaw = {
+  object?: string;
+  items?: UnipilePostReactionRaw[];
+  data?: UnipilePostReactionRaw[];
+  cursor?: string | null;
+  next_cursor?: string | null;
+};

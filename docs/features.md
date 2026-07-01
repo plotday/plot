@@ -65,6 +65,7 @@ Plot gives you the context and clarity to make your next move.
   requests), LinkedIn (two-way messages and connection requests) — read, reply, react, and start new
   conversations. These are provided by a third party and require a $5/month connection add-on on any
   plan, including Team.
+- LinkedIn Public Post channel: compose a public LinkedIn post from Plot; comments sync two-way.
 - Add private notes on any shared thread, visible only to you.
 - Auto-threading (opt-in per connection): for tools that carry a conversation as a run of separate
   messages — like Slack channels — Plot can fold related messages into a single thread instead of

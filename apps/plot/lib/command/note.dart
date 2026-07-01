@@ -312,11 +312,21 @@ class AddNoteReaction extends NoteCommand {
       // Resolve the thread's connector via its primary canonical link's owning
       // twist_instance, then read that instance's synced reaction
       // capabilities. Plot-native threads (no link) → open.
-      final connectionId = Thread.primaryLink(links)?.createdBy;
+      final primary = Thread.primaryLink(links);
+      final connectionId = primary?.createdBy;
       final instance = connectionId == null
           ? null
           : TwistInstance.fromCache(connectionId);
-      final caps = reactionCapabilitiesFromJson(instance?.reactionCapabilities);
+      // Prefer the primary link's own type-level reaction caps (e.g. a
+      // LinkedIn post's 6 reactions) over the connector-wide default (e.g.
+      // LinkedIn DM's 7), falling back to the latter when the link type
+      // doesn't declare its own.
+      final perTypeCaps = (connectionId == null || primary?.type == null)
+          ? null
+          : Channel.reactionCapabilitiesFor(connectionId, primary!.type!);
+      final caps = reactionCapabilitiesFromJson(
+        perTypeCaps ?? instance?.reactionCapabilities,
+      );
       final allowed = caps.allowed;
 
       // Offer this connection's workspace custom emoji (e.g. Slack

@@ -7,6 +7,7 @@ import { notifySync, getPriorityForThread } from "./notify";
 import {
   resolveCreateLinkContacts,
   dispatchCreateLink,
+  noteActionsToAttachments,
   type PendingCreateLink,
 } from "./create-link-dispatch";
 
@@ -41,7 +42,7 @@ noteRetrySend.post("/sync/note-retry-send", async (c) => {
   // Only the note's author may retry it, and only when it actually failed.
   const note = await c.var.db
     .selectFrom("note")
-    .select(["id", "thread_id", "content"])
+    .select(["id", "thread_id", "content", "actions"])
     .where("id", "=", noteId)
     .where("created_by", "=", userId)
     .where("delivery_error", "is not", null)
@@ -130,6 +131,11 @@ noteRetrySend.post("/sync/note-retry-send", async (c) => {
   const noteContent = note.content ?? null;
   const contactIds = (thread?.contacts ?? []) as string[];
   const groupIds = (thread?.groups ?? []) as string[];
+  // Unlike the initial compose dispatch (sync/threads), which reads file
+  // actions from the client-sent `note_actions` control field because the
+  // note isn't reliably persisted yet, by retry time the note IS in the DB —
+  // so read its file actions straight from the persisted `note.actions`.
+  const noteAttachments = noteActionsToAttachments(note.actions);
   const tracker = c.var.tracker;
 
   c.executionCtx.waitUntil(
@@ -157,6 +163,7 @@ noteRetrySend.post("/sync/note-retry-send", async (c) => {
             noteContent,
             contacts,
             inviteEmails: spec.invite_emails ?? [],
+            attachments: noteAttachments,
           },
         });
       } catch (error) {

@@ -12,6 +12,35 @@ export type CreateLinkContact = {
   name: string | null;
 };
 
+/** A file attachment carried into a connector's onCreateLink draft (matches
+ * the Twister SDK's `CreateLinkDraft.attachments` shape, connector.ts:201). */
+export type CreateLinkAttachment = {
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number | null;
+};
+
+/**
+ * Filter a note's `actions` (jsonb, either the raw client-sent `note_actions`
+ * control field or a persisted `note.actions` column) down to file actions
+ * and map them to the draft's attachment shape. Defensive/best-effort: any
+ * non-array input or entry missing the required fields is dropped rather
+ * than throwing, so this is a no-op until callers actually send/store file
+ * actions on the composed thread's first note.
+ */
+export function noteActionsToAttachments(rawActions: unknown): CreateLinkAttachment[] {
+  const actions = Array.isArray(rawActions) ? (rawActions as any[]) : [];
+  return actions
+    .filter((a) => a && a.type === "file" && typeof a.fileId === "string")
+    .map((a) => ({
+      fileId: a.fileId as string,
+      fileName: typeof a.fileName === "string" ? a.fileName : "attachment",
+      mimeType: typeof a.mimeType === "string" ? a.mimeType : "application/octet-stream",
+      fileSize: typeof a.fileSize === "number" ? a.fileSize : null,
+    }));
+}
+
 /** The persisted create_link spec (thread.pending_create_link) needed to
  * re-dispatch a compose on retry. Recipients are re-resolved from the thread's
  * contacts; only the parts not derivable from the thread are stored. */
@@ -34,6 +63,7 @@ export type CreateLinkDraftPayload = {
   noteContent: string | null;
   contacts: CreateLinkContact[];
   inviteEmails: string[];
+  attachments: CreateLinkAttachment[];
 };
 
 /**
