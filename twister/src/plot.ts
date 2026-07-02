@@ -206,6 +206,12 @@ export enum ConferencingProvider {
 }
 
 /**
+ * Outcome of a single plan operation, reported back to the plan callback
+ * after server-side execution. Order matches the plan's `operations` array.
+ */
+export type PlanOperationResult = { success: boolean; error?: string };
+
+/**
  * Represents a clickable action attached to a thread.
  *
  * Thread actions are rendered as buttons that enable user interaction with threads.
@@ -326,8 +332,19 @@ export type Action =
       title: string;
       /** Operations to execute on approval */
       operations: PlanOperation[];
-      /** Callback invoked with (action, approved: boolean) */
+      /** Callback invoked with (action, approved: boolean) after the user decides */
       callback: Callback;
+      /**
+       * The user's decision. Set by the server when the action is delivered
+       * to the plan callback; absent on the action the twist created.
+       */
+      approved?: boolean;
+      /**
+       * Per-operation execution results, same order as `operations`. Set by
+       * the server when `approved` is true: operations are executed
+       * server-side BEFORE the callback is invoked.
+       */
+      results?: PlanOperationResult[];
     };
 
 /**
@@ -1303,6 +1320,16 @@ export type LinkUpdate = { id: Uuid } & {
  * a human-readable summary without additional lookups.
  */
 export type PlanOperation =
+  | {
+      type: "createFocus";
+      /**
+       * Client-generated Uuid (Uuid.Generate()) so later operations in the
+       * same plan can reference this focus before it exists. Execution
+       * creates the focus with exactly this id.
+       */
+      focusId: Uuid;
+      title: string;
+    }
   | {
       type: "updateThread";
       threadId: Uuid;
