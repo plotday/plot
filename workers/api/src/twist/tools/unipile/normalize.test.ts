@@ -110,13 +110,63 @@ describe("normalize (v2)", () => {
       is_event: false,
       text: "Hello",
       attachments: [],
-    });
+    }, "linkedin");
     expect(msg.sentByMe).toBe(true);
     expect(msg.text).toBe("Hello");
     expect(msg.sentAt.toISOString()).toBe("2026-05-22T10:05:00.000Z");
     expect(msg.attachments).toEqual([]);
     expect(msg.eventType).toBeNull();
     expect(msg.reactions).toEqual([]);
+  });
+
+  it("maps the embedded sender object to a ChatProfile (WhatsApp @lid groups)", () => {
+    // WhatsApp group chats do not embed a participant roster, but every message
+    // carries a full `sender` object. Keep it so downstream author resolution
+    // has a real name even when `sender_id` matches no participant.
+    const msg = normalizeMessage(
+      {
+        object: "Message",
+        id: "m3",
+        chat_id: "120363@g.us",
+        sender_id: "277510822584518@lid",
+        timestamp: "2026-05-22T10:07:00.000Z",
+        is_sender: false,
+        is_event: false,
+        text: "hi",
+        attachments: [],
+        sender: {
+          object: "User",
+          id: "277510822584518@lid",
+          display_name: "Andrew Karram",
+          public_identifier: null,
+          public_picture_url: "https://x/y.jpg",
+        },
+      },
+      "whatsapp"
+    );
+    expect(msg.sender).not.toBeNull();
+    expect(msg.sender!.id).toBe("277510822584518@lid");
+    expect(msg.sender!.name).toBe("Andrew Karram");
+    expect(msg.sender!.pictureUrl).toBe("https://x/y.jpg");
+    expect(msg.sender!.isSelf).toBe(false);
+  });
+
+  it("sets sender to null when the message has no embedded sender", () => {
+    const msg = normalizeMessage(
+      {
+        object: "Message",
+        id: "m3b",
+        chat_id: "c1",
+        sender_id: "ACoAA12345",
+        timestamp: "2026-05-22T10:07:00.000Z",
+        is_sender: false,
+        is_event: false,
+        text: "hi",
+        attachments: [],
+      },
+      "linkedin"
+    );
+    expect(msg.sender).toBeNull();
   });
 
   it("normalizes reactions_counter and flags reacted-by-me", () => {
@@ -134,7 +184,7 @@ describe("normalize (v2)", () => {
         { value: "👍", count: 2, reacted: true },
         { value: "❤️", count: 1, reacted: false },
       ],
-    });
+    }, "linkedin");
     expect(msg.reactions).toEqual([
       { value: "👍", senderId: "", sentByMe: true },
       { value: "❤️", senderId: "", sentByMe: false },
@@ -156,7 +206,7 @@ describe("normalize (v2)", () => {
         { value: undefined as unknown as string, count: 1, reacted: false },
         { value: "👍", count: 2, reacted: true },
       ],
-    });
+    }, "linkedin");
     expect(msg.reactions).toEqual([{ value: "👍", senderId: "", sentByMe: true }]);
   });
 
@@ -172,7 +222,7 @@ describe("normalize (v2)", () => {
       event_type: "reaction",
       text: null,
       attachments: [],
-    });
+    }, "linkedin");
     expect(msg.eventType).toBe("reaction");
     expect(msg.text).toBe("");
   });

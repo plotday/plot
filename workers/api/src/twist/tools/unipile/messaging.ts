@@ -66,7 +66,7 @@ export abstract class UnipileMessagingTool extends Tool implements IUnipileMessa
     return this.withAccount(params.channelId, async () => {
       const offset = params.cursor ? Number(params.cursor) : 0;
       const result = await this.client.listMessages({ accountId: params.channelId, chatId: params.chatId, offset, limit: params.limit });
-      const messages = result.data.map(normalizeMessage).filter((m) => !params.since || m.sentAt >= params.since);
+      const messages = result.data.map((m) => normalizeMessage(m, this.provider)).filter((m) => !params.since || m.sentAt >= params.since);
       const nextCursor = result.has_more ? String(offset + result.data.length) : null;
       return { messages, nextCursor };
     });
@@ -127,6 +127,7 @@ export abstract class UnipileMessagingTool extends Tool implements IUnipileMessa
       id,
       chatId,
       senderId: "",
+      sender: null,
       sentByMe: true,
       eventType: null,
       sentAt: new Date(),

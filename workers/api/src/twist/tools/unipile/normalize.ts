@@ -80,11 +80,15 @@ export function normalizeChat(chat: UnipileChat, provider: string): ChatThread {
   };
 }
 
-export function normalizeMessage(msg: UnipileMessage): ChatMessage {
+export function normalizeMessage(msg: UnipileMessage, provider: string): ChatMessage {
   return {
     id: msg.id,
     chatId: msg.chat_id,
     senderId: msg.sender_id,
+    // v2 embeds the sender profile on each message. WhatsApp group chats carry
+    // no participant roster, so this is the only place the sender's real name
+    // and avatar are available for author resolution downstream.
+    sender: msg.sender ? normalizeProfile(msg.sender, provider, msg.is_sender === true) : null,
     sentByMe: msg.is_sender === true,
     eventType: msg.is_event === true ? msg.event_type ?? "unknown" : null,
     sentAt: new Date(msg.timestamp),

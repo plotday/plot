@@ -44,6 +44,13 @@ export type ChatMessage = {
   id: string;
   chatId: string;
   senderId: string;
+  /**
+   * The sender's profile when the provider embeds it on the message. WhatsApp
+   * group chats return no participant roster on the chat, so `senderId` matches
+   * no participant — this per-message sender is then the only source of the
+   * author's real name/avatar. Null when the provider omits it.
+   */
+  sender: ChatProfile | null;
   sentByMe: boolean;
   /** Non-null for synthetic events (reactions, renames, calls); connectors skip these. */
   eventType: string | null;

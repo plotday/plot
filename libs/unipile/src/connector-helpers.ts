@@ -49,6 +49,25 @@ function titleCase(s: string): string {
   return s.length ? s[0]!.toUpperCase() + s.slice(1) : s;
 }
 
+/**
+ * Distinct non-self message senders, in first-seen order. Used to reconstruct a
+ * group's members when the provider omits a participant roster on the chat
+ * (WhatsApp groups) — the per-message embedded `sender` is then the only source
+ * of member identity.
+ */
+export function deriveMembersFromMessages(messages: ChatMessage[], chatId: string): ChatProfile[] {
+  const seen = new Map<string, ChatProfile>();
+  for (const m of messages) {
+    if (m.sentByMe) continue;
+    const s = m.sender;
+    // Skip self and the group-self sender (Unipile quirk: `sender.id === chatId`)
+    // so the group never lists itself as a member.
+    if (!s || s.isSelf || s.id === chatId) continue;
+    if (!seen.has(s.id)) seen.set(s.id, s);
+  }
+  return [...seen.values()];
+}
+
 export function joinParticipantNames(profiles: ChatProfile[]): string {
   if (profiles.length === 0) return "Group";
   if (profiles.length === 1) return profiles[0]!.name;
@@ -147,8 +166,23 @@ export function buildNoteFromMessage(
   provider: string,
   threadPersonId?: string
 ): NewNote {
-  const sender = chat.participants.find((p) => p.id === msg.senderId) ?? null;
-  const author = sender ? profileToContact(sender) : senderFallbackContact(msg, provider);
+  // Author resolution, richest source first: a matched participant carries the
+  // fullest profile (phone/email for cross-connector merge). When the chat has
+  // no roster (WhatsApp groups) the `senderId` matches nothing, so fall back to
+  // the per-message embedded `sender` for the real name/avatar. Own messages
+  // stay attributed via `senderFallbackContact` ("You"). Only when neither a
+  // participant nor an embedded sender is known do we use the generic stub.
+  const participant = chat.participants.find((p) => p.id === msg.senderId) ?? null;
+  // Unipile occasionally reports a real person's group message with the group's
+  // own JID as the sender (`sender.id === chat.id`, display_name = the group
+  // name). That is not a person — fall through to the generic stub rather than
+  // labelling the note with the group's name.
+  const embeddedSender = msg.sender && msg.sender.id !== chat.id ? msg.sender : null;
+  const author = participant
+    ? profileToContact(participant)
+    : embeddedSender && !msg.sentByMe
+      ? profileToContact(embeddedSender)
+      : senderFallbackContact(msg, provider);
   const actions: Action[] = msg.attachments.map((a: ChatAttachment) => ({
     type: ActionType.fileRef as typeof ActionType.fileRef,
     ref: `${msg.id}:${a.id}`,
@@ -219,17 +253,23 @@ export function assembleGroupLink(opts: {
   const { provider, channelId, chat, messages, initialSync } = opts;
   const items = messages.filter((m) => m.eventType === null);
   const others = chat.participants.filter((p) => !p.isSelf);
+  // WhatsApp groups return no participant roster, so `others` is empty. Derive
+  // the members from the distinct non-self message senders instead, so the
+  // group thread has real member contacts (and a name-based title fallback)
+  // rather than only the connected user. Limited to senders seen in the fetched
+  // message window — a silent member who never spoke won't appear until they do.
+  const members = others.length > 0 ? others : deriveMembersFromMessages(items, chat.id);
   const notes: NewNote[] = items.slice().reverse().map((m) => buildNoteFromMessage(m, chat, provider));
   return {
     source: `${provider}:chat:${chat.id}`,
     sources: [`${provider}:chat:${chat.id}`],
     type: opts.type ?? "group",
     ...(initialSync ? { status: "inbox" } : {}),
-    title: chat.title ?? joinParticipantNames(others),
+    title: chat.title ?? joinParticipantNames(members),
     preview: chat.lastMessagePreview ?? null,
     sourceUrl: chat.url,
     created: chat.lastActivityAt,
-    accessContacts: others.map((p) => profileToContact(p)),
+    accessContacts: members.map((p) => profileToContact(p)),
     notes,
     meta: { syncProvider: provider, channelId, chatId: chat.id },
     ...(initialSync ? { unread: false, archived: false } : {}),

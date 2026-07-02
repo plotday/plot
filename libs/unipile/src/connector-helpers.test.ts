@@ -16,7 +16,7 @@ const prof = (over: Partial<ChatProfile>): ChatProfile => ({
   email: null, phone: null, pictureUrl: null, profileUrl: null, ...over,
 });
 const msg = (over: Partial<ChatMessage>): ChatMessage => ({
-  id: "m1", chatId: "c1", senderId: "p1", sentByMe: false, eventType: null,
+  id: "m1", chatId: "c1", senderId: "p1", sender: null, sentByMe: false, eventType: null,
   sentAt: new Date("2026-06-01T00:00:00Z"), text: "hi", attachments: [],
   reactions: [], ...over,
 });
@@ -176,6 +176,46 @@ describe("buildNoteFromMessage", () => {
     const note = buildNoteFromMessage(msg({ senderId: "p2" }), c, "instagram");
     expect(note.thread).toEqual({ source: "instagram:chat:g1" });
   });
+  // WhatsApp group chats carry no participant roster, so `senderId` matches no
+  // participant. The embedded per-message `sender` is the only identity source —
+  // use it instead of the generic "Whatsapp user" fallback.
+  test("uses the message sender when senderId matches no participant", () => {
+    const c = chat({ id: "g1", isGroup: true, participants: [] });
+    const m = msg({
+      senderId: "277510822584518@lid",
+      sender: prof({ id: "277510822584518@lid", name: "Andrew Karram" }),
+    });
+    const note = buildNoteFromMessage(m, c, "whatsapp");
+    expect(note.author).toEqual({ name: "Andrew Karram", avatar: undefined, source: { accountId: "277510822584518@lid" } });
+  });
+  // Unipile sometimes reports a real person's group message with the group's own
+  // JID as the sender (sender.id === chat.id, display_name = the group name).
+  // That is not a person — never label the note with the group name; use the
+  // generic stub so it is not mistaken for someone speaking as the group.
+  test("ignores a sender that is the group itself (@g.us) and uses the fallback", () => {
+    const c = chat({ id: "120363@g.us", isGroup: true, participants: [] });
+    const m = msg({
+      senderId: "120363@g.us",
+      sender: prof({ id: "120363@g.us", name: "2026 Fam Canoe Trip" }),
+    });
+    const note = buildNoteFromMessage(m, c, "whatsapp");
+    expect(note.author).toEqual({ name: "Whatsapp user", source: { accountId: "120363@g.us" } });
+  });
+  test("falls back to the provider-named stub when neither participant nor sender is known", () => {
+    const c = chat({ id: "g1", isGroup: true, participants: [] });
+    const note = buildNoteFromMessage(msg({ senderId: "277510822584518@lid", sender: null }), c, "whatsapp");
+    expect(note.author).toEqual({ name: "Whatsapp user", source: { accountId: "277510822584518@lid" } });
+  });
+  test("own messages stay attributed to You even when sender is embedded", () => {
+    const c = chat({ id: "g1", isGroup: true, participants: [] });
+    const m = msg({
+      senderId: "self@lid",
+      sentByMe: true,
+      sender: prof({ id: "self@lid", name: "You", isSelf: true }),
+    });
+    const note = buildNoteFromMessage(m, c, "whatsapp");
+    expect(note.author).toEqual({ name: "You", source: { accountId: "self@lid" } });
+  });
 });
 
 describe("assembleGroupLink", () => {
@@ -188,6 +228,39 @@ describe("assembleGroupLink", () => {
     expect(link.source).toBe("instagram:chat:c1");
     expect(link.accessContacts).toHaveLength(2);
     expect(link.title).toBe("Bob, Cy");
+  });
+  // WhatsApp groups return no participant roster, so `others` is empty. Derive
+  // the member contacts from the distinct non-self message senders instead, so
+  // the group thread has real members rather than only the connected user.
+  test("derives member contacts from message senders when the roster is empty", () => {
+    const link = assembleGroupLink({
+      provider: "whatsapp", channelId: "acc1",
+      chat: chat({ id: "g1", isGroup: true, title: "Fam Trip", participants: [] }),
+      messages: [
+        msg({ id: "a", senderId: "p2@lid", sender: prof({ id: "p2@lid", name: "Andrew" }) }),
+        msg({ id: "b", senderId: "p3@lid", sender: prof({ id: "p3@lid", name: "Grace" }) }),
+        // duplicate sender — must be deduped
+        msg({ id: "c", senderId: "p2@lid", sender: prof({ id: "p2@lid", name: "Andrew" }) }),
+        // own message — must be excluded from members
+        msg({ id: "d", senderId: "self@lid", sentByMe: true, sender: prof({ id: "self@lid", name: "You", isSelf: true }) }),
+        // group-self sender (Unipile quirk) — must NOT become a member
+        msg({ id: "e", senderId: "g1", sender: prof({ id: "g1", name: "Fam Trip" }) }),
+      ],
+      initialSync: true,
+    });
+    expect(link.accessContacts).toEqual([
+      { name: "Andrew", avatar: undefined, source: { accountId: "p2@lid" } },
+      { name: "Grace", avatar: undefined, source: { accountId: "p3@lid" } },
+    ]);
+  });
+  test("keeps roster-derived members when participants are present (does not double up from senders)", () => {
+    const link = assembleGroupLink({
+      provider: "instagram", channelId: "acc1",
+      chat: chat({ isGroup: true, participants: [prof({ isSelf: true }), prof({ id: "p2", name: "Bob" })] }),
+      messages: [msg({ senderId: "p2", sender: prof({ id: "p2", name: "Bob" }) })],
+      initialSync: true,
+    });
+    expect(link.accessContacts).toEqual([{ name: "Bob", avatar: undefined, source: { accountId: "p2" } }]);
   });
   test("type defaults to group; can be overridden to conversation (LinkedIn)", () => {
     const groupChat = chat({
