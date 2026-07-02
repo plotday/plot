@@ -1,6 +1,8 @@
 import { PostHog } from "posthog-node";
 import { type Kysely, sql } from "kysely";
 
+import { exceptionFingerprintBeforeSend } from "@plotday/worker-util";
+
 import type { DB } from "../../db";
 import type { Bindings } from "../../env";
 
@@ -105,6 +107,7 @@ export async function getSenderEngagement(
         host: env.POSTHOG_HOST,
         flushAt: 1,
         flushInterval: 0,
+        before_send: exceptionFingerprintBeforeSend,
       });
       postHog.captureException(error as Error, recipientUserId, {
         context: "importance:getSenderEngagement",

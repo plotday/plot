@@ -1,5 +1,7 @@
 import { PostHog } from "posthog-node";
 
+import { exceptionFingerprintBeforeSend } from "@plotday/worker-util";
+
 import type { Bindings } from "../env";
 
 // Populated by the Wrangler `define` for each env (development | production).
@@ -51,6 +53,7 @@ export async function emitCustomDeploymentEvent(
     host: input.env.POSTHOG_HOST,
     flushAt: 1,
     flushInterval: 0,
+    before_send: exceptionFingerprintBeforeSend,
   });
   try {
     postHog.capture({
@@ -121,6 +124,7 @@ export async function emitNeedsReauthEvent(
       host: input.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     try {
       postHog.capture({
@@ -174,6 +178,7 @@ export async function captureGenerationFailure(
     host: input.env.POSTHOG_HOST,
     flushAt: 1,
     flushInterval: 0,
+    before_send: exceptionFingerprintBeforeSend,
   });
   try {
     postHog.captureException(err, input.userId ?? undefined, {

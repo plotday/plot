@@ -4,7 +4,7 @@ import { sql, type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
 import { z } from "zod";
 
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 import type { DB } from "../db-types";
 import { withDb, withUserDb } from "../db";
@@ -143,6 +143,7 @@ export class ChannelRouter extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "ChannelRouter",

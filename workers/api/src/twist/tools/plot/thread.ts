@@ -18,7 +18,7 @@ import {
 } from "@plotday/twister/plot";
 import { ContactAccess, ThreadAccess } from "@plotday/twister/tools/plot";
 
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { sql, type Kysely } from "kysely";
 import type { DB } from "../../../db-types";
 import { rpc, rpcUser } from "../../../rpc";
@@ -454,7 +454,7 @@ export async function createThread(
           upsert: JSON.stringify(prep.upsert),
           defaults: JSON.stringify(prep.defaults),
         });
-        const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+        const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0, before_send: exceptionFingerprintBeforeSend });
         postHog.captureException(error as Error, userId, {
           context: "plot:upsertThread",
           twist_instance_id: plot.twistInstanceId,

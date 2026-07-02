@@ -10,7 +10,7 @@ import {
   isTransientDbError,
 } from "../db";
 import type { ThreadTagChange, Bindings, TwistBatchMessage } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { processTwistBatch } from "../queue/updates";
 import { transientErrorReason } from "../utils/transient-error";
 import { TransientAlarmRetry, isTransientAlarmError } from "./alarm-retry";
@@ -78,6 +78,7 @@ export class TwistSync extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, this.ownerId ?? undefined, {
       durable_object: "TwistSync",
@@ -100,6 +101,7 @@ export class TwistSync extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.capture({
       distinctId: "system",
@@ -123,6 +125,7 @@ export class TwistSync extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     try {
       await processTwistBatch(

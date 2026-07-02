@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
 
 import type { Bindings } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { verifyToken } from "@clerk/backend";
 
 interface QueuedMessage {
@@ -33,6 +33,7 @@ export class Broadcast extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "Broadcast",

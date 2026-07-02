@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
 
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 import { isTransientDbError, withDb } from "../db";
 import type { Bindings } from "../env";
@@ -61,6 +61,7 @@ export class PushNotify extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "PushNotify",
@@ -83,6 +84,7 @@ export class PushNotify extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.capture({
       distinctId: "system",

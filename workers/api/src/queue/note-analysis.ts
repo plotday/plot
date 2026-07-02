@@ -1,6 +1,8 @@
 import { type Kysely, sql } from "kysely";
 import { PostHog } from "posthog-node";
 
+import { exceptionFingerprintBeforeSend } from "@plotday/worker-util";
+
 import type { DB } from "../db";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
@@ -585,7 +587,7 @@ export async function applyThreadState(
         `[note-analysis] Failed to apply thread state for user ${member.userId}:`,
         error
       );
-      const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+      const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0, before_send: exceptionFingerprintBeforeSend });
       postHog.captureException(error as Error, member.userId, { context: "note-analysis:applyThreadState", thread_id: threadId });
       await postHog.shutdown();
     }

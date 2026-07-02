@@ -22,7 +22,7 @@ import { createClerkClient } from "@clerk/backend";
 import { PostHog } from "posthog-node";
 import type { Kysely } from "kysely";
 
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 import { sql, withDb, type DB } from "../db";
 import type { Bindings } from "../env";
@@ -108,6 +108,7 @@ export async function purgeDeletedAccounts(
     host: env.POSTHOG_HOST,
     flushAt: 1,
     flushInterval: 0,
+    before_send: exceptionFingerprintBeforeSend,
   });
 
   try {

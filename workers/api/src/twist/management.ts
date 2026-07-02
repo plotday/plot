@@ -5,7 +5,7 @@ import type { twistFactory } from ".";
 import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { rpc } from "../rpc";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import {
   BUILTIN_TWIST_PACKAGE_ID,
   checkTwistCapacity,
@@ -1228,6 +1228,7 @@ export async function activateDraft(
           host: env.POSTHOG_HOST,
           flushAt: 1,
           flushInterval: 0,
+          before_send: exceptionFingerprintBeforeSend,
         });
         postHog.captureException(
           error instanceof Error ? error : new Error(String(error)),

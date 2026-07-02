@@ -9,7 +9,7 @@ import {
   isTransientDoResetError,
   transientErrorReason,
 } from "../utils/transient-error";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { TransientAlarmRetry, isTransientAlarmError } from "./alarm-retry";
 
 // Debouncing configuration (compile-time constants)
@@ -57,6 +57,7 @@ export class UserSync extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "UserSync",
@@ -78,6 +79,7 @@ export class UserSync extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.capture({
       distinctId: "system",

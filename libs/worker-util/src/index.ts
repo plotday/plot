@@ -2,3 +2,4 @@
 export * from "./logger";
 export * from "./db-retry";
 export * from "./background-guard";
+export * from "./posthog-fingerprint";

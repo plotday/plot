@@ -4,7 +4,7 @@ import { PostHog } from "posthog-node";
 import { withDb } from "../db";
 import { rpc } from "../rpc";
 import type { Bindings } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { dispatchInChunks, FAN_OUT_DISPATCH } from "../utils/dispatch-chunks";
 
 // Configuration
@@ -38,6 +38,7 @@ export class SyncRecovery extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, undefined, {
       durable_object: "SyncRecovery",

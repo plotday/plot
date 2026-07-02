@@ -2,6 +2,8 @@ import { PostHog } from "posthog-node";
 
 import type { Kysely } from "kysely";
 
+import { exceptionFingerprintBeforeSend } from "@plotday/worker-util";
+
 import type { DB } from "../db";
 import type { Bindings } from "../env";
 
@@ -77,6 +79,7 @@ export async function emitCtaPushEvent(
       host: env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     try {
       for (const userId of recipientUserIds) {

@@ -7,6 +7,7 @@ import {
   recordTimeout,
   shouldDefer,
   backoffDelaySeconds,
+  exceptionFingerprintBeforeSend,
 } from "@plotday/worker-util";
 
 import type { ClassifierBatchCache, RawQuery } from "@plotday/classifier";
@@ -45,6 +46,7 @@ export default {
       host: env.POSTHOG_HOST,
       flushAt: 5,
       flushInterval: 10,
+      before_send: exceptionFingerprintBeforeSend,
     });
     const batch = unknownBatch as MessageBatch<ClassifyJob>;
     const logger = createLogger({

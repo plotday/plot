@@ -14,7 +14,7 @@ import type {
   NewContact,
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { isTransientDbError, isLockContentionError } from "../../../db";
 import {
   classifyThreadForUser,
@@ -95,6 +95,7 @@ export async function handleDbOperationError(
         host: plot.env.POSTHOG_HOST,
         flushAt: 1,
         flushInterval: 0,
+        before_send: exceptionFingerprintBeforeSend,
       });
       const userId = await plot.getUserId().catch(() => undefined);
       postHog.capture({
@@ -141,6 +142,7 @@ export async function handleDbOperationError(
         host: plot.env.POSTHOG_HOST,
         flushAt: 1,
         flushInterval: 0,
+        before_send: exceptionFingerprintBeforeSend,
       });
       const userId = await plot.getUserId().catch(() => undefined);
       postHog.captureException(error as Error, userId, {

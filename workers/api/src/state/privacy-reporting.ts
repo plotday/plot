@@ -7,7 +7,7 @@ import { AuthProvider } from "@plotday/twister/tools/integrations";
 import { type DB, withDb, sql } from "../db";
 import type { Bindings } from "../env";
 import { PROVIDER_CONFIGS, type StoredTokenData } from "../provider";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 // Report every 7 days
 const REPORT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -40,6 +40,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, undefined, {
       durable_object: "PrivacyReporting",

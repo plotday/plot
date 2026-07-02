@@ -1,7 +1,7 @@
 import { PostHog } from "posthog-node";
 
 import { type EmailType, render } from "@plotday/email";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 // ENV is defined as a global string literal in wrangler.jsonc
 declare const ENV: string;
@@ -138,6 +138,7 @@ export default {
       host: env.POSTHOG_HOST,
       flushAt: 5,
       flushInterval: 10,
+      before_send: exceptionFingerprintBeforeSend,
     });
     const batch = unknownBatch as MessageBatch<MailRequest>;
     const logger = createLogger({ component: "mailer", queue: "mail" });

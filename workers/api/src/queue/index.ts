@@ -10,7 +10,7 @@ import {
   type TwistBatchMessage,
   type WebhookMessage,
 } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { processExtractions } from "./extract";
 import { processLogs } from "./logs";
 import { processMail } from "./mail";
@@ -33,6 +33,7 @@ export async function queue(
     host: env.POSTHOG_HOST,
     flushAt: 10,
     flushInterval: 10,
+    before_send: exceptionFingerprintBeforeSend,
   });
 
   // Create logger with queue context

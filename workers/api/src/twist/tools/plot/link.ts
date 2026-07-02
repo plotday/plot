@@ -3,6 +3,7 @@ import type { Link, LinkUpdate, Note, NewLinkWithNotes, Uuid, ActorId } from "@p
 import { ActorType } from "@plotday/twister/plot";
 import type { LinkFilter } from "@plotday/twister/tools/plot";
 import { LinkAccess } from "@plotday/twister/tools/plot";
+import { exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 import { sql, type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
@@ -483,6 +484,7 @@ export async function createLink(
           host: plot.env.POSTHOG_HOST,
           flushAt: 1,
           flushInterval: 0,
+          before_send: exceptionFingerprintBeforeSend,
         });
         postHog.captureException(
           unreadError as Error,
@@ -510,6 +512,7 @@ export async function createLink(
           host: plot.env.POSTHOG_HOST,
           flushAt: 1,
           flushInterval: 0,
+          before_send: exceptionFingerprintBeforeSend,
         });
         postHog.captureException(
           readError as Error,
@@ -538,6 +541,7 @@ export async function createLink(
           host: plot.env.POSTHOG_HOST,
           flushAt: 1,
           flushInterval: 0,
+          before_send: exceptionFingerprintBeforeSend,
         });
         postHog.captureException(
           muteError as Error,

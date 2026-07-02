@@ -2,7 +2,7 @@ import { PostHog } from "posthog-node";
 import { sql } from "kysely";
 
 import type { Bindings } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { withDb, type DB, type Kysely } from "../db";
 import {
   markThreadUnreadForOthers,
@@ -122,6 +122,7 @@ export async function publishScheduledNotes(
   const postHog = new PostHog(env.POSTHOG_API_KEY, {
     host: "https://us.i.posthog.com",
     disabled: !env.POSTHOG_API_KEY,
+    before_send: exceptionFingerprintBeforeSend,
   });
 
   try {

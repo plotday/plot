@@ -49,7 +49,7 @@ import tokens from "./sdk/tokens";
 // Import Stripe routes and middleware
 import { stripeMiddleware } from "./stripe/middleware";
 import stripe from "./stripe/stripe";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
 import { dbMiddleware } from "./middleware/db";
 import { withDb } from "./db";
@@ -115,6 +115,7 @@ app.use("*", async (c, next) => {
     host: c.env.POSTHOG_HOST,
     flushAt: 5,
     flushInterval: 10,
+    before_send: exceptionFingerprintBeforeSend,
   });
   c.set("tracker", new Tracker(postHog));
   try {
@@ -474,6 +475,7 @@ async function scheduled(
       host: env.POSTHOG_HOST,
       flushAt: 20,
       flushInterval: 1000,
+      before_send: exceptionFingerprintBeforeSend,
     });
     const tracker = new Tracker(postHog);
     try {

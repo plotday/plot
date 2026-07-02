@@ -6,7 +6,7 @@ import { sql, type Kysely } from "kysely";
 import type { Bindings } from "../env";
 import type { DB } from "../db";
 import { captureServerError } from "../utils/error-capture";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { checkAiLimit, isAiEnabled, recordAiUsage } from "../utils/ai-limits";
 import {
@@ -378,7 +378,7 @@ export async function generateSummary(
   } catch (e) {
     const logger = createLogger();
     logger.error("Error generating notification summary", e as Error);
-    const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+    const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0, before_send: exceptionFingerprintBeforeSend });
     postHog.captureException(e as Error, userId, { context: "notification-summary:generateSummary" });
     await postHog.shutdown();
     return fallbackSummary(threads);

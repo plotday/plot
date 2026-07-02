@@ -3,7 +3,7 @@ import { PostHog } from "posthog-node";
 
 import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { buildTwist } from "./builder";
 import { addUpgradeNote } from "./dev-activities";
 import { type TwistPermissions, storeTwistModule } from "./index";
@@ -545,6 +545,7 @@ export async function deployTwist({
         host: env.POSTHOG_HOST,
         flushAt: 1,
         flushInterval: 0,
+        before_send: exceptionFingerprintBeforeSend,
       });
       postHog.captureException(upsertPublicError as Error, userId ?? undefined, {
         context: "twist:auto-approve:public-upsert",

@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { sql } from "kysely";
 import { PostHog } from "posthog-node";
 
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 import { withDb } from "../db";
 import type { Bindings } from "../env";
@@ -63,6 +63,7 @@ export class EmailNotify extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "EmailNotify",
@@ -83,6 +84,7 @@ export class EmailNotify extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.capture({
       distinctId: "system",

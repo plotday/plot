@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { sql } from "kysely";
 import { PostHog } from "posthog-node";
 
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 import { type Kysely, withDb } from "../db";
 import type { DB } from "../db-types";
@@ -70,6 +70,7 @@ export class Usage extends DurableObject<Bindings> {
       host: this.env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     postHog.captureException(error, undefined, {
       durable_object: "Usage",

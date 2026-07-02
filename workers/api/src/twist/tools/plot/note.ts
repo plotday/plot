@@ -13,7 +13,7 @@ import {
   type Uuid,
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { PostHog } from "posthog-node";
 
 import type { DB } from "../../../db-types";
@@ -1176,7 +1176,7 @@ export async function createNotes(
             logger.error("Failed to detect tasks for note", error as Error, {
               note_id: noteId,
             });
-            const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+            const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0, before_send: exceptionFingerprintBeforeSend });
             postHog.captureException(error as Error, ownerId, { context: "detect-tasks:createNotes", note_id: noteId });
             await postHog.shutdown();
           }

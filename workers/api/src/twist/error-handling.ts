@@ -1,7 +1,7 @@
 import { PostHog } from "posthog-node";
 
 import { type TwistEnvironment, type Bindings } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import { exceptionFingerprint } from "../utils/exception-fingerprint";
 import { processStackTrace } from "../utils/stacktrace";
 import { Tracker } from "../utils/tracker";
@@ -208,6 +208,7 @@ export async function handleTwistOperation<T>(
           host: context.env.POSTHOG_HOST,
           flushAt: 1,
           flushInterval: 0,
+          before_send: exceptionFingerprintBeforeSend,
         });
         const tracker = new Tracker(
           postHog,

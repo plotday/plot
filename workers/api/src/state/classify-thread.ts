@@ -7,6 +7,7 @@ import {
   type ClassifierEnv,
 } from "@plotday/classifier-runtime";
 import type { Candidate } from "@plotday/classifier";
+import { exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
@@ -391,6 +392,7 @@ function capture(
       host: env.POSTHOG_HOST,
       flushAt: 1,
       flushInterval: 0,
+      before_send: exceptionFingerprintBeforeSend,
     });
     posthog.captureException(err as Error, userId, { threadId });
     void posthog.shutdown();

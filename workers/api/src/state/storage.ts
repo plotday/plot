@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { PostHog } from "posthog-node";
 
 import type { Bindings } from "../env";
-import { createLogger } from "@plotday/worker-util";
+import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-util";
 import {
   isTokenKey,
   openTokenValue,
@@ -69,6 +69,7 @@ export class Storage extends DurableObject<Bindings> {
           host: this.env.POSTHOG_HOST,
           flushAt: 1,
           flushInterval: 0,
+          before_send: exceptionFingerprintBeforeSend,
         });
         postHog.captureException(error, undefined, {
           durable_object: "Storage",
