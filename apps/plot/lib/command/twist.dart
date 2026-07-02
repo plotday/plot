@@ -1868,25 +1868,23 @@ class EditSource extends ShowForm {
                 FormInfo(
                   key: 'composite_reauth_button',
                   divider: false,
-                  builder: (formContext) => Padding(
-                    padding: EdgeInsets.only(
-                      left: formContext.theme.spacing.xl,
-                      right: formContext.theme.spacing.xl,
-                      bottom: formContext.theme.spacing.lg,
-                    ),
-                    child: CompositeReauthWidget(
-                      provider: provider,
-                      twistInstanceId: twistInstanceId,
-                      grantedGroupIds: allGroupIds,
-                      stagedGroupIds: allGroupIds, // force CTA visible
-                      accountHint: existingAccount?.email,
-                      onSuccess: () async {
-                        await TwistConnection.pull();
-                        if (formContext.mounted) {
-                          await FormScope.of(formContext)?.refresh?.call();
-                        }
-                      },
-                    ),
+                  // CompositeReauthWidget applies its own xl/lg padding, so it
+                  // is used bare here (no outer Padding) — matching the
+                  // product-setup usage above. Wrapping it again double-pads
+                  // and leaves a large gap under the button.
+                  builder: (formContext) => CompositeReauthWidget(
+                    provider: provider,
+                    twistInstanceId: twistInstanceId,
+                    grantedGroupIds: allGroupIds,
+                    stagedGroupIds: allGroupIds, // force CTA visible
+                    accountHint: existingAccount?.email,
+                    forReauth: true,
+                    onSuccess: () async {
+                      await TwistConnection.pull();
+                      if (formContext.mounted) {
+                        await FormScope.of(formContext)?.refresh?.call();
+                      }
+                    },
                   ),
                 ),
               ],

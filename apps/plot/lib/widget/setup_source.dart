@@ -1978,6 +1978,7 @@ class CompositeReauthWidget extends StatefulWidget {
     required this.stagedGroupIds,
     required this.onSuccess,
     this.accountHint,
+    this.forReauth = false,
     super.key,
   });
 
@@ -2001,6 +2002,13 @@ class CompositeReauthWidget extends StatefulWidget {
   /// connection state and refresh the form.
   final Future<void> Function() onSuccess;
 
+  /// When true, the caller (needs-reauth flow) already renders its own
+  /// "Reconnect … to resume syncing." message above this widget, so we omit
+  /// the redundant "Reconnect to enable new products." line and show only the
+  /// account hint. When false (product-setup flow, where new products are
+  /// being staged) we show the full "enable new products" prompt.
+  final bool forReauth;
+
   @override
   State<CompositeReauthWidget> createState() => CompositeReauthWidgetState();
 }
@@ -2020,25 +2028,36 @@ class CompositeReauthWidgetState extends State<CompositeReauthWidget> {
     final theme = context.theme;
     final union = computedScopeGroupIds;
 
+    // In the reauth flow the parent already shows a "Reconnect … to resume
+    // syncing." message, so we drop the redundant reconnect sentence and only
+    // surface the account hint (if any). In the product-setup flow we prompt
+    // to enable the newly staged products.
+    final headerText = widget.forReauth
+        ? (widget.accountHint != null
+            ? 'Sign in as ${widget.accountHint}.'
+            : null)
+        : (widget.accountHint != null
+            ? 'Reconnect to enable new products. Sign in as ${widget.accountHint}.'
+            : 'Reconnect to enable new products.');
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: EdgeInsets.only(
-            left: theme.spacing.xl,
-            right: theme.spacing.xl,
-            top: theme.spacing.md,
-            bottom: theme.spacing.sm,
-          ),
-          child: Text(
-            widget.accountHint != null
-                ? 'Reconnect to enable new products. Sign in as ${widget.accountHint}.'
-                : 'Reconnect to enable new products.',
-            style: theme.typography.sm.copyWith(
-              color: theme.colors.mutedForeground,
+        if (headerText != null)
+          Padding(
+            padding: EdgeInsets.only(
+              left: theme.spacing.xl,
+              right: theme.spacing.xl,
+              top: theme.spacing.md,
+              bottom: theme.spacing.sm,
+            ),
+            child: Text(
+              headerText,
+              style: theme.typography.sm.copyWith(
+                color: theme.colors.mutedForeground,
+              ),
             ),
           ),
-        ),
         Padding(
           padding: EdgeInsets.only(
             left: theme.spacing.xl,
