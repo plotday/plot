@@ -52,6 +52,7 @@ class AuthError implements Exception {
     required this.message,
     this.argument,
     this.code = AuthErrorCode.unknown,
+    this.clerkCode,
   });
 
   /// Raw error message (may contain template placeholders).
@@ -62,6 +63,15 @@ class AuthError implements Exception {
 
   /// Categorised error code.
   final AuthErrorCode code;
+
+  /// The raw Clerk server error code (e.g. `authorization_invalid`,
+  /// `external_account_not_found`), when this wraps a server response —
+  /// otherwise null. The categorised [code] deliberately collapses most
+  /// server errors to [AuthErrorCode.serverErrorResponse], which is fine for
+  /// branching UI but erases the detail needed to tell distinct failures
+  /// apart in telemetry (they also share a stack fingerprint in error
+  /// tracking). Capture sites forward this to PostHog as `clerk_code`.
+  final String? clerkCode;
 
   @override
   String toString() {

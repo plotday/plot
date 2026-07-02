@@ -201,7 +201,19 @@ class _SignInPageState extends State<SignInPage> {
           return;
         }
       }
-      Tracker.captureException(errorToShow, t);
+      // Single capture point for this leg. Tag with the raw Clerk error code
+      // so PostHog can tell otherwise-identical failures apart — audience
+      // rejection, authorization_invalid (missing client token), and a
+      // disabled Google strategy all share the same call-stack fingerprint and
+      // would collapse into one issue without it.
+      Tracker.captureException(
+        errorToShow,
+        t,
+        properties: <String, dynamic>{
+          'flow': 'oauth_idtoken_signin',
+          if (errorToShow.clerkCode != null) 'clerk_code': errorToShow.clerkCode,
+        },
+      );
       if (!mounted) return;
       String message = errorToShow.toString();
       if (message.contains('google_one_tap') ||
@@ -217,7 +229,16 @@ class _SignInPageState extends State<SignInPage> {
       }
       if (errorToShow.code == AuthErrorCode.serverErrorResponse ||
           message.contains('error received from server')) {
-        _showGenericError(errorToShow, t);
+        // Already captured above — surface the generic message without
+        // re-reporting (the previous _showGenericError call here double-counted
+        // every server-side sign-in failure in error tracking).
+        context.showToast(
+          message: 'Something went wrong. Try again later.',
+          isError: true,
+        );
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
       context.showToast(message: message, isError: true);

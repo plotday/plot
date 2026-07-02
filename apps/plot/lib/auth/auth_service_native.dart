@@ -129,6 +129,9 @@ AuthError _wrapClerkError(clerk.ClerkError e) => AuthError(
   message: e.message,
   argument: e.argument,
   code: _mapErrorCode(e),
+  // Preserve the specific server code (e.g. `authorization_invalid`) for
+  // telemetry; [_mapErrorCode] otherwise flattens it to serverErrorResponse.
+  clerkCode: e.errors?.error.code,
 );
 
 /// Wraps a function that may throw [clerk.ClerkError] and re-throws as
@@ -237,6 +240,36 @@ class ClerkDartAuthService implements AuthService {
     );
   }
 
+  /// Guarantee the Clerk client (and its client token) is established before
+  /// an id-token sign-in/up.
+  ///
+  /// `clerk_auth`'s `Auth.initialize()` fetches the client via
+  /// `_fetchClientAndEnv()`, which **silently swallows any exception** and
+  /// returns `Client.empty` — so a single failed/timed-out `/v1/client` call
+  /// (most likely on a cold first launch: fresh install, new VM, flaky first
+  /// TLS handshake) leaves the Api token cache with no client token. The next
+  /// FAPI request (`createSignIn`) then goes out **without** the
+  /// `Authorization` header, and Clerk rejects it with "You are not authorized
+  /// to perform this request" (`authorization_invalid`). This surfaced on
+  /// Windows/Linux Google sign-in as a hard failure even once the id_token
+  /// audience was correct, because [_reinitialize] deletes the cache and
+  /// re-inits on every fresh sign-in, re-running the swallow-prone fetch.
+  ///
+  /// Force-create the client and confirm it actually stuck; if it can't be
+  /// established, fail with a clear, user-actionable error instead of firing
+  /// an unauthenticated sign-in that 401s with an opaque message.
+  Future<void> _ensureClientEstablished() async {
+    if (_auth.client.isNotEmpty) return;
+    await _auth.resetClient();
+    if (_auth.client.isEmpty) {
+      throw const AuthError(
+        message:
+            'Could not reach the sign-in service. '
+            'Check your connection and try again.',
+      );
+    }
+  }
+
   @override
   Future<void> signInWithIdToken({
     required IdTokenProvider provider,
@@ -248,6 +281,10 @@ class ClerkDartAuthService implements AuthService {
         if (!_auth.isSignedIn) {
           await _reinitialize();
         }
+        // Reinitialise can leave the client un-established if clerk_auth
+        // silently swallowed a failed client fetch; without a client token the
+        // sign-in below 401s as authorization_invalid.
+        await _ensureClientEstablished();
         await _auth.idTokenSignIn(
           provider: _toClerkProvider(provider),
           token: idToken,
@@ -267,6 +304,7 @@ class ClerkDartAuthService implements AuthService {
         if (!_auth.isSignedIn) {
           await _reinitialize();
         }
+        await _ensureClientEstablished();
         await _auth.idTokenSignUp(
           provider: _toClerkProvider(provider),
           idToken: idToken,
