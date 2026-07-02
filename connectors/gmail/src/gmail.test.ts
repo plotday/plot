@@ -472,6 +472,28 @@ describe("processEmailThreads — no status set", () => {
       expect(saved.unread).toBeUndefined();
     });
   });
+
+  describe("star -> to-do write-back (no skip_todo_writeback echo guard)", () => {
+    it("calls setThreadToDo and never writes a skip_todo_writeback key", async () => {
+      const { gmail } = makeGmail();
+      const store = (gmail as any).tools.store;
+      const integrations = (gmail as any).tools.integrations;
+      await store.set("auth_actor_id", "actor-1");
+      const thread = makeGmailThread(["INBOX", "STARRED"]);
+
+      await (gmail as any).processEmailThreads([thread], false, "INBOX");
+
+      expect(integrations.setThreadToDo).toHaveBeenCalledWith(
+        "https://mail.google.com/mail/u/0/#inbox/thread-archived",
+        "actor-1",
+        true
+      );
+      expect(store.set).not.toHaveBeenCalledWith(
+        expect.stringContaining("skip_todo_writeback"),
+        expect.anything()
+      );
+    });
+  });
 });
 
 describe("recoverMailboxDelivery — durable recovery on upgrade", () => {
@@ -654,6 +676,20 @@ describe("thread-state write-back when the connection has no auth token", () => 
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       addLabelIds: ["STARRED", "INBOX"],
     });
+    fetchSpy.mockRestore();
+  });
+
+  it("onThreadToDo writes back even if a stale skip_todo_writeback key is present", async () => {
+    const { gmail } = makeGmail({ token: "tok", scopes: [] });
+    const store = (gmail as any).tools.store;
+    await store.set(`skip_todo_writeback:gmail-thread-1`, true);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}"));
+
+    await gmail.onThreadToDo(thread, actor, true, {});
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
     fetchSpy.mockRestore();
   });
 });
