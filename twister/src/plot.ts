@@ -206,6 +206,12 @@ export enum ConferencingProvider {
 }
 
 /**
+ * Outcome of a single plan operation, reported back to the plan callback
+ * after server-side execution. Order matches the plan's `operations` array.
+ */
+export type PlanOperationResult = { success: boolean; error?: string };
+
+/**
  * Represents a clickable action attached to a thread.
  *
  * Thread actions are rendered as buttons that enable user interaction with threads.
@@ -244,13 +250,6 @@ export enum ConferencingProvider {
  * };
  * ```
  */
-
-/**
- * Outcome of a single plan operation, reported back to the plan callback
- * after server-side execution. Order matches the plan's `operations` array.
- */
-export type PlanOperationResult = { success: boolean; error?: string };
-
 export type Action =
   | {
       /** External web link that opens in browser */
