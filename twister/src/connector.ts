@@ -394,6 +394,22 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   readonly autoEnableNewChannelsByDefault?: boolean;
 
   /**
+   * Whether this connector's channel set is fixed — {@link getChannels} always
+   * returns the same enumerated channels and no new channels ever appear
+   * dynamically over time. Set `true` for connectors whose channels are a
+   * built-in, closed set (e.g. LinkedIn: Messages + Public Post) rather than a
+   * list discovered from the external account (Slack channels, Drive folders,
+   * calendars, …).
+   *
+   * When `true`, the connect/edit modal hides the per-connection "Sync new
+   * {channels}" affordance: there are no new channels to auto-enable, so the
+   * toggle would be meaningless. Leave `false`/omitted for connectors whose
+   * channel list grows as the user gains access to more channels — those still
+   * benefit from {@link autoEnableNewChannelsByDefault} and the toggle.
+   */
+  readonly fixedChannels?: boolean;
+
+  /**
    * Whether this connector supports the platform's sequential auto-threading —
    * folding a conversation that arrives as a run of separate top-level messages
    * into a single thread. Set `true` for conversational connectors (chat,
