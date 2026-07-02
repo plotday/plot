@@ -6,10 +6,11 @@ export default {
   ssr: true,
   future: {
     v8_viteEnvironmentApi: true,
-    // v8_middleware is intentionally NOT enabled: the @cloudflare/vite-plugin
-    // getLoadContext returns a plain { cloudflare: { env, ctx } } object, but
-    // middleware mode requires a RouterContextProvider. Loaders read
-    // context.cloudflare.env, so opting in needs a load-context migration first.
+    // Required by @clerk/react-router v3 (clerkMiddleware). The worker entry
+    // (workers/app.ts) builds a RouterContextProvider and loaders read the
+    // Cloudflare bindings via context.get(cloudflareContext) — see
+    // app/lib/cloudflare-context.ts.
+    v8_middleware: true,
     v8_splitRouteModules: true,
     v8_passThroughRequests: true,
     v8_trailingSlashAwareDataRequests: true,

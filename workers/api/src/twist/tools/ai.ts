@@ -1,7 +1,13 @@
 import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { Output, generateText, jsonSchema, stepCountIs } from "ai";
+import {
+  Output,
+  generateText,
+  jsonSchema,
+  stepCountIs,
+  type LanguageModelUsage,
+} from "ai";
 import type { Static, TSchema } from "typebox";
 import { createWorkersAI } from "workers-ai-provider";
 
@@ -78,7 +84,7 @@ export class AI extends Tool implements IAI {
   private openai!: ReturnType<typeof createOpenAI>;
   private anthropic!: ReturnType<typeof createAnthropic>;
   private google!: ReturnType<typeof createGoogleGenerativeAI>;
-  private cloudflare: ReturnType<typeof createWorkersAI>;
+  private cloudflare: ReturnType<typeof createWorkersAI> | null = null;
   private workersAI: Bindings["AI"];
   private usage: DurableObjectStub<Usage>;
   /** The single configured provider, or null for Plot AI (gateway mode). */
@@ -140,8 +146,11 @@ export class AI extends Tool implements IAI {
       });
     }
 
-    // Workers AI always available (used for embeddings regardless of provider config)
-    this.cloudflare = createWorkersAI({ binding: env.AI });
+    // Workers AI binding (used for embeddings regardless of provider config).
+    // The generateText provider is created lazily in prompt():
+    // workers-ai-provider v3 throws at construction when the binding is
+    // absent (v2 accepted undefined), and test harnesses build tools with
+    // partial envs that only exercise the hosted-provider paths.
     this.workersAI = env.AI;
 
     // Initialize usage tracking
@@ -304,12 +313,15 @@ export class AI extends Tool implements IAI {
           `Provider '${this.providerConfig.provider}' is configured but model resolved to Workers AI (${modelStr}).`
         );
       }
-      model = this.cloudflare(`@cf/${modelStr}` as any);
+      const cloudflare = (this.cloudflare ??= createWorkersAI({
+        binding: this.workersAI,
+      }));
+      model = cloudflare(`@cf/${modelStr}` as any);
     }
 
-    // Prepare experimental_output if outputSchema is provided
+    // Prepare structured output if outputSchema is provided
     // Typebox schemas ARE JSON Schema, so we wrap them with jsonSchema() helper
-    let experimental_output = outputSchema
+    const output = outputSchema
       ? Output.object({
           schema: jsonSchema<Static<SCHEMA>>(outputSchema),
         })
@@ -352,10 +364,10 @@ export class AI extends Tool implements IAI {
       maxOutputTokens,
       temperature,
       topP,
-      system,
+      instructions: system,
       ...(prompt ? { prompt: prompt! } : { messages: messages! }),
       tools: hasTools ? (transformedTools as any) : undefined,
-      experimental_output,
+      output,
       toolChoice,
       // Loop tool calls into a final answer up to maxSteps (default 1 =
       // single step, preserving prior behavior). Server-side provider tools
@@ -363,27 +375,40 @@ export class AI extends Tool implements IAI {
       stopWhen: stepCountIs(maxSteps ?? 1),
     });
 
-    await this.trackUsage(modelStr, result.usage);
+    const usage = this.toAIUsage(result.usage);
+    await this.trackUsage(modelStr, usage);
 
+    const finalResponse = result.finalStep.response;
     return {
       text: result.text,
       toolCalls: result.toolCalls,
       toolResults: result.toolResults,
       finishReason: result.finishReason,
-      usage: result.usage,
+      usage,
       sources: result.sources,
-      output: experimental_output
-        ? (result.experimental_output as Static<SCHEMA>)
-        : undefined,
+      output: output ? (result.output as Static<SCHEMA>) : undefined,
       // @ts-ignore - AI SDK ResponseMessage[] vs Twister AIMessage[] type mismatch due to duplicate type definitions
-      response: result.response
+      response: finalResponse
         ? {
-            id: result.response.id,
-            timestamp: result.response.timestamp,
-            modelId: result.response.modelId,
-            messages: result.response.messages,
+            id: finalResponse.id,
+            timestamp: finalResponse.timestamp,
+            modelId: finalResponse.modelId,
+            messages: result.responseMessages,
           }
         : undefined,
+    };
+  }
+
+  /**
+   * Maps the AI SDK's usage shape (token details nested since AI SDK 6) to
+   * the flat Twister AIUsage type that twists consume.
+   */
+  private toAIUsage(usage: LanguageModelUsage): AIUsage {
+    return {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+      reasoningTokens: usage.outputTokenDetails?.reasoningTokens,
     };
   }
 

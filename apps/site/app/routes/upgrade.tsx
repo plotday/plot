@@ -23,6 +23,7 @@ import { ADDON_PRICE, PLANS, PRICES, TWIST_ADDON_PRICE } from "~/lib/plans";
 import type { Billing } from "~/lib/plans";
 
 import type { Route } from "./+types/upgrade";
+import { cloudflareContext } from "../lib/cloudflare-context";
 import classes from "./upgrade.module.css";
 
 const FREEMAIL_DOMAINS = new Set([
@@ -78,7 +79,7 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader({ context }: Route.LoaderArgs) {
   return {
-    apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
+    apiUrl: context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day",
   };
 }
 

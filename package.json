@@ -62,12 +62,12 @@
     "updates:next": "node scripts/preview-updates.mjs"
   },
   "devDependencies": {
-    "@eslint/js": "^9.27.0",
+    "@eslint/js": "^10.0.1",
     "@nx/vite": "20.3.0",
     "@plotday/eslint-config-custom": "workspace:*",
     "@posthog/cli": "0.7.28",
     "@trivago/prettier-plugin-sort-imports": "^4.1.1",
-    "eslint": "^8.38.0",
+    "eslint": "^10.6.0",
     "husky": "^8.0.0",
     "markdownlint-cli2": "^0.22.1",
     "nopy": "^0.2.9",

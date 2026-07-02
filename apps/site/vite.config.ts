@@ -43,14 +43,13 @@ export default defineConfig(() => ({
     noExternal: true,
     optimizeDeps: {
       // Pre-bundle the server-only Clerk subpaths at startup. Without this,
-      // `@clerk/react-router/api.server` (imported only from
-      // internal-auth.server.ts, reachable only via /internal) is discovered
-      // lazily on the first /internal request, triggering a mid-request SSR
-      // re-optimization and the "new version of the pre-bundle" error.
+      // `@clerk/react-router/server` (imported from internal-auth.server.ts,
+      // reachable only via /internal) is discovered lazily on the first
+      // /internal request, triggering a mid-request SSR re-optimization and
+      // the "new version of the pre-bundle" error.
       include: [
         "@clerk/react-router",
-        "@clerk/react-router/api.server",
-        "@clerk/react-router/ssr.server",
+        "@clerk/react-router/server",
       ],
     },
     resolve: {

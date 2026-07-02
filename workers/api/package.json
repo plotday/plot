@@ -24,9 +24,9 @@
     "test:all": "pnpm test && pnpm test:integration"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.33",
-    "@ai-sdk/google": "^2.0.23",
-    "@ai-sdk/openai": "^2.0.52",
+    "@ai-sdk/anthropic": "^4.0.2",
+    "@ai-sdk/google": "^4.0.6",
+    "@ai-sdk/openai": "^4.0.5",
     "@clerk/backend": "^2.33.3",
     "@cloudflare/containers": "^0.3.7",
     "@cloudflare/puppeteer": "^1.0.4",
@@ -40,7 +40,7 @@
     "@plotday/twister": "workspace:*",
     "@plotday/unipile": "workspace:^",
     "@plotday/worker-util": "workspace:^",
-    "ai": "^5.0.76",
+    "ai": "^7.0.11",
     "defuddle": "0.19.0",
     "hono": "^4.12.26",
     "hono-rate-limiter": "^0.5.3",
@@ -54,7 +54,7 @@
     "stripe": "^17.5.0",
     "superjson": "^2.2.6",
     "typebox": "^1.0.35",
-    "workers-ai-provider": "^2.0.0",
+    "workers-ai-provider": "^3.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

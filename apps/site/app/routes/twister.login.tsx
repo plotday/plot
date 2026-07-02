@@ -12,12 +12,13 @@ import {
 } from "@mantine/core";
 
 import { useAuth, useUser } from "@clerk/react-router";
-import { getAuth } from "@clerk/react-router/ssr.server";
+import { getAuth } from "@clerk/react-router/server";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { Form, Link, useActionData, useNavigation } from "react-router";
 
 import { initClerkEnv } from "../lib/clerk.server";
 import type { Route } from "./+types/twister.login";
+import { cloudflareContext } from "../lib/cloudflare-context";
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -33,14 +34,12 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
   return {
     sessionId,
-    apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
+    apiUrl: context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day",
   };
 }
 
 export async function action(args: Route.ActionArgs) {
-  if (args.context.cloudflare?.env) {
-    initClerkEnv(args.context.cloudflare.env);
-  }
+  initClerkEnv(args.context.get(cloudflareContext).env);
   const auth = await getAuth(args);
 
   if (!auth.userId) {
@@ -55,7 +54,7 @@ export async function action(args: Route.ActionArgs) {
 
   const formData = await args.request.formData();
   const sessionId = formData.get("sessionId") as string;
-  const apiUrl = args.context.cloudflare.env.API_ROOT || "https://api.plot.day";
+  const apiUrl = args.context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day";
 
   try {
     const response = await fetch(`${apiUrl}/v1/session/authorize`, {

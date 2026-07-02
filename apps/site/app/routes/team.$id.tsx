@@ -23,6 +23,7 @@ import {
 import { IconTrash } from "@tabler/icons-react";
 
 import type { Route } from "./+types/team.$id";
+import { cloudflareContext } from "../lib/cloudflare-context";
 import classes from "./team.$id.module.css";
 
 type OrgDetails = {
@@ -64,7 +65,7 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader({ context }: Route.LoaderArgs) {
   return {
-    apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
+    apiUrl: context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day",
   };
 }
 

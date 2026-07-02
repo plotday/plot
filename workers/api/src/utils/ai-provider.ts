@@ -61,7 +61,7 @@ export async function summarizeWithProvider(
   try {
     const result = await generateText({
       model,
-      system: "You name items in a productivity app. Create a short title for the user-provided action or note. Do not wrap the title in quotes. Respond only with the title.",
+      instructions: "You name items in a productivity app. Create a short title for the user-provided action or note. Do not wrap the title in quotes. Respond only with the title.",
       prompt: body,
       maxOutputTokens: 64,
     });

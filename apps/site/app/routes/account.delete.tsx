@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 
 import type { Route } from "./+types/account.delete";
+import { cloudflareContext } from "../lib/cloudflare-context";
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -25,7 +26,7 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader({ context }: Route.LoaderArgs) {
   return {
-    apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
+    apiUrl: context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day",
   };
 }
 

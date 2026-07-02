@@ -12,7 +12,7 @@ import {
 import "@mantine/core/styles.css";
 
 import { ClerkProvider } from "@clerk/react-router";
-import { rootAuthLoader } from "@clerk/react-router/ssr.server";
+import { clerkMiddleware, rootAuthLoader } from "@clerk/react-router/server";
 import { dark } from "@clerk/themes";
 
 import {
@@ -29,16 +29,34 @@ import {
 import notFoundImage from "./assets/404.png";
 
 import type { Route } from "./+types/root";
+import { cloudflareContext } from "./lib/cloudflare-context";
 import { mergeMeta } from "./lib/meta";
 import stylesheet from "./app.css?url";
 import { PostHogIdentify } from "./components/posthog-identify";
 import { clerkAppearance, clerkDarkAppearance, resolver, theme } from "./theme";
 
+// Clerk v3 requires clerkMiddleware on the root route: rootAuthLoader and
+// getAuth read the request auth state that the middleware resolves. The keys
+// must be passed explicitly: Clerk's env-variable fallbacks can't see
+// Cloudflare bindings under middleware mode (the RouterContextProvider hides
+// the v2-era context.cloudflare.env shape its lookup understood), so the
+// wrapper reads them from cloudflareContext per request.
+export const middleware: Route.MiddlewareFunction[] = [
+  (args, next) => {
+    const { env } = args.context.get(cloudflareContext);
+    return clerkMiddleware({
+      publishableKey: env.CLERK_PUBLISHABLE_KEY,
+      secretKey: env.CLERK_SECRET_KEY,
+    })(args, next);
+  },
+];
+
 export async function loader(args: Route.LoaderArgs) {
   return rootAuthLoader(args, ({ context }) => {
+    const { env } = context.get(cloudflareContext);
     return {
-      posthogApiKey: (context.cloudflare.env as Record<string, string>).POSTHOG_API_KEY || "",
-      posthogProxy: (context.cloudflare.env as Record<string, string>).POSTHOG_PROXY || "",
+      posthogApiKey: env.POSTHOG_API_KEY || "",
+      posthogProxy: env.POSTHOG_PROXY || "",
     };
   });
 }

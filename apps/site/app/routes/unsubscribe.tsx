@@ -13,6 +13,7 @@ import {
 
 import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/unsubscribe";
+import { cloudflareContext } from "../lib/cloudflare-context";
 
 type Frequency = "daily" | "weekly" | "never";
 
@@ -30,7 +31,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   return {
     token,
     saved,
-    apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
+    apiUrl: context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day",
   };
 }
 
@@ -46,7 +47,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     return { error: "Please choose an option." };
   }
 
-  const apiUrl = context.cloudflare.env.API_ROOT || "https://api.plot.day";
+  const apiUrl = context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day";
   const response = await fetch(`${apiUrl}/unsubscribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -16,6 +16,7 @@ import { IconBrandSlack, IconCheck, IconCopy } from "@tabler/icons-react";
 
 import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/slack";
+import { cloudflareContext } from "../lib/cloudflare-context";
 
 export function meta(_: Route.MetaArgs) {
   return mergeMeta([
@@ -31,7 +32,7 @@ export function meta(_: Route.MetaArgs) {
 export async function loader({ context, request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   return {
-    apiUrl: context.cloudflare.env.API_ROOT || "https://api.plot.day",
+    apiUrl: context.get(cloudflareContext).env.API_ROOT || "https://api.plot.day",
     siteUrl: `${url.protocol}//${url.host}`,
   };
 }

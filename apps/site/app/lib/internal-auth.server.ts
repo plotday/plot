@@ -1,10 +1,10 @@
 import { redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
-import { getAuth } from "@clerk/react-router/ssr.server";
-import { createClerkClient } from "@clerk/react-router/api.server";
+import { createClerkClient, getAuth } from "@clerk/react-router/server";
 
 import { initClerkEnv } from "./clerk.server";
+import { cloudflareContext } from "./cloudflare-context";
 
 const ALLOWED_DOMAIN = "@plot.day";
 
@@ -19,7 +19,7 @@ const ALLOWED_DOMAIN = "@plot.day";
 export async function requireTeamMember(
   args: LoaderFunctionArgs,
 ): Promise<{ email: string }> {
-  const env = args.context.cloudflare.env as {
+  const env = args.context.get(cloudflareContext).env as {
     CLERK_SECRET_KEY: string;
     CLERK_PUBLISHABLE_KEY: string;
   };

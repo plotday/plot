@@ -1,4 +1,6 @@
-import { createRequestHandler } from "react-router";
+import { RouterContextProvider, createRequestHandler } from "react-router";
+
+import { cloudflareContext } from "../app/lib/cloudflare-context";
 
 declare global {
   interface CloudflareEnvironment {
@@ -16,14 +18,10 @@ declare global {
   }
 }
 
-declare module "react-router" {
-  export interface AppLoadContext {
-    cloudflare: {
-      env: CloudflareEnvironment;
-      ctx: ExecutionContext;
-    };
-  }
-}
+// Note: `future.v8_middleware` (react-router.config.ts) makes loaders/actions
+// receive a RouterContextProvider instead of a plain AppLoadContext; the
+// Cloudflare bindings travel via cloudflareContext (app/lib/cloudflare-context).
+// React Router's typegen declares the Future flag in .react-router/types.
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -120,9 +118,9 @@ export default {
 
     let response: Response;
     try {
-      response = await requestHandler(request, {
-        cloudflare: { env, ctx },
-      });
+      const context = new RouterContextProvider();
+      context.set(cloudflareContext, { env, ctx });
+      response = await requestHandler(request, context);
     } catch (error) {
       // A throw here is a worker-level failure (e.g. a bundling regression that
       // breaks module init, like the vite 8.1.0 Clerk `setErrorThrowerOptions`

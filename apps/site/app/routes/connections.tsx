@@ -19,6 +19,7 @@ import { mergeMeta } from "~/lib/meta";
 
 import { CATEGORIES, CONNECTIONS, type Connection } from "../data/connections";
 import type { Route } from "./+types/connections";
+import { cloudflareContext } from "../lib/cloudflare-context";
 import classes from "./connections.module.css";
 
 const VOTED_KEY = "plot-connection-votes";
@@ -41,7 +42,7 @@ function addVotedName(name: string) {
 }
 
 export async function loader({ context }: Route.LoaderArgs) {
-  const kv = context.cloudflare.env.VOTES;
+  const kv = context.get(cloudflareContext).env.VOTES;
   const votes: Record<string, number> = {};
 
   if (kv) {
@@ -66,7 +67,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
-  const kv = context.cloudflare.env.VOTES;
+  const kv = context.get(cloudflareContext).env.VOTES;
   if (!kv) {
     return { error: "Voting unavailable" };
   }
