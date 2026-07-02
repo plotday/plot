@@ -303,9 +303,12 @@ yours.
 
 - A built-in AI assistant that keeps your chats alongside your work: chat with it like any AI
   assistant, @mention Plot on any thread, or start a Plot AI chat.
-- It searches the web with cited sources, reads and reasons over your own workspace (threads, notes,
-  focuses) to answer questions, and can propose organization plans — moves, renames, archives — for
-  your approval.
+- It searches the web with cited sources, and searches your entire workspace — every focus, every
+  thread — to answer questions, opening any thread it finds for a closer look before it replies.
+- It can propose organization plans — moves, renames, archives — and shows its work as it goes;
+  approve the plan and it carries out every step, then reports exactly what changed.
+- For requests that take a while, it keeps working in the background instead of cutting off partway
+  through, and delivers the finished answer when it's done.
 - AI is built in on every plan, with nothing to set up — no API keys, no token bills, and no model
   to choose. When a twist uses AI, the cost is already included in its capacity.
 - Prefer no AI? You can turn it off entirely — for yourself, or for an individual twist.

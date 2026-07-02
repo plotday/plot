@@ -9,6 +9,7 @@ import type { CallbacksState, ResolvedCallback } from "../../state/callbacks";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { invokeWebhookCallback } from "../invoke-webhook";
+import { executeApprovedPlan, storedPlanExists } from "./plot/plan";
 import { Tool } from "./tool";
 
 export * from "@plotday/twister/tools/callbacks";
@@ -149,7 +150,11 @@ export class Callbacks extends Tool implements ICallbackTool {
     env: Bindings,
     ctx: { exports: ExecutionContext["exports"] },
     token: string,
-    action: Action
+    action: Action,
+    // The authenticated user id from the approval request's app-auth session.
+    // Optional so non-plan / non-route callers are unaffected; the plan branch
+    // requires it to enforce owner-only execution.
+    authenticatedUserId?: string | null
   ): Promise<any> {
     try {
       if (
@@ -166,6 +171,64 @@ export class Callbacks extends Tool implements ICallbackTool {
 
       if (callbackToken !== token) {
         throw new Error("Callback token mismatch");
+      }
+
+      if (action.type === ActionType.plan) {
+        const approved = action.approved === true;
+        if (approved) {
+          // Execute the SERVER-STORED plan (owner-only, capped). The
+          // operations the client POSTed are ignored for execution; we
+          // overwrite BOTH action.operations and action.results with the
+          // authoritative stored set so the twist's onPlanResponse zips
+          // operations↔results by the same index. If executeApprovedPlan
+          // throws (NOT_FOUND / owner mismatch / expired token), nothing
+          // executes and — because the token delete only happens in the
+          // dispatch finally below — the token survives for a legitimate
+          // later approval.
+          const { results, operations } = await executeApprovedPlan(
+            env,
+            token,
+            authenticatedUserId
+          );
+          action.operations = operations;
+          action.results = results;
+          try {
+            return await invokeWebhookCallback(env, ctx, callbackToken, action, true);
+          } finally {
+            // Replay guard: once an approved plan's operations have executed,
+            // the plan is consumed — delete the token even when the callback
+            // dispatch throws, so a re-approval can never re-run the
+            // (non-idempotent) operations. The delete cannot happen BEFORE
+            // the dispatch: invokeWebhookCallback resolves the callback by
+            // this same token (CallbacksState.validateAndLoad), so deleting
+            // first would fail the dispatch itself with NOT_FOUND and the
+            // twist would never receive (action, approved). A dispatch
+            // failure therefore only costs the confirmation note (surfaced
+            // via the route's captureServerError), never data correctness.
+            const [doIdHex] = callbackToken.split(":");
+            const stub = env.CALLBACKS.get(env.CALLBACKS.idFromString(doIdHex));
+            try {
+              await stub.delete(callbackToken);
+            } catch {
+              // best-effort cleanup
+            } finally {
+              disposeRpc(stub);
+            }
+          }
+        } else if (await storedPlanExists(env, token)) {
+          // Rejected plans: nothing executes and the token stays live so
+          // the user can still approve later. Plan-ness is VERIFIED against
+          // the server-stored plan first — a mislabeled `type: "plan"`
+          // payload POSTed against a non-plan token must NOT get the extra
+          // positional `approved` arg (which would shift an arbitrary
+          // callback's curried extraArgs); it falls through to the legacy
+          // single-arg dispatch below instead, behaving exactly as before
+          // plans existed. The approved arm needs no such check:
+          // executeApprovedPlan itself fails closed with NOT_FOUND when no
+          // stored plan backs the token.
+          return await invokeWebhookCallback(env, ctx, callbackToken, action, false);
+        }
+        // Not a real plan decision — fall through to the legacy dispatch.
       }
 
       return await invokeWebhookCallback(env, ctx, callbackToken, action);

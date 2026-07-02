@@ -19,11 +19,15 @@ callbacks.post("/callback/:token", async (c) => {
       return c.json({ message: "Bad request (missing link data)" }, 400);
     }
 
+    // The route runs behind appAuthMiddleware, so c.var.user is the
+    // authenticated approver. Plumbed through so the plan branch can enforce
+    // owner-only execution of server-stored plans.
     using result = await Callbacks.HandleLinkCallback(
       c.env,
       c.executionCtx as unknown as { exports: ExecutionContext["exports"] },
       token,
-      link
+      link,
+      c.var.user?.id ?? null
     );
 
     if (result) {

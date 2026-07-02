@@ -1,44 +1,40 @@
-import { Type } from "typebox";
-
 import {
   type Action,
   ActionType,
   type Actor,
-  ActorType,
-  type Focus,
   type Note,
-  type PlanOperation,
+  type Serializable,
   Tag,
   type ToolBuilder,
   Twist,
-  type Uuid,
+  Uuid,
 } from "@plotday/twister";
-import { AI, type AISource } from "@plotday/twister/tools/ai";
+import { AI } from "@plotday/twister/tools/ai";
 import {
   FocusAccess,
   Plot,
   ThreadAccess,
 } from "@plotday/twister/tools/plot";
 
-const SYSTEM_PROMPT = `You are Plot's built-in AI assistant. You are a capable, general-purpose assistant — answer any question or carry out any request the way ChatGPT, Claude, or Gemini would, while also being deeply integrated with the user's Plot workspace.
-
-You have tools:
-- searchPlotData: semantically search the user's own notes, threads, and links. Use this whenever a question might be answered by the user's own content.
-- listThreads / listFocuses: browse the user's threads and focuses (projects/folders).
-- readThreadNotes: read the full conversation of a specific thread to summarize or dig deeper.
-- organizeContent: propose a plan to move, archive, rename, or create threads and focuses. The plan is shown to the user for approval — only use it when the user explicitly asks to reorganize.
-- Web search is available for up-to-date, real-world information (news, weather, public facts, current events). It is a supplement to searchPlotData, never a substitute for it.
-
-Tool-use rules:
-- searchPlotData is your DEFAULT first move. Before answering any question whose answer could plausibly be informed by the user's own content, call searchPlotData FIRST. This includes anything about their notes, threads, tasks, meetings, events, appointments, people, projects, decisions, plans, status, or history — and anything phrased with "my"/"our"/"we"/"I", or naming a specific person, project, company, date, or thing the user would have recorded. Do not assume a question is general knowledge just because it doesn't say "my".
-- When you are unsure whether the answer lives in the user's workspace, search it. A needless Plot search is cheap; a missed one means a wrong or generic answer.
-- Only skip searchPlotData for requests that are purely general knowledge, creative writing, or external real-world facts with no plausible connection to the user's data.
-- If a question could depend on BOTH the user's data and external facts, search Plot first, then web — and reconcile the two in your answer (the user's own content takes precedence when they conflict).
-- Never call web search in place of searchPlotData to answer a question about the user's own world.
-- Never claim to have looked at the user's data unless you actually called searchPlotData (or another data tool).
-- Be concise and direct. Use Markdown (headings, lists, tables, fenced code blocks with a language) when it helps.
-- When you reorganize via organizeContent, don't repeat the full plan in your reply — the plan is shown separately for approval.
-- If asked what you can do, explain these capabilities in a friendly sentence or two.`;
+import { buildActions } from "./actions";
+import {
+  type ChatMessage,
+  buildMessages,
+  partitionHistory,
+  withSummary,
+} from "./messages";
+import {
+  OPERATIONS_SCHEMA,
+  PLANNER_SYSTEM_PROMPT,
+  buildPlannerPrompt,
+  describeOperation,
+  summarizeOperations,
+  validateOperations,
+} from "./planner";
+import { TurnProgress } from "./progress";
+import { SYSTEM_PROMPT } from "./prompt";
+import { isTransientAiError, promptWithRetry } from "./retry";
+import { buildAgentTools, type AgentToolContext } from "./tools";
 
 class PlotTwist extends Twist<PlotTwist> {
   build(build: ToolBuilder) {
@@ -69,10 +65,33 @@ class PlotTwist extends Twist<PlotTwist> {
   }
 
   /**
-   * Conversational entry point. Responds to any mention by running an agentic
-   * AI turn with tools for the user's Plot data and the web.
+   * Conversational entry point. Acquires a per-thread lock so overlapping
+   * mentions (e.g. rapid-fire messages) don't run concurrent turns against
+   * the same thread, then delegates to {@link respondLocked}.
    */
   async respond(note: Note): Promise<void> {
+    const thread = note.thread;
+    const lockKey = `respond:${thread.id}`;
+    let locked = await this.tools.store.acquireLock(lockKey, 120_000);
+    for (let attempt = 0; !locked && attempt < 9; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      locked = await this.tools.store.acquireLock(lockKey, 120_000);
+    }
+    // If still locked after ~45s the holder likely crashed mid-TTL; proceed
+    // anyway rather than dropping the user's message.
+    try {
+      await this.respondLocked(note);
+    } finally {
+      if (locked) await this.tools.store.releaseLock(lockKey);
+    }
+  }
+
+  /**
+   * Runs an agentic AI turn with tools for the user's Plot data and the web.
+   * A progress note is created at the start and updated as tools run; it
+   * BECOMES the final answer rather than being replaced by a separate note.
+   */
+  private async respondLocked(note: Note): Promise<void> {
     const thread = note.thread;
     // available() is an RPC method on the built-in AI tool — must be awaited.
     const { prompt: canPrompt, webSearch: canWebSearch } =
@@ -90,9 +109,22 @@ class PlotTwist extends Twist<PlotTwist> {
       twistTags: { [Tag.Twist]: true },
     });
 
+    let progress: TurnProgress | undefined;
+    // When true, this turn has been handed off to a fresh background execution
+    // that now OWNS clearing Tag.Twist — the finally below must NOT clear it.
+    let handedOff = false;
     try {
       const previousNotes = await this.tools.plot.getNotes(thread);
-      const messages = this.buildMessages(previousNotes);
+      const merged = buildMessages(previousNotes);
+      const { older, recent } = partitionHistory(merged);
+      let messages: ChatMessage[] = recent;
+      if (older.length > 0) {
+        messages = withSummary(
+          recent,
+          await this.threadSummary(thread.id, older),
+          older.length
+        );
+      }
 
       if (messages.length === 0) {
         await this.tools.plot.createNote({
@@ -103,219 +135,269 @@ class PlotTwist extends Twist<PlotTwist> {
         return;
       }
 
+      progress = await TurnProgress.start(this.tools.plot, thread.id as Uuid);
+
       // Thread IDs surfaced by the data tools become navigation actions.
       const referencedThreadIds = new Set<string>();
 
-      const response = await this.tools.ai.prompt({
+      const toolCtx: AgentToolContext = {
+        plot: this.tools.plot,
+        currentFocusId: note.thread.focus.id,
+        currentThreadId: thread.id,
+        referencedThreadIds,
+        onProgress: (m) => progress!.update(m),
+        proposePlan: async (request) => await this.buildAndPostPlan(note, request),
+      };
+      // Cast to `any` to avoid TS2589 (deep generic instantiation) from the
+      // large inline tool set; tool shapes are validated at runtime.
+      const agentTools = buildAgentTools(toolCtx) as any;
+
+      const baseRequest = {
+        system: SYSTEM_PROMPT,
+        webSearch: canWebSearch,
+        tools: agentTools,
+      };
+
+      // Cast the request `as any` to avoid TS2589 (deep generic instantiation)
+      // from the large inline tool set; runtime shapes are validated by the AI
+      // tool. The continuation's `messages` intentionally mixes twist-local
+      // ChatMessage[] with the AIMessage[] transcript plus a user-role nudge.
+      let response = await promptWithRetry(this.tools.ai, {
+        ...baseRequest,
         // Plot-funded → Google (Gemini Flash): a frontier model with native
         // web search + tool calling. See AI tool's selectModel.
         model: { speed: "fast", cost: "high" },
-        system: SYSTEM_PROMPT,
         messages,
-        webSearch: canWebSearch,
-        maxSteps: 6,
-        // Cast to `any` to avoid TS2589 (deep generic instantiation) from the
-        // large inline tool set; tool shapes are validated at runtime.
-        tools: {
-          searchPlotData: {
-            description:
-              "Semantically search the user's own notes, threads, and links. Returns the most relevant items. Prefer this over web search whenever the answer could involve the user's own content — call it first when in doubt.",
-            inputSchema: Type.Object({
-              query: Type.String({
-                description: "What to search for in the user's Plot workspace.",
-              }),
-            }),
-            execute: async ({ query }: { query: string }) => {
-              const results = await this.tools.plot.search(query, {
-                focusId: note.thread.focus.id,
-                limit: 8,
-              });
-              for (const r of results) {
-                if (r.thread?.id) referencedThreadIds.add(r.thread.id);
-              }
-              return results.map((r) => ({
-                kind: r.type,
-                title: r.thread.title ?? (r.type === "link" ? r.title : null),
-                focus: r.focus.title ?? null,
-                content: r.content ?? (r.type === "link" ? r.title : null),
-                url: r.type === "link" ? r.sourceUrl ?? null : null,
-              }));
-            },
-          },
-          listThreads: {
-            description:
-              "List the user's threads in the current focus.",
-            inputSchema: Type.Object({
-              includeArchived: Type.Optional(
-                Type.Boolean({
-                  description: "Include archived threads (default false).",
-                })
-              ),
-            }),
-            execute: async ({
-              includeArchived,
-            }: {
-              includeArchived?: boolean;
-            }) => {
-              const threads = await this.tools.plot.getThreads({
-                focusId: note.thread.focus.id,
-                includeArchived: includeArchived ?? false,
-                limit: 50,
-              });
-              return threads.map((t) => ({
-                id: t.id,
-                title: t.title,
-                archived: t.archived,
-                focus: t.focus.title,
-              }));
-            },
-          },
-          listFocuses: {
-            description:
-              "List the user's focuses (projects/folders).",
-            inputSchema: Type.Object({}),
-            execute: async () => {
-              const focuses = await this.tools.plot.getFocuses();
-              return focuses.map((p) => ({ id: p.id, title: p.title }));
-            },
-          },
-          readThreadNotes: {
-            description:
-              "Read the full notes/conversation of a specific thread by its ID.",
-            inputSchema: Type.Object({
-              threadId: Type.String({
-                description: "The thread ID to read.",
-              }),
-            }),
-            execute: async ({ threadId }: { threadId: string }) => {
-              const target = await this.tools.plot.getThread({
-                id: threadId as Uuid,
-              });
-              if (!target) return { error: "Thread not found." };
-              referencedThreadIds.add(target.id);
-              const notes = await this.tools.plot.getNotes(target);
-              return {
-                title: target.title,
-                notes: notes
-                  .filter((n) => n.content?.trim())
-                  .map((n) => ({
-                    author:
-                      n.author.type === ActorType.Twist
-                        ? "assistant"
-                        : "user",
-                    content: n.content,
-                  })),
-              };
-            },
-          },
-          organizeContent: {
-            description:
-              "Propose a plan to move, archive, rename, or create threads and focuses. The plan is shown to the user for approval. Only use when the user explicitly asks to reorganize.",
-            inputSchema: Type.Object({
-              request: Type.String({
-                description:
-                  "The organization request in the user's words, e.g. 'archive all done threads'.",
-              }),
-            }),
-            execute: async ({ request }: { request: string }) => {
-              return await this.buildAndPostPlan(note, request);
-            },
-          },
-        } as any,
-      });
+        maxSteps: 16,
+      } as any);
 
-      const actions = this.buildActions(
+      if (response.finishReason === "tool-calls") {
+        // Step budget exhausted mid-chain: ONE continuation on the capable
+        // tier (Gemini Pro) with the tool transcript carried forward. Because
+        // this branch runs only from the fast-tier result and reassigns
+        // `response` to the capable-tier result, it can never re-trigger
+        // itself — exactly one continuation per turn.
+        const transcript = response.response?.messages ?? [];
+        response = await promptWithRetry(this.tools.ai, {
+          ...baseRequest,
+          model: { speed: "capable", cost: "high" },
+          messages: [
+            ...messages,
+            ...transcript,
+            {
+              role: "user",
+              content:
+                "(system note) You stopped mid-task because you hit the step limit. Using what you have already gathered, give your best final answer now. Only call another tool if it is truly essential.",
+            },
+          ],
+          maxSteps: 8,
+        } as any);
+      }
+
+      if (response.finishReason === "tool-calls") {
+        // BOTH budgets are now exhausted (fast maxSteps 16 + capable maxSteps
+        // 8) and the model still wants to call tools. Rather than shrug with a
+        // half answer, hand off to a FRESH execution (~1000-request budget) for
+        // exactly one final turn. Everything the background isolate needs must
+        // go through the store — instance variables do NOT survive across
+        // executions.
+        const stateKey = `bg:${note.id}`;
+        await this.set(stateKey, {
+          threadId: thread.id as string,
+          focusId: note.thread.focus.id as string,
+          progressNoteId: progress.noteId as string,
+          // The transcript mixes twist-local ChatMessage[] with the AI-SDK
+          // AIMessage[] transcript. AIMessage content can (per its type) hold
+          // non-plain parts — image/file parts carry Uint8Array/ArrayBuffer,
+          // which SuperJSON does not round-trip. Normalize through JSON so the
+          // persisted payload is guaranteed plain, serializable data no matter
+          // what parts the provider returned.
+          messages: JSON.parse(
+            JSON.stringify([
+              ...messages,
+              ...(response.response?.messages ?? []),
+            ])
+          ) as Serializable,
+        });
+        await progress.update(
+          "This is taking longer than one pass — I'm still working and will post the answer here."
+        );
+        // Persist state BEFORE enqueueing so the fresh execution always finds
+        // it. If runTask itself throws, handedOff stays false: the catch below
+        // surfaces the error and the finally clears Tag.Twist.
+        await this.runTask(
+          await this.callback(this.continueInBackground, stateKey)
+        );
+        handedOff = true;
+        return;
+      }
+
+      let finalText =
+        response.text?.trim() ||
+        "I wasn't able to come up with a complete answer. Could you rephrase or narrow the request?";
+      if (response.finishReason === "length") {
+        finalText +=
+          "\n\n*(I hit a length limit — ask me to continue for more.)*";
+      }
+
+      const actions = buildActions(
         referencedThreadIds,
         thread.id,
         response.sources
       );
 
-      await this.tools.plot.createNote({
-        thread: { id: thread.id },
-        content:
-          response.text?.trim() ||
-          "I wasn't able to come up with a response. Could you rephrase?",
+      // The progress note BECOMES the answer — no separate final note.
+      await progress.finish(finalText, actions.length > 0 ? actions : undefined);
+    } catch (error) {
+      // Twists run sandboxed with no PostHog access — console is the only sink.
+      console.error("Plot assistant respond failed", error);
+      const content = isTransientAiError(error)
+        ? "The AI service is briefly overloaded — please try again in a moment."
+        : "Sorry, I ran into an issue handling that request. Please try again.";
+      if (progress) {
+        await progress.finish(content);
+      } else {
+        // Progress note itself failed to create (or the error happened
+        // before we got that far) — fall back to a plain note so the user
+        // still gets a response.
+        await this.tools.plot.createNote({
+          thread: { id: thread.id },
+          content,
+        });
+      }
+    } finally {
+      // When handed off, the background task owns clearing the working flag.
+      if (!handedOff) {
+        await this.tools.plot.updateThread({
+          id: thread.id,
+          twistTags: { [Tag.Twist]: false },
+        });
+      }
+    }
+  }
+
+  /**
+   * Fresh-budget continuation for turns that exhausted both prompt rounds.
+   * Runs in a NEW execution (~1000-request budget) enqueued via runTask, so
+   * ALL state comes from the store — no instance variables survive here.
+   * Exactly one hop: this run must end with a final answer (it never
+   * re-hands-off), and it always clears the stored state and Tag.Twist.
+   */
+  async continueInBackground(stateKey: string): Promise<void> {
+    // `messages` is typed `Serializable[]` (not `unknown[]`) so the object
+    // satisfies `this.get`'s `T extends Serializable` constraint; the array
+    // holds the mixed twist-local + AI-SDK transcript replayed verbatim below.
+    const state = await this.get<{
+      threadId: string;
+      focusId: string;
+      progressNoteId: string;
+      messages: Serializable[];
+    }>(stateKey);
+    if (!state) return; // already handled or expired
+
+    const threadId = state.threadId as Uuid;
+    try {
+      const referencedThreadIds = new Set<string>();
+      const progressUpdate = async (message: string) => {
+        try {
+          await this.tools.plot.updateNote({
+            id: state.progressNoteId as Uuid,
+            content: `*${message}*`,
+          });
+        } catch (error) {
+          console.error("Background progress update failed", error);
+        }
+      };
+      const toolCtx: AgentToolContext = {
+        plot: this.tools.plot,
+        currentFocusId: state.focusId as Uuid,
+        currentThreadId: state.threadId,
+        referencedThreadIds,
+        onProgress: progressUpdate,
+        proposePlan: async () =>
+          "Reorganization plans can't be built in a background continuation — ask the user to repeat the reorganize request.",
+      };
+
+      const { webSearch: canWebSearch } = await this.tools.ai.available();
+      // Cast the request `as any` to avoid TS2589 (deep generic instantiation)
+      // from the large inline tool set; runtime shapes are validated by the AI
+      // tool. `state.messages` replays the persisted twist-local + AI-SDK
+      // transcript verbatim, plus a final user-role nudge.
+      const response = await promptWithRetry(this.tools.ai, {
+        model: { speed: "capable", cost: "high" },
+        system: SYSTEM_PROMPT,
+        messages: [
+          ...state.messages,
+          {
+            role: "user",
+            content:
+              "(system note) You are in a final continuation with a fresh budget. Finish the task and give your complete final answer now.",
+          },
+        ],
+        tools: buildAgentTools(toolCtx),
+        webSearch: canWebSearch,
+        maxSteps: 24,
+      } as any);
+
+      const finalText =
+        response.text?.trim() ||
+        "I gathered a lot but couldn't finish cleanly — could you narrow the request?";
+      const actions = buildActions(
+        referencedThreadIds,
+        state.threadId,
+        response.sources
+      );
+      await this.tools.plot.updateNote({
+        id: state.progressNoteId as Uuid,
+        content: finalText,
         actions: actions.length > 0 ? actions : undefined,
       });
     } catch (error) {
       // Twists run sandboxed with no PostHog access — console is the only sink.
-      console.error("Plot assistant respond failed", error);
-      await this.tools.plot.createNote({
-        thread: { id: thread.id },
+      console.error("Background continuation failed", error);
+      await this.tools.plot.updateNote({
+        id: state.progressNoteId as Uuid,
         content:
-          "Sorry, I ran into an issue handling that request. Please try again.",
+          "Sorry — I ran out of room finishing that request. Please try a narrower ask.",
       });
     } finally {
+      await this.clear(stateKey);
       await this.tools.plot.updateThread({
-        id: thread.id,
+        id: threadId,
         twistTags: { [Tag.Twist]: false },
       });
     }
   }
 
   /**
-   * Build the AI message history from a thread's notes: map authors to
-   * user/assistant roles, merge consecutive same-role turns (so the provider
-   * sees alternating roles), and ensure the first turn is from the user.
+   * Rolling summary of trimmed-off history, cached per thread. Regenerated
+   * only when 10+ new turns have aged out since the cached summary.
    */
-  private buildMessages(
-    notes: Note[]
-  ): Array<{ role: "user" | "assistant"; content: string }> {
-    const mapped = notes
-      .filter((n) => n.content?.trim())
-      .map((n) => ({
-        role: (n.author.type === ActorType.Twist ? "assistant" : "user") as
-          | "user"
-          | "assistant",
-        content: n.content as string,
-      }));
-
-    const merged: Array<{ role: "user" | "assistant"; content: string }> = [];
-    for (const m of mapped) {
-      const last = merged[merged.length - 1];
-      if (last && last.role === m.role) {
-        last.content += "\n\n" + m.content;
-      } else {
-        merged.push({ ...m });
-      }
+  private async threadSummary(
+    threadId: string,
+    older: ChatMessage[]
+  ): Promise<string | null> {
+    const key = `summary:${threadId}`;
+    // The ENTIRE body (including the cache read) is fault-tolerant: a store
+    // or AI failure degrades to "no summary" — it must never fail the turn.
+    let cached: { coveredTurns: number; text: string } | null = null;
+    try {
+      cached = await this.get<{ coveredTurns: number; text: string }>(key);
+      if (cached && older.length < cached.coveredTurns + 10) return cached.text;
+      const response = await this.tools.ai.prompt({
+        model: { speed: "fast", cost: "medium" },
+        prompt:
+          "Summarize this earlier conversation in under 200 words, keeping named people, projects, decisions, and open questions:\n\n" +
+          older.map((m) => `${m.role}: ${m.content}`).join("\n").slice(0, 30_000),
+      });
+      const text = response.text?.trim();
+      if (!text) return cached?.text ?? null;
+      await this.set(key, { coveredTurns: older.length, text });
+      return text;
+    } catch (error) {
+      console.error("Thread summary failed", error);
+      return cached?.text ?? null; // summary is an enhancement, never a blocker
     }
-
-    // Providers require the conversation to start with a user turn.
-    while (merged.length > 0 && merged[0].role === "assistant") {
-      merged.shift();
-    }
-    return merged;
-  }
-
-  /** Build navigation actions from referenced threads and web sources. */
-  private buildActions(
-    threadIds: Set<string>,
-    currentThreadId: string,
-    sources?: AISource[]
-  ): Action[] {
-    const actions: Action[] = [];
-
-    for (const id of threadIds) {
-      if (id === currentThreadId) continue;
-      actions.push({ type: ActionType.thread, threadId: id as Uuid });
-      if (actions.length >= 3) break;
-    }
-
-    if (sources) {
-      let urls = 0;
-      for (const source of sources) {
-        if (source.sourceType === "url" && source.url) {
-          actions.push({
-            type: ActionType.external,
-            title: source.title || source.url,
-            url: source.url,
-          });
-          if (++urls >= 5) break;
-        }
-      }
-    }
-
-    return actions;
   }
 
   /**
@@ -364,211 +446,58 @@ class PlotTwist extends Twist<PlotTwist> {
   }
 
   /**
-   * Generate an organization plan for `request`, post it as a plan note for
-   * user approval, and return a short status string for the assistant to relay.
+   * Compose an organization plan on a capable model (Gemini Pro) with
+   * conversation context, validate it, and post it as a plan card. Focus
+   * creation is DEFERRED into the plan — nothing mutates until approval.
    */
   private async buildAndPostPlan(note: Note, request: string): Promise<string> {
-    // Gather context: threads, focuses, and search results in parallel
-    const [threads, focuses, searchResults] = await Promise.all([
-      this.tools.plot.getThreads({
-        focusId: note.thread.focus.id,
-        limit: 200,
-      }),
+    const [threads, focuses, previousNotes] = await Promise.all([
+      this.tools.plot.getThreads({ focusId: note.thread.focus.id, limit: 200 }),
       this.tools.plot.getFocuses(),
-      this.tools.plot.search(request, {
-        focusId: note.thread.focus.id,
-        limit: 30,
-      }),
+      this.tools.plot.getNotes(note.thread),
     ]);
 
     if (threads.length === 0) {
       return "There are no threads in this focus to organize.";
     }
 
-    const threadsContext = threads
-      .map(
-        (t) =>
-          `${t.id} | ${t.title} | Focus: ${t.focus.title} (${
-            t.focus.id
-          }) | Archived: ${t.archived ? "yes" : "no"}`
-      )
-      .join("\n");
-
-    const focusesContext = focuses
-      .map((p) => `${p.id} | ${p.title}`)
-      .join("\n");
-
-    const searchContext =
-      searchResults.length > 0
-        ? searchResults
-            .map((r) => `- [${r.thread.title}] (thread ${r.thread.id})`)
-            .join("\n")
-        : "(no search results)";
-
-    const operationsSchema = Type.Array(
-      Type.Union([
-        Type.Object({
-          type: Type.Literal("updateThread"),
-          threadId: Type.String(),
-          threadTitle: Type.String(),
-          changes: Type.Object({
-            archived: Type.Optional(Type.Boolean()),
-            title: Type.Optional(Type.String()),
-            type: Type.Optional(Type.String()),
-            focus: Type.Optional(
-              Type.Object({ id: Type.String(), title: Type.String() })
-            ),
-          }),
-        }),
-        Type.Object({
-          type: Type.Literal("createThread"),
-          title: Type.String(),
-          focusId: Type.String(),
-          focusTitle: Type.String(),
-        }),
-        Type.Object({
-          type: Type.Literal("createNote"),
-          threadId: Type.String(),
-          threadTitle: Type.String(),
-          content: Type.String(),
-        }),
-        Type.Object({
-          type: Type.Literal("updateFocus"),
-          focusId: Type.String(),
-          focusTitle: Type.String(),
-          changes: Type.Object({
-            title: Type.Optional(Type.String()),
-            archived: Type.Optional(Type.Boolean()),
-          }),
-        }),
-        Type.Object({
-          type: Type.Literal("_createFocus"),
-          title: Type.String(),
-        }),
-      ])
-    );
-
     const response = await this.tools.ai.prompt({
-      // Structured planning needs a frontier model for reliable operations.
-      model: { speed: "fast", cost: "high" },
-      system:
-        "You are an organizational assistant for a workspace. The user wants to reorganize their content.\n\n" +
-        "Given the user's request and the available data, produce a JSON array of operations.\n\n" +
-        "Available operation types:\n" +
-        "- updateThread: Change a thread's title, archived status, or move it to a different focus. Use changes.focus with {id, title} to move. Set changes.archived to true to archive.\n" +
-        "- createThread: Create a new thread in a specific focus.\n" +
-        "- createNote: Add a note to an existing thread.\n" +
-        "- updateFocus: Rename a focus or archive it.\n" +
-        "- _createFocus: Signal that a new focus should be created. Use this when the user asks to move threads to a focus that doesn't exist yet. Focuses are flat — they have no parent.\n\n" +
-        "Rules:\n" +
-        "- Only reference thread IDs and focus IDs from the provided data (except for _createFocus).\n" +
-        "- Include the current title in threadTitle/focusTitle fields for display purposes.\n" +
-        "- Be conservative: only include operations that clearly match the user's request.\n" +
-        "- Tag changes are not supported. If the user asks about tags, return an empty array.\n" +
-        "- Only active (non-archived) threads are included in the list below. Already-archived threads cannot be targeted.\n" +
-        "- Return an empty array if the request doesn't match any actionable operations.",
-      prompt:
-        `Request: ${request}\n\n` +
-        `Threads (${threads.length}):\n${threadsContext}\n\n` +
-        `Focuses (${focuses.length}):\n${focusesContext}\n\n` +
-        `Search results for "${request}":\n${searchContext}`,
-      outputSchema: operationsSchema,
+      // Structured planning runs on the capable tier (Gemini Pro).
+      model: { speed: "capable", cost: "high" },
+      system: PLANNER_SYSTEM_PROMPT,
+      prompt: buildPlannerPrompt({
+        request,
+        conversation: buildMessages(previousNotes),
+        threads,
+        focuses,
+      }),
+      outputSchema: OPERATIONS_SCHEMA,
     });
 
-    const aiOperations = response.output;
-    if (!aiOperations || aiOperations.length === 0) {
+    const raw = response.output;
+    if (!raw || raw.length === 0) {
       return "I couldn't determine any operations for that request.";
     }
 
-    const threadIds = new Set<string>(threads.map((t) => t.id));
-    const focusIds = new Set<string>(focuses.map((p) => p.id));
-
-    // Create signalled focuses eagerly, then map them by title.
-    const newFocusMap = new Map<string, Focus>();
-    for (const op of aiOperations) {
-      if (op.type === "_createFocus") {
-        const created = await this.tools.plot.createFocus({
-          title: op.title,
-        });
-        newFocusMap.set(op.title.toLowerCase(), created);
-        focusIds.add(created.id);
-      }
-    }
-
-    const validOperations: PlanOperation[] = [];
-    for (const op of aiOperations) {
-      if (op.type === "_createFocus") continue;
-
-      if (op.type === "updateThread") {
-        if (!threadIds.has(op.threadId)) continue;
-        if (op.changes.focus) {
-          const newFocus = newFocusMap.get(
-            op.changes.focus.title.toLowerCase()
-          );
-          if (newFocus) {
-            op.changes.focus = {
-              id: newFocus.id,
-              title: newFocus.title,
-            };
-          } else if (!focusIds.has(op.changes.focus.id)) {
-            continue;
-          }
-        }
-        validOperations.push(op as PlanOperation);
-      } else if (op.type === "createThread") {
-        const newFocus = newFocusMap.get(op.focusTitle.toLowerCase());
-        if (newFocus) {
-          op.focusId = newFocus.id;
-          op.focusTitle = newFocus.title;
-        } else if (!focusIds.has(op.focusId)) {
-          continue;
-        }
-        validOperations.push(op as PlanOperation);
-      } else if (op.type === "createNote") {
-        if (!threadIds.has(op.threadId)) continue;
-        validOperations.push(op as PlanOperation);
-      } else if (op.type === "updateFocus") {
-        if (!focusIds.has(op.focusId)) continue;
-        validOperations.push(op as PlanOperation);
-      }
-    }
-
-    if (validOperations.length === 0) {
+    // Focus creation is deferred: validateOperations assigns client-generated
+    // ids (Uuid.Generate) and orders createFocus ops first — nothing mutates
+    // until the user approves the plan.
+    const operations = validateOperations(raw, threads, focuses, () =>
+      Uuid.Generate()
+    );
+    if (operations.length === 0) {
       return "I couldn't find any matching content to act on.";
     }
 
-    const operations = validOperations.slice(0, 50);
-
-    const summary = operations
-      .map((op) => {
-        switch (op.type) {
-          case "updateThread":
-            if (op.changes.focus)
-              return `- Move **${op.threadTitle}** to **${op.changes.focus.title}**`;
-            if (op.changes.archived) return `- Archive **${op.threadTitle}**`;
-            if (op.changes.title)
-              return `- Rename **${op.threadTitle}** to **${op.changes.title}**`;
-            return `- Update **${op.threadTitle}**`;
-          case "createThread":
-            return `- Create thread **${op.title}** in **${op.focusTitle}**`;
-          case "createNote":
-            return `- Add note to **${op.threadTitle}**`;
-          case "updateFocus":
-            if (op.changes.archived)
-              return `- Archive focus **${op.focusTitle}**`;
-            if (op.changes.title)
-              return `- Rename focus **${op.focusTitle}** to **${op.changes.title}**`;
-            return `- Update focus **${op.focusTitle}**`;
-          default:
-            return `- Unknown operation`;
-        }
-      })
-      .join("\n");
-
-    const cb = await this.actionCallback(
-      this.onPlanResponse,
-      note.thread.id as string
-    );
+    // The server invokes plan callbacks as (action, approved, ...extraArgs) —
+    // `approved` is a positional arg inserted before the curried extraArg. The
+    // SDK's actionCallback type still models (action, ...extraArgs), so bridge
+    // the extra middle param with a cast (runtime order is guaranteed).
+    const planCallback = this.onPlanResponse as unknown as (
+      action: Action,
+      threadId: string
+    ) => Promise<void>;
+    const cb = await this.actionCallback(planCallback, note.thread.id as string);
     const planAction = this.tools.plot.createPlan({
       title: `Organize: ${request.slice(0, 80)}`,
       operations,
@@ -579,21 +508,57 @@ class PlotTwist extends Twist<PlotTwist> {
       thread: { id: note.thread.id },
       content: `Here's my plan (${operations.length} operation${
         operations.length === 1 ? "" : "s"
-      }):\n\n${summary}`,
+      }):\n\n${summarizeOperations(operations)}`,
       actions: [planAction],
     });
 
     return `Created a plan with ${operations.length} operation${
       operations.length === 1 ? "" : "s"
-    }, shown above for your approval.`;
+    }, shown above for the user's approval.`;
   }
 
-  async onPlanResponse(_action: Action, threadId: string): Promise<void> {
-    // The API executes operations on approval and calls back with the action.
-    // We just post a confirmation note in the original thread.
+  /**
+   * Plan decision callback. The server executes approved operations BEFORE
+   * invoking this (results ride on the action); rejections just invoke it
+   * with approved=false.
+   */
+  async onPlanResponse(
+    action: Action,
+    approved: boolean,
+    threadId: string
+  ): Promise<void> {
+    if (action.type !== ActionType.plan) return;
+
+    if (!approved) {
+      await this.tools.plot.createNote({
+        thread: { id: threadId as Uuid },
+        content: "Okay — I won't make those changes.",
+      });
+      return;
+    }
+
+    const results = action.results ?? [];
+    const failures = results
+      .map((r, i) => ({ result: r, op: action.operations[i] }))
+      .filter((x) => x.op && !x.result.success);
+
+    const content =
+      failures.length === 0
+        ? `Done — completed all ${results.length} operation${
+            results.length === 1 ? "" : "s"
+          }.`
+        : `Completed ${results.length - failures.length} of ${
+            results.length
+          } operations. These failed:\n\n` +
+          failures
+            .map(
+              (f) => `- ${describeOperation(f.op)} — ${f.result.error ?? "unknown error"}`
+            )
+            .join("\n");
+
     await this.tools.plot.createNote({
       thread: { id: threadId as Uuid },
-      content: "Done! The plan has been executed.",
+      content,
     });
   }
 }

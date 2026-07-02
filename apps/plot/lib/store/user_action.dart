@@ -320,8 +320,9 @@ class PlanOperation extends Equatable {
     switch (type) {
       case 'createThread':
         final title = data['title'] as String? ?? 'Untitled';
-        final priorityTitle = data['priorityTitle'] as String?;
-        if (priorityTitle != null) return 'Create "$title" in $priorityTitle';
+        final focusTitle =
+            data['focusTitle'] as String? ?? data['priorityTitle'] as String?;
+        if (focusTitle != null) return 'Create "$title" in $focusTitle';
         return 'Create "$title"';
       case 'createNote':
         final threadTitle = data['threadTitle'] as String? ?? 'thread';
@@ -338,6 +339,10 @@ class PlanOperation extends Equatable {
           final p = changes['priority'] as Map<String, dynamic>;
           parts.add('move to ${p['title'] ?? 'priority'}');
         }
+        if (changes['focus'] != null) {
+          final f = changes['focus'] as Map<String, dynamic>;
+          parts.add('move to ${f['title'] ?? 'focus'}');
+        }
         if (parts.isEmpty) return 'Update "$threadTitle"';
         return 'Update "$threadTitle": ${parts.join(', ')}';
       case 'updateLink':
@@ -347,18 +352,35 @@ class PlanOperation extends Equatable {
         if (threadTitle != null) return 'Move "$linkTitle" to "$threadTitle"';
         return 'Update "$linkTitle"';
       case 'updatePriority':
-        final priorityTitle = data['priorityTitle'] as String? ?? 'priority';
-        final changes = data['changes'] as Map<String, dynamic>? ?? {};
-        final parts = <String>[];
-        if (changes['title'] != null) parts.add('rename');
-        if (changes['archived'] == true) parts.add('archive');
-        if (changes['archived'] == false) parts.add('unarchive');
-        if (changes['parent'] != null) {
-          final p = changes['parent'] as Map<String, dynamic>;
-          parts.add('move to ${p['title'] ?? 'parent'}');
+        {
+          final priorityTitle =
+              data['priorityTitle'] as String? ?? 'priority';
+          final changes = data['changes'] as Map<String, dynamic>? ?? {};
+          final parts = <String>[];
+          if (changes['title'] != null) parts.add('rename');
+          if (changes['archived'] == true) parts.add('archive');
+          if (changes['archived'] == false) parts.add('unarchive');
+          if (changes['parent'] != null) {
+            final p = changes['parent'] as Map<String, dynamic>;
+            parts.add('move to ${p['title'] ?? 'parent'}');
+          }
+          if (parts.isEmpty) return 'Update "$priorityTitle"';
+          return 'Update "$priorityTitle": ${parts.join(', ')}';
         }
-        if (parts.isEmpty) return 'Update "$priorityTitle"';
-        return 'Update "$priorityTitle": ${parts.join(', ')}';
+      case 'createFocus':
+        final title = data['title'] as String? ?? 'Untitled';
+        return 'Create focus "$title"';
+      case 'updateFocus':
+        {
+          final focusTitle = data['focusTitle'] as String? ?? 'focus';
+          final changes = data['changes'] as Map<String, dynamic>? ?? {};
+          final parts = <String>[];
+          if (changes['title'] != null) parts.add('rename');
+          if (changes['archived'] == true) parts.add('archive');
+          if (changes['archived'] == false) parts.add('unarchive');
+          if (parts.isEmpty) return 'Update focus "$focusTitle"';
+          return 'Update focus "$focusTitle": ${parts.join(', ')}';
+        }
       default:
         return type;
     }
