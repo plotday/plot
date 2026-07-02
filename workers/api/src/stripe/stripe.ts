@@ -276,6 +276,7 @@ export async function handleSubscriptionUpdate(
         .where("stripe_customer_id", "=", customerId)
         .execute();
     }
+    await notifySubscriptionChangeForCustomer(c, customerId);
     return; // never run the plan path for an add-on sub
   }
 
@@ -296,6 +297,7 @@ export async function handleSubscriptionUpdate(
     // If the Apple guard (apple_twist_addon_original_transaction_id IS NOT NULL)
     // blocked the write, that is the correct behaviour — Apple owns the count.
     // Teams never buy twist add-ons, so there is no team_subscription fallback.
+    await notifySubscriptionChangeForCustomer(c, customerId);
     return; // never run the plan path for a twist add-on sub
   }
 
@@ -749,20 +751,7 @@ export async function handleSubscriptionDeleted(
   });
 
   // Notify affected users so the Flutter app picks up the plan change.
-  const syncUser = await c.var.db
-    .selectFrom("user_subscription")
-    .select("user_id")
-    .where("stripe_customer_id", "=", customerId)
-    .executeTakeFirst();
-
-  if (syncUser) {
-    await notifySubscriptionChange(c, [syncUser.user_id]);
-  }
-
-  const orgMemberIds = await getOrgMemberUserIds(c.var.db, customerId);
-  if (orgMemberIds.length > 0) {
-    await notifySubscriptionChange(c, orgMemberIds);
-  }
+  await notifySubscriptionChangeForCustomer(c, customerId);
 }
 
 /**
@@ -788,6 +777,31 @@ async function notifySubscriptionChange(
       )
       .execute();
     notifyUserSync(c, userId);
+  }
+}
+
+/**
+ * Notify every user affected by a Stripe customer's subscription change — the
+ * personal owner (via `user_subscription`) and, for a team customer, all org
+ * members (via `getOrgMemberUserIds`). Used by the plan, add-on, and
+ * twist-addon paths so a provisioning change reaches Flutter clients over the
+ * `subscription` websocket broadcast.
+ */
+async function notifySubscriptionChangeForCustomer(
+  c: any,
+  customerId: string
+): Promise<void> {
+  const syncUser = await c.var.db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("stripe_customer_id", "=", customerId)
+    .executeTakeFirst();
+  if (syncUser) {
+    await notifySubscriptionChange(c, [syncUser.user_id]);
+  }
+  const orgMemberIds = await getOrgMemberUserIds(c.var.db, customerId);
+  if (orgMemberIds.length > 0) {
+    await notifySubscriptionChange(c, orgMemberIds);
   }
 }
 

@@ -1,6 +1,5 @@
 import 'package:collection/collection.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'command.dart';
 import 'upgrade.dart'
@@ -13,6 +12,7 @@ import 'upgrade.dart'
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/analytics/profile.dart';
+import 'package:plot/command/checkout_await.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/widget/auth_button.dart' show AuthButton;
 import 'package:plot/store/store.dart';
@@ -949,29 +949,26 @@ Future<CommandReturn> _handleTeamBlockRequired(
   return const CommandSkipped();
 }
 
-/// After an enable returned needs_card (402, [ApiException.needsCard]): open
-/// the $0 Stripe setup session to capture a card, then tell the user to
-/// connect again (the next enable charges). No charge happens here. Keeps the
-/// setup modal open (returns [CommandSkipped]) so the captured consent persists
-/// and the user can connect again on return from the browser.
+/// After an enable returned needs_card (402, [ApiException.needsCard]): open the
+/// coupon-or-card Stripe Checkout and keep an in-app waiting state open until
+/// the add-on credit provisions. On completion returns [CommandAddonConsented]
+/// so the caller retries the enable (a spare credit now exists); on dismissal
+/// returns [CommandSkipped].
 Future<CommandReturn> _handleNeedsCard(
   BuildContext context,
   ApiException e,
 ) async {
   final url = e.checkoutUrl;
-  if (url != null) {
-    try {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (err, st) {
-      log.warning('Failed to open card-setup checkout', err, st);
-    }
-  }
-  if (context.mounted) {
-    context.showToast(
-      message: 'Add a payment method in your browser, then connect again.',
-    );
-  }
-  return const CommandSkipped();
+  if (url == null) return const CommandSkipped();
+  final usage = SubscriptionService.instance.usage;
+  final baseline = usage == null ? 0 : connectionAddonCreditTotal(usage);
+  return launchCheckoutAndAwait(
+    context,
+    url: url,
+    waitingMessage: 'Complete checkout in your browser to add the connection.',
+    isComplete: (u) => connectionAddonCreditTotal(u) > baseline,
+    onComplete: const CommandAddonConsented(),
+  );
 }
 
 /// Runs the connection add-on offer after an enable hit `addon_required`.
@@ -3889,9 +3886,13 @@ class ActivateTwist extends Command {
       // Source connector beyond the pool: consented but no card → capture one;
       // not yet consented → offer the add-on and retry with consentAddon:true.
       if (e.needsCard) {
-        return context.mounted
-            ? _handleNeedsCard(context, e)
-            : const CommandSkipped();
+        if (!context.mounted) return const CommandSkipped();
+        final result = await _handleNeedsCard(context, e);
+        // Checkout completed → a spare credit now exists; retry the enable so
+        // the connection actually connects (mirrors the isAddonRequired path).
+        return result is CommandAddonConsented && context.mounted
+            ? _attempt(context, consentAddon: true)
+            : result;
       }
       if (e.isAddonRequired && !consentAddon) {
         if (!context.mounted) return const CommandSkipped();
@@ -4221,9 +4222,13 @@ class _ActivateNoProviderSource extends Command {
       }
       // Consented but no card on file: capture a card, then connect again.
       if (e.needsCard) {
-        return context.mounted
-            ? _handleNeedsCard(context, e)
-            : const CommandSkipped();
+        if (!context.mounted) return const CommandSkipped();
+        final result = await _handleNeedsCard(context, e);
+        // Checkout completed → a spare credit now exists; retry the enable so
+        // the connection actually connects (mirrors the isAddonRequired path).
+        return result is CommandAddonConsented && context.mounted
+            ? _attempt(context, consentAddon: true)
+            : result;
       }
       // Billable connection without prior consent: offer the add-on / upgrade.
       // On the web consent path, retry the activate with consentAddon:true so
@@ -4737,9 +4742,13 @@ class SaveSource extends Command {
       }
       // Consented but no card on file: capture a card, then connect again.
       if (e.needsCard) {
-        return context.mounted
-            ? _handleNeedsCard(context, e)
-            : const CommandSkipped();
+        if (!context.mounted) return const CommandSkipped();
+        final result = await _handleNeedsCard(context, e);
+        // Checkout completed → a spare credit now exists; retry the enable so
+        // the connection actually connects (mirrors the isAddonRequired path).
+        return result is CommandAddonConsented && context.mounted
+            ? _attempt(context, consentAddon: true)
+            : result;
       }
       // The client's usage data can disagree with the server's view of
       // limits — pre-checks in EditSource use cached/stale usage, but the

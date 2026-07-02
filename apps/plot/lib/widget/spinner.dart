@@ -18,7 +18,7 @@ class Spinner extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         spacing: 8,
         children: [
-          if (message != null) Text(message!),
+          if (message != null) Flexible(child: Text(message!)),
           SizedBox(
             width: size,
             height: size,

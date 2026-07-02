@@ -465,6 +465,60 @@ describe.skipIf(!DATABASE_URL)(
       }
     });
 
+    it("an addon subscription notifies the customer's user (subscription broadcast)", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_addonnotify_${randomUUID().slice(0, 8)}`;
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "free",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_addon_notify",
+            customer: customerId,
+            status: "active",
+            metadata: { type: "addon" },
+            trial_end: null,
+            items: {
+              data: [{ quantity: 1, price: { lookup_key: "addon_monthly" } }],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end:
+              Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const sync = await trx
+            .selectFrom("user_sync")
+            .select(["user_id", "entity"])
+            .where("user_id", "=", userId)
+            .where("entity", "=", "subscription")
+            .executeTakeFirst();
+          expect(sync).toBeDefined();
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
     it("a PLAN subscription does NOT clobber a standalone add-on count (regression: fix1)", async () => {
       // Regression guard: before Fix 1, the plan path set premium_connection_addons
       // to addonQuantity (0 for a plan sub with no add-on line item), zeroing the
@@ -985,6 +1039,62 @@ describe.skipIf(!DATABASE_URL)(
           expect(after).toBeDefined();
           expect(after!.twist_addon_count).toBe(0); // untouched by connection add-on event
           expect(after!.premium_connection_addons).toBe(2); // updated by connection add-on
+
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (!(e instanceof Rollback)) throw e;
+      } finally {
+        await db.destroy();
+      }
+    });
+
+    it("a twist-addon subscription notifies the customer's user (subscription broadcast)", async () => {
+      const db = createDb({ DATABASE_URL } as unknown as Bindings);
+      const userId = randomUUID();
+      const customerId = `cus_twistnotify_${randomUUID().slice(0, 8)}`;
+      try {
+        await db.transaction().execute(async (trx: Kysely<DB>) => {
+          await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+          await trx
+            .insertInto("user_subscription")
+            .values({
+              user_id: userId,
+              plan: "pro",
+              status: "active",
+              origin: "stripe",
+              stripe_customer_id: customerId,
+              billing_cycle_start: new Date().toISOString(),
+              billing_cycle_end: new Date(
+                Date.now() + 30 * 24 * 3600 * 1000
+              ).toISOString(),
+            })
+            .execute();
+
+          const fakeC = buildFakeContext(trx);
+          await handleSubscriptionUpdate(fakeC, {
+            id: "sub_twistaddon_notify",
+            customer: customerId,
+            status: "active",
+            metadata: { type: "twist_addon" },
+            trial_end: null,
+            items: {
+              data: [
+                { quantity: 1, price: { lookup_key: "twist_addon_monthly" } },
+              ],
+            },
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end:
+              Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+          } as unknown as Stripe.Subscription);
+
+          const sync = await trx
+            .selectFrom("user_sync")
+            .select(["user_id", "entity"])
+            .where("user_id", "=", userId)
+            .where("entity", "=", "subscription")
+            .executeTakeFirst();
+          expect(sync).toBeDefined();
 
           throw new Rollback();
         });

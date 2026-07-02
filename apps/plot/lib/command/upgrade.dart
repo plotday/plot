@@ -9,6 +9,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/iap_api.dart';
 import 'package:plot/api/upgrade_api.dart';
+import 'package:plot/command/checkout_await.dart';
 import 'package:plot/state/subscription_service.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
@@ -234,24 +235,22 @@ class BuyAddonCommand extends Command {
     // without a new charge. No card on file → a coupon-or-card Checkout URL.
     try {
       final result = await UpgradeApi.purchaseAddon(teamId: teamId);
+      if (!context.mounted) return const CommandSkipped();
       final url = result.checkoutUrl;
       if (!result.ok && url != null) {
-        try {
-          await launchUrl(
-            Uri.parse(url),
-            mode: LaunchMode.externalApplication,
-          );
-        } catch (err, st) {
-          log.warning('Failed to open add-on checkout', err, st);
-        }
-        if (context.mounted) {
-          context.showToast(
-            message:
-                'Add a payment method or coupon in your browser, then connect '
-                'again.',
-          );
-        }
-        return const CommandSkipped();
+        // No card on file → finish the coupon-or-card Checkout in the browser.
+        // Keep an in-app waiting state open until the credit provisions, then
+        // proceed to connect. Backing out cancels.
+        final usage = SubscriptionService.instance.usage;
+        final baseline = usage == null ? 0 : connectionAddonCreditTotal(usage);
+        return launchCheckoutAndAwait(
+          context,
+          url: url,
+          waitingMessage:
+              'Complete checkout in your browser to add the connection.',
+          isComplete: (u) => connectionAddonCreditTotal(u) > baseline,
+          onComplete: const CommandAddonConsented(),
+        );
       }
       // Provisioned (or already had an unused credit) — proceed to connect.
       return const CommandAddonConsented();
@@ -579,14 +578,18 @@ class BuyTwistAddonCommand extends Command {
       }
       final url = result.checkoutUrl;
       if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        if (context.mounted) {
-          context.showToast(
-            message:
-                'Finish checkout in your browser, then install the twist.',
-          );
-        }
-        return const CommandSkipped();
+        // No card on file → finish checkout in the browser; wait for the twist
+        // add-on credit to provision, then continue to install.
+        return launchCheckoutAndAwait(
+          context,
+          url: url,
+          waitingMessage:
+              'Complete checkout in your browser to add the twist add-on.',
+          isComplete: (u) => twistAddonCreditTotal(u) > previousCount,
+          onComplete: const CommandDone(
+            message: 'Twist add-on added — install the twist again to finish.',
+          ),
+        );
       }
       return const CommandSkipped();
     } catch (e, st) {
