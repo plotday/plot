@@ -25,7 +25,9 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "deploy": "plot deploy",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@plotday/twister": "workspace:*",
@@ -33,6 +35,7 @@
   },
   "devDependencies": {
     "@plotday/tsconfig": "workspace:*",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
   }
 }

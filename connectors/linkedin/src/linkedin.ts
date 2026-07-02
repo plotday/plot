@@ -428,8 +428,10 @@ export class LinkedIn extends Connector<LinkedIn> {
       channelId,
       limit: 20,
     });
-    const invLinks = inv.invitations.map((i) =>
-      buildInvitationLink(channelId, i, true)
+    const invLinks = await Promise.all(
+      inv.invitations.map(async (i) =>
+        buildInvitationLink(channelId, i, true, await this.buildInvitationActions(channelId, i))
+      )
     );
     if (invLinks.length > 0) {
       await this.tools.integrations.saveLinks(invLinks);
@@ -586,13 +588,17 @@ export class LinkedIn extends Connector<LinkedIn> {
         (i) => i.id === event.invitationId
       );
       if (!target) return;
-      const link = buildInvitationLink(channelId, target, false);
+      const link = buildInvitationLink(
+        channelId,
+        target,
+        false,
+        await this.buildInvitationActions(channelId, target)
+      );
       await this.tools.integrations.saveLinks([link]);
     } else {
-      // relation.new — a new 1st-degree LinkedIn connection. Fetch the
-      // profile and save as a Plot contact. Existing person-keyed links
-      // (chats/invitations) will dedupe onto the same contact_external_account
-      // row via (LinkedIn, profileId).
+      // relation.new — a new 1st-degree LinkedIn connection. Save the profile
+      // as a contact, then reconcile any pending request the user accepted
+      // directly on LinkedIn: flip the thread to Connected and clear buttons.
       try {
         const profile = await this.tools.linkedin.getProfile({
           channelId,
@@ -605,6 +611,39 @@ export class LinkedIn extends Connector<LinkedIn> {
           `LinkedIn new_relation handler failed for profile ${event.profileId}`,
           error
         );
+      }
+
+      const pending = await this.get<{ invitationId: string }>(
+        `pending_invitation:${event.profileId}`
+      );
+      if (pending) {
+        const flagKey = `invitation_writeback:${pending.invitationId}`;
+        if (!(await this.get<string>(flagKey))) {
+          await this.set(flagKey, "accept");
+          await this.tools.integrations.saveLinks([
+            {
+              source: `linkedin:person:${event.profileId}`,
+              sources: [`linkedin:person:${event.profileId}`],
+              type: TYPE_CONVERSATION,
+              channelId,
+              status: STATUS_INBOX,
+              meta: {
+                syncProvider: PROVIDER_KEY,
+                channelId,
+                profileId: event.profileId,
+                invitationId: pending.invitationId,
+              },
+            },
+          ]);
+          await this.tools.integrations.saveNote({
+            thread: { source: `linkedin:person:${event.profileId}` },
+            key: `invite-request-${pending.invitationId}`,
+            content: "Connected.",
+            contentType: "markdown",
+            actions: [],
+          });
+        }
+        await this.clear(`pending_invitation:${event.profileId}`);
       }
     }
   }
@@ -902,6 +941,138 @@ export class LinkedIn extends Connector<LinkedIn> {
     }
   }
 
+  /**
+   * Mint the Accept/Ignore callback actions for an inbound invitation and
+   * record a `pending_invitation:${profileId}` marker so a later
+   * `relation.new` (the user accepting directly on LinkedIn) can reconcile
+   * the thread. Each callback stores `(channelId, invitationId, profileId)`
+   * so the handler can write back and update the correct link/note.
+   */
+  async buildInvitationActions(
+    channelId: string,
+    inv: LinkedInInvitation
+  ): Promise<Action[]> {
+    const accept = await this.callback(
+      this.onAcceptInvitation,
+      channelId,
+      inv.id,
+      inv.inviter.id
+    );
+    const ignore = await this.callback(
+      this.onIgnoreInvitation,
+      channelId,
+      inv.id,
+      inv.inviter.id
+    );
+    await this.set(`pending_invitation:${inv.inviter.id}`, {
+      invitationId: inv.id,
+    });
+    return [
+      { type: ActionType.callback, title: "Accept", callback: accept },
+      { type: ActionType.callback, title: "Ignore", callback: ignore },
+    ];
+  }
+
+  // Handler bodies are implemented in Tasks 4 and 5. The `action` first
+  // parameter is prepended by the runtime for ActionType.callback dispatch.
+  async onAcceptInvitation(
+    _action: Action,
+    channelId: string,
+    invitationId: string,
+    profileId: string
+  ): Promise<void> {
+    const flagKey = `invitation_writeback:${invitationId}`;
+    if (await this.get<string>(flagKey)) return;
+
+    let ok = true;
+    try {
+      await this.tools.linkedin.acceptInvitation({ channelId, invitationId });
+    } catch (error) {
+      ok = false;
+      console.warn(
+        `LinkedIn accept-invitation failed (${invitationId})`,
+        error
+      );
+    }
+    await this.set(flagKey, "accept");
+
+    if (ok) {
+      // Merge-save: flip the person-keyed link to Connected without touching
+      // title/preview/etc. (saveLinks upserts by source).
+      await this.tools.integrations.saveLinks([
+        {
+          source: `linkedin:person:${profileId}`,
+          sources: [`linkedin:person:${profileId}`],
+          type: TYPE_CONVERSATION,
+          channelId,
+          status: STATUS_INBOX,
+          meta: {
+            syncProvider: PROVIDER_KEY,
+            channelId,
+            profileId,
+            invitationId,
+          },
+        },
+      ]);
+    }
+
+    await this.tools.integrations.saveNote({
+      thread: { source: `linkedin:person:${profileId}` },
+      key: `invite-request-${invitationId}`,
+      content: ok ? "Connected." : "This request is no longer available.",
+      contentType: "markdown",
+      actions: [],
+    });
+    await this.clear(`pending_invitation:${profileId}`);
+  }
+
+  async onIgnoreInvitation(
+    _action: Action,
+    channelId: string,
+    invitationId: string,
+    profileId: string
+  ): Promise<void> {
+    const flagKey = `invitation_writeback:${invitationId}`;
+    if (await this.get<string>(flagKey)) return;
+
+    try {
+      await this.tools.linkedin.ignoreInvitation({ channelId, invitationId });
+    } catch (error) {
+      // Ignore is dismiss-locally intent — proceed to archive even if the
+      // remote call failed (e.g. the invitation was already resolved).
+      console.warn(
+        `LinkedIn ignore-invitation failed (${invitationId})`,
+        error
+      );
+    }
+    await this.set(flagKey, "ignore");
+
+    // Archiving is a Plot concept (there is no LinkedIn "ignored" status).
+    await this.tools.integrations.saveLinks([
+      {
+        source: `linkedin:person:${profileId}`,
+        sources: [`linkedin:person:${profileId}`],
+        type: TYPE_CONVERSATION,
+        channelId,
+        archived: true,
+        meta: {
+          syncProvider: PROVIDER_KEY,
+          channelId,
+          profileId,
+          invitationId,
+        },
+      },
+    ]);
+    await this.tools.integrations.saveNote({
+      thread: { source: `linkedin:person:${profileId}` },
+      key: `invite-request-${invitationId}`,
+      content: "Ignored.",
+      contentType: "markdown",
+      actions: [],
+    });
+    await this.clear(`pending_invitation:${profileId}`);
+  }
+
   override async onLinkUpdated(link: Link): Promise<void> {
     if (link.type !== TYPE_CONVERSATION) return;
 
@@ -910,6 +1081,7 @@ export class LinkedIn extends Connector<LinkedIn> {
     const invitationId = meta.invitationId as string | undefined;
     if (!channelId) return;
     if (!invitationId) return; // chat-only link — nothing to write back
+    if (!link.source) return; // no thread to rewrite the note on
 
     // Idempotency: each invitation can only be accepted once. Plot may
     // re-fire onLinkUpdated on unrelated edits (notes, title, etc.).
@@ -921,21 +1093,35 @@ export class LinkedIn extends Connector<LinkedIn> {
     // ignore/archive status anymore, so other transitions are no-ops.
     if (link.status !== STATUS_INBOX) return;
 
+    const profileId = meta.profileId as string | undefined;
+    let ok = true;
     try {
       await this.tools.linkedin.acceptInvitation({
         channelId,
         invitationId,
       });
-      await this.set(flagKey, "accept");
     } catch (error) {
       // Invitation may have been resolved out-of-band; record the attempt so
       // we don't retry a stale invitation on every subsequent edit.
+      ok = false;
       console.warn(
         `LinkedIn invitation write-back failed (${invitationId}, accept)`,
         error
       );
-      await this.set(flagKey, "accept");
     }
+    await this.set(flagKey, "accept");
+
+    // Clear the connection-request buttons now that the invitation is
+    // resolved — the status-picker accept path must not leave live
+    // Accept/Ignore buttons on a Connected thread (mirrors onAcceptInvitation).
+    await this.tools.integrations.saveNote({
+      thread: { source: link.source },
+      key: `invite-request-${invitationId}`,
+      content: ok ? "Connected." : "This request is no longer available.",
+      contentType: "markdown",
+      actions: [],
+    });
+    if (profileId) await this.clear(`pending_invitation:${profileId}`);
   }
 
   override async onThreadRead(
@@ -994,6 +1180,27 @@ export class LinkedIn extends Connector<LinkedIn> {
 export default LinkedIn;
 
 /**
+ * Markdown body for the connector-authored connection-request note. The name
+ * links to the inviter's LinkedIn profile (bold plain text when no URL), and
+ * the inviter's headline (`subtitle`) is appended on a second line when
+ * present. Link brackets in the name are escaped so an unusual name can't
+ * break the markdown link.
+ */
+export function invitationNoteContent(inviter: {
+  name: string;
+  subtitle: string | null;
+  profileUrl: string | null;
+}): string {
+  const name = inviter.name.replace(/[[\]]/g, (c) => `\\${c}`);
+  const nameMd = inviter.profileUrl
+    ? `[${name}](${inviter.profileUrl})`
+    : name;
+  let content = `**${nameMd}** requested to connect.`;
+  if (inviter.subtitle) content += `\n${inviter.subtitle}`;
+  return content;
+}
+
+/**
  * Build a person-keyed `conversation` link for an inbound LinkedIn connection
  * request (invitation). The `pending` status is only set on initial sync —
  * incremental polls may see a still-pending invitation for a propagation
@@ -1002,14 +1209,26 @@ export default LinkedIn;
  * Instagram), so this helper stays local; profile→contact uses the shared
  * `profileToContact`.
  */
-function buildInvitationLink(
+export function buildInvitationLink(
   channelId: string,
   inv: LinkedInInvitation,
-  initialSync: boolean
+  initialSync: boolean,
+  actions: Action[]
 ): NewLinkWithNotes {
   const contact = profileToContact(inv.inviter);
 
   const notes: NewNote[] = [];
+  // Connector-authored system note: who requested + headline, plus the
+  // Accept/Ignore action buttons. `author` omitted → authored by the twist.
+  notes.push({
+    thread: { source: `linkedin:person:${inv.inviter.id}` },
+    key: `invite-request-${inv.id}`,
+    content: invitationNoteContent(inv.inviter),
+    contentType: "markdown",
+    created: inv.sentAt,
+    actions,
+  });
+  // Personalized message the inviter attached, if any (unchanged).
   if (inv.message) {
     notes.push({
       thread: { source: `linkedin:person:${inv.inviter.id}` },
