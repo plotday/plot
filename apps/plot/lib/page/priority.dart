@@ -1753,6 +1753,9 @@ class _PriorityPageState extends State<PriorityPage>
         controller: _activityFeedDragController,
         child: ScrollEdgeFade(
           background: context.colour.background,
+          // The pinned section header paints its own fade below its seam;
+          // a top fade here would sit on top of that header instead.
+          top: false,
           child: list,
         ),
       ),

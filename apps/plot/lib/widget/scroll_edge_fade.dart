@@ -25,6 +25,7 @@ class ScrollEdgeFade extends StatefulWidget {
     required this.child,
     this.background,
     this.transparent = false,
+    this.top = true,
     super.key,
   }) : assert(
          background == null || !transparent,
@@ -39,6 +40,12 @@ class ScrollEdgeFade extends StatefulWidget {
   /// painting an overlay gradient. Use when the child has no opaque
   /// background of its own and must fade into whatever is behind it.
   final bool transparent;
+
+  /// Whether to paint the top edge fade. Set false when something else owns
+  /// the top edge — e.g. a pinned sticky header that paints its own fade
+  /// below its seam (see [InfiniteList]'s sticky-header overlay). The bottom
+  /// fade is unaffected.
+  final bool top;
 
   @override
   State<ScrollEdgeFade> createState() => _ScrollEdgeFadeState();
@@ -153,7 +160,7 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
           return Stack(
             children: [
               widget.child,
-              if (!_atTop)
+              if (!_atTop && widget.top)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -200,7 +207,11 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxH = constraints.maxHeight;
-        if (maxH <= _fadeExtent * 3 || (_atTop && _atBottom)) {
+        // Treat the top edge as "already resolved" when the caller has
+        // disabled the top fade, so a list that only needs the top fade
+        // short-circuits to the plain child.
+        final topActive = !_atTop && widget.top;
+        if (maxH <= _fadeExtent * 3 || (!topActive && _atBottom)) {
           return widget.child;
         }
         // RGB is ignored by [BlendMode.dstIn]; only alpha matters. Opaque
@@ -215,7 +226,7 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              _atTop ? opaque : clear,
+              topActive ? clear : opaque,
               opaque,
               opaque,
               _atBottom ? opaque : clear,

@@ -407,6 +407,10 @@ class InfiniteListState extends State<InfiniteList> {
   bool _fetching = false;
 
   // ── Sticky-header overlay state ─────────────────────────────────────
+  /// Height of the scroll-edge fade painted below a pinned sticky header.
+  /// Matches [ScrollEdgeFade]'s extent so the two read as one system.
+  static const double _stickyFadeExtent = 16.0;
+
   /// Measurement keys for currently-tracked header items, keyed by the
   /// item's stable [InfiniteList.itemKey] string so a key follows its
   /// logical item across index shifts. Only header items get one.
@@ -497,14 +501,26 @@ class InfiniteListState extends State<InfiniteList> {
 
     // "Floating" — the overlay is shown only when the real header it mirrors
     // has scrolled up under the top edge. At rest / overscroll (atTop) the
-    // real header shows instead; when the header is measurable, it must be
-    // above the edge (activeTop < 0); when it has scrolled past the cache
-    // extent (unmeasurable) it is necessarily above.
+    // real header shows instead; when the header is measurable, it must have
+    // reached the top edge; when it has scrolled past the cache extent
+    // (unmeasurable) it is necessarily above.
+    //
+    // Threshold is the pin line itself (`< 0.5`), NOT `< -0.5`. This handler
+    // runs from the ScrollUpdateNotification, where `pos.pixels` already holds
+    // the new offset but the header render-boxes still reflect the PREVIOUS
+    // layout — so on the very first scroll frame `activeTop` still measures
+    // ~0. A `-0.5` gate leaves `floating` false for that one frame, so the
+    // real header renders a pixel up (uncovered) and the overlay snaps it back
+    // down the next frame — a visible 1px jump. Flipping at the pin line makes
+    // the overlay cover the header the same frame it starts to scroll away.
+    // `activeIndex` candidates already satisfy `top <= 0.5`, so this only ever
+    // aligns the overlay a sub-pixel earlier at rest — invisible — while
+    // killing the transition jump.
     final bool floating;
     if (atTop) {
       floating = false;
     } else if (activeIndex != null) {
-      floating = activeTop < -0.5;
+      floating = activeTop < 0.5;
     } else {
       floating = newIndex != null;
     }
@@ -1079,6 +1095,7 @@ class InfiniteListState extends State<InfiniteList> {
         ? widget.stickyHeaderBuilder!(context, activeIndex)
         : null;
 
+    final bg = context.theme.colors.background;
     return Stack(
       key: _stackKey,
       clipBehavior: Clip.hardEdge,
@@ -1089,33 +1106,62 @@ class InfiniteListState extends State<InfiniteList> {
             top: _stickyPush,
             left: 0,
             right: 0,
-            child: KeyedSubtree(
-              key: _overlayKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Opaque base so scrolling content never bleeds through a
-                  // header with a translucent band.
-                  ColoredBox(
-                    color: context.theme.colors.background,
-                    child: overlay,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Measured subtree: header + seam ONLY. The push-up hand-off
+                // reads this height via [_overlayKey], so the edge fade below
+                // must stay outside it or the next header would start sliding
+                // up a fade-extent too early.
+                KeyedSubtree(
+                  key: _overlayKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Opaque base so scrolling content never bleeds through a
+                      // header with a translucent band.
+                      ColoredBox(color: bg, child: overlay),
+                      // Seam divider as an explicit 1px child — NOT a
+                      // BoxDecoration border, which paints behind the child and
+                      // would be occluded by the header's own opaque band.
+                      // While floating, the list's real header↔item divider is
+                      // owned by the scrolled-away next item, so the overlay
+                      // supplies its own. Matches the list's divider colour.
+                      Container(
+                        height: 1,
+                        color: Color.alphaBlend(
+                          context.theme.colors.border,
+                          bg,
+                        ),
+                      ),
+                    ],
                   ),
-                  // Seam divider as an explicit 1px child — NOT a
-                  // BoxDecoration border, which paints behind the child and
-                  // would be occluded by the header's own opaque band. While
-                  // floating, the list's real header↔item divider is owned by
-                  // the scrolled-away next item, so the overlay supplies its
-                  // own. Matches the list's divider colour.
-                  Container(
-                    height: 1,
-                    color: Color.alphaBlend(
-                      context.theme.colors.border,
-                      context.theme.colors.background,
+                ),
+                // Scroll-edge fade rendered BELOW the pinned header's seam, so
+                // rows dissolve into the header band as they scroll under it —
+                // rather than the fade sitting on top of (and washing out) the
+                // header itself. Only present while floating (content is
+                // scrolled), IgnorePointer so the rows beneath stay tappable,
+                // and outside [_overlayKey] so it doesn't inflate the hand-off
+                // height. The host list's own top fade is disabled in this
+                // mode (see [ScrollEdgeFade.top]).
+                IgnorePointer(
+                  child: SizedBox(
+                    height: _stickyFadeExtent,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [bg, bg.withValues(alpha: 0)],
+                        ),
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
       ],

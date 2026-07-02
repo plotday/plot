@@ -232,6 +232,9 @@ class LeftPanelAgendaView extends StatelessWidget {
               }
               return ScrollEdgeFade(
                 background: context.colour.background,
+                // The pinned day header paints its own fade below its seam;
+                // a top fade here would sit on top of that header instead.
+                top: false,
                 child: AgendaList(items: state.agendaViewItems),
               );
             },
