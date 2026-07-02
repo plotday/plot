@@ -344,6 +344,23 @@ class InfiniteList extends StatefulWidget {
   /// How dragging the scroll view should dismiss the on-screen keyboard.
   final ScrollViewKeyboardDismissBehavior keyboardDismissBehavior;
 
+  /// Sticky headers (overlay approach).
+  ///
+  /// Returns true for item indices that act as "section headers" — the
+  /// items whose label should pin to the top of the viewport while their
+  /// section's content scrolls beneath. The list attaches a measurement
+  /// key to each such item so it can track their live positions without
+  /// restructuring the (single, flat) sliver.
+  final bool Function(int index)? isStickyHeader;
+
+  /// Builds the pinned overlay for the given header [index] — typically the
+  /// same header widget the list renders inline. When both this and
+  /// [isStickyHeader] are non-null, the list overlays a single pinned header
+  /// on top of the scroll view (and slides it up as the next header reaches
+  /// the top). Null disables the overlay entirely, so existing callers are
+  /// unaffected.
+  final Widget Function(BuildContext context, int index)? stickyHeaderBuilder;
+
   InfiniteList({
     required this.builder,
     required this.count,
@@ -371,6 +388,8 @@ class InfiniteList extends StatefulWidget {
     this.onScrollOffsetChanged,
     this.keyboardDismissBehavior = ScrollViewKeyboardDismissBehavior.manual,
     this.emptyPlaceholder,
+    this.isStickyHeader,
+    this.stickyHeaderBuilder,
     InfiniteListController? controller,
     super.key,
   }) : doneEnd = doneEnd ?? fetcher == null,
@@ -386,6 +405,141 @@ class InfiniteListState extends State<InfiniteList> {
   late final ScrollController _scrollController;
 
   bool _fetching = false;
+
+  // ── Sticky-header overlay state ─────────────────────────────────────
+  /// Measurement keys for currently-tracked header items, keyed by the
+  /// item's stable [InfiniteList.itemKey] string so a key follows its
+  /// logical item across index shifts. Only header items get one.
+  final Map<String, GlobalKey> _headerKeys = {};
+
+  /// Wraps the whole `Stack`, giving the overlay a stable origin (the
+  /// viewport's top edge in global coordinates) to measure against.
+  final GlobalKey _stackKey = GlobalKey();
+
+  /// Wraps the rendered overlay so its height can be measured for the
+  /// push-up hand-off to the next header.
+  final GlobalKey _overlayKey = GlobalKey();
+
+  /// Index of the header currently pinned at the top (null = none).
+  int? _activeStickyIndex;
+
+  /// Vertical translation of the pinned header. 0 while resting at the
+  /// top; negative while the next header pushes it up and out.
+  double _stickyPush = 0;
+
+  /// Whether the pinned header is "floating" — the real in-list header it
+  /// mirrors has scrolled up under the top edge (or off past the cache
+  /// extent). Only while floating does the overlay paint its own bottom
+  /// divider: at rest the overlay coincides with the real header, so we
+  /// let the real, dynamically-coloured shared divider below the first
+  /// row show through instead of occluding it with a neutral line.
+  bool _stickyFloating = false;
+
+  /// Returns the measurement key for [stableKey], creating it on first use.
+  GlobalKey _headerKey(String stableKey) =>
+      _headerKeys.putIfAbsent(stableKey, () => GlobalKey());
+
+  bool get _stickyEnabled =>
+      widget.stickyHeaderBuilder != null && widget.isStickyHeader != null;
+
+  /// Recomputes which header is pinned and how far it is pushed up, from
+  /// the live positions of the tracked header items. Cheap: only headers
+  /// currently laid out (visible + cache extent) have a render box, and
+  /// there are only a handful on screen at once. Called on every scroll
+  /// update and after layout-changing rebuilds.
+  void _updateStickyHeader() {
+    if (!_stickyEnabled) return;
+    final stackContext = _stackKey.currentContext;
+    if (stackContext == null) return;
+    final stackBox = stackContext.findRenderObject() as RenderBox?;
+    if (stackBox == null || !stackBox.hasSize) return;
+    final viewportTop = stackBox.localToGlobal(Offset.zero).dy;
+
+    // Collect (index, topRelativeToViewport) for every tracked header
+    // that is currently laid out. `_headerKeys` is keyed by stable string;
+    // resolve each back to its current index via widget.itemKey.
+    int? activeIndex;
+    double activeTop = double.negativeInfinity;
+    double? nextTop; // top of the first header strictly below the pin line.
+
+    for (var i = 0; i < widget.count; i++) {
+      if (!(widget.isStickyHeader?.call(i) ?? false)) continue;
+      final stableKey = widget.itemKey?.call(i) ?? 'idx_$i';
+      final key = _headerKeys[stableKey];
+      final ctx = key?.currentContext;
+      if (ctx == null) continue; // scrolled out of the cache extent
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) continue;
+      final top = box.localToGlobal(Offset.zero).dy - viewportTop;
+      // A header at or above the pin line (top <= ~0) is a pin candidate;
+      // the lowest such one wins (the section we're currently inside).
+      if (top <= 0.5) {
+        if (top > activeTop) {
+          activeTop = top;
+          activeIndex = i;
+        }
+      } else if (nextTop == null || top < nextTop) {
+        nextTop = top;
+      }
+    }
+
+    // If no tracked header is at/above the pin line, the active section's
+    // header has scrolled past the cache extent — keep the last known one
+    // pinned (that's the whole point of the overlay).
+    var newIndex = activeIndex ?? _activeStickyIndex;
+
+    // At (or above) the top of the list — resting or overscroll-bouncing —
+    // nothing should be pinned: the real first header is fully visible.
+    // Without this, overscroll drags the real header down while the overlay
+    // stays glued to the top, showing two copies.
+    final pos = _scrollController.hasClients ? _scrollController.position : null;
+    final atTop = pos == null || pos.pixels <= 0.5;
+
+    // "Floating" — the overlay is shown only when the real header it mirrors
+    // has scrolled up under the top edge. At rest / overscroll (atTop) the
+    // real header shows instead; when the header is measurable, it must be
+    // above the edge (activeTop < 0); when it has scrolled past the cache
+    // extent (unmeasurable) it is necessarily above.
+    final bool floating;
+    if (atTop) {
+      floating = false;
+    } else if (activeIndex != null) {
+      floating = activeTop < -0.5;
+    } else {
+      floating = newIndex != null;
+    }
+
+    // Push-up hand-off: when the next header rises into the overlay's band,
+    // slide the pinned header up by the overlap so the two swap cleanly.
+    var newPush = 0.0;
+    if (floating && newIndex != null && nextTop != null) {
+      final overlayHeight = _overlayHeight();
+      if (nextTop < overlayHeight) {
+        newPush = nextTop - overlayHeight; // negative → slides up
+      }
+    }
+
+    if (newIndex != _activeStickyIndex ||
+        floating != _stickyFloating ||
+        (newPush - _stickyPush).abs() > 0.5) {
+      setState(() {
+        _activeStickyIndex = newIndex;
+        _stickyFloating = floating;
+        _stickyPush = newPush;
+      });
+    }
+  }
+
+  /// Measured height of the current overlay, falling back to a nominal
+  /// value before the first layout.
+  double _overlayHeight() {
+    final box = _overlayKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize && box.size.height > 0) {
+      return box.size.height;
+    }
+    return 40;
+  }
+  // ────────────────────────────────────────────────────────────────────
 
   /// `widget.count` and `lastVisible` at the most recent fetcher call.
   /// Used by [_loadIfNecessary] to suppress redundant fetches: if neither
@@ -543,6 +697,7 @@ class InfiniteListState extends State<InfiniteList> {
       widget.controller.clamp(0, widget.count - 1);
       _loadIfNecessary();
       _updateKeySnapshot();
+      _updateStickyHeader();
     });
   }
 
@@ -604,6 +759,7 @@ class InfiniteListState extends State<InfiniteList> {
       widget.controller.clamp(0, widget.count - 1);
       _loadIfNecessary();
       _updateKeySnapshot();
+      _updateStickyHeader();
     });
   }
 
@@ -726,6 +882,14 @@ class InfiniteListState extends State<InfiniteList> {
 
     final separator = widget.separatorBuilder?.call(context, index);
 
+    // Tag header items with a measurement key so the sticky overlay can read
+    // their live positions. Keyed by the stable itemKey string so the
+    // GlobalKey follows its logical item across index shifts.
+    if (_stickyEnabled && (widget.isStickyHeader?.call(index) ?? false)) {
+      final stableKey = widget.itemKey?.call(index) ?? 'idx_$index';
+      child = KeyedSubtree(key: _headerKey(stableKey), child: child);
+    }
+
     // Use itemKey for stable identity when available, falling back to
     // child key, then index-based key.
     final itemKeyValue = widget.itemKey?.call(index);
@@ -832,6 +996,16 @@ class InfiniteListState extends State<InfiniteList> {
 
   @override
   Widget build(BuildContext context) {
+    // Recompute the pinned header against the freshly-laid-out list after
+    // every build, not just on scroll — so it can't go stale when the list
+    // rebuilds without a scroll (data changes, viewport resize, hot reload).
+    // _updateStickyHeader only setStates on a real change, so this converges.
+    if (_stickyEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _updateStickyHeader();
+      });
+    }
+
     const spinner = SliverToBoxAdapter(
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -839,11 +1013,12 @@ class InfiniteListState extends State<InfiniteList> {
       ),
     );
 
-    return NotificationListener<ScrollNotification>(
+    final scrollView = NotificationListener<ScrollNotification>(
       onNotification: (ScrollNotification notification) {
         if (notification is ScrollUpdateNotification) {
           _loadIfNecessary();
           _updateKeySnapshot();
+          _updateStickyHeader();
         }
         return false;
       },
@@ -882,6 +1057,68 @@ class InfiniteListState extends State<InfiniteList> {
           ),
         ),
       ),
+    );
+
+    if (!_stickyEnabled) return scrollView;
+
+    // Layer one pinned header over the scroll view. The header widget is the
+    // same one the list renders inline (via stickyHeaderBuilder), so at rest
+    // it sits exactly over the real header. [_stickyPush] slides it up as the
+    // next header arrives; the
+    // Stack clips the overshoot. The overlay is NOT wrapped in IgnorePointer
+    // so interactive headers (e.g. the feed's "Do all later" button) still
+    // work; empty header areas don't block hit tests, so scroll gestures on
+    // them still reach the list beneath.
+    // Only render the overlay while floating — at rest / overscroll the real
+    // in-list header is visible, so a pinned copy would just duplicate it.
+    final activeIndex = _activeStickyIndex;
+    final overlay = (_stickyFloating &&
+            activeIndex != null &&
+            activeIndex >= 0 &&
+            activeIndex < widget.count)
+        ? widget.stickyHeaderBuilder!(context, activeIndex)
+        : null;
+
+    return Stack(
+      key: _stackKey,
+      clipBehavior: Clip.hardEdge,
+      children: [
+        scrollView,
+        if (overlay != null)
+          Positioned(
+            top: _stickyPush,
+            left: 0,
+            right: 0,
+            child: KeyedSubtree(
+              key: _overlayKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Opaque base so scrolling content never bleeds through a
+                  // header with a translucent band.
+                  ColoredBox(
+                    color: context.theme.colors.background,
+                    child: overlay,
+                  ),
+                  // Seam divider as an explicit 1px child — NOT a
+                  // BoxDecoration border, which paints behind the child and
+                  // would be occluded by the header's own opaque band. While
+                  // floating, the list's real header↔item divider is owned by
+                  // the scrolled-away next item, so the overlay supplies its
+                  // own. Matches the list's divider colour.
+                  Container(
+                    height: 1,
+                    color: Color.alphaBlend(
+                      context.theme.colors.border,
+                      context.theme.colors.background,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

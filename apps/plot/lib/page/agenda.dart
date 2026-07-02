@@ -442,6 +442,19 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
       onScrollOffsetChanged: (offset) => bloc.agendaScrollOffset = offset,
       itemKey: (i) =>
           i >= 0 && i < items.length ? items[i].stableKey : 'empty_$i',
+      // The agenda's per-day date headers pin to the top while that day's
+      // rows scroll beneath, sliding up as the next day's header arrives.
+      isStickyHeader: (i) {
+        if (i < 0 || i >= items.length) return false;
+        final item = items[i];
+        return item is AgendaHeaderItem && item.date != null;
+      },
+      stickyHeaderBuilder: (context, index) {
+        final item = items[index] as AgendaHeaderItem;
+        // Render just the date band — AgendaTile's date branch keys off
+        // `date` alone, so this reproduces the inline header exactly.
+        return AgendaTile(date: item.date);
+      },
       separatorBuilder: (context, index) => BlockListSeparator(
         prev: index > 0 && index - 1 < items.length ? items[index - 1] : null,
         next: index < items.length ? items[index] : null,

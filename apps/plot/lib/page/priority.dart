@@ -1257,6 +1257,79 @@ class _PriorityPageState extends State<PriorityPage>
     );
   }
 
+  /// Builds the feed's section-header widget for [header] at [index] in
+  /// [entries]: an [AgendaTile] label plus — for the Doing/Scheduled blocks
+  /// that hold threads — the trailing "Mark all read" / "Do all later"
+  /// buttons. Shared by the inline list builder and the sticky-header
+  /// overlay so the pinned copy is identical to the real header (buttons
+  /// included). Scheduled-day headers carry a `date` for drag/keyboard
+  /// targeting; it's dropped when a section marker is present so they render
+  /// through AgendaTile's text-only heading path (matching their siblings)
+  /// rather than the date-header path.
+  Widget _buildFeedSectionHeaderWidget(
+    BuildContext context,
+    List<_FeedEntry> entries,
+    int index,
+    AgendaHeaderItem header, {
+    FocusNode? focusNode,
+  }) {
+    String? displayText = header.text;
+    final marker = displayText == null
+        ? null
+        : ActivitySectionMarker.tryDecode(displayText);
+    if (marker != null) displayText = marker.label;
+    final tileDate = marker != null ? null : header.date;
+
+    // "Do all later" affordance for the Doing block and every Scheduled-day
+    // block. Collect the threads that follow this header until the next
+    // AgendaHeaderItem and skip the button when the block is empty.
+    final canRescheduleAll =
+        marker != null &&
+        (marker.section == ActivitySection.doing ||
+            marker.section == ActivitySection.scheduled);
+    List<Thread>? sectionThreads;
+    if (canRescheduleAll) {
+      sectionThreads = <Thread>[];
+      for (var j = index + 1; j < entries.length; j++) {
+        final nextEntry = entries[j];
+        if (nextEntry.ghost) continue;
+        final next = nextEntry.item;
+        if (next is AgendaHeaderItem) break;
+        if (next is AgendaThreadItem) {
+          sectionThreads.add(next.thread);
+        }
+      }
+      if (sectionThreads.isEmpty) sectionThreads = null;
+    }
+
+    final tile = AgendaTile(
+      dateTimeRange: header.dateTimeRange,
+      date: tileDate,
+      now: header.now,
+      thread: header.thread,
+      focusNode: focusNode,
+      text: displayText,
+      scheduleAt: header.scheduleAt,
+    );
+
+    if (sectionThreads != null) {
+      // The Active (doing) block gains a leading "Mark all read" button when
+      // it holds unread threads — same command and icon as the multi-select
+      // header's bulk action.
+      final showMarkAllRead =
+          marker!.section == ActivitySection.doing &&
+          BulkMarkRead.applies(sectionThreads);
+      return _SectionHeaderWithRescheduleAll(
+        tile: tile,
+        threads: sectionThreads,
+        sectionLabel: marker.label,
+        showMarkAllRead: showMarkAllRead,
+      );
+    }
+
+    return tile;
+  }
+
   Widget _buildActivityFeed(
     BuildContext context,
     PriorityState state,
@@ -1487,6 +1560,28 @@ class _PriorityPageState extends State<PriorityPage>
       },
       anchorCorrection: false,
       fetcher: (first, count) => bloc.fetchMoreActivityFeedItems(first, count),
+      // Pin the feed's text section headers (Active / Doing / Scheduled /
+      // Done / Everything …) to the top while their threads scroll beneath.
+      // Only text-only headings pin; event/now headers are left alone.
+      isStickyHeader: (i) {
+        if (i < 0 || i >= renderItems.length) return false;
+        final item = renderItems[i].item;
+        return item is AgendaHeaderItem &&
+            item.text != null &&
+            item.dateTimeRange == null;
+      },
+      stickyHeaderBuilder: (context, index) {
+        final header = renderItems[index].item as AgendaHeaderItem;
+        // Identical to the inline section header, buttons included, so the
+        // pinned copy matches (and its "Do all later" / "Mark all read"
+        // actions work — the overlay is not IgnorePointer-wrapped).
+        return _buildFeedSectionHeaderWidget(
+          context,
+          renderItems,
+          index,
+          header,
+        );
+      },
       separatorBuilder: (context, index) =>
           _buildSeparator(context, renderItems, index, state, controller),
       builder: (context, index, focusNode, {reorderableIndex}) {
@@ -1508,76 +1603,15 @@ class _PriorityPageState extends State<PriorityPage>
         final itemKey = feedItemKey(current);
 
         var children = current.when<List<Widget>>(
-              header: (header) {
-                String? displayText = header.text;
-                final marker = displayText == null
-                    ? null
-                    : ActivitySectionMarker.tryDecode(displayText);
-                if (marker != null) displayText = marker.label;
-
-                // Activity-feed section headers (Today / New / Scheduled
-                // day buckets / Done) are all just text labels and must
-                // render through AgendaTile's text-only heading path so
-                // they share color and vertical padding. Scheduled-day
-                // headers carry a `date` for drag/keyboard targeting,
-                // but passing that into AgendaTile would route them
-                // through the date-header path (veryMuted + spacing.md)
-                // and they'd stand out from their siblings — drop it
-                // here when a section marker is present.
-                final tileDate = marker != null ? null : header.date;
-
-                // "Do all later" affordance for the Doing block and
-                // every Scheduled-day block. Collect the threads that
-                // follow this header until the next AgendaHeaderItem and
-                // skip rendering the button when the block is empty.
-                final canRescheduleAll =
-                    marker != null &&
-                    (marker.section == ActivitySection.doing ||
-                        marker.section == ActivitySection.scheduled);
-                List<Thread>? sectionThreads;
-                if (canRescheduleAll) {
-                  sectionThreads = <Thread>[];
-                  for (var j = index + 1; j < renderItems.length; j++) {
-                    final nextEntry = renderItems[j];
-                    if (nextEntry.ghost) continue;
-                    final next = nextEntry.item;
-                    if (next is AgendaHeaderItem) break;
-                    if (next is AgendaThreadItem) {
-                      sectionThreads.add(next.thread);
-                    }
-                  }
-                  if (sectionThreads.isEmpty) sectionThreads = null;
-                }
-
-                final tile = AgendaTile(
-                  dateTimeRange: header.dateTimeRange,
-                  date: tileDate,
-                  now: header.now,
-                  thread: header.thread,
+              header: (header) => [
+                _buildFeedSectionHeaderWidget(
+                  context,
+                  renderItems,
+                  index,
+                  header,
                   focusNode: focusNode,
-                  text: displayText,
-                  scheduleAt: header.scheduleAt,
-                );
-
-                if (sectionThreads != null) {
-                  // The Active (doing) block gains a leading "Mark all read"
-                  // button when it holds unread threads — same command and
-                  // icon as the multi-select header's bulk action.
-                  final showMarkAllRead =
-                      marker!.section == ActivitySection.doing &&
-                      BulkMarkRead.applies(sectionThreads);
-                  return [
-                    _SectionHeaderWithRescheduleAll(
-                      tile: tile,
-                      threads: sectionThreads,
-                      sectionLabel: marker.label,
-                      showMarkAllRead: showMarkAllRead,
-                    ),
-                  ];
-                }
-
-                return [tile];
-              },
+                ),
+              ],
               activity: (agendaActivity) {
                 final baseThread = agendaActivity.thread;
                 final rowKey = entry.ghost
