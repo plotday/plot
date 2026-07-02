@@ -100,7 +100,7 @@ class _ApplySendSchedule extends Command {
   _ApplySendSchedule({required this.sendAt, required this.apply})
     : super(
         title: sendAt == null ? 'Clear schedule' : 'Schedule',
-        icon: sendAt == null ? PlotIcon.remove : PlotIcon.later,
+        icon: sendAt == null ? null : PlotIcon.later,
         eventObject: EventObject.note,
         eventAction: sendAt == null
             ? EventAction.unscheduled

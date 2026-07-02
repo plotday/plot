@@ -167,6 +167,12 @@ class _TimeRangeInputState extends State<TimeRangeInput>
       ..focusEditor = _startTimeFocusNode.requestFocus;
     final theme = context.theme;
     final isTouch = !hasPhysicalKeyboard();
+    // Range mode places the start field hard-right so it meets the left-aligned
+    // end field at the centre; single-time mode has no end field, so centre the
+    // lone value instead of stranding it against the right edge.
+    final startAlign = widget.onEndTimeChanged == null
+        ? TextAlign.center
+        : TextAlign.right;
 
     return Row(
       children: [
@@ -200,7 +206,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           ),
                           focusNode: _startTimeFocusNode,
                           prefixBuilder: null,
-                          textAlign: TextAlign.right,
+                          textAlign: startAlign,
                           style: FTimeFieldStyleDelta.delta(
                             fieldStyles: FVariantsDelta.delta([
                               FVariantOperation.all(
@@ -245,7 +251,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           ),
                           focusNode: _startTimeFocusNode,
                           prefixBuilder: null,
-                          textAlign: TextAlign.right,
+                          textAlign: startAlign,
                           style: FTimeFieldStyleDelta.delta(
                             fieldStyles: FVariantsDelta.delta([
                               FVariantOperation.all(

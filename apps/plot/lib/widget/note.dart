@@ -447,7 +447,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                                 ),
                                 Text(
                                   'Scheduled for '
-                                  '${formatRelativeSchedule(widget.note.sendAt!.toLocal(), context)}',
+                                  '${formatRelativeSchedule(widget.note.sendAt!.toLocal(), context, capitalize: false)}',
                                 ),
                               ],
                             ),

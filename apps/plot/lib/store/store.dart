@@ -588,6 +588,17 @@ class Store extends _$Store {
     _pushBackoffUntil.remove(entity);
   }
 
+  /// Clears the process-static push bookkeeping (in-flight completers + backoff)
+  /// so tests sharing one process start clean. A push left in flight by a prior
+  /// test would otherwise be awaited by the next test's push of the same table
+  /// (see [_pushCompleters] in [push]) and stall it on the old store's network.
+  @visibleForTesting
+  static void clearPushStateForTesting() {
+    _pushCompleters.clear();
+    _pushFailureCount.clear();
+    _pushBackoffUntil.clear();
+  }
+
   // Client ID for tracking updates to prevent sync loops.
   // Positive values indicate app client updates.
   // Negative values indicate twist/API updates (set by truncateUuidForUpdatedBy).

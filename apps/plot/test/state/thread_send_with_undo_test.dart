@@ -63,6 +63,7 @@ Future<Thread> _insertThread(
   Store store, {
   bool draft = false,
   bool shared = true,
+  DateTime? sendAt,
 }) async {
   await store.into(store.threads).insert(
         ThreadsCompanion(
@@ -73,6 +74,7 @@ Future<Thread> _insertThread(
           ),
           groups: const Value([]),
           draft: Value(draft),
+          sendAt: Value(sendAt),
         ),
       );
   return Thread.getOne(_threadId);
@@ -112,6 +114,11 @@ void main() {
     Injector.appInstance.registerSingleton<Store>(() => store, override: true);
     Store.pushHeldNoteIds.clear();
     Store.pushHeldThreadIds.clear();
+    // Drop any push left in-flight by a prior test — otherwise this test's
+    // explicit push would await the stale completer and stall on the previous
+    // store's network call.
+    SyncOrchestrator.resetForTesting();
+    Store.clearPushStateForTesting();
 
     Actor.clearCache();
     TwistInstance.clearCache();
@@ -202,6 +209,48 @@ void main() {
 
     // Release now so the real 5s timer never fires a network commit.
     await PendingSend.instance.undo();
+    await bloc.close();
+  });
+
+  test(
+      'unscheduling a held-thread compose demotes the thread to a local draft '
+      'in emitted state (so re-send re-promotes + revives it)', () async {
+    // A scheduled NEW-thread compose: the whole thread is held (send_at in the
+    // future) and its lone note carries the same hold.
+    final future = DateTime.now().add(const Duration(days: 1));
+    final thread = await _insertThread(store, sendAt: future);
+    final bloc = ThreadBloc(thread: thread, localPreferences: localPreferences);
+    final scheduledNote = _note(content: 'For later').copyWith(
+      draft: false,
+      sendAt: Value(future),
+    );
+    // Insert the scheduled note so unscheduleNote finds it to archive.
+    await scheduledNote.save(pushToRemote: false);
+    // unscheduleNote fires an explicit note push (which also pushes its thread
+    // dependency); hold both out of the push claim so the test exercises the
+    // state logic without a real network call (mirrors the PendingSend hold
+    // used elsewhere in this suite).
+    Store.pushHeldNoteIds.add(_hex(scheduledNote.id));
+    Store.pushHeldThreadIds.add(_hex(_threadId));
+
+    await bloc.unscheduleNote(scheduledNote);
+
+    // The emitted thread must reflect the LOCAL demote: draft=true so the
+    // re-send takes the compose (promote) path, and archived_at=null so the
+    // re-send push carries a null archived_at that revives the server row.
+    // Emitting the stale pre-demote snapshot (draft=false, archived_at set)
+    // makes re-send skip promotion and strands the thread archived server-side.
+    expect(bloc.state.thread.draft, isTrue,
+        reason: 'emitted thread is demoted to a local draft');
+    expect(bloc.state.thread.archivedAt, isNull,
+        reason: 'emitted thread is locally un-archived');
+
+    // The local DB row is demoted too (unchanged by the bug, asserted as a
+    // guard so the emit and the persisted row can't silently diverge).
+    final row = await Thread.getOne(_threadId);
+    expect(row.draft, isTrue);
+    expect(row.archivedAt, isNull);
+
     await bloc.close();
   });
 

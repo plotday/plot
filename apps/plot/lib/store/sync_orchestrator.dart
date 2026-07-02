@@ -15,6 +15,13 @@ class SyncOrchestrator {
 
   SyncOrchestrator._();
 
+  /// Drops the singleton so the next [instance] access starts with empty
+  /// in-flight maps. Tests share one process, so a deferred push left in
+  /// flight by a prior test would otherwise be awaited (via [_pushCompleters])
+  /// by the next test's push and stall it on the old store's network call.
+  @visibleForTesting
+  static void resetForTesting() => _instance = null;
+
   // Track in-flight operations to prevent concurrent sync of same entity
   final Map<SyncEntity, Completer<bool>> _pushCompleters = {};
   final Map<SyncEntity, Completer<void>> _pullCompleters = {};

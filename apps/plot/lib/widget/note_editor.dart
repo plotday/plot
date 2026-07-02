@@ -1773,7 +1773,7 @@ class NoteEditorState extends State<NoteEditor> {
   /// auto-scheduled draft unmissable at the point of action.
   String _labelWithSchedule(String verb, Note draftNote, BuildContext context) {
     if (!draftNote.isScheduled) return verb;
-    return '$verb ${formatRelativeSchedule(draftNote.sendAt!, context)}';
+    return '$verb ${formatRelativeSchedule(draftNote.sendAt!, context, capitalize: false)}';
   }
 
   /// Send-window auto-schedule: when the thread's focus has a send window and

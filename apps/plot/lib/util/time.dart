@@ -825,7 +825,15 @@ extension DurationExtension on Duration {
 ///
 /// Timed events include the time portion (e.g. "Today, 2 PM").
 /// All-day events (midnight start) omit the time (e.g. "Today").
-String formatRelativeSchedule(DateTime dateTime, BuildContext context) {
+///
+/// When [capitalize] is false the relative words ("today"/"tomorrow"/
+/// "yesterday") are lowercased for mid-sentence use (e.g. "Scheduled for
+/// tomorrow, 9 am"). Weekday and month names stay capitalized as proper nouns.
+String formatRelativeSchedule(
+  DateTime dateTime,
+  BuildContext context, {
+  bool capitalize = true,
+}) {
   final today = Date.today();
   final date = dateTime.toDate();
   final time = dateTime.toTimeOfDay();
@@ -835,11 +843,11 @@ String formatRelativeSchedule(DateTime dateTime, BuildContext context) {
   final diff = date.difference(today).inDays;
 
   if (date == today) {
-    return 'Today$timeStr';
+    return '${capitalize ? 'Today' : 'today'}$timeStr';
   } else if (diff == -1) {
-    return 'Yesterday$timeStr';
+    return '${capitalize ? 'Yesterday' : 'yesterday'}$timeStr';
   } else if (diff == 1) {
-    return 'Tomorrow$timeStr';
+    return '${capitalize ? 'Tomorrow' : 'tomorrow'}$timeStr';
   } else if (diff >= 2 && diff <= 6) {
     return '${dateTime.format('EEEE')}$timeStr';
   } else if (diff >= -6 && diff <= -2) {

@@ -438,10 +438,15 @@ class ThreadBloc extends Cubit<ThreadState> {
 
     if (heldThread) {
       final fresh = await Thread.getOne(thread.id);
-      await fresh
-          .copyWith(draft: true, archivedAt: const Value(null))
-          .save();
-      emit(state.copyWith(thread: fresh));
+      final demoted =
+          fresh.copyWith(draft: true, archivedAt: const Value(null));
+      await demoted.save();
+      // Emit the DEMOTED thread (not the pre-demote `fresh`, which is still
+      // draft=false + archived): `sendWithUndo` reads `state.thread` and only
+      // re-promotes/re-pushes when `draft` is true. Emitting the stale snapshot
+      // made re-send skip promotion, so the thread stayed archived server-side
+      // (held but invisible) and dropped out of the list.
+      emit(state.copyWith(thread: demoted));
       // Re-attach the connector create-link spec for the eventual re-send.
       ThreadsBase.stashPendingCreateLink(thread.id, note);
     }
