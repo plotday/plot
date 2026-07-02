@@ -306,6 +306,53 @@ export function boundConnectionsWithoutToken<
 }
 
 /**
+ * Split a hosted-provider connection's collected accounts into the ones to keep
+ * and the orphans to drop.
+ *
+ * getIntegrationData lists a connection's accounts by scanning
+ * `auth_token:{provider}:{actorId}` keys in its Durable Object. A hosted-auth
+ * connection (LinkedIn, WhatsApp, Instagram) is bound to exactly ONE upstream
+ * account, recorded in `twist_instance_connection.actor_id`. A reconnect that
+ * re-binds the same upstream account to a corrected owner contact leaves the
+ * previous actor's token behind (see onAuth's re-bind branch), so the DO ends
+ * up with two `auth_token` keys and the modal shows the account twice.
+ *
+ * An account is an orphan when: its provider is hosted, the connection has a
+ * known canonical binding for that provider (>=1 account in the list whose
+ * actorId is in `boundActorIds`), AND this account's actorId is not one of
+ * those bound actors. Non-hosted providers are always kept (OAuth connectors
+ * can legitimately expose multiple accounts). Hosted providers with no
+ * canonical account present are kept too — fail safe, so a mismatched/missing
+ * binding never hides the only evidence of a connected account.
+ */
+export function partitionOrphanHostedAccounts<
+  A extends { provider: string; actorId: string },
+>(
+  accounts: A[],
+  hostedProviders: Set<string>,
+  boundActorIds: Set<string>,
+): { kept: A[]; orphans: A[] } {
+  // Only prune providers for which a canonical bound account is actually
+  // present — then we can safely keep that one and drop the rest.
+  const prunableProviders = new Set<string>();
+  for (const a of accounts) {
+    if (hostedProviders.has(a.provider) && boundActorIds.has(a.actorId)) {
+      prunableProviders.add(a.provider);
+    }
+  }
+  const kept: A[] = [];
+  const orphans: A[] = [];
+  for (const a of accounts) {
+    if (prunableProviders.has(a.provider) && !boundActorIds.has(a.actorId)) {
+      orphans.push(a);
+    } else {
+      kept.push(a);
+    }
+  }
+  return { kept, orphans };
+}
+
+/**
  * Trello's app key and app secret are NOT stored in the user's token — they
  * are server-side credentials read from env. Inject them into the AuthToken
  * metadata at read time so the connector can authenticate API calls (`?key=&token=`)
@@ -3680,6 +3727,53 @@ export class Integrations extends Tool implements IAuth {
    * second account on a connection that must only ever have one. Call this
    * before each guard rejection to undo the speculative writes.
    */
+  /**
+   * When a re-auth re-binds the SAME upstream account to a corrected owner
+   * contact (see onAuth's re-bind branch), the connection's actor moves from
+   * `fromActorId` to `toActorId`. onAuth has already written the new token /
+   * scope groups under `toActorId`, but the old actor's `auth_token` (and its
+   * per-actor toggles) linger and would surface as a phantom duplicate account
+   * in getIntegrationData. Migrate the user's per-connection preferences to the
+   * new actor (only where unset there, so this auth's fresh values win) and
+   * clear everything left under the old actor. Best-effort: a store hiccup here
+   * must never fail the auth flow.
+   */
+  private async migrateSupersededActorAuth(
+    provider: AuthProvider,
+    fromActorId: ActorId,
+    toActorId: ActorId
+  ): Promise<void> {
+    if (fromActorId === toActorId) return;
+    try {
+      for (const kind of [
+        "auto_enable_new_channels",
+        "auto_threading_enabled",
+      ] as const) {
+        const fromVal = await this.store.get<boolean>(
+          `${kind}:${provider}:${fromActorId}`
+        );
+        if (fromVal == null) continue;
+        const toKey = `${kind}:${provider}:${toActorId}`;
+        if ((await this.store.get<boolean>(toKey)) == null) {
+          await this.store.set(toKey, fromVal);
+        }
+        await this.store.clear(`${kind}:${provider}:${fromActorId}`);
+      }
+      // Clears the old actor's auth_token + enabled_scope_groups.
+      await this.clearStoredAuthForActor(provider, fromActorId);
+    } catch (error) {
+      createLogger({ twist_instance_id: this.twistInstanceId }).warn(
+        "migrateSupersededActorAuth failed (best-effort)",
+        {
+          provider,
+          from_actor_id: fromActorId,
+          to_actor_id: toActorId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+  }
+
   private async clearStoredAuthForActor(
     provider: AuthProvider,
     actorId: ActorId
@@ -3910,6 +4004,18 @@ export class Integrations extends Tool implements IAuth {
             previous_actor_id: previousActorId,
             new_actor_id: actor.id,
           }
+        );
+        // The connection is moving from previousActorId to actor.id. onAuth
+        // already wrote the token + scope groups under the new actor above;
+        // migrate the user's per-connection toggles and clear the superseded
+        // actor's stored auth so the DO keeps exactly one auth_token for this
+        // connection. Otherwise getIntegrationData (which lists accounts by
+        // scanning auth_token keys) surfaces the old actor as a phantom
+        // duplicate account.
+        await this.migrateSupersededActorAuth(
+          tokenInfo.provider,
+          previousActorId as ActorId,
+          actor.id
         );
       }
 
@@ -4796,6 +4902,55 @@ export class Integrations extends Tool implements IAuth {
             false,
           ...(enabledScopeGroups ? { enabledScopeGroups } : {}),
         });
+      }
+    }
+
+    // Heal duplicate hosted accounts. A hosted-auth connection is bound to a
+    // single upstream account (twist_instance_connection.actor_id), but a
+    // reconnect that re-binds the same account to a corrected owner contact can
+    // leave the previous actor's token behind (see onAuth's re-bind branch),
+    // surfacing the account twice. Drop any hosted account whose actor isn't the
+    // canonical binding, and best-effort clear its orphaned token so the phantom
+    // doesn't reappear. Same self-heal-on-read pattern as mirrorChannelsToDb /
+    // the twist_instance_connection backfill above.
+    const hostedProviders = new Set(
+      this.providerConfigs
+        .filter((p) => PROVIDER_CONFIGS[p.provider]?.authMode === "hosted")
+        .map((p) => p.provider as string)
+    );
+    if (hostedProviders.size > 0 && accounts.length > 0) {
+      const boundRows = await this.db
+        .selectFrom("twist_instance_connection")
+        .select("actor_id")
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .where("provider", "in", [...hostedProviders])
+        .execute();
+      const boundActorIds = new Set(boundRows.map((r) => r.actor_id));
+      const { orphans } = partitionOrphanHostedAccounts(
+        accounts.map((a) => ({ ...a, provider: a.provider as string })),
+        hostedProviders,
+        boundActorIds
+      );
+      if (orphans.length > 0) {
+        const orphanKeys = new Set(
+          orphans.map((o) => `${o.provider}:${o.actorId}`)
+        );
+        for (let i = accounts.length - 1; i >= 0; i--) {
+          if (orphanKeys.has(`${accounts[i]!.provider}:${accounts[i]!.actorId}`)) {
+            accounts.splice(i, 1);
+          }
+        }
+        // clearStoredAuthForActor swallows its own errors (best-effort cleanup).
+        for (const o of orphans) {
+          await this.clearStoredAuthForActor(
+            o.provider as AuthProvider,
+            o.actorId as ActorId
+          );
+        }
+        createLogger({ twist_instance_id: this.twistInstanceId }).info(
+          "getIntegrationData: dropped orphan hosted account(s)",
+          { orphans: orphans.map((o) => `${o.provider}:${o.actorId}`) }
+        );
       }
     }
 

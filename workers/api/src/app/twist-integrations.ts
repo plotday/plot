@@ -139,6 +139,7 @@ async function loadTwistConfig(
   toolPermissions: Record<string, any>;
   optionsSchema: OptionsSchema | null;
   singleChannel: boolean;
+  fixedChannels: boolean;
   channelNoun: { singular: string; plural: string } | null;
   autoThreading: boolean;
   access: string[] | null;
@@ -156,6 +157,7 @@ async function loadTwistConfig(
     toolPermissions: parsed.toolPermissions ?? {},
     optionsSchema: parsed.optionsSchema ?? null,
     singleChannel: parsed.sourceProvider?.singleChannel === true,
+    fixedChannels: parsed.sourceProvider?.fixedChannels === true,
     channelNoun: parsed.sourceProvider?.channelNoun ?? null,
     autoThreading: parsed.sourceProvider?.autoThreading === true,
     access: parsed.sourceProvider?.access ?? null,
@@ -734,6 +736,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       providers: [], accounts, syncables, optionsSchema, optionsConfig,
       access: config.access ?? null,
       singleChannel: config.singleChannel,
+      fixedChannels: config.fixedChannels,
       channelNoun: config.channelNoun,
     autoThreading: config.autoThreading,
       shared: twistInfo.shared,
@@ -895,6 +898,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     accounts: allAccounts,
     syncables: allChannels,
     singleChannel: config.singleChannel,
+    fixedChannels: config.fixedChannels,
     channelNoun: config.channelNoun,
     autoThreading: config.autoThreading,
     optionsSchema,

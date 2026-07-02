@@ -144,6 +144,10 @@ export class LinkedIn extends Connector<LinkedIn> {
 
   readonly provider = LINKEDIN_PROVIDER;
   readonly scopes = LinkedIn.SCOPES;
+  // Fixed channel set — getChannels always returns Messages + Public Post and
+  // no channels ever appear dynamically. Suppresses the meaningless
+  // per-connection "Sync new channels" toggle in the connect/edit modal.
+  readonly fixedChannels = true;
   readonly access = [
     "Reads your LinkedIn messages and conversations",
     "Sends messages and replies you write in Plot",

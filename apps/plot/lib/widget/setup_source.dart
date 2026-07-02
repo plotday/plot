@@ -710,9 +710,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     }
 
     // Per-account "sync new channels" toggles, rendered at the end of the
-    // channel list. Skipped for accounts whose provider is fully soft-removed.
+    // channel list. Skipped for accounts whose provider is fully soft-removed,
+    // and entirely suppressed for connectors with a fixed channel set
+    // (fixedChannels) — there are no new channels to auto-enable, so the toggle
+    // would be meaningless (e.g. LinkedIn: Messages + Public Post).
     final autoEnableRows = <Widget>[];
-    for (final account in data.accounts) {
+    for (final account
+        in data.fixedChannels ? const <TwistAccount>[] : data.accounts) {
       if (fullyRemovedProviders.contains(account.provider)) continue;
       final accountKey = '${account.provider.name}:${account.actorId}';
       if (_removedAccounts.contains(accountKey)) continue;

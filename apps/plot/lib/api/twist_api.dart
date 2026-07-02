@@ -844,6 +844,11 @@ class TwistIntegrations {
   /// The UI shows channel config inline instead of a channel list.
   final bool singleChannel;
 
+  /// When true, this connector's channel set is fixed (enumerated by the
+  /// connector; no channels ever appear dynamically). The edit form hides the
+  /// per-account "Sync new channels" toggle since there are none to auto-enable.
+  final bool fixedChannels;
+
   /// The connector's user-facing noun for its channels (folders, projects,
   /// calendars, …). Drives the "Sync new {plural}" copy. Defaults to
   /// "channel" / "channels".
@@ -890,6 +895,7 @@ class TwistIntegrations {
     this.optionsConfig,
     this.access,
     this.singleChannel = false,
+    this.fixedChannels = false,
     this.channelNoun = ChannelNoun.fallback,
     this.autoThreading = false,
     this.shared = false,
@@ -917,6 +923,7 @@ class TwistIntegrations {
       optionsConfig: json['optionsConfig'] as Map<String, dynamic>?,
       access: (json['access'] as List<dynamic>?)?.cast<String>(),
       singleChannel: json['singleChannel'] as bool? ?? false,
+      fixedChannels: json['fixedChannels'] as bool? ?? false,
       channelNoun: ChannelNoun.fromJson(
         json['channelNoun'] as Map<String, dynamic>?,
       ),
