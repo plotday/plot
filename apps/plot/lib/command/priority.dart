@@ -1687,6 +1687,10 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   // notification settings.
   if (!priority.isInbox) EditPriorityCommand(priority),
   if (!priority.isFyi) ShowEarlyNotificationsSettings(priority),
+  // Scheduled sending: per-focus send window (kept as its own entry so
+  // notifications and send windows stay conceptually distinct). The FYI
+  // focus is inbound-only, so it offers none.
+  if (!priority.isFyi) ShowSendWindowSettings(priority),
   ShowTimeLog(priority),
   if (!priority.isInbox) ...archiveOrMergeCommands(priority),
 ];

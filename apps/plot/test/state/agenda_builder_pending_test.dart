@@ -20,6 +20,7 @@ Priority _testPriority({String path = 'p1', double order = 0}) {
     seeWithinSet: false,
     earlyNotificationsEnabledSet: false,
     notifyWindowSet: false,
+    sendWindowSet: false,
   );
   return Priority.fromStore(row, draft: true);
 }

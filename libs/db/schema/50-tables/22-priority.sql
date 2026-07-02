@@ -50,6 +50,9 @@ CREATE TABLE "public"."priority" (
     "early_notifications_enabled" boolean,
     "notify_window" jsonb,
     "see_within" jsonb,
+    -- Concrete send-window setting the focus follows from its role (same
+    -- propagation). NULL/empty = send anytime.
+    "send_window" jsonb,
     "notification_cleared_at" timestamp with time zone,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     -- Every focus must belong to a role. focus-roles wires role_id into every

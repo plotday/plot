@@ -54,6 +54,10 @@ WHERE
     -- if the first dispatch left no idempotency guard). A note the user
     -- archived must never generate a create/send dispatch.
     AND n.archived_at IS NULL
+    -- Scheduled-send hold: a held note (future send_at) must not dispatch;
+    -- the release sweep nulls send_at and bumps seq so it re-qualifies here
+    -- at the scheduled instant.
+    AND (n.send_at IS NULL OR n.send_at <= now())
     AND n.created_by != pt.id
     AND updated_by_uuid (pt.id) != n.updated_by
     AND pt.archived_at IS NULL

@@ -30,6 +30,7 @@ Priority _focus(String title, {bool isInbox = false, RoleId? roleId}) =>
         seeWithinSet: false,
         earlyNotificationsEnabledSet: false,
         notifyWindowSet: false,
+        sendWindowSet: false,
       ),
       draft: true,
     );

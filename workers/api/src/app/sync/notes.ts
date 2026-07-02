@@ -240,6 +240,19 @@ notes.post("/sync/notes", async (c) => {
   let resolvedAccessContactsSnapshot: string[] | null = null;
   let resolvedAccessGroupsSnapshot: string[] | null = null;
 
+  // Scheduled sending: a FUTURE send_at holds the note (author-only, no
+  // dispatch) until the release sweep publishes it. A PAST send_at (offline
+  // authoring that flushed late) is stripped to null so the note takes the
+  // normal immediate path — storing it would make the note dispatch here AND
+  // be claimed by the sweep, whose seq bump re-qualifies it in the seq-cursor
+  // dispatch views and double-sends it to the connector.
+  const sendAt: string | null =
+    typeof body.send_at === "string" &&
+    new Date(body.send_at).getTime() > Date.now()
+      ? body.send_at
+      : null;
+  const isHeld = sendAt != null;
+
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     await assertThreadAccess(trx, c.var.user.id, body.thread_id);
 
@@ -311,6 +324,7 @@ notes.post("/sync/notes", async (c) => {
       p_source_created_at: body.source_created_at || null,
       p_key: body.key || null,
       p_merged_from_thread_id: body.merged_from_thread_id || null,
+      p_send_at: sendAt ?? undefined,
     });
   });
 
@@ -320,8 +334,9 @@ notes.post("/sync/notes", async (c) => {
   // Notify mentioned twists so they receive the onNoteCreated callback.
   // SyncNotify.notifyTwists() only notifies priority-owner twists, so
   // mention-based routing needs an explicit wake-up for any twist not
-  // owned by the priority owner.
-  if (Array.isArray(body.mentions) && body.mentions.length > 0 && !body.draft) {
+  // owned by the priority owner. Held notes skip this — the release sweep
+  // performs the wake when the note goes live.
+  if (Array.isArray(body.mentions) && body.mentions.length > 0 && !body.draft && !isHeld) {
     try {
       const accountTwists = await c.var.db
         .selectFrom("twist_instance")
@@ -353,10 +368,13 @@ notes.post("/sync/notes", async (c) => {
 
   // Background processing: AI analysis + unread marking (best-effort, don't block the response)
   // Uses its own DB connection since the request-scoped one is destroyed after the response
-  // Only run for new notes — re-analyzing on edits causes the AI to re-apply removed tags
+  // Only run for new notes — re-analyzing on edits causes the AI to re-apply removed tags.
+  // Held notes skip the whole fan-out: recipients must not be marked unread or
+  // push-notified at SCHEDULE time; the release sweep runs the equivalent
+  // fan-out when the note goes live.
   const noteId = (result as any)?.id ?? body.id;
   const content = body.content as string | null;
-  if (noteId && !body.draft && !body.archived_at && !isUpdate) {
+  if (noteId && !body.draft && !body.archived_at && !isUpdate && !isHeld) {
     c.executionCtx.waitUntil(
       (async () => {
         const db = createFrontendDb(c.env);

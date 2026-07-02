@@ -930,6 +930,7 @@ export type Database = {
           section_key: string | null
           section_label: string | null
           section_position: string | null
+          send_at: string | null
           seq: unknown
           source_created_at: string
           sync_depth: number | null
@@ -962,6 +963,7 @@ export type Database = {
           section_key?: string | null
           section_label?: string | null
           section_position?: string | null
+          send_at?: string | null
           seq?: unknown
           source_created_at?: string
           sync_depth?: number | null
@@ -994,6 +996,7 @@ export type Database = {
           section_key?: string | null
           section_label?: string | null
           section_position?: string | null
+          send_at?: string | null
           seq?: unknown
           source_created_at?: string
           sync_depth?: number | null
@@ -1253,6 +1256,7 @@ export type Database = {
           path: unknown
           role_id: string | null
           see_within: Json | null
+          send_window: Json | null
           seq: unknown
           sync_depth: number | null
           title: string
@@ -1281,6 +1285,7 @@ export type Database = {
           path: unknown
           role_id?: string | null
           see_within?: Json | null
+          send_window?: Json | null
           seq?: unknown
           sync_depth?: number | null
           title: string
@@ -1309,6 +1314,7 @@ export type Database = {
           path?: unknown
           role_id?: string | null
           see_within?: Json | null
+          send_window?: Json | null
           seq?: unknown
           sync_depth?: number | null
           title?: string
@@ -1514,6 +1520,7 @@ export type Database = {
           notify_window: Json | null
           order: number | null
           see_within: Json | null
+          send_window: Json | null
           seq: unknown
           updated_at: string
           user_id: string
@@ -1529,6 +1536,7 @@ export type Database = {
           notify_window?: Json | null
           order?: number | null
           see_within?: Json | null
+          send_window?: Json | null
           seq?: unknown
           updated_at?: string
           user_id: string
@@ -1544,6 +1552,7 @@ export type Database = {
           notify_window?: Json | null
           order?: number | null
           see_within?: Json | null
+          send_window?: Json | null
           seq?: unknown
           updated_at?: string
           user_id?: string
@@ -2122,6 +2131,7 @@ export type Database = {
           pending_contacts: string[]
           pending_create_link: Json | null
           preview: string | null
+          send_at: string | null
           seq: unknown
           sync_depth: number | null
           team_id: number | null
@@ -2157,6 +2167,7 @@ export type Database = {
           pending_contacts?: string[]
           pending_create_link?: Json | null
           preview?: string | null
+          send_at?: string | null
           seq?: unknown
           sync_depth?: number | null
           team_id?: number | null
@@ -2192,6 +2203,7 @@ export type Database = {
           pending_contacts?: string[]
           pending_create_link?: Json | null
           preview?: string | null
+          send_at?: string | null
           seq?: unknown
           sync_depth?: number | null
           team_id?: number | null
@@ -3946,6 +3958,7 @@ export type Database = {
           pending_contacts: string[] | null
           pending_create_link: Json | null
           preview: string | null
+          send_at: string | null
           seq: unknown
           sync_depth: number | null
           team_id: number | null
@@ -3981,6 +3994,7 @@ export type Database = {
           pending_contacts?: string[] | null
           pending_create_link?: Json | null
           preview?: string | null
+          send_at?: string | null
           seq?: unknown
           sync_depth?: number | null
           team_id?: number | null
@@ -4016,6 +4030,7 @@ export type Database = {
           pending_contacts?: string[] | null
           pending_create_link?: Json | null
           preview?: string | null
+          send_at?: string | null
           seq?: unknown
           sync_depth?: number | null
           team_id?: number | null
@@ -5594,6 +5609,7 @@ export type Database = {
           section_key: string | null
           section_label: string | null
           section_position: string | null
+          send_at: string | null
           seq: unknown
           source_created_at: string | null
           thread_id: string | null
@@ -5735,6 +5751,7 @@ export type Database = {
           section_key: string | null
           section_label: string | null
           section_position: string | null
+          send_at: string | null
           seq: unknown
           source_created_at: string | null
           thread_id: string | null
@@ -5888,6 +5905,8 @@ export type Database = {
           root: boolean | null
           see_within: Json | null
           see_within_set: boolean | null
+          send_window: Json | null
+          send_window_set: boolean | null
           seq: unknown
           title: string | null
           top_order: number | null
@@ -6085,6 +6104,7 @@ export type Database = {
           notify_window: Json | null
           order: number | null
           see_within: Json | null
+          send_window: Json | null
           seq: unknown
           updated_at: string | null
           user_id: string | null
@@ -6100,6 +6120,7 @@ export type Database = {
           notify_window?: Json | null
           order?: number | null
           see_within?: Json | null
+          send_window?: Json | null
           seq?: unknown
           updated_at?: string | null
           user_id?: string | null
@@ -6115,6 +6136,7 @@ export type Database = {
           notify_window?: Json | null
           order?: number | null
           see_within?: Json | null
+          send_window?: Json | null
           seq?: unknown
           updated_at?: string | null
           user_id?: string | null
@@ -6270,6 +6292,7 @@ export type Database = {
           priority_id: string | null
           priority_path: unknown
           revoked: boolean | null
+          send_at: string | null
           seq: unknown
           state_at: unknown
           state_on: unknown
@@ -6475,6 +6498,7 @@ export type Database = {
           priority_id: string | null
           priority_path: unknown
           revoked: boolean | null
+          send_at: string | null
           seq: unknown
           state_at: unknown
           state_on: unknown
@@ -6840,6 +6864,7 @@ export type Database = {
           p_mentions: string[]
           p_merged_from_thread_id?: string
           p_re_note_id: string
+          p_send_at?: string
           p_source_created_at: string
           p_thread_id: string
           p_updated_by: number
@@ -6921,6 +6946,8 @@ export type Database = {
           root: boolean | null
           see_within: Json | null
           see_within_set: boolean | null
+          send_window: Json | null
+          send_window_set: boolean | null
           seq: unknown
           title: string | null
           top_order: number | null
@@ -6942,9 +6969,11 @@ export type Database = {
           p_notify_window?: Json
           p_priority_id: string
           p_see_within?: Json
+          p_send_window?: Json
           p_set_early_notifications_enabled?: boolean
           p_set_notify_window?: boolean
           p_set_see_within?: boolean
+          p_set_send_window?: boolean
           p_user_id: string
         }
         Returns: undefined

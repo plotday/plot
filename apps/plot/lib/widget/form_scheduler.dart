@@ -201,6 +201,244 @@ class FormScheduler extends FormItem {
   }
 }
 
+/// A [FormItem] for picking a single date + time (minute granularity) as a
+/// [DateTime]. Two keyboard-steppable rows — date and time — mirroring
+/// [FormScheduler] but without a range/duration. Used by the schedule-send
+/// modal. `getValue()` returns the chosen [DateTime].
+class FormSendScheduler extends FormItem {
+  FormSendScheduler({
+    required super.key,
+    required DateTime initialValue,
+    this.onChanged,
+  }) : _value = initialValue,
+       super(required: true);
+
+  /// Optional external change callback.
+  final VoidCallback? onChanged;
+
+  DateTime _value;
+  final List<VoidCallback> _changeListeners = [];
+
+  /// One controller per sub-slot: [0]=date, [1]=time.
+  final List<StepController> _stepControllers = [
+    StepController(),
+    StepController(),
+  ];
+
+  @override
+  bool get isFocusable => true;
+
+  @override
+  int get focusableCount => 2;
+
+  @override
+  bool get canActivate => true;
+
+  @override
+  DateTime getValue() => _value;
+
+  @override
+  void setValue(dynamic value) {
+    if (value is DateTime) {
+      _value = value;
+      _notify();
+    }
+  }
+
+  // A scheduled send must be in the future; the body clamps to now+1 min on
+  // edit, so validity only guards direct typing of a past instant.
+  @override
+  bool isValid() => _value.isAfter(Time.now());
+
+  @override
+  void addChangeListener(VoidCallback listener) =>
+      _changeListeners.add(listener);
+
+  @override
+  void removeChangeListener(VoidCallback listener) =>
+      _changeListeners.remove(listener);
+
+  void _notify() {
+    onChanged?.call();
+    for (final l in _changeListeners) {
+      l();
+    }
+  }
+
+  // Enter submits the form (see FormScheduler.onSubmitted for rationale).
+  VoidCallback? _onSubmitted;
+
+  @override
+  set onSubmitted(VoidCallback? callback) => _onSubmitted = callback;
+
+  @override
+  VoidCallback? get onSubmitted => _onSubmitted;
+
+  @override
+  Future<void> activate(BuildContext context, {int subIndex = 0}) async {
+    if (subIndex >= 0 && subIndex < _stepControllers.length) {
+      _stepControllers[subIndex].focusEditor?.call();
+    }
+  }
+
+  @override
+  Widget build(
+    BuildContext context,
+    int highlightedSubIndex, {
+    bool enabled = true,
+    List<FocusNode> focusNodes = const [],
+    FormButtonController? controller,
+  }) {
+    return _FormSendSchedulerBody(
+      value: _value,
+      highlightedSubIndex: highlightedSubIndex,
+      focusNodes: focusNodes,
+      stepControllers: _stepControllers,
+      onChanged: (next) {
+        _value = next;
+        _notify();
+      },
+    );
+  }
+}
+
+class _FormSendSchedulerBody extends StatefulWidget {
+  const _FormSendSchedulerBody({
+    required this.value,
+    required this.highlightedSubIndex,
+    required this.focusNodes,
+    required this.stepControllers,
+    required this.onChanged,
+  });
+
+  final DateTime value;
+  final int highlightedSubIndex;
+  final List<FocusNode> focusNodes;
+  final List<StepController> stepControllers;
+  final ValueChanged<DateTime> onChanged;
+
+  @override
+  State<_FormSendSchedulerBody> createState() => _FormSendSchedulerBodyState();
+}
+
+class _FormSendSchedulerBodyState extends State<_FormSendSchedulerBody> {
+  late DateTime _value;
+
+  @override
+  void initState() {
+    super.initState();
+    _value = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(_FormSendSchedulerBody old) {
+    super.didUpdateWidget(old);
+    if (old.value != widget.value && widget.value != _value) {
+      _value = widget.value;
+    }
+  }
+
+  void _apply(DateTime next) {
+    // Seconds are always zero (minute granularity) and the instant may not be
+    // in the past — clamp to the next whole minute.
+    var clamped = DateTime(
+      next.year,
+      next.month,
+      next.day,
+      next.hour,
+      next.minute,
+    );
+    final now = Time.now();
+    if (!clamped.isAfter(now)) {
+      clamped = DateTime(now.year, now.month, now.day, now.hour, now.minute)
+          .add(const Duration(minutes: 1));
+    }
+    setState(() => _value = clamped);
+    widget.onChanged(clamped);
+  }
+
+  FocusNode _node(int i) {
+    assert(
+      i < widget.focusNodes.length,
+      'FormSendScheduler.focusableCount is 2 but only '
+      '${widget.focusNodes.length} focus nodes were provided',
+    );
+    return widget.focusNodes[i];
+  }
+
+  StepController _ctrl(int i) => widget.stepControllers[i];
+
+  @override
+  Widget build(BuildContext context) {
+    final highlight = context.theme.colors.secondary;
+
+    Widget row(int i, IconData icon, Widget content) {
+      final ctrl = _ctrl(i);
+      return StepperRow(
+        focusNode: _node(i),
+        highlightColor: widget.highlightedSubIndex == i ? highlight : null,
+        onStepBack: () => ctrl.stepBack?.call(),
+        onStepForward: () => ctrl.stepForward?.call(),
+        onJumpBack: () => ctrl.jumpBack?.call(),
+        onJumpForward: () => ctrl.jumpForward?.call(),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.xl),
+          child: IconInputRow(icon: icon, content: content),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        row(
+          0,
+          PlotIcon.event,
+          DateInput(
+            value: _value,
+            onChanged: (date) {
+              if (date != null) {
+                _apply(
+                  DateTime(
+                    date.year,
+                    date.month,
+                    date.day,
+                    _value.hour,
+                    _value.minute,
+                  ),
+                );
+              }
+            },
+            stepController: _ctrl(0),
+          ),
+        ),
+        row(
+          1,
+          PlotIcon.later,
+          TimeRangeInput(
+            startTime: FTime.fromDateTime(_value),
+            onStartTimeChanged: (t) {
+              if (t != null) {
+                _apply(
+                  DateTime(
+                    _value.year,
+                    _value.month,
+                    _value.day,
+                    t.hour,
+                    t.minute,
+                  ),
+                );
+              }
+            },
+            onRangeShift: (delta) => _apply(_value.add(delta)),
+            stepController: _ctrl(1),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FormSchedulerBody extends StatefulWidget {
   const _FormSchedulerBody({
     required this.range,

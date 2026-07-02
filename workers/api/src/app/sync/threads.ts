@@ -550,6 +550,9 @@ threads.get("/sync/threads/search", async (c) => {
   const noteBranch = sql`
     SELECT thread_id AS id FROM public.note
     WHERE archived_at IS NULL AND draft = false AND content ILIKE ${pattern}
+      -- Scheduled-send hold: a held note's content must not surface its
+      -- thread in anyone else's search results.
+      AND (send_at IS NULL OR send_at <= now() OR created_by = ${userId}::uuid)
   `;
   const linkBranch = sql`
     SELECT thread_id AS id FROM public.link
@@ -752,6 +755,21 @@ threads.post("/sync/threads", async (c) => {
     threadData.topic_id = threadData.topicId;
   }
   delete threadData.topicId;
+
+  // Scheduled sending: a FUTURE send_at holds the thread shell (invisible to
+  // recipients) until the release sweep clears it alongside the composing
+  // note. A PAST send_at (offline authoring that flushed late) is stripped so
+  // the compose takes the normal immediate path and no stale hold lingers —
+  // POST /sync/notes strips the note's past send_at the same way.
+  if (
+    !(
+      typeof threadData.send_at === "string" &&
+      new Date(threadData.send_at).getTime() > Date.now()
+    )
+  ) {
+    delete threadData.send_at;
+  }
+  const isHeldCompose = threadData.send_at != null;
 
   const userId = c.var.user.id;
 
@@ -1137,6 +1155,34 @@ threads.post("/sync/threads", async (c) => {
       (async () => {
         const db = createFrontendDb(c.env);
         try {
+          // Stash the spec so a failed send can be retried (cleared once
+          // onCreateLink succeeds, in saveCreatedLink). Server-only — not in
+          // user.thread, so it doesn't sync. Recipients are re-resolved from
+          // thread.contacts on retry; only the parts not derivable from the
+          // thread (connector, channel, type, status, typed addresses) are
+          // stored. For a scheduled compose (held thread), this stash is what
+          // the release sweep dispatches from.
+          await db
+            .updateTable("thread")
+            .set({
+              pending_create_link: sql`${JSON.stringify({
+                twist_instance_id: createLinkSpec.twist_instance_id!,
+                channel_id: createLinkSpec.channel_id ?? null,
+                type: createLinkSpec.type!,
+                status: createLinkSpec.status ?? null,
+                invite_emails: dispatchInviteEmails,
+              })}::jsonb`,
+            })
+            .where("id", "=", dispatchThreadId)
+            .execute();
+
+          // Scheduled compose: the external item must not be created until
+          // the scheduled instant — the release sweep performs the deferred
+          // dispatch from the stash above (publish-scheduled-notes.ts).
+          if (isHeldCompose) {
+            return;
+          }
+
           // Resolve the thread's contacts into Actor rows for the connector,
           // excluding every contact linked to the creating user so the author
           // isn't passed as a recipient.
@@ -1164,26 +1210,6 @@ threads.post("/sync/threads", async (c) => {
             inviteEmails: dispatchInviteEmails,
             attachments: noteAttachments,
           };
-
-          // Stash the spec so a failed send can be retried (cleared once
-          // onCreateLink succeeds, in saveCreatedLink). Server-only — not in
-          // user.thread, so it doesn't sync. Recipients are re-resolved from
-          // thread.contacts on retry; only the parts not derivable from the
-          // thread (connector, channel, type, status, typed addresses) are
-          // stored.
-          await db
-            .updateTable("thread")
-            .set({
-              pending_create_link: sql`${JSON.stringify({
-                twist_instance_id: createLinkSpec.twist_instance_id!,
-                channel_id: createLinkSpec.channel_id ?? null,
-                type: createLinkSpec.type!,
-                status: createLinkSpec.status ?? null,
-                invite_emails: dispatchInviteEmails,
-              })}::jsonb`,
-            })
-            .where("id", "=", dispatchThreadId)
-            .execute();
 
           await dispatchCreateLink(c.env, c.executionCtx as any, db, {
             threadId: dispatchThreadId,

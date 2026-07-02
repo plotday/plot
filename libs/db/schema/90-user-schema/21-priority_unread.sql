@@ -24,6 +24,9 @@ FROM
         AND tp.archived_at IS NULL
         AND tp.revoked_at IS NULL
         AND (a.draft = FALSE OR a.created_by = tp.user_id)
+        -- Scheduled-send hold (mirrors user.thread): no phantom unread dots
+        -- for threads whose shell is still held.
+        AND (a.send_at IS NULL OR a.send_at <= now() OR a.created_by = tp.user_id)
         AND (
             a.contacts && "user".user_contact_ids(tp.user_id)
             OR a.groups && "user".user_group_ids(tp.user_id)

@@ -29,6 +29,10 @@ class Roles extends Table
 
   /// "See within" time the role's focuses follow. JSON-encoded stored as TEXT.
   TextColumn get seeWithin => text().nullable()();
+
+  /// Send window (scheduled sending) the role's focuses follow. JSON-encoded
+  /// `List<AttentionWindow>` stored as TEXT; null = send anytime.
+  TextColumn get sendWindow => text().nullable()();
 }
 
 class RolesBase extends BaseTable {
@@ -45,9 +49,10 @@ class RolesBase extends BaseTable {
     // `user.role` carries the owning user_id; the Drift table doesn't model it
     // (mirrors PrioritiesBase stripping `updated_by`).
     json.remove('user_id');
-    // The server sends notify_window/see_within as native JSON; Drift stores
-    // them as TEXT, so encode any non-string value (mirrors PrioritiesBase).
-    for (final key in const ['notify_window', 'see_within']) {
+    // The server sends notify_window/see_within/send_window as native JSON;
+    // Drift stores them as TEXT, so encode any non-string value (mirrors
+    // PrioritiesBase).
+    for (final key in const ['notify_window', 'see_within', 'send_window']) {
       final value = json[key];
       if (value != null && value is! String) {
         json[key] = jsonEncode(value);
@@ -62,7 +67,7 @@ class RolesBase extends BaseTable {
     // Decode TEXT-stored windows back to JSON for the wire so upsert_role's
     // jsonb extraction (`p_role -> 'notify_window'`) sees an array/object, not
     // a string.
-    for (final key in const ['notify_window', 'see_within']) {
+    for (final key in const ['notify_window', 'see_within', 'send_window']) {
       final value = json[key];
       if (value is String) {
         json[key] = jsonDecode(value);
@@ -90,6 +95,7 @@ class Role extends RoleRow {
         earlyNotificationsEnabled: row.earlyNotificationsEnabled,
         notifyWindow: row.notifyWindow,
         seeWithin: row.seeWithin,
+        sendWindow: row.sendWindow,
       );
 
   /// Builds an unsaved role with a client-generated id and the current user as
@@ -203,6 +209,10 @@ class Role extends RoleRow {
   /// Parsed "see within" time the role's focuses follow.
   SeeWithinTime? get seeWithinTime => SeeWithinTime.fromJsonString(seeWithin);
 
+  /// Parsed send windows (scheduled sending) the role's focuses follow.
+  List<AttentionWindow>? get sendWindows =>
+      AttentionWindow.fromJsonString(sendWindow);
+
   static Future<bool> push() => Store.get.push(table, RolesBase());
 
   static Future<void> pull() async {
@@ -292,6 +302,7 @@ class Role extends RoleRow {
     Value<bool?> earlyNotificationsEnabled = const Value.absent(),
     Value<String?> notifyWindow = const Value.absent(),
     Value<String?> seeWithin = const Value.absent(),
+    Value<String?> sendWindow = const Value.absent(),
   }) => Role._(
     super.copyWith(
       updatedAt: updatedAt,
@@ -306,6 +317,7 @@ class Role extends RoleRow {
       earlyNotificationsEnabled: earlyNotificationsEnabled,
       notifyWindow: notifyWindow,
       seeWithin: seeWithin,
+      sendWindow: sendWindow,
     ),
   );
 

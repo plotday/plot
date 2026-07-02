@@ -37,6 +37,17 @@ BEGIN
               AND see_within IS NOT DISTINCT FROM OLD.see_within));
     END IF;
 
+    -- send_window follows independently of the notification trio, so a focus
+    -- that overrode notifications still follows the role's send window (and
+    -- vice versa).
+    IF NEW.send_window IS DISTINCT FROM OLD.send_window THEN
+        UPDATE priority
+        SET send_window = NEW.send_window
+        WHERE role_id = NEW.id
+          AND archived_at IS NULL
+          AND (is_inbox OR send_window IS NOT DISTINCT FROM OLD.send_window);
+    END IF;
+
     RETURN NEW;
 END;
 $$;
@@ -81,6 +92,7 @@ BEGIN
         NEW.early_notifications_enabled := new_role.early_notifications_enabled;
         NEW.notify_window := new_role.notify_window;
         NEW.see_within := new_role.see_within;
+        NEW.send_window := new_role.send_window;
         RETURN NEW;
     END IF;
 
@@ -94,6 +106,11 @@ BEGIN
         NEW.early_notifications_enabled := new_role.early_notifications_enabled;
         NEW.notify_window := new_role.notify_window;
         NEW.see_within := new_role.see_within;
+    END IF;
+
+    -- send_window follows independently (mirrors propagate_role_to_focuses).
+    IF NEW.send_window IS NOT DISTINCT FROM old_role.send_window THEN
+        NEW.send_window := new_role.send_window;
     END IF;
 
     RETURN NEW;

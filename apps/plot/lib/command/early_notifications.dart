@@ -345,6 +345,291 @@ class ShowEarlyNotificationsSettings extends ShowForm {
   }
 }
 
+/// Modal for the per-focus send window (scheduled sending): recurring windows
+/// during which messages drafted in this focus may go out. Outside a window,
+/// a draft is auto-scheduled to the next opening (see util/send_window.dart).
+///
+/// Cascade UX mirrors the role-based notification columns: the focus's
+/// concrete `sendWindow` already carries the role default (server
+/// propagation); saving a value equal to the role's clears the override
+/// (null + set_send_window) so the focus keeps following its role.
+class ShowSendWindowSettings extends ShowForm {
+  ShowSendWindowSettings(this.priority)
+    : super(
+        title: 'Send window',
+        icon: PlotIcon.later,
+        form: (context) => _buildForm(context, priority),
+      );
+
+  final Priority priority;
+
+  static Future<FormData> _buildForm(
+    BuildContext context,
+    Priority priority,
+  ) async {
+    final roleWindows =
+        Role.fromCache(priority.roleId)?.sendWindows ?? const <AttentionWindow>[];
+    final initial = priority.sendWindows ?? roleWindows;
+
+    FormWindowList? windowsRef;
+    final windowList = FormWindowList(
+      key: 'send_window',
+      initialWindows: initial,
+      onEdit: (modalContext, index) async {
+        final wl = windowsRef!;
+        final current = wl.windows[index];
+        final editResult = await ShowEarlyNotificationsSettings
+            ._showWindowEditModal(
+          modalContext,
+          current,
+          title: 'Send during',
+          canRemove: true,
+        );
+        if (editResult == null) return;
+        if (editResult.removed) {
+          wl.removeWindow(index);
+        } else if (editResult.window != null) {
+          wl.updateWindow(index, editResult.window!);
+        }
+      },
+      onAdd: (modalContext) async {
+        final newWindow = const AttentionWindow(
+          days: [1, 2, 3, 4, 5],
+          start: '09:00',
+          end: '17:00',
+        );
+        final editResult = await ShowEarlyNotificationsSettings
+            ._showWindowEditModal(
+          modalContext,
+          newWindow,
+          title: 'Send during',
+          canRemove: false,
+        );
+        if (editResult != null &&
+            !editResult.removed &&
+            editResult.window != null) {
+          windowsRef!.addWindow(editResult.window!);
+        }
+      },
+    );
+    windowsRef = windowList;
+
+    return FormData(
+      title: 'Send window for ${priority.displayTitle}',
+      groups: [
+        StaticFormGroup(
+          subtitle:
+              'Messages drafted outside these windows are scheduled to send '
+              'at the next opening. No windows = send anytime.',
+          items: [windowList],
+        ),
+        StaticFormGroup(
+          items: [
+            FormButton(
+              key: 'save',
+              isPrimary: true,
+              buildCommand: (values) => _SaveSendWindow(
+                priorityId: priority.id,
+                initial: initial,
+                current:
+                    (values['send_window'] as List<AttentionWindow>?) ??
+                    initial,
+                roleWindows: roleWindows,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Persist the per-focus send window via POST /sync/priority-attention.
+/// A value equal to the role's is sent as `null` + `set_send_window: true`
+/// so the focus reverts to following its role.
+class _SaveSendWindow extends Command {
+  _SaveSendWindow({
+    required this.priorityId,
+    required this.initial,
+    required this.current,
+    required this.roleWindows,
+  }) : super(
+         title: 'Save',
+         icon: PlotIcon.done,
+         eventObject: EventObject.priority,
+         eventAction: EventAction.updated,
+       );
+
+  final PriorityId priorityId;
+  final List<AttentionWindow> initial;
+  final List<AttentionWindow> current;
+  final List<AttentionWindow> roleWindows;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (_windowListEquals(current, initial)) return const CommandDone();
+
+    final matchesRole = _windowListEquals(current, roleWindows);
+    await (Store.get.update(
+      Store.get.priorities,
+    )..where((t) => t.id.equalsValue(priorityId))).write(
+      PrioritiesCompanion(
+        // The local column holds the concrete effective value (denormalized,
+        // like the server): the role's value when following, else the
+        // override (null = send anytime).
+        sendWindow: Value(
+          matchesRole
+              ? (roleWindows.isEmpty
+                    ? null
+                    : AttentionWindow.toJsonString(roleWindows))
+              : (current.isEmpty
+                    ? null
+                    : AttentionWindow.toJsonString(current)),
+        ),
+        sendWindowSet: Value(!matchesRole),
+      ),
+    );
+
+    unawaited(
+      api
+          .post<Map<String, dynamic>>(
+            '/sync/priority-attention',
+            body: {
+              'priority_id': priorityId.toString(),
+              'send_window': matchesRole
+                  ? null
+                  : current.map((w) => w.toJson()).toList(),
+              'set_send_window': true,
+            },
+          )
+          .then((_) => Priority.pull())
+          .catchError((Object e) {
+            log.warning('Failed to sync send-window setting', e);
+          }),
+    );
+
+    return const CommandDone();
+  }
+}
+
+/// Modal for a role's default send window, which its focuses follow until
+/// overridden (server-side propagation, same as the notification template).
+class ShowRoleSendWindowSettings extends ShowForm {
+  ShowRoleSendWindowSettings(this.role)
+    : super(
+        title: 'Send window',
+        icon: PlotIcon.later,
+        form: (context) => _buildForm(context, role),
+      );
+
+  final Role role;
+
+  static Future<FormData> _buildForm(BuildContext context, Role role) async {
+    final initial = role.sendWindows ?? const <AttentionWindow>[];
+
+    FormWindowList? windowsRef;
+    final windowList = FormWindowList(
+      key: 'send_window',
+      initialWindows: initial,
+      onEdit: (modalContext, index) async {
+        final wl = windowsRef!;
+        final editResult = await ShowEarlyNotificationsSettings
+            ._showWindowEditModal(
+          modalContext,
+          wl.windows[index],
+          title: 'Send during',
+          canRemove: true,
+        );
+        if (editResult == null) return;
+        if (editResult.removed) {
+          wl.removeWindow(index);
+        } else if (editResult.window != null) {
+          wl.updateWindow(index, editResult.window!);
+        }
+      },
+      onAdd: (modalContext) async {
+        final editResult = await ShowEarlyNotificationsSettings
+            ._showWindowEditModal(
+          modalContext,
+          const AttentionWindow(
+            days: [1, 2, 3, 4, 5],
+            start: '09:00',
+            end: '17:00',
+          ),
+          title: 'Send during',
+          canRemove: false,
+        );
+        if (editResult != null &&
+            !editResult.removed &&
+            editResult.window != null) {
+          windowsRef!.addWindow(editResult.window!);
+        }
+      },
+    );
+    windowsRef = windowList;
+
+    return FormData(
+      title: 'Send window for ${role.name}',
+      groups: [
+        StaticFormGroup(
+          subtitle:
+              'The default for focuses in this role. Messages drafted outside '
+              'these windows are scheduled to send at the next opening.',
+          items: [windowList],
+        ),
+        StaticFormGroup(
+          items: [
+            FormButton(
+              key: 'save',
+              isPrimary: true,
+              buildCommand: (values) => _SaveRoleSendWindow(
+                role: role,
+                initial: initial,
+                current:
+                    (values['send_window'] as List<AttentionWindow>?) ??
+                    initial,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Persist the role's send window; the server's propagate_role_to_focuses
+/// trigger fans it out to focuses still following the role.
+class _SaveRoleSendWindow extends Command {
+  _SaveRoleSendWindow({
+    required this.role,
+    required this.initial,
+    required this.current,
+  }) : super(
+         title: 'Save',
+         icon: PlotIcon.done,
+         eventObject: EventObject.role,
+         eventAction: EventAction.updated,
+       );
+
+  final Role role;
+  final List<AttentionWindow> initial;
+  final List<AttentionWindow> current;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (_windowListEquals(current, initial)) return const CommandDone();
+    await role
+        .copyWith(
+          sendWindow: Value(
+            current.isEmpty ? null : AttentionWindow.toJsonString(current),
+          ),
+          updatedAt: DateTime.now(),
+        )
+        .save();
+    return const CommandDone();
+  }
+}
+
 /// Snapshot of the three early-notification values together. Used to compare
 /// the loaded ("initial") state with the user's current form state to figure
 /// out which keys to push.

@@ -104,7 +104,11 @@ SELECT
     p.notification_cleared_at,
     p.role_id,
     p.is_inbox,
-    p.is_fyi
+    p.is_fyi,
+    -- Send window (scheduled sending): concrete column following the role,
+    -- like the notification columns above. NULL = send anytime.
+    p.send_window,
+    (p.send_window IS NOT NULL) AS send_window_set
 FROM priority p
     LEFT JOIN user_root ur ON ur.user_id = p.user_id
     LEFT JOIN direct_settings direct ON direct.user_id = p.user_id AND direct.priority_id = p.id

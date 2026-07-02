@@ -2725,7 +2725,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 376;
+  int get schemaVersion => 377;
 
   /// Schema-drift probes run in `beforeOpen` (one column-set per
   /// recently-changed table). A stale on-disk schema — e.g. web OPFS surviving
@@ -4406,6 +4406,17 @@ class Store extends _$Store {
         WHERE pending IS NOT NULL
           AND id NOT IN (SELECT id FROM notes)
       ''');
+    }
+
+    if (from < 377) {
+      // Scheduled sending: send_at on notes (the hold instant) and threads
+      // (mirrored hold for a scheduled new-thread compose); send_window on
+      // focuses and roles (auto-schedule outside the window).
+      await _safeAddColumn(m, notes, notes.sendAt);
+      await _safeAddColumn(m, threads, threads.sendAt);
+      await _safeAddColumn(m, priorities, priorities.sendWindow);
+      await _safeAddColumn(m, priorities, priorities.sendWindowSet);
+      await _safeAddColumn(m, roles, roles.sendWindow);
     }
   }
 

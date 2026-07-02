@@ -48,6 +48,7 @@ SELECT
     "user".effective_priority_id(tp.priority_id, tp.user_id) AS priority_id,
     upe.path AS priority_path,
     a.draft,
+    a.send_at,
     a.contacts,
     a.contact_meta,
     a.groups,
@@ -198,6 +199,9 @@ WHERE
     -- Access-loss rows flow through user.thread_redacted, not here.
     tp.revoked_at IS NULL
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
+    -- Scheduled-send hold: a thread composed with a scheduled first note is
+    -- invisible to recipients until the release sweep clears thread.send_at.
+    AND (a.send_at IS NULL OR a.send_at <= now() OR a.created_by = tp.user_id)
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
@@ -269,6 +273,7 @@ SELECT
     "user".effective_priority_id(tp.priority_id, tp.user_id) AS priority_id,
     upe.path AS priority_path,
     a.draft,
+    NULL::timestamptz AS send_at,
     CAST(ARRAY[]::uuid[] AS uuid[]) AS contacts,
     '{}'::jsonb AS contact_meta,
     CAST(ARRAY[]::uuid[] AS uuid[]) AS groups,
@@ -303,7 +308,9 @@ FROM
         ON upe.user_id = tp.user_id
         AND upe.priority_id = "user".effective_priority_id(tp.priority_id, tp.user_id)
 WHERE
-    tp.revoked_at IS NOT NULL;
+    tp.revoked_at IS NOT NULL
+    -- A held thread was never visible to the revoked user — no stub needed.
+    AND (a.send_at IS NULL OR a.send_at <= now());
 
 
 CREATE OR REPLACE VIEW "user"."thread_tags"

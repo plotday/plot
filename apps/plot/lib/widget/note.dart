@@ -106,6 +106,8 @@ class NoteWidget extends StatefulWidget {
     this.initiallyExpanded = false,
     this.sending = false,
     this.onUndoSend,
+    this.scheduled = false,
+    this.onEditScheduled,
     super.key,
   });
 
@@ -128,6 +130,13 @@ class NoteWidget extends StatefulWidget {
   /// commands, and tapping it calls [onUndoSend].
   final bool sending;
   final VoidCallback? onUndoSend;
+
+  /// When true, this note is scheduled for a future send (the server holds
+  /// delivery): the footer shows a tappable "Scheduled for …" label instead
+  /// of author/timestamp, and tapping it calls [onEditScheduled] (unschedule
+  /// + pull back into the composer).
+  final bool scheduled;
+  final VoidCallback? onEditScheduled;
 
   @override
   State<NoteWidget> createState() => _NoteWidgetState();
@@ -253,7 +262,7 @@ class _NoteWidgetState extends State<NoteWidget> {
               fit: StackFit.expand,
               children: [
                 // Right slot, normal state: author/timestamp.
-                if (!widget.sending)
+                if (!widget.sending && !widget.scheduled)
                   Positioned(
                     right: 0,
                     top: 0,
@@ -385,6 +394,60 @@ class _NoteWidgetState extends State<NoteWidget> {
                                 Icon(
                                   FontAwesomeIcons.xmark,
                                   size: context.theme.iconSizes.xs,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Right slot, scheduled state: tappable "Scheduled for …"
+                // label. Tapping unschedules (archives the held note) and
+                // pulls the content back into the composer.
+                if (widget.scheduled && !widget.sending)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Transform.translate(
+                        offset: Offset(
+                          context
+                              .theme
+                              .buttonStyles
+                              .ghost
+                              .md
+                              .iconContentStyle
+                              .padding
+                              .resolve(TextDirection.ltr)
+                              .right,
+                          0,
+                        ),
+                        child: FTooltip(
+                          tipBuilder: (context, controller) =>
+                              const Text('Change schedule or edit'),
+                          child: FButton(
+                            onPress: widget.onEditScheduled,
+                            variant: FButtonVariant.ghost,
+                            style: ghostSizedStyleDelta(
+                              context,
+                              textStyle: context.theme.typography.xs,
+                            ),
+                            mainAxisSize: MainAxisSize.min,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: .center,
+                              spacing: 4,
+                              children: [
+                                Icon(
+                                  PlotIcon.later,
+                                  size: context.theme.iconSizes.xs,
+                                ),
+                                Text(
+                                  'Scheduled for '
+                                  '${formatRelativeSchedule(widget.note.sendAt!.toLocal(), context)}',
                                 ),
                               ],
                             ),

@@ -4029,26 +4029,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Stashes a pending create_link payload keyed by thread id so
   /// [ThreadsBase.toBase] spreads it into the thread push body when the
   /// thread is saved.
-  void _stashPendingCreateLink(ThreadId threadId, Note? note) {
-    final createAction = note?.actions
-        ?.whereType<CreateLinkUserAction>()
-        .firstOrNull;
-    if (createAction != null) {
-      final fileActions =
-          note?.actions?.whereType<FileUserAction>().toList() ?? [];
-      ThreadsBase.pendingCreateLinks[threadId.toString()] = {
-        'create_link': {
-          'twist_instance_id': createAction.twistInstanceId,
-          'channel_id': createAction.channelId,
-          'type': createAction.linkType,
-          'status': createAction.status,
-        },
-        if (note?.content != null) 'note_content': note!.content,
-        if (fileActions.isNotEmpty)
-          'note_actions': fileActions.map((a) => a.toJson()).toList(),
-      };
-    }
-  }
+  void _stashPendingCreateLink(ThreadId threadId, Note? note) =>
+      ThreadsBase.stashPendingCreateLink(threadId, note);
 
   /// Sends a brand-new thread with a 5-second undo window. The thread is
   /// promoted to non-draft and the note published immediately — so both appear
@@ -4073,26 +4055,41 @@ class PriorityBloc extends Cubit<PriorityState> {
       return add(draftThread, note: note);
     }
 
+    // Scheduled send: no 5-second PendingSend window — the thread + note push
+    // immediately with send_at set and the SERVER holds both (thread shell
+    // invisible to recipients, note undelivered) until the instant. The
+    // tappable "Scheduled for …" footer is the undo affordance.
+    final scheduled =
+        note.sendAt != null && note.sendAt!.isAfter(DateTime.now());
+
     _stashPendingCreateLink(draftThread.id, note);
 
     final isSelfTodo = note.hasTag(Tag.todo, Base.actorId);
-    final promoteThread =
-        draftThread.copyWith(draft: false, todo: isSelfTodo ? true : null);
+    final promoteThread = draftThread.copyWith(
+      draft: false,
+      todo: isSelfTodo ? true : null,
+      // Mirror the composing note's hold onto the thread shell (§ server hold).
+      sendAt: scheduled ? Value(note.sendAt) : const Value.absent(),
+    );
     final publishNote = note.copyWith(threadId: draftThread.id, draft: false);
 
-    // Register the hold + 5s timer BEFORE saving so a save-triggered push can't
-    // claim the rows before the hold is in place.
-    PendingSend.instance.start(
-      noteId: publishNote.id,
-      threadId: draftThread.id,
-      promotedThreadFromDraft: true,
-    );
+    if (scheduled) {
+      unawaited(PendingSend.instance.commit());
+    } else {
+      // Register the hold + 5s timer BEFORE saving so a save-triggered push
+      // can't claim the rows before the hold is in place.
+      PendingSend.instance.start(
+        noteId: publishNote.id,
+        threadId: draftThread.id,
+        promotedThreadFromDraft: true,
+      );
+    }
 
-    // Promote the thread + publish the note as real (non-draft) rows WITHOUT
-    // pushing — they appear in the feed/list immediately; PendingSend holds
-    // their push for the undo window.
+    // Promote the thread + publish the note as real (non-draft) rows. For an
+    // undo-window send they save WITHOUT pushing (PendingSend holds the push);
+    // a scheduled send pushes right away — the server holds delivery instead.
     await promoteThread.save();
-    await publishNote.save(pushToRemote: false);
+    await publishNote.save(pushToRemote: scheduled);
 
     // Reset the compose surface for the next thread.
     resetDraftAfterSend(draftThread.priority);

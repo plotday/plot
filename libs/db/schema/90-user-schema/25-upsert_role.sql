@@ -76,14 +76,15 @@ BEGIN
     END IF;
 
     INSERT INTO public.role (id, user_id, created_by, name, color, "order",
-        early_notifications_enabled, notify_window, see_within)
+        early_notifications_enabled, notify_window, see_within, send_window)
         VALUES (_role_id, upsert_role.user_id, upsert_role.user_id,
             COALESCE(p_role ->> 'name', 'Role'),
             COALESCE((p_role ->> 'color')::integer, 0),
             (p_role ->> 'order')::double precision,
             (p_role ->> 'early_notifications_enabled')::boolean,
             CASE WHEN p_role ? 'notify_window' THEN p_role -> 'notify_window' END,
-            CASE WHEN p_role ? 'see_within' THEN p_role -> 'see_within' END)
+            CASE WHEN p_role ? 'see_within' THEN p_role -> 'see_within' END,
+            CASE WHEN p_role ? 'send_window' THEN p_role -> 'send_window' END)
     ON CONFLICT (id)
         DO UPDATE SET
             name = COALESCE(p_role ->> 'name', role.name),
@@ -95,7 +96,9 @@ BEGIN
             notify_window = CASE WHEN p_role ? 'notify_window'
                 THEN p_role -> 'notify_window' ELSE role.notify_window END,
             see_within = CASE WHEN p_role ? 'see_within'
-                THEN p_role -> 'see_within' ELSE role.see_within END;
+                THEN p_role -> 'see_within' ELSE role.see_within END,
+            send_window = CASE WHEN p_role ? 'send_window'
+                THEN p_role -> 'send_window' ELSE role.send_window END;
 
     -- New role -> auto-create its Inbox and FYI focuses.
     IF NOT _exists THEN
@@ -109,10 +112,12 @@ BEGIN
         ORDER BY created_at ASC
         LIMIT 1;
         INSERT INTO public.priority (id, user_id, created_by, title, color, is_inbox,
-            role_id, early_notifications_enabled, notify_window, see_within, path)
+            role_id, early_notifications_enabled, notify_window, see_within,
+            send_window, path)
         SELECT
             uuidv7 (), upsert_role.user_id, upsert_role.user_id, 'Inbox', r.color,
             TRUE, r.id, r.early_notifications_enabled, r.notify_window, r.see_within,
+            r.send_window,
             CASE WHEN _root_path IS NULL THEN generate_path (NULL)
                 ELSE _root_path || generate_path (NULL) END
         FROM public.role r

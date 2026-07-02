@@ -27,6 +27,7 @@ PriorityRow _row({String? icon}) => PriorityRow(
       seeWithinSet: false,
       earlyNotificationsEnabledSet: false,
       notifyWindowSet: false,
+      sendWindowSet: false,
     );
 
 void main() {

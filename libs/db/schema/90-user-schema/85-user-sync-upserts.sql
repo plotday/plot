@@ -196,7 +196,10 @@ CREATE OR REPLACE FUNCTION "user".upsert_note (
     p_re_note_id uuid,
     p_source_created_at timestamptz,
     p_key text,
-    p_merged_from_thread_id uuid DEFAULT NULL::uuid
+    p_merged_from_thread_id uuid DEFAULT NULL::uuid,
+    -- Scheduled sending: future = held (author-only, no dispatch) until the
+    -- release sweep nulls it. Only user clients set this; connectors don't.
+    p_send_at timestamptz DEFAULT NULL::timestamptz
 )
     RETURNS note
     LANGUAGE plpgsql
@@ -330,8 +333,8 @@ BEGIN
     END IF;
 
     IF p_id IS NULL THEN
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
-            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id, send_at)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id, p_send_at)
         ON CONFLICT (thread_id, link_id, key)
             WHERE key IS NOT NULL
             DO UPDATE SET
@@ -349,11 +352,16 @@ BEGIN
                 source_created_at = EXCLUDED.source_created_at,
                 key = EXCLUDED.key,
                 merged_from_thread_id = EXCLUDED.merged_from_thread_id,
+                -- Never let an upsert CLEAR a hold: clients cancel a schedule
+                -- by archiving the note, and release is the sweep's job. An
+                -- old client editing a held note omits send_at — COALESCE
+                -- keeps the hold instead of firing the note immediately.
+                send_at = COALESCE(EXCLUDED.send_at, note.send_at),
                 updated_at = now()
         RETURNING * INTO v_row;
     ELSE
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
-            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id, send_at)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id, p_send_at)
         ON CONFLICT (id)
             DO UPDATE SET
                 author_id = note.author_id,
@@ -371,6 +379,9 @@ BEGIN
                 source_created_at = EXCLUDED.source_created_at,
                 key = COALESCE(EXCLUDED.key, note.key),
                 merged_from_thread_id = EXCLUDED.merged_from_thread_id,
+                -- COALESCE: see the keyed path above — an upsert may set or
+                -- keep a hold but never clear one.
+                send_at = COALESCE(EXCLUDED.send_at, note.send_at),
                 updated_at = now()
         RETURNING * INTO v_row;
     END IF;
@@ -1199,7 +1210,9 @@ CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
     p_notify_window jsonb DEFAULT NULL,
     p_set_notify_window boolean DEFAULT FALSE,
     p_see_within jsonb DEFAULT NULL,
-    p_set_see_within boolean DEFAULT FALSE
+    p_set_see_within boolean DEFAULT FALSE,
+    p_send_window jsonb DEFAULT NULL,
+    p_set_send_window boolean DEFAULT FALSE
 ) RETURNS void LANGUAGE plpgsql SET search_path TO 'public', 'user' AS $function$
 BEGIN
     PERFORM "user".assert_priority_access(p_user_id, p_priority_id);
@@ -1225,7 +1238,12 @@ BEGIN
             WHEN p_set_see_within THEN
                 COALESCE(p_see_within,
                     (SELECT r.see_within FROM public.role r WHERE r.id = p.role_id))
-            ELSE p.see_within END
+            ELSE p.see_within END,
+        send_window = CASE
+            WHEN p_set_send_window THEN
+                COALESCE(p_send_window,
+                    (SELECT r.send_window FROM public.role r WHERE r.id = p.role_id))
+            ELSE p.send_window END
     WHERE p.id = p_priority_id AND p.user_id = p_user_id;
 
     -- The UPDATE above fires set_priority_updated_at, bumping priority.seq so

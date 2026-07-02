@@ -60,6 +60,13 @@ class Priorities extends Table
   BoolColumn get notifyWindowSet =>
       boolean().withDefault(const Constant(false))();
 
+  /// Send window (scheduled sending): recurring windows during which messages
+  /// may go out. JSON-encoded `List<AttentionWindow>`; null = send anytime.
+  /// Concrete column following the focus's role (server cascade).
+  TextColumn get sendWindow => text().nullable()();
+  BoolColumn get sendWindowSet =>
+      boolean().withDefault(const Constant(false))();
+
   /// Sparse per-priority configuration. Not user-editable. Stored as a JSON
   /// string. See `PriorityConfig` for recognized keys.
   TextColumn get config => text().nullable()();
@@ -115,6 +122,7 @@ class PrioritiesBase extends BaseTable {
       'attention_window',
       'see_within',
       'notify_window',
+      'send_window',
     ]) {
       final value = json[key];
       if (value != null && value is! String) {
@@ -176,6 +184,10 @@ class PrioritiesBase extends BaseTable {
     json.remove('respond_within_set');
     json.remove('early_notifications_enabled_set');
     json.remove('notify_window_set');
+    // Send window is written via /sync/priority-attention, not the generic
+    // push (same as the notification fields above).
+    json.remove('send_window');
+    json.remove('send_window_set');
     // config is read-only from the client's perspective.
     json.remove('config');
     // is_inbox is server-managed (set when a role's Inbox focus is
@@ -1080,6 +1092,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          seeWithinSet: false,
          earlyNotificationsEnabledSet: false,
          notifyWindowSet: false,
+         sendWindowSet: false,
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -1152,6 +1165,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          notifyWindow: row.notifyWindow,
          earlyNotificationsEnabledSet: row.earlyNotificationsEnabledSet,
          notifyWindowSet: row.notifyWindowSet,
+         sendWindow: row.sendWindow,
+         sendWindowSet: row.sendWindowSet,
          config: row.config,
          notificationClearedAt: row.notificationClearedAt,
          roleId: row.roleId,
@@ -1317,6 +1332,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   List<AttentionWindow>? get notifyWindows =>
       AttentionWindow.fromJsonString(notifyWindow);
 
+  /// Send windows (scheduled sending) parsed from the JSON column. Null/empty
+  /// = send anytime.
+  List<AttentionWindow>? get sendWindows =>
+      AttentionWindow.fromJsonString(sendWindow);
+
   /// Parsed sparse priority config (topic/view behaviours). Not
   /// user-editable; populated from the server.
   PriorityConfig get priorityConfig => PriorityConfig.parse(config);
@@ -1401,6 +1421,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<String?> notifyWindow = const Value.absent(),
     bool? earlyNotificationsEnabledSet,
     bool? notifyWindowSet,
+    Value<String?> sendWindow = const Value.absent(),
+    bool? sendWindowSet,
     Value<String?> config = const Value.absent(),
     bool? draft,
     Value<DateTime?> notificationClearedAt = const Value.absent(),
@@ -1447,6 +1469,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         notifyWindow: notifyWindow,
         earlyNotificationsEnabledSet: earlyNotificationsEnabledSet,
         notifyWindowSet: notifyWindowSet,
+        sendWindow: sendWindow,
+        sendWindowSet: sendWindowSet,
         config: config,
         notificationClearedAt: notificationClearedAt,
         roleId: roleId,

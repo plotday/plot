@@ -15,6 +15,7 @@ import 'package:plot/command/command.dart';
 import 'package:plot/screenshot/scenes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/link_type_copy.dart';
+import 'package:plot/util/send_window.dart' show maybeAutoSchedule;
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/url_title.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
@@ -205,6 +206,11 @@ class NoteEditorState extends State<NoteEditor> {
   // clobber the _lastSavedContent proxy and skip the reset (the just-sent reply
   // would linger on screen). See [shouldResetComposerOnDraftChange].
   bool _clearComposerOnNextDraft = false;
+  // Sticky for this draft's lifetime: set when the user schedules OR clears
+  // via the modal, so the send-window auto-schedule never overrides an
+  // explicit choice (sendAt == null alone can't distinguish "never scheduled"
+  // from "user cleared"). Reset when the composer moves to a fresh draft.
+  bool _userTouchedSchedule = false;
   FocusNode? _currentFocusNode;
   // Used only when widget.bodyOnly is true. EditableArea owns the
   // FocusNode in the normal path; here we own it.
@@ -300,6 +306,8 @@ class NoteEditorState extends State<NoteEditor> {
       if (Scenes.active && (widget.draft.content?.isNotEmpty ?? false)) {
         focus();
       }
+      // Send-window auto-schedule at composer-open.
+      _maybeAutoScheduleDraft();
     });
   }
 
@@ -339,8 +347,16 @@ class NoteEditorState extends State<NoteEditor> {
       // Consume the send flag on any draft-id change: the fresh empty draft has
       // arrived (or a different draft superseded the pending send).
       _clearComposerOnNextDraft = false;
+      // A new draft starts with a clean schedule slate: the manual
+      // schedule/clear stickiness applies per draft, not per composer.
+      _userTouchedSchedule = false;
       _lastDraftNoteId = newDraftNoteId;
       _lastSavedContent = newContent;
+      // Re-evaluate the send-window auto-schedule for the fresh draft (and
+      // when the compose target changed, e.g. a different connector/focus).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _maybeAutoScheduleDraft();
+      });
     } else if (newContent != _lastSavedContent) {
       // Update last saved content if it changed but ID didn't
       _lastSavedContent = newContent;
@@ -1556,9 +1572,14 @@ class NoteEditorState extends State<NoteEditor> {
               ),
             ),
             const Spacer(),
+            // Clock control (scheduled sending) — directly left of the
+            // primary button. Hidden in note-edit mode: edits are immediate.
+            if (!isCurrentlyEditing && !widget.viewerMode)
+              _buildScheduleButton(context, activityState.draft),
             // Right side: Save button (always visible). Label adapts to the
             // active top-bar pill — Save, Save task, Send, or a connector
-            // verb like "Comment" / "Reply" from the LinkTypeConfig.
+            // verb like "Comment" / "Reply" from the LinkTypeConfig — and
+            // becomes "[verb] [time]" when the draft is scheduled.
             Button.icon(
               isCurrentlyEditing
                   ? CommandWrapper(
@@ -1578,7 +1599,11 @@ class NoteEditorState extends State<NoteEditor> {
                         Future.value(widget.draft),
                         linkType: threadState.primaryLinkTypeConfig,
                       ),
-                      title: _sendLabelForState(activityState),
+                      title: _labelWithSchedule(
+                        _sendLabelForState(activityState),
+                        activityState.draft,
+                        context,
+                      ),
                       run: (action, context) async {
                         _editorKey.currentState?.submit(false);
                         return const CommandDone();
@@ -1637,6 +1662,9 @@ class NoteEditorState extends State<NoteEditor> {
           ),
         ),
         const Spacer(),
+        // Clock control (scheduled sending) — directly left of the primary
+        // button.
+        if (!widget.viewerMode) _buildScheduleButton(context, draftNote),
         // Right side: Save button (always visible)
         Button.icon(
           CommandWrapper(
@@ -1648,7 +1676,9 @@ class NoteEditorState extends State<NoteEditor> {
                     .firstOrNull,
               ),
             ),
-            title: widget.sendLabel,
+            title: widget.sendLabel != null
+                ? _labelWithSchedule(widget.sendLabel!, draftNote, context)
+                : null,
             run: (action, context) async {
               _editorKey.currentState?.submit(false);
               return const CommandDone();
@@ -1704,6 +1734,86 @@ class NoteEditorState extends State<NoteEditor> {
       widget.onDraftChanged?.call(widget.thread!, note: updatedNote);
     } else {
       context.run(ToggleSelfTask(widget.draft));
+    }
+  }
+
+  // -- Scheduled sending --
+
+  /// Apply a chosen (or cleared) send schedule to the composer draft.
+  void _applySendSchedule(BuildContext context, Note draftNote, DateTime? t) {
+    // A manual choice (or clear) is sticky for this draft's lifetime — the
+    // send-window auto-schedule must not override it (see maybeAutoSchedule).
+    _userTouchedSchedule = true;
+    if (widget.isNewThreadMode) {
+      widget.onDraftChanged?.call(
+        widget.thread!,
+        note: draftNote.copyWith(sendAt: Value(t)),
+      );
+    } else {
+      context.read<ThreadBloc>().updateDraft(
+        draftNote.copyWith(sendAt: Value(t)),
+      );
+    }
+  }
+
+  /// Clock control beside the primary Send button. Inactive = outline clock
+  /// ("Schedule send"); active = selected clock whose tooltip shows the
+  /// absolute scheduled time. Hidden in note-edit mode (edits are immediate).
+  Widget _buildScheduleButton(BuildContext context, Note draftNote) {
+    return Button.icon(
+      OpenScheduleSendModal(
+        current: draftNote.isScheduled ? draftNote.sendAt : null,
+        apply: (t) => _applySendSchedule(context, draftNote, t),
+      ),
+      selected: draftNote.isScheduled,
+    );
+  }
+
+  /// "[verb] [time]" send label when the draft is scheduled — makes a silently
+  /// auto-scheduled draft unmissable at the point of action.
+  String _labelWithSchedule(String verb, Note draftNote, BuildContext context) {
+    if (!draftNote.isScheduled) return verb;
+    return '$verb ${formatRelativeSchedule(draftNote.sendAt!, context)}';
+  }
+
+  /// Send-window auto-schedule: when the thread's focus has a send window and
+  /// now is outside it, default the outward draft's sendAt to the next window
+  /// opening. Evaluated at composer-open and when the compose target changes —
+  /// not continuously (a stale value is visible via the active clock + send
+  /// label and adjustable). Never overrides a manual choice or clear
+  /// ([_userTouchedSchedule]) or an existing schedule.
+  void _maybeAutoScheduleDraft() {
+    if (widget.viewerMode || !mounted) return;
+    final Note draftNote;
+    final Thread? thread;
+    if (widget.isNewThreadMode) {
+      draftNote = widget.draft;
+      thread = widget.thread;
+    } else {
+      final s = context.read<ThreadBloc>().state;
+      draftNote = s.draft;
+      thread = s.thread;
+    }
+    if (thread == null) return;
+    final t = maybeAutoSchedule(
+      windows: thread.priority.sendWindows,
+      currentSendAt: draftNote.sendAt,
+      userTouchedSchedule: _userTouchedSchedule,
+      isOutward: !draftNote.isPrivate && thread.isShared,
+      now: DateTime.now(),
+    );
+    if (t == null) return;
+    // Auto-schedule is a computed DEFAULT — deliberately not user-touched, so
+    // a later manual change/clear still wins.
+    if (widget.isNewThreadMode) {
+      widget.onDraftChanged?.call(
+        thread,
+        note: draftNote.copyWith(sendAt: Value(t)),
+      );
+    } else {
+      context.read<ThreadBloc>().updateDraft(
+        draftNote.copyWith(sendAt: Value(t)),
+      );
     }
   }
 

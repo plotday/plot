@@ -416,7 +416,7 @@ BEGIN
     -- path preserves thread.twist_id so first-creator wins.
     INSERT INTO thread (
         id, created_by, author_id, title, preview, updated_by, sync_depth, contacts, contact_meta, groups, topic,
-        draft, key, icon, twist_id, pending_contacts, team_id, embedding, assignee_id, topic_id, facets
+        draft, key, icon, twist_id, pending_contacts, team_id, embedding, assignee_id, topic_id, facets, send_at
     )
     VALUES (
         v_id,
@@ -473,7 +473,10 @@ BEGIN
         v_input_topic_id,
         -- Intrinsic facets (format/automation/reach) supplied by the connector
         -- via p_defaults.facets. Server-only classifier signal; never synced.
-        COALESCE(p_thread -> 'facets', p_defaults -> 'facets')
+        COALESCE(p_thread -> 'facets', p_defaults -> 'facets'),
+        -- Scheduled-send hold for a thread composed with a scheduled first
+        -- note. Only user clients set this; connectors never do.
+        (p_thread ->> 'send_at')::timestamptz
     )
     ON CONFLICT (id)
         DO UPDATE SET
@@ -582,6 +585,10 @@ BEGIN
             ELSE
                 thread.assignee_id
             END,
+            -- Never let an upsert CLEAR a scheduled-send hold: release is the
+            -- sweep's job and clients cancel by archiving. COALESCE keeps the
+            -- hold when a (possibly old) client omits send_at.
+            send_at = COALESCE((p_thread ->> 'send_at')::timestamptz, thread.send_at),
             archived_at = CASE WHEN v_is_archived THEN
                 CASE WHEN p_thread ? 'archived_at' THEN
                     (p_thread ->> 'archived_at')::timestamptz

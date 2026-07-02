@@ -108,6 +108,12 @@ class Notes extends Table
   TextColumn get content => text().nullable()();
   DateTimeColumn get sourceCreatedAt =>
       dateTime().map(const LocalDateTimeConverter())();
+
+  /// Scheduled sending: when set (future), the server holds the note until
+  /// this instant — visible only to its author. The release sweep nulls it
+  /// when the note goes live. Null = send immediately.
+  DateTimeColumn get sendAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get actions => text().nullable().map(const UserActionsConverter())();
   TextColumn get cta => text().nullable().map(const CtaConverter())();
   TextColumn get deliveryError =>
@@ -213,6 +219,7 @@ class Note extends Equatable implements Comparable<Note> {
     required DateTime updatedAt,
     DateTime? archivedAt,
     ThreadId? mergedFromThreadId,
+    DateTime? sendAt,
     int? pending,
   }) {
     // Auto-extract mentions from content if content is provided but mentions are not
@@ -238,6 +245,7 @@ class Note extends Equatable implements Comparable<Note> {
       updatedAt: updatedAt,
       archivedAt: archivedAt,
       mergedFromThreadId: mergedFromThreadId,
+      sendAt: sendAt,
       pending: pending,
       tags: null,
     );
@@ -260,6 +268,7 @@ class Note extends Equatable implements Comparable<Note> {
       updatedAt = DateTime.now(),
       archivedAt = null,
       mergedFromThreadId = null,
+      sendAt = null,
       pending = null,
       _tags = null;
 
@@ -281,6 +290,7 @@ class Note extends Equatable implements Comparable<Note> {
     required this.updatedAt,
     this.archivedAt,
     this.mergedFromThreadId,
+    this.sendAt,
     this.pending,
     NoteTagsRow? tags,
     // ignore: prefer_initializing_formals
@@ -312,6 +322,7 @@ class Note extends Equatable implements Comparable<Note> {
       updatedAt: noteRow.updatedAt,
       archivedAt: noteRow.archivedAt,
       mergedFromThreadId: noteRow.mergedFromThreadId,
+      sendAt: noteRow.sendAt,
       pending: noteRow.pending,
       tags: tags,
     );
@@ -357,8 +368,18 @@ class Note extends Equatable implements Comparable<Note> {
   final DateTime updatedAt;
   final DateTime? archivedAt;
   final ThreadId? mergedFromThreadId;
+
+  /// Scheduled sending: when set (future), the server holds the note until
+  /// this instant. Null = sent immediately (or already released).
+  final DateTime? sendAt;
   final int? pending;
   final NoteTagsRow? _tags;
+
+  /// Whether this note is still scheduled for a future send. Drives the
+  /// "Scheduled for …" footer state; false once the release instant passes
+  /// (even before the released row syncs back).
+  bool get isScheduled =>
+      sendAt != null && archivedAt == null && sendAt!.isAfter(DateTime.now());
 
   /// Pull this activity's notes, tags and reactions (lazy-loaded on first
   /// view). Tracked in SyncStates as "notes:{threadId}",
@@ -891,6 +912,7 @@ class Note extends Equatable implements Comparable<Note> {
       updatedAt: updatedAt,
       archivedAt: archivedAt,
       mergedFromThreadId: mergedFromThreadId,
+      sendAt: sendAt,
     );
   }
 
@@ -1400,8 +1422,10 @@ class Note extends Equatable implements Comparable<Note> {
     Value<DateTime?> archivedAt = const Value.absent(),
     bool clearArchivedAt = false,
     Value<ThreadId?> mergedFromThreadId = const Value.absent(),
+    Value<DateTime?> sendAt = const Value.absent(),
   }) {
     final now = DateTime.now();
+    final effectiveSendAt = sendAt.present ? sendAt.value : this.sendAt;
 
     // Auto-extract mentions from content if content is provided but mentions are not
     var effectiveMentions =
@@ -1466,7 +1490,10 @@ class Note extends Equatable implements Comparable<Note> {
         accessContacts: accessContacts.present ? accessContacts.value : this.accessContacts,
         accessGroups: accessGroups.present ? accessGroups.value : this.accessGroups,
         content: content ?? this.content,
-        sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
+        // A scheduled note's display/sort timestamp is its send time, so it
+        // sorts to the bottom of the thread while held and reads with the
+        // intended time after release.
+        sourceCreatedAt: isPublishing ? (effectiveSendAt ?? now) : sourceCreatedAt,
         actions: actions ?? this.actions,
         cta: cta.present ? cta.value : this.cta,
         deliveryError: deliveryError.present ? deliveryError.value : this.deliveryError,
@@ -1476,6 +1503,7 @@ class Note extends Equatable implements Comparable<Note> {
         updatedAt: DateTime.now(),
         archivedAt: archivedAt.present ? archivedAt.value : (clearArchivedAt ? null : this.archivedAt),
         mergedFromThreadId: mergedFromThreadId.present ? mergedFromThreadId.value : this.mergedFromThreadId,
+        sendAt: effectiveSendAt,
       ),
       tags: effectiveTags,
     );
@@ -1499,6 +1527,7 @@ class Note extends Equatable implements Comparable<Note> {
     updatedAt,
     archivedAt,
     mergedFromThreadId,
+    sendAt,
     pending,
     _tags,
   ];

@@ -21,6 +21,7 @@ SELECT
     n.archived_at,
     n.thread_id,
     n.draft,
+    n.send_at,
     n.access_contacts,
     n.access_groups,
     n.content,
@@ -46,6 +47,9 @@ FROM
 WHERE
     -- Note-level filtering
     (n.draft = FALSE OR n.created_by = tp.user_id)
+    -- Scheduled-send hold: a held note (future send_at) is visible only to
+    -- its author until the release sweep publishes it.
+    AND (n.send_at IS NULL OR n.send_at <= now() OR n.created_by = tp.user_id)
     AND (
         n.created_by = tp.user_id
         OR (n.access_contacts IS NULL AND n.access_groups IS NULL)
@@ -54,6 +58,7 @@ WHERE
     )
     -- Thread-level filtering
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
+    AND (a.send_at IS NULL OR a.send_at <= now() OR a.created_by = tp.user_id)
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
@@ -83,6 +88,7 @@ SELECT
     COALESCE(n.archived_at, n.updated_at) AS archived_at,
     n.thread_id,
     n.draft,
+    NULL::timestamptz AS send_at,
     CAST(NULL AS uuid[]) AS access_contacts,
     CAST(NULL AS uuid[]) AS access_groups,
     NULL::text AS content,
@@ -107,7 +113,12 @@ FROM
         )
 WHERE
     (n.draft = FALSE OR n.created_by = tp.user_id)
+    -- A held note was never visible to anyone but its author — no stub to
+    -- reconcile. Without this, a scoped held note would emit a stub that the
+    -- client archives, then fights the real row at release.
+    AND (n.send_at IS NULL OR n.send_at <= now())
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
+    AND (a.send_at IS NULL OR a.send_at <= now())
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
@@ -169,6 +180,7 @@ FROM
         HAVING COUNT(*) > 0) nt ON TRUE
 WHERE
     (n.draft = FALSE OR n.created_by = ua.user_id)
+    AND (n.send_at IS NULL OR n.send_at <= now() OR n.created_by = ua.user_id)
     AND (
         n.created_by = ua.user_id
         OR (n.access_contacts IS NULL AND n.access_groups IS NULL)

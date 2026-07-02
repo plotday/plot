@@ -19,6 +19,10 @@ CREATE TABLE "public"."role" (
     "early_notifications_enabled" boolean,
     "notify_window" jsonb,
     "see_within" jsonb,
+    -- Send-window template the role's focuses follow (list of AttentionWindow
+    -- {days,start,end}). NULL/empty = send anytime. Messages drafted outside
+    -- a window are auto-scheduled to the next opening (client-side).
+    "send_window" jsonb,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 

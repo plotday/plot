@@ -39,6 +39,8 @@ FROM
         HAVING COUNT(*) > 0) nr ON TRUE
 WHERE
     (n.draft = FALSE OR n.created_by = ua.user_id)
+    -- Scheduled-send hold: no reaction rows for notes invisible to this user
+    AND (n.send_at IS NULL OR n.send_at <= now() OR n.created_by = ua.user_id)
     AND (n.access_contacts IS NULL
         OR n.created_by = ua.user_id
         OR n.access_contacts && "user".user_contact_ids(ua.user_id));

@@ -1,3 +1,4 @@
+import 'package:plot/command/schedule_send.dart';
 import 'package:plot/state/last_open_focus.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/profile_preferences.dart';
@@ -21,6 +22,7 @@ import 'package:plot/util/profile_preferences.dart';
 /// `test/state/user_scoped_preferences_test.dart` guards this contract.
 const List<String> _userScopedPreferenceKeys = [
   kLastOpenFocusKey,
+  kScheduleSendDefaultKey,
   LocalPreferencesBloc.kMentionMruKey,
   LocalPreferencesBloc.kShowAllPrioritiesKey,
   LocalPreferencesBloc.kConnectionMruKey,

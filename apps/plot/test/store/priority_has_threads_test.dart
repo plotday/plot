@@ -18,6 +18,7 @@ PriorityRow _row({DateTime? archivedAt}) => PriorityRow(
       seeWithinSet: false,
       earlyNotificationsEnabledSet: false,
       notifyWindowSet: false,
+      sendWindowSet: false,
     );
 
 void main() {

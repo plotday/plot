@@ -13,6 +13,7 @@ export 'timer.dart';
 export 'agenda.dart';
 export 'early_notifications.dart';
 export 'focus_block.dart';
+export 'schedule_send.dart';
 export 'thread.dart';
 export 'note.dart';
 export 'note_viewer.dart';

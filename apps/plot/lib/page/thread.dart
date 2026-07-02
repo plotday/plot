@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/spacing.dart';
@@ -205,6 +206,26 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       // Keep focus on the composer with the caret at the end of the restored
       // note. Deferred to after the frame so it runs after the editor resets
       // to the restored draft (the reset clears the selection and focus).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _noteEditorKey.currentState?.focusAtEnd();
+      });
+    }());
+  }
+
+  /// Unschedules a scheduled note: archives the held row server-side (fail
+  /// closed — send_at stays future) and pulls the content back into the
+  /// composer with the prior schedule pre-filled. Mirrors [_undoPendingSend]'s
+  /// composer refocus.
+  void _unscheduleNote(Note note) {
+    final threadBloc = context.read<ThreadBloc>();
+    unawaited(() async {
+      try {
+        await threadBloc.unscheduleNote(note);
+      } catch (e, t) {
+        await Tracker.captureException(e, t);
+        return;
+      }
+      if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _noteEditorKey.currentState?.focusAtEnd();
       });
@@ -927,6 +948,10 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       final sending =
           PendingSend.instance.isPending &&
           PendingSend.instance.pendingNoteId == note.id;
+      // Scheduled-send state derives from the note row itself (send_at in the
+      // future); the affordance disappears client-side once the instant
+      // passes, even before the released row syncs back.
+      final scheduled = !sending && note.isScheduled;
       return NoteWidget(
         note: note,
         selected: false, // No selection on ThreadPage
@@ -937,6 +962,8 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         showAuthor: state.hasOtherAuthors,
         sending: sending,
         onUndoSend: sending ? _undoPendingSend : null,
+        scheduled: scheduled,
+        onEditScheduled: scheduled ? () => _unscheduleNote(note) : null,
         searchHighlight: state.search.isNotEmpty ? state.search : null,
         initiallyExpanded: noteInitiallyExpanded(
           note,

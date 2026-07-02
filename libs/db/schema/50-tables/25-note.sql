@@ -10,6 +10,12 @@ CREATE TABLE "public"."note" (
     "archived_at" timestamp with time zone,
     "thread_id" uuid NOT NULL REFERENCES public.thread ON DELETE CASCADE,
     "draft" boolean NOT NULL DEFAULT FALSE,
+    -- Scheduled sending: when set, the note is HELD — visible only to its
+    -- author (user.note), excluded from all dispatch views, thread
+    -- activity/unread, and POST-time side effects. The release sweep
+    -- (publish-scheduled-notes) atomically nulls it at/after the instant,
+    -- which is both the go-live flip and the idempotency claim. NULL = live.
+    "send_at" timestamp with time zone,
     "access_contacts" uuid[],
     "access_groups" uuid[],
     "content" text, -- markdown
@@ -150,6 +156,12 @@ WHERE
 CREATE INDEX idx_note_embedding_pending ON "public"."note" ("created_at" DESC)
 WHERE embedding IS NULL AND content IS NOT NULL AND draft = FALSE AND archived_at IS NULL;
 
+-- Drives the scheduled-send release sweep (scheduled/publish-scheduled-notes.ts).
+-- Partial WHERE mirrors the sweep's claim predicate so the index holds only
+-- still-held rows and stays (near) empty.
+CREATE INDEX idx_note_send_at_pending ON "public"."note" ("send_at")
+WHERE send_at IS NOT NULL AND draft = FALSE AND archived_at IS NULL;
+
 -- Trigram index for ILIKE substring search in /sync/threads/search.
 -- Partial: search only scans non-archived, non-draft notes, so we can
 -- restrict the index to the same rows and keep it dramatically smaller.
@@ -178,8 +190,12 @@ CREATE OR REPLACE FUNCTION public.update_thread_on_note_change ()
     SET search_path TO 'public'
     AS $function$
 BEGIN
-    -- Only act on visible, non-draft notes.
-    IF NEW.draft = FALSE AND NEW.archived_at IS NULL THEN
+    -- Only act on visible, non-draft, non-held notes. A scheduled note
+    -- (future send_at) must not surface the thread or mark it unread; the
+    -- release sweep's send_at → NULL update re-fires this trigger at the
+    -- moment the note goes live.
+    IF NEW.draft = FALSE AND NEW.archived_at IS NULL
+        AND (NEW.send_at IS NULL OR NEW.send_at <= now()) THEN
         PERFORM pg_advisory_xact_lock(hashtext(NEW.thread_id::text));
 
         IF NEW.access_contacts IS NULL AND NEW.access_groups IS NULL THEN
@@ -282,18 +298,23 @@ CREATE TRIGGER update_thread_last_note_created_at_trigger
     FOR EACH ROW
     EXECUTE FUNCTION update_thread_on_note_change ();
 
--- Trigger on UPDATE when draft, archived_at, or source_created_at changes.
--- source_created_at is included so cancellation/edit upserts (which keep the
--- same row but bump source_created_at to the new external timestamp) advance
--- thread.last_note_source_created_at — without this, the activity feed shows
--- the original event time instead of the cancellation time for, e.g.,
--- cancelled recurring Google Calendar events.
+-- Trigger on UPDATE when draft, archived_at, source_created_at, or send_at
+-- changes. source_created_at is included so cancellation/edit upserts (which
+-- keep the same row but bump source_created_at to the new external timestamp)
+-- advance thread.last_note_source_created_at — without this, the activity
+-- feed shows the original event time instead of the cancellation time for,
+-- e.g., cancelled recurring Google Calendar events. send_at is included so
+-- the release sweep's send_at → NULL claim update fires the thread
+-- activity/unread bump at the moment a scheduled note goes live — a bare
+-- seq-touch would not re-fire this trigger.
 CREATE OR REPLACE TRIGGER update_thread_last_note_created_at_on_status_change
     AFTER UPDATE OF draft,
     archived_at,
-    source_created_at ON "public"."note"
+    source_created_at,
+    send_at ON "public"."note"
     FOR EACH ROW
     WHEN ((OLD.draft IS DISTINCT FROM NEW.draft
         OR OLD.archived_at IS DISTINCT FROM NEW.archived_at
-        OR OLD.source_created_at IS DISTINCT FROM NEW.source_created_at))
+        OR OLD.source_created_at IS DISTINCT FROM NEW.source_created_at
+        OR OLD.send_at IS DISTINCT FROM NEW.send_at))
     EXECUTE FUNCTION update_thread_on_note_change ();

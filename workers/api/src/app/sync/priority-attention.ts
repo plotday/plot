@@ -10,11 +10,12 @@ const priorityAttention = new Hono<{ Bindings: Bindings }>();
 // POST /sync/priority-attention - Set/clear per-priority early-notification
 // settings.
 //
-// Three per-priority keys:
+// Per-priority keys:
 //   - `early_notifications_enabled` toggle.
 //   - `notify_window` (when interruptions are allowed).
 //   - `see_within` (max delay before notification fires; used as the
 //     deadline fallback when no focus block exists for the priority).
+//   - `send_window` (scheduled sending: when messages may go out).
 //
 // Each value pairs with a `set_*` flag so a partial payload only writes
 // the keys the client intended to change; passing a null value with the
@@ -33,6 +34,8 @@ priorityAttention.post("/sync/priority-attention", async (c) => {
       p_set_notify_window: body.set_notify_window ?? false,
       p_see_within: body.see_within ?? null,
       p_set_see_within: body.set_see_within ?? false,
+      p_send_window: body.send_window ?? null,
+      p_set_send_window: body.set_send_window ?? false,
     });
   });
 

@@ -28,6 +28,7 @@ Priority _testPriority({
     seeWithinSet: false,
     earlyNotificationsEnabledSet: false,
     notifyWindowSet: false,
+    sendWindowSet: false,
   );
   return Priority.fromStore(row, draft: true);
 }

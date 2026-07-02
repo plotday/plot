@@ -20,6 +20,7 @@ void main() {
           seeWithinSet: false,
           earlyNotificationsEnabledSet: false,
           notifyWindowSet: false,
+          sendWindowSet: false,
         ),
         draft: true,
       );

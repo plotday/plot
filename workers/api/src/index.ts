@@ -60,6 +60,7 @@ import { recoverRecurringMaintenance } from "./scheduled/recover-recurring-maint
 import { recoverStuckSyncs } from "./scheduled/recover-stuck-syncs";
 import { clearStaleSuspensions } from "./scheduled/clear-stale-suspensions";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
+import { publishScheduledNotes } from "./scheduled/publish-scheduled-notes";
 import { reconcileMissingEmbeddings } from "./scheduled/reconcile-embeddings";
 import { purgeDeletedAccounts } from "./scheduled/purge-deleted-accounts";
 import { runSweep as runClassifySweep } from "./state/classify-thread";
@@ -291,6 +292,17 @@ async function scheduled(
   _ctx: ExecutionContext
 ): Promise<void> {
   const logger = createLogger({ operation: "scheduled" });
+
+  // The dedicated 1-minute cron exists ONLY to release scheduled-send notes
+  // with ≤60 s latency. Everything else stays on the */5 schedule below.
+  if (event.cron === "* * * * *") {
+    try {
+      await publishScheduledNotes(env, _ctx);
+    } catch (error) {
+      logger.error("Error in scheduled-note release sweep", error as Error);
+    }
+    return;
+  }
 
   try {
     // Use a singleton DO instance by using a fixed name

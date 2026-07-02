@@ -72,6 +72,11 @@ CREATE TABLE "public"."thread" (
     -- onCreateLink succeeds. Recipients are re-resolved from thread.contacts.
     "pending_create_link" jsonb,
     "facets" jsonb,
+    -- Scheduled sending: mirrors note.send_at for a thread composed with a
+    -- scheduled first note, so the thread shell (title/preview) is invisible
+    -- to recipients until release. Set by the client on compose; nulled by
+    -- the release sweep together with the note's send_at. NULL = live.
+    "send_at" timestamp with time zone,
     -- Monotonic sync cursor (writing transaction's xid8). Maintained by the
     -- update_seq_and_updated_at BEFORE INSERT/UPDATE trigger. Sync queries
     -- gate on `seq < pg_snapshot_xmin(pg_current_snapshot())` to skip rows

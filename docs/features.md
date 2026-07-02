@@ -131,6 +131,14 @@ original app when you need to.
   message **Failed to send** (with the reason when available) so you can **Retry** or **Discard** it.
 - Threads from tools that track status (a Linear issue, a calendar event) show one clear status icon
   in the header and on the row; tap it to change the status right from Plot.
+- **Schedule send**: the clock beside Send picks a date and time (to the minute) and the server
+  delivers the message at that moment — even if your app is offline. Works for replies and new
+  messages across every connection (email, Slack, LinkedIn, …); recipients see nothing until it
+  sends. The message shows **Scheduled for …** in place of the author line; tap it any time before
+  it sends to change the time or pull it back into the editor.
+- **Send windows**: give a focus (or a whole role, as the default its focuses follow) recurring
+  hours when messages may go out. Draft outside the window and Plot quietly schedules the send for
+  the next opening — the Send button shows exactly when — and you can always adjust or clear it.
 
 ### See what's yours to do
 

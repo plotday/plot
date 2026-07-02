@@ -345,16 +345,30 @@ class ThreadBloc extends Cubit<ThreadState> {
     // no undo window (push right away instead of holding it).
     final immediate = note.isPrivate || !currentThread.isShared;
 
+    // Scheduled send: skip the 5-second PendingSend window entirely — the
+    // note pushes immediately as draft=false + send_at and the SERVER holds
+    // delivery until the instant (visible only to the author until then).
+    // The tappable "Scheduled for …" footer is the undo affordance.
+    final scheduled =
+        note.sendAt != null && note.sendAt!.isAfter(DateTime.now());
+
     // A still-draft thread means this is the first note of a brand-new thread
     // (typically a re-send after undo). Promote it alongside the note.
     final promoting = currentThread.draft;
     final isSelfTodo = note.hasTag(Tag.todo, Base.actorId);
     final publishNote = note.copyWith(draft: false);
     final promoteThread = promoting
-        ? currentThread.copyWith(draft: false, todo: isSelfTodo ? true : null)
+        ? currentThread.copyWith(
+            draft: false,
+            todo: isSelfTodo ? true : null,
+            // Mirror the composing note's hold onto the thread shell so
+            // recipients don't see the new thread until release (§ server
+            // hold). Replies never set thread.send_at.
+            sendAt: scheduled ? Value(note.sendAt) : const Value.absent(),
+          )
         : currentThread;
 
-    if (immediate) {
+    if (immediate || scheduled) {
       // Finalize any prior held send first (one at a time).
       unawaited(PendingSend.instance.commit());
     } else {
@@ -372,8 +386,9 @@ class ThreadBloc extends Cubit<ThreadState> {
       emit(state.copyWith(thread: promoteThread));
     }
     // Held sends save WITHOUT pushing (PendingSend holds the push until the
-    // window elapses); immediate sends push right away.
-    await publishNote.save(pushToRemote: immediate);
+    // window elapses); immediate and scheduled sends push right away (the
+    // server holds a scheduled note's delivery, not the client).
+    await publishNote.save(pushToRemote: immediate || scheduled);
 
     // Reset the composer to a fresh draft and clear reply/editing — same UI
     // reset add() performs so the editor clears immediately on send.
@@ -388,6 +403,69 @@ class ThreadBloc extends Cubit<ThreadState> {
 
     // BCC auto-drop (mirrors add()); runs async.
     _dropHiddenRoleContactsAfterSend(promoteThread, currentLinks);
+  }
+
+  /// Cancels a scheduled send and pulls the note back into the composer.
+  ///
+  /// Server-side cancellation is by ARCHIVING with `send_at` left unchanged
+  /// (still future): if the archive write were lost but a null-`send_at`
+  /// write applied, the note would fire immediately — the exact failure this
+  /// feature guards against. Keeping `send_at` future means the note fails
+  /// CLOSED (stays held); the release sweep skips archived rows.
+  ///
+  /// For a scheduled new-thread compose (thread.sendAt set), the whole thread
+  /// is archived server-side too, then demoted back to a LOCAL draft so
+  /// re-sending takes the compose path again — `upsert_thread`'s
+  /// archived-refile branch revives it, and the re-stashed `create_link`
+  /// spec re-dispatches the external item. Draft threads are never pushed,
+  /// so the local un-archive can't fight the server-side archive.
+  Future<void> unscheduleNote(Note note) async {
+    if (!note.isScheduled) return;
+    final thread = state.thread;
+    final heldThread =
+        thread.sendAt != null && thread.sendAt!.isAfter(DateTime.now());
+
+    if (heldThread) {
+      await thread.copyWith(archivedAt: Value(DateTime.now())).save();
+    }
+    await note
+        .copyWith(archivedAt: Value(DateTime.now()))
+        .save(pushToRemote: false);
+    // Push both cancellations and WAIT for the push before the local demote
+    // below — a draft thread is excluded from the push claim, so demoting
+    // first could strand the thread's archive locally.
+    await SyncOrchestrator.instance.push(SyncOrchestrator.note);
+
+    if (heldThread) {
+      final fresh = await Thread.getOne(thread.id);
+      await fresh
+          .copyWith(draft: true, archivedAt: const Value(null))
+          .save();
+      emit(state.copyWith(thread: fresh));
+      // Re-attach the connector create-link spec for the eventual re-send.
+      ThreadsBase.stashPendingCreateLink(thread.id, note);
+    }
+
+    // Restore the content into a fresh draft with the prior schedule
+    // pre-filled, so re-scheduling is one click and Send-now is
+    // clear-schedule + Send.
+    final restored = Note.draft(threadId: thread.id).copyWith(
+      content: note.content,
+      actions: note.actions,
+      mentions: note.mentions,
+      sendAt: Value(note.sendAt),
+    );
+    Note? replyTarget;
+    if (note.reNoteId != null) {
+      replyTarget = state.notes.where((n) => n.id == note.reNoteId).firstOrNull;
+    }
+    emit(
+      state.copyWith(
+        draft: restored,
+        replyTo: replyTarget,
+        clearReplyTo: replyTarget == null,
+      ),
+    );
   }
 
   /// Moves an un-sent (undone) note's content back into the composer. Restores

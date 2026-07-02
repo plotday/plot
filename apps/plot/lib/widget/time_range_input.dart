@@ -21,13 +21,17 @@ import 'package:plot/widget/text_field_selection_theme.dart';
 /// - Single right chevron (shift range +15 minutes)
 /// - Double right chevron (shift range +1 hour)
 /// - All wrapped in a common outline border
+///
+/// Single-time mode: when [onEndTimeChanged] is null the separator and end
+/// field are hidden, so the widget picks one time-of-day (used by the
+/// schedule-send modal).
 class TimeRangeInput extends StatefulWidget {
   const TimeRangeInput({
     required this.startTime,
-    required this.endTime,
     required this.onStartTimeChanged,
-    required this.onEndTimeChanged,
     required this.onRangeShift,
+    this.endTime,
+    this.onEndTimeChanged,
     this.startTimeFocusNode,
     this.endTimeFocusNode,
     this.autofocus = false,
@@ -39,14 +43,14 @@ class TimeRangeInput extends StatefulWidget {
   /// The current start time value.
   final FTime? startTime;
 
-  /// The current end time value.
+  /// The current end time value. Ignored when [onEndTimeChanged] is null.
   final FTime? endTime;
 
   /// Called when the start time changes.
   final ValueChanged<FTime?> onStartTimeChanged;
 
-  /// Called when the end time changes.
-  final ValueChanged<FTime?> onEndTimeChanged;
+  /// Called when the end time changes. Null = single-time mode (no end field).
+  final ValueChanged<FTime?>? onEndTimeChanged;
 
   /// Called when the time range should be shifted by a duration.
   final ValueChanged<Duration> onRangeShift;
@@ -280,7 +284,8 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           builder: fieldSelectionBuilder,
                         ),
                 ),
-                // En dash separator
+                // En dash separator (range mode only)
+                if (widget.onEndTimeChanged != null)
                 Text(
                   '–',
                   style: theme.typography.sm.copyWith(
@@ -288,13 +293,14 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                     height: 1.0,
                   ),
                 ),
-                // End time field
+                // End time field (range mode only)
+                if (widget.onEndTimeChanged != null)
                 Flexible(
                   child: isTouch
                       ? FTimeField.picker(
                           control: .lifted(
                             time: widget.endTime,
-                            onChange: widget.onEndTimeChanged,
+                            onChange: widget.onEndTimeChanged!,
                           ),
                           focusNode: _endTimeFocusNode,
                           prefixBuilder: null,
@@ -339,7 +345,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                       : FTimeField(
                           control: .lifted(
                             time: widget.endTime,
-                            onChange: widget.onEndTimeChanged,
+                            onChange: widget.onEndTimeChanged!,
                           ),
                           focusNode: _endTimeFocusNode,
                           prefixBuilder: null,

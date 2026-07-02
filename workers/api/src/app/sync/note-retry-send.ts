@@ -8,7 +8,7 @@ import {
   resolveCreateLinkContacts,
   dispatchCreateLink,
   noteActionsToAttachments,
-  type PendingCreateLink,
+  parsePendingCreateLink,
 } from "./create-link-dispatch";
 
 const noteRetrySend = new Hono<{ Bindings: Bindings }>();
@@ -177,33 +177,5 @@ noteRetrySend.post("/sync/note-retry-send", async (c) => {
 
   return c.json({ ok: true, redispatched: true });
 });
-
-function parsePendingCreateLink(value: unknown): PendingCreateLink | null {
-  if (value == null) return null;
-  const parsed: unknown =
-    typeof value === "string" ? safeJsonParse(value) : value;
-  if (!parsed || typeof parsed !== "object") return null;
-  const p = parsed as Record<string, unknown>;
-  if (typeof p.twist_instance_id !== "string" || typeof p.type !== "string") {
-    return null;
-  }
-  return {
-    twist_instance_id: p.twist_instance_id,
-    channel_id: typeof p.channel_id === "string" ? p.channel_id : null,
-    type: p.type,
-    status: typeof p.status === "string" ? p.status : null,
-    invite_emails: Array.isArray(p.invite_emails)
-      ? p.invite_emails.filter((e): e is string => typeof e === "string")
-      : [],
-  };
-}
-
-function safeJsonParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
 
 export default noteRetrySend;

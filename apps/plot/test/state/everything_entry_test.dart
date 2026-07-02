@@ -26,6 +26,7 @@ Priority _focus(String title, {bool isInbox = false}) => Priority.fromStore(
         seeWithinSet: false,
         earlyNotificationsEnabledSet: false,
         notifyWindowSet: false,
+        sendWindowSet: false,
       ),
       draft: true,
     );

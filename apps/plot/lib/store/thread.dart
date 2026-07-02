@@ -83,6 +83,13 @@ class Threads extends Table
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get lastNoteSourceCreatedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
+
+  /// Scheduled sending: mirrors the composing note's send_at when this thread
+  /// was created by a scheduled new-thread compose. While set (future), the
+  /// server hides the thread shell from recipients; the release sweep clears
+  /// it together with the note. Null = live.
+  DateTimeColumn get sendAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   IntColumn get importance => integer().withDefault(const Constant(0))();
 
@@ -356,6 +363,31 @@ class ThreadsBase extends BaseTable {
   /// Shape: `{ 'create_link': { twist_instance_id, channel_id, type, status },
   ///          'note_content': String | null }`.
   static final Map<String, Map<String, dynamic>> pendingCreateLinks = {};
+
+  /// Stash the connector create-link payload derived from [note]'s
+  /// CreateLinkUserAction so the NEXT push of thread [threadId] carries the
+  /// `create_link` spec (consumed once in [toBase]). Shared by the compose
+  /// send paths (PriorityBloc) and the scheduled-send unschedule/re-send flow
+  /// (ThreadBloc). No-op when the note has no create action.
+  static void stashPendingCreateLink(ThreadId threadId, Note? note) {
+    final createAction = note?.actions
+        ?.whereType<CreateLinkUserAction>()
+        .firstOrNull;
+    if (createAction == null) return;
+    final fileActions =
+        note?.actions?.whereType<FileUserAction>().toList() ?? [];
+    pendingCreateLinks[threadId.toString()] = {
+      'create_link': {
+        'twist_instance_id': createAction.twistInstanceId,
+        'channel_id': createAction.channelId,
+        'type': createAction.linkType,
+        'status': createAction.status,
+      },
+      if (note?.content != null) 'note_content': note!.content,
+      if (fileActions.isNotEmpty)
+        'note_actions': fileActions.map((a) => a.toJson()).toList(),
+    };
+  }
 
   @override
   Map<String, String> buildParams({
@@ -4892,6 +4924,10 @@ SELECT
   DateTime? get archivedAt => _thread.archivedAt;
   bool get draft => _thread.draft;
 
+  /// Scheduled sending: the mirrored hold instant for a thread composed with
+  /// a scheduled first note. Null = live (or never held).
+  DateTime? get sendAt => _thread.sendAt;
+
   /// The actor credited with causing this thread's creation: the user's
   /// primary contact for app threads, the resolved external author for
   /// connector threads, and the twist for non-connection twist threads.
@@ -6198,6 +6234,10 @@ SELECT
     // The topic (Plot channel) this thread is posted into. Set on
     // create-into-a-topic (see the new-thread compose flow); null clears it.
     Value<Uuid?> topicId = const Value.absent(),
+
+    // Scheduled sending: mirrors the composing note's send_at on a scheduled
+    // new-thread compose so the server holds the thread shell too.
+    Value<DateTime?> sendAt = const Value.absent(),
   }) {
     final now = DateTime.now();
 
@@ -6230,6 +6270,7 @@ SELECT
         bumpedAt.present ||
         readAt.present ||
         topicId.present ||
+        sendAt.present ||
         title.present) {
       activityDirty = true;
       // Read-state fields (unread, readAt, bumpedAt) sync via
@@ -6250,6 +6291,7 @@ SELECT
           archivedAt.present ||
           muteByThreadId.present ||
           topicId.present ||
+          sendAt.present ||
           title.present;
       activity = _thread.copyWith(
         priorityId: priority?.id,
@@ -6276,6 +6318,7 @@ SELECT
         bumpedAt: bumpedAt,
         readAt: readAt,
         topicId: topicId,
+        sendAt: sendAt,
         title: !recurring ? title : const Value.absent(),
         unread: unread,
       );

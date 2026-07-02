@@ -15,5 +15,6 @@ SELECT
     r."order",
     r.early_notifications_enabled,
     r.notify_window,
-    r.see_within
+    r.see_within,
+    r.send_window
 FROM role r;

@@ -357,7 +357,7 @@
         "binding": "IMAGES"
       },
       "triggers": {
-        "crons": ["*/5 * * * *"]
+        "crons": ["*/5 * * * *", "* * * * *"]
       }
     },
     "production": {
@@ -666,7 +666,7 @@
         "binding": "IMAGES"
       },
       "triggers": {
-        "crons": ["*/5 * * * *"]
+        "crons": ["*/5 * * * *", "* * * * *"]
       }
     }
   },

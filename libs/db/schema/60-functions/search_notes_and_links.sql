@@ -35,7 +35,10 @@ BEGIN
         JOIN priority p ON p.id = tp.priority_id
         WHERE n.embedding IS NOT NULL
           AND n.archived_at IS NULL AND n.draft = FALSE
+          -- Scheduled-send hold: held notes are searchable only by their author
+          AND (n.send_at IS NULL OR n.send_at <= now() OR n.created_by = requesting_user_id)
           AND t.archived_at IS NULL
+          AND (t.send_at IS NULL OR t.send_at <= now() OR t.created_by = requesting_user_id)
           AND t.contacts && "user".user_contact_ids(requesting_user_id)
           AND (
             n.created_by = requesting_user_id
@@ -60,6 +63,7 @@ BEGIN
         JOIN priority p ON p.id = tp.priority_id
         WHERE t.embedding IS NOT NULL AND l.thread_id IS NOT NULL
           AND t.archived_at IS NULL
+          AND (t.send_at IS NULL OR t.send_at <= now() OR t.created_by = requesting_user_id)
           AND t.contacts && "user".user_contact_ids(requesting_user_id)
           AND (1 - (t.embedding <=> query_embedding::halfvec)) >= similarity_threshold
     ) combined

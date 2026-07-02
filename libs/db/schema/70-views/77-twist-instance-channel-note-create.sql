@@ -61,6 +61,10 @@ WHERE
     -- n.seq, so archiving a note re-surfaces it as a "new note" and re-fires
     -- the create dispatch. An archived note must not generate a create/send.
     AND n.archived_at IS NULL
+    -- Scheduled-send hold: a held note (future send_at) must not dispatch;
+    -- the release sweep nulls send_at and bumps seq so it re-qualifies here
+    -- at the scheduled instant.
+    AND (n.send_at IS NULL OR n.send_at <= now())
     AND n.created_by != ptc.twist_instance_id
     AND n.created_at > pt.created_at
 ORDER BY

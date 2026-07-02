@@ -6,6 +6,7 @@ import 'package:plot/widget/color_dot.dart';
 import 'package:plot/widget/widget.dart';
 
 import 'base.dart';
+import 'early_notifications.dart' show ShowRoleSendWindowSettings;
 import 'role_notifications.dart';
 
 /// Modal for creating a new [Role]. Collects name + colour only — notification
@@ -171,11 +172,13 @@ FormSelect<ThemeColor> _colorSelect({required ThemeColor initial}) {
   );
 }
 
-/// The role "…" menu: edit the role's name/colour and its notification
-/// template. Mirrors [prioritySecondaryCommands].
+/// The role "…" menu: edit the role's name/colour, its notification
+/// template, and its send-window template. Mirrors
+/// [prioritySecondaryCommands].
 List<Command> roleSecondaryCommands(Role role) => [
   EditRoleCommand(role),
   ShowRoleNotificationsSettings(role),
+  ShowRoleSendWindowSettings(role),
 ];
 
 /// The role overflow menu, mirroring [ShowPriorityCommands].
