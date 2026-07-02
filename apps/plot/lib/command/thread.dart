@@ -116,8 +116,16 @@ class ChangeCurrentThread extends ThreadCommand {
       nowBloc.setCurrentEvent(thread);
     }
 
-    // No-op if the thread is already selected
-    if (thread != null && priorityBloc.state.thread?.id == thread!.id) {
+    // No-op if the thread is already selected AND visibly open beside the
+    // list (multi-panel). In single-panel the list and an open thread are
+    // never shown together, so a tap from the list must always (re)open the
+    // thread — even when `state.thread` is stale from a back-navigation that
+    // didn't clear it (e.g. a notification/deep-link single-ThreadRoute stack
+    // where the imperative clear-on-back was bypassed), which otherwise makes
+    // the re-tap silently do nothing.
+    if (thread != null &&
+        layoutBloc.state.multiPanel &&
+        priorityBloc.state.thread?.id == thread!.id) {
       return const CommandDone();
     }
 

@@ -615,6 +615,24 @@ class Note extends Equatable implements Comparable<Note> {
     return Note._fromStore(noteRow: noteRow, tags: tagsRow);
   }
 
+  /// Incrementally refresh an already-loaded thread's notes, tags and
+  /// reactions. Unlike [pullForActivity] — an `initial` pull that self-skips
+  /// once the per-thread cursor exists (see [Store.pull]'s
+  /// `initial && initialized` short-circuit) — this fetches `seq >= cursor`
+  /// deltas scoped to the thread (`/sync/notes?thread_id=…`), so a note that
+  /// landed since the thread was last opened is written locally instead of
+  /// waiting for the next global [pullUpdates]. Idempotent (insertOrReplace).
+  static Future<void> refreshForActivity(ThreadId threadId) async {
+    await Future.wait([
+      Store.get.pull(Store.get.notes, NotesBase(threadId: threadId)),
+      Store.get.pull(Store.get.noteTags, NoteTagsBase(threadId: threadId)),
+      Store.get.pull(
+        Store.get.noteReactions,
+        NoteReactionsBase(threadId: threadId),
+      ),
+    ]);
+  }
+
   /// Ensure notes are loaded for an activity, pulling them on first view.
   /// Resolves once this thread's notes are guaranteed loaded: immediately if a
   /// "notes:{threadId}" sync state already exists, otherwise after
@@ -627,7 +645,20 @@ class Note extends Equatable implements Comparable<Note> {
         await (Store.get.select(Store.get.syncStates)
               ..where((s) => s.entity.equals(entity)))
             .getSingleOrNull();
-    if (syncState != null) return;
+    if (syncState != null) {
+      // Already loaded once. The local watch stream renders the cached notes
+      // immediately, so don't block on the network — but a reply may have
+      // arrived since the last global sync (e.g. the very reply behind the
+      // notification the user just tapped). Kick a background incremental
+      // refresh so it appears on open instead of only after leaving and
+      // returning. An `initial` [pullForActivity] would self-skip here.
+      unawaited(
+        refreshForActivity(threadId).catchError((Object e) {
+          log.warning('Failed to refresh notes for activity $threadId: $e');
+        }),
+      );
+      return;
+    }
     // Never loaded notes for this activity - pull now.
     log.info('First time viewing activity $threadId, pulling notes');
     await pullForActivity(threadId);

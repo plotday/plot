@@ -1624,8 +1624,15 @@ class _PriorityPageState extends State<PriorityPage>
                 final item = ActivityFeedThreadRow(
                   key: rowKey,
                   baseThread: baseThread,
+                  // Row selection is a multi-panel concept — it marks which
+                  // thread is open in the side panel beside the list. In
+                  // single-panel the list and an open thread are never shown
+                  // together, so never highlight a row there (state.thread can
+                  // linger after a back-navigation that didn't clear it — e.g.
+                  // a notification/deep-link single-ThreadRoute stack).
                   selected:
                       !entry.ghost &&
+                      context.isMultiPanel &&
                       state.thread != null &&
                       baseThread.id == state.thread!.id,
                   now: agendaActivity.now,
