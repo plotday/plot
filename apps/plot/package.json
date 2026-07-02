@@ -28,7 +28,7 @@
     "screenshots": "tsx screenshots/orchestrate.ts"
   },
   "devDependencies": {
-    "playwright": "^1.49.0",
+    "playwright": "^1.61.1",
     "tsx": "^4.19.2",
     "@types/node": "^22.10.0"
   }

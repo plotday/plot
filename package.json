@@ -65,18 +65,18 @@
     "@eslint/js": "^10.0.1",
     "@nx/vite": "20.3.0",
     "@plotday/eslint-config-custom": "workspace:*",
-    "@posthog/cli": "0.7.28",
+    "@posthog/cli": "0.7.34",
     "@trivago/prettier-plugin-sort-imports": "^4.1.1",
     "eslint": "^10.6.0",
     "husky": "^8.0.0",
-    "markdownlint-cli2": "^0.22.1",
+    "markdownlint-cli2": "^0.23.0",
     "nopy": "^0.2.9",
     "nx": "20.3.0",
     "prettier": "^2.5.1",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.61.1",
+    "typescript-eslint": "^8.62.1",
     "vitest": "^0.33.0",
-    "wrangler": "^4.106.0"
+    "wrangler": "^4.107.0"
   },
   "nx": {},
   "pnpm": {

@@ -25,16 +25,16 @@
     "@plotday/worker-util": "workspace:^",
     "kysely": "^0.29.2",
     "pg": "^8.18.0",
-    "posthog-node": "^5.38.1"
+    "posthog-node": "^5.39.4"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260617.1",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@plotday/eslint-config-custom": "workspace:*",
     "@plotday/tsconfig": "workspace:*",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.16.0",
     "vitest": "^3.0.5",
-    "wrangler": "^4.106.0"
+    "wrangler": "^4.107.0"
   },
   "nx": {
     "tags": [
