@@ -1430,8 +1430,6 @@ export async function processEmailThreadsFn(
             actorId,
             isStarred
           );
-          // Prevent the onThreadToDo callback from echoing back
-          await host.set(`skip_todo_writeback:${thread.id}`, true);
         }
         await host.set(`starred:${thread.id}`, isStarred);
       }
@@ -1694,12 +1692,6 @@ export async function onThreadToDoFn(
   const threadId = meta.threadId as string;
   const channelId = (meta.channelId ?? meta.syncableId) as string;
   if (!threadId || !channelId) return;
-
-  // Loop prevention: skip if this change originated from Gmail star sync
-  if (await host.get(`skip_todo_writeback:${threadId}`)) {
-    await host.clear(`skip_todo_writeback:${threadId}`);
-    return;
-  }
 
   // Best-effort: if the connection lost its Google auth, skip the star
   // write-back instead of throwing (the to-do change already lives in Plot).
