@@ -82,7 +82,8 @@ BEGIN
         COALESCE((v_payload ->> 'p_set_read_at')::boolean, FALSE),
         COALESCE((v_payload ->> 'p_set_order')::boolean, FALSE),
         COALESCE((v_payload ->> 'p_set_on')::boolean, FALSE),
-        COALESCE((v_payload ->> 'p_set_at')::boolean, FALSE)
+        COALESCE((v_payload ->> 'p_set_at')::boolean, FALSE),
+        (v_payload ->> 'p_write_source')::uuid
     );
 END;
 $function$;

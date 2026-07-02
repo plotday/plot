@@ -81,6 +81,71 @@ END;
 $$
 LANGUAGE plpgsql;
 
+-- thread_state variant: besides the base seq/updated_at bump, it maintains
+-- two PER-DIMENSION change cursors and their write-provenance so connector
+-- write-back dispatch fires only on real, non-echoed transitions:
+--   read_seq/read_source  — advance iff read_at changes
+--   todo_seq/todo_source  — advance iff active/on/at change
+-- *_source = the connector twist_instance that caused the write (via the
+-- plot.write_source_twist_instance GUC set inside upsert/clear_thread_state),
+-- or NULL for Plot-side (user/AI) writes. See the two twist_instance_thread_*
+-- views (COALESCE(<dim>_seq, seq) cursor + "<dim>_source IS DISTINCT FROM pt.id"
+-- echo filter). Nullable seq columns COALESCE to `seq` for pre-feature rows.
+CREATE OR REPLACE FUNCTION thread_state_seq_and_updated_at ()
+    RETURNS TRIGGER
+    AS $$
+DECLARE
+    v_source uuid;
+BEGIN
+    v_source := NULLIF(current_setting('plot.write_source_twist_instance', TRUE), '')::uuid;
+
+    -- Activity-only maintenance suppresses the cursor (mirrors
+    -- update_seq_and_updated_at). Preserve ALL per-dimension bookkeeping too.
+    IF TG_OP = 'UPDATE'
+       AND current_setting('plot.skip_activity_seq', TRUE) = 'on' THEN
+        NEW.updated_at = OLD.updated_at;
+        NEW.seq = OLD.seq;
+        NEW.read_seq = OLD.read_seq;
+        NEW.read_source = OLD.read_source;
+        NEW.todo_seq = OLD.todo_seq;
+        NEW.todo_source = OLD.todo_source;
+        RETURN NEW;
+    END IF;
+
+    NEW.updated_at = now();
+    NEW.seq = pg_current_xact_id();
+
+    IF TG_OP = 'UPDATE' THEN
+        IF NEW.read_at IS DISTINCT FROM OLD.read_at THEN
+            NEW.read_seq = pg_current_xact_id();
+            NEW.read_source = v_source;
+        ELSE
+            NEW.read_seq = OLD.read_seq;
+            NEW.read_source = OLD.read_source;
+        END IF;
+
+        IF NEW.active IS DISTINCT FROM OLD.active
+           OR NEW."on" IS DISTINCT FROM OLD."on"
+           OR NEW."at" IS DISTINCT FROM OLD."at" THEN
+            NEW.todo_seq = pg_current_xact_id();
+            NEW.todo_source = v_source;
+        ELSE
+            NEW.todo_seq = OLD.todo_seq;
+            NEW.todo_source = OLD.todo_source;
+        END IF;
+    ELSE
+        -- INSERT: both dimensions are newly established by this writer.
+        NEW.read_seq = pg_current_xact_id();
+        NEW.read_source = v_source;
+        NEW.todo_seq = pg_current_xact_id();
+        NEW.todo_source = v_source;
+    END IF;
+
+    RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+
 -- Same as update_seq_and_updated_at, for tables that don't have an updated_at
 -- column (e.g. twist_instance_connection — driven by per-field lifecycle
 -- timestamps). Only writes seq.

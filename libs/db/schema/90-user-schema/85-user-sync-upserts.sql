@@ -987,7 +987,8 @@ CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
     p_set_read_at boolean DEFAULT FALSE,
     p_set_order boolean DEFAULT FALSE,
     p_set_on boolean DEFAULT FALSE,
-    p_set_at boolean DEFAULT FALSE
+    p_set_at boolean DEFAULT FALSE,
+    p_write_source uuid DEFAULT NULL
 )
     RETURNS thread_state
     LANGUAGE plpgsql
@@ -1000,6 +1001,12 @@ DECLARE
     v_tp_found boolean;
     v_row thread_state;
 BEGIN
+    -- Provenance for connector write-back echo suppression: stamps the
+    -- thread_state trigger via a txn-local GUC (single statement = own txn,
+    -- so the trigger fired within the write sees it; '' clears it so it can't
+    -- leak to a later RPC in the same withUserDb transaction).
+    PERFORM set_config('plot.write_source_twist_instance', COALESCE(p_write_source::text, ''), true);
+
     SELECT
         tp.priority_id, tp.revoked_at, TRUE
         INTO v_priority_id, v_revoked_at, v_tp_found
@@ -1037,7 +1044,8 @@ BEGIN
                 'p_set_read_at', p_set_read_at,
                 'p_set_order', p_set_order,
                 'p_set_on', p_set_on,
-                'p_set_at', p_set_at
+                'p_set_at', p_set_at,
+                'p_write_source', p_write_source
             )
         )
         ON CONFLICT (user_id, thread_id) DO UPDATE SET
@@ -1121,7 +1129,8 @@ CREATE OR REPLACE FUNCTION "user".clear_thread_state (
     user_id uuid,
     p_thread_id uuid,
     p_read_at timestamptz DEFAULT now(),
-    p_bumped_at timestamptz DEFAULT NULL
+    p_bumped_at timestamptz DEFAULT NULL,
+    p_write_source uuid DEFAULT NULL
 )
     RETURNS void
     LANGUAGE plpgsql
@@ -1132,6 +1141,8 @@ DECLARE
     v_priority_id uuid;
     v_threshold timestamptz;
 BEGIN
+    PERFORM set_config('plot.write_source_twist_instance', COALESCE(p_write_source::text, ''), true);
+
     SELECT
         tp.priority_id INTO v_priority_id
     FROM

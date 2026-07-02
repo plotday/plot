@@ -35,6 +35,13 @@ CREATE TABLE "public"."thread_state" (
     "on" daterange,                 -- per-user "do on this date"
     "at" tstzrange,                 -- per-user "do at this time"
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
+    -- Per-dimension change cursors + write-provenance for connector write-back
+    -- dispatch. Nullable, no default (metadata-only DDL, no rewrite): views
+    -- COALESCE(<dim>_seq, seq). Maintained by thread_state_seq_and_updated_at.
+    "read_seq" xid8,
+    "todo_seq" xid8,
+    "read_source" uuid,
+    "todo_source" uuid,
     PRIMARY KEY (user_id, thread_id),
     -- Mutually exclusive timing fields; both null is allowed (no timed intent).
     CONSTRAINT thread_state_at_xor_on CHECK (
@@ -42,10 +49,10 @@ CREATE TABLE "public"."thread_state" (
     )
 );
 
--- Trigger for updated_at / seq
+-- Trigger for updated_at / seq (+ per-dimension read/todo cursors + provenance)
 CREATE TRIGGER set_thread_state_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_state"
-    FOR EACH ROW EXECUTE FUNCTION update_seq_and_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION thread_state_seq_and_updated_at();
 
 CREATE INDEX idx_thread_state_seq ON "public"."thread_state" ("seq");
 

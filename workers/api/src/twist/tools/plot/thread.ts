@@ -250,6 +250,7 @@ export async function markThreadUnreadForUsers(
         p_set_importance: false,
         p_set_read_at: true,
         p_note_created_at: noteCreatedAt,
+        p_write_source: plot.twistInstanceId,
       });
     } catch (err) {
       const logger = createLogger({
@@ -306,6 +307,7 @@ export async function markThreadReadForOwner(
   await rpcUser(plot.db, "clear_thread_state", {
     user_id: owner.owner_id,
     p_thread_id: threadId,
+    p_write_source: plot.twistInstanceId,
   });
 }
 

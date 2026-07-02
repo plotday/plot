@@ -2596,8 +2596,12 @@ export type Database = {
           on: unknown
           order: number | null
           read_at: string | null
+          read_seq: unknown
+          read_source: string | null
           seq: unknown
           thread_id: string
+          todo_seq: unknown
+          todo_source: string | null
           updated_at: string
           urgent: boolean
           user_id: string
@@ -2611,8 +2615,12 @@ export type Database = {
           on?: unknown
           order?: number | null
           read_at?: string | null
+          read_seq?: unknown
+          read_source?: string | null
           seq?: unknown
           thread_id: string
+          todo_seq?: unknown
+          todo_source?: string | null
           updated_at?: string
           urgent?: boolean
           user_id: string
@@ -2626,8 +2634,12 @@ export type Database = {
           on?: unknown
           order?: number | null
           read_at?: string | null
+          read_seq?: unknown
+          read_source?: string | null
           seq?: unknown
           thread_id?: string
+          todo_seq?: unknown
+          todo_source?: string | null
           updated_at?: string
           urgent?: boolean
           user_id?: string
@@ -6726,6 +6738,7 @@ export type Database = {
           p_bumped_at?: string
           p_read_at?: string
           p_thread_id: string
+          p_write_source?: string
           user_id: string
         }
         Returns: undefined
@@ -7112,6 +7125,7 @@ export type Database = {
           p_set_urgent?: boolean
           p_thread_id: string
           p_urgent?: boolean
+          p_write_source?: string
           user_id: string
         }
         Returns: Database["public"]["Tables"]["thread_state"]["Row"]

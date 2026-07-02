@@ -2114,6 +2114,53 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Mark a connector-owned thread read for `userId`, stamping write-provenance
+   * so the dispatch views don't echo onThreadRead back to this connector.
+   *
+   * The trigger stamps thread_state.read_source from the txn-local GUC
+   * 'plot.write_source_twist_instance' (see upsert/clear_thread_state and
+   * thread_state_seq_and_updated_at). set_config(..., true) scopes to the
+   * CURRENT transaction, so the SET and the UPDATE below must run in the
+   * same transaction/connection for the stamp to take.
+   *
+   * Callers may pass a plain (non-transactional) `this.db` — the common case
+   * at every real call site, built fresh from twistFactory — in which case we
+   * open an explicit transaction to guarantee both statements share a
+   * connection. But this method is also exercised directly by tests against
+   * an already-open trx (this.db.isTransaction === true); Kysely's
+   * Transaction.transaction() throws ("calling the transaction method for a
+   * Transaction is not supported") on nested transactions, so in that case we
+   * run the SET + UPDATE directly on this.db instead of nesting.
+   */
+  private async markThreadStateReadFromConnector(
+    threadId: string,
+    userId: string
+  ): Promise<void> {
+    const run = async (trx: Kysely<DB>) => {
+      await sql`SELECT set_config('plot.write_source_twist_instance', ${this.twistInstanceId}, true)`.execute(
+        trx
+      );
+      await trx
+        .updateTable("thread_state")
+        .set({ read_at: new Date() })
+        .where("thread_id", "=", threadId)
+        .where("user_id", "=", userId)
+        .where("read_at", "is", null)
+        .execute();
+      // Reset the GUC so it can't leak to a later direct write sharing this
+      // transaction/connection (only reachable via the isTransaction branch,
+      // since the fresh-connection branch's transaction ends right after).
+      await sql`SELECT set_config('plot.write_source_twist_instance', '', true)`.execute(trx);
+    };
+
+    if (this.db.isTransaction) {
+      await run(this.db);
+    } else {
+      await this.db.transaction().execute(run);
+    }
+  }
+
+  /**
    * Apply or clear to-do (active) state for a specific user on a specific
    * thread. Shared by setThreadToDo (which first resolves thread+user from a
    * source URL + actor) and saveLink (which already has the threadId and uses
@@ -2148,6 +2195,7 @@ export class Integrations extends Tool implements IAuth {
         p_set_urgent: false,
         p_set_importance: false,
         p_set_on: true,
+        p_write_source: this.twistInstanceId,
       });
 
       await this.db
@@ -2167,13 +2215,7 @@ export class Integrations extends Tool implements IAuth {
         });
       }
     } else {
-      await this.db
-        .updateTable("thread_state")
-        .set({ read_at: new Date() })
-        .where("thread_id", "=", threadId)
-        .where("user_id", "=", userId)
-        .where("read_at", "is", null)
-        .execute();
+      await this.markThreadStateReadFromConnector(threadId, userId);
     }
 
     const tp = await this.db
@@ -2285,13 +2327,7 @@ export class Integrations extends Tool implements IAuth {
       // drops out of the action tabs.
       const channelLinkTypes = await this.getChannelLinkTypesForThread(threadId);
       if (this.isStatusDone(dbLink.type, dbLink.status, channelLinkTypes.length > 0 ? channelLinkTypes : undefined)) {
-        await this.db
-          .updateTable("thread_state")
-          .set({ read_at: new Date() })
-          .where("thread_id", "=", threadId as string)
-          .where("user_id", "=", contact.user_id)
-          .where("read_at", "is", null)
-          .execute();
+        await this.markThreadStateReadFromConnector(threadId as string, contact.user_id);
       }
     } catch (error) {
       console.error("[thread_state] Failed to file thread_state from link assignment:", error);
@@ -6494,6 +6530,7 @@ export class Integrations extends Tool implements IAuth {
         p_set_importance: false,
         p_set_read_at: true,
         p_note_created_at: new Date().toISOString(),
+        p_write_source: this.twistInstanceId,
       });
     } catch (err) {
       createLogger({ twist_instance_id: this.twistInstanceId }).error(

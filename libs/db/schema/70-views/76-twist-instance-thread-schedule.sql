@@ -1,9 +1,12 @@
 -- Per-user thread_state changes for threads created by each twist.
 -- Used to dispatch onThreadToDo callbacks to sources.
 --
--- NOTE: rows are emitted even when `on`/`at` are cleared (no schedule).
--- Dispatchers derive `todo` from the presence of `on`/`at` and whether
--- read_at is set.
+-- The todo dimension is active/on/at only. `deriveScheduleTodo`
+-- (workers/api/src/twist/tools/schedule-todo.ts) deliberately IGNORES read_at
+-- — reading a starred thread must not clear the star. Cursor is per-dimension:
+-- COALESCE(todo_seq, seq) advances only when active/on/at change, so a pure
+-- read write no longer re-fires onThreadToDo. todo_source IS DISTINCT FROM the
+-- twist_instance suppresses the connector's own synced-in star from echoing.
 CREATE OR REPLACE VIEW "public"."twist_instance_thread_schedule"
 AS
 SELECT
@@ -15,7 +18,7 @@ SELECT
     ts.active,
     ts.read_at,
     ts.updated_at,
-    ts.seq,
+    COALESCE(ts.todo_seq, ts.seq) AS seq,
     tp.priority_id
 FROM
     twist_instance pt
@@ -26,5 +29,6 @@ WHERE
     a.draft = FALSE
     AND pt.archived_at IS NULL
     AND ts.updated_at > pt.created_at
+    AND ts.todo_source IS DISTINCT FROM pt.id
 ORDER BY
-    ts.updated_at ASC;
+    COALESCE(ts.todo_seq, ts.seq) ASC;
