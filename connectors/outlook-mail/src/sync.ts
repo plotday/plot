@@ -1456,8 +1456,6 @@ export async function processConversationsFn(
             actorId,
             isFlagged
           );
-          // Prevent the onThreadToDo callback from echoing back.
-          await host.set(`skip_todo_writeback:${conversationId}`, true);
         }
         await host.set(`flagged:${conversationId}`, isFlagged);
       }
@@ -1523,12 +1521,6 @@ export async function onThreadToDoFn(
   const conversationId = meta.conversationId as string;
   const channelId = (meta.channelId ?? meta.syncableId) as string;
   if (!conversationId || !channelId) return;
-
-  // Loop prevention: skip if this change originated from Outlook flag sync.
-  if (await host.get(`skip_todo_writeback:${conversationId}`)) {
-    await host.clear(`skip_todo_writeback:${conversationId}`);
-    return;
-  }
 
   // Update local state BEFORE calling Graph, so the notification fired by
   // our own write sees isFlagged === wasFlagged and doesn't re-propagate.

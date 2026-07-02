@@ -73,6 +73,41 @@ describe("saveStarredThread", () => {
     const saved = saveLink.mock.calls[0][0];
     expect(saved.todo).toBe(true);
     expect(saved.status).toBeUndefined();
+    // The platform now suppresses the onThreadToDo echo via write-source
+    // provenance stamped by saveLink's todo path — the connector no longer
+    // writes a skip_todo_writeback echo guard.
+    expect(store.set).not.toHaveBeenCalledWith(
+      expect.stringContaining("skip_todo_writeback"),
+      expect.anything()
+    );
+  });
+});
+
+describe("onThreadToDo — no skip_todo_writeback echo guard", () => {
+  it("writes back to Slack even when a stale skip_todo_writeback key is present", async () => {
+    const store = makeStore({
+      // A leftover key from a pre-cleanup deploy must NOT short-circuit the
+      // write-back — the guard has been removed.
+      "skip_todo_writeback:C123:111.000": true,
+    });
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    const api = { addStar: vi.fn(), removeStar: vi.fn() };
+    vi.spyOn(
+      slack as unknown as { getApi: (c: string) => Promise<unknown> },
+      "getApi"
+    ).mockResolvedValue(api);
+
+    const thread = { meta: { channelId: "C123", threadTs: "111.000" } };
+    await slack.onThreadToDo(thread as never, {} as never, true, {});
+
+    expect(api.addStar).toHaveBeenCalledWith("C123", "111.000");
+    expect(store.clear).not.toHaveBeenCalledWith(
+      "skip_todo_writeback:C123:111.000"
+    );
   });
 });
 

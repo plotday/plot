@@ -370,9 +370,6 @@ export class Slack extends Connector<Slack> {
     // Sweep per-thread state for this channel so a re-enable starts clean.
     const starredKeys = await this.tools.store.list(`starred:${channelId}:`);
     for (const key of starredKeys) await this.clear(key);
-
-    const skipKeys = await this.tools.store.list(`skip_todo_writeback:${channelId}:`);
-    for (const key of skipKeys) await this.clear(key);
   }
 
   async setupChannelWebhook(channelId: string): Promise<void> {
@@ -713,7 +710,7 @@ export class Slack extends Connector<Slack> {
    * Re-fetch a Slack thread and upsert it (notes + per-message reactions).
    * Idempotent via `source`/`key` upsert; safe to call repeatedly.
    * Unlike {@link saveStarredThread} this does not touch the link's
-   * status or set the skipKey echo guard — it's purely a refresh path.
+   * to-do status — it's purely a refresh path.
    */
   private async refreshSlackThread(
     api: SlackApi,
@@ -845,9 +842,6 @@ export class Slack extends Connector<Slack> {
         error
       );
     }
-
-    // Block the onThreadToDo callback that Plot will queue.
-    await this.set(this.skipKey(channelId, parentTs), true);
 
     // Record the new state so subsequent duplicate events short-circuit.
     await this.set(this.starredKey(channelId, parentTs), isStarred);
@@ -1000,9 +994,6 @@ export class Slack extends Connector<Slack> {
     };
     if (messages[0]) link.facets = slackFacets(messages[0], channelId);
 
-    // Suppress the onThreadToDo echo Plot will fire from this write;
-    // handleStarEvent / backfillStars is already the source of truth.
-    await this.set(this.skipKey(channelId, threadTs), true);
     await this.tools.integrations.saveLink(link);
   }
 
@@ -1044,10 +1035,6 @@ export class Slack extends Connector<Slack> {
     return `starred:${channelId}:${threadTs}`;
   }
 
-  private skipKey(channelId: string, threadTs: string): string {
-    return `skip_todo_writeback:${channelId}:${threadTs}`;
-  }
-
   async onThreadToDo(
     thread: Thread,
     _actor: Actor,
@@ -1058,11 +1045,6 @@ export class Slack extends Connector<Slack> {
     const channelId = meta.channelId as string | undefined;
     const threadTs = meta.threadTs as string | undefined;
     if (!channelId || !threadTs) return;
-
-    if (await this.get(this.skipKey(channelId, threadTs))) {
-      await this.clear(this.skipKey(channelId, threadTs));
-      return;
-    }
 
     // Update local state BEFORE calling Slack so the webhook fired by our
     // own write sees isStarred === wasStarred and doesn't re-propagate.
