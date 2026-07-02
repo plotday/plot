@@ -347,7 +347,16 @@ Worker secrets and env vars (API keys, OAuth secrets, DSNs, etc.) all originate 
 
 ## Development Webhooks with Cloudflare Tunnel
 
-For testing webhooks from external services (Slack, Gmail, etc.) during local development, you can expose your local API worker via a Cloudflare Tunnel.
+For testing webhooks from external services (Slack, Gmail, etc.) during local development, you can expose your local API worker via a Cloudflare Tunnel. Each developer gets their own tunnel and hostname (`https://api-<you>.plot.day`), so multiple people can run tunnels concurrently without colliding.
+
+The `<you>` part defaults to the first dot-separated segment of your macOS account name (`whoami`), e.g. account `tobin.smith` → `tobin`. Override it with `TUNNEL_DEV_NAME=<name>` (set before `tunnel:setup`, or export it in your shell profile) if that guess is wrong.
+
+### Prerequisites (once per machine)
+
+```bash
+brew install cloudflared
+cloudflared tunnel login   # opens a browser to authorize against the plot.day Cloudflare account
+```
 
 ### Quick Start
 
@@ -355,8 +364,9 @@ For testing webhooks from external services (Slack, Gmail, etc.) during local de
 
 ```bash
 pnpm tunnel:setup
-cloudflared tunnel route dns plot-dev api-kris.plot.day
 ```
+
+This prints your resolved tunnel name/hostname and, at the end, the exact `cloudflared tunnel route dns ...` command to run once to create the DNS record — copy/paste it as printed.
 
 **2. Start development with webhooks:**
 
@@ -370,7 +380,7 @@ pnpm tunnel:start
 
 **3. Configure external services:**
 
-Use `https://api-kris.plot.day` as the webhook URL in your external service configuration. Webhooks will route to your local API (localhost:8787).
+Use `https://api-<you>.plot.day` (shown by `pnpm tunnel:setup` / `pnpm tunnel:status`) as the webhook URL in your external service configuration. Webhooks will route to your local API (localhost:8787).
 
 **4. Stop tunnel when done:**
 
@@ -380,11 +390,11 @@ pnpm tunnel:stop
 
 ### Webhook URLs
 
-When the tunnel is active, use these public URLs:
+When the tunnel is active, use these public URLs (substituting your own hostname):
 
-- **Slack**: `https://api-kris.plot.day/hook/slack`
-- **Gmail**: `https://api-kris.plot.day/hook/gmail/:topicId`
-- **Generic callbacks**: `https://api-kris.plot.day/hook/:token`
+- **Slack**: `https://api-<you>.plot.day/hook/slack`
+- **Gmail**: `https://api-<you>.plot.day/hook/gmail/:topicId`
+- **Generic callbacks**: `https://api-<you>.plot.day/hook/:token`
 
 ### Available Commands
 

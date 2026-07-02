@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 
-# Cloudflare Tunnel management for development
-# Exposes local API at api.kris.plot.day for webhook testing
+# Cloudflare Tunnel management for development.
+# Exposes local API at a per-developer hostname (https://api-<you>.plot.day)
+# for webhook testing.
+#
+# The developer identifier defaults to the first dot-separated segment of
+# `whoami` (e.g. macOS account "kris.braun" -> "kris"), which matches the
+# firstname@plot.day convention for most machines. Override it if that
+# guess is wrong for you:
+#   TUNNEL_DEV_NAME=tobin pnpm tunnel:setup
 
 set -euo pipefail
 
@@ -13,6 +20,21 @@ WORKSPACE_PATH="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 if GIT_COMMON_DIR=$(git -C "$WORKSPACE_PATH" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
   WORKSPACE_PATH="$(dirname "$GIT_COMMON_DIR")"
 fi
+
+resolve_dev_name() {
+  if [ -n "${TUNNEL_DEV_NAME:-}" ]; then
+    printf '%s' "$TUNNEL_DEV_NAME"
+    return
+  fi
+
+  local raw
+  raw="$(whoami | cut -d. -f1)"
+  printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-'
+}
+
+DEV_NAME="$(resolve_dev_name)"
+TUNNEL_NAME="plot-dev-$DEV_NAME"
+TUNNEL_HOSTNAME="api-$DEV_NAME.plot.day"
 
 CONFIG_PATH="$WORKSPACE_PATH/.cloudflared/config.yml"
 PID_PATH="$WORKSPACE_PATH/.tunnel.pid"
@@ -26,9 +48,16 @@ require_config() {
   fi
 }
 
+# The config file is the source of truth for the hostname actually in use
+# (it's written once at setup time and doesn't change if TUNNEL_DEV_NAME or
+# the git email changes later).
+config_hostname() {
+  awk -F'hostname:[[:space:]]*' '/hostname:/ { print $2; exit }' "$CONFIG_PATH"
+}
+
 start() {
   require_config
-  echo "Starting Cloudflare Tunnel (api.kris.plot.day → localhost:8787)"
+  echo "Starting Cloudflare Tunnel ($(config_hostname) → localhost:8787)"
   cloudflared tunnel --config "$CONFIG_PATH" run
 }
 
@@ -65,56 +94,61 @@ start_bg() {
 }
 
 stop() {
-  if [ ! -f "$WORKSPACE_PATH/.tunnel.pid" ]; then
+  if [ ! -f "$PID_PATH" ]; then
     echo "No tunnel PID file found"
     return 0
   fi
 
-  PID=$(cat "$WORKSPACE_PATH/.tunnel.pid")
+  PID=$(cat "$PID_PATH")
   if ps -p "$PID" > /dev/null 2>&1; then
     echo "Stopping tunnel (PID $PID)..."
     kill "$PID"
-    rm "$WORKSPACE_PATH/.tunnel.pid"
+    rm "$PID_PATH"
     echo "✓ Tunnel stopped"
   else
     echo "Tunnel not running (stale PID file removed)"
-    rm "$WORKSPACE_PATH/.tunnel.pid"
+    rm "$PID_PATH"
   fi
 }
 
 status() {
-  if [ ! -f "$WORKSPACE_PATH/.tunnel.pid" ]; then
+  if [ ! -f "$PID_PATH" ]; then
     echo "Tunnel: not running"
     return 1
   fi
 
-  PID=$(cat "$WORKSPACE_PATH/.tunnel.pid")
+  PID=$(cat "$PID_PATH")
   if ps -p "$PID" > /dev/null 2>&1; then
     echo "Tunnel: running (PID $PID)"
-    echo "Public URL: https://api.kris.plot.day"
+    if [ -f "$CONFIG_PATH" ]; then
+      echo "Public URL: https://$(config_hostname)"
+    fi
     echo "Local URL: http://localhost:8787"
     return 0
   else
     echo "Tunnel: not running (stale PID)"
-    rm "$WORKSPACE_PATH/.tunnel.pid"
+    rm "$PID_PATH"
     return 1
   fi
 }
 
 setup() {
   echo "Setting up Cloudflare Tunnel for Plot development"
+  echo "Developer: $DEV_NAME  (tunnel: $TUNNEL_NAME, hostname: $TUNNEL_HOSTNAME)"
+  echo "Wrong? Rerun with TUNNEL_DEV_NAME=<name> pnpm tunnel:setup"
   echo ""
 
-  # Check if tunnel already exists
-  EXISTING=$(cloudflared tunnel list 2>/dev/null | grep "plot-dev" | awk '{print $1}' || true)
+  # Match the tunnel name exactly - a substring grep would pick the wrong
+  # tunnel once more than one developer's "plot-dev-*" tunnel exists.
+  EXISTING=$(cloudflared tunnel list 2>/dev/null | awk -v name="$TUNNEL_NAME" '$2 == name { print $1 }')
 
   if [ -n "$EXISTING" ]; then
     echo "Found existing tunnel: $EXISTING"
     TUNNEL_ID="$EXISTING"
   else
-    echo "Creating new tunnel..."
-    cloudflared tunnel create plot-dev
-    TUNNEL_ID=$(cloudflared tunnel list | grep "plot-dev" | awk '{print $1}')
+    echo "Creating new tunnel: $TUNNEL_NAME"
+    cloudflared tunnel create "$TUNNEL_NAME"
+    TUNNEL_ID=$(cloudflared tunnel list | awk -v name="$TUNNEL_NAME" '$2 == name { print $1 }')
   fi
 
   echo ""
@@ -129,11 +163,11 @@ tunnel: $TUNNEL_ID
 credentials-file: $HOME/.cloudflared/$TUNNEL_ID.json
 
 ingress:
-  - hostname: api.kris.plot.day
+  - hostname: $TUNNEL_HOSTNAME
     service: http://localhost:8787
     originRequest:
       noTLSVerify: true
-      httpHostHeader: api.kris.plot.day
+      httpHostHeader: $TUNNEL_HOSTNAME
   - service: http_status:404
 EOF
 
@@ -141,7 +175,7 @@ EOF
   echo ""
   echo "Next steps:"
   echo "1. Create DNS record (if not exists):"
-  echo "   cloudflared tunnel route dns plot-dev api.kris.plot.day"
+  echo "   cloudflared tunnel route dns $TUNNEL_NAME $TUNNEL_HOSTNAME"
   echo ""
   echo "2. Start tunnel:"
   echo "   pnpm tunnel:start"
