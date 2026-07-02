@@ -141,6 +141,25 @@ describe("normalize (v2)", () => {
     ]);
   });
 
+  it("drops reactions_counter entries with no value", () => {
+    const msg = normalizeMessage({
+      object: "Message",
+      id: "m2b",
+      chat_id: "c1",
+      sender_id: "ACoAA12345",
+      timestamp: "2026-05-22T10:06:00.000Z",
+      is_sender: false,
+      is_event: false,
+      text: "Nice",
+      attachments: [],
+      reactions_counter: [
+        { value: undefined as unknown as string, count: 1, reacted: false },
+        { value: "👍", count: 2, reacted: true },
+      ],
+    });
+    expect(msg.reactions).toEqual([{ value: "👍", senderId: "", sentByMe: true }]);
+  });
+
   it("surfaces eventType for is_event messages so connectors can skip them", () => {
     const msg = normalizeMessage({
       object: "Message",

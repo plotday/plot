@@ -24,4 +24,22 @@ void main() {
   test('unicode-subset without subset → open (null allowed)', () {
     expect(reactionCapabilitiesFromJson({'mode': 'unicode-subset'}).allowed, isNull);
   });
+
+  group('ReactionsConverter.fromJson', () {
+    const converter = ReactionsConverter();
+    test('parses valid emoji-keyed reactions', () {
+      final result = converter.fromJson({
+        '👍': ['019f2052-f423-7848-a8cd-68ba480d1f3d'],
+      });
+      expect(result!.keys, ['👍']);
+    });
+    test('skips malformed "undefined" and empty keys', () {
+      final result = converter.fromJson({
+        'undefined': ['019f2052-f423-7848-a8cd-68ba480d1f3d'],
+        '': ['019f2052-f423-7848-a8cd-68ba480d1f3d'],
+        '❤️': ['019f2052-f423-7848-a8cd-68ba480d1f3d'],
+      });
+      expect(result!.keys, ['❤️']);
+    });
+  });
 }

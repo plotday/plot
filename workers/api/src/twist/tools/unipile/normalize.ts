@@ -90,7 +90,12 @@ export function normalizeMessage(msg: UnipileMessage): ChatMessage {
     sentAt: new Date(msg.timestamp),
     text: msg.text ?? "",
     attachments: (msg.attachments ?? []).map(normalizeAttachment),
-    reactions: (msg.reactions_counter ?? []).map(normalizeReaction),
+    // The live API sometimes returns a counter entry with no `value` (the type
+    // optimistically declares `value: string`); drop those so a valueless
+    // reaction never propagates downstream as the emoji `"undefined"`.
+    reactions: (msg.reactions_counter ?? [])
+      .filter((r) => Boolean(r.value))
+      .map(normalizeReaction),
   };
 }
 

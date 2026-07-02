@@ -121,6 +121,12 @@ export function buildReactionsFromMessage(
   if (!msg.reactions || msg.reactions.length === 0) return undefined;
   const byEmoji = new Map<string, NewActor[]>();
   for (const r of msg.reactions) {
+    // Providers occasionally return a reaction with no emoji `value` (Unipile's
+    // `reactions_counter` type claims `value: string` but the live API omits it
+    // for some LinkedIn reactions). Skip these — otherwise the falsy value
+    // becomes the object key `"undefined"` below and renders as a literal
+    // "undefined" reaction pill.
+    if (!r.value) continue;
     const participant = chat.participants.find((p) => p.id === r.senderId);
     const actor: NewActor = participant
       ? profileToContact(participant)
@@ -129,6 +135,7 @@ export function buildReactionsFromMessage(
     if (existing) existing.push(actor);
     else byEmoji.set(r.value, [actor]);
   }
+  if (byEmoji.size === 0) return undefined;
   const out: NewReactions = {};
   for (const [emoji, actors] of byEmoji) out[emoji] = actors;
   return out;

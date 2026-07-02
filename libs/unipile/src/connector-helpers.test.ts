@@ -138,6 +138,24 @@ describe("buildReactionsFromMessage", () => {
   test("undefined when no reactions", () => {
     expect(buildReactionsFromMessage(msg({ reactions: [] }), c, "whatsapp")).toBeUndefined();
   });
+  test("skips reactions with a missing emoji value (no `undefined` key)", () => {
+    const m = msg({
+      reactions: [
+        // Simulates the live API omitting `value` on a counter entry.
+        { value: undefined as unknown as string, senderId: "p2", sentByMe: false },
+        { value: "👍", senderId: "p3", sentByMe: false },
+      ],
+    });
+    const out = buildReactionsFromMessage(m, c, "linkedin")!;
+    expect(Object.keys(out)).toEqual(["👍"]);
+    expect(out).not.toHaveProperty("undefined");
+  });
+  test("undefined when all reactions lack a value", () => {
+    const m = msg({
+      reactions: [{ value: undefined as unknown as string, senderId: "p2", sentByMe: false }],
+    });
+    expect(buildReactionsFromMessage(m, c, "linkedin")).toBeUndefined();
+  });
 });
 
 describe("buildNoteFromMessage", () => {

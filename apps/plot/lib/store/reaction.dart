@@ -135,6 +135,11 @@ class ReactionsConverter extends TypeConverter<Reactions?, String?>
     if (json == null) return null;
     final result = <Reaction, List<ActorId>>{};
     for (final entry in json.entries) {
+      // Guard against malformed emoji keys. A connector bug once stored
+      // reactions keyed on the literal string "undefined" (a JS `undefined`
+      // coerced to an object key); skip empty/"undefined" keys so such rows
+      // never render as a bogus reaction pill.
+      if (entry.key.isEmpty || entry.key == 'undefined') continue;
       final value = entry.value;
       if (value is! List<dynamic>) continue;
       final actors = value
