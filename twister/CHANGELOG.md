@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.69.0
+
+### Added
+
+- `createFocus` plan operation, `approved`/`results` fields on plan actions, and `PlanOperationResult` — plan operations are now executed server-side when the user approves, and the plan callback receives `(action, approved)` with per-operation results on the action. ([#247](https://github.com/plotday/plot/pull/247) [`31cd5b2`](https://github.com/plotday/plot/commit/31cd5b2a6d89f9e335daa2f6063925e696d27387))
+
 ## 0.68.0
 
 ### Added
