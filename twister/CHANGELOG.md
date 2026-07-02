@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.68.0
+
+### Added
+
+- `Connector.fixedChannels` flag. When `true`, the connector's channel set is a fixed, enumerated list (no channels ever appear dynamically), and the connect/edit modal hides the per-connection "Sync new channels" toggle. ([#245](https://github.com/plotday/plot/pull/245) [`41efed8`](https://github.com/plotday/plot/commit/41efed876c3d163ff073d8e250c5478be31bf58b))
+
 ## 0.67.0
 
 ### Added
