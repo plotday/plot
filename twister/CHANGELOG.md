@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.67.0
+
+### Added
+
+- `LinkTypeConfig.reactionCapabilities` and `CreateLinkDraft.attachments`. ([#243](https://github.com/plotday/plot/pull/243) [`f9ec108`](https://github.com/plotday/plot/commit/f9ec108383fe5f07d989566e32ded780bf983d1a))
+
+### Fixed
+
+- `SerializableArray` (and thus `Serializable`) now accept `readonly` arrays, so fields declared with `readonly T[]` (e.g. `ReactionCapabilities.allowed`/`subset`) can be stored via `this.set()` / `Store.set()`. ([#243](https://github.com/plotday/plot/pull/243) [`aeb6fee`](https://github.com/plotday/plot/commit/aeb6fee57e1fae22e64b847e557747ae833addb4))
+
 ## 0.66.0
 
 ### Added
