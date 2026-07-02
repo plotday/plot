@@ -12,6 +12,8 @@ import {
 import type { ThreadTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { processTwistBatch } from "../queue/updates";
+import { transientErrorReason } from "../utils/transient-error";
+import { TransientAlarmRetry, isTransientAlarmError } from "./alarm-retry";
 import {
   utf8ByteLength,
   buildSizeAwareBatches,
@@ -60,6 +62,7 @@ export class TwistSync extends DurableObject<Bindings> {
   private lastFingerprint: string | null = null;
   private repeatCount: number = 0;
   private consecutiveEmptyAlarms: number = 0;
+  private retry = new TransientAlarmRetry();
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -80,6 +83,31 @@ export class TwistSync extends DurableObject<Bindings> {
       durable_object: "TwistSync",
       twist_instance_id: this.twistInstanceId,
       ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
+  }
+
+  /**
+   * Emit a `push.transient` counter (NOT a captureException) for each
+   * suppressed transient platform blip, so a SUSTAINED spike trips the
+   * server-side volume alert (infra/posthog/alerts.tf) even though individual
+   * occurrences self-heal via the retry ladder. Shares the event + `reason`
+   * breakdown with PushNotify/UserSync/EmailNotify; `durable_object`
+   * distinguishes this DO.
+   */
+  private captureTransientCounter(error: unknown) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.capture({
+      distinctId: "system",
+      event: "push.transient",
+      properties: {
+        durable_object: "TwistSync",
+        reason: transientErrorReason(error),
+      },
     });
     this.ctx.waitUntil(postHog.shutdown());
   }
@@ -150,6 +178,8 @@ export class TwistSync extends DurableObject<Bindings> {
     // Reset circuit breaker on fresh notification — a new notify() means
     // something changed externally and we should try processing again.
     this.consecutiveEmptyAlarms = 0;
+    // Fresh activity also restores the transient-retry budget.
+    this.retry.reset();
 
     // If we have a pending alarm, let it handle the sync
     if (this.state.pendingAlarm) {
@@ -835,7 +865,32 @@ export class TwistSync extends DurableObject<Bindings> {
 
       this.state.lastSyncTime = now;
       }); // end withDb
+
+      this.retry.reset();
     } catch (error) {
+      // Transient platform faults (DO reset, Hyperdrive drop) self-heal:
+      // reschedule the alarm so this DO retries directly instead of leaning
+      // on SyncRecovery's next sweep (which adds ~30-60s of sync latency).
+      // Queue sends already happened-or-not atomically per batch and cursor
+      // advances are idempotent, so a re-run is safe. After the ladder is
+      // exhausted the error is captured — SyncRecovery remains the backstop.
+      if (isTransientAlarmError(error)) {
+        this.captureTransientCounter(error);
+        const handled = await this.retry.reschedule({
+          storage: this.ctx.storage,
+          logger,
+          error,
+          durableObject: "TwistSync",
+          logContext: { twist_instance_id: this.twistInstanceId ?? undefined },
+          beforeSchedule: () => {
+            this.state.pendingAlarm = true;
+          },
+          onScheduleFailed: () => {
+            this.state.pendingAlarm = false;
+          },
+        });
+        if (handled) return;
+      }
       logger.error("Error in TwistSync alarm", error as Error, {
         twist_instance_id: this.twistInstanceId,
       });

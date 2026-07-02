@@ -9,6 +9,7 @@ import { createLogger } from "@plotday/worker-util";
 import type { DB } from "../db-types";
 import { withDb, withUserDb } from "../db";
 import type { Bindings } from "../env";
+import { TransientAlarmRetry, isTransientAlarmError } from "./alarm-retry";
 import { enqueueJobs, type ClassifyJob } from "./classify-thread";
 import { notifyUserSyncByEnv } from "../app/sync/notify";
 import { isAiEnabled } from "../utils/ai-limits";
@@ -70,6 +71,7 @@ type PriorityRow = {
  */
 export class ChannelRouter extends DurableObject<Bindings> {
   private userId: string | null = null;
+  private retry = new TransientAlarmRetry();
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -90,6 +92,8 @@ export class ChannelRouter extends DurableObject<Bindings> {
         this.userId = body.userId;
         await this.ctx.storage.put("userId", body.userId);
       }
+      // Fresh work restores the transient-retry budget for the alarm.
+      this.retry.reset();
       await this.ctx.storage.setAlarm(Date.now() + DEBOUNCE_MS);
       return new Response("OK");
     }
@@ -113,7 +117,20 @@ export class ChannelRouter extends DurableObject<Bindings> {
         await runRouter(this.env, db, userId, logger);
       });
       await notifyUserSyncByEnv(this.env, userId);
+      this.retry.reset();
     } catch (error) {
+      // A transient platform blip (DO reset, Hyperdrive drop) shouldn't drop
+      // the routing pass until the user's next edit — reschedule and retry.
+      if (isTransientAlarmError(error)) {
+        const handled = await this.retry.reschedule({
+          storage: this.ctx.storage,
+          logger,
+          error,
+          durableObject: "ChannelRouter",
+          logContext: { user_id: userId },
+        });
+        if (handled) return;
+      }
       logger.error("ChannelRouter run failed", error as Error, {
         user_id: userId,
       });

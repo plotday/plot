@@ -7,6 +7,7 @@ import { createLogger } from "@plotday/worker-util";
 import { type Kysely, withDb } from "../db";
 import type { DB } from "../db-types";
 import { type Bindings } from "../env";
+import { TransientAlarmRetry, isTransientAlarmError } from "./alarm-retry";
 
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute
 const MINUTE_MS = 60 * 1000;
@@ -42,6 +43,7 @@ export class Usage extends DurableObject<Bindings> {
   private twistInstanceId?: string;
   private isDirty: boolean = false;
   private nextFlushTime: number | null = null;
+  private retry = new TransientAlarmRetry();
 
   static Get(
     env: {
@@ -283,8 +285,47 @@ export class Usage extends DurableObject<Bindings> {
     this.nextFlushTime = null;
     this.persistState();
 
-    if (this.isDirty) {
+    if (!this.isDirty) {
+      return;
+    }
+
+    try {
       await this.flushToDb();
+      this.retry.reset();
+    } catch (error) {
+      const logger = createLogger({
+        durable_object: "Usage",
+        operation: "alarm",
+        twist_instance_id: this.twistInstanceId,
+      });
+      // The buffered rows stay in SQLite and the flush is idempotent, so a
+      // transient platform blip just re-arms the alarm. Once the ladder is
+      // exhausted (or the error is a real fault) capture it; the data stays
+      // dirty and the next spend() re-arms the flush.
+      if (isTransientAlarmError(error)) {
+        const handled = await this.retry.reschedule({
+          storage: this.ctx.storage,
+          logger,
+          error,
+          durableObject: "Usage",
+          logContext: { twist_instance_id: this.twistInstanceId },
+          beforeSchedule: () => {
+            // Mark a flush as imminent so a concurrent spend() doesn't
+            // overwrite the short retry alarm with a full-interval one.
+            this.nextFlushTime = Date.now();
+            this.persistState();
+          },
+          onScheduleFailed: () => {
+            this.nextFlushTime = null;
+            this.persistState();
+          },
+        });
+        if (handled) return;
+      }
+      logger.error("Failed to flush usage to DB", error as Error, {
+        twist_instance_id: this.twistInstanceId,
+      });
+      this.captureException(error as Error);
     }
   }
 

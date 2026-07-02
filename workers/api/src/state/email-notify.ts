@@ -10,6 +10,8 @@ import {
   generateSummary,
   fallbackSummary,
 } from "../app/notification-summary";
+import { transientErrorReason } from "../utils/transient-error";
+import { TransientAlarmRetry, isTransientAlarmError } from "./alarm-retry";
 import { selectDigestThreads } from "./email-digest-query";
 
 /** 18 hours in milliseconds */
@@ -50,6 +52,7 @@ export function priorityDeepLinkUrl(
 
 export class EmailNotify extends DurableObject<Bindings> {
   private userId: string | null = null;
+  private retry = new TransientAlarmRetry();
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -64,6 +67,30 @@ export class EmailNotify extends DurableObject<Bindings> {
     postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "EmailNotify",
       ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
+  }
+
+  /**
+   * Emit a `push.transient` counter (NOT a captureException — these are
+   * expected, self-healing platform blips) so a SUSTAINED spike still trips
+   * the server-side volume alert (infra/posthog/alerts.tf). Shares the event
+   * + `reason` breakdown with PushNotify/UserSync so one alert watches the
+   * whole notification-delivery path; `durable_object` distinguishes them.
+   */
+  private captureTransientCounter(error: unknown) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.capture({
+      distinctId: "system",
+      event: "push.transient",
+      properties: {
+        durable_object: "EmailNotify",
+        reason: transientErrorReason(error),
+      },
     });
     this.ctx.waitUntil(postHog.shutdown());
   }
@@ -89,18 +116,31 @@ export class EmailNotify extends DurableObject<Bindings> {
       await this.ctx.storage.put("userId", userId);
     }
 
+    // Fresh trigger restores the full transient-retry budget for the alarm.
+    this.retry.reset();
+
+    const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
+
     const pendingNotifyTime =
       (await this.ctx.storage.get<number>("pendingNotifyTime")) ?? 0;
 
     if (pendingNotifyTime > 0) {
-      // Already have a pending alarm — keep the earlier one for batching
+      // Already have a pending cycle — keep the earlier window for batching.
+      // But if its alarm was lost (a setAlarm failure or storage wipe left
+      // the window orphaned), re-arm it at the original target so the digest
+      // isn't stranded forever behind the `pendingNotifyTime > 0` guard.
+      const scheduled = await this.ctx.storage.getAlarm();
+      if (scheduled === null) {
+        await this.ctx.storage.setAlarm(
+          pendingNotifyTime + EMAIL_DELAY_MS * multiplier
+        );
+      }
       return;
     }
 
     const now = Date.now();
     await this.ctx.storage.put("pendingNotifyTime", now);
 
-    const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
     await this.ctx.storage.setAlarm(now + EMAIL_DELAY_MS * multiplier);
   }
 
@@ -361,12 +401,31 @@ export class EmailNotify extends DurableObject<Bindings> {
           priority_count: priorities.length,
         });
       });
+
+      this.retry.reset();
+      await this.clearPending();
     } catch (error) {
+      // A transient platform blip (DO reset, Hyperdrive drop) must not
+      // abandon the digest cycle: keep pendingNotifyTime and re-arm the
+      // alarm so this cycle retries. Dedup state (`lastEmailedUnreadAt`,
+      // persisted before the queue send) still guards against duplicates.
+      if (isTransientAlarmError(error)) {
+        this.captureTransientCounter(error);
+        const handled = await this.retry.reschedule({
+          storage: this.ctx.storage,
+          logger,
+          error,
+          durableObject: "EmailNotify",
+          logContext: { user_id: this.userId ?? undefined },
+        });
+        // On a setAlarm failure the pending window stays set and the next
+        // notify() re-arms it via the lost-alarm check in handleNotify.
+        if (handled) return;
+      }
       logger.error("Error in EmailNotify alarm", error as Error, {
         user_id: this.userId ?? undefined,
       });
       this.captureException(error as Error);
-    } finally {
       await this.clearPending();
     }
   }

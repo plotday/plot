@@ -10,16 +10,12 @@ import {
   transientErrorReason,
 } from "../utils/transient-error";
 import { createLogger } from "@plotday/worker-util";
+import { TransientAlarmRetry, isTransientAlarmError } from "./alarm-retry";
 
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 300; // Minimum time to wait before sending, allowing batching
 const MAX_WAIT_MS = 2000; // Maximum time a batch can sit waiting before forced flush
 const MIN_INTERVAL_MS = 500; // Minimum gap between sync deliveries
-
-// Reschedule cadence after a transient platform error. Capped so a
-// misclassified persistent error can't loop indefinitely — after the cap
-// we fall back to waiting for the next notify() to schedule a fresh alarm.
-const TRANSIENT_RETRY_DELAYS_MS = [2000, 4000, 8000];
 
 interface UserSyncState {
   lastNotifyTime: number;
@@ -29,14 +25,14 @@ interface UserSyncState {
   // Reset to 0 after each successful broadcast.
   batchStartTime: number;
   pendingAlarm: boolean;
-  // Consecutive transient-error retries since the last fresh notify(). Reset
-  // in notify() so user activity restores the full retry budget.
-  transientRetries: number;
 }
 
 export class UserSync extends DurableObject<Bindings> {
   private userId: string | null = null;
   private state: UserSyncState;
+  // Consecutive transient-error retry budget since the last fresh notify().
+  // Reset in notify() so user activity restores the full budget.
+  private retry = new TransientAlarmRetry();
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -45,7 +41,6 @@ export class UserSync extends DurableObject<Bindings> {
       lastSyncTime: 0,
       batchStartTime: 0,
       pendingAlarm: false,
-      transientRetries: 0,
     };
     // Load userId from storage on DO initialization to avoid storage reads
     // in the alarm handler, reducing the chance of hitting DO storage timeouts.
@@ -134,7 +129,7 @@ export class UserSync extends DurableObject<Bindings> {
     this.state.lastNotifyTime = now;
     // Fresh user activity restores the transient-retry budget so a future
     // alarm chain gets the full set of attempts again.
-    this.state.transientRetries = 0;
+    this.retry.reset();
     if (this.state.batchStartTime === 0) {
       this.state.batchStartTime = now;
     }
@@ -378,43 +373,36 @@ export class UserSync extends DurableObject<Bindings> {
       });
     } catch (error) {
       timings.totalMs = Date.now() - alarmStart;
-      // DO resets and DO-to-DO network blips are transient Cloudflare
-      // platform errors. Reschedule a self-heal so a quiescent user (no
-      // further notify() incoming) doesn't sit on a stuck pending update.
-      // After TRANSIENT_RETRY_DELAYS_MS is exhausted, treat it as a real
-      // error so a misclassified persistent failure surfaces.
-      if (isTransientDoResetError(error)) {
+      // DO resets, DO-to-DO network blips, and Hyperdrive/pg connection
+      // drops are transient platform errors. Reschedule a self-heal so a
+      // quiescent user (no further notify() incoming) doesn't sit on a
+      // stuck pending update. After the retry ladder is exhausted, treat
+      // it as a real error so a misclassified persistent failure surfaces.
+      if (isTransientAlarmError(error)) {
         // Count every occurrence (before deciding to reschedule vs. capture)
         // so a sustained spike trips the volume alert (infra/posthog/alerts.tf)
         // — the per-DO retry budget below only captures AFTER it's exhausted.
         this.captureTransientCounter(error);
-        const retryIndex = this.state.transientRetries;
-        const delayMs = TRANSIENT_RETRY_DELAYS_MS[retryIndex];
-        if (delayMs !== undefined) {
-          this.state.transientRetries = retryIndex + 1;
-          logger.warn("UserSync alarm interrupted by transient platform error, rescheduling", {
+        const handled = await this.retry.reschedule({
+          storage: this.ctx.storage,
+          logger,
+          error,
+          durableObject: "UserSync",
+          logContext: {
             user_id: this.userId,
             in_flight_step: currentStep,
-            transient_attempt: this.state.transientRetries,
-            retry_delay_ms: delayMs,
-            error_message: (error as Error).message,
             ...timings,
-          });
-          try {
+          },
+          beforeSchedule: () => {
             this.state.pendingAlarm = true;
-            await this.ctx.storage.setAlarm(Date.now() + delayMs);
-          } catch (rescheduleError) {
-            // setAlarm itself can fail if the DO storage is in the same
-            // transient state. Fall back to next-notify recovery — we
-            // can't do better without storage.
+          },
+          onScheduleFailed: () => {
+            // Fall back to next-notify/SyncRecovery — we can't do better
+            // without storage.
             this.state.pendingAlarm = false;
-            logger.warn("Failed to reschedule UserSync alarm after transient error", {
-              user_id: this.userId,
-              reschedule_error: (rescheduleError as Error).message,
-            });
-          }
-          return;
-        }
+          },
+        });
+        if (handled) return;
         // Retry budget exhausted. The error is no longer "transient" by
         // any useful definition — capture it so we can investigate.
         logger.error(
@@ -423,17 +411,14 @@ export class UserSync extends DurableObject<Bindings> {
           {
             user_id: this.userId,
             in_flight_step: currentStep,
-            transient_attempts: retryIndex,
             ...timings,
           },
         );
         this.captureException(error as Error, {
           in_flight_step: currentStep,
-          transient_attempts: retryIndex,
           retries_exhausted: true,
           ...timings,
         });
-        this.state.transientRetries = 0;
         return;
       }
       logger.error("Error in UserSync alarm", error as Error, {
