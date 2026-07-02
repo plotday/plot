@@ -17,7 +17,7 @@ import type {
   Thread,
 } from "@plotday/twister/plot";
 import { ActionType } from "@plotday/twister/plot";
-import { Callbacks } from "@plotday/twister/tools/callbacks";
+import { type Callback, Callbacks } from "@plotday/twister/tools/callbacks";
 import { Files } from "@plotday/twister/tools/files";
 import {
   AuthProvider,
@@ -103,6 +103,22 @@ type RelationsSyncState = {
   lastCompletedAt: number | null;
   lastPageAt: number;
 };
+
+// Per-invitation marker recorded when the Accept/Ignore buttons are minted.
+// Keyed `pending_invitation:${profileId}`. Carries the invitation's sent time
+// (so the resolved note keeps its position) and the two callback tokens (so
+// they can be deleted once the request is resolved or re-minted).
+type PendingInvitation = {
+  invitationId: string;
+  sentAt: string; // ISO timestamp
+  acceptToken: Callback;
+  ignoreToken: Callback;
+};
+
+// The recorded outcome of an invitation, stored as the value of the
+// `invitation_writeback:${invitationId}` flag. The flag guards only the
+// one-shot external API call; the local reconcile is idempotent.
+type InvitationResolution = "accepted" | "ignored" | "unavailable";
 
 const RELATIONS_PAGE_LIMIT = 100;
 const RELATIONS_PAGE_MIN_DELAY_MS = 2 * 60 * 60 * 1000;
@@ -613,37 +629,25 @@ export class LinkedIn extends Connector<LinkedIn> {
         );
       }
 
-      const pending = await this.get<{ invitationId: string }>(
+      const pending = await this.get<PendingInvitation>(
         `pending_invitation:${event.profileId}`
       );
       if (pending) {
+        // The new relation means the request is connected. Record the
+        // resolution if not already set (respecting a prior in-Plot ignore),
+        // then reconcile the thread idempotently.
         const flagKey = `invitation_writeback:${pending.invitationId}`;
-        if (!(await this.get<string>(flagKey))) {
-          await this.set(flagKey, "accept");
-          await this.tools.integrations.saveLinks([
-            {
-              source: `linkedin:person:${event.profileId}`,
-              sources: [`linkedin:person:${event.profileId}`],
-              type: TYPE_CONVERSATION,
-              channelId,
-              status: STATUS_INBOX,
-              meta: {
-                syncProvider: PROVIDER_KEY,
-                channelId,
-                profileId: event.profileId,
-                invitationId: pending.invitationId,
-              },
-            },
-          ]);
-          await this.tools.integrations.saveNote({
-            thread: { source: `linkedin:person:${event.profileId}` },
-            key: `invite-request-${pending.invitationId}`,
-            content: "Connected.",
-            contentType: "markdown",
-            actions: [],
-          });
+        let resolution = await this.get<InvitationResolution>(flagKey);
+        if (!resolution) {
+          resolution = "accepted";
+          await this.set(flagKey, resolution);
         }
-        await this.clear(`pending_invitation:${event.profileId}`);
+        await this.reconcileResolvedInvitation(
+          channelId,
+          pending.invitationId,
+          event.profileId,
+          resolution
+        );
       }
     }
   }
@@ -952,13 +956,24 @@ export class LinkedIn extends Connector<LinkedIn> {
     channelId: string,
     inv: LinkedInInvitation
   ): Promise<Action[]> {
-    const accept = await this.callback(
+    // Delete callback tokens minted for a prior delivery of this same
+    // invitation before re-minting, so re-syncs / webhook redeliveries don't
+    // accrete orphaned callbacks.
+    const prev = await this.get<PendingInvitation>(
+      `pending_invitation:${inv.inviter.id}`
+    );
+    if (prev?.acceptToken) await this.deleteCallback(prev.acceptToken);
+    if (prev?.ignoreToken) await this.deleteCallback(prev.ignoreToken);
+
+    // `actionCallback` is the SDK's callback variant for handlers whose first
+    // argument is the dispatched `Action`.
+    const accept = await this.actionCallback(
       this.onAcceptInvitation,
       channelId,
       inv.id,
       inv.inviter.id
     );
-    const ignore = await this.callback(
+    const ignore = await this.actionCallback(
       this.onIgnoreInvitation,
       channelId,
       inv.id,
@@ -966,39 +981,37 @@ export class LinkedIn extends Connector<LinkedIn> {
     );
     await this.set(`pending_invitation:${inv.inviter.id}`, {
       invitationId: inv.id,
-    });
+      sentAt: new Date(inv.sentAt).toISOString(),
+      acceptToken: accept,
+      ignoreToken: ignore,
+    } satisfies PendingInvitation);
     return [
       { type: ActionType.callback, title: "Accept", callback: accept },
       { type: ActionType.callback, title: "Ignore", callback: ignore },
     ];
   }
 
-  // Handler bodies are implemented in Tasks 4 and 5. The `action` first
-  // parameter is prepended by the runtime for ActionType.callback dispatch.
-  async onAcceptInvitation(
-    _action: Action,
+  /**
+   * Idempotently reconcile a resolved invitation's thread in Plot: flip the
+   * link (Connected on accept, archived on ignore), rewrite the system note to
+   * clear its Accept/Ignore buttons (preserving the note's original position
+   * via the recorded `sentAt`), drop the pending marker, and delete the
+   * consumed callback tokens. Safe to call more than once — that self-heal is
+   * why the handlers no longer early-return once the writeback flag is set: a
+   * transient write failure recovers on the next invocation.
+   */
+  private async reconcileResolvedInvitation(
     channelId: string,
     invitationId: string,
-    profileId: string
+    profileId: string,
+    resolution: InvitationResolution
   ): Promise<void> {
-    const flagKey = `invitation_writeback:${invitationId}`;
-    if (await this.get<string>(flagKey)) return;
+    const pending = await this.get<PendingInvitation>(
+      `pending_invitation:${profileId}`
+    );
 
-    let ok = true;
-    try {
-      await this.tools.linkedin.acceptInvitation({ channelId, invitationId });
-    } catch (error) {
-      ok = false;
-      console.warn(
-        `LinkedIn accept-invitation failed (${invitationId})`,
-        error
-      );
-    }
-    await this.set(flagKey, "accept");
-
-    if (ok) {
-      // Merge-save: flip the person-keyed link to Connected without touching
-      // title/preview/etc. (saveLinks upserts by source).
+    if (resolution === "accepted") {
+      // Merge-save: flip to Connected without touching title/preview.
       await this.tools.integrations.saveLinks([
         {
           source: `linkedin:person:${profileId}`,
@@ -1006,12 +1019,19 @@ export class LinkedIn extends Connector<LinkedIn> {
           type: TYPE_CONVERSATION,
           channelId,
           status: STATUS_INBOX,
-          meta: {
-            syncProvider: PROVIDER_KEY,
-            channelId,
-            profileId,
-            invitationId,
-          },
+          meta: { syncProvider: PROVIDER_KEY, channelId, profileId, invitationId },
+        },
+      ]);
+    } else if (resolution === "ignored") {
+      // Archiving is a Plot concept (there is no LinkedIn "ignored" status).
+      await this.tools.integrations.saveLinks([
+        {
+          source: `linkedin:person:${profileId}`,
+          sources: [`linkedin:person:${profileId}`],
+          type: TYPE_CONVERSATION,
+          channelId,
+          archived: true,
+          meta: { syncProvider: PROVIDER_KEY, channelId, profileId, invitationId },
         },
       ]);
     }
@@ -1019,11 +1039,65 @@ export class LinkedIn extends Connector<LinkedIn> {
     await this.tools.integrations.saveNote({
       thread: { source: `linkedin:person:${profileId}` },
       key: `invite-request-${invitationId}`,
-      content: ok ? "Connected." : "This request is no longer available.",
+      content:
+        resolution === "accepted"
+          ? "Connected."
+          : resolution === "ignored"
+            ? "Ignored."
+            : "This request is no longer available.",
       contentType: "markdown",
       actions: [],
+      // Keep the note's original position (avoid restamping to now()).
+      ...(pending?.sentAt ? { created: new Date(pending.sentAt) } : {}),
     });
+
     await this.clear(`pending_invitation:${profileId}`);
+    // Best-effort deletion of the now-consumed callback tokens.
+    try {
+      if (pending?.acceptToken) await this.deleteCallback(pending.acceptToken);
+      if (pending?.ignoreToken) await this.deleteCallback(pending.ignoreToken);
+    } catch (error) {
+      console.warn(
+        `LinkedIn invitation token cleanup failed (${invitationId})`,
+        error
+      );
+    }
+  }
+
+  // The `action` first parameter is prepended by the runtime for
+  // ActionType.callback dispatch (see `actionCallback`).
+  async onAcceptInvitation(
+    _action: Action,
+    channelId: string,
+    invitationId: string,
+    profileId: string
+  ): Promise<void> {
+    const flagKey = `invitation_writeback:${invitationId}`;
+    // The writeback flag guards only the one-shot external API call; the
+    // reconcile below always runs so a transient write failure self-heals on
+    // a later invocation (button re-press / relation.new).
+    let resolution = await this.get<InvitationResolution>(flagKey);
+    if (!resolution) {
+      let ok = true;
+      try {
+        await this.tools.linkedin.acceptInvitation({ channelId, invitationId });
+      } catch (error) {
+        ok = false;
+        console.warn(
+          `LinkedIn accept-invitation failed (${invitationId})`,
+          error
+        );
+      }
+      resolution = ok ? "accepted" : "unavailable";
+      await this.set(flagKey, resolution);
+    }
+
+    await this.reconcileResolvedInvitation(
+      channelId,
+      invitationId,
+      profileId,
+      resolution
+    );
   }
 
   async onIgnoreInvitation(
@@ -1033,44 +1107,28 @@ export class LinkedIn extends Connector<LinkedIn> {
     profileId: string
   ): Promise<void> {
     const flagKey = `invitation_writeback:${invitationId}`;
-    if (await this.get<string>(flagKey)) return;
-
-    try {
-      await this.tools.linkedin.ignoreInvitation({ channelId, invitationId });
-    } catch (error) {
-      // Ignore is dismiss-locally intent — proceed to archive even if the
-      // remote call failed (e.g. the invitation was already resolved).
-      console.warn(
-        `LinkedIn ignore-invitation failed (${invitationId})`,
-        error
-      );
+    let resolution = await this.get<InvitationResolution>(flagKey);
+    if (!resolution) {
+      try {
+        await this.tools.linkedin.ignoreInvitation({ channelId, invitationId });
+      } catch (error) {
+        // Ignore is dismiss-locally intent — proceed even if the remote call
+        // failed (e.g. the invitation was already resolved).
+        console.warn(
+          `LinkedIn ignore-invitation failed (${invitationId})`,
+          error
+        );
+      }
+      resolution = "ignored";
+      await this.set(flagKey, resolution);
     }
-    await this.set(flagKey, "ignore");
 
-    // Archiving is a Plot concept (there is no LinkedIn "ignored" status).
-    await this.tools.integrations.saveLinks([
-      {
-        source: `linkedin:person:${profileId}`,
-        sources: [`linkedin:person:${profileId}`],
-        type: TYPE_CONVERSATION,
-        channelId,
-        archived: true,
-        meta: {
-          syncProvider: PROVIDER_KEY,
-          channelId,
-          profileId,
-          invitationId,
-        },
-      },
-    ]);
-    await this.tools.integrations.saveNote({
-      thread: { source: `linkedin:person:${profileId}` },
-      key: `invite-request-${invitationId}`,
-      content: "Ignored.",
-      contentType: "markdown",
-      actions: [],
-    });
-    await this.clear(`pending_invitation:${profileId}`);
+    await this.reconcileResolvedInvitation(
+      channelId,
+      invitationId,
+      profileId,
+      resolution
+    );
   }
 
   override async onLinkUpdated(link: Link): Promise<void> {
@@ -1079,49 +1137,44 @@ export class LinkedIn extends Connector<LinkedIn> {
     const meta = (link.meta ?? {}) as Record<string, unknown>;
     const channelId    = meta.channelId    as string | undefined;
     const invitationId = meta.invitationId as string | undefined;
+    const profileId    = meta.profileId    as string | undefined;
     if (!channelId) return;
     if (!invitationId) return; // chat-only link — nothing to write back
-    if (!link.source) return; // no thread to rewrite the note on
-
-    // Idempotency: each invitation can only be accepted once. Plot may
-    // re-fire onLinkUpdated on unrelated edits (notes, title, etc.).
-    const flagKey = `invitation_writeback:${invitationId}`;
-    if (await this.get<string>(flagKey)) return;
 
     // The only write-back is accept: moving a pending invitation to
-    // "Connected" (inbox) in Plot accepts it on LinkedIn. There is no
-    // ignore/archive status anymore, so other transitions are no-ops.
+    // "Connected" (inbox) in Plot accepts it on LinkedIn. Other transitions
+    // are no-ops.
     if (link.status !== STATUS_INBOX) return;
+    if (!profileId) return; // can't reconcile the note without the person key
 
-    const profileId = meta.profileId as string | undefined;
-    let ok = true;
-    try {
-      await this.tools.linkedin.acceptInvitation({
-        channelId,
-        invitationId,
-      });
-    } catch (error) {
-      // Invitation may have been resolved out-of-band; record the attempt so
-      // we don't retry a stale invitation on every subsequent edit.
-      ok = false;
-      console.warn(
-        `LinkedIn invitation write-back failed (${invitationId}, accept)`,
-        error
-      );
+    // The writeback flag guards only the one-shot external accept; the
+    // reconcile (clearing the Accept/Ignore buttons on the now-Connected
+    // thread) always runs and is idempotent, mirroring onAcceptInvitation.
+    const flagKey = `invitation_writeback:${invitationId}`;
+    let resolution = await this.get<InvitationResolution>(flagKey);
+    if (!resolution) {
+      let ok = true;
+      try {
+        await this.tools.linkedin.acceptInvitation({ channelId, invitationId });
+      } catch (error) {
+        // Invitation may have been resolved out-of-band; record the attempt
+        // so we don't retry a stale invitation on every subsequent edit.
+        ok = false;
+        console.warn(
+          `LinkedIn invitation write-back failed (${invitationId}, accept)`,
+          error
+        );
+      }
+      resolution = ok ? "accepted" : "unavailable";
+      await this.set(flagKey, resolution);
     }
-    await this.set(flagKey, "accept");
 
-    // Clear the connection-request buttons now that the invitation is
-    // resolved — the status-picker accept path must not leave live
-    // Accept/Ignore buttons on a Connected thread (mirrors onAcceptInvitation).
-    await this.tools.integrations.saveNote({
-      thread: { source: link.source },
-      key: `invite-request-${invitationId}`,
-      content: ok ? "Connected." : "This request is no longer available.",
-      contentType: "markdown",
-      actions: [],
-    });
-    if (profileId) await this.clear(`pending_invitation:${profileId}`);
+    await this.reconcileResolvedInvitation(
+      channelId,
+      invitationId,
+      profileId,
+      resolution
+    );
   }
 
   override async onThreadRead(

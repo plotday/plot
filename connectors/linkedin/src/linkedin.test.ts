@@ -41,11 +41,17 @@ function makeLinkedIn(over: {
   const conn = new LinkedIn("twist-instance-1" as never, {
     getTools: () => tools,
   } as never);
-  // this.get/this.set/this.clear delegate to tools.store; mock this.callback.
-  (conn as unknown as { callback: unknown }).callback = vi.fn(
-    async (_fn: unknown, ...args: unknown[]) => `cb:${args.join(",")}`
+  // this.get/this.set/this.clear delegate to tools.store. Mint tokens keyed by
+  // the target handler so Accept/Ignore get distinct tokens.
+  const mint = vi.fn(
+    async (fn: { name?: string } | undefined, ...args: unknown[]) =>
+      `cb:${fn?.name ?? "fn"}:${args.join(",")}`
   );
-  return { conn, tools, store };
+  (conn as unknown as { callback: unknown }).callback = mint;
+  (conn as unknown as { actionCallback: unknown }).actionCallback = mint;
+  const deleteCallback = vi.fn(async () => {});
+  (conn as unknown as { deleteCallback: unknown }).deleteCallback = deleteCallback;
+  return { conn, tools, store, mint, deleteCallback };
 }
 
 describe("invitationNoteContent", () => {
@@ -165,20 +171,53 @@ describe("buildInvitationLink", () => {
   });
 });
 
+type BuildActions = (c: string, i: LinkedInInvitation) => Promise<Action[]>;
+
 describe("buildInvitationActions", () => {
-  it("mints Accept + Ignore callbacks and records the pending marker", async () => {
-    const { conn, store } = makeLinkedIn();
+  it("mints Accept + Ignore callbacks and records the pending marker with tokens + sentAt", async () => {
+    const { conn, store, deleteCallback } = makeLinkedIn();
     const inv = fakeInvitation();
     const actions = await (
-      conn as unknown as {
-        buildInvitationActions: (c: string, i: LinkedInInvitation) => Promise<Action[]>;
-      }
+      conn as unknown as { buildInvitationActions: BuildActions }
     ).buildInvitationActions("chan-1", inv);
 
     expect(actions).toHaveLength(2);
     expect(actions[0]).toMatchObject({ type: ActionType.callback, title: "Accept" });
     expect(actions[1]).toMatchObject({ type: ActionType.callback, title: "Ignore" });
-    expect(store.map.get("pending_invitation:prof-1")).toEqual({ invitationId: "inv-1" });
+
+    const marker = store.map.get("pending_invitation:prof-1") as {
+      invitationId: string;
+      sentAt: string;
+      acceptToken: string;
+      ignoreToken: string;
+    };
+    expect(marker.invitationId).toBe("inv-1");
+    expect(marker.sentAt).toBe("2026-07-01T00:00:00.000Z");
+    // Narrow the Action union to the callback variant to read `.callback`.
+    const callbackOf = (a: Action) =>
+      (a as Extract<Action, { type: ActionType.callback }>).callback;
+    expect(marker.acceptToken).toBe(callbackOf(actions[0]));
+    expect(marker.ignoreToken).toBe(callbackOf(actions[1]));
+    expect(marker.acceptToken).not.toBe(marker.ignoreToken);
+    // No prior marker → nothing to clean up.
+    expect(deleteCallback).not.toHaveBeenCalled();
+  });
+
+  it("deletes the previously-minted tokens before re-minting for the same invitation", async () => {
+    const store = makeStore({
+      "pending_invitation:prof-1": {
+        invitationId: "inv-1",
+        sentAt: "2026-07-01T00:00:00.000Z",
+        acceptToken: "old-accept",
+        ignoreToken: "old-ignore",
+      },
+    });
+    const { conn, deleteCallback } = makeLinkedIn({ store });
+    await (
+      conn as unknown as { buildInvitationActions: BuildActions }
+    ).buildInvitationActions("chan-1", fakeInvitation());
+    expect(deleteCallback).toHaveBeenCalledWith("old-accept");
+    expect(deleteCallback).toHaveBeenCalledWith("old-ignore");
   });
 });
 
@@ -188,14 +227,31 @@ const fakeAction: Action = {
   callback: "cb" as never,
 };
 
-describe("onAcceptInvitation", () => {
-  it("accepts, flips status to inbox, clears buttons, sets flag", async () => {
-    const store = makeStore({ "pending_invitation:prof-1": { invitationId: "inv-1" } });
-    const { conn, tools } = makeLinkedIn({ store });
+type AcceptFn = (a: Action, c: string, i: string, p: string) => Promise<void>;
+type IgnoreFn = AcceptFn;
 
-    await (conn as unknown as {
-      onAcceptInvitation: (a: Action, c: string, i: string, p: string) => Promise<void>;
-    }).onAcceptInvitation(fakeAction, "chan-1", "inv-1", "prof-1");
+// A fully-populated pending marker as buildInvitationActions would write it.
+function pendingMarker(over: Record<string, unknown> = {}) {
+  return {
+    invitationId: "inv-1",
+    sentAt: "2026-07-01T00:00:00.000Z",
+    acceptToken: "tok-accept",
+    ignoreToken: "tok-ignore",
+    ...over,
+  };
+}
+
+describe("onAcceptInvitation", () => {
+  it("accepts, flips status to inbox, clears buttons, records outcome, cleans up", async () => {
+    const store = makeStore({ "pending_invitation:prof-1": pendingMarker() });
+    const { conn, tools, deleteCallback } = makeLinkedIn({ store });
+
+    await (conn as unknown as { onAcceptInvitation: AcceptFn }).onAcceptInvitation(
+      fakeAction,
+      "chan-1",
+      "inv-1",
+      "prof-1"
+    );
 
     expect(tools.linkedin.acceptInvitation).toHaveBeenCalledWith({
       channelId: "chan-1",
@@ -209,7 +265,37 @@ describe("onAcceptInvitation", () => {
         status: "inbox",
       }),
     ]);
-    // Note rewritten: Connected, no buttons.
+    // Note rewritten: Connected, no buttons, position preserved via `created`.
+    expect(tools.integrations.saveNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "invite-request-inv-1",
+        content: "Connected.",
+        actions: [],
+        created: new Date("2026-07-01T00:00:00.000Z"),
+      })
+    );
+    expect(store.map.get("invitation_writeback:inv-1")).toBe("accepted");
+    expect(store.map.has("pending_invitation:prof-1")).toBe(false);
+    // Consumed callback tokens deleted.
+    expect(deleteCallback).toHaveBeenCalledWith("tok-accept");
+    expect(deleteCallback).toHaveBeenCalledWith("tok-ignore");
+  });
+
+  it("skips the external accept but still reconciles when already resolved (self-heal)", async () => {
+    const store = makeStore({
+      "invitation_writeback:inv-1": "accepted",
+      "pending_invitation:prof-1": pendingMarker(),
+    });
+    const { conn, tools } = makeLinkedIn({ store });
+    await (conn as unknown as { onAcceptInvitation: AcceptFn }).onAcceptInvitation(
+      fakeAction,
+      "chan-1",
+      "inv-1",
+      "prof-1"
+    );
+    // The one-shot external call is guarded...
+    expect(tools.linkedin.acceptInvitation).not.toHaveBeenCalled();
+    // ...but the idempotent reconcile still clears the buttons (self-heal).
     expect(tools.integrations.saveNote).toHaveBeenCalledWith(
       expect.objectContaining({
         key: "invite-request-inv-1",
@@ -217,30 +303,24 @@ describe("onAcceptInvitation", () => {
         actions: [],
       })
     );
-    expect(store.map.get("invitation_writeback:inv-1")).toBe("accept");
-    expect(store.map.has("pending_invitation:prof-1")).toBe(false);
+    expect(tools.integrations.saveLinks).toHaveBeenCalledWith([
+      expect.objectContaining({ source: "linkedin:person:prof-1", status: "inbox" }),
+    ]);
   });
 
-  it("is a no-op when the flag is already set", async () => {
-    const store = makeStore({ "invitation_writeback:inv-1": "accept" });
-    const { conn, tools } = makeLinkedIn({ store });
-    await (conn as unknown as {
-      onAcceptInvitation: (a: Action, c: string, i: string, p: string) => Promise<void>;
-    }).onAcceptInvitation(fakeAction, "chan-1", "inv-1", "prof-1");
-    expect(tools.linkedin.acceptInvitation).not.toHaveBeenCalled();
-    expect(tools.integrations.saveNote).not.toHaveBeenCalled();
-  });
-
-  it("still clears buttons (unavailable) when accept fails", async () => {
+  it("records `unavailable` and clears buttons when accept fails", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const store = makeStore();
+    const store = makeStore({ "pending_invitation:prof-1": pendingMarker() });
     const { conn, tools } = makeLinkedIn({
       store,
       linkedin: { acceptInvitation: vi.fn().mockRejectedValue(new Error("gone")) },
     });
-    await (conn as unknown as {
-      onAcceptInvitation: (a: Action, c: string, i: string, p: string) => Promise<void>;
-    }).onAcceptInvitation(fakeAction, "chan-1", "inv-1", "prof-1");
+    await (conn as unknown as { onAcceptInvitation: AcceptFn }).onAcceptInvitation(
+      fakeAction,
+      "chan-1",
+      "inv-1",
+      "prof-1"
+    );
     // Did NOT flip status to Connected on failure.
     expect(tools.integrations.saveLinks).not.toHaveBeenCalled();
     expect(tools.integrations.saveNote).toHaveBeenCalledWith(
@@ -250,26 +330,24 @@ describe("onAcceptInvitation", () => {
         actions: [],
       })
     );
-    expect(store.map.get("invitation_writeback:inv-1")).toBe("accept");
+    expect(store.map.get("invitation_writeback:inv-1")).toBe("unavailable");
     warnSpy.mockRestore();
   });
 });
 
 describe("onLinkUpdated invitation accept", () => {
+  const link = {
+    type: "conversation",
+    status: "inbox",
+    source: "linkedin:person:prof-1",
+    meta: { channelId: "chan-1", invitationId: "inv-1", profileId: "prof-1" },
+  } as never;
+
   it("clears the connection-request buttons when accepted via the status picker", async () => {
     const store = makeStore();
     const { conn, tools } = makeLinkedIn({ store });
 
-    const link = {
-      type: "conversation",
-      status: "inbox",
-      source: "linkedin:person:prof-1",
-      meta: { channelId: "chan-1", invitationId: "inv-1", profileId: "prof-1" },
-    } as never;
-
-    await (conn as unknown as {
-      onLinkUpdated: (l: never) => Promise<void>;
-    }).onLinkUpdated(link);
+    await (conn as unknown as { onLinkUpdated: (l: never) => Promise<void> }).onLinkUpdated(link);
 
     expect(tools.linkedin.acceptInvitation).toHaveBeenCalledWith({
       channelId: "chan-1",
@@ -282,10 +360,10 @@ describe("onLinkUpdated invitation accept", () => {
         actions: [],
       })
     );
-    expect(store.map.get("invitation_writeback:inv-1")).toBe("accept");
+    expect(store.map.get("invitation_writeback:inv-1")).toBe("accepted");
   });
 
-  it("still clears buttons (unavailable) when the write-back accept fails", async () => {
+  it("records `unavailable` and clears buttons when the write-back accept fails", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const store = makeStore();
     const { conn, tools } = makeLinkedIn({
@@ -293,16 +371,7 @@ describe("onLinkUpdated invitation accept", () => {
       linkedin: { acceptInvitation: vi.fn().mockRejectedValue(new Error("gone")) },
     });
 
-    const link = {
-      type: "conversation",
-      status: "inbox",
-      source: "linkedin:person:prof-1",
-      meta: { channelId: "chan-1", invitationId: "inv-1", profileId: "prof-1" },
-    } as never;
-
-    await (conn as unknown as {
-      onLinkUpdated: (l: never) => Promise<void>;
-    }).onLinkUpdated(link);
+    await (conn as unknown as { onLinkUpdated: (l: never) => Promise<void> }).onLinkUpdated(link);
 
     expect(tools.integrations.saveNote).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -311,19 +380,22 @@ describe("onLinkUpdated invitation accept", () => {
         actions: [],
       })
     );
-    expect(store.map.get("invitation_writeback:inv-1")).toBe("accept");
+    expect(store.map.get("invitation_writeback:inv-1")).toBe("unavailable");
     warnSpy.mockRestore();
   });
 });
 
 describe("onIgnoreInvitation", () => {
-  it("ignores, archives the thread, clears buttons, sets flag", async () => {
-    const store = makeStore({ "pending_invitation:prof-1": { invitationId: "inv-1" } });
-    const { conn, tools } = makeLinkedIn({ store });
+  it("ignores, archives the thread, clears buttons, records outcome, cleans up", async () => {
+    const store = makeStore({ "pending_invitation:prof-1": pendingMarker() });
+    const { conn, tools, deleteCallback } = makeLinkedIn({ store });
 
-    await (conn as unknown as {
-      onIgnoreInvitation: (a: Action, c: string, i: string, p: string) => Promise<void>;
-    }).onIgnoreInvitation(fakeAction, "chan-1", "inv-1", "prof-1");
+    await (conn as unknown as { onIgnoreInvitation: IgnoreFn }).onIgnoreInvitation(
+      fakeAction,
+      "chan-1",
+      "inv-1",
+      "prof-1"
+    );
 
     expect(tools.linkedin.ignoreInvitation).toHaveBeenCalledWith({
       channelId: "chan-1",
@@ -343,18 +415,32 @@ describe("onIgnoreInvitation", () => {
         actions: [],
       })
     );
-    expect(store.map.get("invitation_writeback:inv-1")).toBe("ignore");
+    expect(store.map.get("invitation_writeback:inv-1")).toBe("ignored");
     expect(store.map.has("pending_invitation:prof-1")).toBe(false);
+    expect(deleteCallback).toHaveBeenCalledWith("tok-accept");
+    expect(deleteCallback).toHaveBeenCalledWith("tok-ignore");
   });
 
-  it("is a no-op when the flag is already set", async () => {
-    const store = makeStore({ "invitation_writeback:inv-1": "ignore" });
+  it("skips the external ignore but still reconciles when already resolved (self-heal)", async () => {
+    const store = makeStore({
+      "invitation_writeback:inv-1": "ignored",
+      "pending_invitation:prof-1": pendingMarker(),
+    });
     const { conn, tools } = makeLinkedIn({ store });
-    await (conn as unknown as {
-      onIgnoreInvitation: (a: Action, c: string, i: string, p: string) => Promise<void>;
-    }).onIgnoreInvitation(fakeAction, "chan-1", "inv-1", "prof-1");
+    await (conn as unknown as { onIgnoreInvitation: IgnoreFn }).onIgnoreInvitation(
+      fakeAction,
+      "chan-1",
+      "inv-1",
+      "prof-1"
+    );
     expect(tools.linkedin.ignoreInvitation).not.toHaveBeenCalled();
-    expect(tools.integrations.saveLinks).not.toHaveBeenCalled();
+    // Reconcile still archives + clears buttons.
+    expect(tools.integrations.saveLinks).toHaveBeenCalledWith([
+      expect.objectContaining({ source: "linkedin:person:prof-1", archived: true }),
+    ]);
+    expect(tools.integrations.saveNote).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "invite-request-inv-1", content: "Ignored.", actions: [] })
+    );
   });
 });
 
@@ -371,16 +457,19 @@ describe("onWebhookEvent relation.new reconciliation", () => {
     profileUrl: null,
   };
 
+  type WebhookFn = (e: unknown, c: string) => Promise<void>;
+
   it("flips a pending invitation to Connected and clears its buttons", async () => {
-    const store = makeStore({ "pending_invitation:prof-1": { invitationId: "inv-1" } });
+    const store = makeStore({ "pending_invitation:prof-1": pendingMarker() });
     const { conn, tools } = makeLinkedIn({
       store,
       linkedin: { getProfile: vi.fn().mockResolvedValue(profile) },
     });
 
-    await (conn as unknown as {
-      onWebhookEvent: (e: unknown, c: string) => Promise<void>;
-    }).onWebhookEvent({ kind: "relation.new", profileId: "prof-1" }, "chan-1");
+    await (conn as unknown as { onWebhookEvent: WebhookFn }).onWebhookEvent(
+      { kind: "relation.new", profileId: "prof-1" },
+      "chan-1"
+    );
 
     expect(tools.integrations.saveContacts).toHaveBeenCalled();
     expect(tools.integrations.saveLinks).toHaveBeenCalledWith([
@@ -389,17 +478,40 @@ describe("onWebhookEvent relation.new reconciliation", () => {
     expect(tools.integrations.saveNote).toHaveBeenCalledWith(
       expect.objectContaining({ key: "invite-request-inv-1", content: "Connected.", actions: [] })
     );
-    expect(store.map.get("invitation_writeback:inv-1")).toBe("accept");
+    expect(store.map.get("invitation_writeback:inv-1")).toBe("accepted");
     expect(store.map.has("pending_invitation:prof-1")).toBe(false);
+  });
+
+  it("respects a prior in-Plot ignore when the relation later appears", async () => {
+    const store = makeStore({
+      "invitation_writeback:inv-1": "ignored",
+      "pending_invitation:prof-1": pendingMarker(),
+    });
+    const { conn, tools } = makeLinkedIn({
+      store,
+      linkedin: { getProfile: vi.fn().mockResolvedValue(profile) },
+    });
+
+    await (conn as unknown as { onWebhookEvent: WebhookFn }).onWebhookEvent(
+      { kind: "relation.new", profileId: "prof-1" },
+      "chan-1"
+    );
+
+    // Keeps the recorded "ignored" resolution: archives, does not flip to inbox.
+    expect(tools.integrations.saveLinks).toHaveBeenCalledWith([
+      expect.objectContaining({ source: "linkedin:person:prof-1", archived: true }),
+    ]);
+    expect(store.map.get("invitation_writeback:inv-1")).toBe("ignored");
   });
 
   it("just saves the contact when there is no pending invitation", async () => {
     const { conn, tools } = makeLinkedIn({
       linkedin: { getProfile: vi.fn().mockResolvedValue(profile) },
     });
-    await (conn as unknown as {
-      onWebhookEvent: (e: unknown, c: string) => Promise<void>;
-    }).onWebhookEvent({ kind: "relation.new", profileId: "prof-1" }, "chan-1");
+    await (conn as unknown as { onWebhookEvent: WebhookFn }).onWebhookEvent(
+      { kind: "relation.new", profileId: "prof-1" },
+      "chan-1"
+    );
     expect(tools.integrations.saveContacts).toHaveBeenCalled();
     expect(tools.integrations.saveLinks).not.toHaveBeenCalled();
     expect(tools.integrations.saveNote).not.toHaveBeenCalled();
