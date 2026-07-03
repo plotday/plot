@@ -12,13 +12,30 @@ describe("stripQuotedReply", () => {
     expect(stripQuotedReply(html, "html")).toBe("<p>Reply</p>");
   });
 
+  it("cuts Apple Mail <blockquote type=\"cite\"> quotes", () => {
+    // The nested gmail_quote sits deeper in the byte stream than the first
+    // cite blockquote, so the earliest boundary must win.
+    const html =
+      `<div>Reply body</div>` +
+      `<blockquote type="cite">On Jul 2, 2026, Bob wrote:` +
+      `<div class="gmail_quote">nested older quote</div></blockquote>`;
+    expect(stripQuotedReply(html, "html")).toBe("<div>Reply body</div>");
+  });
+
+  it("cuts Yahoo Mail yahoo_quoted blocks", () => {
+    const html =
+      `<div>Reply body</div>` +
+      `<div id="yahoo_quoted_123" class="yahoo_quoted">On Sat, Bob wrote: old</div>`;
+    expect(stripQuotedReply(html, "html")).toBe("<div>Reply body</div>");
+  });
+
   it("preserves forwarded messages", () => {
     const text = "FYI\n---------- Forwarded message ---------\nFrom: x";
     expect(stripQuotedReply(text, "text")).toBe(text);
   });
 
   it("cuts plain-text 'On ... wrote:' quotes", () => {
-    const text = "Thanks!\nOn Tue, Jun 10, 2026, Kris wrote:\n> earlier";
+    const text = "Thanks!\nOn Tue, Jun 10, 2026, Bob wrote:\n> earlier";
     expect(stripQuotedReply(text, "text")).toBe("Thanks!");
   });
 });

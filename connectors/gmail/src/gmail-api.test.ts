@@ -232,6 +232,63 @@ describe("forwarded email body extraction", () => {
     expect(reply).toContain("My answer is yes.");
     expect(reply).not.toContain("old message text");
   });
+
+  it("strips Apple Mail quoted replies (<blockquote type=\"cite\">)", () => {
+    // Apple Mail (Mail.app / iPhone Mail) wraps the "On <date>, <name> wrote:"
+    // attribution and the quoted history in <blockquote type="cite">. The
+    // quoted history here ALSO contains a nested gmail_quote (the original was
+    // sent from Gmail), so the earliest boundary — the first cite blockquote —
+    // must win, not the later nested gmail_quote.
+    const html =
+      '<body dir="auto">Sounds good, I will call you at 1:30pm.' +
+      "<div><br></div><div>Talk soon,</div><div><br></div>" +
+      '<div>Alice Example<br id="lineBreakAtBeginningOfSignature">' +
+      '<div dir="ltr"><br></div><div dir="ltr"><br>' +
+      '<blockquote type="cite">On Jan 2, 2026, at 8:03 PM, Bob Example ' +
+      "&lt;bob@example.com&gt; wrote:<br><br></blockquote></div>" +
+      '<blockquote type="cite"><div dir="ltr">Thanks Alice.' +
+      "SECRETAPPLEQUOTE must be stripped." +
+      '<div class="gmail_quote gmail_quote_container">nested older quote</div>' +
+      "</div></blockquote></body>";
+    const reply = stripQuotedReply(html, "html");
+    expect(reply).toContain("Sounds good, I will call you");
+    expect(reply).toContain("Talk soon,");
+    expect(reply).toContain("Alice Example");
+    expect(reply).not.toContain("On Jan 2, 2026");
+    expect(reply).not.toContain("SECRETAPPLEQUOTE");
+    expect(reply).not.toContain("nested older quote");
+  });
+
+  it("strips Yahoo Mail quoted replies (yahoo_quoted container)", () => {
+    const html =
+      '<div class="ydp2bd977f2yahoo-style-wrap">' +
+      '<div dir="ltr">Hi Bob, thanks for the update.</div>' +
+      '<div><br></div><div class="ydp2bd977f2signature">' +
+      '<div dir="ltr">Kind regards, Alice</div></div></div>' +
+      "<div><br></div><div><br></div>" +
+      '<div id="yahoo_quoted_3231833225" class="yahoo_quoted">' +
+      "<div>On Saturday, 16 May 2026 at 22:17:45 BST, Bob Example wrote:</div>" +
+      "<div>SECRETYAHOOQUOTE must be stripped</div></div>";
+    const reply = stripQuotedReply(html, "html");
+    expect(reply).toContain("Hi Bob, thanks for the update");
+    expect(reply).toContain("Kind regards, Alice");
+    expect(reply).not.toContain("On Saturday, 16 May 2026");
+    expect(reply).not.toContain("SECRETYAHOOQUOTE");
+  });
+
+  it("keeps an Apple Mail forwarded message (blockquote type=cite around forward)", () => {
+    // A forward wrapped in a cite blockquote must be preserved — the forwarded
+    // content IS the note. The forward guard runs before quote stripping.
+    const html =
+      '<body dir="auto">FYI below<div><br></div>' +
+      '<blockquote type="cite">Begin forwarded message:<br><br>' +
+      "From: Someone &lt;someone@example.com&gt;<br>" +
+      "Subject: KEEPAPPLEFWD789<br>To: Alice<br><br>" +
+      "The booking is confirmed.</blockquote></body>";
+    const reply = stripQuotedReply(html, "html");
+    expect(reply).toContain("KEEPAPPLEFWD789");
+    expect(reply).toContain("The booking is confirmed.");
+  });
 });
 
 describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
