@@ -6,13 +6,16 @@ This guide helps AI assistants build Plot sources and twists correctly.
 
 ### Building a Connector (service integration)
 
-Connectors are packages that connect to external services (Linear, Slack, Google Calendar, etc.). They extend Connector and save data directly via `integrations.saveLink()`.
+Connectors are packages that connect to external services (Linear, Slack, Google Calendar, etc.).
+They extend Connector and save data directly via `integrations.saveLink()`.
 
-**Start here:** `connectors/AGENTS.md` — Complete connector development guide with scaffold, patterns, and checklist.
+**Start here:** `connectors/AGENTS.md` — Complete connector development guide with scaffold,
+patterns, and checklist.
 
 ### Building a Twist (orchestrator)
 
-Twists are the entry point that users install. They declare which tools to use and implement domain logic.
+Twists are the entry point that users install. They declare which tools to use and implement domain
+logic.
 
 **Start here:** `twister/cli/templates/AGENTS.template.md` — Twist implementation guide.
 
@@ -24,7 +27,8 @@ All types in `twister/src/` with full JSDoc:
 - **Tool base**: `twister/src/tool.ts`
 - **Twist base**: `twister/src/twist.ts`
 - **Built-in tools**: `twister/src/tools/*.ts`
-  - `callbacks.ts`, `store.ts`, `tasks.ts`, `plot.ts`, `ai.ts`, `network.ts`, `integrations.ts`, `twists.ts`, `files.ts`, `imap.ts`, `smtp.ts`
+  - `callbacks.ts`, `store.ts`, `tasks.ts`, `plot.ts`, `ai.ts`, `network.ts`, `integrations.ts`,
+    `twists.ts`, `files.ts`, `imap.ts`, `smtp.ts`
 - **Core types**: `twister/src/plot.ts`, `twister/src/tag.ts`
 
 ## Additional Resources
@@ -35,26 +39,59 @@ All types in `twister/src/` with full JSDoc:
 - **Tools Guide**: `twister/docs/TOOLS_GUIDE.md`
 - **Multi-User Auth**: `twister/docs/MULTI_USER_AUTH.md`
 - **Sync Strategies**: `twister/docs/SYNC_STRATEGIES.md`
-- **Plot-initiated item creation (`onCreateLink`)**: `twister/docs/BUILDING_CONNECTORS.md#creating-items-from-plot-oncreatelink`
-- **Working Connector Examples**: `connectors/linear/`, `connectors/google-calendar/`, `connectors/slack/`, `connectors/jira/`
+- **Plot-initiated item creation (`onCreateLink`)**:
+  `twister/docs/BUILDING_CONNECTORS.md#creating-items-from-plot-oncreatelink`
+- **Working Connector Examples**: `connectors/linear/`, `connectors/google-calendar/`,
+  `connectors/slack/`, `connectors/jira/`
 
 ## Changesets: Only for `twister/`
 
-Only changes under `twister/` require a changeset. `@plotday/twister` is the only package published to npm from this repo. Connectors (`@plotday/connector-*`) are listed under `ignore` in `.changeset/config.json` — they deploy via `plot deploy`, not npm.
+Only changes under `twister/` require a changeset. `@plotday/twister` is the only package published
+to npm from this repo. Connectors (`@plotday/connector-*`) are listed under `ignore` in
+`.changeset/config.json` — they deploy via `plot deploy`, not npm.
 
-**Never add a changeset that targets only a connector package.** Such a changeset never resolves: `changeset version` leaves the file in place on every run, so the release workflow perpetually tries to open an empty release PR and fails. `pnpm validate-changesets` (run in CI on every PR) will reject these. See `RELEASING.md` for the full release flow.
+**Never add a changeset that targets only a connector package.** Such a changeset never resolves:
+`changeset version` leaves the file in place on every run, so the release workflow perpetually tries
+to open an empty release PR and fails. `pnpm validate-changesets` (run in CI on every PR) will
+reject these. See `RELEASING.md` for the full release flow.
+
+## Pull Requests
+
+This is a public repository. When writing commit messages, PR titles, and PR descriptions:
+
+- Describe the change in terms of the public SDK/connector behavior a twist or connector author
+  would observe. Explain the "what" and the "why" at the level of this open-source surface.
+- Do not include private or internal details: internal ticket/issue IDs, error-tracking IDs or
+  dashboards, internal infrastructure or service names, non-public schema internals, or
+  roadmap/strategy notes.
+- Do not include real data: user data or PII, customer names, production values, email addresses,
+  credentials, or log excerpts containing any of the above.
+- When a change is driven by a fix reported elsewhere, describe the public-facing symptom and fix on
+  its own terms rather than narrating an internal investigation.
 
 ## Common Pitfalls
 
-1. **❌ Using instance variables for state** — Use `this.set()`/`this.get()` (state doesn't persist between executions)
-2. **❌ Long-running operations without batching** — Break into chunks with `runTask()` (~1000 requests per execution)
-3. **❌ Passing functions to `this.callback()`** — See `connectors/AGENTS.md` for callback serialization pattern
-4. **❌ Forgetting sync metadata** — Always set `link.channelId` (first-class field) and inject `syncProvider` into `link.meta`
-5. **❌ Not handling initial vs incremental sync** — Propagate `initialSync` flag from entry point (`onChannelEnabled` → `true`, webhook → `false`) through all batch callbacks. Set `unread: false` and `archived: false` for initial, omit for incremental
-6. **❌ Missing localhost guard in webhooks** — Skip webhook registration when URL contains "localhost"
-7. **❌ Stripping HTML tags locally** — Pass raw HTML with `contentType: "html"` for server-side markdown conversion
-8. **❌ Implementing `onCreateLink` without declaring `compose`** — A link type opts in to Plot-initiated item creation by adding a `compose` block to `LinkTypeConfig` (with `targets`, default `status`, and optional `label`). Without it the "Create new …" picker entry never appears, regardless of whether the method is defined
+1. **❌ Using instance variables for state** — Use `this.set()`/`this.get()` (state doesn't persist
+   between executions)
+2. **❌ Long-running operations without batching** — Break into chunks with `runTask()` (~1000
+   requests per execution)
+3. **❌ Passing functions to `this.callback()`** — See `connectors/AGENTS.md` for callback
+   serialization pattern
+4. **❌ Forgetting sync metadata** — Always set `link.channelId` (first-class field) and inject
+   `syncProvider` into `link.meta`
+5. **❌ Not handling initial vs incremental sync** — Propagate `initialSync` flag from entry point
+   (`onChannelEnabled` → `true`, webhook → `false`) through all batch callbacks. Set `unread: false`
+   and `archived: false` for initial, omit for incremental
+6. **❌ Missing localhost guard in webhooks** — Skip webhook registration when URL contains
+   "localhost"
+7. **❌ Stripping HTML tags locally** — Pass raw HTML with `contentType: "html"` for server-side
+   markdown conversion
+8. **❌ Implementing `onCreateLink` without declaring `compose`** — A link type opts in to
+   Plot-initiated item creation by adding a `compose` block to `LinkTypeConfig` (with `targets`,
+   default `status`, and optional `label`). Without it the "Create new …" picker entry never
+   appears, regardless of whether the method is defined
 
 ---
 
-**Remember**: When in doubt, check the type definitions in `twister/src/` and study the working examples in `connectors/`.
+**Remember**: When in doubt, check the type definitions in `twister/src/` and study the working
+examples in `connectors/`.
