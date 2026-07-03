@@ -121,6 +121,14 @@ function computeFormat(s: EmailSignals, automation: Automation, reach: Reach): F
   if (s.gmailCategories.includes("CATEGORY_PROMOTIONS")) return "promotion";
   if (reach === "list" && PROMO_RE.test(subject)) return "promotion";
   if (reach === "list" && s.bodyLength >= READING_MIN_BODY) return "reading";
+  // A directly-addressed reply is part of a two-way conversation, so treat it
+  // as correspondence even when the sending system stamps automated headers
+  // (support desks, ticketing systems like Zendesk/Front). Without this, a
+  // short automated reply falls through to the notification branch below and
+  // gets swept into the muted FYI focus, burying real back-and-forth — e.g. a
+  // support agent replying "we need more info" on a request the user opened.
+  // Scoped to `direct` reach so list/bulk mail is unaffected.
+  if (s.isReply && reach === "direct") return "message";
   if (automation === "automated" && s.bodyLength < NOTIFICATION_MAX_BODY) return "notification";
   if (s.gmailCategories.includes("CATEGORY_UPDATES") || s.gmailCategories.includes("CATEGORY_SOCIAL")) {
     return "notification";

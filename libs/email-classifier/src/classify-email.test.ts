@@ -82,6 +82,32 @@ describe("classifyEmail — format", () => {
   it("classifies a short automated email as a notification", () => {
     expect(classifyEmail(signals({ fromAddress: "no-reply@x.com", bodyLength: 0, subject: null })).format).toBe("notification");
   });
+  it("keeps a short automated DIRECT reply a message, not a notification", () => {
+    // A support desk / ticketing system stamps automated headers, but a reply
+    // addressed directly to the user is a two-way conversation. Without the
+    // direct-reply guard this short automated body falls through to the
+    // notification branch and gets swept into the muted FYI focus.
+    expect(
+      classifyEmail(
+        signals({ isReply: true, autoSubmitted: "auto-generated", bodyLength: 200, subject: "Re: RESP Withdrawals" })
+      ).format
+    ).toBe("message");
+  });
+  it("still classifies a short automated DIRECT non-reply as a notification", () => {
+    expect(
+      classifyEmail(
+        signals({ isReply: false, fromAddress: "no-reply@x.com", bodyLength: 200 })
+      ).format
+    ).toBe("notification");
+  });
+  it("does not treat a reply on a LIST email as a message", () => {
+    // The guard is scoped to direct reach — bulk/list replies stay as they were.
+    expect(
+      classifyEmail(
+        signals({ isReply: true, listId: "<news>", listUnsubscribe: "<x>", bodyLength: 200 })
+      ).format
+    ).toBe("notification");
+  });
   it("leaves format null when no heuristic is confident", () => {
     // automated (auto_reply) but long body, direct, no categories, neutral subject →
     // none of the format branches fire → null.
