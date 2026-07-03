@@ -3,15 +3,17 @@ import type { Kysely } from "kysely";
 
 import { Tag } from "@plotday/twister/tag";
 
-import { type DB, createDb } from "../db";
+import { type DB, createDb, isTransientDbError } from "../db";
 import { type Bindings, type TwistBatchMessage } from "../env";
 import { rpcUser } from "../rpc";
 import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
+import type { ErrorWithTwistOwner } from "../twist/invoke-webhook";
 import { createLogger } from "@plotday/worker-util";
 import { analyzeNote } from "./note-analysis";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
 import { markChannelNoteUnreadFallback } from "./channel-note-unread";
+import { isQueueRetryExhausted } from "./retry";
 import {
   isAuthError,
   isRateLimitError,
@@ -57,8 +59,76 @@ export function captureTwistBatchError(
 }
 
 /**
+ * A write-back dispatch that fails with one of these transient infrastructure
+ * faults never reached the connector — the callback was NOT delivered. Mirrors
+ * the retry set the other queue consumers use (`Tasks.processQueue`,
+ * `processWebhooks`): a Cloudflare Durable Object storage reset
+ * (`isTransientDoResetError`), an isolate OOM / network blip / deploy-time DO
+ * code swap (`isTransientError`), or a Hyperdrive/pg connection drop
+ * (`isTransientDbError`). These self-resolve on retry, so the message should be
+ * redelivered rather than ACKed-and-dropped. Deliberately excludes rate-limit
+ * and terminal-auth errors: those are per-item, provider-driven outcomes that
+ * are dropped (see {@link captureTwistBatchError}), not retried.
+ */
+export function isRetriableDispatchError(error: unknown): boolean {
+  return (
+    isTransientDoResetError(error) ||
+    isTransientDbError(error) ||
+    isTransientError(error)
+  );
+}
+
+/**
+ * Decide what happens to an error thrown while dispatching one item of a twist
+ * batch:
+ *
+ *   - THROW it (to redeliver the whole message) when the fault is a transient
+ *     infrastructure blip AND the message is safe to re-deliver. The throw
+ *     propagates out of `processTwistBatch` to `processUpdates`, which calls
+ *     `message.retry()` so Cloudflare hands the identical message back.
+ *   - Otherwise capture-and-continue via {@link captureTwistBatchError} (which
+ *     itself skips paging for expected transient/provider blips), so one bad
+ *     item can't wedge the batch.
+ *
+ * `redeliverable` gates the retry because re-delivery re-runs EVERY item in the
+ * message, including ones that already succeeded. That is safe for idempotent
+ * write-backs (mark-read, to-do, RSVP, reaction, link updates — set/PUT
+ * semantics) but NOT for `onNoteCreated` reply sends, which most connectors
+ * perform unconditionally and would therefore double-send. A message carrying a
+ * note send is marked non-redeliverable by the caller, so its transient faults
+ * fall through to capture-and-continue (today's drop behavior) rather than risk
+ * a duplicate reply. When it rethrows, it tags the error with the owning user so
+ * an exhaustion capture attributes to a real person rather than a random id.
+ */
+function handleTwistBatchItemError(
+  postHog: PostHog,
+  error: unknown,
+  distinctId: string,
+  properties: Record<string, unknown>,
+  redeliverable: boolean
+): void {
+  if (redeliverable && isRetriableDispatchError(error)) {
+    if (
+      error instanceof Error &&
+      !(error as ErrorWithTwistOwner).twistOwnerId
+    ) {
+      (error as ErrorWithTwistOwner).twistOwnerId = distinctId;
+    }
+    throw error;
+  }
+  captureTwistBatchError(postHog, error, distinctId, properties);
+}
+
+/**
  * Process a batch of twist update messages from the queue.
- * Each message contains enriched entity data for a single twist instance.
+ *
+ * Each message is delivered independently: a transient infrastructure fault
+ * that prevents a connector write-back from being delivered retries THAT
+ * message (Cloudflare redelivers it) instead of silently ACKing it away —
+ * `processTwistBatch` rethrows such faults, everything else it isolates
+ * in-place. The updates queue has no dead-letter queue, so a transient that
+ * persists to the delivery cap is reported once and ACKed rather than left to
+ * vanish. Mirrors `processWebhooks` / `Tasks.processQueue`.
  */
 export async function processUpdates(
   batch: MessageBatch<TwistBatchMessage>,
@@ -67,17 +137,69 @@ export async function processUpdates(
   postHog: PostHog
 ): Promise<void> {
   const db = createDb(env);
+  const logger = createLogger({
+    queue: batch.queue,
+    batch_size: batch.messages.length,
+  });
 
   try {
     for (const message of batch.messages) {
-      await processTwistBatch(
-        message.body,
-        env,
-        ctx,
-        db,
-        batch.queue,
-        postHog
-      );
+      const twistInstanceId = message.body.twistInstanceId;
+      try {
+        await processTwistBatch(
+          message.body,
+          env,
+          ctx,
+          db,
+          batch.queue,
+          postHog
+        );
+        message.ack();
+      } catch (error) {
+        // `processTwistBatch` only lets an error escape when it's a TRANSIENT
+        // infrastructure fault on a redeliverable message (every genuine
+        // per-item error is captured and swallowed inside it). Retry so
+        // Cloudflare redelivers the identical message and the write-back
+        // callbacks — which are idempotent for redeliverable messages — land on
+        // a healthy isolate. A permanent error can still reach here from the
+        // pre-dispatch twist_instance lookup; isolate it (ack) so it can't
+        // storm the queue.
+        if (
+          isRetriableDispatchError(error) &&
+          !isQueueRetryExhausted(message.attempts)
+        ) {
+          logger.warn("Twist batch transient fault, retrying", {
+            twist_instance_id: twistInstanceId,
+            attempts: message.attempts,
+            error: String(error),
+          });
+          message.retry();
+          continue;
+        }
+
+        // Reached here two ways: a transient that burned through every delivery
+        // (the updates queue has NO dead-letter queue, so it would otherwise
+        // vanish), or a genuine/unexpected error. Report once — attributed to
+        // the owning user when the rethrow tagged it — and ACK so it neither
+        // storms nor disappears silently.
+        const transientExhausted = isRetriableDispatchError(error);
+        const outcome = transientExhausted ? "transient_exhausted" : "failure";
+        logger.error("Twist batch delivery failed", error as Error, {
+          twist_instance_id: twistInstanceId,
+          attempts: message.attempts,
+          outcome,
+        });
+        const ownerId =
+          (error as ErrorWithTwistOwner)?.twistOwnerId ??
+          `twist:${twistInstanceId}`;
+        postHog.captureException(error as Error, ownerId, {
+          queue: batch.queue,
+          twist_instance_id: twistInstanceId,
+          attempts: message.attempts,
+          outcome,
+        });
+        message.ack();
+      }
     }
   } finally {
     await db.destroy();
@@ -258,6 +380,21 @@ export async function processTwistBatch(
     twistInstance,
   } = batchData;
 
+  // Whether a transient fault may retry the WHOLE message. Re-delivery re-runs
+  // every item, so it's only safe when none of them is a non-idempotent send:
+  // `onNoteCreated` (newNotes) and `onNoteUpdated` (updatedNotes) reply-sends
+  // that most connectors perform unconditionally (double-send on retry), and
+  // inbound `channelNewNotes`, which also fires push notifications and AI note
+  // analysis that would repeat. The remaining write-backs (mark-read, to-do,
+  // RSVP, reaction, link updates) are idempotent set/PUT operations, so a
+  // note-free message is safe to redeliver. A note-bearing message keeps
+  // capture-and-continue: its write-backs are still best-effort (unchanged from
+  // before this guard), we just never re-send them.
+  const redeliverable =
+    newNotes.length === 0 &&
+    updatedNotes.length === 0 &&
+    channelNewNotes.length === 0;
+
   const logger = createLogger({
     twist_instance_id: twistInstanceId,
     twist_id: String(twistId),
@@ -287,6 +424,23 @@ export async function processTwistBatch(
   }
 
   const ownerId = twistStatus.owner_id;
+
+  // Handle an error from a write-back dispatch: rethrow a transient fault to
+  // retry the whole message when it's safe to redeliver, otherwise capture-and-
+  // continue. Bound to this message's `redeliverable` so the call sites stay
+  // terse.
+  const handleItemError = (
+    error: unknown,
+    distinctId: string,
+    properties: Record<string, unknown>
+  ): void =>
+    handleTwistBatchItemError(
+      postHog,
+      error,
+      distinctId,
+      properties,
+      redeliverable
+    );
 
   try {
     if (twistStatus.suspended_at) {
@@ -372,7 +526,7 @@ export async function processTwistBatch(
             thread_id: note.thread_id ?? undefined,
           }
         );
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteId,
@@ -419,7 +573,7 @@ export async function processTwistBatch(
             thread_id: note.thread_id ?? undefined,
           }
         );
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteId,
@@ -507,7 +661,7 @@ export async function processTwistBatch(
             priority_id: activity.priority_id ?? undefined,
           }
         );
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: activityId,
@@ -543,7 +697,7 @@ export async function processTwistBatch(
         logger.error("Error processing channel link create", error as Error, {
           link_id: link.id,
         });
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           link_id: link.id,
@@ -578,7 +732,7 @@ export async function processTwistBatch(
         logger.error("Error processing channel link update", error as Error, {
           link_id: link.id,
         });
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           link_id: link.id,
@@ -732,7 +886,7 @@ export async function processTwistBatch(
         logger.error("Error processing channel note create", error as Error, {
           note_id: note.id,
         });
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: note.id,
@@ -760,7 +914,7 @@ export async function processTwistBatch(
           thread_id: threadRead.thread_id,
           user_id: threadRead.user_id ?? undefined,
         });
-        captureTwistBatchError(postHog, error, threadRead.user_id ?? ownerId, {
+        handleItemError(error, threadRead.user_id ?? ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: threadRead.thread_id,
@@ -787,7 +941,7 @@ export async function processTwistBatch(
           schedule_id: scheduleContact.schedule_id,
           contact_id: scheduleContact.contact_id ?? undefined,
         });
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           schedule_id: scheduleContact.schedule_id,
@@ -814,7 +968,7 @@ export async function processTwistBatch(
           actor_id: noteReaction.actor_id ?? undefined,
           emoji: noteReaction.emoji,
         });
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteReaction.note_id,
@@ -841,7 +995,7 @@ export async function processTwistBatch(
           thread_id: threadSchedule.thread_id,
           user_id: threadSchedule.user_id ?? undefined,
         });
-        captureTwistBatchError(postHog, error, threadSchedule.user_id ?? ownerId, {
+        handleItemError(error, threadSchedule.user_id ?? ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: threadSchedule.thread_id,
@@ -873,7 +1027,7 @@ export async function processTwistBatch(
             twist_instance_id: twistInstanceId,
           }
         );
-        captureTwistBatchError(postHog, error, ownerId, {
+        handleItemError(error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           queue,
@@ -900,7 +1054,7 @@ export async function processTwistBatch(
       twist_instance_id: twistInstanceId,
       twist_id: String(twistId),
     });
-    captureTwistBatchError(postHog, error, ownerId, {
+    handleItemError(error, ownerId, {
       twist_id: String(twistId),
       twist_instance_id: twistInstanceId,
       queue,
