@@ -395,6 +395,20 @@ class _ModalProviderState extends State<ModalProvider> {
   }
 
   Future<Value<T>> push<T>(BuildContext context, Widget modal) {
+    // On mobile a modal is presented as a bottom sheet whose position and
+    // max height are derived from the current keyboard inset
+    // (MediaQuery.viewInsets.bottom — see [Modal.build] and forui's
+    // ShiftedSheet). Proactively drop any active text focus so a lingering
+    // soft keyboard — or a stale keyboard inset left behind by an app-switch,
+    // which Android doesn't always re-dispatch on resume — doesn't shove the
+    // sheet up and leave an empty band at the bottom of the screen. Mobile
+    // modals never autofocus a field on open (SelectModal's field uses
+    // `autofocus: hasPhysicalKeyboard()`, false on touch), so this can't
+    // dismiss a keyboard the modal itself needs.
+    if (!context.isMultiPanel) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+
     final stackItem = _ModalStackItem<T>(modal);
 
     _modalStack.add(stackItem);
