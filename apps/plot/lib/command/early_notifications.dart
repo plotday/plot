@@ -356,7 +356,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
 class ShowSendWindowSettings extends ShowForm {
   ShowSendWindowSettings(this.priority)
     : super(
-        title: 'Send window',
+        title: 'Scheduled sending',
         icon: PlotIcon.later,
         form: (context) => _buildForm(context, priority),
       );
@@ -375,6 +375,7 @@ class ShowSendWindowSettings extends ShowForm {
     final windowList = FormWindowList(
       key: 'send_window',
       initialWindows: initial,
+      addLabel: 'Add a scheduled sending window',
       onEdit: (modalContext, index) async {
         final wl = windowsRef!;
         final current = wl.windows[index];
@@ -415,12 +416,14 @@ class ShowSendWindowSettings extends ShowForm {
     windowsRef = windowList;
 
     return FormData(
-      title: 'Send window for ${priority.displayTitle}',
+      title: 'Scheduled sending for ${priority.displayTitle}',
       groups: [
         StaticFormGroup(
           subtitle:
-              'Messages drafted outside these windows are scheduled to send '
-              'at the next opening. No windows = send anytime.',
+              'Set when messages you write are delivered. Messages you create '
+              'outside these times are automatically scheduled for the next '
+              'sending window. You can always change or remove scheduling for '
+              'any message.',
           items: [windowList],
         ),
         StaticFormGroup(
@@ -517,7 +520,7 @@ class _SaveSendWindow extends Command {
 class ShowRoleSendWindowSettings extends ShowForm {
   ShowRoleSendWindowSettings(this.role)
     : super(
-        title: 'Send window',
+        title: 'Scheduled sending',
         icon: PlotIcon.later,
         form: (context) => _buildForm(context, role),
       );
@@ -531,6 +534,7 @@ class ShowRoleSendWindowSettings extends ShowForm {
     final windowList = FormWindowList(
       key: 'send_window',
       initialWindows: initial,
+      addLabel: 'Add a scheduled sending window',
       onEdit: (modalContext, index) async {
         final wl = windowsRef!;
         final editResult = await ShowEarlyNotificationsSettings
@@ -569,12 +573,14 @@ class ShowRoleSendWindowSettings extends ShowForm {
     windowsRef = windowList;
 
     return FormData(
-      title: 'Send window for ${role.name}',
+      title: 'Scheduled sending for ${role.name}',
       groups: [
         StaticFormGroup(
           subtitle:
-              'The default for focuses in this role. Messages drafted outside '
-              'these windows are scheduled to send at the next opening.',
+              'The default for focuses in this role. Set when messages you '
+              'write are delivered. Messages you create outside these times '
+              'are automatically scheduled for the next sending window. You '
+              'can always change or remove scheduling for any message.',
           items: [windowList],
         ),
         StaticFormGroup(

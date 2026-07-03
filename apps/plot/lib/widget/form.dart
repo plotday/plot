@@ -1114,12 +1114,16 @@ class FormWindowList extends FormItem {
     required this.onEdit,
     required this.onAdd,
     this.onChanged,
+    this.addLabel = 'Add notification window',
   }) : _windows = List.of(initialWindows),
        super(required: true);
 
   final Future<void> Function(BuildContext context, int index) onEdit;
   final Future<void> Function(BuildContext context) onAdd;
   final VoidCallback? onChanged;
+
+  /// Label for the keyboard-navigable "add" row at the bottom of the list.
+  final String addLabel;
 
   List<AttentionWindow> _windows;
   final List<VoidCallback> _listeners = [];
@@ -1202,6 +1206,7 @@ class FormWindowList extends FormItem {
       windows: _windows,
       onEdit: onEdit,
       onAdd: onAdd,
+      addLabel: addLabel,
       highlightedSubIndex: highlightedSubIndex,
       focusNodes: focusNodes,
     );
@@ -1213,6 +1218,7 @@ class _FormWindowListWidget extends StatelessWidget {
     required this.windows,
     required this.onEdit,
     required this.onAdd,
+    required this.addLabel,
     required this.highlightedSubIndex,
     this.focusNodes = const [],
   });
@@ -1220,6 +1226,7 @@ class _FormWindowListWidget extends StatelessWidget {
   final List<AttentionWindow> windows;
   final Future<void> Function(BuildContext context, int index) onEdit;
   final Future<void> Function(BuildContext context) onAdd;
+  final String addLabel;
   final int highlightedSubIndex;
   final List<FocusNode> focusNodes;
 
@@ -1236,6 +1243,7 @@ class _FormWindowListWidget extends StatelessWidget {
             focusNode: i < focusNodes.length ? focusNodes[i] : null,
           ),
         _AddWindowTile(
+          label: addLabel,
           onTap: () => onAdd(context),
           highlighted: highlightedSubIndex == windows.length,
           focusNode: windows.length < focusNodes.length
@@ -1285,11 +1293,13 @@ class _WindowTile extends StatelessWidget {
 
 class _AddWindowTile extends StatelessWidget {
   const _AddWindowTile({
+    required this.label,
     required this.onTap,
     required this.highlighted,
     this.focusNode,
   });
 
+  final String label;
   final VoidCallback onTap;
   final bool highlighted;
   final FocusNode? focusNode;
@@ -1297,7 +1307,7 @@ class _AddWindowTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: 'Add notification window',
+      title: label,
       icon: PlotIcon.add,
       padding: EdgeInsets.symmetric(
         horizontal: context.theme.spacing.xl,
@@ -1308,7 +1318,7 @@ class _AddWindowTile extends StatelessWidget {
       focusNode: focusNode,
       command: CommandWrapper(
         _FormSubmitCommand(),
-        title: 'Add notification window',
+        title: label,
         icon: Value(PlotIcon.add),
         run: (_, _) async {
           onTap();
