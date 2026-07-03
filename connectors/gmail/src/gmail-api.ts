@@ -672,31 +672,44 @@ export function stripQuotedReply(
   if (isForwardedMessage(content)) return content;
 
   if (contentType === "html") {
-    // Gmail wraps quoted replies in <div class="gmail_quote">
-    // Remove it and everything after it
+    // Different mail clients wrap quoted history in different containers.
+    // Collect every recognized quote boundary and cut at the EARLIEST one:
+    // once the first boundary is reached, everything after it is quoted
+    // history, even if it contains nested markers from a different client
+    // (e.g. an Apple Mail reply whose quote embeds the Gmail original, which
+    // still carries its own `gmail_quote` div deeper in the byte stream).
+    const candidates: number[] = [];
+
+    // Gmail wraps quoted replies in <div class="gmail_quote">.
     const gmailQuoteIdx = content.search(
       /<div[^>]*class\s*=\s*["'][^"']*gmail_quote[^"']*["'][^>]*>/i
     );
-    if (gmailQuoteIdx !== -1) {
-      return content.substring(0, gmailQuoteIdx).trim();
-    }
+    if (gmailQuoteIdx !== -1) candidates.push(gmailQuoteIdx);
 
-    // Some clients use <blockquote> with gmail_quote class
-    const blockquoteIdx = content.search(
+    // Some clients use <blockquote> with the gmail_quote class.
+    const gmailBlockquoteIdx = content.search(
       /<blockquote[^>]*class\s*=\s*["'][^"']*gmail_quote[^"']*["'][^>]*>/i
     );
-    if (blockquoteIdx !== -1) {
-      return content.substring(0, blockquoteIdx).trim();
-    }
+    if (gmailBlockquoteIdx !== -1) candidates.push(gmailBlockquoteIdx);
 
-    // Microsoft Outlook-style: <div id="appendonsend"></div> followed by quoted content,
-    // or a <hr> divider followed by "From:" header pattern
+    // Apple Mail (Mail.app / iPhone Mail) wraps the "On <date>, <name>
+    // wrote:" attribution and the quoted history in <blockquote type="cite">.
+    const appleCiteIdx = content.search(
+      /<blockquote[^>]*type\s*=\s*["']cite["'][^>]*>/i
+    );
+    if (appleCiteIdx !== -1) candidates.push(appleCiteIdx);
+
+    // Yahoo Mail wraps quoted history in <div class="yahoo_quoted"> /
+    // <div id="yahoo_quoted_...">.
+    const yahooQuotedIdx = content.search(/<div[^>]*yahoo_quoted/i);
+    if (yahooQuotedIdx !== -1) candidates.push(yahooQuotedIdx);
+
+    // Microsoft Outlook-style: <div id="appendonsend"></div> or
+    // <div id="divRplyFwdMsg"> before the quoted content.
     const outlookDivIdx = content.search(
       /<div[^>]*id\s*=\s*["'](?:appendonsend|divRplyFwdMsg)["'][^>]*>/i
     );
-    if (outlookDivIdx !== -1) {
-      return content.substring(0, outlookDivIdx).trim();
-    }
+    if (outlookDivIdx !== -1) candidates.push(outlookDivIdx);
 
     // Outlook (desktop, OWA, and corporate Exchange clients) wraps replies
     // with a "From: / Sent: / To: / Subject:" header block. The markup
@@ -735,7 +748,11 @@ export function stripQuotedReply(
           cut = lookbackStart + wrapper;
         }
       }
-      return content.substring(0, cut).trim();
+      candidates.push(cut);
+    }
+
+    if (candidates.length > 0) {
+      return content.substring(0, Math.min(...candidates)).trim();
     }
 
     return content;
