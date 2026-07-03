@@ -1,3 +1,45 @@
+## 1.5.2+376 — 2026-07-03
+
+### LinkedIn
+
+- LinkedIn connection requests now explain who's reaching out — with their name, headline, and a link to their profile — and you can Accept or Ignore the request right from Plot.
+- Post to LinkedIn straight from Plot and follow the conversation — comments on your posts show up as replies, and replying in Plot comments back on LinkedIn.
+
+### Plot assistant
+
+- Approving an organization plan now actually applies the changes, and the assistant reports exactly what succeeded.
+- The assistant now searches your whole workspace (every focus), can read any thread it finds, and shows live progress while it works.
+- Long or complex requests keep going instead of stopping halfway — the assistant continues in the background and posts the finished answer.
+
+### Sending
+
+- The "Send window" focus setting is now called "Scheduled sending", with clearer wording explaining that messages you write outside your chosen times are automatically scheduled for the next sending window.
+- Schedule a message to send later: tap the clock beside Send, pick a date and time, and Plot delivers it at that moment — even if the app is closed. Works for replies and new messages, including email and other connected apps. Tap the "Scheduled for …" label any time before it sends to change the time or edit the message.
+- Set send windows on a focus (or a whole role): messages drafted outside the window are automatically scheduled to go out when the window next opens. You can always adjust or clear the suggested time before sending.
+
+### Agenda
+
+- The day's date now stays pinned at the top as you scroll through the agenda, so you always know which day you're looking at.
+
+### Threads
+
+- Section headings (like Active and Done) now stick to the top of the thread list as you scroll, so the current section is always labelled — and their buttons stay within reach.
+
+### Fixes
+
+- Adding a paid connection or twist add-on now shows a clear "waiting for checkout" status while you finish payment in your browser, and connects automatically once it goes through.
+- Marking a to-do done now clears it in the connected app too — completing a starred Gmail email (or a flagged message) removes the star instead of leaving it stuck on.
+- Reactions on messages no longer occasionally appear as the word "undefined" instead of the emoji.
+- Reading and starring an email in Gmail no longer makes the thread pop back to unread in both Gmail and Plot.
+- Fixed a bug where a newly connected account (such as LinkedIn) could immediately show "Reconnect" and sync nothing, for people who have more than one email/contact on their account.
+- Fixed a LinkedIn connection sometimes showing the same account twice (with a duplicate "Sync new channels" option) after reconnecting. LinkedIn now always shows its single account and its fixed set of channels.
+- On Android, the focus list no longer draws behind the status bar.
+- On Android, opening a menu right after using the keyboard no longer leaves a blank grey gap at the bottom of the screen.
+- Opening a thread now shows its latest replies right away, instead of sometimes needing you to leave and come back for a new reply to appear.
+- After returning from a thread to the list, tapping it again reliably reopens it — it no longer stays stuck as "selected" and unresponsive.
+- Rejecting an assistant plan no longer replies "Done!"; new focuses are only created after you approve the plan.
+- WhatsApp group messages now show each sender's real name instead of a generic "WhatsApp user", and the group's members appear as contacts on the thread.
+
 ## 1.5.1+375 — 2026-07-01
 
 ### Connections
