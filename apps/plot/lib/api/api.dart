@@ -539,11 +539,13 @@ Future<Map<String, dynamic>> uploadFile({
 /// Throws [ApiException] (with statusCode 410) when the source attachment is
 /// no longer available, and [NetworkException] on connectivity issues.
 Future<Uint8List> getFileRefBytes(String noteId, int actionIndex) async {
-  final endpoint = '/app/files/ref/$noteId/$actionIndex';
+  // Env.apiRoot already ends in `/app`; the resolver lives at
+  // `${apiRoot}/files/ref/...`. `endpoint` is only a label for errors/logging.
+  final endpoint = '/files/ref/$noteId/$actionIndex';
   try {
     final headers = await getHeaders()..remove('Content-Type');
     final response = await http.get(
-      Uri.parse('${Env.apiRoot}$endpoint'),
+      buildFileRefUri(Env.apiRoot, noteId, actionIndex),
       headers: headers,
     ).timeout(const Duration(seconds: 120));
     if (response.statusCode != 200) {

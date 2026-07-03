@@ -58,6 +58,7 @@ If any files were modified in the `public/` submodule:
 
 - **Twister SDK changes** (`public/twist/src/`): A changeset file MUST be included at `public/.changeset/<descriptive-name>.md` in the proper format (see CLAUDE.md "Changesets" section). Validate with `cd public && pnpm validate-changesets`.
 - **Separate PR**: Changes in the `public/` submodule need their own commit and PR in that repo, pushed before or alongside the main repo PR. Remind the user of this.
+- **Public consumption**: The `public/` repo is public on GitHub, so its commit messages, PR titles, and PR descriptions are world-readable and permanent. Write them for an external audience. **Before pushing, scrub any internal details** — private repo PR/issue numbers, internal ticket or PostHog IDs, internal infrastructure/service names, non-public schema internals, roadmap notes — and any real data (user PII, customer names, prod values, emails, credentials, log excerpts). Describe the change in terms of public SDK/connector behavior only. If the PR body was drafted from private context, rewrite it. See AGENTS.md "Public Repo PRs" for the full rule.
 
 ## When Done
 

@@ -8,3 +8,12 @@ Uri buildFileBytesUri(String apiRoot, String fileId, {int? width}) {
   if (width == null) return Uri.parse(base);
   return Uri.parse('$base?w=$width');
 }
+
+/// Builds the URL for the connector fileRef resolver
+/// (`GET /app/files/ref/:noteId/:actionIndex`).
+///
+/// [apiRoot] already includes the `/app` mount, so this appends only
+/// `/files/ref/...` — never a second `/app` (which would 404 as a route miss).
+Uri buildFileRefUri(String apiRoot, String noteId, int actionIndex) {
+  return Uri.parse('$apiRoot/files/ref/$noteId/$actionIndex');
+}

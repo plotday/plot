@@ -506,7 +506,19 @@ Before committing or declaring any code change complete, run `/finalize` to exec
 2. **Backwards compatibility**: Verify old clients work with new APIs. No removed/renamed fields without migration paths.
 3. **Error capture**: All new `catch` blocks for unexpected errors must call `captureException` (PostHog).
 4. **Documentation**: Notable user-facing changes add a fragment in `docs/updates.d/` (via `pnpm updates:new`). Major new functionality also updates `docs/features.md`.
-5. **Public submodule**: Changes in `public/` need a separate PR. Twister SDK changes require a changeset.
+5. **Public submodule**: Changes in `public/` need a separate PR. Twister SDK changes require a changeset. **The `public/` repo is public on GitHub — every commit message, PR title, and PR description there is world-readable. Write them for an external audience.** See "Public Repo PRs" below.
+
+### Public Repo PRs
+
+The `public/` submodule maps to a public GitHub repository. Anything you write into a commit, PR title, or PR description for it (or for any change that lands in that repo) is publicly visible and permanent. Write all of it for public consumption:
+
+- **Describe the change in terms of public SDK/connector behavior** — what a twist/connector author would observe. Explain the "what" and "why" at the level of the open-source surface.
+- **Never reference private/internal details**, including: private repo PR/issue numbers, internal ticket IDs, PostHog error/issue IDs or dashboards, internal infrastructure, database or schema internals not part of the public API, internal service names, workflow/deploy specifics, or roadmap/strategy.
+- **Never include real data**: user data or PII, customer/prospect names, production values, email addresses, IDs from prod, credentials, or log excerpts containing any of the above.
+- **No internal-only shorthand or cross-links** that only make sense inside the private monorepo (e.g. "as in the `core#573` fix", links to internal docs, or references to private connectors/twists by internal codename).
+- When a public change is driven by a private fix, describe the public-facing symptom and fix on its own terms — do not narrate the internal investigation.
+
+If a PR body was drafted with internal context (as commonly happens when the work originated in the private repo), rewrite it before pushing to the public repo.
 
 ## Thread Visibility Rules
 
