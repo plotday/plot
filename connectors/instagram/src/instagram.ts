@@ -75,7 +75,7 @@ export class Instagram extends Connector<Instagram> {
   readonly linkTypes = [
     {
       type: TYPE_CONVERSATION,
-      label: "Instagram chat",
+      label: "Chat",
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/instagram-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/instagram.svg",
@@ -89,7 +89,7 @@ export class Instagram extends Connector<Instagram> {
     },
     {
       type: TYPE_GROUP,
-      label: "Instagram group",
+      label: "Group",
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/instagram-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/instagram.svg",

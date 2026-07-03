@@ -55,7 +55,7 @@ export class WhatsApp extends Connector<WhatsApp> {
   readonly linkTypes = [
     {
       type: TYPE_CONVERSATION,
-      label: "WhatsApp chat",
+      label: "Chat",
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/whatsapp.svg",
@@ -63,7 +63,7 @@ export class WhatsApp extends Connector<WhatsApp> {
     },
     {
       type: TYPE_GROUP,
-      label: "WhatsApp group",
+      label: "Group",
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/whatsapp.svg",

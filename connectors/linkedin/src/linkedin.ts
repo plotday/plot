@@ -175,7 +175,7 @@ export class LinkedIn extends Connector<LinkedIn> {
   readonly linkTypes = [
     {
       type: TYPE_CONVERSATION,
-      label: "LinkedIn conversation",
+      label: "Conversation",
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/linkedin-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
