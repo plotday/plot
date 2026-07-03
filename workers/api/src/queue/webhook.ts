@@ -21,7 +21,21 @@ import { parseBodyFromRaw } from "../webhook";
 // back-compat CallCallback path reachable from other routes.
 function isDurableObjectResetError(error: unknown): boolean {
   const msg = (error as Error)?.message ?? "";
-  return msg.includes("Durable Object storage operation exceeded timeout");
+  return (
+    // A DO call held its storage gate past the platform's watchdog.
+    msg.includes("Durable Object storage operation exceeded timeout") ||
+    // Cloudflare failed to initialize the CALLBACKS DO's storage on the
+    // validateAndLoad / delete hop (see invoke-webhook.ts) and reset the
+    // object. The runtime emits several phrasings — "Internal error while
+    // starting up Durable Object storage caused object to be reset", "Internal
+    // error in Durable Object storage caused object to be reset" — so match the
+    // stable platform signature, not one exact string. Same class of transient
+    // fault; self-resolves on retry. Without this these fell through to the
+    // generic capture below, one PostHog exception per occurrence (issue
+    // 019f277a: 214 captures / 158 users in a single day).
+    (msg.includes("Durable Object storage") &&
+      msg.includes("caused object to be reset"))
+  );
 }
 
 /**
@@ -104,8 +118,31 @@ export async function processWebhooks(
       }
 
       if (isDurableObjectResetError(error)) {
+        // Same persistent-failure guard as the transient branch below: no DLQ,
+        // so a reset that persists to the attempt cap (a poisoned DO, or a
+        // platform incident outlasting the retry window) would otherwise drop
+        // the webhook with zero signal anywhere.
+        if (isQueueRetryExhausted(message.attempts)) {
+          logger.error(
+            "Durable Object reset processing webhook exhausted retries",
+            error as Error,
+            {
+              token: token.substring(0, 8) + "...",
+              attempts: message.attempts,
+            }
+          );
+          postHog.captureException(error as Error, undefined, {
+            queue: batch.queue,
+            token: token.substring(0, 8) + "...",
+            attempts: message.attempts,
+            outcome: "do_reset_exhausted",
+          });
+          message.ack();
+          return;
+        }
         logger.warn("Durable Object reset during webhook callback, retrying", {
           token: token.substring(0, 8) + "...",
+          attempts: message.attempts,
         });
         message.retry();
         return;

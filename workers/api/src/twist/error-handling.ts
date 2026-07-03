@@ -8,6 +8,7 @@ import { Tracker } from "../utils/tracker";
 import {
   isAuthError,
   isRateLimitError,
+  isTransientDoResetError,
   isTransientError,
 } from "../utils/transient-error";
 import { ThreadFilingSkippedError } from "./tools/plot/thread-helpers";
@@ -93,6 +94,18 @@ export async function handleTwistOperation<T>(
     // these silently — escalating them to TWIST_LOGS_QUEUE or PostHog
     // would just add noise to the user-facing twist log on every retry.
     if (isTransientError(error)) {
+      throw error;
+    }
+
+    // Cloudflare Durable Object resets — the platform resets a DO when its
+    // storage gate overruns or fails to initialize ("... Durable Object storage
+    // caused object to be reset; reference = <id>"). These surface here when a
+    // callback's DO hop faults mid-execution. Like the transient blips above
+    // they self-resolve on retry and are not actionable by twist developers, so
+    // the queue consumers (`processWebhooks`, `Tasks.processQueue`) retry them
+    // silently. Rethrow WITHOUT escalating to TWIST_LOGS_QUEUE / PostHog so a
+    // single platform blip doesn't page Error Tracking (PostHog issue 019f277a).
+    if (isTransientDoResetError(error)) {
       throw error;
     }
 

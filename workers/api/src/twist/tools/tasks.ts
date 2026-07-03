@@ -18,6 +18,7 @@ import { disposeRpc } from "../../utils/rpc";
 import {
   isAuthError,
   isRateLimitError,
+  isTransientDoResetError,
   isTransientError,
 } from "../../utils/transient-error";
 import { Tool } from "./tool";
@@ -260,7 +261,16 @@ export class Tasks extends Tool implements IRun {
         // here retries the idempotent task QUIETLY (no Error Tracking page) with
         // the same isQueueRetryExhausted one-time-report backstop — instead of
         // falling through to failure_retry, which would re-flood 019ed581.
-        if (isTransientError(error) || isTransientDbError(error)) {
+        // isTransientDoResetError covers a Cloudflare DO reset ("... Durable
+        // Object storage caused object to be reset; reference = <id>") thrown
+        // from a callback's DO hop — platform noise that self-resolves on retry
+        // (PostHog issue 019f277a). Without it the reset fell through to
+        // failure_retry below and paged Error Tracking on every occurrence.
+        if (
+          isTransientError(error) ||
+          isTransientDbError(error) ||
+          isTransientDoResetError(error)
+        ) {
           // Persistent failure guard: the run queue has no DLQ, so once retries
           // are exhausted Cloudflare drops the message silently. If a transient
           // error keeps failing to the attempt cap (e.g. an isolate that OOMs

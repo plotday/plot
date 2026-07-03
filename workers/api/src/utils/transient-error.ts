@@ -63,6 +63,14 @@ export function isTransientDoResetError(error: unknown): boolean {
   return (
     msg.includes("storage operation exceeded timeout") ||
     msg.includes("internal error; reference") ||
+    // Storage failed to initialize and the platform reset the object. Matched
+    // on the stable signature because the runtime emits several phrasings —
+    // "Internal error while starting up Durable Object storage caused object
+    // to be reset", "Internal error in Durable Object storage caused object to
+    // be reset" (PostHog issue 019f277a surfaced on the CALLBACKS DO webhook
+    // hop; the same fault can hit any DO handler).
+    (msg.includes("Durable Object storage") &&
+      msg.includes("caused object to be reset")) ||
     msg.includes("Network connection lost")
   );
 }
@@ -83,6 +91,12 @@ export function transientErrorReason(error: unknown): string {
     return "do_storage_timeout";
   }
   if (msg.includes("internal error; reference")) return "platform_internal";
+  if (
+    msg.includes("Durable Object storage") &&
+    msg.includes("caused object to be reset")
+  ) {
+    return "do_storage_reset";
+  }
   if (msg.includes("Network connection lost")) return "network_lost";
   if (
     lower.includes("connection terminated") ||

@@ -66,6 +66,25 @@ describe("isTransientDoResetError", () => {
     expect(
       isTransientDoResetError(new Error("internal error; reference = abc123"))
     ).toBe(true);
+    // Storage failed to initialize and the platform reset the object. Both
+    // "while starting up" (issue 019f277a) and "in" phrasings are matched on
+    // the stable signature.
+    expect(
+      isTransientDoResetError(
+        new Error(
+          "Internal error while starting up Durable Object storage caused " +
+            "object to be reset; reference = q1jnt2ahu9rjefmqe6npchv9"
+        )
+      )
+    ).toBe(true);
+    expect(
+      isTransientDoResetError(
+        new Error(
+          "Internal error in Durable Object storage caused object to be " +
+            "reset; reference = 26ou2mt86hahckspbj7bpcar"
+        )
+      )
+    ).toBe(true);
     // DO-to-DO fetch dropped mid-flight.
     expect(
       isTransientDoResetError(new Error("Network connection lost"))
@@ -100,6 +119,14 @@ describe("transientErrorReason", () => {
     expect(
       transientErrorReason(new Error("internal error; reference = abc123"))
     ).toBe("platform_internal");
+    expect(
+      transientErrorReason(
+        new Error(
+          "Internal error while starting up Durable Object storage caused " +
+            "object to be reset; reference = q1jnt2ahu9rjefmqe6npchv9"
+        )
+      )
+    ).toBe("do_storage_reset");
     expect(transientErrorReason(new Error("Network connection lost"))).toBe(
       "network_lost"
     );

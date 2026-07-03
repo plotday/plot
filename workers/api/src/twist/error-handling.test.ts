@@ -168,4 +168,28 @@ describe("handleTwistOperation suppresses expected provider errors", () => {
     expect(captureException).not.toHaveBeenCalled();
     expect(context.env.TWIST_LOGS_QUEUE.send).not.toHaveBeenCalled();
   });
+
+  it("does not capture or log a Cloudflare Durable Object reset, but still rethrows", async () => {
+    // A callback's DO hop faulted and the platform reset the object. The queue
+    // consumers retry these via isTransientDoResetError; escalating here would
+    // page Error Tracking on every occurrence (PostHog issue 019f277a — the
+    // RUN_QUEUE path captured this at handleTwistOperation + Tasks.processQueue).
+    const message =
+      "Internal error in Durable Object storage caused object to be reset; " +
+      "reference = 1irqeqag57aq2nfnq4ucegng";
+    const context = makeContext();
+
+    await expect(
+      handleTwistOperation(
+        "op",
+        async () => {
+          throw new Error(message);
+        },
+        context
+      )
+    ).rejects.toThrow(message);
+
+    expect(captureException).not.toHaveBeenCalled();
+    expect(context.env.TWIST_LOGS_QUEUE.send).not.toHaveBeenCalled();
+  });
 });

@@ -12,6 +12,49 @@ import { createLogger } from "@plotday/worker-util";
 import { analyzeNote } from "./note-analysis";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
 import { markChannelNoteUnreadFallback } from "./channel-note-unread";
+import {
+  isAuthError,
+  isRateLimitError,
+  isTransientDoResetError,
+  isTransientError,
+} from "../utils/transient-error";
+
+/**
+ * Capture an error thrown while processing a twist-batch item to PostHog Error
+ * Tracking — UNLESS it's an expected infrastructure / provider blip. Every
+ * per-item catch in `processTwistBatch` swallows the error and continues
+ * (best-effort, no retry), so the only decision is whether to page Error
+ * Tracking.
+ *
+ * Cloudflare Durable Object resets and other transient platform faults,
+ * downstream provider rate-limits, and terminal auth errors are all expected —
+ * self-resolving or user-driven — and are deliberately NOT paged by the other
+ * queue consumers (`processWebhooks`, `Tasks.processQueue`) or
+ * `handleTwistOperation`. Without this filter a single platform blip inside a
+ * connector callback fans one fault out into a capture per affected item:
+ * PostHog issue 019f277a saw the "starting up Durable Object storage caused
+ * object to be reset" fault captured 30× from `Google.onThreadRead` alone
+ * (sibling of the 214-capture webhook-queue flood). These markers survive the
+ * `__TWIST_ERROR__` RPC-boundary wrapping because they are matched as
+ * substrings. The error is still logged at the call site; we only skip the
+ * PostHog capture.
+ */
+export function captureTwistBatchError(
+  postHog: PostHog,
+  error: unknown,
+  distinctId: string,
+  properties: Record<string, unknown>
+): void {
+  if (
+    isTransientError(error) ||
+    isTransientDoResetError(error) ||
+    isRateLimitError(error) ||
+    isAuthError(error)
+  ) {
+    return;
+  }
+  postHog.captureException(error as Error, distinctId, properties);
+}
 
 /**
  * Process a batch of twist update messages from the queue.
@@ -144,7 +187,7 @@ async function clearTwistingTag(
         priority_twist_id: priorityTwistId,
       }
     );
-    postHog.captureException(error as Error, ownerId, {
+    captureTwistBatchError(postHog, error, ownerId, {
       context: "twist:tag-cleanup",
       priority_twist_id: priorityTwistId,
       note_id: noteId,
@@ -329,7 +372,7 @@ export async function processTwistBatch(
             thread_id: note.thread_id ?? undefined,
           }
         );
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteId,
@@ -376,7 +419,7 @@ export async function processTwistBatch(
             thread_id: note.thread_id ?? undefined,
           }
         );
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteId,
@@ -464,7 +507,7 @@ export async function processTwistBatch(
             priority_id: activity.priority_id ?? undefined,
           }
         );
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: activityId,
@@ -500,7 +543,7 @@ export async function processTwistBatch(
         logger.error("Error processing channel link create", error as Error, {
           link_id: link.id,
         });
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           link_id: link.id,
@@ -535,7 +578,7 @@ export async function processTwistBatch(
         logger.error("Error processing channel link update", error as Error, {
           link_id: link.id,
         });
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           link_id: link.id,
@@ -610,7 +653,8 @@ export async function processTwistBatch(
                   ? analysisError.message
                   : String(analysisError),
             });
-            postHog.captureException(
+            captureTwistBatchError(
+              postHog,
               analysisError instanceof Error ? analysisError : new Error(String(analysisError)),
               ownerId,
               { context: "note-analysis:channelNote", note_id: note.id, twist_instance_id: twistInstanceId }
@@ -635,7 +679,7 @@ export async function processTwistBatch(
             note_id: note.id,
             thread_id: note.thread_id,
           });
-          postHog.captureException(error as Error, ownerId, {
+          captureTwistBatchError(postHog, error, ownerId, {
             context: "markThreadUnreadForOthers:channelNote",
             note_id: note.id,
             thread_id: note.thread_id,
@@ -688,7 +732,7 @@ export async function processTwistBatch(
         logger.error("Error processing channel note create", error as Error, {
           note_id: note.id,
         });
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: note.id,
@@ -716,7 +760,7 @@ export async function processTwistBatch(
           thread_id: threadRead.thread_id,
           user_id: threadRead.user_id ?? undefined,
         });
-        postHog.captureException(error as Error, threadRead.user_id ?? ownerId, {
+        captureTwistBatchError(postHog, error, threadRead.user_id ?? ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: threadRead.thread_id,
@@ -743,7 +787,7 @@ export async function processTwistBatch(
           schedule_id: scheduleContact.schedule_id,
           contact_id: scheduleContact.contact_id ?? undefined,
         });
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           schedule_id: scheduleContact.schedule_id,
@@ -770,7 +814,7 @@ export async function processTwistBatch(
           actor_id: noteReaction.actor_id ?? undefined,
           emoji: noteReaction.emoji,
         });
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteReaction.note_id,
@@ -797,7 +841,7 @@ export async function processTwistBatch(
           thread_id: threadSchedule.thread_id,
           user_id: threadSchedule.user_id ?? undefined,
         });
-        postHog.captureException(error as Error, threadSchedule.user_id ?? ownerId, {
+        captureTwistBatchError(postHog, error, threadSchedule.user_id ?? ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: threadSchedule.thread_id,
@@ -829,7 +873,7 @@ export async function processTwistBatch(
             twist_instance_id: twistInstanceId,
           }
         );
-        postHog.captureException(error as Error, ownerId, {
+        captureTwistBatchError(postHog, error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           queue,
@@ -856,7 +900,7 @@ export async function processTwistBatch(
       twist_instance_id: twistInstanceId,
       twist_id: String(twistId),
     });
-    postHog.captureException(error as Error, ownerId, {
+    captureTwistBatchError(postHog, error, ownerId, {
       twist_id: String(twistId),
       twist_instance_id: twistInstanceId,
       queue,

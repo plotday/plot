@@ -19,11 +19,11 @@ vi.mock("../twist/invoke-webhook", () => ({ invokeWebhookCallback }));
 // the heavy import chain never loads.
 vi.mock("../webhook", () => ({ parseBodyFromRaw: vi.fn() }));
 
-function makeMessage() {
+function makeMessage(attempts = 1) {
   return {
     id: "msg-1",
     timestamp: new Date(),
-    attempts: 1,
+    attempts,
     body: {
       type: "webhook" as const,
       token: "tok_abcdefgh",
@@ -37,9 +37,9 @@ function makeMessage() {
   };
 }
 
-async function run(error: Error) {
+async function run(error: Error, { attempts = 1 } = {}) {
   invokeWebhookCallback.mockRejectedValueOnce(error);
-  const message = makeMessage();
+  const message = makeMessage(attempts);
   const batch = {
     queue: "webhook-queue",
     messages: [message],
@@ -70,6 +70,49 @@ describe("processWebhooks suppresses expected provider errors", () => {
     expect(message.retry).toHaveBeenCalledTimes(1);
     expect(message.ack).not.toHaveBeenCalled();
     expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("retries a Durable Object storage-startup reset without paging PostHog", async () => {
+    // Cloudflare failed to start up the CALLBACKS DO's storage (the
+    // validateAndLoad hop in invoke-webhook) and reset the object:
+    // "Internal error while starting up Durable Object storage caused object
+    // to be reset; reference = <id>" (PostHog issue 019f277a: 214 captures /
+    // 158 users in one day). Platform noise, self-resolves on retry — warn +
+    // retry, never page.
+    const { message, captureException } = await run(
+      new Error(
+        "Internal error while starting up Durable Object storage caused " +
+          "object to be reset; reference = q1jnt2ahu9rjefmqe6npchv9"
+      )
+    );
+
+    expect(message.retry).toHaveBeenCalledTimes(1);
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports a Durable Object reset ONCE when retries are exhausted, then acks", async () => {
+    // The webhook queue has no DLQ, so after max_retries Cloudflare silently
+    // drops the message. A reset that persists to the attempt cap (a poisoned
+    // DO, or a platform incident outlasting the retry window) must leave one
+    // signal — the same isQueueRetryExhausted backstop the transient branch
+    // uses. A blip that recovers on attempts 1-2 never reaches this.
+    const { message, captureException } = await run(
+      new Error(
+        "Internal error in Durable Object storage caused object to be " +
+          "reset; reference = q1jnt2ahu9rjefmqe6npchv9"
+      ),
+      { attempts: 3 }
+    );
+
+    expect(message.ack).toHaveBeenCalledTimes(1);
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      undefined,
+      expect.objectContaining({ outcome: "do_reset_exhausted", attempts: 3 })
+    );
   });
 
   it("acks a terminal auth error without paging PostHog", async () => {
