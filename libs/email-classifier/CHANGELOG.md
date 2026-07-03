@@ -1,5 +1,11 @@
 # @plotday/email-classifier
 
+## 0.1.13
+
+### Fixed
+
+- a directly-addressed reply is now classified as a message instead of a notification, even when the sending system stamps automated headers (support desks, ticketing systems). Previously short automated replies were swept into the muted FYI focus, burying real two-way conversations. ([#252](https://github.com/plotday/plot/pull/252) [`b575f76`](https://github.com/plotday/plot/commit/b575f76337a3bd6b51b0ddc28f6286b57d339d54))
+
 ## 0.1.12
 
 ### Changed
