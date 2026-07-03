@@ -34,6 +34,25 @@ hookMessaging.post("/hook/messaging", async (c) => {
       have_signature: !!signature,
       header_names: Object.keys(c.req.header()),
     });
+    // A delivery that carried a signature but failed verification is almost
+    // never internet noise (scanners don't send `unipile-signature`) — it means
+    // our stored UNIPILE_WEBHOOK_SECRET no longer matches the endpoint's signing
+    // secret. That happens when the Unipile webhook is recreated (recreation
+    // rotates the secret) but the deployed secret isn't re-synced
+    // (scripts/sync-github-secrets). Every delivery then 401s and Unipile backs
+    // off the endpoint, silently stranding ALL inbound messages for that
+    // environment. Capture it so a secret drift pages instead of hiding.
+    // Requests with no signature header are just noise — warn only, no capture.
+    if (signature) {
+      c.var.tracker.captureException(
+        new Error(
+          "Unipile webhook signature verification failed with a signature present " +
+            "— UNIPILE_WEBHOOK_SECRET likely out of sync with the endpoint's " +
+            "signing secret (re-run scripts/sync-github-secrets after any webhook recreation)."
+        ),
+        { path: c.req.path, method: c.req.method, route: "hook/messaging" }
+      );
+    }
     return c.json({ ok: false }, 401);
   }
 
