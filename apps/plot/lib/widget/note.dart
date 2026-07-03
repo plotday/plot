@@ -390,7 +390,17 @@ class _NoteWidgetState extends State<NoteWidget> {
                               mainAxisAlignment: .center,
                               spacing: 4,
                               children: [
-                                const Text('sending'),
+                                // Drop the height-leading so the tight
+                                // `height: 1` ghost text style doesn't clip
+                                // the descender (the "g"). Mirrors
+                                // unified_header's tight-text box.
+                                const Text(
+                                  'sending',
+                                  textHeightBehavior: TextHeightBehavior(
+                                    applyHeightToFirstAscent: false,
+                                    applyHeightToLastDescent: false,
+                                  ),
+                                ),
                                 Icon(
                                   FontAwesomeIcons.xmark,
                                   size: context.theme.iconSizes.xs,
@@ -448,6 +458,13 @@ class _NoteWidgetState extends State<NoteWidget> {
                                 Text(
                                   'Scheduled for '
                                   '${formatRelativeSchedule(widget.note.sendAt!.toLocal(), context, capitalize: false)}',
+                                  // See the `sending` label above: drop the
+                                  // height-leading so the tight ghost text
+                                  // style doesn't clip descenders.
+                                  textHeightBehavior: const TextHeightBehavior(
+                                    applyHeightToFirstAscent: false,
+                                    applyHeightToLastDescent: false,
+                                  ),
                                 ),
                               ],
                             ),
