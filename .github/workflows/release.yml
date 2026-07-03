@@ -793,10 +793,18 @@ jobs:
       # for review). Best-effort: the AAB is already on internal testing, so a
       # promotion hiccup (a halted rollout, changes pending review) must not
       # fail the release.
+      #
+      # SUBMIT_VERSION_CODE pins the promotion to THIS run's build. The `beta`
+      # step above uploads the AAB as a draft; without an explicit version code,
+      # supply's promote skips the draft and promotes whatever is the last
+      # *completed* release on the internal track (a stale old build). Passing
+      # the build number makes supply promote exactly the build we just uploaded.
       - name: Promote to Google Play production
         id: submit
         if: ${{ inputs.submit_for_review }}
         continue-on-error: true
+        env:
+          SUBMIT_VERSION_CODE: ${{ needs.prepare-release.outputs.build_number }}
         run: |
           cd apps/plot/android
           fastlane submit_production
