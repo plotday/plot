@@ -109,6 +109,13 @@ export async function getTwist({
           toolPermissions: {},
           permissions: {},
         }),
+        // The real `twist` is a Worker Loader RPC stub. Reading a *property*
+        // (rather than calling a method) off a stub returns a truthy
+        // RpcProperty proxy, NEVER undefined — so `stub.dynamicLinkTypes ?? x`
+        // does not fall through. We expose a truthy value here so tests catch
+        // any regression that reads such flags as properties off `twist`
+        // instead of via the getSourceMetadata() method call. See factory.ts.
+        dynamicLinkTypes: () => {},
       }),
     };
     return {

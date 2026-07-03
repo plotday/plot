@@ -220,15 +220,14 @@ describe("twistFactory", () => {
   });
 
   describe("dynamicLinkTypes flag", () => {
-    // Note: dynamicLinkTypes is read from the connector's instance property via
-    // the Cloudflare Workers RPC proxy (same pattern as reactionCapabilities).
-    // In the test environment the RPC proxy returns undefined for instance
-    // properties, so the factory falls back to the initialised default (false).
-    // The important contract is that the field is present in the factory result
-    // and that it defaults to false — the deployment.ts permissions-injection
-    // tests (in deployment.test.ts) cover the true→_dynamic_link_types mapping.
-
-    it("includes dynamicLinkTypes in factory result (defaults false when connector omits it)", async () => {
+    it("reads dynamicLinkTypes via getSourceMetadata, not off the twist RPC stub", async () => {
+      // Regression guard for the "every twist flagged dynamic" bug: `twist` is
+      // a Worker Loader RPC stub, so a *property* read (`twist.dynamicLinkTypes`)
+      // returns a truthy proxy in production, never undefined — the loader mock
+      // models this by exposing a truthy `dynamicLinkTypes` property. The flag
+      // MUST instead be sourced from getSourceMetadata() (a method call that
+      // marshals the real value), which is null here → false. If the factory
+      // regresses to the direct property read, this assertion flips to true.
       const factory = twistFactory({
         env: testEnv,
         ctx,
@@ -244,7 +243,6 @@ describe("twistFactory", () => {
         twistInstanceId: "__deployment__",
       });
 
-      // Field must be present and typed boolean
       expect(typeof result.dynamicLinkTypes).toBe("boolean");
       expect(result.dynamicLinkTypes).toBe(false);
     });

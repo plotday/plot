@@ -94,6 +94,7 @@ export function twistFactory({
       provider?: string;
       scopes?: string[];
       linkTypes?: any[];
+      dynamicLinkTypes?: boolean;
       handleReplies?: boolean;
       shared?: boolean;
       keyOption?: string;
@@ -463,9 +464,13 @@ export function twistFactory({
       reactionCapabilities =
         (twist as { reactionCapabilities?: unknown }).reactionCapabilities ?? null;
 
-      // Read dynamicLinkTypes instance property from the connector
-      dynamicLinkTypes =
-        (twist as { dynamicLinkTypes?: boolean }).dynamicLinkTypes ?? false;
+      // Read dynamicLinkTypes from the source metadata, NOT off `twist`
+      // directly: `twist` is a Worker Loader RPC stub (see getTwist), and
+      // property reads on an RPC stub return a truthy proxy rather than the
+      // connector's real value — so `twist.dynamicLinkTypes ?? false` never
+      // fell through and every twist got flagged dynamic. getSourceMetadata()
+      // is a *method* call, so it marshals the real instance value.
+      dynamicLinkTypes = sourceProvider?.dynamicLinkTypes ?? false;
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
       // Use stored permissions without rebuilding twist

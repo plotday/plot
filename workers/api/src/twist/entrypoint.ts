@@ -469,6 +469,7 @@ export default class extends WorkerEntrypoint {
         provider: twist.provider,
         scopes: twist.scopes,
         linkTypes: twist.linkTypes || [],
+        ...(twist.dynamicLinkTypes ? { dynamicLinkTypes: true } : {}),
         ...(TwistConstructor.handleReplies ? { handleReplies: true } : {}),
         ...(twist.singleChannel ? { singleChannel: true } : {}),
         ...(twist.fixedChannels ? { fixedChannels: true } : {}),
@@ -928,7 +929,7 @@ export abstract class TwistEntrypoint extends WorkerEntrypoint {
 
   abstract getSourceMetadata(
     _twistInit: TwistInit
-  ): Promise<{ provider?: string; scopes?: string[]; access?: string[]; linkTypes: any[]; shared?: boolean; keyOption?: string } | null>;
+  ): Promise<{ provider?: string; scopes?: string[]; access?: string[]; linkTypes: any[]; dynamicLinkTypes?: boolean; shared?: boolean; keyOption?: string } | null>;
 
   abstract activate(
     _twistInit: TwistInit,
