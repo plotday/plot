@@ -199,6 +199,16 @@ export type CreateLinkDraft = {
    * when the composer attached no files. Read the bytes via the Files tool.
    */
   attachments?: Array<{ fileId: string; fileName: string; mimeType: string; fileSize: number | null }>;
+  /**
+   * When present, this create-link is a FORWARD of an existing upstream item.
+   * `key` is the source note's connector `key` (e.g. the Gmail message id). The
+   * connector should reconstruct a native forward of that item — carrying its
+   * original body and attachments — addressed to the draft's recipients, with
+   * `noteContent` as the forwarder's own message on top. Only populated for link
+   * types that declare `supportsForward: true`; otherwise the runtime uses the
+   * blockquote fallback and never sets this.
+   */
+  forward?: { key: string };
 };
 
 /** An optional OAuth scope group the user can toggle at connect time. */
