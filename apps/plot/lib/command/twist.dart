@@ -286,8 +286,14 @@ class ManageConnections extends Command {
           } else if (item is _UpcomingConnection) {
             await _NotifyUpcomingConnection(item).run(ctx);
           }
-          // Optimistically drop an archived source from the cache so the list
-          // reflects the change immediately; otherwise invalidate so we refetch.
+          // Keep the list current after returning from a detail modal without
+          // reloading the whole thing:
+          //  - archived active source → drop it from the cache immediately.
+          //  - edited active source → only its summary (counts/label/scope)
+          //    and usage can have changed, so refetch just those and keep the
+          //    available/upcoming lists cached.
+          //  - anything else (adding a connection, voting) → invalidate and do
+          //    a full refetch.
           final cache = _dataCache;
           if (archivedActiveId != null && cache != null) {
             _dataCache = (
@@ -298,6 +304,8 @@ class ManageConnections extends Command {
               upcoming: cache.upcoming,
               usage: cache.usage,
             );
+          } else if (item is _ActiveSource && cache != null) {
+            await _refreshActiveConnections();
           } else {
             _dataCache = null;
           }
@@ -397,32 +405,7 @@ class ManageConnections extends Command {
     }
     final upcomingResult = _upcomingCache;
 
-    // Build active connections from summaries. Only show the scope badge
-    // (team name / "Personal") when the user actually belongs to a team —
-    // otherwise the "Personal" badge confused users into thinking it meant
-    // the connection was assigned to their Personal priority.
-    final showScopeBadge = usage != null && usage.teams.isNotEmpty;
-    final activeItems = <_ActiveSource>[];
-    for (final summary in summaries) {
-      activeItems.add(
-        _ActiveSource(
-          id: summary.id,
-          name: summary.name,
-          twistName: summary.twistName,
-          accountLabel: summary.accountLabel,
-          logoUrl: summary.logoUrl,
-          logoUrlDark: summary.logoUrlDark,
-          provider: summary.provider,
-          enabledCount: summary.enabledCount,
-          teamName: summary.teamName,
-          showScopeBadge: showScopeBadge,
-          premium: summary.premium,
-        ),
-      );
-    }
-
-    // Exclude sources with no enabled channels — they don't count as active
-    activeItems.removeWhere((item) => item.enabledCount == 0);
+    final activeItems = _buildActiveItems(summaries, usage);
 
     // Build available connections (all source twists, including active ones
     // since additional accounts can be added)
@@ -431,10 +414,7 @@ class ManageConnections extends Command {
         .map((t) => _AvailableSource(t))
         .toList();
 
-    // Sort by name, then environment (public first)
-    activeItems.sort(
-      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    );
+    // Sort available connections by name, then environment (public first)
     availableItems.sort((a, b) {
       final nameComparison = a.twist.name.toLowerCase().compareTo(
         b.twist.name.toLowerCase(),
@@ -467,6 +447,68 @@ class ManageConnections extends Command {
       active: activeItems,
       available: availableItems,
       upcoming: upcomingItems,
+      usage: usage,
+    );
+  }
+
+  /// Build the active-connection list items from source summaries.
+  static List<_ActiveSource> _buildActiveItems(
+    List<SourceSummary> summaries,
+    UsageData? usage,
+  ) {
+    // Only show the scope badge (team name / "Personal") when the user
+    // actually belongs to a team — otherwise the "Personal" badge confused
+    // users into thinking it meant the connection was assigned to their
+    // Personal priority.
+    final showScopeBadge = usage != null && usage.teams.isNotEmpty;
+    final activeItems = <_ActiveSource>[];
+    for (final summary in summaries) {
+      activeItems.add(
+        _ActiveSource(
+          id: summary.id,
+          name: summary.name,
+          twistName: summary.twistName,
+          accountLabel: summary.accountLabel,
+          logoUrl: summary.logoUrl,
+          logoUrlDark: summary.logoUrlDark,
+          provider: summary.provider,
+          enabledCount: summary.enabledCount,
+          teamName: summary.teamName,
+          showScopeBadge: showScopeBadge,
+          premium: summary.premium,
+        ),
+      );
+    }
+    // Exclude sources with no enabled channels — they don't count as active.
+    activeItems.removeWhere((item) => item.enabledCount == 0);
+    activeItems.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    return activeItems;
+  }
+
+  /// Refetch only the active connections (and usage) and patch [_dataCache],
+  /// leaving the available/upcoming lists intact. Used after editing an
+  /// existing connection: its channel counts, label or scope may have changed,
+  /// but the available and upcoming lists cannot have, so there's no need to
+  /// reload the whole list. Falls back to a full load if the cache was cleared
+  /// in the meantime.
+  static Future<void> _refreshActiveConnections() async {
+    final cache = _dataCache;
+    if (cache == null) {
+      await _loadData();
+      return;
+    }
+    final results = await Future.wait(<Future<dynamic>>[
+      TwistApi.getSourcesSummary(),
+      UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
+    ]);
+    final summaries = results[0] as List<SourceSummary>;
+    final usage = results[1] as UsageData?;
+    _dataCache = (
+      active: _buildActiveItems(summaries, usage),
+      available: cache.available,
+      upcoming: cache.upcoming,
       usage: usage,
     );
   }
@@ -4679,31 +4721,45 @@ class SaveSource extends Command {
         return CommandMessage('Connection "$name" saved');
       }
 
-      // 0. Save updated metadata (teamId and account_label). Wrapping in
-      // Value() so a null teamId is sent to the server as a clear, not
-      // omitted — picking "Personal" must move the twist out of any team
-      // scope, otherwise the subsequent batch enable hits the team's quota.
-      await TwistApi.updateTwist(
-        twistInstanceId: twistInstanceId,
-        teamId: Value(teamId),
-        accountLabel: Value(accountLabel),
-      );
-
-      // Update local database to immediately reflect team/label change.
+      // 0. Save updated metadata (teamId and account_label) — but only when it
+      // actually changed. A pure channel-toggle save shouldn't pay an extra
+      // PATCH round-trip. Compare the chosen values against the connection's
+      // current local values; when we can't read them, fall back to updating
+      // (safe default). Picking "Personal" (null teamId) is a real change and
+      // still goes through — the server must clear the team scope, otherwise
+      // the subsequent batch enable hits the old team's quota. Value() wraps
+      // null so it's sent as a clear, not omitted.
       final id = Uuid.fromString(twistInstanceId);
       TwistInstanceRow? twist = TwistInstance.fromCache(id);
       twist ??= await (Store.get.select(
         TwistInstance.table,
       )..where((t) => t.id.equals(id.toBytes()))).getSingleOrNull();
-      if (twist != null) {
-        await Store.get
-            .update(TwistInstance.table)
-            .replace(
-              twist.copyWith(
-                teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
-                accountLabel: Value(accountLabel),
-              ),
-            );
+
+      final newTeamId = teamId != null ? BigInt.parse(teamId!) : null;
+      String? normLabel(String? s) => (s == null || s.isEmpty) ? null : s;
+      final metadataChanged =
+          twist == null ||
+          twist.teamId != newTeamId ||
+          normLabel(twist.accountLabel) != normLabel(accountLabel);
+
+      if (metadataChanged) {
+        await TwistApi.updateTwist(
+          twistInstanceId: twistInstanceId,
+          teamId: Value(teamId),
+          accountLabel: Value(accountLabel),
+        );
+
+        // Update local database to immediately reflect team/label change.
+        if (twist != null) {
+          await Store.get
+              .update(TwistInstance.table)
+              .replace(
+                twist.copyWith(
+                  teamId: Value(newTeamId),
+                  accountLabel: Value(accountLabel),
+                ),
+              );
+        }
       }
 
       // 1. Save updated options if present (no-provider connectors)
