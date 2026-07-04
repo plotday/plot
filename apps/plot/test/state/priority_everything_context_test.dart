@@ -184,4 +184,30 @@ void main() {
       );
     });
   });
+
+  group('shouldApplyRoutePrioritySwitch', () {
+    // Regression: entering Everything from a focus routes to the Inbox
+    // priority's URL, so `PriorityBlocProvider.didUpdateWidget` sees a
+    // priorityId change and would call `setPriority(inbox)` — which sets
+    // `everything: false` and collapses Everything into the scoped Inbox feed
+    // (the "Everything shows a focus's Inbox" bug). The route-driven switch
+    // must be suppressed while Everything is active.
+    test('suppresses the route-driven switch while Everything is active', () {
+      expect(
+        PriorityBloc.shouldApplyRoutePrioritySwitch(everythingActive: true),
+        isFalse,
+        reason:
+            'the Inbox-URL priorityId change on Everything entry must not '
+            'drive setPriority and clear the everything flag',
+      );
+    });
+
+    test('applies an ordinary focus switch when Everything is not active', () {
+      expect(
+        PriorityBloc.shouldApplyRoutePrioritySwitch(everythingActive: false),
+        isTrue,
+        reason: 'a genuine focus navigation must still scope the bloc',
+      );
+    });
+  });
 }

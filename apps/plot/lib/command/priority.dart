@@ -28,7 +28,21 @@ import 'package:plot/util/theme_color.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/page/priority.dart' show kEverythingRouteSegment;
 import 'package:plot/router.dart';
+
+/// The `/p/:priorityId` segment a priority navigation targets. The synthetic
+/// Everything feed uses the reserved [kEverythingRouteSegment], so its URL is
+/// stable across refresh and independent of the Inbox id (the route resolves
+/// the default Inbox lazily via `useDefault`). Every ordinary navigation
+/// targets the focus's own id; such a navigation always carries a non-null
+/// [priority] (the null-priority path is [ChangeCurrentPriority.everything],
+/// which sets `everything: true`).
+String everythingCommandTarget({
+  required bool everything,
+  required Priority? priority,
+}) =>
+    everything ? kEverythingRouteSegment : priority!.id.toShortString();
 
 abstract class PriorityCommand extends Command {
   PriorityCommand(
@@ -113,9 +127,9 @@ class ChangeCurrentPriority extends PriorityCommand {
 
   /// Named constructor for opening the synthetic "Everything" feed.
   /// Unlike the default constructor this takes no [Priority] — the feed is
-  /// unanchored to any specific focus. The route still navigates to the
-  /// default-Inbox priority URL (so the URL is valid and back-navigation
-  /// works), but [NowBloc] receives `setContext(null, everything: true)` so
+  /// unanchored to any specific focus. The route navigates to the reserved
+  /// `/p/everything` URL (a stable, refresh-safe address independent of the
+  /// Inbox id), and [NowBloc] receives `setContext(null, everything: true)` so
   /// [PriorityBloc] enters the null-context Everything mode.
   ChangeCurrentPriority.everything()
       : selectedBlockId = null,
@@ -178,23 +192,13 @@ class ChangeCurrentPriority extends PriorityCommand {
       currentSourceTab: PrioritiesShell.sourceTab,
     );
 
-    // For the Everything entry the route target is the default-Inbox priority
-    // (the URL must resolve to a real priority page). For ordinary focus
-    // navigation it is the tapped focus itself.
-    final String? targetPriorityIdString;
-    if (everything && priority == null) {
-      // Resolve the default Inbox from PrioritiesBloc (already loaded in the
-      // widget tree) so we don't need a DB round-trip inside a command.
-      final root = context.read<PrioritiesBloc>().state.root;
-      targetPriorityIdString = root?.id.toShortString();
-    } else {
-      targetPriorityIdString = priority!.id.toShortString();
-    }
-
-    if (targetPriorityIdString == null) {
-      // No inbox priority loaded yet — nothing to navigate to.
-      return const CommandDone();
-    }
+    // For the Everything entry the route target is the reserved
+    // `/p/everything` segment (a stable, refresh-safe URL, independent of the
+    // Inbox id); for ordinary focus navigation it is the tapped focus itself.
+    final targetPriorityIdString = everythingCommandTarget(
+      everything: everything,
+      priority: priority,
+    );
 
     // `context` here is the CommandModal's rootContext, which can be the
     // global CommandScope from GlobalShortcuts — that scope sits above

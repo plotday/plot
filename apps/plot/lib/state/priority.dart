@@ -3763,6 +3763,31 @@ class PriorityBloc extends Cubit<PriorityState> {
   ) =>
       state.context?.id == watched.id;
 
+  /// Whether a route-driven priority switch (from [PriorityBlocProvider]'s
+  /// `didUpdateWidget`) should be applied to the bloc via [setPriority].
+  ///
+  /// The synthetic Everything feed has no priority of its own, so
+  /// [ChangeCurrentPriority.everything] navigates the route to the default
+  /// Inbox priority's URL just to have a valid page to land on. Entering
+  /// Everything from a focus therefore surfaces in the provider as an ordinary
+  /// `priorityId` change to the Inbox — even though the user is opening the
+  /// unscoped Everything view. Driving [setPriority] for that Inbox would scope
+  /// the bloc to the Inbox and clear the everything flag ([setPriority] always
+  /// emits `everything: false`), collapsing Everything into the Inbox feed —
+  /// the "Everything shows a focus's Inbox" bug.
+  ///
+  /// The everything mirror ([setEverything], wired from [NowBloc.everything] by
+  /// the priority page) already puts the bloc in the correct null-context
+  /// Everything mode, so the route-driven switch must be suppressed whenever
+  /// Everything is active. Opening any real focus always clears
+  /// [NowBloc.everything] first (see [ChangeCurrentPriority]), so returning
+  /// false here never suppresses a genuine focus navigation.
+  @visibleForTesting
+  static bool shouldApplyRoutePrioritySwitch({
+    required bool everythingActive,
+  }) =>
+      !everythingActive;
+
   void _loadPriority({
     _PriorityLoadProfile? profile,
     bool reloadAgenda = true,
@@ -4770,6 +4795,7 @@ class PriorityBlocProvider extends StatefulWidget {
     this.priority,
     this.useDefault = false,
     this.setContext = true,
+    this.everything = false,
     required this.child,
     super.key,
   });
@@ -4777,6 +4803,17 @@ class PriorityBlocProvider extends StatefulWidget {
   final PriorityId? priorityId;
   final ThreadId? threadId;
   final Priority? priority;
+
+  /// When true, mount in the synthetic Everything view: the bloc is seeded
+  /// `everything: true` (context-less, unscoped flat feed) regardless of the
+  /// live [NowBloc.everything], and NowBloc is aligned to Everything on load.
+  /// This is the panel-independent establishment for the reserved
+  /// `/p/everything` route — a cold load / refresh / deep-link enters Everything
+  /// in BOTH single- and multi-panel layouts (a per-page hook would miss the
+  /// single-panel layout, which never builds the middle panel). Pairs with
+  /// [useDefault] (the default Inbox is the draft home) and `setContext: false`
+  /// (no scoped context is published).
+  final bool everything;
 
   /// When true, load the user's default (root) priority directly instead of a
   /// specific priority/thread. This is an intentional, warning-free path for
@@ -4833,7 +4870,10 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     // Capture before any await — used to seed the bloc's archived visibility
     // and keep it reacting to the global flag.
     final localPreferences = context.read<LocalPreferencesBloc>();
-    final everything = nowBloc.everything;
+    // The reserved `/p/everything` route forces Everything mode even on a cold
+    // load / refresh / deep-link where NowBloc.everything hasn't been set yet
+    // (it defaults to false). The bloc is seeded everything:true from this.
+    final everything = widget.everything || nowBloc.everything;
     // Snapshot the switch generation at load-initiation. If a newer switch
     // arrives via didUpdateWidget while Priority.getOne is in flight,
     // `_switchGen` advances past this value and the deferred setContext
@@ -4842,6 +4882,19 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     // reverting the sidebar to the previous focus. Mirrors the `_switchGen`
     // guard in didUpdateWidget.
     final myGen = _switchGen;
+    // Cold-load / refresh / deep-link of `/p/everything`: align NowBloc to
+    // Everything (sidebar highlight + the everything<=>null-context invariant)
+    // from this panel-independent seam. The bloc is already seeded
+    // everything:true above; this only mirrors that onto NowBloc, and runs in
+    // BOTH single- and multi-panel layouts. In-app focus→Everything is handled
+    // by ChangeCurrentPriority.everything (which sets NowBloc.everything up
+    // front); there the provider is reused, not remounted, so this does not run.
+    if (widget.everything) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (myGen != _switchGen || !mounted) return;
+        nowBloc.setContext(null, everything: true);
+      });
+    }
     // PriorityState eagerly creates a Note.draft (which reads Base.actorId!),
     // so ensure identity is complete before constructing the bloc. An
     // incomplete identity (userId present but actorId missing) usually means
@@ -4980,6 +5033,12 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
       final myGen = ++_switchGen;
+      // Capture before the async gap below. The Everything feed reuses the
+      // Inbox priority's URL, so a focus→Everything switch arrives here as a
+      // priorityId change to the Inbox; `nowBloc.everything` tells us to
+      // suppress the route-driven setPriority in that case (see
+      // [PriorityBloc.shouldApplyRoutePrioritySwitch]).
+      final nowBloc = context.read<NowBloc>();
       // Stopwatch starts at the user-visible click time. Logs how long
       // didUpdateWidget's pre-setPriority work takes so the [PriorityProfile]
       // timeline covers the full click-to-threads window.
@@ -4999,6 +5058,17 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         );
         // Drop this switch if a newer one has been requested since.
         if (myGen != _switchGen || !mounted) return;
+        // Entering Everything navigates to the Inbox priority's URL, so this
+        // priorityId change can be an Everything entry rather than a real focus
+        // switch. Applying setPriority would scope the bloc to the Inbox and
+        // clear the everything flag the mirror ([setEverything]) just set,
+        // collapsing Everything into the Inbox feed. Skip it — setEverything
+        // already holds the correct null-context Everything mode.
+        if (!PriorityBloc.shouldApplyRoutePrioritySwitch(
+          everythingActive: nowBloc.everything,
+        )) {
+          return;
+        }
         final priority = resolved.priority;
         if (priority != null) {
           result.bloc!.setPriority(priority);

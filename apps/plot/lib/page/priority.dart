@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
+import 'package:equatable/equatable.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
@@ -41,18 +42,71 @@ void returnFromPriorityToSourceTab(BuildContext context) {
   AutoTabsRouter.of(context).setActiveIndex(back.targetTab);
 }
 
+/// Reserved `/p/:priorityId` segment that opens the synthetic Everything feed
+/// instead of a specific priority. A 10-char word can never collide with a
+/// real (~22-char base58) priority id, and [PriorityWrapper] checks it before
+/// base58 parsing.
+const String kEverythingRouteSegment = 'everything';
+
+/// What a `/p/:priorityId` segment resolves to. Pure so it can be unit-tested
+/// without a router (see priority_route_target_test.dart), mirroring the
+/// [PriorityBloc.shouldApplyWatchedContext] testable-decision pattern.
+class PriorityRouteTarget extends Equatable {
+  // ignore: unused_element
+  const PriorityRouteTarget._({
+    required this.everything,
+    required this.priorityId,
+    required this.invalid,
+  });
+
+  /// The reserved Everything feed (no scoped priority).
+  const PriorityRouteTarget.everything()
+      : everything = true,
+        priorityId = null,
+        invalid = false;
+
+  /// A scoped focus/Inbox.
+  const PriorityRouteTarget.focus(PriorityId id)
+      : everything = false,
+        priorityId = id,
+        invalid = false;
+
+  /// An unparseable segment (e.g. a stale/malformed link).
+  const PriorityRouteTarget.invalid()
+      : everything = false,
+        priorityId = null,
+        invalid = true;
+
+  final bool everything;
+  final PriorityId? priorityId;
+  final bool invalid;
+
+  @override
+  List<Object?> get props => [everything, priorityId, invalid];
+}
+
+/// Resolves a `/p/:priorityId` segment to a [PriorityRouteTarget]. The reserved
+/// [kEverythingRouteSegment] wins before base58 parsing.
+PriorityRouteTarget parsePriorityRouteTarget(String segment) {
+  if (segment == kEverythingRouteSegment) {
+    return const PriorityRouteTarget.everything();
+  }
+  final id = PriorityId.tryFromShortString(segment);
+  return id == null
+      ? const PriorityRouteTarget.invalid()
+      : PriorityRouteTarget.focus(id);
+}
+
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper implements AutoRouteWrapper {
-  PriorityWrapper({@PathParam("priorityId") required this.priorityIdString})
-    : priorityId = PriorityId.tryFromShortString(priorityIdString);
+  PriorityWrapper({@PathParam("priorityId") required this.priorityIdString});
 
   final String priorityIdString;
-  final PriorityId? priorityId;
 
   @override
   Widget wrappedRoute(BuildContext context) {
-    final priorityId = this.priorityId;
-    if (priorityId == null) {
+    final target = parsePriorityRouteTarget(priorityIdString);
+    if (target.invalid) {
       // Invalid base58 priority id (e.g. /p/login from a stale or
       // malformed link). Redirect to the user's default landing instead
       // of crashing in the parser.
@@ -66,9 +120,14 @@ class PriorityWrapper implements AutoRouteWrapper {
     // GlobalKey lives on State and survives `wrappedRoute` rebuilds. That
     // way switching priorities flips this widget's `priorityId` prop
     // through `didUpdateWidget` instead of remounting the whole tree.
+    //
+    // For the reserved Everything segment there is no scoped priority: the
+    // host mounts the feed in Everything mode (priorityId null), and the feed
+    // resolves the default Inbox as its draft home.
     return _PriorityWrapperHost(
       priorityIdString: priorityIdString,
-      priorityId: priorityId,
+      priorityId: target.priorityId,
+      everything: target.everything,
     );
   }
 }
@@ -77,10 +136,16 @@ class _PriorityWrapperHost extends StatefulWidget {
   const _PriorityWrapperHost({
     required this.priorityIdString,
     required this.priorityId,
+    this.everything = false,
   });
 
   final String priorityIdString;
-  final PriorityId priorityId;
+
+  /// Null in the reserved Everything view (no scoped priority).
+  final PriorityId? priorityId;
+
+  /// Whether this is the synthetic Everything feed rather than a scoped focus.
+  final bool everything;
 
   @override
   State<_PriorityWrapperHost> createState() => _PriorityWrapperHostState();
@@ -161,9 +226,18 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
   @override
   Widget build(BuildContext context) => _build(context, widget.priorityId);
 
-  Widget _build(BuildContext context, PriorityId priorityId) {
+  Widget _build(BuildContext context, PriorityId? priorityId) {
+    final everything = widget.everything;
     return PriorityBlocProvider(
-      priorityId: priorityId,
+      // Everything has no scoped priority: load the default Inbox as the
+      // draft home (the `useDefault` path, as the Search feed does) and do
+      // not publish a scoped context to NowBloc. A scoped focus loads its id.
+      priorityId: everything ? null : priorityId,
+      useDefault: everything,
+      setContext: !everything,
+      // Establish Everything from the provider (built in both panel layouts),
+      // not a per-page hook — single-panel never builds the `middle` panel.
+      everything: everything,
       child: _PriorityCommandScope(
         child: _PriorityShortcutsProvider(
           priorityId: priorityId,
@@ -332,7 +406,10 @@ class _PriorityShortcutsProvider extends StatefulWidget {
     required this.child,
   });
 
-  final PriorityId priorityId;
+  /// Null in the reserved Everything view (no scoped priority). Unused
+  /// within this class's State, so nullability requires no further changes
+  /// here.
+  final PriorityId? priorityId;
   final Widget child;
 
   @override
@@ -675,9 +752,14 @@ class PriorityOnlyPage extends StatefulWidget {
   PriorityOnlyPage({
     @PathParam.inherit("priorityId") required String priorityIdString,
     super.key,
-  }) : priorityId = PriorityId.tryFromShortString(priorityIdString);
+  }) : target = parsePriorityRouteTarget(priorityIdString);
 
-  final PriorityId? priorityId;
+  /// Resolved route target. The reserved Everything segment yields a null
+  /// [PriorityRouteTarget.priorityId] but is NOT invalid, so the single-panel
+  /// feed still mounts (in Everything mode). Parsing via
+  /// [parsePriorityRouteTarget] — rather than a bare `tryFromShortString` —
+  /// keeps `everything` from decoding into a garbage priority id.
+  final PriorityRouteTarget target;
 
   @override
   State<PriorityOnlyPage> createState() => _PriorityOnlyPageState();
@@ -712,11 +794,13 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
 
   @override
   Widget build(BuildContext context) {
-    final priorityId = widget.priorityId;
-    if (priorityId == null) {
+    if (widget.target.invalid) {
       // Parent PriorityWrapper handles redirect for invalid ids.
       return const SizedBox.shrink();
     }
+    // Null in Everything mode; the feed mounts unscoped (the bloc is already in
+    // Everything mode via PriorityBlocProvider).
+    final priorityId = widget.target.priorityId;
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         if (!layoutState.multiPanel) {
@@ -776,9 +860,11 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
 }
 
 class PriorityPage extends StatefulWidget {
-  const PriorityPage({required this.priorityId, super.key});
+  const PriorityPage({this.priorityId, super.key});
 
-  final PriorityId priorityId;
+  /// Null in the reserved Everything view (Everything mode is established by
+  /// [PriorityBlocProvider], not this page).
+  final PriorityId? priorityId;
 
   @override
   State<PriorityPage> createState() => _PriorityPageState();
