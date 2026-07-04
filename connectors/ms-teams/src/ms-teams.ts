@@ -27,6 +27,13 @@ import {
 
 const DM_CHANNEL_ID = "__direct_messages__";
 const MAX_SYNC_BATCHES = 50;
+
+/**
+ * Delay before a webhook-triggered incremental sync runs. The pass is
+ * scheduled as a keyed coalescing task, so a burst of Graph notifications
+ * collapses into one pass that fires at most this long after the first one.
+ */
+const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
 /** Graph subscriptions for Teams channel messages max out at ~60 minutes. */
 const SUBSCRIPTION_EXPIRY_MINUTES = 55;
 
@@ -459,6 +466,13 @@ export class MsTeams extends Connector<MsTeams> {
     };
     await this.set(`sync_state_${channelId}`, incrementalState);
 
+    // Coalesced: Graph sends one change notification per channel message, so
+    // enqueueing an immediate task per notification floods the queue during
+    // active conversation and the duplicate passes (each re-fetching the same
+    // 1-hour window) stack concurrently into one worker. A notification burst
+    // collapses into a single pass; one arriving mid-pass schedules exactly
+    // one follow-up. The 1-hour window means the delayed pass still covers
+    // every notified change.
     const syncCallback = await this.callback(
       this.syncBatch,
       1,
@@ -466,7 +480,10 @@ export class MsTeams extends Connector<MsTeams> {
       channelId,
       false
     );
-    await this.runTask(syncCallback);
+    await this.scheduleTask(`incremental-sync:${channelId}`, syncCallback, {
+      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
+      coalesce: true,
+    });
   }
 
   // ---- Subscription renewal ----

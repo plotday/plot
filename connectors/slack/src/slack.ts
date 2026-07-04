@@ -73,6 +73,14 @@ import { slackFacets } from "./slack-facets";
  * - `mpim:history` - Read group direct messages
  * - `stars:read` / `stars:write` - Read and manage the user's saved items
  */
+
+/**
+ * Delay before an event-triggered incremental sync runs. The pass is
+ * scheduled as a keyed coalescing task, so a burst of message events
+ * collapses into one pass that fires at most this long after the first one.
+ */
+const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
+
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
   static readonly handleReplies = true;
@@ -1021,6 +1029,14 @@ export class Slack extends Connector<Slack> {
     };
 
     await this.set(`sync_state_${channelId}`, incrementalState);
+
+    // Coalesced: Slack delivers one event per message, so enqueueing an
+    // immediate task per event turns a busy channel into a flood of duplicate
+    // passes (each re-fetching the same 15-minute window) that run
+    // concurrently in one worker. A burst of events collapses into a single
+    // pass; an event arriving mid-pass schedules exactly one follow-up. The
+    // 15-minute window (with the coalesce delay well inside it) means the
+    // delayed pass still covers every notified message.
     const syncCallback = await this.callback(
       this.syncBatch,
       1,
@@ -1028,7 +1044,10 @@ export class Slack extends Connector<Slack> {
       channelId,
       false
     );
-    await this.runTask(syncCallback);
+    await this.scheduleTask(`incremental-sync:${channelId}`, syncCallback, {
+      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
+      coalesce: true,
+    });
   }
 
   private starredKey(channelId: string, threadTs: string): string {

@@ -423,3 +423,40 @@ describe("onNoteReactionChanged (custom emoji outbound)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("startIncrementalSync — coalesced scheduling", () => {
+  it("schedules a keyed coalescing task instead of enqueueing per event", async () => {
+    const store = makeStore({ channel_webhook_C123: { url: "https://x" } });
+    const scheduleTask = vi.fn(async () => "cancel-token");
+    const runTask = vi.fn(async () => {});
+    const tools = {
+      store,
+      callbacks: { create: vi.fn(async () => "cb-token") },
+      tasks: { scheduleTask, runTask },
+      integrations: {},
+      network: {},
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as any;
+
+    await slack.startIncrementalSync("C123");
+
+    // One Slack event per message must NOT become one queued task per event —
+    // the pass is scheduled under a stable per-channel key with coalesce so
+    // bursts collapse into a single pending pass.
+    expect(runTask).not.toHaveBeenCalled();
+    expect(scheduleTask).toHaveBeenCalledTimes(1);
+    const [key, , options] = scheduleTask.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      { runAt: Date; coalesce?: boolean },
+    ];
+    expect(key).toBe("incremental-sync:C123");
+    expect(options.coalesce).toBe(true);
+    expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
+  });
+});
