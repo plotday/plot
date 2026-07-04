@@ -61,6 +61,84 @@ async function getTeamDomains(
 // ============================================================================
 
 /**
+ * Descriptor for a set of channels enabled under one provider whose
+ * `onChannelEnabled` dispatch was deferred (see {@link deferEnabledChannelDispatch}).
+ */
+type EnabledChannelDescriptor = {
+  provider: string;
+  actorId: string;
+  channelIds: string[];
+  integrationsPath: string;
+};
+
+/**
+ * Run the connectors' `onChannelEnabled` callbacks OFF the HTTP response.
+ *
+ * The enable/batch routes persist channel-enabled state synchronously via
+ * `enableSyncBatch(..., { dispatch: false })` (Lever B), then hand the
+ * per-provider descriptors here. We run `dispatchEnabledChannels` — which
+ * rebuilds and fires each channel's `onChannelEnabled` (initial-sync enqueue,
+ * webhook registration, LinkedIn post pagination, …) — in the background so
+ * the user's "Save" returns as soon as state is persisted, not after every
+ * connector callback has run inline. This mirrors the draft-activation path in
+ * `app/twists.ts`.
+ *
+ * A fresh `createDb` + twist factory is opened because the request-scoped db is
+ * torn down after the response (see AGENTS "Never use c.var.db inside
+ * waitUntil"). If this dispatch is ever lost to eviction, the channels were
+ * still persisted and `initial_sync_started_at`-stamped by `enableSyncBatch`,
+ * so `recoverStuckSyncs` re-dispatches them.
+ */
+function deferEnabledChannelDispatch(
+  c: Context<{ Bindings: Bindings }>,
+  twistInstanceId: string,
+  descriptors: EnabledChannelDescriptor[]
+): void {
+  if (descriptors.length === 0) return;
+  const env = c.env;
+  const ctx = c.executionCtx as ExecutionContext;
+  const tracker = c.var.tracker;
+  c.executionCtx.waitUntil(
+    (async () => {
+      const bgLogger = createLogger({ twist_instance_id: twistInstanceId });
+      // createDb is inside the try so a background-lane connection failure is
+      // captured (and the un-awaited promise never rejects unhandled) rather
+      // than escaping waitUntil. destroy() is guarded because bgDb may be unset.
+      let bgDb: ReturnType<typeof createDb> | undefined;
+      try {
+        bgDb = createDb(env);
+        const wrapper = await twistFactory({ env, ctx, db: bgDb })({
+          twistInstanceId,
+        });
+        for (const d of descriptors) {
+          try {
+            const result = await wrapper.callCallback(
+              d.integrationsPath.split(":"),
+              "dispatchEnabledChannels",
+              d.provider,
+              d.actorId,
+              d.channelIds
+            );
+            disposeRpc(result);
+          } catch (error) {
+            bgLogger.warn("Deferred onChannelEnabled dispatch failed", {
+              provider: d.provider,
+              error_message:
+                error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      } catch (error) {
+        bgLogger.error("Deferred channel dispatch setup failed", error as Error);
+        tracker?.captureException(error as Error);
+      } finally {
+        await bgDb?.destroy();
+      }
+    })()
+  );
+}
+
+/**
  * Look up twist_instance metadata needed for integration operations.
  */
 async function resolveTwistInfo(db: Kysely<DB>, twistInstanceId: string) {
@@ -1589,43 +1667,70 @@ twistIntegrations.post(
       message: string;
     }> = [];
 
+    // Group enables by provider so each provider is a single enableSyncBatch
+    // call — it reads the channel-access tree and builds the sync context once,
+    // instead of one enableSync round-trip (each re-running build()) per
+    // channel. { dispatch: false } persists enabled state synchronously but
+    // defers each channel's onChannelEnabled off the response (Lever B); we
+    // collect the descriptors and dispatch them in the background below.
+    const enablesByProvider = new Map<string, string[]>();
     for (const { provider, syncableId } of enables) {
+      const list = enablesByProvider.get(provider) ?? [];
+      list.push(syncableId);
+      enablesByProvider.set(provider, list);
+    }
+
+    const enabledDescriptors: EnabledChannelDescriptor[] = [];
+    for (const [provider, channelIds] of enablesByProvider) {
       const integrationsPathStr = config.integrationsMap[provider];
       if (!integrationsPathStr) {
-        errors.push({
-          op: "enable",
-          provider,
-          syncableId,
-          message: `Provider ${provider} not configured`,
-        });
+        for (const syncableId of channelIds) {
+          errors.push({
+            op: "enable",
+            provider,
+            syncableId,
+            message: `Provider ${provider} not configured`,
+          });
+        }
         continue;
       }
       try {
         const result = await twistWrapper.callCallback(
           integrationsPathStr.split(":"),
-          "enableSync",
+          "enableSyncBatch",
           provider,
-          syncableId,
+          channelIds,
           currentActorId!,
-          undefined
+          undefined, // titles
+          { dispatch: false }
         );
         disposeRpc(result);
-        enabled.push({ provider, syncableId });
+        for (const syncableId of channelIds) {
+          enabled.push({ provider, syncableId });
+        }
+        enabledDescriptors.push({
+          provider,
+          actorId: currentActorId!,
+          channelIds,
+          integrationsPath: integrationsPathStr,
+        });
       } catch (error) {
         if (error instanceof PlanLimitError) {
           return c.json(error.toJSON(), 403);
         }
-        logger.warn("Batch enable failed for channel", {
+        logger.warn("Batch enable failed for provider", {
           provider,
-          syncable_id: syncableId,
+          channel_count: channelIds.length,
           error: error instanceof Error ? error.message : String(error),
         });
-        errors.push({
-          op: "enable",
-          provider,
-          syncableId,
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
+        for (const syncableId of channelIds) {
+          errors.push({
+            op: "enable",
+            provider,
+            syncableId,
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
       }
     }
 
@@ -1669,6 +1774,10 @@ twistIntegrations.post(
       disabled_count: disabled.length,
       error_count: errors.length,
     });
+
+    // Fire onChannelEnabled for every successfully-enabled channel off the
+    // response so the client's Save returns once state is persisted.
+    deferEnabledChannelDispatch(c, twistInstanceId, enabledDescriptors);
 
     return c.json({
       success: errors.length === 0,

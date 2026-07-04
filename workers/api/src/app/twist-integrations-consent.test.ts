@@ -231,6 +231,10 @@ function makeApp(db: Kysely<DB>, userId: string) {
 /** Mock env — KV + dummy Stripe key + SITE_ROOT. */
 function makeMockEnv() {
   return {
+    // Real DB URL so the batch route's deferred onChannelEnabled dispatch
+    // (deferEnabledChannelDispatch → createDb) can open its background-lane
+    // connection; twistFactory is module-mocked so no real runtime is needed.
+    DATABASE_URL,
     TWIST_CONFIG: { get: vi.fn(async () => KV_CONFIG) },
     STRIPE_SECRET_KEY: "sk_test_mock",
     SITE_ROOT: "https://plot.day",
