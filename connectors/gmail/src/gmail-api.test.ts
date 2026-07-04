@@ -360,4 +360,38 @@ describe("buildForwardMessage", () => {
     expect(raw).toContain("Subject: Fwd: hi");
     expect(raw).not.toContain("Fwd: Fwd:");
   });
+
+  it("emits a Bcc header without exposing bcc addresses in To/Cc", () => {
+    const raw = decodeRawMessage(
+      buildForwardMessage({
+        to: ["bob@example.com"],
+        cc: ["carol@example.com"],
+        bcc: ["dave@example.com"],
+        from: "me@example.com",
+        subject: "Q3 budget",
+        body: "",
+        originalHeader: "From: Alice <alice@example.com>",
+        originalBody: "hi",
+      })
+    );
+    expect(raw).toContain("Bcc: dave@example.com");
+    expect(raw).toContain("To: bob@example.com");
+    expect(raw).not.toContain("To: bob@example.com, dave@example.com");
+    expect(raw).not.toContain("Cc: carol@example.com, dave@example.com");
+  });
+
+  it("omits the Bcc header entirely when there are no bcc recipients", () => {
+    const raw = decodeRawMessage(
+      buildForwardMessage({
+        to: ["bob@example.com"],
+        cc: [],
+        from: "me@example.com",
+        subject: "Q3 budget",
+        body: "",
+        originalHeader: "From: Alice <alice@example.com>",
+        originalBody: "hi",
+      })
+    );
+    expect(raw).not.toContain("Bcc:");
+  });
 });

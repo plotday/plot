@@ -283,6 +283,21 @@ export class GmailApi {
     return data as GmailThread;
   }
 
+  /**
+   * Fetches a single message by id. Used to source a native forward (see
+   * `buildForwardMessage`), where the caller has a message id — the note
+   * `key` a Gmail-backed note carries — rather than a thread id.
+   */
+  public async getMessage(
+    messageId: string,
+    format: "full" | "minimal" | "metadata" | "raw" = "full"
+  ): Promise<GmailMessage> {
+    const data = await this.call(`/messages/${messageId}`, {
+      params: { format },
+    });
+    return data as GmailMessage;
+  }
+
   public async setupWatch(
     topicName: string,
     labelId?: string
@@ -584,7 +599,7 @@ export function isFromAddressRewritten(
  * Extracts the body from a Gmail message (handles multipart messages).
  * Returns raw content with its type so HTML can be converted server-side.
  */
-function extractBody(part: GmailMessagePart): { content: string; contentType: "text" | "html" } {
+export function extractBody(part: GmailMessagePart): { content: string; contentType: "text" | "html" } {
   // Prefer HTML over plain text — server-side conversion produces cleaner output.
   // Search the WHOLE MIME tree, not just immediate children: forwarded messages
   // nest the real body inside a `message/rfc822` part (or a deeper multipart),
@@ -1470,6 +1485,14 @@ export function buildReplyMessage(options: {
 export function buildForwardMessage(options: {
   to: string[];
   cc: string[];
+  /**
+   * Optional — a forward's recipients come from the same role-tagged picker
+   * as a compose, so a bcc-role recipient can appear here. Defaults to none.
+   * Gmail's send API delivers to Bcc recipients and strips the Bcc header
+   * from the copy other recipients receive (same as `buildNewEmailMessage`),
+   * so listing them here does not expose them.
+   */
+  bcc?: string[];
   from: string;
   subject: string;
   body: string;
@@ -1477,14 +1500,24 @@ export function buildForwardMessage(options: {
   originalBody: string; // the original message's text/markdown body
   attachments?: AttachmentData[];
 }): string {
-  const { to, cc, from, subject, body, originalHeader, originalBody, attachments } =
-    options;
+  const {
+    to,
+    cc,
+    bcc = [],
+    from,
+    subject,
+    body,
+    originalHeader,
+    originalBody,
+    attachments,
+  } = options;
 
   // Sanitize every value interpolated into a header to prevent CRLF header
   // injection (RFC 5322) via attacker-controlled subjects or addresses.
   const fromHeader = sanitizeHeaderValue(from);
   const toHeader = to.map(sanitizeHeaderValue).join(", ");
   const ccHeader = cc.map(sanitizeHeaderValue).join(", ");
+  const bccHeader = bcc.map(sanitizeHeaderValue).join(", ");
 
   // Ensure subject has a "Fwd:" prefix, without doubling an existing one.
   const fwdSubject = sanitizeHeaderValue(
@@ -1495,6 +1528,7 @@ export function buildForwardMessage(options: {
   // no In-Reply-To / References header here.
   const headerLines: string[] = [`From: ${fromHeader}`, `To: ${toHeader}`];
   if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
+  if (bcc.length > 0) headerLines.push(`Bcc: ${bccHeader}`);
   headerLines.push(`Subject: ${fwdSubject}`);
   headerLines.push(`MIME-Version: 1.0`);
 

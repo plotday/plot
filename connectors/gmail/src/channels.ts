@@ -44,6 +44,10 @@ export const GMAIL_LINK_TYPES: LinkTypeConfig[] = [
     compose: {
       targets: "addresses" as const,
     },
+    // onCreateLink reconstructs a real Gmail forward (original message +
+    // attachments) when `CreateLinkDraft.forward` is set, so the runtime
+    // should route native forwards here instead of the blockquote fallback.
+    supportsForward: true,
   },
 ];
 
