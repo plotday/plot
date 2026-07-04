@@ -242,6 +242,21 @@ export abstract class Twist<TSelf> {
   }
 
   /**
+   * Stores many key/value pairs in one round-trip. Always prefer this over
+   * looping `set()` for batch writes — each `set()` is a network round-trip.
+   * Atomic: either every entry lands or none do. See {@link Store.setMany}.
+   *
+   * @template T - The type of values being stored (must be Serializable)
+   * @param entries - Array of `[key, value]` pairs to store
+   * @returns Promise that resolves when all values are stored
+   */
+  protected async setMany<T extends import("./index").Serializable>(
+    entries: [key: string, value: T][]
+  ): Promise<void> {
+    return this.tools.store.setMany(entries);
+  }
+
+  /**
    * Removes a specific key from persistent storage.
    *
    * @param key - The storage key to remove
@@ -303,15 +318,21 @@ export abstract class Twist<TSelf> {
    * "store token, cancel before re-scheduling" bookkeeping that otherwise leaks
    * parallel task chains. See {@link Tasks.scheduleTask}.
    *
+   * With `coalesce: true`, an existing pending task is kept instead of
+   * replaced (its fire time is pulled earlier, never pushed later) — use for
+   * high-frequency triggers like webhook-driven sync scheduling; the passed
+   * callback may be discarded, so don't reuse its token.
+   *
    * @param key - Stable identifier scoped to what the task renews
    * @param callback - The callback token created with `this.callback()`
    * @param options.runAt - When to run (required)
+   * @param options.coalesce - Keep an existing pending task (earliest wins)
    * @returns Promise resolving to the scheduled task's cancellation token
    */
   protected async scheduleTask(
     key: string,
     callback: Callback,
-    options: { runAt: Date }
+    options: { runAt: Date; coalesce?: boolean }
   ): Promise<string | void> {
     return this.tools.tasks.scheduleTask(key, callback, options);
   }

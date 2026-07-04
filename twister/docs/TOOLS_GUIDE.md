@@ -462,6 +462,26 @@ await this.set("config", {
 await this.set("items", ["a", "b", "c"]);
 ```
 
+### Batch Writes
+
+Every `set()` is a network round-trip to the storage backend. When you write
+per-item state in a batch (e.g. an id→channel mapping for every message in a
+sync pass), a loop of `set()` calls dominates the execution's wall-clock time
+and request budget. Use `setMany()` — one round-trip, atomic (all entries land
+or none do):
+
+```typescript
+// ❌ WRONG — one round-trip per message
+for (const message of thread.messages) {
+  await this.set(`msg-channel:${message.id}`, channelId);
+}
+
+// ✅ CORRECT — one round-trip for the whole batch
+await this.setMany(
+  thread.messages.map((m) => [`msg-channel:${m.id}`, channelId])
+);
+```
+
 ### Retrieving Data
 
 ```typescript
@@ -793,6 +813,39 @@ timing (e.g. re-arm at expiry-minus-24h rather than waiting the full ceiling),
 re-calling under the same key is fine and atomic — it replaces the pending run
 without forking. Use `scheduleTask(key, cb, { runAt })` only for **one-shot**
 keyed deferred work (a single future task, atomically replaced if re-keyed).
+
+### Coalescing Webhook-Driven Work
+
+Never enqueue an immediate task per provider notification. Providers like Gmail
+push one notification per mailbox change, so `runTask()` in a webhook handler
+turns a busy period into a flood of queued sync passes — they batch together,
+run concurrently in one worker, and can multiply the working set past the
+memory limit. Schedule the pass as a keyed, coalescing task instead:
+
+```typescript
+// ❌ WRONG — one queued execution per webhook notification
+async onWebhook(request: WebhookRequest) {
+  const cb = await this.callback(this.incrementalSync);
+  await this.runTask(cb);
+}
+
+// ✅ CORRECT — a notification burst collapses into ONE pending pass
+async onWebhook(request: WebhookRequest) {
+  const cb = await this.callback(this.incrementalSync);
+  await this.scheduleTask("incremental-sync", cb, {
+    runAt: new Date(Date.now() + 10_000),
+    coalesce: true,
+  });
+}
+```
+
+With `coalesce: true` an existing pending task under the key is **kept** — its
+fire time is pulled earlier when the new `runAt` is sooner, but never pushed
+later, so a continuous stream of notifications can't starve the timer (plain
+keyed replace would reset it on every call). A notification arriving while a
+pass is already running schedules exactly one follow-up pass. Note that the
+callback you pass may be discarded when an existing task is kept — create a
+fresh callback each call and don't store or reuse its token.
 
 ### Batch Processing Pattern
 

@@ -40,6 +40,8 @@ import {
   addEnabledChannelFn,
   removeEnabledChannelFn,
   processWriteBackRetryFn,
+  INCREMENTAL_SYNC_COALESCE_MS,
+  INCREMENTAL_SYNC_TASK_KEY,
   SELF_HEAL_INTERVAL_MS,
   WRITEBACK_RETRY_DELAY_MS,
 } from "@plotday/connector-gmail";
@@ -587,6 +589,13 @@ export class Google extends Connector<Google> {
     return this.set(`mail:${key}`, value);
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _mailHostSetMany(entries: [key: string, value: any][]): Promise<void> {
+    return this.setMany(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      entries.map(([key, value]): [string, any] => [`mail:${key}`, value])
+    );
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _mailHostGet<T = any>(key: string): Promise<T | null> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return this.get<any>(`mail:${key}`);
@@ -608,6 +617,7 @@ export class Google extends Connector<Google> {
     return {
       id: self.id,
       set: (key, value) => self._mailHostSet(key, value),
+      setMany: (entries) => self._mailHostSetMany(entries),
       get: <T>(key: string) => self._mailHostGet<T>(key),
       clear: (key) => self._mailHostClear(key),
       tools: {
@@ -763,9 +773,19 @@ export class Google extends Connector<Google> {
     });
   }
 
+  /**
+   * Schedule the mailbox-wide incremental sync (host scheduler hook). Keyed +
+   * coalescing (mirrors the standalone Gmail connector): a Pub/Sub
+   * notification burst collapses into a single pass instead of flooding the
+   * task queue with one pass per notification, whose batched concurrent
+   * execution stacked into one worker isolate and exceeded the memory limit.
+   */
   private async mailQueueIncrementalSync(): Promise<void> {
     const callback = await this.callback(this.mailIncrementalSyncBatch);
-    await this.runTask(callback);
+    await this.scheduleTask(INCREMENTAL_SYNC_TASK_KEY, callback, {
+      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
+      coalesce: true,
+    });
   }
 
   /**

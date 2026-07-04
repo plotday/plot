@@ -10,6 +10,8 @@ export {
   type InitialSyncBatchResult,
   type GmailWebhookResult,
   type PendingWriteBack,
+  INCREMENTAL_SYNC_COALESCE_MS,
+  INCREMENTAL_SYNC_TASK_KEY,
   SELF_HEAL_INTERVAL_MS,
   SYSTEM_LABEL_ORDER,
   WRITEBACK_RETRY_DELAY_MS,

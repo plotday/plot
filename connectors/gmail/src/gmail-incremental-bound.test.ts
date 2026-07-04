@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GmailApi,
   type GmailThread,
+  MAX_HISTORY_PAGES_PER_PASS,
   syncGmailMailboxIncremental,
 } from "./gmail-api";
 import {
@@ -92,6 +93,120 @@ describe("syncGmailMailboxIncremental — per-pass bound", () => {
   });
 });
 
+/** Multi-page GmailApi mock: getHistory serves `pages` in order, keyed by the
+ *  incoming pageToken; getThread returns a stub thread. */
+function mockPagedApi(
+  pages: {
+    entries: { recordId: string; threadId: string }[];
+    nextPageToken?: string;
+  }[],
+  mailboxHistoryId: string
+): { api: GmailApi; getHistory: ReturnType<typeof vi.fn> } {
+  const byToken = new Map<string | undefined, (typeof pages)[number]>();
+  byToken.set(undefined, pages[0]);
+  for (let i = 0; i < pages.length; i++) {
+    const token = pages[i].nextPageToken;
+    if (token !== undefined) byToken.set(token, pages[i + 1]);
+  }
+  const getHistory = vi.fn(
+    async (_startHistoryId: string, _labelId?: string, pageToken?: string) => {
+      const page = byToken.get(pageToken);
+      if (!page) throw new Error(`unexpected pageToken ${pageToken}`);
+      return {
+        history: page.entries.map(({ recordId, threadId }) => ({
+          id: recordId,
+          messagesAdded: [{ message: { id: `m-${threadId}`, threadId } }],
+        })),
+        historyId: mailboxHistoryId,
+        nextPageToken: page.nextPageToken,
+      };
+    }
+  );
+  const getThread = vi.fn(
+    async (id: string): Promise<GmailThread> =>
+      ({ id, historyId: "h", messages: [] }) as unknown as GmailThread
+  );
+  const api = { getHistory, getThread } as unknown as GmailApi;
+  return { api, getHistory };
+}
+
+describe("syncGmailMailboxIncremental — history pagination", () => {
+  it("walks every history page, not just the first", async () => {
+    const { api, getHistory } = mockPagedApi(
+      [
+        {
+          entries: [{ recordId: "101", threadId: "t1" }],
+          nextPageToken: "page2",
+        },
+        {
+          entries: [{ recordId: "102", threadId: "t2" }],
+          nextPageToken: "page3",
+        },
+        { entries: [{ recordId: "103", threadId: "t3" }] },
+      ],
+      "999"
+    );
+
+    const result = await syncGmailMailboxIncremental(api, "100", [], 100);
+    if ("expired" in result && result.expired) throw new Error("unexpected");
+
+    expect(getHistory).toHaveBeenCalledTimes(3);
+    // Changes from pages 2+ are collected (previously silently skipped).
+    expect(result.threads.map((t) => t.id)).toEqual(["t1", "t2", "t3"]);
+    // Fully drained → cursor advances to the mailbox-current history id.
+    expect(result.historyId).toBe("999");
+  });
+
+  it("stops at the page cap and advances the cursor only to the last record read", async () => {
+    // MAX_HISTORY_PAGES_PER_PASS pages each pointing at another page: the
+    // walk must stop at the cap and the cursor must NOT jump to the
+    // mailbox-current id (that would skip the unread tail).
+    const pages = Array.from(
+      { length: MAX_HISTORY_PAGES_PER_PASS + 2 },
+      (_, i) => ({
+        entries: [{ recordId: `rec-${i}`, threadId: `t${i}` }],
+        nextPageToken:
+          i < MAX_HISTORY_PAGES_PER_PASS + 1 ? `page-${i + 1}` : undefined,
+      })
+    );
+    const { api, getHistory } = mockPagedApi(pages, "999");
+
+    const result = await syncGmailMailboxIncremental(api, "100", [], 1000);
+    if ("expired" in result && result.expired) throw new Error("unexpected");
+
+    expect(getHistory).toHaveBeenCalledTimes(MAX_HISTORY_PAGES_PER_PASS);
+    expect(result.historyId).toBe(`rec-${MAX_HISTORY_PAGES_PER_PASS - 1}`);
+  });
+
+  it("returns expired when a later page 404s", async () => {
+    const { GmailApiError } = await import("./gmail-api");
+    const getHistory = vi.fn(
+      async (_h: string, _l?: string, pageToken?: string) => {
+        if (pageToken === "page2") {
+          throw new GmailApiError(404, "Not Found", "history expired");
+        }
+        return {
+          history: [
+            {
+              id: "101",
+              messagesAdded: [{ message: { id: "m-t1", threadId: "t1" } }],
+            },
+          ],
+          historyId: "999",
+          nextPageToken: "page2",
+        };
+      }
+    );
+    const api = {
+      getHistory,
+      getThread: vi.fn(),
+    } as unknown as GmailApi;
+
+    const result = await syncGmailMailboxIncremental(api, "100", [], 100);
+    expect("expired" in result && result.expired).toBe(true);
+  });
+});
+
 /** Minimal GmailSyncHost backed by an in-memory store, exposing spies for the
  *  scheduler continuation hook and the saved incremental cursor. */
 function makeHost(initial: IncrementalState): {
@@ -111,6 +226,9 @@ function makeHost(initial: IncrementalState): {
     ),
     set: vi.fn(async (key: string, value: unknown) => {
       store.set(key, value);
+    }),
+    setMany: vi.fn(async (entries: [string, unknown][]) => {
+      for (const [key, value] of entries) store.set(key, value);
     }),
     clear: vi.fn(async (key: string) => {
       store.delete(key);

@@ -1155,6 +1155,15 @@ async function syncGmailChannelFull(
 }
 
 /**
+ * Max history.list pages walked per incremental pass. Each page holds up to
+ * ~100 history records; only thread IDs are retained, so the cap bounds API
+ * calls per pass, not memory. When the cap is hit, the cursor advances to the
+ * last record actually read (never past unread records) and the next pass
+ * continues from there.
+ */
+export const MAX_HISTORY_PAGES_PER_PASS = 20;
+
+/**
  * Mailbox-wide incremental sync. Calls the Gmail History API without a
  * `labelId` filter, so it returns every change in the mailbox since
  * `historyId` — including replies in existing threads that don't carry the
@@ -1198,30 +1207,54 @@ export async function syncGmailMailboxIncremental(
       deferredThreadIds: string[];
     }
 > {
-  let historyResult;
-  try {
-    historyResult = await api.getHistory(historyId);
-  } catch (error) {
-    if (error instanceof GmailApiError && error.status === 404) {
-      return { expired: true };
-    }
-    throw error;
-  }
-
+  // Walk the history window page by page, collecting changed thread ids
+  // (small — ids only). history.list's top-level `historyId` is the CURRENT
+  // mailbox history id regardless of pagination, so advancing the cursor to
+  // it after reading only the first page would silently skip every change on
+  // pages 2+ — losing mail under exactly the backlogged conditions that
+  // produce multiple pages. If we stop before draining all pages (page cap),
+  // we advance the cursor only to the id of the last history RECORD we read,
+  // so the un-walked tail is picked up by the next pass.
   const changedThreadIds = new Set<string>(retryThreadIds);
-  for (const entry of historyResult.history) {
-    for (const added of entry.messagesAdded ?? []) {
-      changedThreadIds.add(added.message.threadId);
+  let pageToken: string | undefined;
+  let pagesFetched = 0;
+  let mailboxHistoryId: string | undefined;
+  let lastReadRecordId: string | undefined;
+  let truncated = false;
+  do {
+    let historyResult;
+    try {
+      historyResult = await api.getHistory(historyId, undefined, pageToken);
+    } catch (error) {
+      if (error instanceof GmailApiError && error.status === 404) {
+        return { expired: true };
+      }
+      throw error;
     }
-    for (const labeled of entry.labelsAdded ?? []) {
-      if (labeled.message.threadId)
-        changedThreadIds.add(labeled.message.threadId);
+    mailboxHistoryId = historyResult.historyId;
+
+    for (const entry of historyResult.history) {
+      lastReadRecordId = entry.id;
+      for (const added of entry.messagesAdded ?? []) {
+        changedThreadIds.add(added.message.threadId);
+      }
+      for (const labeled of entry.labelsAdded ?? []) {
+        if (labeled.message.threadId)
+          changedThreadIds.add(labeled.message.threadId);
+      }
+      for (const labeled of entry.labelsRemoved ?? []) {
+        if (labeled.message.threadId)
+          changedThreadIds.add(labeled.message.threadId);
+      }
     }
-    for (const labeled of entry.labelsRemoved ?? []) {
-      if (labeled.message.threadId)
-        changedThreadIds.add(labeled.message.threadId);
+
+    pageToken = historyResult.nextPageToken;
+    pagesFetched++;
+    if (pageToken && pagesFetched >= MAX_HISTORY_PAGES_PER_PASS) {
+      truncated = true;
+      break;
     }
-  }
+  } while (pageToken);
 
   // Bound how many full threads we pull into memory per pass. `retryThreadIds`
   // are inserted into the Set first, so prior-deferred (and previously-failed)
@@ -1244,7 +1277,7 @@ export async function syncGmailMailboxIncremental(
 
   return {
     expired: false,
-    historyId: historyResult.historyId,
+    historyId: truncated && lastReadRecordId ? lastReadRecordId : mailboxHistoryId!,
     threads,
     failedThreadIds,
     deferredThreadIds,
