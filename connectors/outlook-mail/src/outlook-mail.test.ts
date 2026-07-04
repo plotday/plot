@@ -166,3 +166,57 @@ describe("recoverMailboxDelivery — durable recovery on upgrade", () => {
     expect(spies.requeueInitialSync).not.toHaveBeenCalled();
   });
 });
+
+describe("queueIncrementalSync — coalesced scheduling", () => {
+  it("persists notified ids and schedules a keyed coalescing drain instead of enqueueing per notification", async () => {
+    const map = new Map<string, unknown>();
+    const store = {
+      get: vi.fn(async (k: string) => (map.has(k) ? map.get(k) : null)),
+      set: vi.fn(async (k: string, v: unknown) => {
+        map.set(k, v);
+      }),
+      setMany: vi.fn(async (entries: [string, unknown][]) => {
+        for (const [k, v] of entries) map.set(k, v);
+      }),
+      clear: vi.fn(async (k: string) => {
+        map.delete(k);
+      }),
+      list: vi.fn(async (p: string) =>
+        [...map.keys()].filter((k) => k.startsWith(p))
+      ),
+    };
+    const scheduleTask = vi.fn(async () => "cancel-token");
+    const runTask = vi.fn(async () => {});
+    const tools = {
+      store,
+      callbacks: { create: vi.fn(async () => "cb-token") },
+      tasks: { scheduleTask, runTask },
+      integrations: {},
+      network: {},
+      files: {},
+    };
+    const connector = new OutlookMail(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as any;
+
+    await connector.queueIncrementalSync(["m1", "m2"]);
+
+    // One Graph notification per message must NOT become one queued task per
+    // notification: ids are persisted per-key, and the drain is scheduled
+    // under a stable key with coalesce so bursts collapse into one pass.
+    expect(map.get("pending_msg:m1")).toBe(0);
+    expect(map.get("pending_msg:m2")).toBe(0);
+    expect(runTask).not.toHaveBeenCalled();
+    expect(scheduleTask).toHaveBeenCalledTimes(1);
+    const [key, , options] = scheduleTask.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      { runAt: Date; coalesce?: boolean },
+    ];
+    expect(key).toBe("mailbox-incremental-sync");
+    expect(options.coalesce).toBe(true);
+    expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
+  });
+});
