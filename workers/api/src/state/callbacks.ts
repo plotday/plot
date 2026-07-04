@@ -849,18 +849,33 @@ export class CallbacksState extends DurableObject<Bindings> {
 
   /**
    * The epoch-ms `call_at` of this twist_instance's soonest *future* scheduled
-   * callback (a pending `Tasks.runTask({ runAt })` batch the alarm will fire to
-   * resume work), or `null` when none is queued. The stuck-sync watchdog
+   * callback that represents the initial sync actively re-arming its next batch
+   * (a pending `Tasks.runTask({ runAt })` continuation), or `null` when none is
+   * queued. The stuck-sync watchdog
    * (workers/api/src/scheduled/recover-stuck-syncs.ts) compares this against a
-   * near-term horizon to tell a sync that's actively re-arming its next batch
-   * apart from one orphaned by a crash (nothing queued) or whose only pending
-   * callback is a far-future *background* task (e.g. the Unipile relations
-   * crawl, 2–8h out) rather than the initial sync itself.
+   * near-term horizon to tell a sync that's still batching apart from one
+   * orphaned by a crash (nothing queued).
    *
-   * Only future scheduled rows count: an immediate (`call_at IS NULL`) task row
-   * can linger after the run queue exhausts its retries, so it is NOT a
-   * reliable liveness signal; a past-due scheduled row is consumed-and-deleted
-   * by the alarm, so it never lingers either.
+   * Two exclusions make this a signal about the *initial sync* rather than
+   * about any activity in the DO:
+   *
+   * 1. **Immediate (`call_at IS NULL`) rows are ignored** — an immediate task
+   *    row can linger after the run queue exhausts its retries, so it is not a
+   *    reliable liveness signal; a past-due scheduled row is consumed-and-
+   *    deleted by the alarm, so it never lingers either.
+   *
+   * 2. **Keyed (`task_key`) and recurring (`recurring_interval_ms`) rows are
+   *    ignored** — these are independent maintenance/background callbacks
+   *    (`Tasks.scheduleTask` / `Tasks.scheduleRecurring`) that share the
+   *    connection's DO but say nothing about whether the initial backfill is
+   *    progressing. A batch continuation is always an *unkeyed one-shot*
+   *    `runTask`. Without this exclusion a 60-second `gmail-writeback-retry`
+   *    (`scheduleTask`) or a watch-renewal (`scheduleRecurring`) would sit
+   *    permanently inside the watchdog's liveness horizon and make an orphaned
+   *    Google initial sync look alive forever — the connection would spin
+   *    "Syncing" indefinitely because the watchdog never escalated it. The
+   *    far-future case (e.g. the Unipile relations crawl, 2–8h out) is covered
+   *    both by this exclusion and by the watchdog's horizon.
    */
   nextScheduledCallbackAt(twistInstanceId: string): number | null {
     const result = this.sql
@@ -871,6 +886,8 @@ export class CallbacksState extends DurableObject<Bindings> {
         WHERE twist_instance_id = ?
           AND call_at IS NOT NULL
           AND call_at > ?
+          AND task_key IS NULL
+          AND recurring_interval_ms IS NULL
         `,
         twistInstanceId,
         Date.now()

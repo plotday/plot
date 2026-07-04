@@ -63,11 +63,18 @@ export const MAX_INITIAL_SYNC_ATTEMPTS = 3;
  * hours away — that pattern belongs to independent *background* crawls. The
  * Unipile relations backfill, for example, reschedules itself 2–4h out (and
  * 4–8h on error) while the initial chat sync (`backfillChats`, the task that
- * calls `channelSyncCompleted`) runs in one pass. The old liveness check
- * counted *any* future callback as alive, so a parked relations crawl made a
- * dead `backfill` look alive forever — the connection spun on "Syncing" and
- * never escalated. This horizon must stay comfortably below that 2h crawl floor
- * so such a parked callback can never masquerade as a live sync.
+ * calls `channelSyncCompleted`) runs in one pass. This horizon stays comfortably
+ * below that 2h crawl floor so such a parked callback can never masquerade as a
+ * live sync.
+ *
+ * This horizon is only half the defense. The other half lives in
+ * `CallbacksState.nextScheduledCallbackAt`, which now excludes keyed
+ * (`scheduleTask`) and recurring (`scheduleRecurring`) callbacks entirely, so a
+ * *near-future* maintenance callback — e.g. a 60-second `gmail-writeback-retry`
+ * or a watch renewal — can no longer keep an orphaned Google initial sync
+ * looking alive. Only the initial sync's own unkeyed one-shot batch
+ * continuation counts, and the horizon then guards against a genuinely parked
+ * continuation.
  */
 export const LIVENESS_HORIZON_MS = 90 * 60 * 1000;
 
