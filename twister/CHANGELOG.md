@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.70.0
+
+### Added
+
+- `scheduleTask` now accepts `coalesce: true`, which keeps an existing pending task under the same key instead of replacing it — the fire time is pulled earlier when the new `runAt` is sooner, but never pushed later. Use it for high-frequency triggers (e.g. scheduling a sync pass from a provider webhook) so a burst of N calls collapses into a single pending task instead of N queued executions. With `coalesce`, the passed callback may be discarded when an existing task is kept, so create a fresh callback per call and don't reuse its token.
+- `LinkTypeConfig.supportsForward` and `CreateLinkDraft.forward` so connectors can perform native forwards of existing items (e.g. email forwards carrying the original message and attachments) when a user forwards a note. ([#258](https://github.com/plotday/plot/pull/258) [`e0e0737`](https://github.com/plotday/plot/commit/e0e07374d37bb96f966d90f33a23ae73afb283f9))
+
 ## 0.69.0
 
 ### Added
