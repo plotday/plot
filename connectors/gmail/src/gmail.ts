@@ -44,6 +44,8 @@ import {
   selfHealCheckFn,
   setupMailboxWebhookFn,
   teardownMailboxWebhookFn,
+  INCREMENTAL_SYNC_COALESCE_MS,
+  INCREMENTAL_SYNC_TASK_KEY,
   SELF_HEAL_INTERVAL_MS,
   SYSTEM_LABEL_ORDER,
   WRITEBACK_RETRY_DELAY_MS,
@@ -133,6 +135,11 @@ export class Gmail extends Connector<Gmail> {
   _hostSet(key: string, value: any): Promise<void> {
     return this.set(key, value);
   }
+  /** Public bulk-set wrapper so the host object can expose it. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _hostSetMany(entries: [key: string, value: any][]): Promise<void> {
+    return this.setMany(entries);
+  }
   /** Public get wrapper so the host object can expose it. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _hostGet<T = any>(key: string): Promise<T | null> {
@@ -154,6 +161,7 @@ export class Gmail extends Connector<Gmail> {
     return {
       id: self.id,
       set: (key, value) => self._hostSet(key, value),
+      setMany: (entries) => self._hostSetMany(entries),
       get: <T>(key: string) => self._hostGet<T>(key),
       clear: (key) => self._hostClear(key),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -631,10 +639,20 @@ export class Gmail extends Connector<Gmail> {
     await incrementalSyncBatchFn(this.makeHost());
   }
 
-  /** Queue the mailbox-wide incremental sync as a task (host scheduler hook). */
+  /**
+   * Schedule the mailbox-wide incremental sync (host scheduler hook). Keyed +
+   * coalescing: Gmail pushes one Pub/Sub notification per mailbox change, so
+   * enqueueing an immediate task per call flooded the queue during active
+   * traffic and the batched passes stacked into one worker isolate until it
+   * exceeded the memory limit. A notification burst now collapses into a
+   * single pass that fires within {@link INCREMENTAL_SYNC_COALESCE_MS}.
+   */
   private async queueIncrementalSync(): Promise<void> {
     const callback = await this.callback(this.incrementalSyncBatch);
-    await this.runTask(callback);
+    await this.scheduleTask(INCREMENTAL_SYNC_TASK_KEY, callback, {
+      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
+      coalesce: true,
+    });
   }
 
   /**

@@ -62,6 +62,9 @@ function makeHost(): { host: GmailSyncHost; store: Map<string, unknown> } {
     set: vi.fn(async (key: string, value: unknown) => {
       store.set(key, value);
     }),
+    setMany: vi.fn(async (entries: [string, unknown][]) => {
+      for (const [key, value] of entries) store.set(key, value);
+    }),
     clear: vi.fn(async (key: string) => {
       store.delete(key);
     }),

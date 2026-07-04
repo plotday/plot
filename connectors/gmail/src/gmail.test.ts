@@ -335,6 +335,9 @@ describe("processEmailThreads — no status set", () => {
       set: vi.fn(async (key: string, value: unknown) => {
         storeMap.set(key, value);
       }),
+      setMany: vi.fn(async (entries: [string, unknown][]) => {
+        for (const [key, value] of entries) storeMap.set(key, value);
+      }),
       clear: vi.fn(async (key: string) => {
         storeMap.delete(key);
       }),
@@ -506,6 +509,9 @@ describe("recoverMailboxDelivery — durable recovery on upgrade", () => {
       set: vi.fn(async (k: string, v: unknown) => {
         storeMap.set(k, v);
       }),
+      setMany: vi.fn(async (entries: [string, unknown][]) => {
+        for (const [k, v] of entries) storeMap.set(k, v);
+      }),
       clear: vi.fn(async (k: string) => {
         storeMap.delete(k);
       }),
@@ -605,6 +611,9 @@ describe("thread-state write-back when the connection has no auth token", () => 
       set: vi.fn(async (key: string, value: unknown) => {
         storeMap.set(key, value);
       }),
+      setMany: vi.fn(async (entries: [string, unknown][]) => {
+        for (const [key, value] of entries) storeMap.set(key, value);
+      }),
       clear: vi.fn(async (key: string) => {
         storeMap.delete(key);
       }),
@@ -691,5 +700,40 @@ describe("thread-state write-back when the connection has no auth token", () => 
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     fetchSpy.mockRestore();
+  });
+});
+
+describe("queueIncrementalSync — coalesced scheduling", () => {
+  it("schedules a keyed coalescing task instead of enqueueing per call", async () => {
+    const scheduleTask = vi.fn(async () => "cancel-token");
+    const runTask = vi.fn(async () => {});
+    const tools = {
+      callbacks: { create: vi.fn(async () => "cb-token") },
+      tasks: { scheduleTask, runTask },
+      store: {},
+      integrations: {},
+      network: {},
+      files: {},
+    };
+    const gmail = new Gmail(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    ) as any;
+
+    await gmail.queueIncrementalSync();
+
+    // One Pub/Sub notification per mailbox change must NOT become one queued
+    // task per notification — the pass is scheduled under a stable key with
+    // coalesce so bursts collapse into a single pending pass.
+    expect(runTask).not.toHaveBeenCalled();
+    expect(scheduleTask).toHaveBeenCalledTimes(1);
+    const [key, , options] = scheduleTask.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      { runAt: Date; coalesce?: boolean },
+    ];
+    expect(key).toBe("mailbox-incremental-sync");
+    expect(options.coalesce).toBe(true);
+    expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
   });
 });

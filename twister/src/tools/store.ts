@@ -114,6 +114,35 @@ export abstract class Store extends ITool {
   abstract set<T extends Serializable>(key: string, value: T): Promise<void>;
 
   /**
+   * Stores many key/value pairs in one round-trip.
+   *
+   * Equivalent to calling {@link set} for each entry, but issues a single
+   * storage operation. **Always prefer this over looping `set()`** when
+   * writing per-item state in a batch (e.g. an id→channel mapping for every
+   * message in a sync pass): each `set()` is a network round-trip to the
+   * storage backend, so a loop of hundreds of them dominates the execution's
+   * wall-clock time and request budget, while one `setMany()` costs a single
+   * request.
+   *
+   * All entries are written atomically — either every entry lands or none do.
+   *
+   * @template T - The type of values being stored (must be Serializable)
+   * @param entries - Array of `[key, value]` pairs to store
+   * @returns Promise that resolves when all values are stored
+   *
+   * @example
+   * ```typescript
+   * await this.setMany(
+   *   thread.messages.map((m) => [`msg-channel:${m.id}`, channelId])
+   * );
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract setMany<T extends Serializable>(
+    entries: [key: string, value: T][]
+  ): Promise<void>;
+
+  /**
    * Lists all storage keys matching a prefix.
    *
    * Returns an array of key strings that start with the given prefix.

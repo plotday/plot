@@ -136,6 +136,26 @@ export const MAX_THREAD_FETCH_ATTEMPTS = 5;
 export const MAX_INCREMENTAL_THREADS_PER_BATCH = 20;
 
 /**
+ * Delay before a webhook-triggered incremental sync pass runs. Gmail sends one
+ * Pub/Sub notification per mailbox change; enqueueing a full sync pass for
+ * EVERY notification flooded the task queue during active mail traffic, and
+ * the batched, concurrently-dispatched passes stacked their working sets into
+ * one worker isolate until it exceeded the memory limit. The sync is instead
+ * scheduled as a keyed, coalescing task (`scheduleTask` with `coalesce: true`):
+ * a burst of notifications collapses into a single pass that runs at most this
+ * long after the first notification, and a notification arriving mid-pass
+ * schedules exactly one follow-up. Kept short so mail latency stays negligible
+ * relative to the pass itself.
+ */
+export const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
+
+/**
+ * Task key for the coalesced mailbox-wide incremental sync pass (see
+ * {@link INCREMENTAL_SYNC_COALESCE_MS}).
+ */
+export const INCREMENTAL_SYNC_TASK_KEY = "mailbox-incremental-sync";
+
+/**
  * Max deferred write-backs drained per retry pass. A burst of to-do/read
  * changes that hit Gmail's per-user-per-minute quota is queued and drained in
  * bounded passes, mirroring the incremental-sync batch cap so one drain
@@ -226,6 +246,8 @@ export interface GmailSyncHost {
 
   /** Persist a value under a connector-scoped key. */
   set(key: string, value: unknown): Promise<void>;
+  /** Persist many key/value pairs in one round-trip (bulk upsert). */
+  setMany(entries: [key: string, value: unknown][]): Promise<void>;
   /** Retrieve a previously persisted value. Returns null if absent. */
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
@@ -1337,15 +1359,26 @@ export async function processEmailThreadsFn(
     }
   }
 
+  // Cache message → channel mappings so downloadAttachment can look up which
+  // channel owns a given Gmail message ID. Written as ONE bulk upsert for the
+  // whole batch: a per-message `host.set` loop cost a storage round-trip per
+  // message (hundreds per pass), which dominated the pass's wall-clock time.
+  const messageChannelEntries: [string, unknown][] = transformed.flatMap(
+    ({ thread, channelId }) =>
+      (thread.messages ?? []).map(
+        (message): [string, unknown] => [
+          `gmail:msg-channel:${message.id}`,
+          channelId,
+        ]
+      )
+  );
+  if (messageChannelEntries.length > 0) {
+    await host.setMany(messageChannelEntries);
+  }
+
   for (const { thread, plot: plotThread, channelId } of transformed) {
     try {
       if (!plotThread.notes || plotThread.notes.length === 0) continue;
-
-      // Cache message → channel mapping so downloadAttachment can look up
-      // which channel owns a given Gmail message ID.
-      for (const message of thread.messages ?? []) {
-        await host.set(`gmail:msg-channel:${message.id}`, channelId);
-      }
 
       // Filter out notes for messages we sent (dedup)
       const filtered = [];

@@ -151,11 +151,24 @@ export abstract class Tasks extends ITool {
    * Replacement is atomic on the server, so concurrent executions racing to
    * schedule the same key converge on a single task rather than leaking.
    *
+   * **Coalescing (`coalesce: true`):** instead of replacing the pending task,
+   * an existing one is KEPT — its fire time is pulled earlier when the new
+   * `runAt` is sooner, but never pushed later. Use this for high-frequency
+   * triggers (e.g. scheduling a sync pass from a provider webhook): a burst of
+   * N calls collapses into a single pending task that fires at the earliest
+   * requested time, where plain replacement would reset the timer on every
+   * call and could starve under a continuous stream. With `coalesce: true`
+   * the `callback` you pass may be discarded (when an existing task is kept),
+   * so create a fresh callback for each call and do NOT store or reuse its
+   * token elsewhere.
+   *
    * @param key - Stable identifier for this logical task. Scope it to what it
    *   renews, e.g. `` `watch-renewal:${folderId}` ``.
    * @param callback - Callback created with `this.callback()`
    * @param options.runAt - When to run. Required: keying only applies to
    *   scheduled tasks (immediate tasks go straight to the queue).
+   * @param options.coalesce - Keep an existing pending task for this key
+   *   (earliest fire time wins) instead of replacing it.
    * @returns Promise resolving to the cancellation token for the scheduled task
    *
    * @example
@@ -164,13 +177,21 @@ export abstract class Tasks extends ITool {
    * await this.scheduleTask(`watch-renewal:${folderId}`, cb, { runAt });
    * // ...later, on disable:
    * await this.cancelScheduledTask(`watch-renewal:${folderId}`);
+   *
+   * // Webhook-driven sync: collapse a notification burst into one pass
+   * // that runs a few seconds from now.
+   * const sync = await this.callback(this.incrementalSync);
+   * await this.scheduleTask("incremental-sync", sync, {
+   *   runAt: new Date(Date.now() + 10_000),
+   *   coalesce: true,
+   * });
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract scheduleTask(
     key: string,
     callback: Callback,
-    options: { runAt: Date }
+    options: { runAt: Date; coalesce?: boolean }
   ): Promise<string | void>;
 
   /**
