@@ -920,6 +920,7 @@ export type Database = {
           draft: boolean
           embedding: unknown
           external_content_hash: string | null
+          fwd_note: string | null
           id: string
           item_position: string | null
           key: string | null
@@ -953,6 +954,7 @@ export type Database = {
           draft?: boolean
           embedding?: unknown
           external_content_hash?: string | null
+          fwd_note?: string | null
           id?: string
           item_position?: string | null
           key?: string | null
@@ -986,6 +988,7 @@ export type Database = {
           draft?: boolean
           embedding?: unknown
           external_content_hash?: string | null
+          fwd_note?: string | null
           id?: string
           item_position?: string | null
           key?: string | null
@@ -1005,6 +1008,30 @@ export type Database = {
           updated_by?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "twist_instance_channel_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "twist_instance_note_update"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "note_link_id_fkey"
             columns: ["link_id"]
@@ -5613,6 +5640,7 @@ export type Database = {
           cta: Json | null
           delivery_error: Json | null
           draft: boolean | null
+          fwd_note: string | null
           id: string | null
           item_position: string | null
           mentions: string[] | null
@@ -5630,6 +5658,30 @@ export type Database = {
           user_id: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note_redacted"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note_tags"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "note_merged_from_thread_id_fkey"
             columns: ["merged_from_thread_id"]
@@ -5755,6 +5807,7 @@ export type Database = {
           cta: Json | null
           delivery_error: Json | null
           draft: boolean | null
+          fwd_note: string | null
           id: string | null
           item_position: string | null
           mentions: string[] | null
@@ -5772,6 +5825,30 @@ export type Database = {
           user_id: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note_redacted"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_fwd_note_fkey"
+            columns: ["fwd_note"]
+            referencedRelation: "note_tags"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "note_merged_from_thread_id_fkey"
             columns: ["merged_from_thread_id"]
@@ -6872,6 +6949,7 @@ export type Database = {
           p_content: string
           p_created_by: string
           p_draft: boolean
+          p_fwd_note?: string
           p_id: string
           p_key: string
           p_mentions: string[]

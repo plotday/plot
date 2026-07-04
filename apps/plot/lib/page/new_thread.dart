@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 
-import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/widget/priorities_shell.dart' show BottomNavInset;
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
@@ -90,6 +90,23 @@ List<Uuid> suggestedFocusRanking({
   return globalRank;
 }
 
+/// Seed for a forward-in-progress: the source note being forwarded and the
+/// connection (if any) it was forwarded from, so a fresh compose can default
+/// to the same channel. Passed to [NewThreadPageState.requestForward].
+///
+/// STUB: this task only defines the type and stashes it; applying it to the
+/// draft is implemented by a follow-up task.
+class ForwardSeed {
+  const ForwardSeed({required this.sourceNote, required this.primaryLink});
+
+  /// The note being forwarded.
+  final Note sourceNote;
+
+  /// The source thread's primary (canonical) link, if any — null when the
+  /// thread has no connector link (plain Plot thread).
+  final Link? primaryLink;
+}
+
 @RoutePage(name: "NewThreadWrapperRoute")
 class NewThreadWrapper implements AutoRouteWrapper {
   const NewThreadWrapper();
@@ -154,6 +171,24 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Requests every live [NewThreadPage] reset to step 1 with a fresh draft.
   static void requestReset() => resetRequest.value++;
+
+  /// Seed describing a forward-in-progress, meant to be consumed by a
+  /// live/fresh page reacting to [resetRequest].
+  ///
+  /// STUB: only stashed here for now — applying it to the draft (seeding the
+  /// blockquoted source content + connection) is a follow-up task, not this
+  /// one, so nothing reads this field yet.
+  // ignore: unused_field
+  static ForwardSeed? _pendingForward;
+
+  /// Requests every live [NewThreadPage] open a forward of [seed]. Reuses
+  /// [resetRequest] (rather than a dedicated notifier) so a live page's
+  /// existing reset-listener path is the single place that inspects
+  /// [_pendingForward] on the next bump — mirroring [requestReset].
+  static void requestForward(ForwardSeed seed) {
+    _pendingForward = seed;
+    resetRequest.value++;
+  }
 
   /// Monotonic "enter Help & Feedback mode" signal, mirroring [resetRequest].
   /// The [HelpAndFeedback] command bumps this so a live (AutoRoute-reused)
@@ -476,6 +511,16 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Selected twist for chat mode
   TwistInstance? _selectedTwist;
 
+  /// The note being forwarded, when this compose was opened via the Forward
+  /// command ([ForwardNote]). Passed to the [NoteEditor] as `forwardSource`,
+  /// which drives the "Forwarding" takeover bar (quote preview from its
+  /// content) and, at send time, stamps the outgoing note's `fwdNoteId` (and
+  /// denormalized onto the create-link thread POST as `note_fwd_note`). Set
+  /// by [_applyForward]; cleared by [_resetToFreshStart] or the takeover
+  /// bar's × (via `onClearForward`, which also clears here). Null for a
+  /// normal compose.
+  Note? _forwardSourceNote;
+
   /// True once the user has added at least one contact (including groups /
   /// invite-emails) during this compose session. Keeps the Chat placeholder
   /// and "Send" label active even if the user later removes all contacts.
@@ -563,6 +608,17 @@ class NewThreadPageState extends State<NewThreadPage> {
     _dismissed = false;
     _recomputeActive();
     _resetToFreshStart();
+    // A Forward re-invocation against this live page stashed a seed alongside
+    // the resetRequest bump (see [requestForward]). Consume it after the
+    // fresh-start reset so the forwarding state is applied on a clean slate;
+    // connection targets were loaded on the initial mount, so the default Via
+    // resolves against [_allConnectionTargets]. A plain reset leaves
+    // [_pendingForward] null and this is a no-op.
+    final pendingForward = NewThreadPageState._pendingForward;
+    if (pendingForward != null) {
+      NewThreadPageState._pendingForward = null;
+      unawaited(_applyForward(pendingForward));
+    }
   }
 
   /// Returns the page to step 1 (target picker) with a brand-new draft,
@@ -589,6 +645,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       _selectedRecipient = null;
       _stashedSectionsQuery = '';
       _selectedTwist = null;
+      _forwardSourceNote = null;
       _hadContactsThisSession = false;
       _focusSuggestionOrder = const [];
       _feedbackMode = false;
@@ -832,6 +889,18 @@ class NewThreadPageState extends State<NewThreadPage> {
     // instead (this path won't re-run — see [_hasAppliedQueryParams]).
     if (widget.feedback ?? false) {
       await _applyFeedbackMode();
+    }
+
+    // Forward (fresh mount): [ForwardNote] stashed a pending seed alongside the
+    // resetRequest bump, but a fresh mount's [_lastResetSeen] already swallowed
+    // that bump in [initState], so [_onResetRequested] never fires for it.
+    // Apply it here instead — now that [_loadConnections] has populated
+    // [_allConnectionTargets] so the default Via can resolve.
+    if (!mounted) return;
+    final pendingForward = NewThreadPageState._pendingForward;
+    if (pendingForward != null) {
+      NewThreadPageState._pendingForward = null;
+      await _applyForward(pendingForward);
     }
   }
 
@@ -1203,6 +1272,59 @@ class NewThreadPageState extends State<NewThreadPage> {
     // null `actions` arg as "keep existing", so the prior CreateLinkUserAction
     // would survive when the user picks a Plot thread.
     await bloc.updateDraft(bloc.state.draft, note: nextNote);
+  }
+
+  /// Applies a [ForwardSeed] to this compose: jumps straight to the compose
+  /// step, holds the source note (for the forwarding takeover bar and the sent
+  /// note's `fwdNoteId`), and defaults the connection ("Via") to the source
+  /// note's connection when it came from a connector — a plain-Plot source
+  /// (no primary link) keeps the default Plot target.
+  ///
+  /// Called from the reset ([_onResetRequested]) and fresh-mount
+  /// ([_initializeDraft]) paths once [_allConnectionTargets] is loaded so the
+  /// default Via resolves.
+  Future<void> _applyForward(ForwardSeed seed) async {
+    setState(() {
+      _forwardSourceNote = seed.sourceNote;
+      _step = _ComposeStep.compose;
+    });
+    _publishHeaderBack();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _threadEditorKey.currentState?.focus();
+    });
+
+    // Default the connection to the source note's connection. Only the Via is
+    // seeded — the roster starts empty so the user chooses new recipients.
+    //
+    // The forward pointer itself is NOT stamped on the draft note here. It's
+    // applied at SEND time from the live [_forwardSourceNote] (passed to the
+    // NoteEditor as `forwardSource`, stamped in finalizeThreadDraft), so
+    // clearing the forwarding state cleanly cancels the forward — there's no
+    // stale draft pointer to leak a forward into a later send.
+    final link = seed.primaryLink;
+    if (link != null && link.createdBy != null) {
+      await _applyForwardVia(link);
+    }
+  }
+
+  /// Defaults the draft's connection ("Via") to the connection that owns
+  /// [link], by resolving the matching [CreateTarget] from the already-loaded
+  /// [_allConnectionTargets] (keyed on twist instance + channel + link type —
+  /// the reverse of [_resolveActiveConnectionChoice]) and applying it via the
+  /// established [_applyConnectionChoice] path. No-op — leaving the default Plot
+  /// target — when no loaded target matches (e.g. the connection is no longer
+  /// enabled, so it can't be composed to anyway).
+  Future<void> _applyForwardVia(Link link) async {
+    for (final target in _allConnectionTargets) {
+      // For DM/address-mode targets `target.channel` is null and a DM link's
+      // channelId is also null — the null == null comparison handles that.
+      if (link.createdBy?.toString() == target.twist.id.toString() &&
+          link.channelId == target.channel?.channelId &&
+          link.type == target.linkType.type) {
+        await _applyConnectionChoice(ConnectionChoice.target(target));
+        return;
+      }
+    }
   }
 
   /// Applies a [ComposeTarget] chosen in the picker to the draft and advances
@@ -2562,6 +2684,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               ),
                                               additionalMentions:
                                                   _twistMentions,
+                                              forwardSource:
+                                                  _forwardSourceNote,
+                                              onClearForward: () =>
+                                                  setState(
+                                                    () =>
+                                                        _forwardSourceNote =
+                                                            null,
+                                                  ),
                                               onSubmitted: _onChatSubmitted,
                                               submitValidator:
                                                   _validateDmSubmit,
@@ -2638,6 +2768,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                         ),
                                                     additionalMentions:
                                                         _twistMentions,
+                                                    forwardSource:
+                                                        _forwardSourceNote,
+                                                    onClearForward: () =>
+                                                        setState(
+                                                          () =>
+                                                              _forwardSourceNote =
+                                                                  null,
+                                                        ),
                                                     onSubmitted:
                                                         _onChatSubmitted,
                                                     submitValidator:

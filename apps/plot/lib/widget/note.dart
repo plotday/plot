@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
@@ -181,6 +182,16 @@ class _NoteWidgetState extends State<NoteWidget> {
     final noteLinks = (widget.note.actions ?? [])
         .where((a) => a.type != UserActionType.createLink)
         .toList();
+    // A forwarded note carries `fwdNoteId` pointing at its source (set by the
+    // author's own client at send time). When the author can still resolve
+    // that source locally, they see a live "Forwarded from {title}" link
+    // instead of the recipient-facing `ForwardUserAction` snapshot the server
+    // later materializes onto `actions` (see [_ForwardAwareAttachments] and
+    // [ForwardUserAction]'s docstring). This keeps the author's view
+    // identical before and after that snapshot syncs in.
+    final fwdNoteId = widget.note.fwdNoteId;
+    final isForwardAuthor =
+        fwdNoteId != null && widget.note.authorId.isCurrentUser;
     final activityBloc = context.read<ThreadBloc>();
 
     final hasFocus = widget.focusNode?.hasFocus ?? false;
@@ -241,7 +252,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                 initiallyExpanded: widget.initiallyExpanded,
               ),
             ),
-          if (noteLinks.isNotEmpty)
+          if (noteLinks.isNotEmpty || isForwardAuthor)
             Padding(
               // right: 0 so the link row extends to the same right edge as the
               // note timestamp (which sits at the ListTile's content edge); the
@@ -252,7 +263,13 @@ class _NoteWidgetState extends State<NoteWidget> {
                 top: 8,
                 bottom: 4,
               ),
-              child: _NoteActionsLayout(actions: noteLinks, note: widget.note),
+              child: isForwardAuthor
+                  ? _ForwardAwareAttachments(
+                      note: widget.note,
+                      fwdNoteId: fwdNoteId!,
+                      otherActions: noteLinks,
+                    )
+                  : _NoteActionsLayout(actions: noteLinks, note: widget.note),
             ),
           if (widget.note.deliveryError != null)
             _DeliveryErrorBanner(note: widget.note),
@@ -1537,12 +1554,190 @@ class NoteCommands extends StatelessWidget {
   }
 }
 
+/// For a note the current user authored via "Forward" (identified by
+/// `fwdNoteId`), resolves the source thread locally and — when it's still
+/// resolvable — renders a compact "Forwarded from {title}" link in place of
+/// the server's recipient-facing [ForwardUserAction] snapshot, filtering
+/// that snapshot out of [otherActions] so the two never both render (see
+/// [ForwardUserAction]'s docstring for the visibility contract). Falls back
+/// to rendering [otherActions] unfiltered — surfacing the snapshot, if one
+/// has synced in — when the source can't (yet, or ever) be resolved
+/// locally, so the author sees the actual forwarded content rather than a
+/// broken link.
+class _ForwardAwareAttachments extends StatefulWidget {
+  const _ForwardAwareAttachments({
+    required this.note,
+    required this.fwdNoteId,
+    required this.otherActions,
+  });
+
+  final Note note;
+  final NoteId fwdNoteId;
+  final List<UserAction> otherActions;
+
+  @override
+  State<_ForwardAwareAttachments> createState() =>
+      _ForwardAwareAttachmentsState();
+}
+
+class _ForwardAwareAttachmentsState extends State<_ForwardAwareAttachments> {
+  late final Future<Thread?> _sourceThreadFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _sourceThreadFuture = _resolveSourceThread(widget.fwdNoteId);
+  }
+
+  static Future<Thread?> _resolveSourceThread(NoteId fwdNoteId) async {
+    try {
+      final sourceNote = await Note.get(fwdNoteId);
+      if (sourceNote == null) return null;
+      return await Thread.getOne(sourceNote.threadId);
+    } catch (_) {
+      // Expected when the forwarded-from note/thread hasn't synced to this
+      // device yet, or was later removed — the caller falls back to the
+      // recipient snapshot in that case, so this isn't an unexpected error
+      // worth reporting.
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Thread?>(
+      future: _sourceThreadFuture,
+      builder: (context, snapshot) {
+        // Never flash the recipient-shaped snapshot to the author. The
+        // ForwardUserAction stays suppressed for the whole author lifecycle:
+        // while the source is resolving we show content-only (no forward
+        // affordance yet, but ALSO no snapshot); once resolved we show the
+        // link. The visibility guard keys on `connectionState` — not just
+        // `data == null`, which is also true during `waiting` and would flash
+        // the unfiltered snapshot on the first frame after sync. Mirrors the
+        // `_NoteReplyReference` connection-state pattern above.
+        final resolving = snapshot.connectionState != ConnectionState.done;
+        final visibleActions = widget.otherActions
+            .where((a) => a is! ForwardUserAction)
+            .toList();
+
+        if (resolving) {
+          // Loading: keep the snapshot suppressed and don't show the link
+          // yet. Render only the note's other (non-forward) actions, if any.
+          if (visibleActions.isEmpty) return const SizedBox.shrink();
+          return _NoteActionsLayout(actions: visibleActions, note: widget.note);
+        }
+
+        final sourceThread = snapshot.data;
+        if (sourceThread == null) {
+          // Resolved to nothing (source not local / removed): fall through to
+          // the ordinary UNFILTERED actions row so a synced ForwardUserAction
+          // snapshot still renders instead of showing nothing.
+          if (widget.otherActions.isEmpty) return const SizedBox.shrink();
+          return _NoteActionsLayout(
+            actions: widget.otherActions,
+            note: widget.note,
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (visibleActions.isNotEmpty)
+              _NoteActionsLayout(actions: visibleActions, note: widget.note),
+            _ForwardedFromLink(sourceThread: sourceThread),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Compact tappable "Forwarded from {title}" row shown beneath a note the
+/// current user forwarded, once the original thread has resolved locally.
+/// Tapping navigates to that thread. This is internal navigation (not a
+/// link to external content), so it keeps the default desktop cursor rather
+/// than the web pointer cursor — see AGENTS.md "Flutter app uses a
+/// desktop-style cursor".
+class _ForwardedFromLink extends StatefulWidget {
+  const _ForwardedFromLink({required this.sourceThread});
+
+  final Thread sourceThread;
+
+  @override
+  State<_ForwardedFromLink> createState() => _ForwardedFromLinkState();
+}
+
+class _ForwardedFromLinkState extends State<_ForwardedFromLink> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.sourceThread.title;
+    final label =
+        'Forwarded from ${title == null || title.isEmpty ? 'thread' : title}';
+    return GestureDetector(
+      onTap: () {
+        // How often people follow a forward back to its source thread.
+        Tracker.trackAction(EventObject.activity, EventAction.opened, {
+          'source': 'forward_source_link',
+        });
+        context.router.root.navigate(
+          PriorityRoute(
+            priorityIdString: widget.sourceThread.priority.id.toShortString(),
+            children: [
+              ThreadRoute(
+                threadIdString: widget.sourceThread.id.toShortString(),
+              ),
+            ],
+          ),
+        );
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                FontAwesomeIcons.share,
+                size: 11,
+                color: _isHovered
+                    ? context.colour.foreground
+                    : context.colour.muted,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  style: context.theme.typography.xs.copyWith(
+                    color: _isHovered
+                        ? context.colour.foreground
+                        : context.colour.muted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Renders a note's action attachments.
 ///
-/// External links display as full-width thin rows (mirroring the pinned
-/// thread-link row), so they're rendered in a vertical Column. All other
-/// action types (callbacks, files, conferencing links, etc.) remain in a
-/// horizontal Wrap below — they're chip-shaped and read better side by side.
+/// External links and forwarded-note snapshot cards display as full-width thin
+/// rows (mirroring the pinned thread-link row), so they're rendered in a
+/// vertical Column. All other action types (callbacks, files, conferencing
+/// links, etc.) remain in a horizontal Wrap below — they're chip-shaped and
+/// read better side by side.
 class _NoteActionsLayout extends StatelessWidget {
   const _NoteActionsLayout({required this.actions, required this.note});
 
@@ -1555,7 +1750,11 @@ class _NoteActionsLayout extends StatelessWidget {
     final others = <(int, UserAction)>[];
     for (var i = 0; i < actions.length; i++) {
       final action = actions[i];
-      if (action.type == UserActionType.external) {
+      // A forwarded-note snapshot is a quoted "forwarded message" card that
+      // reads as a full-width block (like the pinned thread-link row), not a
+      // shrink-wrapped chip — so bucket it with external links, not the Wrap.
+      if (action.type == UserActionType.external ||
+          action.type == UserActionType.forward) {
         externalLinks.add((i, action));
       } else {
         others.add((i, action));

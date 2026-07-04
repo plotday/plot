@@ -26,6 +26,7 @@ CREATE TABLE "public"."note" (
     "key" text,
     "mentions" uuid[],
     "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,
+    "fwd_note" uuid REFERENCES public.note ON DELETE SET NULL,
     "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
     "link_id" uuid REFERENCES public.link (id) ON DELETE SET NULL,
     "canonical_source" text,

@@ -114,6 +114,8 @@ class NoteEditor extends StatefulWidget {
     this.hint,
     this.sendLabel,
     this.additionalMentions,
+    this.forwardSource,
+    this.onClearForward,
     this.onSubmitted,
     this.submitValidator,
     this.viewerMode = false,
@@ -149,6 +151,20 @@ class NoteEditor extends StatefulWidget {
   /// Additional actor IDs to include in the note's mentions on submit.
   /// Only used in new-thread mode.
   final List<ActorId>? additionalMentions;
+
+  /// When non-null, the note being forwarded. Drives the "Forwarding" takeover
+  /// bar (its content feeds the quote preview) and, at send time in
+  /// [finalizeThreadDraft], stamps the outgoing note as a forward of this
+  /// source note's id (sets `fwdNoteId`). Applied from the parent's live
+  /// forwarding state — never pre-stamped on the draft — so clearing the
+  /// forwarding state cleanly cancels the forward with no stale pointer left
+  /// on the draft. Only used in new-thread mode.
+  final Note? forwardSource;
+
+  /// Called when the user dismisses the "Forwarding" takeover bar's ×. The
+  /// parent (new-thread mode) clears its forwarding state in response. Only
+  /// used in new-thread mode.
+  final VoidCallback? onClearForward;
 
   /// Called after the thread is submitted. Only used in new-thread mode.
   final VoidCallback? onSubmitted;
@@ -773,6 +789,7 @@ class NoteEditorState extends State<NoteEditor> {
           roundTop: roundTop,
           onClearReply: () => threadBloc.setReplyTo(null),
           onCancelEdit: () => threadBloc.setEditingNote(null),
+          onClearForward: () => widget.onClearForward?.call(),
         );
       },
     );
@@ -788,6 +805,10 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   TopBarState _computeTopBarState(ThreadState s) {
+    final forwardSource = widget.forwardSource;
+    if (forwardSource != null) {
+      return ForwardingState(quotePreview: _previewOf(forwardSource.content));
+    }
     final replyTo = s.replyTo;
     if (replyTo != null) {
       return ReplyingState(quotePreview: _previewOf(replyTo.content));
@@ -2187,6 +2208,16 @@ class NoteEditorState extends State<NoteEditor> {
       note = note.copyWith(
         mentions: [...?note.mentions, ...widget.additionalMentions!],
       );
+    }
+
+    // Forward: stamp the source-note pointer onto the outgoing note so it sends
+    // as a forward. Applied here (send time) from the parent's live forwarding
+    // state — NOT pre-stamped on the draft — so a cancelled forward carries no
+    // pointer. Flows to the note sync (fwd_note) and, on a connector channel,
+    // the create-link thread POST (note_fwd_note via
+    // ThreadsBase.stashPendingCreateLink, which reads THIS final note).
+    if (widget.forwardSource != null && note != null) {
+      note = note.copyWith(fwdNoteId: widget.forwardSource!.id);
     }
 
     // Cmd-Enter (alt) adds the thread to agenda (Do Now scheduling).

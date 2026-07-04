@@ -2736,7 +2736,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 377;
+  int get schemaVersion => 378;
 
   /// Schema-drift probes run in `beforeOpen` (one column-set per
   /// recently-changed table). A stale on-disk schema — e.g. web OPFS surviving
@@ -4428,6 +4428,12 @@ class Store extends _$Store {
       await _safeAddColumn(m, priorities, priorities.sendWindow);
       await _safeAddColumn(m, priorities, priorities.sendWindowSet);
       await _safeAddColumn(m, roles, roles.sendWindow);
+    }
+
+    if (from < 378) {
+      // Forward a note: fwd_note points at the note being forwarded, mirroring
+      // re_note (reply-to). Nullable — no data migration needed.
+      await _safeAddColumn(m, notes, notes.fwdNoteId);
     }
   }
 

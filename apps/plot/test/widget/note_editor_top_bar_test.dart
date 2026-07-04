@@ -41,6 +41,7 @@ void main() {
         ),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       expect(find.text('Reply'), findsOneWidget);
       expect(find.text('Task'), findsOneWidget);
@@ -55,6 +56,7 @@ void main() {
         ),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       final active = tester.widget<Text>(find.text('A'));
       final inactive = tester.widget<Text>(find.text('B'));
@@ -72,6 +74,7 @@ void main() {
         ),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       await tester.tap(find.text('Task'));
       expect(tapped, isTrue);
@@ -84,6 +87,7 @@ void main() {
         state: const ReplyingState(quotePreview: 'Sounds good, ship Friday'),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       expect(find.text('Replying'), findsOneWidget);
       expect(find.text('Sounds good, ship Friday'), findsOneWidget);
@@ -95,6 +99,7 @@ void main() {
         state: const ReplyingState(quotePreview: 'q'),
         onClearReply: () => cleared = true,
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       await tester.tap(find.byKey(const Key('top-bar-clear')));
       expect(cleared, isTrue);
@@ -107,6 +112,7 @@ void main() {
         state: const EditingState(quotePreview: 'Old text'),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       expect(find.text('Editing'), findsOneWidget);
       expect(find.text('Old text'), findsOneWidget);
@@ -118,6 +124,7 @@ void main() {
         state: const EditingState(quotePreview: 'q'),
         onClearReply: () {},
         onCancelEdit: () => cancelled = true,
+        onClearForward: () {},
       )));
       await tester.tap(find.byKey(const Key('top-bar-clear')));
       expect(cancelled, isTrue);
@@ -144,6 +151,7 @@ void main() {
         ),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       expect(find.byIcon(FontAwesomeIcons.replyAll), findsOneWidget);
       expect(find.byIcon(FontAwesomeIcons.pen), findsOneWidget);
@@ -170,6 +178,7 @@ void main() {
         ),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       await tester.tap(find.byIcon(FontAwesomeIcons.userPlus));
       // Drain the FTooltip hide-delay timer before the test ends.
@@ -215,6 +224,7 @@ void main() {
             ),
             onClearReply: () {},
             onCancelEdit: () {},
+            onClearForward: () {},
           ),
         ),
       )));
@@ -235,6 +245,7 @@ void main() {
         ),
         onClearReply: () {},
         onCancelEdit: () {},
+        onClearForward: () {},
       )));
       expect(find.byIcon(FontAwesomeIcons.pen), findsNothing);
       expect(find.byIcon(FontAwesomeIcons.userPlus), findsNothing);

@@ -3202,6 +3202,11 @@ export class Integrations extends Tool implements IAuth {
             mimeType: string;
             fileSize: number | null;
           }>;
+          // Set when sync/threads decided this create_link is a native
+          // forward (decideForward mode "native"). Passed straight through
+          // to the connector's onCreateLink via `args: [draft]` below — no
+          // reconstruction needed since `draft` itself carries the field.
+          forward?: { key: string };
         };
       };
       if (!threadId || !draft) return [];

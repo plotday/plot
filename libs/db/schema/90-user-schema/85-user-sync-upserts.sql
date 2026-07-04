@@ -199,7 +199,12 @@ CREATE OR REPLACE FUNCTION "user".upsert_note (
     p_merged_from_thread_id uuid DEFAULT NULL::uuid,
     -- Scheduled sending: future = held (author-only, no dispatch) until the
     -- release sweep nulls it. Only user clients set this; connectors don't.
-    p_send_at timestamptz DEFAULT NULL::timestamptz
+    p_send_at timestamptz DEFAULT NULL::timestamptz,
+    -- Forwarding: pointer to the source note being forwarded, resolved
+    -- server-side to decide native-vs-fallback forwarding. Must trail with a
+    -- default (like p_merged_from_thread_id/p_send_at above) since Postgres
+    -- requires all parameters after the first defaulted one to have defaults.
+    p_fwd_note uuid DEFAULT NULL::uuid
 )
     RETURNS note
     LANGUAGE plpgsql
@@ -333,8 +338,8 @@ BEGIN
     END IF;
 
     IF p_id IS NULL THEN
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id, send_at)
-            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id, p_send_at)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, fwd_note, source_created_at, key, merged_from_thread_id, send_at)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, p_fwd_note, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id, p_send_at)
         ON CONFLICT (thread_id, link_id, key)
             WHERE key IS NOT NULL
             DO UPDATE SET
@@ -349,6 +354,7 @@ BEGIN
                 actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,
                 re_note_id = EXCLUDED.re_note_id,
+                fwd_note = EXCLUDED.fwd_note,
                 source_created_at = EXCLUDED.source_created_at,
                 key = EXCLUDED.key,
                 merged_from_thread_id = EXCLUDED.merged_from_thread_id,
@@ -360,8 +366,8 @@ BEGIN
                 updated_at = now()
         RETURNING * INTO v_row;
     ELSE
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id, send_at)
-            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id, p_send_at)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, fwd_note, source_created_at, key, merged_from_thread_id, send_at)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, p_fwd_note, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id, p_send_at)
         ON CONFLICT (id)
             DO UPDATE SET
                 author_id = note.author_id,
@@ -376,6 +382,7 @@ BEGIN
                 actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,
                 re_note_id = EXCLUDED.re_note_id,
+                fwd_note = EXCLUDED.fwd_note,
                 source_created_at = EXCLUDED.source_created_at,
                 key = COALESCE(EXCLUDED.key, note.key),
                 merged_from_thread_id = EXCLUDED.merged_from_thread_id,

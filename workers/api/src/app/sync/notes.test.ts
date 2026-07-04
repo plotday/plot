@@ -4,6 +4,7 @@ import {
   noteVisibleUserIds,
   resolveAccessContactsForSend,
   resolveAccessGroupsForSend,
+  withForwardSnapshot,
 } from "./notes";
 
 /**
@@ -121,6 +122,57 @@ describe("isScopedNote", () => {
   it("is scoped when resolved access_groups is non-null", () => {
     expect(isScopedNote(null, ["g1"])).toBe(true);
     expect(isScopedNote(null, [])).toBe(true);
+  });
+});
+
+describe("withForwardSnapshot", () => {
+  // Task 8: exactly-one forward-snapshot invariant on a note's actions. The
+  // note is client-owned and re-pushed on every edit, so this MUST strip any
+  // prior forward action before appending the freshly-derived one — otherwise
+  // the server-added snapshot (which echoes back to the client in the next
+  // body.actions) would duplicate on every re-push.
+  const snap = {
+    sourceTitle: "Q3",
+    sourceAuthorName: "Alice",
+    quotedContent: "> hi",
+    sourceThreadId: "t1",
+  };
+  const expectedAction = { type: "forward", ...snap };
+
+  it("appends a ForwardUserAction snapshot when none exists", () => {
+    expect(withForwardSnapshot([], snap)).toEqual([expectedAction]);
+  });
+
+  it("treats null/undefined existing actions as empty", () => {
+    expect(withForwardSnapshot(null, snap)).toEqual([expectedAction]);
+    expect(withForwardSnapshot(undefined, snap)).toEqual([expectedAction]);
+  });
+
+  it("REPLACES an existing forward action instead of duplicating it (idempotence)", () => {
+    const stale = {
+      type: "forward",
+      sourceTitle: "Old",
+      sourceAuthorName: "Bob",
+      quotedContent: "> old",
+      sourceThreadId: "t0",
+    };
+    const actions = withForwardSnapshot([stale], snap);
+    expect(actions).toHaveLength(1);
+    expect(actions).toEqual([expectedAction]);
+  });
+
+  it("preserves other (non-forward) actions untouched, replacing only the forward one", () => {
+    const external = { type: "external", title: "x", url: "https://x" };
+    const stale = {
+      type: "forward",
+      sourceTitle: "Old",
+      sourceAuthorName: "Bob",
+      quotedContent: "> old",
+      sourceThreadId: "t0",
+    };
+    const actions = withForwardSnapshot([external, stale], snap);
+    expect(actions).toHaveLength(2);
+    expect(actions).toEqual([external, expectedAction]);
   });
 });
 

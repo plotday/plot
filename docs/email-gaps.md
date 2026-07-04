@@ -54,13 +54,13 @@ as" picker when multiple Gmail connections exist.
 
 ## Tier 2 — Expected by any serious email user
 
-### 5. Forward action
+### 5. Forward action (shipped)
 
-No way to forward a received email. Reply / reply-all only.
+~~No way to forward a received email. Reply / reply-all only.~~
 
-**Sketch:** Add a "Forward" affordance on email-type threads. Branch in `gmail.ts onNoteCreated()`
-on a new note flag (or new note type) that builds an outbound message with the original body
-quoted + new recipient list. Requires Tier 1 #1 to be useful.
+Shipped: a "Forward" affordance now exists on threads. Email forwards the original message
+(including attachments) via Gmail's native forward; other channels forward the quoted text through
+Plot.
 
 ### 6. Microsoft / Outlook mail connector
 

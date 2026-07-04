@@ -121,6 +121,7 @@ class Notes extends Table
   TextColumn get mentions =>
       text().nullable().map(const ActorIdListConverter())();
   BlobColumn get reNoteId => blob().nullable().map(const UuidConverter())();
+  BlobColumn get fwdNoteId => blob().nullable().map(const UuidConverter())();
   BlobColumn get mergedFromThreadId => blob().nullable().map(const UuidConverter())();
 }
 
@@ -166,6 +167,13 @@ class NotesBase extends BaseTable {
     json.remove('updated_by');
     json.remove('sync_depth');
     json.remove('user_id');
+    // Wire key is `fwd_note` (remote DB column / user.note view), but the
+    // local Drift column is `fwdNoteId` → NoteRow.fromJson() expects
+    // `fwd_note_id`. Remap before handing off so the pulled pointer lands in
+    // the local column instead of being silently dropped.
+    if (json.containsKey('fwd_note')) {
+      json['fwd_note_id'] = json.remove('fwd_note');
+    }
     return NoteRow.fromJson(json);
   }
 
@@ -175,6 +183,15 @@ class NotesBase extends BaseTable {
 
     // The client sets author_id correctly to Base.actorId (contact ID)
     // Do NOT remove - the sync API needs it to set the correct author
+
+    // Local Drift column is `fwdNoteId` → row.toJson() emits `fwd_note_id`,
+    // but the remote DB column / user.note view / server RPC all use
+    // `fwd_note` (no `_id`). Remap so the push actually reaches the server —
+    // without this the server always reads undefined and the pointer never
+    // persists.
+    if (json.containsKey('fwd_note_id')) {
+      json['fwd_note'] = json.remove('fwd_note_id');
+    }
 
     return json;
   }
@@ -214,6 +231,7 @@ class Note extends Equatable implements Comparable<Note> {
     DeliveryError? deliveryError,
     List<ActorId>? mentions,
     NoteId? reNoteId,
+    NoteId? fwdNoteId,
     required DateTime createdAt,
     required DateTime sourceCreatedAt,
     required DateTime updatedAt,
@@ -241,6 +259,7 @@ class Note extends Equatable implements Comparable<Note> {
       deliveryError: deliveryError,
       mentions: effectiveMentions,
       reNoteId: reNoteId,
+      fwdNoteId: fwdNoteId,
       createdAt: createdAt,
       updatedAt: updatedAt,
       archivedAt: archivedAt,
@@ -263,6 +282,7 @@ class Note extends Equatable implements Comparable<Note> {
       deliveryError = null,
       mentions = null,
       reNoteId = null,
+      fwdNoteId = null,
       createdAt = DateTime.now(),
       sourceCreatedAt = DateTime.now(),
       updatedAt = DateTime.now(),
@@ -285,6 +305,7 @@ class Note extends Equatable implements Comparable<Note> {
     this.deliveryError,
     this.mentions,
     this.reNoteId,
+    this.fwdNoteId,
     required this.createdAt,
     required this.sourceCreatedAt,
     required this.updatedAt,
@@ -318,6 +339,7 @@ class Note extends Equatable implements Comparable<Note> {
       deliveryError: noteRow.deliveryError,
       mentions: effectiveMentions,
       reNoteId: noteRow.reNoteId,
+      fwdNoteId: noteRow.fwdNoteId,
       createdAt: noteRow.createdAt,
       updatedAt: noteRow.updatedAt,
       archivedAt: noteRow.archivedAt,
@@ -363,6 +385,7 @@ class Note extends Equatable implements Comparable<Note> {
   final DeliveryError? deliveryError;
   final List<ActorId>? mentions;
   final NoteId? reNoteId;
+  final NoteId? fwdNoteId;
   final DateTime createdAt;
   final DateTime sourceCreatedAt;
   final DateTime updatedAt;
@@ -939,6 +962,7 @@ class Note extends Equatable implements Comparable<Note> {
       deliveryError: deliveryError,
       mentions: mentions,
       reNoteId: reNoteId,
+      fwdNoteId: fwdNoteId,
       createdAt: createdAt,
       updatedAt: updatedAt,
       archivedAt: archivedAt,
@@ -1449,6 +1473,8 @@ class Note extends Equatable implements Comparable<Note> {
     List<ActorId>? addMentions,
     NoteId? reNoteId,
     bool clearReNoteId = false,
+    NoteId? fwdNoteId,
+    bool clearFwdNoteId = false,
     NoteTagsRow? tags,
     Value<DateTime?> archivedAt = const Value.absent(),
     bool clearArchivedAt = false,
@@ -1530,6 +1556,7 @@ class Note extends Equatable implements Comparable<Note> {
         deliveryError: deliveryError.present ? deliveryError.value : this.deliveryError,
         mentions: effectiveMentions,
         reNoteId: clearReNoteId ? null : (reNoteId ?? this.reNoteId),
+        fwdNoteId: clearFwdNoteId ? null : (fwdNoteId ?? this.fwdNoteId),
         createdAt: isPublishing ? now : createdAt,
         updatedAt: DateTime.now(),
         archivedAt: archivedAt.present ? archivedAt.value : (clearArchivedAt ? null : this.archivedAt),
@@ -1554,6 +1581,7 @@ class Note extends Equatable implements Comparable<Note> {
     deliveryError,
     mentions,
     reNoteId,
+    fwdNoteId,
     createdAt,
     updatedAt,
     archivedAt,

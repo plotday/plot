@@ -121,6 +121,8 @@ original app when you need to.
   channels and threads, Linear comments, Teams chats.
 - Email replies offer a labelled **Reply all** (with a count of who's on it) and a plain **Reply**
   to the sender, plus per-message recipient editing.
+- **Forward** any message to new people: email forwards the original message with its attachments
+  intact, and other connections forward the text as a new message.
 - React from Plot and it syncs both ways — the full standard emoji set with skin tones, plus Slack
   workspace custom emoji.
 - Changed your mind right after hitting send? For five seconds after sending a note, a **SENDING**

@@ -39,7 +39,7 @@ set -euo pipefail
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # >>>  BUMP THIS WHEN ICONS OR FONT FILES CHANGE (see header above)   <<<
-FONT_CACHE_VERSION=27
+FONT_CACHE_VERSION=28
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

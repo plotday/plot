@@ -6,10 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:plot/router.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/shortcut.dart';
-import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/widget/editor_clipboard.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/page/new_thread.dart' show NewThreadPageState, ForwardSeed;
 import 'package:plot/store/store.dart';
+import 'package:plot/state/priority.dart' show PriorityBloc;
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/util/link_type_copy.dart';
@@ -809,6 +811,48 @@ class SplitNoteToNewThread extends NoteCommand {
   }
 }
 
+class ForwardNote extends NoteCommand {
+  ForwardNote(super.note)
+    : super(
+        title: 'Forward',
+        eventObject: EventObject.note,
+        eventAction: EventAction.opened,
+        icon: FontAwesomeIcons.share,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      // Read the bloc before the async gap below (context.read after an
+      // await would need a mounted check; grabbing it up front avoids that).
+      final priorityBloc = context.read<PriorityBloc>();
+      final priorityId =
+          (priorityBloc.state.context ?? priorityBloc.state.draft.priority).id;
+
+      // Resolve the source note's connection so compose defaults to the same
+      // channel (plain Plot when the thread has no connector).
+      final links = await Link.getForThread(note.threadId);
+      final primaryLink = Thread.primaryLink(links);
+
+      NewThreadPageState.activateOnOpen();
+      NewThreadPageState.requestForward(
+        ForwardSeed(sourceNote: note, primaryLink: primaryLink),
+      );
+
+      return CommandRoute(
+        PriorityRoute(
+          priorityIdString: priorityId.toShortString(),
+          children: [NewThreadRoute()],
+        ),
+      );
+    } catch (e, stackTrace) {
+      log.severe('Error in ForwardNote: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to forward note', isError: true);
+    }
+  }
+}
+
 List<StaticCommandGroup> noteCommandGroups(
   Note note, {
   ThreadBloc? activityBloc,
@@ -853,6 +897,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       EditNote(note, activityBloc: activityBloc),
     if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
       SplitNoteToNewThread(note),
+    if (!note.draft) ForwardNote(note),
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
     if (activityBloc != null && !note.isPrivate)

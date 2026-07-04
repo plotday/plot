@@ -361,7 +361,8 @@ class ThreadsBase extends BaseTable {
   /// connector's onCreateLink after the thread is upserted and titled.
   ///
   /// Shape: `{ 'create_link': { twist_instance_id, channel_id, type, status },
-  ///          'note_content': String | null }`.
+  ///          'note_content': String | null,
+  ///          'note_fwd_note': String? (forwarded source note id) }`.
   static final Map<String, Map<String, dynamic>> pendingCreateLinks = {};
 
   /// Stash the connector create-link payload derived from [note]'s
@@ -384,6 +385,11 @@ class ThreadsBase extends BaseTable {
         'status': createAction.status,
       },
       if (note?.content != null) 'note_content': note!.content,
+      // Denormalized forward pointer: when this compose was started via
+      // "Forward", the note's fwdNoteId is carried inline so the connector
+      // create-link dispatch can resolve the forwarded source note before the
+      // composed note is reliably persisted (mirrors note_content above).
+      if (note?.fwdNoteId != null) 'note_fwd_note': note!.fwdNoteId!.toString(),
       if (fileActions.isNotEmpty)
         'note_actions': fileActions.map((a) => a.toJson()).toList(),
     };

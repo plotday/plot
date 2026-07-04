@@ -42,7 +42,10 @@ import {
   resolveCreateLinkContacts,
   dispatchCreateLink,
   noteActionsToAttachments,
+  decideForward,
+  type CreateLinkDraftPayload,
 } from "./create-link-dispatch";
+import { resolveForwardSource, buildFallbackContent } from "../../twist/forward";
 
 /** Client-supplied request to create an external item via a connector. */
 export type CreateLinkSpec = {
@@ -648,6 +651,11 @@ threads.post("/sync/threads", async (c) => {
   // also clear `body.create_link` if we didn't snapshot here.
   const createLinkSpec = body.create_link as CreateLinkSpec | undefined;
   const noteContent = (body.note_content as string | null | undefined) ?? null;
+  // The source note id being forwarded, when this compose was started via
+  // "Forward" — denormalized onto the thread POST for the same reason as
+  // note_content (the composed note isn't reliably persisted yet at dispatch
+  // time). Read defensively: no-op (null) until the client sends it.
+  const noteFwdNoteId = (body.note_fwd_note as string | null | undefined) ?? null;
   // Client sends the composed thread's first note's file actions inline
   // (the note isn't reliably persisted yet at dispatch time — see
   // note_content above for the same reasoning). Read defensively: this is a
@@ -726,12 +734,13 @@ threads.post("/sync/threads", async (c) => {
   // by upsert_thread and the peer-promotion logic.
   delete threadData.twist_id;
   delete threadData.pending_contacts;
-  // create_link, note_content, and note_actions are client→server control
-  // fields for the connector-backed create-new-item flow; they are not
-  // thread columns.
+  // create_link, note_content, note_actions, and note_fwd_note are
+  // client→server control fields for the connector-backed create-new-item
+  // flow; they are not thread columns.
   delete threadData.create_link;
   delete threadData.note_content;
   delete threadData.note_actions;
+  delete threadData.note_fwd_note;
 
   // Translate legacy `topics` field (apiVersion < 3) to `groups` so
   // upsert_thread sees the new shape. If both are present, `groups` wins.
@@ -1197,7 +1206,7 @@ threads.post("/sync/threads", async (c) => {
             },
           );
 
-          const draft = {
+          const draft: CreateLinkDraftPayload = {
             channelId: createLinkSpec.channel_id!,
             type: createLinkSpec.type!,
             // null for status-less link types (Gmail email); onCreateLink
@@ -1210,6 +1219,31 @@ threads.post("/sync/threads", async (c) => {
             inviteEmails: dispatchInviteEmails,
             attachments: noteAttachments,
           };
+
+          // Forward: when this compose was started via "Forward" of an
+          // existing upstream item, decide whether the target connection can
+          // rebuild it natively (same connection as the source + link type
+          // supports it). Only the native branch is handled here.
+          if (noteFwdNoteId) {
+            const source = await resolveForwardSource(db, userId, noteFwdNoteId);
+            if (source) {
+              const decision = decideForward(source, createLinkSpec.twist_instance_id ?? null);
+              if (decision.mode === "native") {
+                draft.forward = { key: decision.key };
+              } else {
+                // Fallback: the target connector can't rebuild the original
+                // natively (different connection, or a link type/connector
+                // without native forward support). Blockquote the original
+                // into the outbound connector payload — this is race-free
+                // because it reads the denormalized snapshot, not the note row.
+                draft.noteContent = buildFallbackContent(draft.noteContent ?? "", source.snapshot);
+                // Recipient snapshot (ForwardUserAction) is materialized onto
+                // the note at /sync/notes ingest (has the note row + fwd_note);
+                // not here (the note row isn't reliably persisted yet at
+                // dispatch time — see note_content note above).
+              }
+            }
+          }
 
           await dispatchCreateLink(c.env, c.executionCtx as any, db, {
             threadId: dispatchThreadId,

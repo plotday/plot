@@ -97,7 +97,34 @@ export type CreateLinkDraftPayload = {
   contacts: CreateLinkContact[];
   inviteEmails: string[];
   attachments: CreateLinkAttachment[];
+  // Set only when this create_link is a native forward of an existing
+  // upstream item (matches connector.ts's CreateLinkDraft.forward) — see
+  // decideForward below for when that applies.
+  forward?: { key: string };
 };
+
+export type ForwardDecision = { mode: "native"; key: string } | { mode: "fallback" };
+
+/**
+ * Native forward only when the target connection is the SAME connection that
+ * owns the source item AND that link type supports native forward. Any other
+ * case (different connection, unsupported link type, plain Plot) → fallback.
+ */
+export function decideForward(
+  source: { key: string | null; sourceConnectionId: string | null; supportsForward: boolean },
+  targetConnectionId: string | null,
+): ForwardDecision {
+  if (
+    source.supportsForward &&
+    source.key &&
+    targetConnectionId &&
+    source.sourceConnectionId &&
+    targetConnectionId === source.sourceConnectionId
+  ) {
+    return { mode: "native", key: source.key };
+  }
+  return { mode: "fallback" };
+}
 
 /**
  * Resolve a thread's contact + group ids into the contact rows a connector's

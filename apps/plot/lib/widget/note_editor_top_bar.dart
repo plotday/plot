@@ -36,6 +36,13 @@ class EditingState extends TopBarState {
   const EditingState({required this.quotePreview});
 }
 
+/// Takeover chrome shown while composing a forward.
+class ForwardingState extends TopBarState {
+  final String quotePreview;
+
+  const ForwardingState({required this.quotePreview});
+}
+
 // ---------------------------------------------------------------------------
 // TopBarPill value type
 // ---------------------------------------------------------------------------
@@ -110,6 +117,7 @@ class NoteEditorTopBar extends StatelessWidget {
 
   final VoidCallback onClearReply;
   final VoidCallback onCancelEdit;
+  final VoidCallback onClearForward;
 
   const NoteEditorTopBar({
     super.key,
@@ -117,6 +125,7 @@ class NoteEditorTopBar extends StatelessWidget {
     required this.roundTop,
     required this.onClearReply,
     required this.onCancelEdit,
+    required this.onClearForward,
   });
 
   @override
@@ -136,6 +145,14 @@ class NoteEditorTopBar extends StatelessWidget {
         label: 'Editing',
         quotePreview: s.quotePreview,
         onClear: onCancelEdit,
+        roundTop: roundTop,
+        context: context,
+      ),
+      final ForwardingState s => _TakeoverBar(
+        icon: FontAwesomeIcons.share,
+        label: 'Forwarding',
+        quotePreview: s.quotePreview,
+        onClear: onClearForward,
         roundTop: roundTop,
         context: context,
       ),

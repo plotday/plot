@@ -8,6 +8,7 @@ import type { Bindings } from "../../env";
 import { analyzeNote } from "../../queue/note-analysis";
 import { rpcUser } from "../../rpc";
 import { fallbackImportanceFromFacets } from "../../state/importance/band";
+import { buildSnapshotAction, resolveForwardSource, type ForwardSource } from "../../twist/forward";
 import {
   checkAiLimitForContacts,
   isAiEnabled,
@@ -47,6 +48,23 @@ export function resolveAccessGroupsForSend(args: {
   // no Plot groups), so this is a straight pass-through with type coercion.
   const { bodyAccessGroups } = args;
   return Array.isArray(bodyAccessGroups) ? bodyAccessGroups : null;
+}
+
+/**
+ * Ensure exactly one ForwardUserAction snapshot on a forwarded note's
+ * actions: strip any existing `type === "forward"` action, then append the
+ * freshly-derived one. MUST be idempotent — the note is client-owned and
+ * re-pushed on every edit, and the server-added snapshot echoes back to the
+ * client in the next `body.actions`. Naively appending would duplicate the
+ * snapshot on every re-push; stripping first keeps it exactly-one and always
+ * current (covers the source note being edited after the forward too).
+ */
+export function withForwardSnapshot(
+  existing: Array<Record<string, unknown>> | null | undefined,
+  snapshot: ForwardSource["snapshot"],
+): Array<Record<string, unknown>> {
+  const others = (existing ?? []).filter((a) => a?.type !== "forward");
+  return [...others, buildSnapshotAction(snapshot)];
 }
 
 const notes = new Hono<{ Bindings: Bindings }>();
@@ -300,6 +318,23 @@ notes.post("/sync/notes", async (c) => {
     resolvedAccessContactsSnapshot = resolvedAccessContacts;
     resolvedAccessGroupsSnapshot = resolvedAccessGroups;
 
+    // Materialize the forward snapshot onto the note's actions for ALL
+    // forward notes (plain-Plot, connector-fallback, AND native) — this is
+    // the only place the note row is reliably persisted at write time (the
+    // /sync/threads dispatch path can't rely on it existing yet), and per
+    // design even native forwards keep a Plot-visible snapshot for
+    // recipients. Idempotent via withForwardSnapshot, so this is safe to run
+    // on every re-push of the same note (edits, retries).
+    if (body.fwd_note) {
+      const source = await resolveForwardSource(trx, c.var.user.id, body.fwd_note);
+      if (source) {
+        body.actions = withForwardSnapshot(
+          Array.isArray(body.actions) ? body.actions : [],
+          source.snapshot,
+        );
+      }
+    }
+
     return rpcUser(trx, "upsert_note", {
       user_id: c.var.user.id,
       p_id: body.id || null,
@@ -321,6 +356,7 @@ notes.post("/sync/notes", async (c) => {
         ? `{${body.mentions.join(",")}}`
         : null) as any,
       p_re_note_id: body.re_note_id || null,
+      p_fwd_note: body.fwd_note || null,
       p_source_created_at: body.source_created_at || null,
       p_key: body.key || null,
       p_merged_from_thread_id: body.merged_from_thread_id || null,

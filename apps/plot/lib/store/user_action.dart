@@ -10,6 +10,7 @@ enum UserActionType {
   thread,
   plan,
   createLink,
+  forward,
 }
 
 enum ConferencingProvider { googleMeet, zoom, microsoftTeams, webex, other }
@@ -44,6 +45,8 @@ abstract class UserAction extends Equatable {
         return PlanUserAction.fromJson(json);
       case UserActionType.createLink:
         return CreateLinkUserAction.fromJson(json);
+      case UserActionType.forward:
+        return ForwardUserAction.fromJson(json);
     }
   }
 
@@ -299,6 +302,56 @@ class ThreadUserAction extends UserAction {
 
   @override
   List<Object?> get props => [type, threadId, title, priorityId];
+}
+
+/// A snapshot of a forwarded note's content, materialized by the server onto
+/// the forwarded item so recipients see the original even when they lack access
+/// to it. The author's client suppresses this in favor of a link to the
+/// original (see note rendering). Never authored by the client.
+class ForwardUserAction extends UserAction {
+  const ForwardUserAction({
+    required this.sourceTitle,
+    required this.sourceAuthorName,
+    required this.quotedContent,
+    this.sourceThreadId,
+  }) : super(type: UserActionType.forward);
+
+  /// Title of the original thread/message being forwarded.
+  final String sourceTitle;
+
+  /// Display name of the original message's author.
+  final String sourceAuthorName;
+
+  /// The original content, already blockquoted as Markdown.
+  final String quotedContent;
+
+  /// Base58/uuid id of the original thread, when the viewer could resolve it.
+  /// Recipients typically cannot; null then.
+  final String? sourceThreadId;
+
+  factory ForwardUserAction.fromJson(Map<String, dynamic> json) {
+    return ForwardUserAction(
+      sourceTitle: json['sourceTitle'] as String? ?? '',
+      sourceAuthorName: json['sourceAuthorName'] as String? ?? '',
+      quotedContent: json['quotedContent'] as String? ?? '',
+      sourceThreadId: json['sourceThreadId'] as String?,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'sourceTitle': sourceTitle,
+      'sourceAuthorName': sourceAuthorName,
+      'quotedContent': quotedContent,
+      if (sourceThreadId != null) 'sourceThreadId': sourceThreadId,
+    };
+  }
+
+  @override
+  List<Object?> get props =>
+      [type, sourceTitle, sourceAuthorName, quotedContent, sourceThreadId];
 }
 
 /// A single operation within a plan submitted for user approval.

@@ -163,7 +163,62 @@ class NoteActionWidget extends StatelessWidget {
       case UserActionType.createLink:
         // Rendered inline by NoteEditor's attachment row; invisible elsewhere.
         return const SizedBox.shrink();
+      case UserActionType.forward:
+        return _ForwardedNoteCard(link: link as ForwardUserAction);
     }
+  }
+}
+
+/// Recipient-facing snapshot of a forwarded note. The server materializes
+/// this onto the forwarded note's `actions` (see [ForwardUserAction]) so
+/// someone who lacks access to the original thread can still see what was
+/// forwarded: the source author/title above the quoted original content.
+/// The note's own author suppresses this snapshot in favor of a live
+/// "Forwarded from" link to the source thread (see `widget/note.dart`) — the
+/// two never render for the same viewer.
+class _ForwardedNoteCard extends StatelessWidget {
+  const _ForwardedNoteCard({required this.link});
+
+  final ForwardUserAction link;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final muted = theme.colors.mutedForeground;
+    final header = link.sourceTitle.isEmpty
+        ? 'Forwarded from ${link.sourceAuthorName}'
+        : 'Forwarded from ${link.sourceAuthorName} — ${link.sourceTitle}';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(color: theme.colors.border, width: 2),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 10, top: 2, bottom: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              header,
+              style: theme.typography.xs.copyWith(
+                color: muted,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              link.quotedContent,
+              style: theme.typography.sm.copyWith(color: muted),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
