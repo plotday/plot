@@ -11,7 +11,6 @@ import 'package:plot/widget/editor_clipboard.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/page/new_thread.dart' show NewThreadPageState, ForwardSeed;
 import 'package:plot/store/store.dart';
-import 'package:plot/state/priority.dart' show PriorityBloc;
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/util/link_type_copy.dart';
@@ -823,11 +822,12 @@ class ForwardNote extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // Read the bloc before the async gap below (context.read after an
-      // await would need a mounted check; grabbing it up front avoids that).
-      final priorityBloc = context.read<PriorityBloc>();
-      final priorityId =
-          (priorityBloc.state.context ?? priorityBloc.state.draft.priority).id;
+      // This command runs from the note "…" modal, whose context is OUTSIDE
+      // the priority-scoped PriorityBloc provider — so we must not read
+      // PriorityBloc here (it throws ProviderNotFound). Derive the route
+      // priority from the source note's own thread, optionally refined by the
+      // app-level NowBloc, exactly like SplitNoteToNewThread does.
+      final parentThread = await Thread.getOne(note.threadId);
 
       // Resolve the source note's connection so compose defaults to the same
       // channel (plain Plot when the thread has no connector).
@@ -839,9 +839,17 @@ class ForwardNote extends NoteCommand {
         ForwardSeed(sourceNote: note, primaryLink: primaryLink),
       );
 
+      var routePriority = parentThread.priority;
+      if (context.mounted) {
+        final nowBloc = context.read<NowBloc>();
+        if (nowBloc.loadedState.context != null) {
+          routePriority = nowBloc.loadedState.context!;
+        }
+      }
+
       return CommandRoute(
         PriorityRoute(
-          priorityIdString: priorityId.toShortString(),
+          priorityIdString: routePriority.id.toShortString(),
           children: [NewThreadRoute()],
         ),
       );
