@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 
 import type { DB } from "../db";
+import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
 import { PROVIDER_CONFIGS } from "../provider";
@@ -771,6 +772,9 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
   // Union of OAuth scopes granted across every Integrations instance — feeds
   // the combined-connector productStatus computation below.
   const grantedScopesSet = new Set<string>();
+  // Instances whose read queued self-heal writes; drained after we respond
+  // (see the waitUntil below) so those repair writes stay off the read path.
+  const integrationsInstances: Integrations[] = [];
 
   for (const [pathStr, providers] of pathToProviders) {
     const path = pathStr.split(":");
@@ -784,6 +788,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       twistInfo.twistPackageId,
       twistInfo.environment
     );
+    integrationsInstances.push(integrations);
 
     let data = await integrations.getIntegrationData(
       currentActorId as any
@@ -856,6 +861,31 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     allAccounts.push(...data.accounts);
     allChannels.push(...data.syncables);
     for (const s of data.grantedScopes ?? []) grantedScopesSet.add(s);
+  }
+
+  // Drain the self-heal writes accumulated while reading (channel mirror + tic
+  // backfill) after the response is sent, on a fresh connection — the request
+  // db is torn down once this handler returns. Snapshot env/tracker into locals
+  // per the waitUntil-lifetime rule.
+  if (integrationsInstances.length > 0) {
+    const bgEnv = c.env;
+    const bgTracker = c.var.tracker;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const bgDb = createDb(bgEnv);
+        try {
+          for (const inst of integrationsInstances) {
+            await inst.flushDeferredSelfHeal(bgDb);
+          }
+        } catch (error) {
+          // Per-write failures are already logged inside flushDeferredSelfHeal;
+          // this backstops unexpected failures (e.g. connection setup).
+          bgTracker.captureException(error as Error);
+        } finally {
+          await bgDb.destroy();
+        }
+      })()
+    );
   }
 
   const teamDomains = await getTeamDomains(c.var.db);

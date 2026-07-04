@@ -92,6 +92,7 @@ class SelectModal<T> extends Modal {
     this.initialItems,
     this.emptyMessage,
     this.onRefreshNeeded,
+    this.onHighlightChanged,
     this.showFilter,
     this.onAdd,
     this.addTooltip,
@@ -117,6 +118,7 @@ class SelectModal<T> extends Modal {
            initialItems: initialItems,
            emptyMessage: emptyMessage,
            onRefreshNeeded: onRefreshNeeded,
+           onHighlightChanged: onHighlightChanged,
            showFilter: showFilter,
            onAdd: onAdd,
            addTooltip: addTooltip,
@@ -173,6 +175,12 @@ class SelectModal<T> extends Modal {
   /// Optional callback to receive a refresh function that can be called
   /// to reload the items while keeping the modal open.
   final void Function(Future<void> Function() refresh)? onRefreshNeeded;
+
+  /// Optional callback fired when the highlighted item changes (mouse hover or
+  /// keyboard navigation), settling on a real item slot (never a group header
+  /// or info-only row). Fires at most once per distinct highlight. Callers use
+  /// it to prefetch data for the row the user is likely to activate next.
+  final void Function(T item)? onHighlightChanged;
 
   /// Controls whether the filter/search field is shown.
   /// `null` = default behavior (shown when physical keyboard is present),
@@ -234,6 +242,7 @@ class SelectModal<T> extends Modal {
     onSelect,
     String? emptyMessage,
     void Function(Future<void> Function() refresh)? onRefreshNeeded,
+    void Function(T item)? onHighlightChanged,
     bool? showFilter,
     Future<T?> Function(BuildContext context)? onAdd,
     String? addTooltip,
@@ -273,6 +282,7 @@ class SelectModal<T> extends Modal {
       initialItems: initialItems,
       emptyMessage: emptyMessage,
       onRefreshNeeded: onRefreshNeeded,
+      onHighlightChanged: onHighlightChanged,
       showFilter: showFilter,
       onAdd: onAdd,
       addTooltip: addTooltip,
@@ -303,6 +313,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.initialItems,
     this.emptyMessage,
     this.onRefreshNeeded,
+    this.onHighlightChanged,
     this.showFilter,
     this.onAdd,
     this.addTooltip,
@@ -326,6 +337,7 @@ class _SelectModal<T> extends StatefulWidget {
   final List<SelectGroup<T>>? initialItems;
   final String? emptyMessage;
   final void Function(Future<void> Function() refresh)? onRefreshNeeded;
+  final void Function(T item)? onHighlightChanged;
   final bool? showFilter;
   final Future<T?> Function(BuildContext context)? onAdd;
   final String? addTooltip;
@@ -356,6 +368,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool _isLoading = false;
   int _requestId = 0; // For canceling stale requests
   int _highlightedIndex = 0;
+  // Last flat index dispatched to [widget.onHighlightChanged]; guards against
+  // re-firing while the highlight sits on the same row across rebuilds.
+  int? _lastNotifiedHighlight;
   bool _isRefreshing = false;
   bool _mouseHasMoved = false;
   bool _enterHandled =
@@ -1266,8 +1281,33 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     Modal.pop<T>(context, Value.absent());
   }
 
+  /// Dispatch [widget.onHighlightChanged] for the currently highlighted row,
+  /// at most once per distinct highlight. Skips info-only slots and
+  /// out-of-range indices (mirrors the Enter-activation guards). Scheduled from
+  /// [build] via a post-frame callback so the callback — which may kick off
+  /// work in the parent — never runs during build.
+  void _maybeNotifyHighlight() {
+    final onChanged = widget.onHighlightChanged;
+    if (onChanged == null) return;
+    final index = _highlightedIndex;
+    if (index == _lastNotifiedHighlight) return;
+    if (index < 0 || index >= _getTotalDisplayCount()) return;
+    if (_isInfoOnlySlot(index)) return;
+    _lastNotifiedHighlight = index;
+    onChanged(_getItemAtIndexUnsafe(index));
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Notify the parent once the highlight settles (after this frame lays out),
+    // so it can prefetch the row the user is likely to activate. Only scheduled
+    // when a listener is present — no cost for the common no-callback case.
+    if (widget.onHighlightChanged != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) _maybeNotifyHighlight();
+      });
+    }
+
     Widget? loadingIndicator;
     // Only render the spinner during a cold load (no cached results yet).
     // Once the empty-search cache is populated, keystrokes never re-show it.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -215,11 +217,28 @@ class ManageConnections extends Command {
     }
     try {
       Future<void> Function()? refreshFn;
+      // Prefetch an existing connection's integrations once the user settles on
+      // its row (mouse hover or keyboard highlight) so tapping it opens the
+      // edit form without waiting on GET /twist/:id/integrations. Debounced so
+      // arrowing through the list doesn't fire a request per row, and deduped
+      // so the same row isn't re-requested.
+      Timer? preloadTimer;
+      String? lastPreloadedId;
       await SelectModal.open<_ConnectionItem>(
         context,
         items: (search) => _fetchItems(search),
         itemBuilder: (item, isLoading) => _buildItem(item, isLoading),
         onRefreshNeeded: (refresh) => refreshFn = refresh,
+        onHighlightChanged: (item) {
+          if (item is! _ActiveSource) return;
+          final id = item.id;
+          if (id == lastPreloadedId) return;
+          preloadTimer?.cancel();
+          preloadTimer = Timer(const Duration(milliseconds: 180), () {
+            lastPreloadedId = id;
+            EditSource.preloadIntegrations(id);
+          });
+        },
         onSelect: (ctx, item, _) async {
           String? archivedActiveId;
           if (item is _ActiveSource) {
@@ -286,6 +305,7 @@ class ManageConnections extends Command {
           return false; // Keep SelectModal open
         },
       );
+      preloadTimer?.cancel();
 
       return const CommandSkipped();
     } on ApiException catch (e, t) {
@@ -897,6 +917,22 @@ UsageData _liveUsage(UsageData fallback) =>
 /// Setup forms seed their initial usage from this so the value they render and
 /// the notifier they bind to via `refreshOn` share one source of truth.
 Future<UsageData> _freshUsage() async {
+  // Seed from already-loaded usage when available so opening a setup form
+  // doesn't block on a subscription/usage/teams round-trip. The at-limit gate
+  // reads _liveUsage() at decision time (save / scope change), so a slightly
+  // stale seed is safe; refresh in the background to keep the live value
+  // current for that gate and any onRefresh re-read.
+  final cached =
+      SubscriptionService.instance.usage ??
+      ManageConnections._dataCache?.usage;
+  if (cached != null) {
+    // ensureFresh() coalesces concurrent callers and never throws
+    // (_doRefresh swallows failures), so this is safe to fire unawaited.
+    unawaited(SubscriptionService.instance.ensureFresh());
+    return cached;
+  }
+  // Cold start — no usage loaded yet, so we must fetch before we can render
+  // connection limits.
   await SubscriptionService.instance.ensureFresh();
   return SubscriptionService.instance.usage ??
       ManageConnections._dataCache?.usage ??
@@ -1436,7 +1472,14 @@ class EditSource extends ShowForm {
 
   static void preloadIntegrations(String twistInstanceId) {
     _preloadedFor = twistInstanceId;
-    _preloadedIntegrations = TwistApi.getIntegrations(twistInstanceId);
+    final f = TwistApi.getIntegrations(twistInstanceId);
+    _preloadedIntegrations = f;
+    // A preload may never be consumed (the user highlights a connection row
+    // then dismisses without opening it). Attach a no-op handler so an
+    // un-consumed failure isn't reported as an unhandled async error;
+    // _buildForm still awaits `f` directly and sees any error when it IS
+    // consumed.
+    unawaited(f.then((_) {}, onError: (_) {}));
   }
 
   static Future<FormData> _buildForm(

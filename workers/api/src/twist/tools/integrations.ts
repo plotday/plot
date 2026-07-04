@@ -393,6 +393,22 @@ export class Integrations extends Tool implements IAuth {
     | null
     | undefined = undefined;
   /**
+   * Self-heal writes accumulated during a `getIntegrationData` read (mirror the
+   * DO channel list into `public.channel`, backfill `twist_instance_connection`
+   * for the viewer). These are pure repair writes the response never depends
+   * on, so they are queued here and drained by the route in `waitUntil` on a
+   * fresh connection instead of blocking the read. See `flushDeferredSelfHeal`.
+   */
+  private deferredSelfHeal: Array<
+    | { kind: "mirrorChannels"; channels: Channel[] }
+    | {
+        kind: "ticBackfill";
+        userId: string;
+        provider: AuthProvider;
+        actorId: ActorId;
+      }
+  > = [];
+  /**
    * Extract provider metadata from integration options during deployment.
    * Returns provider/scopes pairs without lifecycle callbacks.
    */
@@ -1235,7 +1251,12 @@ export class Integrations extends Tool implements IAuth {
    * enabled=false; existing rows keep their enabled state and only get
    * title/link_types refreshed when the refresh provides non-null values.
    */
-  private async mirrorChannelsToDb(channels: Channel[]): Promise<void> {
+  private async mirrorChannelsToDb(
+    channels: Channel[],
+    // Defaults to the request connection; the deferred read-path drain passes a
+    // fresh connection since it runs after the request db is torn down.
+    db: Kysely<DB> = this.db
+  ): Promise<void> {
     const flat = this.flattenChannels(channels);
     if (flat.length === 0) return;
     const futureDate = new Date(Date.now() + 1);
@@ -1268,7 +1289,7 @@ export class Integrations extends Tool implements IAuth {
       };
     });
 
-    await this.db
+    await db
       .insertInto("channel")
       .values(values)
       .onConflict((oc) =>
@@ -1298,6 +1319,53 @@ export class Integrations extends Tool implements IAuth {
         }))
       )
       .execute();
+  }
+
+  /**
+   * Drain the self-heal writes queued during {@link getIntegrationData} against
+   * a caller-provided connection, then clear the queue. The read path defers
+   * these repairs (mirror the DO channel list into `public.channel`, backfill
+   * `twist_instance_connection` for the viewer) so they run in the route's
+   * `waitUntil` on a fresh connection — the request db is torn down once the
+   * handler returns. Each write self-guards: a FK violation means the
+   * `twist_instance` was deleted out from under stale DO storage and must never
+   * surface (matches the original inline read-path behaviour). Idempotent, so
+   * safe to call once after a possibly-doubled read.
+   */
+  async flushDeferredSelfHeal(db: Kysely<DB>): Promise<void> {
+    const pending = this.deferredSelfHeal;
+    this.deferredSelfHeal = [];
+    for (const op of pending) {
+      try {
+        if (op.kind === "mirrorChannels") {
+          await this.mirrorChannelsToDb(op.channels, db);
+        } else {
+          await db
+            .insertInto("twist_instance_connection")
+            .values({
+              twist_instance_id: this.twistInstanceId,
+              user_id: op.userId,
+              provider: op.provider,
+              actor_id: op.actorId,
+              connected_at: new Date().toISOString(),
+            })
+            .onConflict((oc) =>
+              oc
+                .columns(["twist_instance_id", "user_id", "provider"])
+                .doNothing()
+            )
+            .execute();
+        }
+      } catch (error) {
+        const logger = createLogger({
+          twist_instance_id: this.twistInstanceId,
+        });
+        logger.warn("deferred self-heal write failed", {
+          kind: op.kind,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   /**
@@ -4630,6 +4698,11 @@ export class Integrations extends Tool implements IAuth {
     // computation to tell which products' scopes the user consented to.
     grantedScopes: string[];
   }> {
+    // Reset any self-heal writes queued by a prior read (the route may call
+    // this twice — see the hosted empty-channel refresh path) so the drain
+    // reflects only this read's findings.
+    this.deferredSelfHeal = [];
+
     const providers = this.providerConfigs.map(p => ({
       provider: p.provider,
       scopes: p.scopes,
@@ -4819,20 +4892,14 @@ export class Integrations extends Tool implements IAuth {
 
         // Self-heal: mirror the DO access list into public.channel so ops
         // queries see the full available list even for connections that
-        // predate the dual-write in setChannels. A FK violation here means
-        // the twist_instance was deleted out from under stale DO storage —
-        // shouldn't fail the read path.
+        // predate the dual-write in setChannels. Deferred off the read path —
+        // the response never depends on this write; the route drains it after
+        // responding (see flushDeferredSelfHeal).
         if (actorChannels.length > 0) {
-          try {
-            await this.mirrorChannelsToDb(actorChannels);
-          } catch (error) {
-            const logger = createLogger({ twist_instance_id: this.twistInstanceId });
-            logger.warn("mirrorChannelsToDb self-heal failed", {
-              provider,
-              actor_id: actorId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
+          this.deferredSelfHeal.push({
+            kind: "mirrorChannels",
+            channels: actorChannels,
+          });
         }
 
         // Track access for the current user
@@ -4842,37 +4909,15 @@ export class Integrations extends Tool implements IAuth {
           }
 
           // Self-heal: backfill twist_instance_connection for pre-existing
-          // connections. A FK violation here means the twist_instance was
-          // deleted out from under stale DO storage (same failure mode the
-          // mirrorChannelsToDb self-heal above guards against) — this is a
-          // read path, so a failed backfill must never fail the read.
+          // connections. Deferred alongside the channel mirror above — a read
+          // never blocks on this repair write.
           if (contactUserId) {
-            try {
-              await this.db
-                .insertInto("twist_instance_connection")
-                .values({
-                  twist_instance_id: this.twistInstanceId,
-                  user_id: contactUserId,
-                  provider,
-                  actor_id: actorId,
-                  connected_at: new Date().toISOString(),
-                })
-                .onConflict((oc) =>
-                  oc
-                    .columns(["twist_instance_id", "user_id", "provider"])
-                    .doNothing()
-                )
-                .execute();
-            } catch (error) {
-              const logger = createLogger({
-                twist_instance_id: this.twistInstanceId,
-              });
-              logger.warn("twist_instance_connection self-heal backfill failed", {
-                provider,
-                actor_id: actorId,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
+            this.deferredSelfHeal.push({
+              kind: "ticBackfill",
+              userId: contactUserId,
+              provider,
+              actorId: actorId as ActorId,
+            });
           }
         }
 
