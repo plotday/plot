@@ -1,3 +1,13 @@
+## 1.5.3+377 — 2026-07-04
+
+### Fixes
+
+- Cleaned up thread type names for LinkedIn, Instagram, and WhatsApp so they no longer repeat the app name (for example "LinkedIn conversation" instead of "LinkedIn linkedin conversation").
+- Fixed a "not authorized" error when creating a new account with Google on Windows.
+- Fixed a rare case on macOS where the thread list could render as a blank grey panel after switching focuses.
+- Attachments and inline images in Gmail threads now load correctly instead of showing an error.
+- Email replies sent from Apple Mail (iPhone and Mac) and Yahoo Mail now show just the new message, with the quoted earlier conversation trimmed out like other email.
+
 ## 1.5.2+376 — 2026-07-03
 
 ### LinkedIn
