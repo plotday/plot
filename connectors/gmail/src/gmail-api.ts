@@ -283,6 +283,21 @@ export class GmailApi {
     return data as GmailThread;
   }
 
+  /**
+   * Fetches a single message by id. Used to source a native forward (see
+   * `buildForwardMessage`), where the caller has a message id — the note
+   * `key` a Gmail-backed note carries — rather than a thread id.
+   */
+  public async getMessage(
+    messageId: string,
+    format: "full" | "minimal" | "metadata" | "raw" = "full"
+  ): Promise<GmailMessage> {
+    const data = await this.call(`/messages/${messageId}`, {
+      params: { format },
+    });
+    return data as GmailMessage;
+  }
+
   public async setupWatch(
     topicName: string,
     labelId?: string
@@ -584,7 +599,7 @@ export function isFromAddressRewritten(
  * Extracts the body from a Gmail message (handles multipart messages).
  * Returns raw content with its type so HTML can be converted server-side.
  */
-function extractBody(part: GmailMessagePart): { content: string; contentType: "text" | "html" } {
+export function extractBody(part: GmailMessagePart): { content: string; contentType: "text" | "html" } {
   // Prefer HTML over plain text — server-side conversion produces cleaner output.
   // Search the WHOLE MIME tree, not just immediate children: forwarded messages
   // nest the real body inside a `message/rfc822` part (or a deeper multipart),
@@ -1441,6 +1456,119 @@ export function buildReplyMessage(options: {
 
   if (attachments && attachments.length > 0) {
     // Wrap the alternative body and the attachments in a multipart/mixed.
+    const mixBoundary = mimeBoundary("mix");
+
+    const attachmentParts: string[] = [];
+    for (const att of attachments) {
+      const b64Lines = uint8ArrayToBase64Lines(att.data);
+      // Encode filename for Content-Disposition
+      const safeFileName = att.fileName.replace(/[\r\n"]/g, "_");
+      attachmentParts.push(
+        `--${mixBoundary}`,
+        `Content-Type: ${att.mimeType}; name="${safeFileName}"`,
+        `Content-Transfer-Encoding: base64`,
+        `Content-Disposition: attachment; filename="${safeFileName}"`,
+        "",
+        b64Lines,
+      );
+    }
+
+    rawMessage = [
+      ...headerLines,
+      `Content-Type: multipart/mixed; boundary="${mixBoundary}"`,
+      "", // end of message headers
+      `--${mixBoundary}`,
+      ...altBlock,
+      ...attachmentParts,
+      `--${mixBoundary}--`,
+    ].join("\r\n");
+  } else {
+    // Top-level body is the multipart/alternative entity itself.
+    rawMessage = [...headerLines, ...altBlock].join("\r\n");
+  }
+
+  return base64UrlEncodeMessage(rawMessage);
+}
+
+/**
+ * Builds an RFC 2822 forward of an existing Gmail message. Gmail has no
+ * native "forward" endpoint — a forward is just a new message sent via
+ * `messages.send`. Unlike a reply, a forward starts a NEW thread (no
+ * `In-Reply-To` / `References`). The body is the forwarder's own message
+ * followed by a standard quoted-original attribution block; the original
+ * message's attachments are re-attached.
+ * Returns the base64url-encoded raw message string for the Gmail API.
+ */
+export function buildForwardMessage(options: {
+  to: string[];
+  cc: string[];
+  /**
+   * Optional — a forward's recipients come from the same role-tagged picker
+   * as a compose, so a bcc-role recipient can appear here. Defaults to none.
+   * Gmail's send API delivers to Bcc recipients and strips the Bcc header
+   * from the copy other recipients receive (same as `buildNewEmailMessage`),
+   * so listing them here does not expose them.
+   */
+  bcc?: string[];
+  from: string;
+  subject: string;
+  body: string;
+  originalHeader: string; // e.g. "From: … \n Date: … \n Subject: … \n To: …"
+  originalBody: string; // the original message's text/markdown body
+  attachments?: AttachmentData[];
+}): string {
+  const {
+    to,
+    cc,
+    bcc = [],
+    from,
+    subject,
+    body,
+    originalHeader,
+    originalBody,
+    attachments,
+  } = options;
+
+  // Sanitize every value interpolated into a header to prevent CRLF header
+  // injection (RFC 5322) via attacker-controlled subjects or addresses.
+  const fromHeader = sanitizeHeaderValue(from);
+  const toHeader = to.map(sanitizeHeaderValue).join(", ");
+  const ccHeader = cc.map(sanitizeHeaderValue).join(", ");
+  const bccHeader = bcc.map(sanitizeHeaderValue).join(", ");
+
+  // Ensure subject has a "Fwd:" prefix, without doubling an existing one.
+  const fwdSubject = sanitizeHeaderValue(
+    subject.startsWith("Fwd:") ? subject : `Fwd: ${subject}`
+  );
+
+  // A forward starts a new thread, so — unlike buildReplyMessage — there is
+  // no In-Reply-To / References header here.
+  const headerLines: string[] = [`From: ${fromHeader}`, `To: ${toHeader}`];
+  if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
+  if (bcc.length > 0) headerLines.push(`Bcc: ${bccHeader}`);
+  headerLines.push(`Subject: ${fwdSubject}`);
+  headerLines.push(`MIME-Version: 1.0`);
+
+  // Compose the visible body: the forwarder's own message (if any) on top of
+  // a standard quoted-original attribution block.
+  const quotedOriginal = [
+    "---------- Forwarded message ----------",
+    originalHeader,
+    "",
+    originalBody,
+  ].join("\n");
+  const composed = body.length > 0 ? `${body}\n\n${quotedOriginal}` : quotedOriginal;
+
+  // The body is always a multipart/alternative (plain text + rendered HTML) so
+  // recipients get clean formatting and MTAs don't hard-wrap raw Markdown.
+  const altBoundary = mimeBoundary("alt");
+  const altBlock = buildAlternativeBlock(altBoundary, composed);
+
+  let rawMessage: string;
+
+  if (attachments && attachments.length > 0) {
+    // Wrap the alternative body and the re-attached attachments in a
+    // multipart/mixed.
     const mixBoundary = mimeBoundary("mix");
 
     const attachmentParts: string[] = [];

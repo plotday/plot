@@ -210,6 +210,16 @@ export type LinkTypeConfig = {
    */
   supportsFileAttachments?: boolean;
   /**
+   * Whether a note on this link type can be forwarded to new recipients using
+   * the source system's native forwarding (e.g. an email forward that carries
+   * the original message and its attachments). When false (the default), Plot
+   * forwards by creating a new item on the target whose body is the user's
+   * message followed by the blockquoted original ("fallback" forward). Only set
+   * true if the connector's `onCreateLink` handles a `CreateLinkDraft.forward`
+   * reference and builds a real upstream forward.
+   */
+  supportsForward?: boolean;
+  /**
    * Declares how sharing on threads of this link type is scoped:
    *
    * - `"thread"` (default): one roster shared across all notes in the

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GmailApi,
+  buildForwardMessage,
   buildNewEmailMessage,
   buildReplyMessage,
   stripQuotedReply,
@@ -374,5 +375,80 @@ describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
       "<strong>Exploring burnout</strong>"
     );
     expect(decodeMimePart(raw, "text/plain")).not.toContain("**");
+  });
+});
+
+describe("buildForwardMessage", () => {
+  it("uses a Fwd: subject and includes the quoted original + forwarder message", () => {
+    const raw = decodeRawMessage(
+      buildForwardMessage({
+        to: ["bob@example.com"],
+        cc: [],
+        from: "me@example.com",
+        subject: "Q3 budget",
+        body: "See below.",
+        originalHeader: "From: Alice <alice@example.com>\nSubject: Q3 budget",
+        originalBody: "Let's meet Thursday.",
+      })
+    );
+    expect(raw).toContain("Subject: Fwd: Q3 budget");
+    expect(raw).not.toContain("In-Reply-To:");
+
+    // Body content lives base64-encoded inside the multipart/alternative
+    // plain-text part, so decode that part rather than scanning the raw
+    // (still-encoded) message for the literal text.
+    const text = decodeMimePart(raw, "text/plain");
+    expect(text).toContain("See below.");
+    expect(text).toContain("Let's meet Thursday.");
+  });
+
+  it("keeps an existing Fwd: prefix instead of doubling it", () => {
+    const raw = decodeRawMessage(
+      buildForwardMessage({
+        to: ["b@x.com"],
+        cc: [],
+        from: "m@x.com",
+        subject: "Fwd: hi",
+        body: "",
+        originalHeader: "From: a@x.com",
+        originalBody: "hi",
+      })
+    );
+    expect(raw).toContain("Subject: Fwd: hi");
+    expect(raw).not.toContain("Fwd: Fwd:");
+  });
+
+  it("emits a Bcc header without exposing bcc addresses in To/Cc", () => {
+    const raw = decodeRawMessage(
+      buildForwardMessage({
+        to: ["bob@example.com"],
+        cc: ["carol@example.com"],
+        bcc: ["dave@example.com"],
+        from: "me@example.com",
+        subject: "Q3 budget",
+        body: "",
+        originalHeader: "From: Alice <alice@example.com>",
+        originalBody: "hi",
+      })
+    );
+    expect(raw).toContain("Bcc: dave@example.com");
+    expect(raw).toContain("To: bob@example.com");
+    expect(raw).not.toContain("To: bob@example.com, dave@example.com");
+    expect(raw).not.toContain("Cc: carol@example.com, dave@example.com");
+  });
+
+  it("omits the Bcc header entirely when there are no bcc recipients", () => {
+    const raw = decodeRawMessage(
+      buildForwardMessage({
+        to: ["bob@example.com"],
+        cc: [],
+        from: "me@example.com",
+        subject: "Q3 budget",
+        body: "",
+        originalHeader: "From: Alice <alice@example.com>",
+        originalBody: "hi",
+      })
+    );
+    expect(raw).not.toContain("Bcc:");
   });
 });

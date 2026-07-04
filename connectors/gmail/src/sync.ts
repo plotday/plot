@@ -36,11 +36,16 @@ import { enrichLinkContactsFromGoogle } from "@plotday/connector-google-contacts
 
 import {
   GmailApi,
+  GmailApiError,
+  type GmailMessage,
   type GmailThread,
   type AttachmentData,
   type SyncState,
+  buildForwardMessage,
   buildNewEmailMessage,
   buildReplyMessage,
+  collectAttachments,
+  extractBody,
   getHeader,
   isGmailRateLimitError,
   parseEmailAddresses,
@@ -588,18 +593,19 @@ export async function findChannelForMessageFn(
 
 /**
  * Send with bounded in-process retry for transient failures. Neither send
- * path (onNoteCreated reply / onCreateLink compose) rides a retrying queue,
- * so transient blips (429 / 5xx / network) must be retried here. Up to 3
- * attempts with short backoff (well under the worker budget); permanent and
- * auth failures short-circuit immediately. Returns a discriminated result so
- * the caller can surface a `deliveryError` to the user instead of throwing.
+ * path (onNoteCreated reply / onCreateLink compose or forward) rides a
+ * retrying queue, so transient blips (429 / 5xx / network) must be retried
+ * here. Up to 3 attempts with short backoff (well under the worker budget);
+ * permanent and auth failures short-circuit immediately. Returns a
+ * discriminated result so the caller can surface a `deliveryError` to the
+ * user instead of throwing.
  *
  * Truly unexpected errors (classified `unknown`) are rethrown so they still
  * reach error tracking.
  */
 export async function sendWithRetry(
   send: () => Promise<{ id: string; threadId: string }>,
-  label: "reply" | "compose"
+  label: "reply" | "compose" | "forward"
 ): Promise<
   | { ok: true; result: { id: string; threadId: string } }
   | { ok: false; error: ClassifiedSendError }
@@ -1838,6 +1844,239 @@ export async function processWriteBackRetryFn(
 }
 
 /**
+ * Builds the "---------- Forwarded message ----------" attribution block's
+ * header lines (From/Date/Subject/To) for a source message being forwarded,
+ * mirroring the block Gmail's own UI inserts. Omits any header the source
+ * message doesn't carry rather than emitting a blank/`null` line.
+ */
+function buildForwardedHeader(src: GmailMessage): string {
+  const lines: string[] = [];
+  const from = getHeader(src, "From");
+  const date = getHeader(src, "Date");
+  const subject = getHeader(src, "Subject");
+  const to = getHeader(src, "To");
+  if (from) lines.push(`From: ${from}`);
+  if (date) lines.push(`Date: ${date}`);
+  if (subject) lines.push(`Subject: ${subject}`);
+  if (to) lines.push(`To: ${to}`);
+  return lines.join("\n");
+}
+
+/**
+ * Re-downloads the source message's attachment bytes so they can be
+ * re-attached to the outbound forward (Gmail has no server-side "forward
+ * with attachments" endpoint — the connector must fetch and resend the
+ * bytes itself). Best-effort per attachment: a single failed download is
+ * logged and skipped rather than failing the whole forward.
+ */
+async function fetchOriginalAttachments(
+  api: GmailApi,
+  messageId: string,
+  src: GmailMessage
+): Promise<AttachmentData[]> {
+  const parts = collectAttachments(src.payload);
+  const attachments: AttachmentData[] = [];
+  for (const part of parts) {
+    try {
+      const att = await api.getAttachment(messageId, part.partId);
+      // Gmail returns base64url-encoded data (same decode as downloadAttachmentFn).
+      const b64 = (att.data ?? "").replace(/-/g, "+").replace(/_/g, "/");
+      const padded = b64.padEnd(Math.ceil(b64.length / 4) * 4, "=");
+      const binary = atob(padded);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      attachments.push({ fileName: part.fileName, mimeType: part.mimeType, data: bytes });
+    } catch (err) {
+      console.error(
+        `[gmail] onCreateLink(forward): failed to fetch attachment ${part.partId} on message ${messageId}:`,
+        err
+      );
+    }
+  }
+  return attachments;
+}
+
+/**
+ * Handles `onCreateLink` when `draft.forward` is set — the runtime is asking
+ * the connector to reconstruct a native Gmail forward of an existing message
+ * (declared via `LinkTypeConfig.supportsForward`) instead of falling back to
+ * the generic blockquote forward. Gmail has no native forward endpoint: a
+ * forward is a brand-new message (new thread, no In-Reply-To/References)
+ * whose body carries the forwarder's own note on top of the quoted original,
+ * with the original's attachments re-attached. Mirrors the compose path's
+ * idempotency guard, echo suppression, and delivery-error surfacing so a
+ * retried dispatch behaves the same way a retried compose does.
+ */
+async function onCreateLinkForwardFn(
+  host: GmailSyncHost,
+  draft: CreateLinkDraft,
+  forwardKey: string
+): Promise<NewLinkWithNotes | null> {
+  const api = await getApiAnyFn(host);
+  if (!api) {
+    console.error(
+      "[gmail] onCreateLink(forward): no enabled channel to source auth from"
+    );
+    return null;
+  }
+
+  // A forward needs its recipients before the MIME message can be built, so
+  // resolve them here with the same role-based To/Cc/Bcc split the normal
+  // compose path uses below (this branch returns before that code runs).
+  // Bcc must stay out of the To/Cc headers: a forward's recipients come from
+  // the same role-tagged picker as a compose, so a bcc-role recipient can
+  // appear here just as it can for a compose — dropping it into "to" would
+  // expose it to the other recipients (see the compose recipient-splitting
+  // comment below for the same privacy rationale).
+  const seenEmails = new Set<string>();
+  const to: string[] = [];
+  const cc: string[] = [];
+  const bcc: string[] = [];
+  const addRecipient = (raw: string | null | undefined, role: string | null) => {
+    if (!raw) return;
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seenEmails.has(key)) return;
+    seenEmails.add(key);
+    if (role === "cc") cc.push(trimmed);
+    else if (role === "bcc") bcc.push(trimmed);
+    else to.push(trimmed);
+  };
+  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role);
+  for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
+
+  if (to.length + cc.length + bcc.length === 0) {
+    console.error(
+      "[gmail] onCreateLink(forward): no email recipients could be derived from draft"
+    );
+    return null;
+  }
+
+  // Fetch the source message to forward. A stale/deleted forward key is an
+  // EXPECTED failure: the user can delete the original in Gmail after it
+  // synced into Plot, so the id 404s. Surface that as a delivery error (not a
+  // thrown exception that pages error tracking) — same contract as a failed
+  // send. Any 4xx from Gmail means the message can't be retrieved for this
+  // request (gone / no access / bad id); only non-4xx (5xx, network) is
+  // genuinely unexpected and rethrown so transient failures still surface.
+  let src: GmailMessage;
+  try {
+    src = await api.getMessage(forwardKey);
+  } catch (error) {
+    if (
+      error instanceof GmailApiError &&
+      error.status >= 400 &&
+      error.status < 500
+    ) {
+      console.warn(
+        `[gmail] onCreateLink(forward): source message ${forwardKey} could not be fetched (status ${error.status})`
+      );
+      return {
+        originatingNote: {
+          deliveryError: {
+            code: "not_found",
+            message:
+              "The original message could not be found — it may have been deleted.",
+          },
+        },
+      };
+    }
+    throw error;
+  }
+
+  const profile = await api.getProfile();
+  const subject = draft.title || getHeader(src, "Subject") || "";
+  const body = draft.noteContent ?? "";
+  const { content: originalBody } = extractBody(src.payload);
+  const originalHeader = buildForwardedHeader(src);
+  const attachments = await fetchOriginalAttachments(api, forwardKey, src);
+
+  // channelId: use the first enabled channel so onNoteCreated (reply path)
+  // can resolve the OAuth token via getApi(channelId) — same convention as
+  // the compose path below.
+  const enabledChannels = await getEnabledChannelsFn(host);
+  const channelId = [...enabledChannels][0] ?? "";
+
+  const linkFor = (gmailThreadId: string): NewLinkWithNotes => {
+    const canonicalUrl = `https://mail.google.com/mail/u/0/#inbox/${gmailThreadId}`;
+    return {
+      source: canonicalUrl,
+      type: "email",
+      title: subject || undefined,
+      status: null,
+      created: new Date(),
+      sourceUrl: canonicalUrl,
+      channelId,
+      meta: {
+        syncProvider: "google",
+        syncableId: channelId,
+        channelId,
+        threadId: gmailThreadId,
+        historyId: null,
+      },
+    };
+  };
+
+  // Idempotency: reuses the compose path's dedup window (COMPOSE_DEDUP_WINDOW_MS)
+  // — a callback retry with identical forward content within the window
+  // reuses the prior send instead of forwarding a second time.
+  const dedupKey = `forward:${fnv1aHex(
+    JSON.stringify([
+      forwardKey,
+      subject,
+      body,
+      [...to].sort(),
+      [...cc].sort(),
+      [...bcc].sort(),
+    ])
+  )}`;
+  const prior = await host.get<{ gmailThreadId: string; at: number }>(dedupKey);
+  if (prior?.gmailThreadId && Date.now() - prior.at < COMPOSE_DEDUP_WINDOW_MS) {
+    console.log(
+      `[gmail] onCreateLink(forward): duplicate dispatch within ${COMPOSE_DEDUP_WINDOW_MS}ms, reusing thread ${prior.gmailThreadId}`
+    );
+    return linkFor(prior.gmailThreadId);
+  }
+
+  const raw = buildForwardMessage({
+    to,
+    cc,
+    bcc,
+    from: profile.emailAddress,
+    subject,
+    body,
+    originalHeader,
+    originalBody,
+    attachments,
+  });
+
+  const sent = await sendWithRetry(() => api.sendNewMessage(raw), "forward");
+  if (!sent.ok) {
+    // Mirrors the compose failure path: no link (no Gmail thread exists),
+    // just a delivery-error marker so the runtime surfaces "Failed to send".
+    return {
+      originatingNote: {
+        deliveryError: { code: sent.error.code, message: sent.error.message },
+      },
+    };
+  }
+  const gmailThreadId = sent.result.threadId;
+  const gmailMessageId = sent.result.id;
+
+  // Record the idempotency guard so a retried dispatch reuses this send.
+  await host.set(dedupKey, { gmailThreadId, at: Date.now() });
+  // Suppress the echo when this sent message is synced back via Gmail's
+  // incremental history (same convention as the compose/reply paths).
+  await host.set(`sent:${gmailMessageId}`, true);
+
+  return {
+    ...linkFor(gmailThreadId),
+    originatingNote: { key: gmailMessageId, deliveryError: null },
+  };
+}
+
+/**
  * Creates a new outbound email from Plot.
  *
  * For the `email` link type's `compose.targets: "addresses"`, the runtime
@@ -1850,12 +2089,20 @@ export async function processWriteBackRetryFn(
  *
  * The returned `NewLinkWithNotes`'s `meta` matches what `onNoteCreated`
  * reads so replies work with zero extra wiring.
+ *
+ * When `draft.forward` is set (the link type declares `supportsForward`),
+ * delegates to {@link onCreateLinkForwardFn} to reconstruct a native forward
+ * of the source message instead of composing a brand-new email.
  */
 export async function onCreateLinkFn(
   host: GmailSyncHost,
   draft: CreateLinkDraft
 ): Promise<NewLinkWithNotes | null> {
   if (draft.type !== "email") return null;
+
+  if (draft.forward) {
+    return onCreateLinkForwardFn(host, draft, draft.forward.key);
+  }
 
   // Split recipients into To/Cc/Bcc by their thread role so CC/BCC
   // recipients are addressed correctly — and, critically, so BCC
