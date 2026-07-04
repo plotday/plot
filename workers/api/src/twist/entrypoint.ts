@@ -28,6 +28,96 @@ globalThis.fetch = async function(input, init) {
   return response;
 };
 
+// Built-in tool methods timed for the per-invocation tool-call metrics
+// summary reported back to the runtime (see reportToolMetricsToHost). Every
+// listed method call is measured caller-side, so the recorded duration
+// includes the RPC round-trip to the runtime — the cost the twist actually
+// pays. Methods not listed simply aren't timed; property reads and symbols
+// pass through untouched so RPC-stub semantics are preserved.
+const TIMED_TOOL_METHODS = new Set([
+  // Store
+  'get', 'set', 'setMany', 'list', 'clear', 'clearAll', 'acquireLock', 'releaseLock',
+  // Callbacks
+  'create', 'createFromParent', 'run', 'resolve', 'delete', 'deleteAll',
+  // Tasks
+  'runTask', 'scheduleTask', 'scheduleRecurring', 'cancelTask', 'cancelScheduledTask', 'cancelAllTasks',
+  // Integrations
+  'saveLink', 'saveLinks', 'saveNote', 'saveNotes', 'saveCreatedLink', 'saveContacts',
+  'saveCustomEmoji', 'archiveLinks', 'archiveNotes', 'channelSyncCompleted', 'setThreadToDo',
+  'setChannels', 'getSyncHistoryMin', 'getAccountContact', 'markNeedsReauth',
+  // Network / Files
+  'createWebhook', 'deleteWebhook', 'read', 'write',
+  // Generic tool dispatch surfaces (lifecycle + framework callbacks)
+  'callCallback', 'tryCallCallback', 'dispatch',
+]);
+
+function recordToolCall(metrics, key, ms) {
+  const entry = metrics[key] || (metrics[key] = { n: 0, ms: 0, max: 0 });
+  entry.n += 1;
+  entry.ms += ms;
+  if (ms > entry.max) entry.max = ms;
+}
+
+/**
+ * Wrap a built-in tool RPC stub so calls to TIMED_TOOL_METHODS record
+ * count/total/max duration into the invocation's metrics map. Only string
+ * props in the allowlist that resolve to functions are wrapped; everything
+ * else (property reads, symbols, dispose) passes through Reflect.get so the
+ * stub behaves exactly as before.
+ */
+function instrumentToolStub(stub, toolId, metrics) {
+  return new Proxy(stub, {
+    get(target, prop) {
+      // Do NOT pass a receiver — RPC stubs need their original context.
+      const value = Reflect.get(target, prop);
+      if (
+        typeof prop !== 'string' ||
+        !TIMED_TOOL_METHODS.has(prop) ||
+        typeof value !== 'function'
+      ) {
+        return value;
+      }
+      return (...args) => {
+        const startedAt = Date.now();
+        const finish = () =>
+          recordToolCall(metrics, toolId + '.' + prop, Date.now() - startedAt);
+        try {
+          const result = value.call(target, ...args);
+          if (result && typeof result.then === 'function') {
+            return result.then(
+              (resolved) => { finish(); return resolved; },
+              (error) => { finish(); throw error; }
+            );
+          }
+          finish();
+          return result;
+        } catch (error) {
+          finish();
+          throw error;
+        }
+      };
+    }
+  });
+}
+
+/**
+ * Hand the invocation's tool-call metrics back to the runtime (which attaches
+ * them to its boundary log for the invocation). Best-effort: metrics must
+ * never fail or slow an invocation beyond the single report round-trip, and
+ * older runtimes that don't pass reportToolMetrics are silently skipped.
+ */
+async function reportToolMetricsToHost(twistInit, toolShed) {
+  try {
+    const metrics =
+      toolShed && toolShed.rootToolShed ? toolShed.rootToolShed.toolMetrics : null;
+    if (!metrics || Object.keys(metrics).length === 0) return;
+    if (typeof twistInit.reportToolMetrics !== 'function') return;
+    await twistInit.reportToolMetrics(metrics);
+  } catch {
+    // Observability only — swallow.
+  }
+}
+
 class ToolShed {
   constructor(path, twistInstanceId, builtInToolFactory, rootToolShed) {
     this.path = path || [];
@@ -49,6 +139,9 @@ class ToolShed {
     // the GC eventually collects them. Only the root ToolShed owns the list;
     // child sheds reference the same array.
     this.disposables = rootToolShed ? rootToolShed.disposables : [];
+    // Per-invocation tool-call metrics (key: "ToolId.method" -> {n, ms, max}).
+    // Shared across the whole tool tree; reported via reportToolMetricsToHost.
+    this.toolMetrics = rootToolShed ? rootToolShed.toolMetrics : {};
 
     // Bind build method so it can be passed around
     this.build = this._buildTool.bind(this);
@@ -118,7 +211,9 @@ class ToolShed {
     if (isBuiltIn) {
       // Built-in tool: use factory
       tool = await this.builtInToolFactory(toolPath, id, options);
+      // Dispose the RAW stub; hand out the instrumented wrapper.
       this.rootToolShed.disposables.push(tool);
+      tool = instrumentToolStub(tool, id, this.rootToolShed.toolMetrics);
     } else {
       // Regular tool: construct with id, options, and toolShed
       tool = new ToolClass(this.twistInstanceId, options, toolShed);
@@ -141,8 +236,10 @@ class ToolShed {
 
   async _buildBuiltIn(id, options) {
     const toolPath = this.path.concat([id]);
-    const tool = await this.builtInToolFactory(toolPath, id, options);
+    let tool = await this.builtInToolFactory(toolPath, id, options);
+    // Dispose the RAW stub; hand out the instrumented wrapper.
     this.rootToolShed.disposables.push(tool);
+    tool = instrumentToolStub(tool, id, this.rootToolShed.toolMetrics);
     // Register so getByPath() can resolve scheduled-callback paths like ["Tasks"].
     // Don't overwrite an explicit build() registration for the same id.
     if (!this.built.has(id)) {
@@ -716,6 +813,7 @@ export default class extends WorkerEntrypoint {
       twistError.name = 'TwistError';
       throw twistError;
     } finally {
+      await reportToolMetricsToHost(twistInit, tools);
       tools?.disposeAll();
     }
   }
@@ -938,6 +1036,7 @@ export default class extends WorkerEntrypoint {
       twistError.name = 'TwistError';
       throw twistError;
     } finally {
+      await reportToolMetricsToHost(twistInit, tools);
       tools?.disposeAll();
     }
   }
@@ -950,11 +1049,24 @@ type BuiltInToolFactory = (
   options?: any
 ) => ITool;
 
+/** Per-invocation tool-call metrics: "ToolId.method" -> counts/durations. */
+export type ToolCallMetrics = Record<
+  string,
+  { n: number; ms: number; max: number }
+>;
+
 export interface TwistInit {
   twistInstanceId: string;
   /** The user ID (`twist_instance.owner_id`) that installed this twist. */
   userId: string;
   builtInToolFactory: BuiltInToolFactory;
+  /**
+   * Optional hook the twist worker calls at the end of callCallback /
+   * dispatchToTool with the invocation's tool-call metrics, so the runtime
+   * can attach a per-tool breakdown to its boundary log (e.g. explain a
+   * multi-minute sync pass as "Store.set ×800, 240s"). Best-effort.
+   */
+  reportToolMetrics?: (metrics: ToolCallMetrics) => void | Promise<void>;
 }
 
 export abstract class TwistEntrypoint extends WorkerEntrypoint {

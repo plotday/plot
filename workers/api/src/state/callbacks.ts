@@ -257,6 +257,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     meta,
     taskKey,
     recurringIntervalMs,
+    coalesce,
   }: {
     twistInstanceId: string;
     path: string[]; // tool hierarchy only
@@ -276,6 +277,14 @@ export class CallbacksState extends DurableObject<Bindings> {
     // this interval instead of deleting the row. Requires taskKey. Forces
     // call_once = false. call_at is clamped to min(callAt ?? now, now + intervalMs).
     recurringIntervalMs?: number;
+    // With taskKey: instead of replacing an existing pending task, KEEP it —
+    // pulling its call_at earlier when the new request is sooner, but never
+    // pushing it later. High-frequency schedulers (one call per provider
+    // webhook) thereby collapse to a single pending occurrence that fires at
+    // the earliest requested time even under a continuous stream of calls
+    // (plain replace would reset the timer on every call and could starve).
+    // See Tasks.scheduleTask.
+    coalesce?: boolean;
   }): Promise<string> {
     // Validate extra args if provided
     // Note: SuperJSON handles undefined values, so no need to clean them
@@ -284,6 +293,46 @@ export class CallbacksState extends DurableObject<Bindings> {
         `create callback args for function "${functionName}"`,
         extraArgs
       );
+    }
+
+    // Coalesce fast path: keep the existing pending task for this key.
+    // Checked before version resolution so the common webhook-storm case
+    // costs one SQLite read, no Hyperdrive round-trip. Ignored for
+    // recurring tasks — scheduleRecurring owns its own replace semantics.
+    if (taskKey && coalesce && recurringIntervalMs === undefined) {
+      const existing = this.sql
+        .exec(
+          "SELECT token, call_at FROM callbacks WHERE twist_instance_id = ? AND task_key = ? AND call_at IS NOT NULL",
+          twistInstanceId,
+          taskKey
+        )
+        .next();
+      if (!existing.done) {
+        const existingToken = existing.value.token as string;
+        const existingCallAt = existing.value.call_at as number;
+        const requested = callAt ? callAt.getTime() : Date.now();
+        if (requested < existingCallAt) {
+          this.sql.exec(
+            "UPDATE callbacks SET call_at = ? WHERE token = ?",
+            requested,
+            existingToken
+          );
+          this.updateAlarm();
+        }
+        // The incoming wrapper is never inserted, so its inner task callback
+        // (created by the caller expressly for this schedule — documented on
+        // Tasks.scheduleTask's coalesce option) would be orphaned. Delete it
+        // locally so webhook-frequency coalescing doesn't grow the table.
+        if (functionName === "scheduledSend" && typeof extraArgs?.[0] === "string") {
+          const separator = (extraArgs[0] as string).indexOf(":");
+          const innerDoId = (extraArgs[0] as string).slice(0, separator);
+          const innerToken = (extraArgs[0] as string).slice(separator + 1);
+          if (separator > 0 && innerToken && innerDoId === String(this.ctx.id)) {
+            this.sql.exec("DELETE FROM callbacks WHERE token = ?", innerToken);
+          }
+        }
+        return `${String(this.ctx.id)}:${existingToken}`;
+      }
     }
 
     // Fetch twist_id, environment, and version from database if version not provided

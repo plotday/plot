@@ -99,11 +99,13 @@ export class Tasks extends Tool implements IRun {
   async scheduleTask(
     key: string,
     callback: Callback,
-    options: { runAt: Date }
+    options: { runAt: Date; coalesce?: boolean }
   ): Promise<string | void> {
     // Same scheduled wrapper as runTask({ runAt }), but tagged with task_key
     // so the DO atomically replaces any pending task under the same key —
     // guaranteeing at most one live scheduled task per key (no leaked chains).
+    // With coalesce, the DO keeps an existing pending task instead (earliest
+    // fire time wins) so webhook-frequency scheduling can't starve the timer.
     return await this.callbacks.create({
       twistInstanceId: this.twistInstanceId,
       path: this.selfPath,
@@ -111,6 +113,7 @@ export class Tasks extends Tool implements IRun {
       extraArgs: [callback],
       callAt: options.runAt,
       taskKey: key,
+      ...(options.coalesce ? { coalesce: true } : {}),
     });
   }
 
@@ -372,6 +375,34 @@ export class Tasks extends Tool implements IRun {
       }
     };
 
-    await Promise.allSettled(batch.messages.map(handleMessage));
+    // Group by twist instance and run each group's messages SEQUENTIALLY
+    // (groups still run concurrently). Batch-mates all execute inside the
+    // same dynamically-loaded twist isolate (loader.ts shares one worker per
+    // twist package+version), so dispatching a whole batch of one instance's
+    // heavy tasks in parallel stacks their working sets into a single
+    // isolate's memory limit — the failure mode behind the recurring
+    // "Worker exceeded memory limit" bursts, where a webhook-driven backlog
+    // filled batches with same-instance sync passes. Serializing per
+    // instance bounds the stacking to one pass per instance per batch
+    // without slowing unrelated instances.
+    const byInstance = new Map<string, Message<RunMessage>[]>();
+    for (const message of batch.messages) {
+      const group = byInstance.get(message.body.twistInstanceId);
+      if (group) {
+        group.push(message);
+      } else {
+        byInstance.set(message.body.twistInstanceId, [message]);
+      }
+    }
+    await Promise.allSettled(
+      [...byInstance.values()].map(async (messages) => {
+        for (const message of messages) {
+          // handleMessage never rejects for expected outcomes (it acks or
+          // retries internally), so one failing message doesn't stop the
+          // rest of its group.
+          await handleMessage(message);
+        }
+      })
+    );
   }
 }

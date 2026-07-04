@@ -90,3 +90,41 @@ describe("Storage.list", () => {
     expect(fooKeys).toEqual(["foo:1"]);
   });
 });
+
+describe("Storage.setMany", () => {
+  let stub: DurableObjectStub<Storage>;
+
+  beforeEach(async () => {
+    stub = getStorage(`test-${crypto.randomUUID()}`);
+    await stub.clearAll();
+  });
+
+  it("writes all entries in one call", async () => {
+    await stub.setMany([
+      ["a:1", "v1"],
+      ["a:2", "v2"],
+      ["b:1", "v3"],
+    ]);
+
+    expect(await stub.get("a:1")).toBe("v1");
+    expect(await stub.get("a:2")).toBe("v2");
+    expect(await stub.get("b:1")).toBe("v3");
+  });
+
+  it("upserts existing keys", async () => {
+    await stub.set("a:1", "old");
+
+    await stub.setMany([
+      ["a:1", "new"],
+      ["a:2", "v2"],
+    ]);
+
+    expect(await stub.get("a:1")).toBe("new");
+    expect(await stub.get("a:2")).toBe("v2");
+  });
+
+  it("is a no-op for an empty batch", async () => {
+    await stub.setMany([]);
+    expect(await stub.list("")).toEqual([]);
+  });
+});

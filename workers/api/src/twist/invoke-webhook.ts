@@ -8,6 +8,7 @@ import { Usage } from "../state/usage";
 import { disposeRpc } from "../utils/rpc";
 import { handleTwistOperation } from "./error-handling";
 import { twistFactory } from "./factory";
+import { formatToolMetrics } from "./tool-metrics";
 
 /**
  * An Error annotated with the owning user of the twist that raised it.
@@ -205,6 +206,9 @@ export async function invokeWebhookCallback(
       invocationLogger.info("Twist callback RPC finished", {
         duration_ms: Date.now() - rpcStartedAt,
         outcome: "success",
+        // Per-tool-call breakdown reported by the twist worker — explains
+        // where a slow invocation spent its time (e.g. "Store.set x800").
+        ...formatToolMetrics(twistWrapper.takeToolMetrics()),
       });
 
       if (callback.callOnce) {
@@ -248,6 +252,7 @@ export async function invokeWebhookCallback(
           duration_ms: durationMs,
           outcome: "failure",
           error_message: error instanceof Error ? error.message : String(error),
+          ...formatToolMetrics(twistWrapper.takeToolMetrics()),
         });
       }
       disposeRpc(callbacksStub);

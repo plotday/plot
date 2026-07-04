@@ -6,8 +6,10 @@ import { createLogger } from "@plotday/worker-util";
 import type { DB } from "../db-types";
 import { type Bindings, type TwistEnvironment } from "../env";
 import { resolveSecureOptions } from "../utils/secure-options";
+import type { ToolCallMetrics } from "./entrypoint";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
+import { formatToolMetrics } from "./tool-metrics";
 import {
   type MergedPermissions,
   type ToolPermission,
@@ -305,11 +307,23 @@ export function twistFactory({
       twistOwnerUserId = ownerRow?.owner_id ?? "";
     }
 
+    // Per-invocation tool-call metrics reported back by the twist worker at
+    // the end of callCallback/dispatchToTool (see entrypoint.ts
+    // reportToolMetricsToHost). Read by callers via getToolMetrics() to attach
+    // a per-tool breakdown to their boundary logs. Holds the LAST report —
+    // each factory() call constructs a fresh wrapper per dispatch, so there is
+    // no cross-invocation aliasing in practice.
+    let lastToolMetrics: ToolCallMetrics | null = null;
+    const reportToolMetrics = (metrics: ToolCallMetrics) => {
+      lastToolMetrics = metrics;
+    };
+
     // Create twistInit object to pass to each twist method
     const twistInit = {
       twistInstanceId,
       userId: twistOwnerUserId,
       builtInToolFactory,
+      reportToolMetrics,
     };
 
     // Initialize twist and collect/validate permissions and providers
@@ -478,6 +492,16 @@ export function twistFactory({
     }
 
     return {
+      /**
+       * Return-and-clear the tool-call metrics reported by the twist worker
+       * for the most recent invocation on this wrapper. Callers attach them
+       * to their boundary logs (see invokeWebhookCallback).
+       */
+      takeToolMetrics: (): ToolCallMetrics | null => {
+        const metrics = lastToolMetrics;
+        lastToolMetrics = null;
+        return metrics;
+      },
       permissions,
       toolPermissions: toolPermissionsMap,
       providers,
@@ -570,13 +594,27 @@ export function twistFactory({
         const twistInit = {
           twistInstanceId,
           builtInToolFactory,
+          reportToolMetrics,
         };
 
         // Convert all paths to arrays
         const pathArrays = toolPaths.map((path) => path.split(":"));
 
         // Single RPC call with all paths
-        await twist.dispatchToTool(twistInit, pathArrays, ...args);
+        const dispatchStartedAt = Date.now();
+        try {
+          await twist.dispatchToTool(twistInit, pathArrays, ...args);
+        } finally {
+          // Boundary timing + per-tool-call breakdown, mirroring the
+          // "Twist callback RPC finished" log in invokeWebhookCallback, so
+          // slow dispatches (updates/webhook consumers) are diagnosable too.
+          logger.info("Twist dispatch finished", {
+            tool_name: toolName,
+            duration_ms: Date.now() - dispatchStartedAt,
+            ...formatToolMetrics(lastToolMetrics),
+          });
+          lastToolMetrics = null;
+        }
       },
 
       callCallback: async (

@@ -49,6 +49,17 @@ export class Store extends Tool implements IStore {
     await this.storage.set(key, serializedValue);
   }
 
+  async setMany<T extends Serializable>(
+    entries: [key: string, value: T][]
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    const serialized = entries.map(([key, value]): [string, string] => {
+      validateSerializable(`store value for key "${key}"`, value);
+      return [key, superjson.stringify(value)];
+    });
+    await this.storage.setMany(serialized);
+  }
+
   async list(prefix: string): Promise<string[]> {
     const result = await this.storage.list(prefix);
     return result;

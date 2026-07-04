@@ -100,6 +100,40 @@ export class Storage extends DurableObject<Bindings> {
     );
   }
 
+  /**
+   * Bulk upsert in a single DO invocation. One RPC round-trip instead of one
+   * per key — callers writing per-item caches (e.g. hundreds of message-id
+   * mappings per sync pass) must use this instead of looping set().
+   * Atomic: either every entry lands or none do.
+   */
+  async setMany(entries: [key: string, value: string][]): Promise<void> {
+    if (entries.length === 0) return;
+    // Seal token values outside the transaction (sealing is async;
+    // transactionSync only wraps synchronous work).
+    const sealed: [string, string][] = await Promise.all(
+      entries.map(async ([key, value]): Promise<[string, string]> => [
+        key,
+        isTokenKey(key)
+          ? await sealTokenValue(value, this.env.TOKEN_ENCRYPTION_KEY)
+          : value,
+      ])
+    );
+    this.ctx.storage.transactionSync(() => {
+      for (const [key, stored] of sealed) {
+        this.sql.exec(
+          `
+            INSERT INTO store (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              value = excluded.value
+          `,
+          key,
+          stored
+        );
+      }
+    });
+  }
+
   list(prefix: string): string[] {
     // Cloudflare DO SQLite caps LIKE patterns at 50 bytes
     // (SQLITE_LIMIT_LIKE_PATTERN_LENGTH=50 in workerd), so a LIKE-based
