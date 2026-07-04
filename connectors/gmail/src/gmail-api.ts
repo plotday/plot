@@ -1457,3 +1457,97 @@ export function buildReplyMessage(options: {
 
   return base64UrlEncodeMessage(rawMessage);
 }
+
+/**
+ * Builds an RFC 2822 forward of an existing Gmail message. Gmail has no
+ * native "forward" endpoint — a forward is just a new message sent via
+ * `messages.send`. Unlike a reply, a forward starts a NEW thread (no
+ * `In-Reply-To` / `References`). The body is the forwarder's own message
+ * followed by a standard quoted-original attribution block; the original
+ * message's attachments are re-attached.
+ * Returns the base64url-encoded raw message string for the Gmail API.
+ */
+export function buildForwardMessage(options: {
+  to: string[];
+  cc: string[];
+  from: string;
+  subject: string;
+  body: string;
+  originalHeader: string; // e.g. "From: … \n Date: … \n Subject: … \n To: …"
+  originalBody: string; // the original message's text/markdown body
+  attachments?: AttachmentData[];
+}): string {
+  const { to, cc, from, subject, body, originalHeader, originalBody, attachments } =
+    options;
+
+  // Sanitize every value interpolated into a header to prevent CRLF header
+  // injection (RFC 5322) via attacker-controlled subjects or addresses.
+  const fromHeader = sanitizeHeaderValue(from);
+  const toHeader = to.map(sanitizeHeaderValue).join(", ");
+  const ccHeader = cc.map(sanitizeHeaderValue).join(", ");
+
+  // Ensure subject has a "Fwd:" prefix, without doubling an existing one.
+  const fwdSubject = sanitizeHeaderValue(
+    subject.startsWith("Fwd:") ? subject : `Fwd: ${subject}`
+  );
+
+  // A forward starts a new thread, so — unlike buildReplyMessage — there is
+  // no In-Reply-To / References header here.
+  const headerLines: string[] = [`From: ${fromHeader}`, `To: ${toHeader}`];
+  if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
+  headerLines.push(`Subject: ${fwdSubject}`);
+  headerLines.push(`MIME-Version: 1.0`);
+
+  // Compose the visible body: the forwarder's own message (if any) on top of
+  // a standard quoted-original attribution block.
+  const quotedOriginal = [
+    "---------- Forwarded message ----------",
+    originalHeader,
+    "",
+    originalBody,
+  ].join("\n");
+  const composed = body.length > 0 ? `${body}\n\n${quotedOriginal}` : quotedOriginal;
+
+  // The body is always a multipart/alternative (plain text + rendered HTML) so
+  // recipients get clean formatting and MTAs don't hard-wrap raw Markdown.
+  const altBoundary = mimeBoundary("alt");
+  const altBlock = buildAlternativeBlock(altBoundary, composed);
+
+  let rawMessage: string;
+
+  if (attachments && attachments.length > 0) {
+    // Wrap the alternative body and the re-attached attachments in a
+    // multipart/mixed.
+    const mixBoundary = mimeBoundary("mix");
+
+    const attachmentParts: string[] = [];
+    for (const att of attachments) {
+      const b64Lines = uint8ArrayToBase64Lines(att.data);
+      // Encode filename for Content-Disposition
+      const safeFileName = att.fileName.replace(/[\r\n"]/g, "_");
+      attachmentParts.push(
+        `--${mixBoundary}`,
+        `Content-Type: ${att.mimeType}; name="${safeFileName}"`,
+        `Content-Transfer-Encoding: base64`,
+        `Content-Disposition: attachment; filename="${safeFileName}"`,
+        "",
+        b64Lines,
+      );
+    }
+
+    rawMessage = [
+      ...headerLines,
+      `Content-Type: multipart/mixed; boundary="${mixBoundary}"`,
+      "", // end of message headers
+      `--${mixBoundary}`,
+      ...altBlock,
+      ...attachmentParts,
+      `--${mixBoundary}--`,
+    ].join("\r\n");
+  } else {
+    // Top-level body is the multipart/alternative entity itself.
+    rawMessage = [...headerLines, ...altBlock].join("\r\n");
+  }
+
+  return base64UrlEncodeMessage(rawMessage);
+}
