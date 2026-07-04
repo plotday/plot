@@ -1166,27 +1166,53 @@ class _PriorityPageState extends State<PriorityPage>
                             // is ahead of the focus the displayed items belong
                             // to — the bloc holds the outgoing list for a beat
                             // until the new focus's items stream in (~200ms) —
-                            // dim the feed. This gives immediate feedback that
-                            // the tap registered and softens the content swap.
-                            // Opacity only: it never touches layout or scroll
-                            // offset, so it can't disturb the displayed-content
-                            // scroll restoration above.
+                            // dim the feed toward the panel background. This
+                            // gives immediate feedback that the tap registered
+                            // and softens the content swap.
+                            //
+                            // Dim with an overlay SCRIM (a translucent fill of
+                            // the panel background painted on top), NOT
+                            // `AnimatedOpacity` on the feed. A subtree opacity
+                            // < 1.0 forces an offscreen `saveLayer` over the
+                            // whole feed; on macOS Impeller that offscreen
+                            // intermittently failed to composite and painted the
+                            // panel a flat grey (an engine-level failure, so no
+                            // Dart exception and nothing in error tracking). A
+                            // scrim is a plain translucent rect — no offscreen,
+                            // nothing to fail — and is mathematically identical
+                            // to the old 0.55 opacity because the feed's own
+                            // background is this same colour (see the
+                            // ScrollEdgeFade in [_buildActivityFeed]): opacity α
+                            // over background B equals a scrim of B at alpha
+                            // (1 − α).
+                            //
+                            // [_FeedSwitchScrim] paints that scrim and fades its
+                            // alpha with an explicit controller (never an
+                            // `Opacity`/`AnimatedOpacity`, which would
+                            // reintroduce the saveLayer). IgnorePointer +
+                            // StackFit.expand keep it paint-only — no layout or
+                            // scroll-offset impact, so it can't disturb the
+                            // displayed-content scroll restoration above.
                             final switchingFocus =
                                 state.context?.id != state.activeTabContext?.id;
-                            return AnimatedOpacity(
-                              opacity: switchingFocus ? 0.55 : 1.0,
-                              duration: const Duration(milliseconds: 150),
-                              curve: Curves.easeOut,
-                              child: _buildActivityFeed(
-                                context,
-                                state,
-                                items,
-                                listController,
-                                ScrollControllerContext.of(context),
-                                scrollStorageKey: PageStorageKey(
-                                  'priority_feed_$feedScrollFocusId',
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                _buildActivityFeed(
+                                  context,
+                                  state,
+                                  items,
+                                  listController,
+                                  ScrollControllerContext.of(context),
+                                  scrollStorageKey: PageStorageKey(
+                                    'priority_feed_$feedScrollFocusId',
+                                  ),
                                 ),
-                              ),
+                                _FeedSwitchScrim(
+                                  active: switchingFocus,
+                                  color: context.colour.background,
+                                ),
+                              ],
                             );
                           },
                         ),
@@ -1776,6 +1802,94 @@ class _FeedEntry {
   const _FeedEntry(this.item, {this.ghost = false});
   final AgendaItem item;
   final bool ghost;
+}
+
+/// Opaque scrim that dims the activity feed toward the panel background during
+/// a focus switch (see the feed builder's call site for why the feed dims while
+/// the bloc holds the outgoing list until the new focus's items stream in).
+///
+/// Painted as an overlay scrim rather than wrapping the feed in
+/// `Opacity`/`AnimatedOpacity`: a subtree opacity < 1.0 forces an offscreen
+/// `saveLayer`, and on macOS Impeller that offscreen intermittently failed to
+/// composite and rendered the whole panel a flat grey (an engine-level failure,
+/// so no Dart exception reached error tracking). A translucent rect has no
+/// offscreen and is mathematically identical to the old 0.55 opacity — the
+/// feed's own background is [color], and opacity α over background B equals a
+/// scrim of B at alpha (1 − α).
+///
+/// The alpha is animated by an explicit [AnimationController] — never an
+/// `Opacity`/`AnimatedOpacity` on the scrim itself, which would reintroduce the
+/// very `saveLayer` this exists to avoid.
+class _FeedSwitchScrim extends StatefulWidget {
+  const _FeedSwitchScrim({required this.active, required this.color});
+
+  /// Whether the feed is mid-switch and should be dimmed. Toggling this drives
+  /// the fade in/out.
+  final bool active;
+
+  /// The panel background colour the scrim fades in over the feed. Matches the
+  /// feed's own background so the dim reads as a uniform wash, not a tint.
+  final Color color;
+
+  @override
+  State<_FeedSwitchScrim> createState() => _FeedSwitchScrimState();
+}
+
+class _FeedSwitchScrimState extends State<_FeedSwitchScrim>
+    with SingleTickerProviderStateMixin {
+  /// Peak scrim alpha while switching — 1 − 0.55, matching the opacity the feed
+  /// dim used before it became a scrim.
+  static const double _maxAlpha = 0.45;
+
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed to the resting/active value so a feed that mounts mid-switch (first
+    // load: switchingFocus is already true) shows the dim immediately, matching
+    // the old implicit-opacity behaviour that never animated on first build.
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+      value: widget.active ? 1.0 : 0.0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(_FeedSwitchScrim oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active == oldWidget.active) return;
+    if (widget.active) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = Curves.easeOut.transform(_controller.value);
+          // Same RGB as the resting state; only the alpha ramps, so the wash
+          // never passes through an off-hue mid-tone. At t == 0 the fully
+          // transparent fill is a no-op paint (ColoredBox skips it).
+          return ColoredBox(
+            color: widget.color.withValues(alpha: _maxAlpha * t),
+          );
+        },
+      ),
+    );
+  }
 }
 
 /// Section header (Doing or a Scheduled-day bucket) paired with small
