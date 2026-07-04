@@ -1462,18 +1462,9 @@ export async function onNoteCreatedFn(
     return;
   }
 
-  // Idempotency: a callback may be re-dispatched after its send already
-  // succeeded (e.g. the response was lost), which would send a duplicate
-  // reply. `note.id` is stable across retries of the same note, so a guard
-  // keyed on it suppresses the resend and returns the original message key.
-  const sendGuardKey = `send_note:${note.id}`;
-  const priorSend = await host.get<{ messageId: string }>(sendGuardKey);
-  if (priorSend?.messageId) {
-    console.log(
-      `[gmail] onNoteCreated: note ${note.id} already sent as ${priorSend.messageId}, skipping resend`
-    );
-    return { key: priorSend.messageId };
-  }
+  // Idempotency for a re-dispatched onNoteCreated (e.g. a lost response) is now
+  // guaranteed by the Plot runtime: it will not re-invoke onNoteCreated for a
+  // note it already wrote back, so no per-connector send guard is needed here.
 
   const api = await getApiFn(host, channelId);
 
@@ -1613,10 +1604,6 @@ export async function onNoteCreatedFn(
     };
   }
   const result = sent.result;
-
-  // Record the idempotency guard so a retried dispatch of this note does
-  // not send a second copy (see the guard check above).
-  await host.set(sendGuardKey, { messageId: result.id });
 
   // Store sent message ID for dedup when synced back
   await host.set(`sent:${result.id}`, true);

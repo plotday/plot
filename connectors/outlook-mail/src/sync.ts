@@ -1566,16 +1566,9 @@ export async function onNoteCreatedFn(
     return;
   }
 
-  // Idempotency: a callback may be re-dispatched after its send already
-  // succeeded. `note.id` is stable across retries of the same note.
-  const sendGuardKey = `send_note:${note.id}`;
-  const priorSend = await host.get<{ key: string }>(sendGuardKey);
-  if (priorSend?.key) {
-    console.log(
-      `[outlook-mail] onNoteCreated: note ${note.id} already sent as ${priorSend.key}, skipping resend`
-    );
-    return { key: priorSend.key };
-  }
+  // Idempotency for a re-dispatched onNoteCreated is now guaranteed by the Plot
+  // runtime: it will not re-invoke onNoteCreated for a note it already wrote
+  // back, so no per-connector send guard is needed here.
 
   const api = await getApiFn(host, channelId);
 
@@ -1708,7 +1701,6 @@ export async function onNoteCreatedFn(
 
   await api.send(draft.id);
 
-  await host.set(sendGuardKey, { key });
   await host.set(`sent:${key}`, true);
 
   // No `externalContent`: Graph's send returns 202 with no stored body,
