@@ -6241,7 +6241,20 @@ export class Integrations extends Tool implements IAuth {
     // For authorization flows (has callback), use full params from config
     const isSignInFlow = !callback && provider === "google";
     const additionalParams: Record<string, string> = {
-      ...(isSignInFlow ? { prompt: "select_account" } : config.additionalParams),
+      ...(isSignInFlow
+        ? // Clerk's `google_one_tap` strategy requires the id_token to carry
+          // a `nonce` claim (see auth_button.dart's native GoogleSignIn flow,
+          // which sets one for exactly this reason). The desktop/Windows sign-in
+          // flow mediates the OAuth code exchange through this server instead of
+          // a native SDK, so nothing upstream ever sets one — Google only embeds
+          // a `nonce` claim in the id_token if the original authorize request
+          // included it. Without it, Clerk's sign-in *existence check* still
+          // succeeds (it's lenient), but *creating* a new account is flatly
+          // rejected with a contextless `authorization_invalid`, which only
+          // shows up for first-time Google sign-ups — existing users signing in
+          // never hit account creation, so this was invisible until now.
+          { prompt: "select_account", nonce: crypto.randomUUID() }
+        : config.additionalParams),
     };
 
     // Re-auth: caller knows which account to reconnect, so pre-select it via

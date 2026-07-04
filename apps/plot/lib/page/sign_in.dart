@@ -168,7 +168,12 @@ class _SignInPageState extends State<SignInPage> {
         await _resolveExistingSession();
         return;
       }
-      log.warning('Error signing in with OAuth', e, t);
+      // Include the raw Clerk server code inline — the default `e.toString()`
+      // only surfaces the human message ("You are not authorized to perform
+      // this request"), which is identical across several distinct Clerk
+      // failures (missing client token vs. audience rejection vs. disabled
+      // strategy) and can't be told apart from the console/crash log alone.
+      log.warning('Error signing in with OAuth (clerkCode=${e.clerkCode})', e, t);
       if (_isExternalAccountNotFound(e)) {
         try {
           log.info('External account not found, attempting sign-up');

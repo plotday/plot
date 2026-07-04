@@ -134,6 +134,12 @@ AuthError _wrapClerkError(clerk.ClerkError e) => AuthError(
   clerkCode: e.errors?.error.code,
 );
 
+/// True when [e] is Clerk's `authorization_invalid` server error — i.e. the
+/// request reached Clerk but its client token was rejected.
+bool _isAuthorizationInvalid(clerk.ClerkError e) =>
+    e.code == clerk.ClerkErrorCode.serverErrorResponse &&
+    e.errors?.error.code == 'authorization_invalid';
+
 /// Wraps a function that may throw [clerk.ClerkError] and re-throws as
 /// [AuthError].
 Future<T> _guard<T>(Future<T> Function() fn) async {
@@ -285,10 +291,38 @@ class ClerkDartAuthService implements AuthService {
         // silently swallowed a failed client fetch; without a client token the
         // sign-in below 401s as authorization_invalid.
         await _ensureClientEstablished();
-        await _auth.idTokenSignIn(
-          provider: _toClerkProvider(provider),
-          token: idToken,
-        );
+        try {
+          await _auth.idTokenSignIn(
+            provider: _toClerkProvider(provider),
+            token: idToken,
+          );
+        } on clerk.ClerkError catch (e) {
+          if (!_isAuthorizationInvalid(e)) rethrow;
+          // `_ensureClientEstablished` can still be fooled: clerk_auth's
+          // `initialize()` falls back to a *persisted* Client blob when its
+          // network fetch fails, which reads as non-empty even though the
+          // matching client token never made it into this run's in-memory
+          // token cache. That leaves the sign-in call above 401ing with the
+          // raw "not authorized" server error instead of our friendlier
+          // network-failure message. `_reinitialize` wipes the whole cache
+          // file (client blob + token together), so a single retry after it
+          // gets a token that's actually backed by a live network round trip.
+          //
+          // Logged at WARNING (not just captured to PostHog) so this is
+          // visible in a local `flutter run` console without needing
+          // dashboard access — if this line never appears, the failure is
+          // happening somewhere other than this retry path.
+          log.warning(
+            'signInWithIdToken: authorization_invalid despite established '
+            'client; forcing hard reinitialize and retrying once',
+          );
+          await _reinitialize();
+          await _ensureClientEstablished();
+          await _auth.idTokenSignIn(
+            provider: _toClerkProvider(provider),
+            token: idToken,
+          );
+        }
       });
 
   @override
@@ -305,10 +339,26 @@ class ClerkDartAuthService implements AuthService {
           await _reinitialize();
         }
         await _ensureClientEstablished();
-        await _auth.idTokenSignUp(
-          provider: _toClerkProvider(provider),
-          idToken: idToken,
-        );
+        try {
+          await _auth.idTokenSignUp(
+            provider: _toClerkProvider(provider),
+            idToken: idToken,
+          );
+        } on clerk.ClerkError catch (e) {
+          if (!_isAuthorizationInvalid(e)) rethrow;
+          // See the matching retry in signInWithIdToken for why this can
+          // still happen even after `_ensureClientEstablished` passed.
+          log.warning(
+            'signUpWithIdToken: authorization_invalid despite established '
+            'client; forcing hard reinitialize and retrying once',
+          );
+          await _reinitialize();
+          await _ensureClientEstablished();
+          await _auth.idTokenSignUp(
+            provider: _toClerkProvider(provider),
+            idToken: idToken,
+          );
+        }
       });
 
   @override
