@@ -774,6 +774,22 @@ export default class extends WorkerEntrypoint {
             if (callbackInfo?.sourceMethod && callbackInfo?.args) {
               const method = twist[callbackInfo.sourceMethod];
               if (typeof method === 'function') {
+                // Platform idempotency for connector reply write-backs: if this
+                // note's onNoteCreated already succeeded on an earlier delivery
+                // of this batch (e.g. before a transient DO reset re-queued it),
+                // skip re-invoking the connector so it does not send a duplicate
+                // reply. Scoped to onNoteCreated — edits (onNoteUpdated) are
+                // idempotent in place. Outside the try below so a transient
+                // store read propagates for the queue to retry, rather than
+                // being caught and mis-marked as a send failure.
+                if (
+                  callbackInfo.sourceMethod === 'onNoteCreated' &&
+                  callbackInfo.deferredNoteKeyUpdate &&
+                  typeof tool.wasNoteWrittenBack === 'function' &&
+                  (await tool.wasNoteWrittenBack(callbackInfo.deferredNoteKeyUpdate.noteId))
+                ) {
+                  continue;
+                }
                 try {
                   const cbResult = await method.call(twist, ...callbackInfo.args);
 
@@ -805,6 +821,27 @@ export default class extends WorkerEntrypoint {
                         if (typeof tool.updateNoteBaseline === 'function') {
                           await tool.updateNoteBaseline(noteId, cbResult);
                         }
+                      }
+                      // Platform idempotency: record a successful reply send so a
+                      // re-delivered batch skips the resend (see the guard before
+                      // the invoke). onNoteCreated only; only on a real send — a
+                      // key was produced and there is no deliveryError. A failure
+                      // leaves the marker unset so an explicit Retry re-sends.
+                      // Swallowed on error (inside this try) so a marker-write
+                      // blip doesn't force an immediate resend.
+                      const sentKey =
+                        typeof cbResult === 'string'
+                          ? cbResult
+                          : cbResult && typeof cbResult === 'object' && !cbResult.deliveryError
+                            ? cbResult.key
+                            : undefined;
+                      if (
+                        callbackInfo.sourceMethod === 'onNoteCreated' &&
+                        typeof sentKey === 'string' &&
+                        sentKey.length > 0 &&
+                        typeof tool.markNoteWrittenBack === 'function'
+                      ) {
+                        await tool.markNoteWrittenBack(noteId);
                       }
                     } catch (keyError) {
                       console.warn('Failed to update note baseline:', keyError);

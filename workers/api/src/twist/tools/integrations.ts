@@ -6407,6 +6407,38 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Platform idempotency for connector reply write-backs. A queue message can be
+   * re-delivered (e.g. after a transient Durable Object reset) and re-run a note
+   * dispatch whose `onNoteCreated` already succeeded — which would send a
+   * duplicate reply on any connector that sends unconditionally. The runtime
+   * records a marker here on the first successful send (see
+   * {@link markNoteWrittenBack}) and checks it before re-invoking, so no
+   * connector needs its own guard.
+   *
+   * Keyed on the stable `note.id` in THIS connector instance's own store, so it
+   * is correct even when the same note is written back to more than one
+   * connector — a shared `note.key` (last-writer-wins across connectors) could
+   * not distinguish them. The `__` prefix reserves the key from connector-
+   * defined ones.
+   *
+   * Fails closed: a transient store error propagates (the caller lets the queue
+   * retry) rather than being read as "not sent", which would risk a resend.
+   */
+  async wasNoteWrittenBack(noteId: string): Promise<boolean> {
+    return (await this.store.get<boolean>(`__writeback:${noteId}`)) === true;
+  }
+
+  /**
+   * Record that this note's reply write-back succeeded, so a re-delivered batch
+   * skips the resend (see {@link wasNoteWrittenBack}). Called only on a genuine
+   * send — a `deliveryError` (or a throw) leaves the marker unset so an explicit
+   * Retry re-sends.
+   */
+  async markNoteWrittenBack(noteId: string): Promise<void> {
+    await this.store.set(`__writeback:${noteId}`, true);
+  }
+
+  /**
    * Apply a {@link NoteWriteBackResult} after a connector's
    * `onNoteCreated`/`onNoteUpdated` returned one. Sets the note's `key`
    * (when the connector just established it) and stores the sync baseline

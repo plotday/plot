@@ -278,27 +278,26 @@ describe("processUpdates redelivers transient write-back failures", () => {
     expect(captureException).toHaveBeenCalledTimes(1);
   });
 
-  // ── Safety gate: never redeliver a message that carries a non-idempotent
-  //    reply-send (onNoteCreated). Re-dispatching an already-sent reply
-  //    double-sends on connectors without a send guard, so a message with
-  //    newNotes / updatedNotes / channelNewNotes must NOT be retried even when
-  //    a transient fault occurs.
-  it("does NOT retry a message carrying a reply-send, even on a transient fault", async () => {
+  // ── Reply-send write-backs (onNoteCreated / onNoteUpdated) ARE redeliverable:
+  //    the runtime dedups a re-dispatched onNoteCreated per (note, connector)
+  //    at the dispatch seam, so a retry can't double-send. Only channelNewNotes
+  //    (inbound note → push + AI, non-idempotent in this consumer) still blocks
+  //    a retry.
+  it("retries a message carrying a reply-send when a dispatch hits a transient DO reset", async () => {
     h.dispatch.mockRejectedValue(doResetError);
     const msg = makeMessage({ newNotes: [{ id: "n-1", sync_depth: 1 }] as any });
 
     await run(msg);
 
-    // Would double-send the reply on retry → must ack (drop) instead.
-    expect(msg.retry).not.toHaveBeenCalled();
-    expect(msg.ack).toHaveBeenCalledOnce();
-    // Transient blip: still no capture noise.
+    // The dispatch-seam guard makes re-delivery safe, so recover the write-back.
+    expect(msg.retry).toHaveBeenCalledOnce();
+    expect(msg.ack).not.toHaveBeenCalled();
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it("does NOT retry when an idempotent write-back fails but the message also carries an already-sent reply", async () => {
-    // newNotes dispatch (Plot + Integrations) succeeds first — the reply is
-    // sent — then the threadRead dispatch hits a transient DO reset.
+  it("retries a mixed reply+read message on a transient read fault (no double-send: seam guard covers the reply)", async () => {
+    // newNotes dispatch (Plot + Integrations) succeeds — the reply is sent —
+    // then the threadRead dispatch hits a transient DO reset.
     h.dispatch
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
@@ -310,9 +309,24 @@ describe("processUpdates redelivers transient write-back failures", () => {
 
     await run(msg);
 
-    // Retrying would re-run the already-succeeded newNote dispatch → duplicate
-    // reply. Safety wins over the dropped thread_read write-back.
+    // Redelivery re-runs the already-sent reply, but the dispatch-seam guard
+    // suppresses the resend, so retrying to recover the read write-back is safe.
+    expect(msg.retry).toHaveBeenCalledOnce();
+    expect(msg.ack).not.toHaveBeenCalled();
+  });
+
+  it("does NOT retry a message carrying an inbound channel note", async () => {
+    // channelNewNotes re-run would re-fire push notifications and AI analysis
+    // in this consumer — non-idempotency the dispatch-seam guard doesn't cover.
+    h.dispatch.mockRejectedValue(doResetError);
+    const msg = makeMessage({
+      channelNewNotes: [{ id: "cn-1", sync_depth: 1 }] as any,
+    });
+
+    await run(msg);
+
     expect(msg.retry).not.toHaveBeenCalled();
     expect(msg.ack).toHaveBeenCalledOnce();
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

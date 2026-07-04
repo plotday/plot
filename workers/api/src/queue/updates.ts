@@ -381,19 +381,19 @@ export async function processTwistBatch(
   } = batchData;
 
   // Whether a transient fault may retry the WHOLE message. Re-delivery re-runs
-  // every item, so it's only safe when none of them is a non-idempotent send:
-  // `onNoteCreated` (newNotes) and `onNoteUpdated` (updatedNotes) reply-sends
-  // that most connectors perform unconditionally (double-send on retry), and
-  // inbound `channelNewNotes`, which also fires push notifications and AI note
-  // analysis that would repeat. The remaining write-backs (mark-read, to-do,
-  // RSVP, reaction, link updates) are idempotent set/PUT operations, so a
-  // note-free message is safe to redeliver. A note-bearing message keeps
-  // capture-and-continue: its write-backs are still best-effort (unchanged from
-  // before this guard), we just never re-send them.
-  const redeliverable =
-    newNotes.length === 0 &&
-    updatedNotes.length === 0 &&
-    channelNewNotes.length === 0;
+  // every item, so it's only safe when none of them has a non-idempotent side
+  // effect. Reply-send write-backs (`onNoteCreated` on newNotes, `onNoteUpdated`
+  // on updatedNotes) ARE now safe: the runtime dedups a re-dispatched
+  // onNoteCreated per (note, connector instance) at the dispatch seam (see
+  // entrypoint.ts dispatchToTool / Integrations.wasNoteWrittenBack), so a resend
+  // can't happen regardless of connector correctness, and onNoteUpdated edits in
+  // place. The remaining direct write-backs (mark-read, to-do, RSVP, reaction,
+  // link updates) are idempotent set/PUT operations.
+  //
+  // `channelNewNotes` stays non-redeliverable: its non-idempotency lives HERE in
+  // the consumer (re-running fires push notifications and AI note-analysis
+  // again), which the dispatch-seam guard does not address.
+  const redeliverable = channelNewNotes.length === 0;
 
   const logger = createLogger({
     twist_instance_id: twistInstanceId,
