@@ -216,6 +216,34 @@ describe("buildNoteFromMessage", () => {
     const note = buildNoteFromMessage(m, c, "whatsapp");
     expect(note.author).toEqual({ name: "You", source: { accountId: "self@lid" } });
   });
+  // Own messages arrive with an empty `senderId` on some providers (LinkedIn),
+  // and 1:1 chats omit self from the roster — so without `self` the note is
+  // credited to the connector. Given `self`, it is keyed on the owner's
+  // provider id and resolves to the owner's contact.
+  test("own message with empty senderId is attributed to the connection owner via self", () => {
+    const c = chat({ participants: [prof({ id: "them", name: "Komal" })] });
+    const m = msg({ senderId: "", sentByMe: true, sender: null, text: "thanks!" });
+    const self = prof({ id: "ACoAA-self", name: "Kris Braun", isSelf: true });
+    const note = buildNoteFromMessage(m, c, "linkedin", "them", self);
+    expect(note.author).toEqual({
+      name: "Kris Braun",
+      avatar: undefined,
+      source: { accountId: "ACoAA-self" },
+    });
+  });
+  test("without self, an own message with empty senderId falls back to the You stub (pre-fix behavior)", () => {
+    const c = chat({ participants: [prof({ id: "them", name: "Komal" })] });
+    const m = msg({ senderId: "", sentByMe: true, sender: null });
+    const note = buildNoteFromMessage(m, c, "linkedin", "them");
+    expect(note.author).toEqual({ name: "You", source: { accountId: "" } });
+  });
+  test("self is ignored for messages from other people", () => {
+    const c = chat({ participants: [prof({ id: "them", name: "Komal" })] });
+    const m = msg({ senderId: "them", sentByMe: false });
+    const self = prof({ id: "ACoAA-self", name: "Kris Braun", isSelf: true });
+    const note = buildNoteFromMessage(m, c, "linkedin", "them", self);
+    expect(note.author).toEqual({ name: "Komal", avatar: undefined, source: { accountId: "them" } });
+  });
 });
 
 describe("assembleGroupLink", () => {

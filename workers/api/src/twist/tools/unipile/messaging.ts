@@ -144,6 +144,21 @@ export abstract class UnipileMessagingTool extends Tool implements IUnipileMessa
     });
   }
 
+  /** In-memory (per tool instance) cache of the connected account's own
+   * profile, so a backfill that assembles many chats issues one `users/me`. */
+  private _ownProfile = new Map<string, ChatProfile>();
+
+  async getOwnProfile(params: { channelId: string }): Promise<ChatProfile> {
+    const cached = this._ownProfile.get(params.channelId);
+    if (cached) return cached;
+    return this.withAccount(params.channelId, async () => {
+      const raw = await this.client.getOwnProfile({ accountId: params.channelId });
+      const profile = normalizeProfile(raw, this.provider, true);
+      this._ownProfile.set(params.channelId, profile);
+      return profile;
+    });
+  }
+
   // Default: free-form recipients unsupported (LinkedIn closed roster). Overridden by WhatsApp/Instagram.
   async resolveRecipient(_params: { channelId: string; address: string }): Promise<string | null> {
     return null;

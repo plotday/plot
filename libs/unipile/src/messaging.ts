@@ -156,6 +156,18 @@ export abstract class UnipileMessaging extends ITool {
   abstract getProfile(params: { channelId: string; profileId: string }): Promise<ChatProfile>;
 
   /**
+   * The connected account's OWN provider profile (`isSelf: true`), fetched from
+   * the provider's `users/me` route. Its `id` is the same provider id the
+   * account was bound to at connect time, so authoring the connected user's
+   * own ("sent-by-me") messages with it dedups onto the owner's existing
+   * contact — providers return an empty/absent `sender_id` on own messages, so
+   * the per-message id cannot be relied on for that attribution. Cached per
+   * channel for the lifetime of the tool instance.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getOwnProfile(params: { channelId: string }): Promise<ChatProfile>;
+
+  /**
    * Resolve a free-form typed address (phone for WhatsApp, @username for
    * Instagram) to a provider attendee id usable in `startChat`. Returns null
    * when the address can't be resolved. Default (LinkedIn: closed roster,
