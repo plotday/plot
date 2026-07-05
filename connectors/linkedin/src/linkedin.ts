@@ -264,7 +264,12 @@ export class LinkedIn extends Connector<LinkedIn> {
       this.syncRelationsPage,
       channel.id
     );
-    await this.runTask(firstRelationsPage);
+    // Keyed under the same key as the crawl's self-chain, so a re-dispatched
+    // onChannelEnabled replaces any pending page instead of forking a second
+    // parallel crawl.
+    await this.scheduleTask(`relations:${channel.id}`, firstRelationsPage, {
+      runAt: new Date(Date.now() + 1_000),
+    });
   }
 
   /**
@@ -295,16 +300,32 @@ export class LinkedIn extends Connector<LinkedIn> {
 
     // Kick off each imported post's comment poll, then the discovery loop.
     for (const postId of recentPostIds) {
-      const t = await this.callback(this.pollPostComments, channelId, postId);
-      await this.runTask(t);
+      await this.schedulePostCommentPoll(channelId, postId, 0);
     }
+    // Durable recurring discovery: the platform owns the cadence (ceiling
+    // DISCOVER_MAX_MS; each run re-registers a jittered firstRunAt), so a
+    // re-dispatched onChannelEnabled (auto-enable, recovery) atomically
+    // replaces the pending occurrence instead of forking a second
+    // self-rescheduling chain that would poll in parallel forever.
+    await this.scheduleDiscoverPosts(channelId, DISCOVER_MIN_MS);
+  }
+
+  /** (Re)register the keyed recurring post-discovery task for a channel. */
+  private async scheduleDiscoverPosts(
+    channelId: string,
+    delayMs: number
+  ): Promise<void> {
     const discover = await this.callback(this.discoverPosts, channelId);
-    await this.runTask(discover, { runAt: new Date(Date.now() + DISCOVER_MIN_MS) });
+    await this.scheduleRecurring(`discover-posts:${channelId}`, discover, {
+      intervalMs: DISCOVER_MAX_MS,
+      firstRunAt: new Date(Date.now() + delayMs),
+    });
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
     if (channel.id.endsWith("#posts")) {
       await this.clear(`posts_enabled_${channel.id}`);
+      await this.cancelScheduledTask(`discover-posts:${channel.id}`);
       return;
     }
 
@@ -369,16 +390,16 @@ export class LinkedIn extends Connector<LinkedIn> {
         if (!cursor || reachedOld) break;
       }
       for (const postId of newPostIds) {
-        const t = await this.callback(this.pollPostComments, channelId, postId);
-        await this.runTask(t);
+        await this.schedulePostCommentPoll(channelId, postId, 0);
       }
     } catch (error) {
       console.warn(`LinkedIn post discovery failed for ${channelId}`, error);
     }
-    // Reschedule regardless (unless disabled, checked at top of next run).
+    // The platform re-arms the recurring task every DISCOVER_MAX_MS on its
+    // own; re-registering here just tightens the next fire to a jittered
+    // 1-2h (keyed replace — never forks a second chain).
     const delay = DISCOVER_MIN_MS + Math.random() * (DISCOVER_MAX_MS - DISCOVER_MIN_MS);
-    const next = await this.callback(this.discoverPosts, channelId);
-    await this.runTask(next, { runAt: new Date(Date.now() + delay) });
+    await this.scheduleDiscoverPosts(channelId, delay);
   }
 
   /** Poll one post's comments, upsert new ones, and reschedule by post age.
@@ -427,8 +448,24 @@ export class LinkedIn extends Connector<LinkedIn> {
     const delay = adaptivePollDelayMs(createdAt, new Date());
     if (delay === null) return; // retire
     const jittered = delay + Math.random() * delay * 0.2;
+    await this.schedulePostCommentPoll(channelId, postId, jittered);
+  }
+
+  /**
+   * (Re)schedule one post's comment poll as a keyed one-shot task. Keyed so
+   * duplicate kicks (a re-dispatched onChannelEnabled, discovery re-finding
+   * a post, the self-chain) atomically replace the pending occurrence
+   * instead of forking parallel poll chains for the same post.
+   */
+  private async schedulePostCommentPoll(
+    channelId: string,
+    postId: string,
+    delayMs: number
+  ): Promise<void> {
     const next = await this.callback(this.pollPostComments, channelId, postId);
-    await this.runTask(next, { runAt: new Date(Date.now() + jittered) });
+    await this.scheduleTask(`poll-post:${postId}`, next, {
+      runAt: new Date(Date.now() + delayMs),
+    });
   }
 
   /**
@@ -551,7 +588,7 @@ export class LinkedIn extends Connector<LinkedIn> {
             (RELATIONS_PAGE_ERROR_MAX_DELAY_MS -
               RELATIONS_PAGE_ERROR_MIN_DELAY_MS);
         const retry = await this.callback(this.syncRelationsPage, channelId);
-        await this.runTask(retry, {
+        await this.scheduleTask(`relations:${channelId}`, retry, {
           runAt: new Date(Date.now() + errorDelay),
         });
       } catch (scheduleError) {
@@ -569,7 +606,11 @@ export class LinkedIn extends Connector<LinkedIn> {
       Math.random() *
         (RELATIONS_PAGE_MAX_DELAY_MS - RELATIONS_PAGE_MIN_DELAY_MS);
     const next = await this.callback(this.syncRelationsPage, channelId);
-    await this.runTask(next, { runAt: new Date(Date.now() + delayMs) });
+    // Keyed: a re-dispatched onChannelEnabled converges on ONE crawl chain
+    // instead of walking the relations pages twice in parallel.
+    await this.scheduleTask(`relations:${channelId}`, next, {
+      runAt: new Date(Date.now() + delayMs),
+    });
   }
 
   async onWebhookEvent(
@@ -690,9 +731,8 @@ export class LinkedIn extends Connector<LinkedIn> {
       }
       const accountId = accountIdFromChannel(channelId);
       await this.set(`known_post_${postId}`, { createdAt: Date.now() });
-      // Start this post's comment poll.
-      const t = await this.callback(this.pollPostComments, channelId, postId);
-      await this.runTask(t, { runAt: new Date(Date.now() + 5 * 60 * 1000) });
+      // Start this post's comment poll (keyed — can't fork a parallel chain).
+      await this.schedulePostCommentPoll(channelId, postId, 5 * 60 * 1000);
       return {
         source: `linkedin:post:${postId}`,
         sources: [`linkedin:post:${postId}`],
