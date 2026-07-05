@@ -426,10 +426,10 @@ class LinksBase extends BaseTable {
   Map<String, String> buildRangeParams(DateTimeRange range) {
     final params = <String, String>{};
     if (range.start != null) {
-      params['range_start'] = range.start!.toIso8601String();
+      params['range_start'] = toServerTimestamp(range.start!);
     }
     if (range.end != null) {
-      params['range_end'] = range.end!.toIso8601String();
+      params['range_end'] = toServerTimestamp(range.end!);
     }
     return params;
   }

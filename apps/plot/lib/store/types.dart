@@ -179,6 +179,11 @@ class ExternalAccountListConverter
   }
 }
 
+/// Stores DateTimes as UTC but returns them **local** (`fromSql` calls
+/// `.toLocal()`), so every store-sourced DateTime is local. Anything sent to the
+/// server must be re-normalized to UTC via `toServerTimestamp` (store.dart) — a
+/// bare `toIso8601String()` emits a naive local string the server misreads as
+/// UTC, which silently rejected read receipts for west-of-UTC users.
 class LocalDateTimeConverter extends TypeConverter<DateTime, DateTime> {
   const LocalDateTimeConverter();
 

@@ -361,4 +361,40 @@ void main() {
     expect(row.statePending, isFalse,
         reason: 'must not re-push a thread that is genuinely unread');
   });
+
+  test('read_at is serialized as UTC (trailing Z), not naive local time',
+      () async {
+    // Regression: a west-of-UTC device sent read_at via a bare
+    // toIso8601String() (no toUtc()), producing a timezone-less local string
+    // like "2026-01-02T09:00:00.000". The server parsed that AS UTC, shifting
+    // the read marker earlier by the device's UTC offset. Because read_at
+    // equals the thread's content timestamp — exactly clear_thread_state's
+    // freshness threshold — the shift pushed it below the threshold and the
+    // read was silently rejected, leaving the thread perpetually unread.
+    //
+    // DateTime(...) is always local (isUtc == false), and Dart only appends
+    // the "Z" suffix for UTC DateTimes, so `endsWith('Z')` is a
+    // timezone-independent check: it fails on the old code (no toUtc) on any
+    // machine, including a UTC CI runner.
+    final id = Uuid.generate();
+    final readAt = DateTime(2026, 1, 2, 9); // local wall-clock
+    expect(readAt.isUtc, isFalse, reason: 'guard: the input must be local');
+    await insertThread(id, active: true, readAt: readAt);
+
+    Object? captured;
+    await Thread.pushPendingThreadState(
+      post: (url, {body = const <String, dynamic>{}}) async {
+        captured = body;
+        return {'ok': true};
+      },
+    );
+
+    final records = captured! as List;
+    final sentReadAt = (records.single as Map)['read_at'] as String;
+    expect(sentReadAt, endsWith('Z'),
+        reason: 'read_at must be UTC-marked so the server does not reparse a '
+            'local wall-clock as UTC and reject the read');
+    expect(sentReadAt, readAt.toUtc().toIso8601String(),
+        reason: 'the serialized instant must equal the UTC of the read');
+  });
 }

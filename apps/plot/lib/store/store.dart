@@ -166,6 +166,16 @@ mixin UuidTable on Table {
 ///   as [absentOnServer]: keep local row, keep pending.
 enum _RevertOutcome { reverted, absentOnServer, fetchFailed }
 
+/// UTC ISO-8601 for any [DateTime] sent to the server — a JSON body field or a
+/// query param. Store-sourced DateTimes are LOCAL ([LocalDateTimeConverter.fromSql]
+/// calls `.toLocal()`), so a bare `toIso8601String()` emits a timezone-naive
+/// string (no trailing `Z`) that the server parses AS UTC, silently shifting the
+/// value by the device's offset. This is the single source of truth for that
+/// conversion: [toEncodableSyncValue] applies it to generic push bodies, and
+/// hand-built bodies / query params (which never pass through that walker) call
+/// it directly.
+String toServerTimestamp(DateTime value) => value.toUtc().toIso8601String();
+
 /// Recursively rewrite a sync push body into a form `jsonEncode` accepts.
 ///
 /// Drift's default JSON serializer (used by every `DataClass.toJson`) only
@@ -187,7 +197,7 @@ dynamic toEncodableSyncValue(dynamic value) {
     return value;
   }
   if (value is BigInt) return value.toString();
-  if (value is DateTime) return value.toUtc().toIso8601String();
+  if (value is DateTime) return toServerTimestamp(value);
   if (value is Map) {
     return {
       for (final entry in value.entries)
@@ -294,7 +304,7 @@ abstract class BaseTable {
       if (pageSeq != null) params['page_seq'] = pageSeq;
       if (pageId != null) params['page_id'] = pageId;
     } else if (updatedSince != null) {
-      params['updated_since'] = updatedSince.toIso8601String();
+      params['updated_since'] = toServerTimestamp(updatedSince);
       if (lastId != null) params['cursor_id'] = lastId;
     }
     if (initial) params['initial'] = 'true';
@@ -309,6 +319,9 @@ abstract class BaseTable {
   /// Build range query params for calendar/pagination filtering.
   /// Override in subclasses for entity-specific range filtering (e.g., calendar overlap).
   /// Default returns empty map (no range filtering).
+  ///
+  /// Serialize bounds with [toServerTimestamp]: these are query params, so they
+  /// bypass the [toEncodableSyncValue] body walker, and store DateTimes are local.
   Map<String, String> buildRangeParams(DateTimeRange range) {
     return {};
   }

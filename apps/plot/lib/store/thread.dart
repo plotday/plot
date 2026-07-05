@@ -491,10 +491,10 @@ class ThreadsBase extends BaseTable {
   Map<String, String> buildRangeParams(DateTimeRange range) {
     final params = <String, String>{};
     if (range.start != null) {
-      params['range_start'] = range.start!.toIso8601String();
+      params['range_start'] = toServerTimestamp(range.start!);
     }
     if (range.end != null) {
-      params['range_end'] = range.end!.toIso8601String();
+      params['range_end'] = toServerTimestamp(range.end!);
     }
     return params;
   }
@@ -1242,11 +1242,14 @@ class Thread extends Equatable implements Comparable<Thread> {
         'importance': row.importance,
         if (row.stateOrder != null) 'order': row.stateOrder!.value,
         if (row.stateOn != null) 'on': '[${row.stateOn},)',
-        if (row.stateAt != null)
-          'at': '["${row.stateAt!.toIso8601String()}",)',
-        if (row.readAt != null) 'read_at': row.readAt!.toIso8601String(),
-        if (row.bumpedAt != null)
-          'bumped_at': row.bumpedAt!.toIso8601String(),
+        // Timestamps MUST go out as UTC via [toServerTimestamp] — store rows are
+        // local. For `read_at` a naive-local string is silently destructive: it
+        // equals the content timestamp, which is exactly clear_thread_state's
+        // freshness threshold, so a sub-offset shift makes the server reject the
+        // read and the thread stays unread forever.
+        if (row.stateAt != null) 'at': '["${toServerTimestamp(row.stateAt!)}",)',
+        if (row.readAt != null) 'read_at': toServerTimestamp(row.readAt!),
+        if (row.bumpedAt != null) 'bumped_at': toServerTimestamp(row.bumpedAt!),
       };
 
   /// Durable replacement for the old fire-and-forget `_pushThreadState`.
