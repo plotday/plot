@@ -141,9 +141,17 @@ export class Storage extends DurableObject<Bindings> {
     // prefix exceeds ~40 chars (e.g. `pending_occ:google-calendar:<iCalUID>:`).
     // Range scan instead, and the prefix is matched literally — `%` / `_`
     // in the caller's prefix are not interpreted as wildcards.
+    //
+    // Reserved namespaces are hidden from general listings: `__lock__:`
+    // (store locks, never surfaced) and `__drain__:` (the SDK's
+    // scheduleDrain pending-id bookkeeping). Unlike locks, the drain
+    // machinery reads its own keys through this method, so `__drain__:`
+    // is only hidden when the caller's prefix doesn't opt into it.
+    const hideDrain = !prefix.startsWith("__drain__:");
+    const drainClause = hideDrain ? " AND key NOT LIKE '__drain__:%'" : "";
     if (prefix.length === 0) {
       const all = this.sql.exec(
-        "SELECT key FROM store WHERE key NOT LIKE '__lock__:%'"
+        `SELECT key FROM store WHERE key NOT LIKE '__lock__:%'${drainClause}`
       );
       return [...all].map((r) => r.key as string);
     }
@@ -151,7 +159,7 @@ export class Storage extends DurableObject<Bindings> {
     const upperBound =
       prefix.slice(0, -1) + String.fromCharCode(lastChar + 1);
     const ranged = this.sql.exec(
-      "SELECT key FROM store WHERE key >= ? AND key < ? AND key NOT LIKE '__lock__:%'",
+      `SELECT key FROM store WHERE key >= ? AND key < ? AND key NOT LIKE '__lock__:%'${drainClause}`,
       prefix,
       upperBound
     );

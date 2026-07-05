@@ -91,6 +91,32 @@ describe("Storage.list", () => {
   });
 });
 
+describe("Storage.list — reserved __drain__ namespace", () => {
+  let stub: DurableObjectStub<Storage>;
+
+  beforeEach(async () => {
+    stub = getStorage(`test-${crypto.randomUUID()}`);
+    await stub.clearAll();
+  });
+
+  it("hides __drain__ keys from general listings", async () => {
+    await stub.set("foo:1", "v");
+    await stub.set("__drain__:sync:a", "0");
+
+    expect(await stub.list("")).toEqual(["foo:1"]);
+    expect(await stub.list("foo:")).toEqual(["foo:1"]);
+  });
+
+  it("returns __drain__ keys when the prefix opts into the namespace", async () => {
+    await stub.set("__drain__:sync:a", "0");
+    await stub.set("__drain__:sync:b", "1");
+    await stub.set("__drain__:other:c", "0");
+
+    const keys = await stub.list("__drain__:sync:");
+    expect(keys.sort()).toEqual(["__drain__:sync:a", "__drain__:sync:b"]);
+  });
+});
+
 describe("Storage.setMany", () => {
   let stub: DurableObjectStub<Storage>;
 
