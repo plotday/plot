@@ -23,6 +23,8 @@ export {
   INCREMENTAL_SYNC_TASK_KEY,
   PENDING_MSG_PREFIX,
   queueIncrementalSyncFn,
+  drainNotifiedMessagesFn,
+  migrateLegacyPendingMessagesFn,
   COMPOSE_DEDUP_WINDOW_MS,
   DIRECT_ATTACH_MAX_BYTES,
   fnv1aHex,

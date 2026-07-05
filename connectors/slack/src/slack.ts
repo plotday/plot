@@ -1006,6 +1006,23 @@ export class Slack extends Connector<Slack> {
   }
 
   private async startIncrementalSync(channelId: string): Promise<void> {
+    // Signal-only per-channel drain: Slack delivers one event per message,
+    // so enqueueing an immediate task per event turns a busy channel into a
+    // flood of duplicate passes (each re-fetching the same 15-minute window)
+    // that run concurrently in one worker. scheduleDrain collapses an event
+    // burst into a single pass; an event arriving mid-pass schedules exactly
+    // one follow-up. The window is computed at drain time inside the
+    // handler, so the delayed pass still covers every notified message — and
+    // the webhook path writes no state at all.
+    await this.scheduleDrain(
+      `incremental-sync:${channelId}`,
+      this.drainChannelSync,
+      { handlerArgs: [channelId], delayMs: INCREMENTAL_SYNC_COALESCE_MS }
+    );
+  }
+
+  /** Drain handler: run one incremental window sync for the channel. */
+  async drainChannelSync(_ids: string[], channelId: string): Promise<void> {
     const webhookData = await this.get<any>(`channel_webhook_${channelId}`);
     if (!webhookData) {
       console.error("No channel webhook data found");
@@ -1029,25 +1046,7 @@ export class Slack extends Connector<Slack> {
     };
 
     await this.set(`sync_state_${channelId}`, incrementalState);
-
-    // Coalesced: Slack delivers one event per message, so enqueueing an
-    // immediate task per event turns a busy channel into a flood of duplicate
-    // passes (each re-fetching the same 15-minute window) that run
-    // concurrently in one worker. A burst of events collapses into a single
-    // pass; an event arriving mid-pass schedules exactly one follow-up. The
-    // 15-minute window (with the coalesce delay well inside it) means the
-    // delayed pass still covers every notified message.
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "incremental",
-      channelId,
-      false
-    );
-    await this.scheduleTask(`incremental-sync:${channelId}`, syncCallback, {
-      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
-      coalesce: true,
-    });
+    await this.syncBatch(1, "incremental", channelId, false);
   }
 
   private starredKey(channelId: string, threadTs: string): string {

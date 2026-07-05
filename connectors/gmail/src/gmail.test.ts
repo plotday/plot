@@ -723,8 +723,9 @@ describe("queueIncrementalSync — coalesced scheduling", () => {
     await gmail.queueIncrementalSync();
 
     // One Pub/Sub notification per mailbox change must NOT become one queued
-    // task per notification — the pass is scheduled under a stable key with
-    // coalesce so bursts collapse into a single pending pass.
+    // task per notification — the pass rides the platform's signal-only
+    // scheduleDrain, whose coalescing keyed task collapses bursts into a
+    // single pending pass.
     expect(runTask).not.toHaveBeenCalled();
     expect(scheduleTask).toHaveBeenCalledTimes(1);
     const [key, , options] = scheduleTask.mock.calls[0] as unknown as [
@@ -732,7 +733,7 @@ describe("queueIncrementalSync — coalesced scheduling", () => {
       unknown,
       { runAt: Date; coalesce?: boolean },
     ];
-    expect(key).toBe("mailbox-incremental-sync");
+    expect(key).toBe("__drain__:mailbox-incremental-sync");
     expect(options.coalesce).toBe(true);
     expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
   });

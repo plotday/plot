@@ -459,31 +459,31 @@ export class MsTeams extends Connector<MsTeams> {
   }
 
   private async startIncrementalSync(channelId: string): Promise<void> {
+    // Signal-only per-channel drain: Graph sends one change notification per
+    // channel message, so enqueueing an immediate task per notification
+    // floods the queue during active conversation and the duplicate passes
+    // (each re-fetching the same 1-hour window) stack concurrently into one
+    // worker. scheduleDrain collapses a notification burst into a single
+    // pass; one arriving mid-pass schedules exactly one follow-up. The
+    // window is computed at drain time inside the handler, so the delayed
+    // pass still covers every notified change — and the webhook path writes
+    // no state at all.
+    await this.scheduleDrain(
+      `incremental-sync:${channelId}`,
+      this.drainChannelSync,
+      { handlerArgs: [channelId], delayMs: INCREMENTAL_SYNC_COALESCE_MS }
+    );
+  }
+
+  /** Drain handler: run one incremental window sync for the channel. */
+  async drainChannelSync(_ids: string[], channelId: string): Promise<void> {
     const incrementalState: SyncState = {
       channelId,
       oldest: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       initialSync: false,
     };
     await this.set(`sync_state_${channelId}`, incrementalState);
-
-    // Coalesced: Graph sends one change notification per channel message, so
-    // enqueueing an immediate task per notification floods the queue during
-    // active conversation and the duplicate passes (each re-fetching the same
-    // 1-hour window) stack concurrently into one worker. A notification burst
-    // collapses into a single pass; one arriving mid-pass schedules exactly
-    // one follow-up. The 1-hour window means the delayed pass still covers
-    // every notified change.
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "incremental",
-      channelId,
-      false
-    );
-    await this.scheduleTask(`incremental-sync:${channelId}`, syncCallback, {
-      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
-      coalesce: true,
-    });
+    await this.syncBatch(1, "incremental", channelId, false);
   }
 
   // ---- Subscription renewal ----

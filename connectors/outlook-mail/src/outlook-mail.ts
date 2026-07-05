@@ -30,7 +30,9 @@ import {
   INCREMENTAL_SYNC_COALESCE_MS,
   INCREMENTAL_SYNC_TASK_KEY,
   SELF_HEAL_INTERVAL_MS,
+  MAX_INCREMENTAL_MESSAGES_PER_BATCH,
   addEnabledChannelFn,
+  drainNotifiedMessagesFn,
   queueIncrementalSyncFn,
   downloadAttachmentFn,
   ensureMailboxSubscriptionFn,
@@ -162,8 +164,7 @@ export class OutlookMail extends Connector<OutlookMail> {
           self.scheduleMailboxRenewal(expiration),
         scheduleSelfHealCheck: () => self.scheduleSelfHealCheck(),
         cancelScheduledTask: (key) => self.cancelScheduledTask(key),
-        scheduleIncrementalSyncDrain: () =>
-          self.scheduleIncrementalSyncDrain(),
+        scheduleDrain: (messageIds) => self.scheduleMailDrain(messageIds),
         queueRenewSubscription: () => self.queueRenewSubscription(),
         requeueInitialSync: (channelId) => self.requeueInitialSync(channelId),
       },
@@ -429,20 +430,31 @@ export class OutlookMail extends Connector<OutlookMail> {
    * sends one change notification per message; enqueueing an immediate task
    * per notification flooded the queue during active mail traffic, and the
    * batched passes stacked into one worker until it exceeded the memory
-   * limit. Ids are persisted per-key first (race-free under concurrent
-   * deliveries), then a burst collapses into a single drain pass.
+   * limit. The platform's scheduleDrain owns the durable dirty set,
+   * coalescing, bounded passes, and per-id retry caps.
    */
   private async queueIncrementalSync(messageIds: string[]): Promise<void> {
     await queueIncrementalSyncFn(this.makeHost(), messageIds);
   }
 
-  /** Schedule the coalesced incremental drain (host scheduler hook). */
-  private async scheduleIncrementalSyncDrain(): Promise<void> {
-    const callback = await this.callback(this.incrementalSyncBatch, []);
-    await this.scheduleTask(INCREMENTAL_SYNC_TASK_KEY, callback, {
-      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
-      coalesce: true,
-    });
+  /** Record ids + schedule the platform drain (host scheduler hook). */
+  private async scheduleMailDrain(messageIds: string[]): Promise<void> {
+    await this.scheduleDrain(
+      INCREMENTAL_SYNC_TASK_KEY,
+      this.drainNotifiedMessages,
+      {
+        ids: messageIds,
+        batchSize: MAX_INCREMENTAL_MESSAGES_PER_BATCH,
+        delayMs: INCREMENTAL_SYNC_COALESCE_MS,
+      }
+    );
+  }
+
+  /** Drain handler: ingest the notified messages' conversations. */
+  async drainNotifiedMessages(
+    messageIds: string[]
+  ): Promise<{ retry: string[] } | undefined> {
+    return drainNotifiedMessagesFn(this.makeHost(), messageIds);
   }
 
   /** Queue a subscription renewal as a task (host scheduler hook). */

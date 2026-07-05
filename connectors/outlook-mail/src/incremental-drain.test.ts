@@ -16,22 +16,22 @@ vi.mock("./graph-mail-api", async (importOriginal) => {
 
 import {
   type OutlookMailSyncHost,
-  MAX_INCREMENTAL_MESSAGES_PER_BATCH,
-  MAX_MESSAGE_FETCH_ATTEMPTS,
   PENDING_MSG_PREFIX,
+  drainNotifiedMessagesFn,
   incrementalSyncBatchFn,
+  migrateLegacyPendingMessagesFn,
   queueIncrementalSyncFn,
 } from "./sync";
 
 function makeHost(initial: Record<string, unknown> = {}): {
   host: OutlookMailSyncHost;
   map: Map<string, unknown>;
-  scheduleIncrementalSyncDrain: ReturnType<typeof vi.fn>;
+  scheduleDrain: ReturnType<typeof vi.fn>;
 } {
   const map = new Map<string, unknown>([
     ["enabled_channels", ["inbox-folder"]],
     // Pre-cache well-known folders so the drain doesn't hit Graph for them.
-    ["wellknown_folders", { inbox: "inbox-folder" }],
+    ["wellknown_folders", { inbox: "inbox-folder", drafts: "drafts-folder" }],
     ...Object.entries(initial),
   ]);
   const store = {
@@ -51,7 +51,7 @@ function makeHost(initial: Record<string, unknown> = {}): {
     acquireLock: vi.fn(async () => true),
     releaseLock: vi.fn(async () => {}),
   };
-  const scheduleIncrementalSyncDrain = vi.fn(async () => {});
+  const scheduleDrain = vi.fn(async () => {});
   const host = {
     id: "twist-instance-1",
     set: store.set,
@@ -76,109 +76,91 @@ function makeHost(initial: Record<string, unknown> = {}): {
       scheduleMailboxRenewal: vi.fn(async () => {}),
       scheduleSelfHealCheck: vi.fn(async () => {}),
       cancelScheduledTask: vi.fn(async () => {}),
-      scheduleIncrementalSyncDrain,
+      scheduleDrain,
       queueRenewSubscription: vi.fn(async () => {}),
       requeueInitialSync: vi.fn(async () => {}),
     },
   } as unknown as OutlookMailSyncHost;
-  return { host, map, scheduleIncrementalSyncDrain };
+  return { host, map, scheduleDrain };
 }
 
-const pendingKeysIn = (map: Map<string, unknown>) =>
-  [...map.keys()].filter((k) => k.startsWith(PENDING_MSG_PREFIX)).sort();
-
-describe("queueIncrementalSyncFn", () => {
-  it("persists one pending key per notified id, then schedules the coalesced drain", async () => {
-    const { host, map, scheduleIncrementalSyncDrain } = makeHost();
+describe("queueIncrementalSyncFn / incrementalSyncBatchFn", () => {
+  it("forward notified ids to the platform drain", async () => {
+    const { host, scheduleDrain } = makeHost();
 
     await queueIncrementalSyncFn(host, ["m1", "m2"]);
+    expect(scheduleDrain).toHaveBeenCalledWith(["m1", "m2"]);
 
-    expect(pendingKeysIn(map)).toEqual([
-      `${PENDING_MSG_PREFIX}m1`,
-      `${PENDING_MSG_PREFIX}m2`,
-    ]);
-    expect(scheduleIncrementalSyncDrain).toHaveBeenCalledTimes(1);
-  });
-
-  it("schedules the drain even with no ids (renewal-style nudge)", async () => {
-    const { host, scheduleIncrementalSyncDrain } = makeHost();
-    await queueIncrementalSyncFn(host, []);
-    expect(scheduleIncrementalSyncDrain).toHaveBeenCalledTimes(1);
+    // Legacy entry point (already-queued callbacks) re-records the same way.
+    await incrementalSyncBatchFn(host, ["m3"]);
+    expect(scheduleDrain).toHaveBeenCalledWith(["m3"]);
   });
 });
 
-describe("incrementalSyncBatchFn — bounded coalesced drain", () => {
-  it("probes at most MAX_INCREMENTAL_MESSAGES_PER_BATCH and schedules a continuation for the rest", async () => {
-    const total = MAX_INCREMENTAL_MESSAGES_PER_BATCH + 5;
-    const initial = Object.fromEntries(
-      Array.from({ length: total }, (_, i) => [
-        // Zero-pad so lexicographic list order is deterministic.
-        `${PENDING_MSG_PREFIX}m${String(i).padStart(3, "0")}`,
-        0,
-      ])
-    );
-    const { host, map, scheduleIncrementalSyncDrain } = makeHost(initial);
-    // 404 for every probe: nothing to ingest, keys are simply consumed.
-    graphApi.getMessage.mockResolvedValue(null);
-
-    await incrementalSyncBatchFn(host, []);
-
-    expect(graphApi.getMessage).toHaveBeenCalledTimes(
-      MAX_INCREMENTAL_MESSAGES_PER_BATCH
-    );
-    // Processed keys cleared; overflow retained for the continuation.
-    expect(pendingKeysIn(map)).toHaveLength(5);
-    expect(scheduleIncrementalSyncDrain).toHaveBeenCalledTimes(1);
-  });
-
-  it("persists argument ids before processing so a dying pass loses nothing", async () => {
-    const { host, map } = makeHost();
-    // Seed write happens before probing; make the probe blow up the pass.
-    graphApi.getMessage.mockRejectedValue(new Error("boom"));
-
-    await incrementalSyncBatchFn(host, ["m1"]);
-
-    // Probe failed → attempts bumped, key retained for retry.
-    expect(map.get(`${PENDING_MSG_PREFIX}m1`)).toBe(1);
-  });
-
-  it("migrates legacy incremental_state.pendingMessageIds into pending keys", async () => {
-    const { host, map } = makeHost({
-      incremental_state: { pendingMessageIds: [{ id: "old1", attempts: 2 }] },
+describe("migrateLegacyPendingMessagesFn", () => {
+  it("re-records pre-drain pending state via the platform drain and clears it", async () => {
+    const { host, map, scheduleDrain } = makeHost({
+      [`${PENDING_MSG_PREFIX}old1`]: 2,
+      incremental_state: { pendingMessageIds: [{ id: "old2", attempts: 1 }] },
     });
-    graphApi.getMessage.mockResolvedValue(null);
 
-    await incrementalSyncBatchFn(host, []);
+    await migrateLegacyPendingMessagesFn(host);
 
-    // Legacy state cleared; the id flowed through the new pending-key path
-    // (processed this pass since it fits the cap).
+    expect(scheduleDrain).toHaveBeenCalledTimes(1);
+    const migrated = scheduleDrain.mock.calls[0][0] as string[];
+    expect(migrated.sort()).toEqual(["old1", "old2"]);
+    expect(map.has(`${PENDING_MSG_PREFIX}old1`)).toBe(false);
     expect(map.get("incremental_state")).toEqual({});
-    expect(graphApi.getMessage).toHaveBeenCalledWith(
-      "old1",
-      "id,conversationId,parentFolderId,isDraft"
-    );
   });
 
-  it("drops a message after exhausting its fetch attempts", async () => {
-    const { host, map } = makeHost({
-      [`${PENDING_MSG_PREFIX}poison`]: MAX_MESSAGE_FETCH_ATTEMPTS,
+  it("is a no-op once migrated", async () => {
+    const { host, scheduleDrain } = makeHost();
+    await migrateLegacyPendingMessagesFn(host);
+    expect(scheduleDrain).not.toHaveBeenCalled();
+  });
+});
+
+describe("drainNotifiedMessagesFn", () => {
+  it("returns retry for probe failures and nothing for skips", async () => {
+    const { host } = makeHost();
+    graphApi.getMessage.mockImplementation(async (id: string) => {
+      if (id === "gone") return null; // hard-deleted upstream
+      if (id === "draft") return { id, isDraft: true };
+      if (id === "excluded")
+        return { id, isDraft: false, parentFolderId: "drafts-folder" };
+      if (id === "broken") throw new Error("boom");
+      return { id, isDraft: false, conversationId: `conv-${id}` };
     });
-    graphApi.getMessage.mockRejectedValue(new Error("still broken"));
+    graphApi.getConversationMessages.mockResolvedValue([]);
 
-    await incrementalSyncBatchFn(host, []);
+    const result = await drainNotifiedMessagesFn(host, [
+      "gone",
+      "draft",
+      "excluded",
+      "broken",
+      "ok",
+    ]);
 
-    // attempts would exceed the cap → key dropped so the drain can't wedge.
-    expect(pendingKeysIn(map)).toEqual([]);
+    // Only the probe FAILURE is retried; skips are released by the platform.
+    expect(result).toEqual({ retry: ["broken"] });
   });
 
-  it("does not schedule a continuation when everything fit in one pass", async () => {
-    const { host, scheduleIncrementalSyncDrain } = makeHost({
-      [`${PENDING_MSG_PREFIX}m1`]: 0,
-    });
+  it("no-ops on an empty slice", async () => {
+    const { host } = makeHost();
+    graphApi.getMessage.mockClear();
+
+    const result = await drainNotifiedMessagesFn(host, []);
+
+    expect(result).toBeUndefined();
+    expect(graphApi.getMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns undefined when every probe succeeds", async () => {
+    const { host } = makeHost();
     graphApi.getMessage.mockResolvedValue(null);
 
-    await incrementalSyncBatchFn(host, []);
+    const result = await drainNotifiedMessagesFn(host, ["m1", "m2"]);
 
-    expect(scheduleIncrementalSyncDrain).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
   });
 });

@@ -204,10 +204,10 @@ describe("queueIncrementalSync — coalesced scheduling", () => {
     await connector.queueIncrementalSync(["m1", "m2"]);
 
     // One Graph notification per message must NOT become one queued task per
-    // notification: ids are persisted per-key, and the drain is scheduled
-    // under a stable key with coalesce so bursts collapse into one pass.
-    expect(map.get("pending_msg:m1")).toBe(0);
-    expect(map.get("pending_msg:m2")).toBe(0);
+    // notification: the platform drain records the ids durably and schedules
+    // one coalesced pass per burst.
+    expect(map.get("__drain__:mailbox-incremental-sync:m1")).toBe(0);
+    expect(map.get("__drain__:mailbox-incremental-sync:m2")).toBe(0);
     expect(runTask).not.toHaveBeenCalled();
     expect(scheduleTask).toHaveBeenCalledTimes(1);
     const [key, , options] = scheduleTask.mock.calls[0] as unknown as [
@@ -215,7 +215,7 @@ describe("queueIncrementalSync — coalesced scheduling", () => {
       unknown,
       { runAt: Date; coalesce?: boolean },
     ];
-    expect(key).toBe("mailbox-incremental-sync");
+    expect(key).toBe("__drain__:mailbox-incremental-sync");
     expect(options.coalesce).toBe(true);
     expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
   });
