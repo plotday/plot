@@ -82,7 +82,15 @@ function instrumentToolStub(stub, toolId, metrics) {
         const finish = () =>
           recordToolCall(metrics, toolId + '.' + prop, Date.now() - startedAt);
         try {
-          const result = value.call(target, ...args);
+          // Invoke the already-fetched method stub directly. Do NOT reach for
+          // value.call(...)/value.apply(...): \`target\` is a cross-worker RPC
+          // stub, so \`.call\` is NOT Function.prototype.call — the RPC proxy
+          // treats ANY property access on a method (\`.call\`, \`.apply\`,
+          // \`.bind\`, ...) as a *remote* method of that name, and invoking it
+          // throws "The RPC receiver does not implement the method \\"call\\".",
+          // dropping the tool call. \`value(...args)\` performs the normal RPC
+          // dispatch, exactly as a connector's \`this.tools.x.method(...)\` does.
+          const result = value(...args);
           if (result && typeof result.then === 'function') {
             return result.then(
               (resolved) => { finish(); return resolved; },
