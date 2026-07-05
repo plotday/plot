@@ -1,3 +1,26 @@
+## 1.5.3+378 — 2026-07-05
+
+### Connections
+
+- Opening a connection to edit its settings is now noticeably faster.
+- Saving changes to which channels a connection syncs (for example turning Gmail labels or LinkedIn message types on or off) now completes right away instead of waiting for the sync to spin up in the background.
+
+### Threads
+
+- Forward any email or message to new people — emails forward the original with its attachments; other channels include the forwarded text.
+
+### Fixes
+
+- A connection that got interrupted while first syncing (for example, Gmail & Calendar) could stay stuck showing "Syncing" indefinitely. These are now detected and retried automatically, and fall back to "Reconnect" if they can't recover.
+- Fixed the Everything view showing a focus's Inbox instead of all your threads when you opened it from a focus.
+- Everything now has its own link, so refreshing or reopening the page keeps you on Everything.
+- Fixed forwarding a Gmail email (or composing one) to a picked contact failing to send. Choosing a recipient from your contacts now delivers correctly, just like typing an address.
+- Fixed Gmail syncing falling behind or missing recent emails during busy periods — bursts of mailbox activity are now handled smoothly instead of overloading sync.
+- Replies you send in a LinkedIn, WhatsApp, or Instagram conversation now show as written by you, instead of being attributed to the connection.
+- Fixed muted threads reappearing as unread in Active when a new message arrived. Once a thread matches one of your "skip threads like this" rules, it now stays out of the way.
+- Fixed Outlook, Microsoft Teams, and Slack syncing falling behind during busy periods — bursts of activity are now handled smoothly instead of overloading sync.
+- Fixed some threads on your Doing list reappearing as unread every time you opened the app, even after you'd read them.
+
 ## 1.5.3+377 — 2026-07-04
 
 ### Fixes
