@@ -2600,6 +2600,68 @@ export class Integrations extends Tool implements IAuth {
     }
   }
 
+  /**
+   * Resolve the {@link LinkTypeConfig} for a create_link draft's `type` on this
+   * connection, used to read its `compose.targets` when pre-resolving picked
+   * contacts into connector recipients.
+   *
+   * A connector's link types can be declared two ways: statically on the
+   * connector (`sourceProvider.linkTypes`), or dynamically per channel
+   * (`dynamicLinkTypes` — e.g. the combined Google connection, whose `email`/
+   * `event`/`task` configs live only on the `channel` rows returned by
+   * `getChannels`, with no connector-level declaration). Compounding that, a
+   * connection-scoped compose target (Gmail's `compose.targets: "addresses"`)
+   * carries no `channelId`, and even a named channel may declare no matching
+   * type (e.g. an empty `INBOX` channel).
+   *
+   * So resolve by scanning this connection's channels — the draft's named
+   * channel first (when it has one), then any channel that declares `type` —
+   * before falling back to the connector-level declaration. Returning
+   * `undefined` here is what previously skipped recipient resolution entirely,
+   * so a Gmail compose/forward to a picked contact (which relies on server-side
+   * resolution, unlike a typed `inviteEmail`) reached `onCreateLink` with zero
+   * recipients.
+   */
+  private async resolveComposeLinkType(
+    type: string,
+    channelId: string | null,
+  ): Promise<LinkTypeConfig | undefined> {
+    const parseTypes = (raw: unknown): LinkTypeConfig[] => {
+      const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed) ? (parsed as LinkTypeConfig[]) : [];
+    };
+    try {
+      const channelRows = await this.db
+        .selectFrom("channel")
+        .select(["channel_id", "link_types"])
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .execute();
+      // Prefer the draft's named channel so a channel-scoped compose keeps
+      // using its own channel's declared config.
+      const named = channelId
+        ? channelRows.find((r) => r.channel_id === channelId)
+        : undefined;
+      const namedMatch = named?.link_types
+        ? parseTypes(named.link_types).find((lt) => lt.type === type)
+        : undefined;
+      if (namedMatch) return namedMatch;
+      // Otherwise take the first channel of this connection that declares the
+      // type (compose config is a property of the link type, not the channel,
+      // so any channel declaring it carries the same config).
+      for (const row of channelRows) {
+        if (!row.link_types) continue;
+        const found = parseTypes(row.link_types).find((lt) => lt.type === type);
+        if (found) return found;
+      }
+    } catch {
+      // Non-fatal: fall through to the connector-level declaration.
+    }
+    const sourceLinkTypes = this.sourceProvider?.linkTypes as
+      | LinkTypeConfig[]
+      | undefined;
+    return sourceLinkTypes?.find((lt) => lt.type === type);
+  }
+
   async dispatch(
     dispatchItem: any
   ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; forwardTo?: { functionName: string; prependArgs: any[] }; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
@@ -3222,32 +3284,14 @@ export class Integrations extends Tool implements IAuth {
       // link types and when no contacts were picked.
       const provider = this.sourceProvider.provider;
       if (provider && draft.contacts.length > 0) {
-        // Resolve the link type config for this draft's type. Check
-        // channel-level linkTypes first (from the DB row), then fall back to
-        // the connector-level declaration in sourceProvider.linkTypes.
-        let linkTypeConfig: LinkTypeConfig | undefined;
-        try {
-          const channelRow = await this.db
-            .selectFrom("channel")
-            .select("link_types")
-            .where("twist_instance_id", "=", this.twistInstanceId)
-            .where("channel_id", "=", draft.channelId)
-            .executeTakeFirst();
-          if (channelRow?.link_types) {
-            const parsed: unknown = typeof channelRow.link_types === "string"
-              ? JSON.parse(channelRow.link_types)
-              : channelRow.link_types;
-            if (Array.isArray(parsed)) {
-              linkTypeConfig = (parsed as LinkTypeConfig[]).find((lt) => lt.type === draft.type);
-            }
-          }
-        } catch {
-          // Non-fatal: fall through to sourceProvider fallback
-        }
-        if (!linkTypeConfig) {
-          const sourceLinkTypes = this.sourceProvider.linkTypes as LinkTypeConfig[] | undefined;
-          linkTypeConfig = sourceLinkTypes?.find((lt) => lt.type === draft.type);
-        }
+        // Resolve the link type config for this draft's type (channel-level
+        // first, then the connector-level declaration) so we can read its
+        // compose.targets. See resolveComposeLinkType for why the draft's
+        // channelId can't be trusted to name the channel that declares it.
+        const linkTypeConfig = await this.resolveComposeLinkType(
+          draft.type,
+          draft.channelId ?? null,
+        );
 
         const composeTargets = linkTypeConfig?.compose?.targets;
         if (

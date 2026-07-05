@@ -1378,6 +1378,21 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     }
   }
 
+  /// Resolve a draft's own roster into a presentable [ComposePeopleEntry] (or
+  /// null when nothing resolves from cache). Lets the compose page rebuild a
+  /// recipient for the connection step when the roster wasn't picked through the
+  /// step-1 people list — e.g. a forward, or contacts added directly on the
+  /// compose surface, neither of which sets `NewThreadPage._selectedRecipient`.
+  ComposePeopleEntry? peopleEntryForRoster({
+    required List<Uuid> contacts,
+    required List<Uuid> groups,
+    required List<String> inviteEmails,
+  }) => _peopleEntryFor((
+    contacts: contacts,
+    groups: groups,
+    inviteEmails: inviteEmails,
+  ));
+
   /// Resolve a deduped [RosterKey] into a presentable [ComposePeopleEntry], or
   /// null when nothing in the roster resolves (uncached group/contacts and no
   /// invites). A formal group wins; a single contact is a [ContactPillData];

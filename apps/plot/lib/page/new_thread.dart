@@ -198,6 +198,18 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// yet, so the page just starts clean as usual.
   static final ValueNotifier<int> resetRequest = ValueNotifier<int>(0);
 
+  /// The highest [resetRequest] value that a live page has already *processed*
+  /// (reset the shared draft + applied any pending forward). More than one live
+  /// [NewThreadPage] can be mounted at once (e.g. transient duplicates during a
+  /// panel transition), and they all share the priority's single
+  /// `PriorityBloc`/working draft. Each fires [_onResetRequested] on the same
+  /// bump, but only the FIRST may act: a second instance's `startFreshDraft`
+  /// would park (orphan) the draft the first instance just configured — so a
+  /// forward's connection lands on the parked draft while the visible working
+  /// draft resets to an empty Plot thread. Guarding on this static makes each
+  /// bump reset the shared draft exactly once.
+  static int _lastResetHandled = 0;
+
   /// Requests every live [NewThreadPage] reset to step 1 with a fresh draft.
   static void requestReset() => resetRequest.value++;
 
@@ -647,8 +659,15 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// resets to step 1 with a fresh draft (see [_resetToFreshStart]).
   void _onResetRequested() {
     if (!mounted) return;
-    if (NewThreadPageState.resetRequest.value == _lastResetSeen) return;
-    _lastResetSeen = NewThreadPageState.resetRequest.value;
+    final value = NewThreadPageState.resetRequest.value;
+    if (value == _lastResetSeen) return;
+    _lastResetSeen = value;
+    // Only the first live page to see this bump may act — a second instance
+    // sharing the same PriorityBloc/draft would park the draft the first just
+    // configured (see [_lastResetHandled]). Later instances still advance their
+    // own [_lastResetSeen] above so they don't reprocess a future bump.
+    if (value == NewThreadPageState._lastResetHandled) return;
+    NewThreadPageState._lastResetHandled = value;
     // An explicit New-thread command re-invoked this live page → engage it
     // (mirrors a command-driven fresh mount). requestReset() is only ever called
     // by that command, so reaching here always means an explicit invocation.
@@ -1795,15 +1814,48 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  /// Compose-step "go back": to step 2 when a recipient is chosen, else step 1.
+  /// Compose-step "go back": to the connection step (step 2) when the draft has
+  /// a roster — the user most likely wants to change *how* they reach those
+  /// recipients (a different sending address / channel, or a plain Plot thread)
+  /// — else back to the target picker (step 1).
+  ///
+  /// The decision is driven by the draft's own roster, not [_selectedRecipient]:
+  /// a forward jumps straight to compose and contacts can be added directly on
+  /// the compose surface, neither of which sets [_selectedRecipient]. Deriving
+  /// the recipient from the draft (and stashing it for the connection step,
+  /// which renders it) is what makes tapping the connection reach channel
+  /// selection on the first try rather than only after re-picking in step 1.
   void _backFromCompose() {
-    if (_selectedRecipient != null) {
-      setState(() => _step = _ComposeStep.connection);
+    final recipient = _recipientForDraftRoster();
+    if (recipient != null) {
+      setState(() {
+        _selectedRecipient = recipient;
+        _step = _ComposeStep.connection;
+      });
       _publishHeaderBack();
       _focusPickerSearch(_ComposeStep.connection);
     } else {
       _returnToSectionsStep();
     }
+  }
+
+  /// The connection-step recipient for the draft's current roster, or null when
+  /// the draft has no recipients (contacts / groups / invite-emails). Rebuilt
+  /// from the draft each time so it reflects recipients added on the compose
+  /// surface, not just those picked through the step-1 people list. Null (→ step
+  /// 1) when the roster is empty, or when nothing in it resolves from cache.
+  ComposePeopleEntry? _recipientForDraftRoster() {
+    final draft = (_priorityBloc ?? context.read<PriorityBloc>()).state.draft;
+    if (draft.contacts.isEmpty &&
+        draft.groups.isEmpty &&
+        draft.inviteEmails.isEmpty) {
+      return null;
+    }
+    return context.read<ComposeTargetsBloc>().peopleEntryForRoster(
+      contacts: draft.contacts,
+      groups: draft.groups,
+      inviteEmails: draft.inviteEmails,
+    );
   }
 
   /// Suggests a concrete focus for [target] and switches the draft to it.
