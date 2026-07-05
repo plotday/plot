@@ -814,38 +814,70 @@ re-calling under the same key is fine and atomic — it replaces the pending run
 without forking. Use `scheduleTask(key, cb, { runAt })` only for **one-shot**
 keyed deferred work (a single future task, atomically replaced if re-keyed).
 
-### Coalescing Webhook-Driven Work
+### Webhook-Driven Sync: `scheduleDrain`
 
-Never enqueue an immediate task per provider notification. Providers like Gmail
-push one notification per mailbox change, so `runTask()` in a webhook handler
-turns a busy period into a flood of queued sync passes — they batch together,
-run concurrently in one worker, and can multiply the working set past the
-memory limit. Schedule the pass as a keyed, coalescing task instead:
+Never enqueue an immediate task per provider notification. Providers like
+Gmail or Microsoft Graph push one notification per item change, so
+`runTask()` in a webhook handler turns a busy period into a flood of queued
+sync passes — they batch together, run concurrently in one worker, and can
+multiply the working set past the memory limit.
+
+`scheduleDrain(key, handler, options)` is the purpose-built primitive: it
+records dirty item ids durably and guarantees a **single, bounded** drain
+pass runs soon.
 
 ```typescript
-// ❌ WRONG — one queued execution per webhook notification
-async onWebhook(request: WebhookRequest) {
-  const cb = await this.callback(this.incrementalSync);
-  await this.runTask(cb);
+// Webhook: record what changed; a notification burst collapses into ONE pass.
+async onWebhook(request: WebhookRequest): Promise<void> {
+  const ids = parseChangedIds(request); // or [] when the provider sends no ids
+  await this.scheduleDrain("incremental-sync", this.drainChanges, { ids });
 }
 
-// ✅ CORRECT — a notification burst collapses into ONE pending pass
-async onWebhook(request: WebhookRequest) {
-  const cb = await this.callback(this.incrementalSync);
-  await this.scheduleTask("incremental-sync", cb, {
-    runAt: new Date(Date.now() + 10_000),
-    coalesce: true,
-  });
+// Drain: receives at most batchSize ids per pass (default 20). The platform
+// schedules continuations while a backlog remains.
+async drainChanges(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    await this.syncItem(id);
+  }
 }
+
+// Teardown (e.g. onChannelDisabled):
+await this.cancelDrain("incremental-sync");
 ```
 
-With `coalesce: true` an existing pending task under the key is **kept** — its
-fire time is pulled earlier when the new `runAt` is sooner, but never pushed
-later, so a continuous stream of notifications can't starve the timer (plain
-keyed replace would reset it on every call). A notification arriving while a
-pass is already running schedules exactly one follow-up pass. Note that the
-callback you pass may be discarded when an existing task is kept — create a
-fresh callback each call and don't store or reuse its token.
+What the platform owns so you don't have to:
+
+- **Coalescing** — every `scheduleDrain` call collapses into one pending pass
+  per `key`, firing at most `delayMs` (default 10s) after the first call of a
+  burst; later calls never push it back, so a continuous stream can't starve
+  the timer. A notification arriving mid-pass yields exactly one follow-up.
+- **Durable, race-free dirty set** — ids persist under one storage key each
+  (single bulk write per call) and are released only after your handler
+  processes them. Concurrent webhook deliveries and an in-flight drain can't
+  lose ids to a read-modify-write race; processing is at-least-once, so make
+  your handler idempotent (syncs that upsert by `source` already are).
+- **Bounded passes + continuation** — the handler never sees more than
+  `batchSize` ids; overflow drains on scheduled continuations, so memory per
+  pass stays flat no matter how large the burst.
+- **Poison protection** — ids whose passes keep failing are dropped (with a
+  log) after `maxAttempts` (default 5), so one unprocessable item can't wedge
+  the drain. Keep a periodic self-heal (`scheduleRecurring`) as the backstop
+  that re-discovers anything dropped.
+
+**Signal-only drains**: when the provider notification carries no item ids
+(e.g. Gmail's "history changed" ping) or your sync derives its own work from
+a cursor or time window, omit `ids` — the handler is invoked with `[]` and
+simply runs its cursor-based pass, still coalesced.
+
+The handler must be a **named method on your class** (the same rule as
+`this.callback(this.method)`), and renaming it orphans scheduled passes —
+treat the name as part of your deployed surface.
+
+For keyed one-shot scheduling that is not a backlog drain, the underlying
+building block is `scheduleTask(key, cb, { runAt, coalesce: true })` — an
+existing pending task is kept and its fire time pulled earlier, never later.
+`scheduleDrain` uses it internally; prefer `scheduleDrain` for anything
+webhook-driven.
 
 ### Batch Processing Pattern
 
