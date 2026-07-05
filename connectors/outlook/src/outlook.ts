@@ -21,6 +21,9 @@ import {
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Files } from "@plotday/twister/tools/files";
 import {
+  INCREMENTAL_SYNC_COALESCE_MS,
+  INCREMENTAL_SYNC_TASK_KEY,
+  queueIncrementalSyncFn,
   type OutlookMailSyncHost,
   SELF_HEAL_INTERVAL_MS,
   addEnabledChannelFn,
@@ -297,6 +300,13 @@ export class Outlook extends Connector<Outlook> {
     return this.set(`mail:${key}`, value);
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _mailHostSetMany(entries: [key: string, value: any][]): Promise<void> {
+    return this.setMany(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      entries.map(([key, value]): [string, any] => [`mail:${key}`, value])
+    );
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _mailHostGet<T = any>(key: string): Promise<T | null> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return this.get<any>(`mail:${key}`);
@@ -319,6 +329,7 @@ export class Outlook extends Connector<Outlook> {
     return {
       id: self.id,
       set: (key, value) => self._mailHostSet(key, value),
+      setMany: (entries) => self._mailHostSetMany(entries),
       get: <T>(key: string) => self._mailHostGet<T>(key),
       clear: (key) => self._mailHostClear(key),
       tools: {
@@ -348,8 +359,8 @@ export class Outlook extends Connector<Outlook> {
           self.mailScheduleRenewal(expiration),
         scheduleSelfHealCheck: () => self.mailScheduleSelfHeal(),
         cancelScheduledTask: (key) => self.cancelScheduledTask(key),
-        queueIncrementalSync: (messageIds) =>
-          self.mailQueueIncrementalSync(messageIds),
+        scheduleIncrementalSyncDrain: () =>
+          self.mailScheduleIncrementalSyncDrain(),
         queueRenewSubscription: () => self.mailQueueRenewSubscription(),
         requeueInitialSync: (channelId) => self.mailRequeueInitialSync(channelId),
       },
@@ -480,12 +491,23 @@ export class Outlook extends Connector<Outlook> {
     });
   }
 
+  /**
+   * Record notified message ids and schedule the coalesced drain (mirrors
+   * the standalone Outlook Mail connector): ids are persisted per-key
+   * first, then a notification burst collapses into a single drain pass
+   * instead of one queued task per Graph notification.
+   */
   private async mailQueueIncrementalSync(messageIds: string[]): Promise<void> {
-    const callback = await this.callback(
-      this.incrementalSyncBatch,
-      messageIds
-    );
-    await this.runTask(callback);
+    await queueIncrementalSyncFn(this.makeMailHost(), messageIds);
+  }
+
+  /** Schedule the coalesced incremental drain (host scheduler hook). */
+  private async mailScheduleIncrementalSyncDrain(): Promise<void> {
+    const callback = await this.callback(this.incrementalSyncBatch, []);
+    await this.scheduleTask(INCREMENTAL_SYNC_TASK_KEY, callback, {
+      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
+      coalesce: true,
+    });
   }
 
   private async mailQueueRenewSubscription(): Promise<void> {

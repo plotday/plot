@@ -27,8 +27,11 @@ import {
   type InitialSyncState,
   type OutlookMailSyncHost,
   type SubscriptionState,
+  INCREMENTAL_SYNC_COALESCE_MS,
+  INCREMENTAL_SYNC_TASK_KEY,
   SELF_HEAL_INTERVAL_MS,
   addEnabledChannelFn,
+  queueIncrementalSyncFn,
   downloadAttachmentFn,
   ensureMailboxSubscriptionFn,
   getApiFn,
@@ -120,6 +123,11 @@ export class OutlookMail extends Connector<OutlookMail> {
   _hostSet(key: string, value: any): Promise<void> {
     return this.set(key, value);
   }
+  /** Public bulk-set wrapper so the host object can expose it. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _hostSetMany(entries: [key: string, value: any][]): Promise<void> {
+    return this.setMany(entries);
+  }
   /** Public get wrapper so the host object can expose it. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _hostGet<T = any>(key: string): Promise<T | null> {
@@ -141,6 +149,7 @@ export class OutlookMail extends Connector<OutlookMail> {
     return {
       id: self.id,
       set: (key, value) => self._hostSet(key, value),
+      setMany: (entries) => self._hostSetMany(entries),
       get: <T>(key: string) => self._hostGet<T>(key),
       clear: (key) => self._hostClear(key),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,8 +162,8 @@ export class OutlookMail extends Connector<OutlookMail> {
           self.scheduleMailboxRenewal(expiration),
         scheduleSelfHealCheck: () => self.scheduleSelfHealCheck(),
         cancelScheduledTask: (key) => self.cancelScheduledTask(key),
-        queueIncrementalSync: (messageIds) =>
-          self.queueIncrementalSync(messageIds),
+        scheduleIncrementalSyncDrain: () =>
+          self.scheduleIncrementalSyncDrain(),
         queueRenewSubscription: () => self.queueRenewSubscription(),
         requeueInitialSync: (channelId) => self.requeueInitialSync(channelId),
       },
@@ -415,11 +424,25 @@ export class OutlookMail extends Connector<OutlookMail> {
     }
   }
 
-  /** Queue the mailbox-wide incremental sync as a task (host scheduler hook). */
+  /**
+   * Record notified message ids and schedule the coalesced drain. Graph
+   * sends one change notification per message; enqueueing an immediate task
+   * per notification flooded the queue during active mail traffic, and the
+   * batched passes stacked into one worker until it exceeded the memory
+   * limit. Ids are persisted per-key first (race-free under concurrent
+   * deliveries), then a burst collapses into a single drain pass.
+   */
   private async queueIncrementalSync(messageIds: string[]): Promise<void> {
-    await this.runTask(
-      await this.callback(this.incrementalSyncBatch, messageIds)
-    );
+    await queueIncrementalSyncFn(this.makeHost(), messageIds);
+  }
+
+  /** Schedule the coalesced incremental drain (host scheduler hook). */
+  private async scheduleIncrementalSyncDrain(): Promise<void> {
+    const callback = await this.callback(this.incrementalSyncBatch, []);
+    await this.scheduleTask(INCREMENTAL_SYNC_TASK_KEY, callback, {
+      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
+      coalesce: true,
+    });
   }
 
   /** Queue a subscription renewal as a task (host scheduler hook). */

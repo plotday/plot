@@ -87,6 +87,34 @@ export const SUBSCRIPTION_DURATION_DAYS = 3;
 export const MAX_MESSAGE_FETCH_ATTEMPTS = 5;
 
 /**
+ * Max notified messages probed (and their conversations fetched) per
+ * incremental drain pass. Graph sends one change notification per message;
+ * an unbounded pass loaded every notified conversation into one worker at
+ * once. Overflow stays in the per-message pending keys (see
+ * {@link PENDING_MSG_PREFIX}) and drains on a scheduled continuation.
+ */
+export const MAX_INCREMENTAL_MESSAGES_PER_BATCH = 20;
+
+/**
+ * Delay before a webhook-triggered incremental drain runs. The drain is
+ * scheduled as a keyed coalescing task, so a burst of Graph notifications
+ * collapses into one pass that fires at most this long after the first.
+ */
+export const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
+
+/** Task key for the coalesced incremental drain. */
+export const INCREMENTAL_SYNC_TASK_KEY = "mailbox-incremental-sync";
+
+/**
+ * Store-key prefix for notified-but-not-yet-ingested message ids. Each id
+ * lives under its own key (value: failed-fetch attempt count), so concurrent
+ * webhook deliveries and an in-flight drain can never lose ids to a
+ * read-modify-write race on shared state; keys are deleted only after the
+ * message's conversation is ingested.
+ */
+export const PENDING_MSG_PREFIX = "pending_msg:";
+
+/**
  * Page cap per folder per self-heal delta sweep. A walk that exceeds the
  * cap stores its nextLink and resumes on the next cycle, bounding the work
  * any single self-heal run can do.
@@ -164,6 +192,8 @@ export interface OutlookMailSyncHost {
 
   /** Persist a value under a connector-scoped key. */
   set(key: string, value: unknown): Promise<void>;
+  /** Persist many key/value pairs in one round-trip (bulk upsert). */
+  setMany(entries: [key: string, value: unknown][]): Promise<void>;
   /** Retrieve a previously persisted value. Returns null if absent. */
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
@@ -235,8 +265,13 @@ export interface OutlookMailSyncHost {
     scheduleSelfHealCheck(): Promise<void>;
     /** Cancel a durable recurring task by key. */
     cancelScheduledTask(key: string): Promise<void>;
-    /** Queue an incremental sync over the given notified message ids. */
-    queueIncrementalSync(messageIds: string[]): Promise<void>;
+    /**
+     * Schedule the coalesced incremental drain (keyed task; a burst of
+     * calls collapses into one pending pass). The notified ids are already
+     * persisted under {@link PENDING_MSG_PREFIX} keys by
+     * {@link queueIncrementalSyncFn} before this is called.
+     */
+    scheduleIncrementalSyncDrain(): Promise<void>;
     /** Queue a subscription renewal (lifecycle-notification response). */
     queueRenewSubscription(): Promise<void>;
     /**
@@ -1233,10 +1268,36 @@ export async function onOutlookMailWebhookFn(
  * and processes whole conversations. Failed probes are carried in
  * `incremental_state.pendingMessageIds` for retry on a later sync.
  */
+/**
+ * Record notified message ids and schedule the coalesced incremental drain.
+ *
+ * Each id is persisted under its own {@link PENDING_MSG_PREFIX} key (one bulk
+ * write), so concurrent webhook deliveries and an in-flight drain can never
+ * lose ids to a shared-state race — a key is deleted only after its message's
+ * conversation has been ingested. The drain itself is a keyed coalescing
+ * task: a burst of notifications collapses into a single pass.
+ */
+export async function queueIncrementalSyncFn(
+  host: OutlookMailSyncHost,
+  messageIds: string[]
+): Promise<void> {
+  if (messageIds.length > 0) {
+    await host.setMany(
+      messageIds.map((id): [string, unknown] => [
+        `${PENDING_MSG_PREFIX}${id}`,
+        0,
+      ])
+    );
+  }
+  await host.scheduler.scheduleIncrementalSyncDrain();
+}
+
 export async function incrementalSyncBatchFn(
   host: OutlookMailSyncHost,
   messageIds: string[]
 ): Promise<void> {
+  // Ids probed this pass; cleared/attempt-bumped in the epilogue below.
+  let processed: string[] = [];
   try {
     const enabled = await getEnabledChannelsFn(host);
     if (enabled.size === 0) return;
@@ -1248,10 +1309,39 @@ export async function incrementalSyncBatchFn(
       return;
     }
 
+    // Durably record ids handed in as arguments (already-queued legacy
+    // callbacks, and the self-heal delta sweep) plus any legacy
+    // incremental_state.pendingMessageIds, as per-message pending keys —
+    // BEFORE processing, so a pass that dies mid-way loses nothing.
     const state =
       (await host.get<IncrementalState>("incremental_state")) ?? {};
-    const pending = state.pendingMessageIds ?? [];
-    const toFetch = [...new Set([...messageIds, ...pending.map((p) => p.id)])];
+    const legacy = state.pendingMessageIds ?? [];
+    const seed: [string, unknown][] = [
+      ...legacy.map((p): [string, unknown] => [
+        `${PENDING_MSG_PREFIX}${p.id}`,
+        p.attempts,
+      ]),
+      ...messageIds.map((id): [string, unknown] => [
+        `${PENDING_MSG_PREFIX}${id}`,
+        0,
+      ]),
+    ];
+    if (seed.length > 0) {
+      await host.setMany(seed);
+    }
+    if (legacy.length > 0) {
+      // One-time migration: the pending set now lives in per-message keys.
+      await host.set("incremental_state", {} satisfies IncrementalState);
+    }
+
+    // Bound the pass: probe (and fetch conversations for) at most
+    // MAX_INCREMENTAL_MESSAGES_PER_BATCH pending messages; the overflow keeps
+    // its pending keys and drains on a scheduled continuation.
+    const pendingKeys = await host.tools.store.list(PENDING_MSG_PREFIX);
+    const allIds = pendingKeys.map((k) => k.slice(PENDING_MSG_PREFIX.length));
+    processed = allIds.slice(0, MAX_INCREMENTAL_MESSAGES_PER_BATCH);
+    const deferredCount = allIds.length - processed.length;
+    if (processed.length === 0) return;
 
     const wellKnown = await getWellKnownFn(host, api);
     const excludedFolderIds = new Set(
@@ -1259,8 +1349,8 @@ export async function incrementalSyncBatchFn(
     );
 
     const conversationIds = new Set<string>();
-    const failedIds: string[] = [];
-    for (const id of toFetch) {
+    const failedIds = new Set<string>();
+    for (const id of processed) {
       try {
         const m = await api.getMessage(
           id,
@@ -1274,7 +1364,7 @@ export async function incrementalSyncBatchFn(
         if (m.conversationId) conversationIds.add(m.conversationId);
       } catch (error) {
         console.error(`[outlook-mail] message probe failed for ${id}:`, error);
-        failedIds.push(id);
+        failedIds.add(id);
       }
     }
 
@@ -1283,12 +1373,56 @@ export async function incrementalSyncBatchFn(
       await processConversationsFn(host, items, false);
     }
 
-    await host.set("incremental_state", {
-      pendingMessageIds: mergePendingMessages(pending, failedIds),
-    } satisfies IncrementalState);
+    // Epilogue: drop the keys for everything ingested (or skipped as
+    // draft/excluded/deleted); bump attempts on probe failures, giving up
+    // past the retry cap.
+    for (const id of processed) {
+      if (failedIds.has(id)) {
+        await bumpPendingAttemptFn(host, id);
+      } else {
+        await host.clear(`${PENDING_MSG_PREFIX}${id}`);
+      }
+    }
+    processed = [];
+
+    if (deferredCount > 0) {
+      await host.scheduler.scheduleIncrementalSyncDrain();
+    }
   } catch (error) {
     console.error("[outlook-mail] incremental sync batch failed:", error);
+    // The pass died after seeding (e.g. conversation fetch/ingest threw).
+    // The pending keys survive, so nothing is lost — but bump attempts on
+    // the slice we were processing so a poison message can't wedge the
+    // drain forever: past the cap it is dropped with a log.
+    for (const id of processed) {
+      try {
+        await bumpPendingAttemptFn(host, id);
+      } catch {
+        // Best-effort; the key simply retries with its old count.
+      }
+    }
     throw error;
+  }
+}
+
+/**
+ * Increment the failed-attempt counter on a pending-message key, deleting it
+ * (with a log — that change is effectively lost) once it exceeds
+ * {@link MAX_MESSAGE_FETCH_ATTEMPTS}.
+ */
+async function bumpPendingAttemptFn(
+  host: OutlookMailSyncHost,
+  id: string
+): Promise<void> {
+  const key = `${PENDING_MSG_PREFIX}${id}`;
+  const attempts = ((await host.get<number>(key)) ?? 0) + 1;
+  if (attempts > MAX_MESSAGE_FETCH_ATTEMPTS) {
+    console.error(
+      `[outlook-mail] giving up on message ${id} after ${attempts - 1} failed fetch attempts; its change may be lost`
+    );
+    await host.clear(key);
+  } else {
+    await host.set(key, attempts);
   }
 }
 
