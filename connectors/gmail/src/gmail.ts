@@ -635,7 +635,7 @@ export class Gmail extends Connector<Gmail> {
    * Delegates entirely to {@link incrementalSyncBatchFn} (no further
    * scheduling — a single pass drains the whole history window).
    */
-  async incrementalSyncBatch(): Promise<void> {
+  async incrementalSyncBatch(_ids: string[] = []): Promise<void> {
     await incrementalSyncBatchFn(this.makeHost());
   }
 
@@ -648,11 +648,14 @@ export class Gmail extends Connector<Gmail> {
    * single pass that fires within {@link INCREMENTAL_SYNC_COALESCE_MS}.
    */
   private async queueIncrementalSync(): Promise<void> {
-    const callback = await this.callback(this.incrementalSyncBatch);
-    await this.scheduleTask(INCREMENTAL_SYNC_TASK_KEY, callback, {
-      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
-      coalesce: true,
-    });
+    // Signal-only drain: Gmail's history cursor (not the notification) is
+    // the source of work, so no ids are recorded — the platform just
+    // guarantees one coalesced pass.
+    await this.scheduleDrain(
+      INCREMENTAL_SYNC_TASK_KEY,
+      this.incrementalSyncBatch,
+      { delayMs: INCREMENTAL_SYNC_COALESCE_MS }
+    );
   }
 
   /**

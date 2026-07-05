@@ -266,12 +266,12 @@ export interface OutlookMailSyncHost {
     /** Cancel a durable recurring task by key. */
     cancelScheduledTask(key: string): Promise<void>;
     /**
-     * Schedule the coalesced incremental drain (keyed task; a burst of
-     * calls collapses into one pending pass). The notified ids are already
-     * persisted under {@link PENDING_MSG_PREFIX} keys by
-     * {@link queueIncrementalSyncFn} before this is called.
+     * Record notified message ids and schedule the coalesced incremental
+     * drain via the platform's `scheduleDrain` primitive (the connector owns
+     * the call so the handler is one of its own methods). A burst of calls
+     * collapses into one pending pass; ids persist durably until drained.
      */
-    scheduleIncrementalSyncDrain(): Promise<void>;
+    scheduleDrain(messageIds: string[]): Promise<void>;
     /** Queue a subscription renewal (lifecycle-notification response). */
     queueRenewSubscription(): Promise<void>;
     /**
@@ -600,6 +600,8 @@ export async function recoverMailboxDeliveryFn(
  * stranded one. See {@link recoverMailboxDeliveryFn} for the stranded cases.
  */
 export async function upgradeFn(host: OutlookMailSyncHost): Promise<void> {
+  // One-time migration of pre-drain pending-message bookkeeping.
+  await migrateLegacyPendingMessagesFn(host);
   await recoverMailboxDeliveryFn(host);
 }
 
@@ -1270,160 +1272,114 @@ export async function onOutlookMailWebhookFn(
  */
 /**
  * Record notified message ids and schedule the coalesced incremental drain.
- *
- * Each id is persisted under its own {@link PENDING_MSG_PREFIX} key (one bulk
- * write), so concurrent webhook deliveries and an in-flight drain can never
- * lose ids to a shared-state race — a key is deleted only after its message's
- * conversation has been ingested. The drain itself is a keyed coalescing
- * task: a burst of notifications collapses into a single pass.
+ * Thin forwarder onto the platform's `scheduleDrain` primitive (via the host
+ * scheduler boundary), which owns the durable dirty set, coalescing, bounded
+ * passes, and per-id retry caps.
  */
 export async function queueIncrementalSyncFn(
   host: OutlookMailSyncHost,
   messageIds: string[]
 ): Promise<void> {
-  if (messageIds.length > 0) {
-    await host.setMany(
-      messageIds.map((id): [string, unknown] => [
-        `${PENDING_MSG_PREFIX}${id}`,
-        0,
-      ])
-    );
-  }
-  await host.scheduler.scheduleIncrementalSyncDrain();
+  await host.scheduler.scheduleDrain(messageIds);
 }
 
+/**
+ * Legacy entry point kept for already-queued callbacks (and the pre-drain
+ * webhook flow): re-records the ids with the platform drain and lets the
+ * scheduled pass do the work.
+ */
 export async function incrementalSyncBatchFn(
   host: OutlookMailSyncHost,
   messageIds: string[]
 ): Promise<void> {
-  // Ids probed this pass; cleared/attempt-bumped in the epilogue below.
-  let processed: string[] = [];
-  try {
-    const enabled = await getEnabledChannelsFn(host);
-    if (enabled.size === 0) return;
-    const api = await getApiAnyFn(host);
-    if (!api) {
-      console.warn(
-        "[outlook-mail] incrementalSyncBatch: no enabled channel to source auth from"
-      );
-      return;
-    }
-
-    // Durably record ids handed in as arguments (already-queued legacy
-    // callbacks, and the self-heal delta sweep) plus any legacy
-    // incremental_state.pendingMessageIds, as per-message pending keys —
-    // BEFORE processing, so a pass that dies mid-way loses nothing.
-    const state =
-      (await host.get<IncrementalState>("incremental_state")) ?? {};
-    const legacy = state.pendingMessageIds ?? [];
-    const seed: [string, unknown][] = [
-      ...legacy.map((p): [string, unknown] => [
-        `${PENDING_MSG_PREFIX}${p.id}`,
-        p.attempts,
-      ]),
-      ...messageIds.map((id): [string, unknown] => [
-        `${PENDING_MSG_PREFIX}${id}`,
-        0,
-      ]),
-    ];
-    if (seed.length > 0) {
-      await host.setMany(seed);
-    }
-    if (legacy.length > 0) {
-      // One-time migration: the pending set now lives in per-message keys.
-      await host.set("incremental_state", {} satisfies IncrementalState);
-    }
-
-    // Bound the pass: probe (and fetch conversations for) at most
-    // MAX_INCREMENTAL_MESSAGES_PER_BATCH pending messages; the overflow keeps
-    // its pending keys and drains on a scheduled continuation.
-    const pendingKeys = await host.tools.store.list(PENDING_MSG_PREFIX);
-    const allIds = pendingKeys.map((k) => k.slice(PENDING_MSG_PREFIX.length));
-    processed = allIds.slice(0, MAX_INCREMENTAL_MESSAGES_PER_BATCH);
-    const deferredCount = allIds.length - processed.length;
-    if (processed.length === 0) return;
-
-    const wellKnown = await getWellKnownFn(host, api);
-    const excludedFolderIds = new Set(
-      EXCLUDED_WELL_KNOWN.map((n) => wellKnown[n]).filter(Boolean) as string[]
-    );
-
-    const conversationIds = new Set<string>();
-    const failedIds = new Set<string>();
-    for (const id of processed) {
-      try {
-        const m = await api.getMessage(
-          id,
-          "id,conversationId,parentFolderId,isDraft"
-        );
-        if (!m) continue; // 404 — hard-deleted upstream; nothing to ingest
-        if (m.isDraft) continue;
-        if (m.parentFolderId && excludedFolderIds.has(m.parentFolderId)) {
-          continue;
-        }
-        if (m.conversationId) conversationIds.add(m.conversationId);
-      } catch (error) {
-        console.error(`[outlook-mail] message probe failed for ${id}:`, error);
-        failedIds.add(id);
-      }
-    }
-
-    const items = await fetchConversationsFn(host, api, [...conversationIds]);
-    if (items.length > 0) {
-      await processConversationsFn(host, items, false);
-    }
-
-    // Epilogue: drop the keys for everything ingested (or skipped as
-    // draft/excluded/deleted); bump attempts on probe failures, giving up
-    // past the retry cap.
-    for (const id of processed) {
-      if (failedIds.has(id)) {
-        await bumpPendingAttemptFn(host, id);
-      } else {
-        await host.clear(`${PENDING_MSG_PREFIX}${id}`);
-      }
-    }
-    processed = [];
-
-    if (deferredCount > 0) {
-      await host.scheduler.scheduleIncrementalSyncDrain();
-    }
-  } catch (error) {
-    console.error("[outlook-mail] incremental sync batch failed:", error);
-    // The pass died after seeding (e.g. conversation fetch/ingest threw).
-    // The pending keys survive, so nothing is lost — but bump attempts on
-    // the slice we were processing so a poison message can't wedge the
-    // drain forever: past the cap it is dropped with a log.
-    for (const id of processed) {
-      try {
-        await bumpPendingAttemptFn(host, id);
-      } catch {
-        // Best-effort; the key simply retries with its old count.
-      }
-    }
-    throw error;
-  }
+  await host.scheduler.scheduleDrain(messageIds);
 }
 
 /**
- * Increment the failed-attempt counter on a pending-message key, deleting it
- * (with a log — that change is effectively lost) once it exceeds
- * {@link MAX_MESSAGE_FETCH_ATTEMPTS}.
+ * One-time migration of the hand-rolled pending-message bookkeeping that
+ * predates the platform drain: `pending_msg:<id>` keys and
+ * `incremental_state.pendingMessageIds` are re-recorded via
+ * {@link OutlookMailSyncHost.scheduler.scheduleDrain} and the old state is
+ * cleared. Runs from `upgradeFn` on deploy; a no-op once migrated.
  */
-async function bumpPendingAttemptFn(
-  host: OutlookMailSyncHost,
-  id: string
+export async function migrateLegacyPendingMessagesFn(
+  host: OutlookMailSyncHost
 ): Promise<void> {
-  const key = `${PENDING_MSG_PREFIX}${id}`;
-  const attempts = ((await host.get<number>(key)) ?? 0) + 1;
-  if (attempts > MAX_MESSAGE_FETCH_ATTEMPTS) {
-    console.error(
-      `[outlook-mail] giving up on message ${id} after ${attempts - 1} failed fetch attempts; its change may be lost`
-    );
+  const legacyKeys = await host.tools.store.list(PENDING_MSG_PREFIX);
+  const state = await host.get<IncrementalState>("incremental_state");
+  const legacyState = state?.pendingMessageIds ?? [];
+  const ids = new Set<string>([
+    ...legacyKeys.map((k) => k.slice(PENDING_MSG_PREFIX.length)),
+    ...legacyState.map((p) => p.id),
+  ]);
+  if (ids.size === 0) return;
+
+  await host.scheduler.scheduleDrain([...ids]);
+  for (const key of legacyKeys) {
     await host.clear(key);
-  } else {
-    await host.set(key, attempts);
   }
+  if (legacyState.length > 0) {
+    await host.set("incremental_state", {} satisfies IncrementalState);
+  }
+  console.log(
+    `[outlook-mail] migrated ${ids.size} legacy pending message id(s) to the platform drain`
+  );
+}
+
+/**
+ * Drain handler: probe the notified message ids handed over by the platform
+ * drain (already bounded to one pass's batch), route them to conversations,
+ * and ingest those conversations. Returns `{ retry }` for probe failures so
+ * the platform keeps just those ids pending (with attempt caps); skipped
+ * probes (drafts, excluded folders, hard-deleted messages) are simply
+ * released.
+ */
+export async function drainNotifiedMessagesFn(
+  host: OutlookMailSyncHost,
+  messageIds: string[]
+): Promise<{ retry: string[] } | undefined> {
+  if (messageIds.length === 0) return;
+  const enabled = await getEnabledChannelsFn(host);
+  if (enabled.size === 0) return;
+  const api = await getApiAnyFn(host);
+  if (!api) {
+    console.warn(
+      "[outlook-mail] drainNotifiedMessages: no enabled channel to source auth from"
+    );
+    return;
+  }
+
+  const wellKnown = await getWellKnownFn(host, api);
+  const excludedFolderIds = new Set(
+    EXCLUDED_WELL_KNOWN.map((n) => wellKnown[n]).filter(Boolean) as string[]
+  );
+
+  const conversationIds = new Set<string>();
+  const retry: string[] = [];
+  for (const id of messageIds) {
+    try {
+      const m = await api.getMessage(
+        id,
+        "id,conversationId,parentFolderId,isDraft"
+      );
+      if (!m) continue; // 404 — hard-deleted upstream; nothing to ingest
+      if (m.isDraft) continue;
+      if (m.parentFolderId && excludedFolderIds.has(m.parentFolderId)) {
+        continue;
+      }
+      if (m.conversationId) conversationIds.add(m.conversationId);
+    } catch (error) {
+      console.error(`[outlook-mail] message probe failed for ${id}:`, error);
+      retry.push(id);
+    }
+  }
+
+  const items = await fetchConversationsFn(host, api, [...conversationIds]);
+  if (items.length > 0) {
+    await processConversationsFn(host, items, false);
+  }
+
+  return retry.length > 0 ? { retry } : undefined;
 }
 
 export async function processConversationsFn(

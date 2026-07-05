@@ -732,7 +732,7 @@ export class Google extends Connector<Google> {
   }
 
   /** Mailbox-wide incremental sync (one pass drains the history window). */
-  async mailIncrementalSyncBatch(): Promise<void> {
+  async mailIncrementalSyncBatch(_ids: string[] = []): Promise<void> {
     await incrementalSyncBatchFn(this.makeMailHost());
   }
 
@@ -781,11 +781,14 @@ export class Google extends Connector<Google> {
    * execution stacked into one worker isolate and exceeded the memory limit.
    */
   private async mailQueueIncrementalSync(): Promise<void> {
-    const callback = await this.callback(this.mailIncrementalSyncBatch);
-    await this.scheduleTask(INCREMENTAL_SYNC_TASK_KEY, callback, {
-      runAt: new Date(Date.now() + INCREMENTAL_SYNC_COALESCE_MS),
-      coalesce: true,
-    });
+    // Signal-only drain (mirrors the standalone Gmail connector): the
+    // history cursor is the source of work, the platform guarantees one
+    // coalesced pass.
+    await this.scheduleDrain(
+      INCREMENTAL_SYNC_TASK_KEY,
+      this.mailIncrementalSyncBatch,
+      { delayMs: INCREMENTAL_SYNC_COALESCE_MS }
+    );
   }
 
   /**

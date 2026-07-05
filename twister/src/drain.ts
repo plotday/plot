@@ -48,7 +48,19 @@ export const DEFAULT_DRAIN_DELAY_MS = 10_000;
 /** Default per-id failure cap before a pending id is dropped. */
 export const DEFAULT_DRAIN_MAX_ATTEMPTS = 5;
 
-export type DrainHandler = (ids: string[]) => Promise<void> | void;
+/**
+ * Result a drain handler may return: ids from the current slice that failed
+ * and should be RETRIED on a later pass (their attempt counters are bumped;
+ * ids past `maxAttempts` are dropped). Ids not listed are considered
+ * processed and released. Returning nothing releases the whole slice.
+ */
+export type DrainResult = { retry?: string[] } | void;
+
+export type DrainHandler = (
+  ids: string[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ...handlerArgs: any[]
+) => Promise<DrainResult> | DrainResult;
 
 export type DrainOptions = {
   /**
@@ -74,6 +86,14 @@ export type DrainOptions = {
    * this many failed passes containing the id, it is dropped with a log.
    */
   maxAttempts?: number;
+  /**
+   * Extra arguments appended after the ids slice when the handler is
+   * invoked — `handler(ids, ...handlerArgs)`. Use for per-scope drains
+   * (e.g. a per-channel key whose handler needs the channel id). Must be
+   * serializable; frozen at the first call of a coalesced burst, so keep
+   * them constant for a given `key`.
+   */
+  handlerArgs?: Serializable[];
 };
 
 /**
@@ -85,6 +105,7 @@ type PersistedDrainOptions = {
   batchSize: number;
   delayMs: number;
   maxAttempts: number;
+  handlerArgs?: Serializable[];
 };
 
 /**
@@ -160,6 +181,7 @@ export async function scheduleDrainImpl(
     batchSize: options?.batchSize ?? DEFAULT_DRAIN_BATCH_SIZE,
     delayMs: options?.delayMs ?? DEFAULT_DRAIN_DELAY_MS,
     maxAttempts: options?.maxAttempts ?? DEFAULT_DRAIN_MAX_ATTEMPTS,
+    ...(options?.handlerArgs ? { handlerArgs: options.handlerArgs } : {}),
   };
   await scheduleDrainTask(host, key, name, persisted);
 }
@@ -208,9 +230,13 @@ export async function drainBacklogImpl(
   const pendingKeys = (await host.tools.store.list(prefix)).sort();
   const batch = pendingKeys.slice(0, options.batchSize);
   const ids = batch.map((k) => k.slice(prefix.length));
+  const handlerArgs = options.handlerArgs ?? [];
 
+  let result: DrainResult;
   try {
-    await (handler as (ids: string[]) => Promise<void>).call(host, ids);
+    result = await (
+      handler as (ids: string[], ...args: unknown[]) => Promise<DrainResult>
+    ).call(host, ids, ...handlerArgs);
   } catch (error) {
     // The pass failed: keep the ids (at-least-once) but bump their attempt
     // counters so an unprocessable item is eventually dropped instead of
@@ -226,17 +252,27 @@ export async function drainBacklogImpl(
     throw error;
   }
 
-  // Success: the handler has processed (or knowingly skipped) every id in
-  // the slice — release their pending keys. Ids marked dirty again while the
-  // pass ran keep their fresh keys and are picked up by the next pass.
-  for (const pendingKey of batch) {
-    await host.tools.store.clear(pendingKey);
+  // The handler may report a PARTIAL failure — ids from the slice that
+  // should be retried on a later pass. Those keep their pending keys with a
+  // bumped attempt counter; everything else in the slice is released. Ids
+  // marked dirty again while the pass ran keep their fresh keys and are
+  // picked up by the next pass.
+  const retry = new Set(
+    (result?.retry ?? []).filter((id) => ids.includes(id))
+  );
+  for (const id of ids) {
+    if (retry.has(id)) {
+      await bumpAttempt(host, key, id, options.maxAttempts);
+    } else {
+      await host.tools.store.clear(`${prefix}${id}`);
+    }
   }
 
-  if (pendingKeys.length > batch.length) {
-    // Backlog remains: schedule a continuation. Coalesces with any pass the
-    // next notification schedules, so the backlog strictly shrinks at up to
-    // batchSize per delayMs without ever stacking passes.
+  if (pendingKeys.length > batch.length || retry.size > 0) {
+    // Backlog (or retryable failures) remain: schedule a continuation.
+    // Coalesces with any pass the next notification schedules, so the
+    // backlog strictly shrinks at up to batchSize per delayMs without ever
+    // stacking passes.
     await scheduleDrainTask(host, key, name, options);
   }
 }

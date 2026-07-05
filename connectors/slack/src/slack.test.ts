@@ -181,7 +181,7 @@ describe("syncCustomEmoji", () => {
       network: { createWebhook: vi.fn() },
       files: {},
       callbacks: { create },
-      tasks: { runTask },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
     };
     const slack = new Slack(
       "twist-instance-1" as never,
@@ -455,7 +455,7 @@ describe("startIncrementalSync — coalesced scheduling", () => {
       unknown,
       { runAt: Date; coalesce?: boolean },
     ];
-    expect(key).toBe("incremental-sync:C123");
+    expect(key).toBe("__drain__:incremental-sync:C123");
     expect(options.coalesce).toBe(true);
     expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
   });

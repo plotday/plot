@@ -4,6 +4,7 @@ import {
   DEFAULT_DRAIN_BATCH_SIZE,
   DEFAULT_DRAIN_MAX_ATTEMPTS,
   type DrainHost,
+  type DrainResult,
   cancelDrainImpl,
   drainBacklogImpl,
   scheduleDrainImpl,
@@ -24,7 +25,9 @@ function makeHost() {
   const map = new Map<string, unknown>();
   const scheduled: ScheduledTask[] = [];
   const createdCallbacks: unknown[][] = [];
-  const drainChanges = vi.fn(async (_ids: string[]) => {});
+  const drainChanges = vi.fn(
+    async (_ids: string[]): Promise<DrainResult> => {}
+  );
   // Class methods carry their name; vi.fn() is named "spy", so restore the
   // name the by-name dispatch relies on.
   Object.defineProperty(drainChanges, "name", { value: "drainChanges" });
@@ -230,6 +233,58 @@ describe("drain pass (__drainBacklog)", () => {
     delete (raw as Record<string, unknown>).drainChanges;
 
     await expect(fire()).rejects.toThrow(/no longer exists/);
+  });
+});
+
+describe("handlerArgs", () => {
+  it("appends handlerArgs after the ids slice", async () => {
+    const { host, raw, fire } = makeHost();
+    await scheduleDrainImpl(host, "sync:C123", raw.drainChanges, {
+      handlerArgs: ["C123"],
+    });
+
+    await fire();
+
+    expect(raw.drainChanges).toHaveBeenCalledWith([], "C123");
+  });
+});
+
+describe("partial failure (retry contract)", () => {
+  it("retains and bumps only the ids the handler reports as retry", async () => {
+    const { host, raw, map, scheduled, fire } = makeHost();
+    await scheduleDrainImpl(host, "sync", raw.drainChanges, {
+      ids: ["a", "b"],
+    });
+    raw.drainChanges.mockResolvedValueOnce({ retry: ["a"] });
+
+    await fire();
+
+    // "a" kept with a bumped attempt counter; "b" released.
+    expect(map.get("__drain__:sync:a")).toBe(1);
+    expect(map.has("__drain__:sync:b")).toBe(false);
+    // A continuation is scheduled to retry "a".
+    expect(scheduled).toHaveLength(2);
+  });
+
+  it("ignores retry ids that were not in the slice", async () => {
+    const { host, raw, map, fire } = makeHost();
+    await scheduleDrainImpl(host, "sync", raw.drainChanges, { ids: ["a"] });
+    raw.drainChanges.mockResolvedValueOnce({ retry: ["not-in-slice"] });
+
+    await fire();
+
+    expect(pendingKeys(map)).toEqual([]);
+  });
+
+  it("drops a retry id past maxAttempts", async () => {
+    const { host, raw, map, fire } = makeHost();
+    await scheduleDrainImpl(host, "sync", raw.drainChanges, { ids: ["a"] });
+    map.set("__drain__:sync:a", DEFAULT_DRAIN_MAX_ATTEMPTS);
+    raw.drainChanges.mockResolvedValueOnce({ retry: ["a"] });
+
+    await fire();
+
+    expect(pendingKeys(map)).toEqual([]);
   });
 });
 
