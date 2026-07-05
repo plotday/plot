@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.71.0
+
+### Added
+
+- `scheduleDrain` now supports `handlerArgs` (extra serializable arguments appended after the ids slice when the handler is invoked — for per-scope drains such as a per-channel key whose handler needs the channel id) and a partial-failure contract: the handler may return `{ retry: ids }` to keep just the failed ids pending with bumped attempt counters while releasing the rest of the slice. ([#265](https://github.com/plotday/plot/pull/265) [`0c68a18`](https://github.com/plotday/plot/commit/0c68a18e153b93e5acceb9f3a49663ba1abc71a3))
+- `scheduleDrain(key, handler, options)` and `cancelDrain(key)` on Twist and Tool — the purpose-built primitive for webhook-driven sync and any high-frequency "something changed, process it soon" trigger. The platform records dirty item ids durably (one storage key per id, released only after the handler processes them — at-least-once and race-free under concurrent deliveries), collapses a burst of calls into a single pending pass per key, hands the handler at most `batchSize` ids per pass (scheduling continuations while a backlog remains), and drops ids that keep failing after `maxAttempts` so a poison item can't wedge the drain. Omit `ids` for signal-only drains where the handler derives its own work from a cursor or time window. The `__drain__:` storage-key namespace is reserved for this machinery. ([#263](https://github.com/plotday/plot/pull/263) [`fcc1512`](https://github.com/plotday/plot/commit/fcc1512e813cbd28ae6715e8155d79ff02ebfa93))
+
 ## 0.70.0
 
 ### Added
