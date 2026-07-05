@@ -115,6 +115,46 @@ describe.skipIf(!DATABASE_URL)("applyMuteForNewThread", () => {
     });
   });
 
+  it("keeps a muted thread read when a later note re-marks it unread", async () => {
+    // Regression: apply_mute_for_new_thread marks the thread read + inactive,
+    // but the async note-analysis / connector-fallback path later calls
+    // upsert_thread_state to mark it unread (p_read_at NULL). That writer
+    // passes its own now() as p_note_created_at — newer than the mute's
+    // read_at — so the read-vs-note race guard doesn't protect the mute, and
+    // read_at was clobbered to NULL. The thread then reappeared unread in
+    // Active despite being muted. upsert_thread_state must preserve the read
+    // marker on a muted thread.
+    await withMuteSeed(async (trx, ctx) => {
+      const newThreadId = await arriveThread(trx, ctx, ctx.senderId);
+
+      const matchedSeed = await applyMuteForNewThread(trx, ctx.userId, newThreadId);
+      expect(matchedSeed).not.toBeNull();
+
+      // A later note lands and the ingest path tries to mark the thread
+      // unread. It passes its own ingest wall-clock (strictly AFTER the mute's
+      // read_at) as p_note_created_at, so the read-vs-note race guard does not
+      // fire. In prod these are separate transactions; within this single test
+      // txn now() is constant, so add an interval to model the later clock.
+      await sql`
+        SELECT "user".upsert_thread_state(
+          user_id => ${ctx.userId}::uuid,
+          p_thread_id => ${newThreadId}::uuid,
+          p_set_read_at => true,
+          p_note_created_at => now() + interval '5 seconds',
+          p_write_source => ${matchedSeed}::uuid
+        )
+      `.execute(trx);
+
+      const ts = await sql<{ active: boolean; read_at: string | null }>`
+        SELECT active, read_at::text FROM thread_state
+        WHERE thread_id = ${newThreadId}::uuid AND user_id = ${ctx.userId}::uuid
+      `.execute(trx);
+      // Muted thread must stay read (and inactive) — not resurface in Active.
+      expect(ts.rows[0]?.read_at).not.toBeNull();
+      expect(ts.rows[0]?.active).toBe(false);
+    });
+  });
+
   it("does NOT mute when the sender (link author) differs from the seed", async () => {
     // This is the production scenario: the sign-in sender's contact changed
     // (old fallback author deleted, new mail keyed on the real sender), so the

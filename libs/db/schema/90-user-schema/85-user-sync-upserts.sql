@@ -1006,6 +1006,7 @@ DECLARE
     v_priority_id uuid;
     v_revoked_at timestamptz;
     v_tp_found boolean;
+    v_muted boolean;
     v_row thread_state;
 BEGIN
     -- Provenance for connector write-back echo suppression: stamps the
@@ -1015,8 +1016,8 @@ BEGIN
     PERFORM set_config('plot.write_source_twist_instance', COALESCE(p_write_source::text, ''), true);
 
     SELECT
-        tp.priority_id, tp.revoked_at, TRUE
-        INTO v_priority_id, v_revoked_at, v_tp_found
+        tp.priority_id, tp.revoked_at, TRUE, tp.mute_by_thread_id IS NOT NULL
+        INTO v_priority_id, v_revoked_at, v_tp_found, v_muted
     FROM
         thread_priority tp
     WHERE
@@ -1073,7 +1074,18 @@ BEGIN
             -- this guard a payload like {active: true} on a thread with no
             -- prior thread_state row would insert read_at=NULL and the
             -- user.thread view would flip unread=true.
-            CASE WHEN p_set_read_at THEN p_read_at ELSE now() END,
+            --
+            -- Muted-thread guard: a muted thread must never be resurfaced as
+            -- unread by connector/queue note ingestion (the mute rule already
+            -- marked it read + inactive). If the caller intends to mark unread
+            -- (p_read_at NULL) but the thread is muted for this user, seed the
+            -- row read (now()) instead. Normally a muted thread already has a
+            -- thread_state row, so this INSERT branch is a defensive mirror of
+            -- the UPDATE branch below.
+            CASE
+                WHEN p_set_read_at AND NOT (v_muted AND p_read_at IS NULL) THEN p_read_at
+                ELSE now()
+            END,
             p_bumped_at,
             -- Default state_order when a row is being created with active=true
             -- and the caller didn't pass an order. NULL state_order makes the
@@ -1112,6 +1124,18 @@ BEGIN
             read_at = CASE
                 -- Caller didn't opt in to writing read_at → preserve existing.
                 WHEN NOT p_set_read_at THEN thread_state.read_at
+                -- Muted thread: the mute rule marked it read + inactive, and
+                -- connector/queue note ingestion must not resurface it as
+                -- unread. Preserve the existing read marker rather than nulling
+                -- it. Gated on the caller's intent (p_read_at NULL = mark
+                -- unread) rather than EXCLUDED.read_at, which the INSERT branch
+                -- above may have rewritten to now() for a muted row. An explicit
+                -- read (p_read_at NOT NULL) still writes through the ELSE below.
+                -- Without this, an async unread writer (which passes its own
+                -- ingest now() as p_note_created_at, newer than the mute's
+                -- read_at) defeats the race guard below and clobbers read_at to
+                -- NULL — the muted thread reappears unread in Active.
+                WHEN v_muted AND p_read_at IS NULL THEN thread_state.read_at
                 -- Race condition: user read after the note was created → preserve their read
                 -- Truncate to ms precision (see PRECISION BOUNDARY comment above)
                 WHEN p_note_created_at IS NOT NULL
