@@ -343,23 +343,32 @@ const webhookUrl = await this.tools.network.createWebhook({}, this.onWebhook, re
 if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) return;
 ```
 
-### Coalesce webhook-driven sync (REQUIRED for high-frequency webhooks)
+### Webhook-driven sync uses `scheduleDrain` (REQUIRED)
 
-Providers that push one notification per item change (Gmail Pub/Sub, chat
-messages, etc.) can deliver many notifications per minute. Never `runTask()` a
-sync pass per notification — the queued passes batch together, run concurrently
-in one worker, and can multiply the working set past the memory limit. Schedule
-the pass as a keyed coalescing task so a burst collapses into one pending pass:
+Providers that push one notification per item change (Gmail Pub/Sub, Microsoft
+Graph, chat messages, etc.) can deliver many notifications per minute. Never
+`runTask()` a sync pass per notification — the queued passes batch together,
+run concurrently in one worker, and can multiply the working set past the
+memory limit. Use the purpose-built drain primitive instead:
 
 ```typescript
-const cb = await this.callback(this.incrementalSync);
-await this.scheduleTask("incremental-sync", cb, {
-  runAt: new Date(Date.now() + 10_000),
-  coalesce: true, // keep existing pending task; earliest fire time wins
-});
+async onWebhook(request: WebhookRequest): Promise<void> {
+  const ids = parseChangedIds(request); // [] when the provider sends no ids
+  await this.scheduleDrain("incremental-sync", this.drainChanges, { ids });
+}
+
+// Receives ≤ batchSize ids per pass (default 20); the platform persists the
+// dirty set durably (at-least-once), coalesces notification bursts into one
+// pass, schedules continuations for the backlog, and drops poison ids after
+// maxAttempts. Teardown: `await this.cancelDrain("incremental-sync")`.
+async drainChanges(ids: string[]): Promise<void> {
+  for (const id of ids) await this.syncItem(id);
+}
 ```
 
-See "Coalescing Webhook-Driven Work" in `twister/docs/TOOLS_GUIDE.md`.
+For cursor/window-based syncs where the notification carries no ids, omit
+`ids` — the handler runs with `[]`, still coalesced. See "Webhook-Driven
+Sync: `scheduleDrain`" in `twister/docs/TOOLS_GUIDE.md`.
 
 ### Signature verification
 
@@ -596,6 +605,8 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 - [ ] Never pass functions, RPC stubs, or `undefined` to `this.callback()` — use `null`
 - [ ] Validate stored callback tokens exist before `this.run()`
 - [ ] Localhost guard in webhook setup; verify webhook signatures
+- [ ] Webhook handlers never enqueue an unkeyed task per notification — use `this.scheduleDrain(key, this.handler, { ids })` (or process the payload inline when it's self-contained); `cancelDrain(key)` on teardown
+- [ ] Batch state writes use `this.setMany()`, never a per-item `set()` loop
 - [ ] Canonical, globally-unique `source` using immutable ids; mutable keys in `meta` only
 - [ ] `note.key` for note-level upserts
 - [ ] Set `link.channelId` and inject `syncProvider` into `link.meta`
@@ -631,7 +642,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 19. Returning `externalContent` that doesn't match what sync-in emits for the same note (e.g. post-write raw HTML when sync-in extracts plain text; pre-translation mentions when sync-in translates them) → baseline hash always mismatches and every sync clobbers. Inspect the sync-in `build*Note` path and return exactly what it produces.
 20. Calling `integrations.saveLink()` inside `onNoteCreated` to set the note's `key` → legacy workaround, no longer needed. The runtime sets `key` automatically from the `NoteWriteBackResult` return.
 21. Scheduling a recurring/self-renewing task with `scheduleTask` or `runTask({ runAt })` + manual token bookkeeping → `scheduleTask` is one-shot (the task fires once and is gone; a self-rescheduling callback leaks a new parallel chain on every redundant setup call). Use `this.scheduleRecurring(key, …)` — the durable recurring primitive where the platform owns the cadence and re-arms the task every `intervalMs`. The callback does NOT need to reschedule itself; re-scheduling under the same key with a new `firstRunAt` is safe and atomic (tightens the next fire without leaking a second chain).
-22. `runTask()` per webhook notification → a notification burst floods the queue with duplicate sync passes that stack into one worker's memory. Use `scheduleTask(key, cb, { runAt, coalesce: true })` so bursts collapse into a single pending pass (see "Coalesce webhook-driven sync" above). Similarly, looping `this.set()` for per-item batch state → use `this.setMany()` (one round-trip, atomic).
+22. `runTask()` per webhook notification → a notification burst floods the queue with duplicate sync passes that stack into one worker's memory. Use `this.scheduleDrain(key, this.handler, { ids })` — the platform coalesces bursts, bounds each pass, and owns the dirty-set bookkeeping (see "Webhook-driven sync uses `scheduleDrain`" above). Similarly, looping `this.set()` for per-item batch state → use `this.setMany()` (one round-trip, atomic).
 
 ## Examples
 

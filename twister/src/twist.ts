@@ -3,6 +3,14 @@ import { type Action, type Actor, type ActorId, type Link, type Note, type Threa
 import type { Tag } from "./tag";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
+import {
+  type DrainHandler,
+  type DrainHost,
+  type DrainOptions,
+  cancelDrainImpl,
+  drainBacklogImpl,
+  scheduleDrainImpl,
+} from "./drain";
 import type { Serializable } from "./utils/serializable";
 import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
 
@@ -366,6 +374,71 @@ export abstract class Twist<TSelf> {
     options: { intervalMs: number; firstRunAt?: Date }
   ): Promise<void> {
     return this.tools.tasks.scheduleRecurring(key, callback, options);
+  }
+
+  /**
+   * Record dirty items and ensure a bounded drain pass runs soon — THE
+   * pattern for webhook-driven sync and any other high-frequency
+   * "something changed" trigger.
+   *
+   * A burst of calls under the same `key` collapses into ONE pending pass
+   * (never one queued task per notification); ids are persisted durably and
+   * released only after the handler processes them (at-least-once, race-free
+   * under concurrent deliveries); each pass hands the handler at most
+   * `batchSize` ids, with the platform scheduling continuations while a
+   * backlog remains; ids that keep failing are dropped after `maxAttempts`
+   * passes so one poison item can't wedge the drain.
+   *
+   * The handler must be a named method on this class (like `this.callback`
+   * targets). It receives the ids slice — or `[]` for signal-only drains
+   * (omit `ids`) where it derives its own work from a cursor or time window.
+   *
+   * @example
+   * ```typescript
+   * async onWebhook(request: WebhookRequest): Promise<void> {
+   *   const ids = parseChangedIds(request);
+   *   await this.scheduleDrain("incremental-sync", this.drainChanges, { ids });
+   * }
+   *
+   * async drainChanges(ids: string[]): Promise<void> {
+   *   for (const id of ids) await this.syncItem(id); // ≤ batchSize items
+   * }
+   * ```
+   *
+   * Tear down with {@link cancelDrain} (e.g. in `onChannelDisabled`).
+   */
+  protected async scheduleDrain(
+    key: string,
+    handler: DrainHandler,
+    options?: DrainOptions
+  ): Promise<void> {
+    return scheduleDrainImpl(this as unknown as DrainHost, key, handler, options);
+  }
+
+  /**
+   * Cancel the pending drain pass for `key` and discard its recorded ids.
+   * Use in teardown paths. See {@link scheduleDrain}.
+   */
+  protected async cancelDrain(key: string): Promise<void> {
+    return cancelDrainImpl(this as unknown as DrainHost, key);
+  }
+
+  /**
+   * SDK-internal: executes one bounded drain pass (the scheduled-task target
+   * behind {@link scheduleDrain}). Public only so the task runtime can
+   * dispatch to it by name — do not call or override.
+   */
+  async __drainBacklog(
+    key: string,
+    handlerName: string,
+    options: { batchSize: number; delayMs: number; maxAttempts: number }
+  ): Promise<void> {
+    return drainBacklogImpl(
+      this as unknown as DrainHost,
+      key,
+      handlerName,
+      options
+    );
   }
 
   /**
