@@ -1,6 +1,6 @@
 import 'dart:async' show StreamSubscription, unawaited;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
@@ -105,6 +105,35 @@ class ForwardSeed {
   /// The source thread's primary (canonical) link, if any — null when the
   /// thread has no connector link (plain Plot thread).
   final Link? primaryLink;
+}
+
+/// Whether a forwarded source link matches a compose target, so a forward can
+/// default its "Via" to the connection the source came from. Takes primitives
+/// (not the [Link]/[CreateTarget] objects) so the rule is testable without
+/// Drift-row fixtures; [_applyForwardVia] adapts a live target.
+///
+/// Matched on connection (twist instance) + link type, plus — only for
+/// *channel-scoped* targets — the channel. A connection-scoped compose target
+/// (contacts/addresses mode, e.g. Gmail, whose `channel` is null) composes to
+/// the whole connection, so the source link's own mailbox channel is
+/// irrelevant: a received Gmail email carries `channelId` "INBOX"/"SENT", which
+/// must NOT be required to equal the target's absent channel or the forward
+/// would silently fall back to plain Plot. Only channel-scoped targets (e.g. a
+/// Slack channel) require the channel to match.
+@visibleForTesting
+bool forwardLinkMatchesTarget({
+  required String? linkConnection,
+  required String? linkType,
+  required String? linkChannelId,
+  required String targetConnection,
+  required String? targetLinkType,
+  required bool targetIsChannelScoped,
+  required String? targetChannelId,
+}) {
+  if (linkConnection != targetConnection) return false;
+  if (linkType != targetLinkType) return false;
+  if (targetIsChannelScoped && linkChannelId != targetChannelId) return false;
+  return true;
 }
 
 @RoutePage(name: "NewThreadWrapperRoute")
@@ -547,20 +576,41 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   /// The [resetRequest] value seen on the last reset. Bumps past this trigger
-  /// a fresh-start reset; the initial assignment in [initState] ignores the
-  /// bump that the [NewThread] command fired to navigate here (a fresh mount
-  /// is already clean).
-  late int _lastResetSeen = NewThreadPageState.resetRequest.value;
+  /// a fresh-start reset; the assignment in [initState] ignores the bump that
+  /// the [NewThread] command fired to navigate here (a fresh mount is already
+  /// clean).
+  ///
+  /// This MUST be assigned eagerly in [initState] (before the listener is
+  /// attached), not via a `late` field initializer. A `late` initializer is
+  /// evaluated on first *read*, which for a long-lived page (one that has been
+  /// mounted since app start and never itself navigated) is inside the very
+  /// first [_onResetRequested] — by which point `resetRequest.value` has
+  /// *already* been incremented by the bump we're reacting to. The initializer
+  /// would then capture the post-bump value, the `value == _lastResetSeen`
+  /// guard would see equality and early-return, and the reset (e.g. a Forward
+  /// seed) would be silently dropped on that first invocation.
+  late int _lastResetSeen;
 
   /// The [feedbackRequest] value seen on the last feedback entry, mirroring
   /// [_lastResetSeen]. A fresh mount ignores the bump the [HelpAndFeedback]
   /// command fired to navigate here (it reacts to the `feedback` route param
   /// instead); only a later bump against this live page re-enters feedback.
-  late int _lastFeedbackSeen = NewThreadPageState.feedbackRequest.value;
+  ///
+  /// Assigned eagerly in [initState] for the same reason as [_lastResetSeen] —
+  /// a `late` initializer would lazily capture a post-bump value inside the
+  /// first [_onFeedbackRequested] and swallow that invocation.
+  late int _lastFeedbackSeen;
 
   @override
   void initState() {
     super.initState();
+    // Snapshot the current signal values BEFORE attaching listeners so the
+    // guards in [_onResetRequested] / [_onFeedbackRequested] compare against
+    // the value at mount, not a value lazily captured after a bump has already
+    // landed. (See the field docs — a `late` initializer here silently drops
+    // the first invocation on a long-lived page.)
+    _lastResetSeen = NewThreadPageState.resetRequest.value;
+    _lastFeedbackSeen = NewThreadPageState.feedbackRequest.value;
     NewThreadPageState.resetRequest.addListener(_onResetRequested);
     NewThreadPageState.feedbackRequest.addListener(_onFeedbackRequested);
     _pickerSearchController.addListener(_onFilterChanged);
@@ -1309,18 +1359,22 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Defaults the draft's connection ("Via") to the connection that owns
   /// [link], by resolving the matching [CreateTarget] from the already-loaded
-  /// [_allConnectionTargets] (keyed on twist instance + channel + link type —
-  /// the reverse of [_resolveActiveConnectionChoice]) and applying it via the
-  /// established [_applyConnectionChoice] path. No-op — leaving the default Plot
-  /// target — when no loaded target matches (e.g. the connection is no longer
-  /// enabled, so it can't be composed to anyway).
+  /// [_allConnectionTargets] (see [forwardLinkMatchesTarget]) and applying it
+  /// via the established [_applyConnectionChoice] path. No-op — leaving the
+  /// default Plot target — when no loaded target matches (e.g. the connection
+  /// is no longer enabled, so it can't be composed to anyway).
   Future<void> _applyForwardVia(Link link) async {
     for (final target in _allConnectionTargets) {
-      // For DM/address-mode targets `target.channel` is null and a DM link's
-      // channelId is also null — the null == null comparison handles that.
-      if (link.createdBy?.toString() == target.twist.id.toString() &&
-          link.channelId == target.channel?.channelId &&
-          link.type == target.linkType.type) {
+      final matches = forwardLinkMatchesTarget(
+        linkConnection: link.createdBy?.toString(),
+        linkType: link.type,
+        linkChannelId: link.channelId,
+        targetConnection: target.twist.id.toString(),
+        targetLinkType: target.linkType.type,
+        targetIsChannelScoped: target.channel != null,
+        targetChannelId: target.channel?.channelId,
+      );
+      if (matches) {
         await _applyConnectionChoice(ConnectionChoice.target(target));
         return;
       }

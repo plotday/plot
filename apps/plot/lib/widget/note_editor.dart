@@ -650,8 +650,16 @@ class NoteEditorState extends State<NoteEditor> {
           children: [
             // Top bar: pill row (note-type chooser) or takeover bar
             // (reply / editing chrome). Hidden in new-thread mode — the top
-            // chrome there lives in NewThreadPage.
-            if (!widget.isNewThreadMode) _buildTopBar(context),
+            // chrome there lives in NewThreadPage, and [_buildTopBar] depends
+            // on a ThreadBloc that isn't provided in new-thread compose.
+            if (!widget.isNewThreadMode)
+              _buildTopBar(context)
+            // The *forwarding* takeover (quoted source-note preview + ×) IS a
+            // note-editor concern, and a forward always targets a new thread —
+            // so surface just that bar in new-thread mode, built directly from
+            // [widget.forwardSource] with no ThreadBloc dependency.
+            else if (widget.forwardSource != null)
+              _buildForwardTakeover(context),
             Flexible(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -792,6 +800,23 @@ class NoteEditorState extends State<NoteEditor> {
           onClearForward: () => widget.onClearForward?.call(),
         );
       },
+    );
+  }
+
+  /// Forwarding takeover bar for new-thread mode. [_buildTopBar] can't be used
+  /// there — it wraps a `BlocBuilder<ThreadBloc>` and new-thread compose has no
+  /// ThreadBloc — so build the same [NoteEditorTopBar] directly from
+  /// [widget.forwardSource]. Only ever called when `forwardSource != null`.
+  Widget _buildForwardTakeover(BuildContext context) {
+    final source = widget.forwardSource;
+    if (source == null) return const SizedBox.shrink();
+    return NoteEditorTopBar(
+      state: ForwardingState(quotePreview: _previewOf(source.content)),
+      // bodyOnly / flushToBottom editors are square-topped (see [_buildTopBar]).
+      roundTop: !widget.bodyOnly && !widget.flushToBottom,
+      onClearReply: () {},
+      onCancelEdit: () {},
+      onClearForward: () => widget.onClearForward?.call(),
     );
   }
 
