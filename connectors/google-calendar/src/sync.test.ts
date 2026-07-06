@@ -10,6 +10,7 @@ import type { NewLinkWithNotes } from "@plotday/twister";
 import type { Thread } from "@plotday/twister";
 import type { CalendarSyncHost } from "./sync";
 import {
+  cancellationWasSelfInitiatedFn,
   extractRSVPParamsFn,
   getWatchRenewalScheduleFn,
   processCalendarEventsFn,
@@ -1158,5 +1159,153 @@ describe("processCalendarEventsFn — past cancellations", () => {
         (n as { key?: string }).key?.startsWith("cancellation-")
       )
     ).toBe(true);
+  });
+});
+
+describe("cancellationWasSelfInitiatedFn", () => {
+  it("treats a cancellation the user organized as self-initiated", () => {
+    expect(
+      cancellationWasSelfInitiatedFn({
+        id: "e",
+        status: "cancelled",
+        organizer: { email: "user@example.com", self: true },
+      })
+    ).toBe(true);
+  });
+
+  it("does not treat a cancellation someone else organized as self-initiated", () => {
+    // Even when the user is the only attendee shown, a non-self organizer means
+    // someone else could have cancelled it — the user should still be notified.
+    expect(
+      cancellationWasSelfInitiatedFn({
+        id: "e",
+        status: "cancelled",
+        organizer: { email: "boss@example.com", self: false },
+        attendees: [{ email: "user@example.com", self: true }],
+      })
+    ).toBe(false);
+  });
+
+  it("treats a solo event (user the only invitee) as self-initiated", () => {
+    expect(
+      cancellationWasSelfInitiatedFn({
+        id: "e",
+        status: "cancelled",
+        attendees: [{ email: "user@example.com", self: true }],
+      })
+    ).toBe(true);
+  });
+
+  it("does not treat an event with other invitees as self-initiated", () => {
+    expect(
+      cancellationWasSelfInitiatedFn({
+        id: "e",
+        status: "cancelled",
+        attendees: [
+          { email: "user@example.com", self: true },
+          { email: "other@example.com" },
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it("does not conclude self-initiated from a sparse payload (no organizer or attendees)", () => {
+    // Google only guarantees id/status/updated on a cancelled event. Absence of
+    // attendees is "unknown", not "solo" — never suppress on missing data.
+    expect(
+      cancellationWasSelfInitiatedFn({ id: "e", status: "cancelled" })
+    ).toBe(false);
+  });
+});
+
+describe("processCalendarEventsFn — self-initiated cancellations", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "user@example.com";
+  const futureStart = () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  function seedHost() {
+    const host = makeFakeHost({ calendarId });
+    host.store.set(
+      `first_sync_at_${calendarId}`,
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+    return host;
+  }
+
+  it("marks a standalone cancellation the user organized as read", async () => {
+    const host = seedHost();
+    const start = futureStart();
+    const event = {
+      id: "evt-self",
+      iCalUID: "self@google.com",
+      status: "cancelled" as const,
+      updated: new Date().toISOString(),
+      start: { dateTime: start.toISOString() },
+      end: { dateTime: new Date(start.getTime() + 3_600_000).toISOString() },
+      summary: "Kia AC",
+      organizer: { email: "user@example.com", self: true },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    // Still records the cancellation (archives the schedule + note) …
+    expect(
+      saved[0].notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(true);
+    // … but does not flip the thread unread for the user who deleted it.
+    expect(saved[0].unread).toBe(false);
+  });
+
+  it("keeps a standalone cancellation someone else organized unread", async () => {
+    const host = seedHost();
+    const start = futureStart();
+    const event = {
+      id: "evt-other",
+      iCalUID: "other@google.com",
+      status: "cancelled" as const,
+      updated: new Date().toISOString(),
+      start: { dateTime: start.toISOString() },
+      end: { dateTime: new Date(start.getTime() + 3_600_000).toISOString() },
+      summary: "Team meeting",
+      organizer: { email: "boss@example.com", self: false },
+      attendees: [
+        { email: "user@example.com", self: true },
+        { email: "boss@example.com", organizer: true },
+      ],
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].unread).toBeUndefined();
+  });
+
+  it("marks a self-organized recurring occurrence cancellation read", async () => {
+    const host = seedHost();
+    const start = futureStart();
+    const event = {
+      id: "evt-occ-self",
+      iCalUID: "occ@google.com",
+      recurringEventId: "master-self",
+      originalStartTime: { dateTime: start.toISOString() },
+      status: "cancelled" as const,
+      updated: new Date().toISOString(),
+      start: { dateTime: start.toISOString() },
+      end: { dateTime: new Date(start.getTime() + 3_600_000).toISOString() },
+      organizer: { email: "user@example.com", self: true },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].unread).toBe(false);
   });
 });
