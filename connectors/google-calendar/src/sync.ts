@@ -317,6 +317,46 @@ export function cancellationIsForPastEventFn(
 }
 
 /**
+ * A cancellation the user performed themselves shouldn't flip their thread
+ * unread — deleting your own appointment is not something to be notified about.
+ * Google never tells us *who* cancelled an event, but two signals on the user's
+ * own copy imply the user did it:
+ *
+ *  1. The user organizes the event (`organizer.self`). Only the organizer's
+ *     deletion cancels an event for everyone, so a cancelled event the user
+ *     organizes was cancelled by the user. This also covers personal events —
+ *     you are the organizer of your own solo appointments.
+ *  2. The user is the only invitee. A single-participant event can only be
+ *     cancelled by that participant. We require POSITIVE evidence here — a
+ *     populated attendee list containing only the user — because Google
+ *     guarantees only `id`/`status`/`updated` on a cancelled event, so an
+ *     *absent* attendee list means "unknown", not "solo".
+ *
+ * A non-self organizer is decisive the other way: someone else controls the
+ * event, so its cancellation should still notify the user (their meeting was
+ * cancelled by the host). When neither signal is present (sparse payloads, e.g.
+ * most cancelled recurring instances) we return false and the cancellation
+ * notifies exactly as before — best-effort suppression that never hides a real
+ * "someone else cancelled your meeting".
+ */
+export function cancellationWasSelfInitiatedFn(event: GoogleEvent): boolean {
+  // Someone else organizes it → their action; keep notifying the user.
+  if (event.organizer && event.organizer.self !== true) return false;
+  // The user organizes it → only the organizer can cancel → self-initiated.
+  if (event.organizer?.self === true) return true;
+
+  // No organizer signal: conclude self-initiated only from positive evidence
+  // that the user is the sole invitee.
+  const attendees = event.attendees ?? [];
+  if (attendees.length === 0) return false;
+  const hasSelf = attendees.some((att) => att.self === true);
+  const hasOther = attendees.some(
+    (att) => att.self !== true && att.email && !att.resource
+  );
+  return hasSelf && !hasOther;
+}
+
+/**
  * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
  * Used on recovery, stopSync, and sync-error paths.
  */
@@ -463,6 +503,10 @@ export async function prepareEventInstanceFn(
       meta: { syncProvider: "google", syncableId: calendarId },
       scheduleOccurrences: [cancelledOccurrence],
       notes: [cancelNote],
+      // Don't flip the thread unread when the user cancelled the occurrence
+      // themselves. Cancelled instances are usually sparse (no organizer /
+      // attendees), so this rarely fires — best-effort, never over-suppresses.
+      ...(cancellationWasSelfInitiatedFn(event) ? { unread: false } : {}),
     };
   }
 
@@ -708,7 +752,11 @@ export async function processCalendarEventsFn(
                 archived: true,
               },
             ],
-            ...(initialSync ? { unread: false } : {}),
+            // Record the cancellation (archive the schedule, add the note) but
+            // don't flip the thread unread when the user cancelled it themselves.
+            ...(initialSync || cancellationWasSelfInitiatedFn(event)
+              ? { unread: false }
+              : {}),
             ...(initialSync ? { archived: false } : {}),
           };
 
