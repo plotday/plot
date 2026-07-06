@@ -385,6 +385,19 @@ class Tracker {
       return true;
     }
 
+    // Ignore JSON parse failures caused by the Clerk Frontend API returning an
+    // HTML error page (gateway 5xx / maintenance page) instead of JSON. This
+    // surfaces from clerk_auth's periodic `_pollForSessionToken`, which runs
+    // from a Timer — jsonDecode throws `FormatException: Unexpected character
+    // (at character 1) <html>`, clerk_auth rethrows it via handleError, and it
+    // escapes the un-awaited callback into the zone. It's a transient upstream
+    // failure, not a bug: the poll retries on its next tick. jsonDecode-ing an
+    // HTML body is never intentional, so the `<html>` signature reliably marks
+    // an error page regardless of release-build stack obfuscation.
+    if (error is FormatException && error.toString().contains('<html>')) {
+      return true;
+    }
+
     // Ignore network errors (timeouts, connection failures, socket errors).
     // These are expected during offline periods and are already handled
     // by the sync orchestrator. HttpException and SocketException also
