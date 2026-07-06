@@ -56,3 +56,4 @@ Gemfile.lock
 
 # Local marker written by scripts/sync-github-secrets in CI (Actions cache)
 .secrets-sync-marker
+.vscode/settings.json

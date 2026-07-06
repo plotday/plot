@@ -34,6 +34,23 @@ class RootMenuBar extends StatelessWidget {
     }
   }
 
+  static List<PlatformMenuItem> get _hideMenuMembers => <PlatformMenuItem>[
+    if (PlatformProvidedMenuItem.hasMenu(PlatformProvidedMenuItemType.hide))
+      const PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.hide),
+    if (PlatformProvidedMenuItem.hasMenu(
+      PlatformProvidedMenuItemType.hideOtherApplications,
+    ))
+      const PlatformProvidedMenuItem(
+        type: PlatformProvidedMenuItemType.hideOtherApplications,
+      ),
+    if (PlatformProvidedMenuItem.hasMenu(
+      PlatformProvidedMenuItemType.showAllApplications,
+    ))
+      const PlatformProvidedMenuItem(
+        type: PlatformProvidedMenuItemType.showAllApplications,
+      ),
+  ];
+
   List<PlatformMenuItem> _buildAppMenu(bool showUserMenus) {
     return <PlatformMenuItem>[
       if (PlatformProvidedMenuItem.hasMenu(PlatformProvidedMenuItemType.about))
@@ -56,28 +73,11 @@ class RootMenuBar extends StatelessWidget {
         const PlatformProvidedMenuItem(
           type: PlatformProvidedMenuItemType.servicesSubmenu,
         ),
-      PlatformMenuItemGroup(
-        members: <PlatformMenuItem>[
-          if (PlatformProvidedMenuItem.hasMenu(
-            PlatformProvidedMenuItemType.hide,
-          ))
-            const PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.hide,
-            ),
-          if (PlatformProvidedMenuItem.hasMenu(
-            PlatformProvidedMenuItemType.hideOtherApplications,
-          ))
-            const PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.hideOtherApplications,
-            ),
-          if (PlatformProvidedMenuItem.hasMenu(
-            PlatformProvidedMenuItemType.showAllApplications,
-          ))
-            const PlatformProvidedMenuItem(
-              type: PlatformProvidedMenuItemType.showAllApplications,
-            ),
-        ],
-      ),
+      // macOS-only: hasMenu() returns false for all three on every other
+      // platform, which would leave `members` empty — and PlatformMenuItemGroup
+      // asserts at least one member. Only emit the group when it has one.
+      if (_hideMenuMembers.isNotEmpty)
+        PlatformMenuItemGroup(members: _hideMenuMembers),
       if (showUserMenus)
         PlatformMenuItemGroup(
           members: <PlatformMenuItem>[
