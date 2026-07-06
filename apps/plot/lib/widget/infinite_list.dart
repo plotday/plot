@@ -1088,10 +1088,19 @@ class InfiniteListState extends State<InfiniteList> {
     // Only render the overlay while floating — at rest / overscroll the real
     // in-list header is visible, so a pinned copy would just duplicate it.
     final activeIndex = _activeStickyIndex;
+    // [_activeStickyIndex] is a "keep last known" index (see _updateStickyHeader:
+    // `activeIndex ?? _activeStickyIndex`), so it can outlive the layout it was
+    // captured in. If the item list reshuffles before the next scroll update —
+    // a thread moves, a ghost splices in/out, a section collapses — that stale
+    // index may now point at a non-header row, and stickyHeaderBuilder would
+    // cast it to a header type and throw. Re-verify it still points at a sticky
+    // header before building the overlay; if not, drop the overlay this frame
+    // and let the next _updateStickyHeader recompute.
     final overlay = (_stickyFloating &&
             activeIndex != null &&
             activeIndex >= 0 &&
-            activeIndex < widget.count)
+            activeIndex < widget.count &&
+            (widget.isStickyHeader?.call(activeIndex) ?? false))
         ? widget.stickyHeaderBuilder!(context, activeIndex)
         : null;
 

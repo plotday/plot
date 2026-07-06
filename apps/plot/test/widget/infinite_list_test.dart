@@ -1048,4 +1048,109 @@ void main() {
       },
     );
   });
+
+  group('InfiniteList Sticky Header', () {
+    testWidgets(
+      'does not build the overlay for a stale index that no longer points at '
+      'a header',
+      (WidgetTester tester) async {
+        // Reproduces the production _TypeError where the pinned-overlay index
+        // (_activeStickyIndex, a "keep last known" value) outlived the layout
+        // it was captured in: the item list reshuffled so that index now held
+        // a non-header row, and stickyHeaderBuilder cast it to a header type
+        // and threw. The overlay must re-verify isStickyHeader before building.
+
+        // Index 0 starts as the only header; everything else is a thread row.
+        final headerFlags = List<bool>.generate(21, (i) => i == 0);
+        bool isHeader(int i) => i >= 0 && i < headerFlags.length && headerFlags[i];
+
+        var mutated = false;
+        final overlayBuildsAfterMutation = <int>[];
+
+        late StateSetter setStateCallback;
+        final scrollController = ScrollController();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                height: 300,
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    setStateCallback = setState;
+                    return InfiniteList(
+                      count: headerFlags.length,
+                      doneEnd: true,
+                      scrollController: scrollController,
+                      itemKey: (index) => 'item_$index',
+                      isStickyHeader: isHeader,
+                      stickyHeaderBuilder: (context, index) {
+                        if (mutated) overlayBuildsAfterMutation.add(index);
+                        // Mirror the production cast: throw if this index no
+                        // longer points at a header, exactly like
+                        // `renderItems[index].item as AgendaHeaderItem`.
+                        if (!isHeader(index)) {
+                          throw StateError(
+                            'sticky overlay built for non-header index $index',
+                          );
+                        }
+                        return SizedBox(
+                          height: 40,
+                          child: Text('Header $index (overlay)'),
+                        );
+                      },
+                      builder: (context, index, focusNode, {reorderableIndex}) {
+                        return SizedBox(
+                          key: ValueKey('item_$index'),
+                          height: isHeader(index) ? 40 : 50,
+                          child: Text(
+                            isHeader(index) ? 'Header $index' : 'Item $index',
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        // Scroll the header just above the pin line (still within the cache
+        // extent so it stays measurable) so the overlay begins floating and
+        // _activeStickyIndex latches onto index 0.
+        scrollController.jumpTo(80);
+        await tester.pumpAndSettle();
+
+        // Reshuffle so index 0 is now a thread row and the header sits at
+        // index 1 — without a scroll, so _activeStickyIndex stays a stale 0.
+        setStateCallback(() {
+          mutated = true;
+          headerFlags[0] = false;
+          headerFlags[1] = true;
+        });
+
+        // One build frame: the overlay is computed from the stale index 0
+        // before the post-frame _updateStickyHeader can correct it.
+        await tester.pump();
+
+        expect(
+          tester.takeException(),
+          isNull,
+          reason:
+              'overlay must not build stickyHeaderBuilder for a stale index '
+              'that no longer points at a header',
+        );
+        expect(
+          overlayBuildsAfterMutation.where((i) => !isHeader(i)),
+          isEmpty,
+          reason: 'stickyHeaderBuilder must only be called for header indices',
+        );
+
+        await tester.pumpAndSettle();
+      },
+    );
+  });
 }
