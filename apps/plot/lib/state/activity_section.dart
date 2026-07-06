@@ -49,18 +49,22 @@ enum ActivityTab {
 /// The sections of the unified activity feed.
 ///
 /// The feed is built in this order. There is no separate "Updates"
-/// section: every unread thread is projected to the top of [doing]
-/// (sorted by urgency, importance, order). When the user opens an
-/// unread thread it becomes sticky-pinned in the unread cluster until
-/// they navigate away, then falls back to its natural primary section
-/// (which may be [doing], [scheduled], or [activity]).
+/// section: active to-dos hold the top of [doing] in their chosen
+/// `order` (read and unread intermixed), and non-active unread threads
+/// gather in a cluster at the BOTTOM of [doing] (sorted by urgency,
+/// importance, order) so incoming messages never push committed work
+/// down. When the user opens a non-active unread thread it stays
+/// sticky-pinned in that bottom cluster until they navigate away, then
+/// drains to its natural primary section (usually [activity], or
+/// [scheduled] if it has a future day).
 ///
 /// - [eventAgenda] — Pinned event thread + associated threads. Only
 ///                   present when an event is currently selected.
-/// - [doing]      — Unread threads at the top (sorted by urgent,
-///                  importance, order), then active threads not
-///                  scheduled for the future (sorted by order).
-///                  Reorderable end-to-end.
+/// - [doing]      — Active to-dos at the top, holding their `order`
+///                  position (read and unread intermixed), then a
+///                  cluster of non-active unread threads at the bottom
+///                  (sorted by urgent, importance, order). Reorderable
+///                  end-to-end.
 /// - [scheduled]  — Read active threads scheduled for a future day.
 ///                  Per-day sub-sections, reorderable within a day.
 /// - [activity]   — Tail of history: read threads with no active
@@ -70,11 +74,11 @@ enum ActivityTab {
 enum ActivitySection { eventAgenda, doing, scheduled, activity }
 
 /// Classify a thread into its natural primary section based on its
-/// underlying state. Unread threads are surfaced at the top of
-/// [doing] by the feed builder independently of this classification,
-/// so when an unread thread is later marked read it returns to the
-/// section this function would return for it (i.e. its scheduled day,
-/// or activity if it has no active state).
+/// underlying state. Non-active unread threads are gathered into the
+/// bottom cluster of [doing] by the feed builder independently of this
+/// classification, so when such a thread is later marked read it returns
+/// to the section this function would return for it (i.e. its scheduled
+/// day, or activity if it has no active state).
 ActivitySection primarySectionFor(Thread thread) {
   if (thread.isActiveThread) return ActivitySection.doing;
   if (thread.isScheduledThread) return ActivitySection.scheduled;

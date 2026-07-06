@@ -222,11 +222,11 @@ name ("Plot: All your work, organized"); see Shared facts.
 
 **Source:** `apps/plot/ios/fastlane/metadata/en-US/subtitle.txt`
 
-Leads with "Team chat" (not email), and deliberately does not repeat "organized"
-from
-the name. Apple indexes the name and subtitle as separate keyword fields, so this
-line spends its characters on fresh terms (team, chat, email, app, threads) — the
-channels from the site tagline.
+Mirrors the site tagline's pillars ("Messages, tasks & meetings") and deliberately
+does not repeat "organized" from the name. Apple indexes the name and subtitle as
+separate keyword fields, so this line spends its 30 characters on fresh terms
+(messages, tasks, meetings) that the name doesn't cover. The channel words the old
+subtitle carried (chat, email, threads) move into the keyword field below.
 
 ### Promotional Text — 170 char max (editable any time, no review)
 
@@ -237,11 +237,12 @@ this per launch to highlight what's new; it updates without an App Review pass.
 
 **Source:** `apps/plot/ios/fastlane/metadata/en-US/keywords.txt`
 
-Words already in the name (all, your, work, organized) and subtitle (team, chat,
-email, app, threads) are omitted on purpose; Apple indexes those separately. "tasks" is
-included because it's no longer in the name or subtitle, and it's a core search
-term for Plot. Integration names (Slack, Gmail, Linear, Notion) are kept out of
-this field to avoid a trademark rejection — they appear in the description instead.
+Words already in the name (all, your, work, organized) and subtitle (messages,
+tasks, meetings) are omitted on purpose; Apple indexes those separately. The
+channel terms (chat, email, threads) live here now that the subtitle leads with
+messages/tasks/meetings, so nothing the tagline surfaces goes unindexed.
+Integration names (Slack, Gmail, Linear, Notion) are kept out of this field to
+avoid a trademark rejection — they appear in the description instead.
 
 ### Description — 4000 char max
 
@@ -330,9 +331,9 @@ title bar — and spend one slot on the Mac-specific command bar.
 
 **Source:** `apps/plot/android/fastlane/metadata/android/en-US/short_description.txt`
 
-Keeps the site tagline's exact tail ("organized around your priorities");
-compresses "the comment threads inside apps" → "app threads" and drops "meeting"
-to fit 80. Leads with "Team chat," not email.
+Keeps the site tagline's exact tail ("organized and prioritized") and its
+"in one place" framing; drops the "All your work" lead and "collaboration" to fit
+80. Leads with "Messages," mirroring the tagline.
 
 ### Full description — 4000 char max
 
@@ -407,10 +408,10 @@ Plot: All your work, organized
 **Source:** `apps/plot/windows/store/en-US/short_description.txt`
 
 ```
-Team chat, email, meeting notes, and threads from your apps, organized around your priorities.
+All your work (messages, collaboration, tasks, and meetings) in one place, organized and prioritized.
 ```
 
-(94) — The Microsoft Store has no subtitle field, so the site's full tagline
+(101) — The Microsoft Store has no subtitle field, so the site's full tagline
 fits here verbatim with no trim.
 
 ### Description — 10,000 char max

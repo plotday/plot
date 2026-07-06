@@ -833,7 +833,7 @@ export default function Terms() {
           subsidiaries, affiliates, and all of our respective officers, agents,
           partners, and employees, from and against any loss, damage, liability,
           claim, or demand, including reasonable attorneys' fees and expenses,
-          made by any third party due to or arising out of: (1) your content (including activities, notes, and other content you create in Plot); (2) use of the Service; (3) breach of these Terms of
+          made by any third party due to or arising out of: (1) your content (including threads, notes, and other content you create in Plot); (2) use of the Service; (3) breach of these Terms of
           Use; (4) any breach of your representations and warranties set forth
           in these Terms of Use; (5) your violation of the rights of a third
           party, including but not limited to intellectual property rights; (6)

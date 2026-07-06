@@ -18,7 +18,7 @@ The agenda is its own top-level tab, alongside Priorities and Activity:
   showing. Navigating to `/agenda` in this layout bounces back to the current priority (the agenda
   is already visible).
 - **Priority panel** — the priority panel itself no longer contains an agenda tab. The priority page
-  renders only the activity feed (Today / Scheduled / New / Done sections — see `docs/activity.md`).
+  renders only the thread feed (Active / Scheduled / Done sections — see `docs/threads.md`).
 
 ## What Appears in the Agenda
 

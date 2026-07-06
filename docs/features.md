@@ -7,8 +7,18 @@ product.
 
 ## Positioning
 
-Plot brings your work together from team chat, email, meeting notes, and the tools you use (Linear,
-Notion, and more) and organizes it so you can pick a focus and make real progress.
+**The shift we're built for.** Most productivity tools are made to do more, faster. That helps when
+the work is a finite list to get through — but it rarely is. More than we can, or even should, do
+lands in our inboxes, and the work that matters most — new, generative, human work — is never
+finished by moving faster. Speed is no longer the differentiator; anyone can move fast now. What
+still sets a person apart is where they invest their most human abilities: initiative, creativity,
+and empathy. The old tools keep us busy moving faster until we're exhausted, without ever finding
+space for what really matters.
+
+Plot is built for this shift — from _more, faster_ to _more intentional and human_. It concentrates
+your energy and attention on what matters most: it brings your work together from team chat, email,
+meeting notes, and the tools you use (Linear, Notion, and more) and organizes it so you can pick a
+focus and make real progress with the people who matter to it.
 
 ### Messaging
 
@@ -60,7 +70,8 @@ Plot gives you the context and clarity to make your next move.
   workspace, one Linear account).
 - Available today: Google (Gmail, Calendar, Chat, Contacts, Drive), Microsoft (Outlook Calendar,
   Teams channels + DMs), Slack, Linear, Trello (cards, comments, and two-way checklist items),
-  Notion (pages and comments), PostHog, Apple Calendar.
+  Notion (pages and comments), PostHog, Apple Calendar, Granola (meeting notes and transcripts
+  onto your events).
 - Connection add-ons: WhatsApp (two-way DMs and group chats), Instagram (two-way DMs and message
   requests), LinkedIn (two-way messages and connection requests) — read, reply, react, and start new
   conversations. These are provided by a third party and require a $5/month connection add-on on any
@@ -74,6 +85,8 @@ Plot gives you the context and clarity to make your next move.
   messages — like Slack channels — Plot can fold related messages into a single thread instead of
   creating a new thread per message, deciding at sync time whether each message continues the prior
   conversation or starts a new one. Direct messages collapse into one running thread.
+- Every message — email, chat, or app comment — opens in a clean reading view: links and images
+  are kept, but flashy marketing layouts and clutter are stripped, so you get what you need fast.
 
 ### Plot threads
 
@@ -102,9 +115,12 @@ Plot gives you the context and clarity to make your next move.
 
 ### Your list, your order
 
-- Within a focus, threads group by when they need you: **Active** for new arrivals and to-dos, then
-  the days you've scheduled threads for (each header shows its scheduled date), then **Done** — so
-  you always know what to move forward next.
+- Within a focus, threads group by when they need you: **Active** for your to-dos and new arrivals,
+  then the days you've scheduled threads for (each header shows its scheduled date), then **Done** —
+  so you always know what to move forward next.
+- Within Active, your to-dos stay at the top in the order you choose, and new arrivals gather below
+  them, sorted by importance and urgency — so what just came in never pushes ahead of the work
+  you've committed to.
 - Drag a thread between groups to make it a to-do, schedule it for a day, mark it unread, or finish
   it — and reorder within a day by hand.
 
@@ -156,6 +172,9 @@ original app when you need to.
 - In Plot, you can assign any thread to another Plot user, even if the connection doesn't support
   assignments directly. For example, if you share an email group with others, you can assign a
   thread to clearly see who is responsible.
+- Each thread has a single owner — one clearly responsible person — while anyone can still add it
+  to their own to-dos. It's the "directly responsible individual" model, and it works even for
+  tools with no assignment of their own, like email and chat.
 
 ### Full agenda
 
@@ -170,6 +189,8 @@ original app when you need to.
 - When Plot users attend the same event, they share one thread for notes and tasks.
 - In the thread list, you can also drag other threads into the event agenda as a quick way to
   remember everything you want to discuss.
+- Connect Granola and its meeting notes and transcripts attach to the matching event
+  automatically — including recurring meetings, where every occurrence shares one thread.
 
 ### Plot topics
 
@@ -347,7 +368,9 @@ yours.
 - **Twist add-ons** — +5 twist automations each, for when you need more than your plan includes.
   $10/month each on the web (a little higher via the App Store), available on Free and Pro, billed
   only while you're using the extra capacity.
-- New signups get a 30-day trial of unlimited connections on the Free plan.
+- New signups start free and get unlimited connections for their first 30 days — a welcome bonus on
+  top of the always-free plan, not a countdown into paying. Mention it as a pricing detail, never as
+  the call to action (see [voice.md](./voice.md), "Don't gate the call to action").
 - Annual billing saves 20%. Stripe-powered checkout and self-service subscription management. On Apple platforms (iPhone, iPad, Mac), subscriptions can also be purchased directly in-app via Apple's in-app purchase (StoreKit), with a single cross-platform entitlement shared between web and native.
 - Plan changes propagate instantly to all devices.
 

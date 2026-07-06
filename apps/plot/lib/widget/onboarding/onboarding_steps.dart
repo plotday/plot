@@ -197,7 +197,7 @@ class OnboardingSteps {
       const FullScreenStep(
         title: "All your work,\nready for action",
         body:
-            "Your team chat, email, meeting notes, and app threads, organized and prioritized.",
+            "Messages, collaboration, tasks, and meetings in one place — organized and prioritized.",
         background: ThemeColor(0),
         // No × until a role is chosen — keep the user in the flow.
         dismissible: false,

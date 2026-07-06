@@ -49,10 +49,11 @@ export default function Privacy() {
         <h3 id="content-you-add">Content you add</h3>
         <p>
           You may add content to Plot. Most content you add is private to you.
-          However, Priorities (containers for your threads)
-          can be shared with other users. All content within a shared Priority
-          is visible to its members, unless you mark specific items as private.
-          Private items within a shared Priority are only visible to you.
+          You can share individual threads with specific people or a group, or
+          post to a topic that everyone in it can see. Content on a shared
+          thread is visible to the people it's shared with, except notes you
+          mark as private, which stay visible only to you. Your focuses — how
+          you organize threads for yourself — are always private to you.
         </p>
         <h3 id="extensions-and-integrations">
           Extensions, Connections, and integrations
@@ -68,7 +69,7 @@ export default function Privacy() {
         <p>
           When you install a Twist, you explicitly grant it permission to
           operate. Twists may access the following categories of your data
-          within Plot: activities, notes, priorities, and user profile
+          within Plot: threads, notes, focuses, and user profile
           information. Third-party Twists run in a sandboxed environment with
           access only to the tools and permissions they request.
         </p>

@@ -62,7 +62,7 @@ export default function GettingStarted() {
           </Title>
           <Text mb="sm">
             Sign up with any account you want to use to sign into Plot. We
-            recommend a personal account that you're have access to even if your
+            recommend a personal account that you'll have access to even if your
             job changes. You can sync data from any other account after signing
             in.
           </Text>
@@ -89,14 +89,14 @@ export default function GettingStarted() {
 
         <div>
           <Title order={2} size="h3" mb="md">
-            4. Create Activities
+            4. Start threads
           </Title>
           <Text>
-            Activities are the things that flow through Plot: conversations from
+            Threads are the things that flow through Plot: conversations from
             your connected tools (email, chat, project threads), scheduled
-            events, tasks, and notes. New activities show up automatically from
-            your connections; you can also create your own with the "+" button
-            or the command bar.
+            events, tasks, and notes. New threads show up automatically from
+            your connections; you can also start your own with the "+" button
+            or the command palette.
           </Text>
         </div>
 

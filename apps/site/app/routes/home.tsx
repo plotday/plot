@@ -26,7 +26,7 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Team chat, email, meeting notes, and threads from your apps, organized around your priorities.",
+        "All your work (messages, collaboration, tasks, and meetings) in one place, organized and prioritized.",
     },
     {
       name: "twitter:title",
@@ -35,7 +35,7 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "twitter:description",
       content:
-        "Team chat, email, meeting notes, and threads from your apps, organized around your priorities.",
+        "All your work (messages, collaboration, tasks, and meetings) in one place, organized and prioritized.",
     },
   ]);
 }
@@ -66,11 +66,9 @@ export default function Home() {
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Team chat, email, notes, and
+              Messages, collaboration, tasks, and meetings
               <br />
-              threads from inside your apps,
-              <br />
-              organized around your priorities.
+              in one place — organized and prioritized.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
               <Button

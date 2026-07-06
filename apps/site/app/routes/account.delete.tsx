@@ -132,7 +132,7 @@ export default function DeleteAccount({ loaderData }: Route.ComponentProps) {
             Your data will be retained for 14 days to allow for account recovery
           </List.Item>
           <List.Item>
-            After 14 days, all your data including tasks, messages, priorities,
+            After 14 days, all your data including tasks, messages, focuses,
             and settings will be permanently deleted
           </List.Item>
           <List.Item>

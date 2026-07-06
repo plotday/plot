@@ -1,1 +1,1 @@
-tasks,inbox,calendar,to-do,todo,agenda,notes,reminders,meetings,productivity,focus,collaboration
+chat,email,threads,inbox,calendar,to-do,todo,agenda,notes,reminders,productivity,focus,collaboration

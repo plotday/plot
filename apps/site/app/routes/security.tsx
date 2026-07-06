@@ -35,9 +35,9 @@ export default function Security() {
 
         <h2 id="where-your-data-lives">Where your data lives</h2>
         <p>
-          Plot is local-first. The app keeps a copy of your data on your
-          device, so it works offline and stays fast. That copy is protected
-          by your device&apos;s own storage encryption.
+          Plot keeps a copy of your data on your device, so it works offline
+          and stays fast. That copy is protected by your device&apos;s own
+          storage encryption.
         </p>
         <p>
           Your data syncs to our servers for backup, for your other devices,

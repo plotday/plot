@@ -43,7 +43,9 @@ Others offer these approaches which we reject:
 
 We believe work can be good, meaningful, and fulfilling. Not all work is created equal. We elevate
 work that creates new value, innovates, and drives real human impact. We actively resist work that
-is low-value and performative knowing it steals energy from better work.
+is low-value and performative knowing it steals energy from better work. Doing more, faster, is no
+longer the differentiator — anyone can move fast now — so we point the reader's energy at what is
+still theirs alone: initiative, creativity, and empathy.
 
 And the best work is rarely solitary. People aren't the bottleneck, and they aren't resources to
 optimize — they bring the creativity, wisdom, challenge, and inspiration that carry a group further
@@ -196,14 +198,32 @@ poster; show it through what Plot does instead.
   you decide when notifications are allowed"_ — and the worldview comes through in the behavior, not
   the lecture.
 
+### Don't gate the call to action
+
+A call to action invites the reader to start using Plot — free, now. Plot is free to use; upgrading
+is only for when they want to do more. So the invitation stays open: it never leads with a limit, a
+price, or a countdown.
+
+- _Avoid:_ "Start your 30-day free trial." · "Free for 30 days, then $25/mo." · any CTA that pairs
+  the invitation with a clock or a limit.
+- _Why:_ a trial-shaped CTA makes the reader's first thought "this runs out" or "soon I'll pay" —
+  the opposite of feeling welcomed in. The free plan is permanent, not a teaser, so the CTA should
+  read as an open door. "Free" belongs there as an ongoing fact, never as a duration.
+- _Instead:_ "Try Plot." · "Get started free." · "Start for free." — free that keeps being free,
+  with upgrading saved for when they choose to do more.
+
+Mentioning the trial is fine where you're explaining how pricing works — just don't make it the
+invitation, and don't lead with it.
+
 ### Words and moves we reach for
 
 - **Intention & investment:** "where you spend your attention," "worth your time," "choose what gets
-  today," "what deserves your time right now," "put your time where it counts."
+  today," "what deserves your time right now," "put your time where it counts," "concentrate your
+  energy where it matters most."
 - **Permission & grace:** "let it wait," "safe to ignore," "catch up when you have time," "no need
   to," "when you're ready," "the rest of your day is yours."
 - **Real progress:** "make progress on what matters," "your best work," "get traction,"
-  "keep going."
+  "keep going," "the work that moves you forward."
 - **On the reader's side:** "your call," "you choose," "you decide how much and how often."
 - **People & collaboration:** "the people you work with," "bring the right people in," "share it
   with whoever needs it," "move it forward together."
@@ -270,5 +290,7 @@ Run any draft past these:
    slogan, hype word, and corporate phrase cut? (Scan the lists above.)
 10. Right register for the surface — spacious on the site, terse in the UI?
 11. Current, correct terminology (per features.md)?
+12. If it's a call to action, does it invite the reader into ongoing free use — with no trial
+    countdown, and no limit or price as the hook?
 
-If a line passes all eleven, it sounds like Plot.
+If a line passes all twelve, it sounds like Plot.

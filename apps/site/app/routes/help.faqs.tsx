@@ -56,10 +56,10 @@ export default function FAQs() {
           <Accordion.Item value="offline-sync">
             <Accordion.Control>Does Plot work offline?</Accordion.Control>
             <Accordion.Panel>
-              Yes! Plot is local-first, which means it works without an internet
-              connection. Your data is stored locally on your device and syncs
-              to the cloud when you have an internet connection. This ensures
-              you can always access and work with your data, even when offline.
+              Yes. Plot works offline — read, write, and organize with no
+              connection. Everything's stored on your device and syncs the
+              moment you're back online, across all your devices, with cloud
+              backup.
             </Accordion.Panel>
           </Accordion.Item>
 

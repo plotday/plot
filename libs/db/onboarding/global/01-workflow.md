@@ -15,7 +15,8 @@ state:
 Plot is designed around a simple workflow that keeps your focus where you choose while knowing
 what's happening.
 
-New and updated threads arrive at the top of **Active**. _When a thread…_
+New and updated threads arrive in **Active**, below your to-dos — so the work you've chosen stays
+first. _When a thread…_
 
 - _… is just FYI_: Simply read it and it'll move to **Done**.
 - _… needs follow-up or careful reading_: Mark it **To do** to keep it in **Active**.
@@ -31,7 +32,7 @@ time.
 
 ## note: focuses
 
-By bringing all you work together, Plot eliminates time and attention lost to jump around tools.
+By bringing all your work together, Plot eliminates time and attention lost to jumping around tools.
 Instead of organizing your work by _where_ it is, you organize it by _how_ you work on it. This lets
 you make real progress in an area you choose.
 
@@ -51,7 +52,7 @@ Create focuses for:
 Focuses aren't just for your most important priorities. By creating focuses for low-urgency
 activities like unsolicited requests, you can batch them to complete efficiently less frequently.
 
-Focuses are grouped within roles. Add a role for each areas of your life, such as work, personal,
+Focuses are grouped within roles. Add a role for each area of your life, such as work, personal,
 and volunteering. Roles help you stay on top of commitments that easily get buried by your biggest
 role.
 
