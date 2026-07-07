@@ -14,6 +14,73 @@ void main() {
   final original = ActorId.fromUuid(Uuid.generate());
   final other = ActorId.fromUuid(Uuid.generate());
 
+  group('messageReplyAudienceBase', () {
+    // Resolves the candidate recipients (and group count) behind the
+    // "Reply all (N)" badge for a message-mode thread. The badge total is
+    // derived from this base with self filtered out.
+    final selfU = Uuid.generate();
+    final otherA = Uuid.generate();
+    final otherB = Uuid.generate();
+
+    test('an explicit draft recipient subset drives the audience live — the '
+        'badge updates when recipients are edited, before send', () {
+      // Regression: the badge count used to come only from the last *sent*
+      // note's audience, so editing recipients to add a second person left the
+      // "Reply all" badge absent until after the reply was sent.
+      final base = messageReplyAudienceBase(
+        draftAccessContacts: [selfU, otherA, otherB],
+        draftAccessGroups: const [],
+        latestNoteAudience: {selfU, otherA}, // last note reached only one other
+        threadActiveContacts: [selfU, otherA],
+        threadGroupCount: 0,
+      );
+      expect(base.contacts, containsAll(<Uuid>[selfU, otherA, otherB]));
+      expect(base.contacts.length, 3);
+      expect(base.groupCount, 0);
+    });
+
+    test('no draft narrowing falls back to the latest note audience and '
+        'thread group count', () {
+      final base = messageReplyAudienceBase(
+        draftAccessContacts: null,
+        draftAccessGroups: null,
+        latestNoteAudience: {selfU, otherA, otherB},
+        threadActiveContacts: [selfU],
+        threadGroupCount: 5,
+      );
+      expect(base.contacts, containsAll(<Uuid>[selfU, otherA, otherB]));
+      expect(base.contacts.length, 3);
+      expect(base.groupCount, 5);
+    });
+
+    test('no draft narrowing and no notes falls back to thread active contacts',
+        () {
+      final base = messageReplyAudienceBase(
+        draftAccessContacts: null,
+        draftAccessGroups: null,
+        latestNoteAudience: const {},
+        threadActiveContacts: [selfU, otherA],
+        threadGroupCount: 0,
+      );
+      expect(base.contacts, [selfU, otherA]);
+      expect(base.groupCount, 0);
+    });
+
+    test('a draft narrowed to a group subset uses the draft group count, not '
+        'the thread default', () {
+      final group = Uuid.generate();
+      final base = messageReplyAudienceBase(
+        draftAccessContacts: null,
+        draftAccessGroups: [group],
+        latestNoteAudience: {selfU, otherA, otherB},
+        threadActiveContacts: [selfU],
+        threadGroupCount: 9,
+      );
+      expect(base.contacts, isEmpty);
+      expect(base.groupCount, 1);
+    });
+  });
+
   group('reserveEmptyTopBar', () {
     // The composer holds an empty, height-reserving placeholder bar only while
     // a *shared* thread's links load — a shared thread always resolves to a

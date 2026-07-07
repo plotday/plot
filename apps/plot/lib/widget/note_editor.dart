@@ -55,6 +55,44 @@ String messageReplyPillId({
   return isReplyToOriginal ? 'replyOriginal' : 'reply';
 }
 
+/// Resolves the base reply audience behind a message-mode thread's
+/// "Reply all (N)" badge: the candidate recipient contact ids (self included —
+/// the caller filters self out) plus the group count. The badge total is
+/// `contacts (minus self) + groupCount`.
+///
+/// An explicit per-note recipient subset — set live via the recipient picker
+/// and stored on the draft as `accessContacts` / `accessGroups` — takes
+/// priority. That's what makes the badge update the moment recipients are
+/// edited, before the reply is sent. Without it the badge was derived only
+/// from the most-recent *sent* note's audience, so editing recipients left the
+/// count stale until a send minted a new note.
+///
+/// Only when the draft has NOT narrowed the audience (both subsets null) do we
+/// fall back to the latest note's audience — or, when the thread has no notes
+/// yet, to the thread's active contacts — plus the full thread group count.
+/// Pure so the count logic can be unit-tested without a mounted editor.
+@visibleForTesting
+({List<Uuid> contacts, int groupCount}) messageReplyAudienceBase({
+  required List<Uuid>? draftAccessContacts,
+  required List<Uuid>? draftAccessGroups,
+  required Set<Uuid> latestNoteAudience,
+  required List<Uuid> threadActiveContacts,
+  required int threadGroupCount,
+}) {
+  // A non-null subset (even empty) means the user explicitly chose recipients
+  // for this note — honour it over the thread default.
+  if (draftAccessContacts != null || draftAccessGroups != null) {
+    return (
+      contacts: draftAccessContacts ?? const [],
+      groupCount: draftAccessGroups?.length ?? 0,
+    );
+  }
+  final contacts = latestNoteAudience.isEmpty
+      ? threadActiveContacts
+      : latestNoteAudience.toList();
+  return (contacts: contacts, groupCount: threadGroupCount);
+}
+
 /// Whether the composer should hold an empty, height-reserving placeholder top
 /// bar while a thread's links finish their first load.
 ///
@@ -901,16 +939,30 @@ class NoteEditorState extends State<NoteEditor> {
   /// the [Actor] cache aren't drawn individually but still count toward the
   /// total; [_warmAvatarCache] fetches them and rebuilds so they appear.
   ({List<Actor> actors, int total}) _replyAudience(ThreadState s) {
-    final base = s.primaryLinkTypeConfig?.sharingModel == SharingModel.message
-        ? () {
-            final audience = Thread.latestNoteAudience(
-              s.notes,
-            ).map((a) => a.toUuid()).toList();
-            return audience.isEmpty ? s.thread.activeContacts : audience;
-          }()
-        : s.thread.activeContacts;
+    final List<Uuid> base;
+    final int groupCount;
+    if (s.primaryLinkTypeConfig?.sharingModel == SharingModel.message) {
+      // Prefer the draft's live per-note recipient subset (set via the
+      // recipient picker) so the badge tracks edits immediately; fall back to
+      // the latest sent note's audience only when the draft hasn't narrowed it.
+      final resolved = messageReplyAudienceBase(
+        draftAccessContacts:
+            widget.draft.accessContacts?.map((a) => a.toUuid()).toList(),
+        draftAccessGroups:
+            widget.draft.accessGroups?.map((a) => a.toUuid()).toList(),
+        latestNoteAudience:
+            Thread.latestNoteAudience(s.notes).map((a) => a.toUuid()).toSet(),
+        threadActiveContacts: s.thread.activeContacts,
+        threadGroupCount: s.thread.groups.length,
+      );
+      base = resolved.contacts;
+      groupCount = resolved.groupCount;
+    } else {
+      base = s.thread.activeContacts;
+      groupCount = s.thread.groups.length;
+    }
     final nonSelf = base.where((c) => !_isSelfContact(c)).toList();
-    final total = nonSelf.length + s.thread.groups.length;
+    final total = nonSelf.length + groupCount;
     if (total < 2) return (actors: const [], total: 0);
     _warmAvatarCache(nonSelf);
     final actors = <Actor>[];
