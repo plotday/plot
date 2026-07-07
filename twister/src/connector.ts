@@ -1,5 +1,9 @@
-import { type Actor, type ActorId, type Contact, type DeliveryError, type Link, type NewLinkWithNotes, type Note, type Thread, type Uuid } from "./plot";
+import { type Actor, type ActorId, type Contact, type DeliveryError, type Link, type NewLinkWithNotes, type Note, type ResolvedRecipient, type Thread } from "./plot";
 import type { ScheduleContactStatus } from "./schedule";
+
+// ResolvedRecipient now lives in ./plot (so Note.recipients can reference it).
+// Re-exported here to preserve the `@plotday/twister/connector` import path.
+export type { ResolvedRecipient };
 import {
   type AuthProvider,
   type AuthToken,
@@ -104,38 +108,6 @@ export type NoteWriteBackResult = {
    * runtime, just without a specific reason.
    */
   deliveryError?: DeliveryError | null;
-};
-
-/**
- * A Plot contact pre-resolved to its platform account ID, ready for use
- * in a messaging dispatch.
- *
- * Populated by the runtime for link types with `compose.targets: "contacts"` before
- * `onCreateLink` is called. The connector should use `externalAccountId`
- * directly to address the recipient on the platform (e.g. Slack user ID,
- * LinkedIn URN, Gmail address) without performing its own contact lookup.
- */
-export type ResolvedRecipient = {
-  /** Plot contact UUID */
-  id: Uuid;
-  /** Display name, or null if not set */
-  name: string | null;
-  /** Platform-specific account identifier pre-resolved at dispatch time (e.g. Slack `U…`, LinkedIn URN, Gmail email address) */
-  externalAccountId: string;
-  /**
-   * The contact's role on the originating thread, resolved from
-   * `thread.contact_meta` against the link type's `contactRoles` (e.g.
-   * `"to"` / `"cc"` / `"bcc"` for Gmail). `null` when the contact had no
-   * explicit role entry — connectors should treat `null` as the link
-   * type's default role (the `contactRoles` entry marked `default: true`).
-   *
-   * Connectors that distinguish roles MUST honor this when addressing the
-   * recipient — e.g. Gmail must place `"cc"`/`"bcc"` recipients in the
-   * Cc/Bcc headers, never the To header, so BCC recipients are not
-   * exposed to the other recipients. Connectors that don't distinguish
-   * roles (Slack, Linear) can ignore it.
-   */
-  role: string | null;
 };
 
 /**

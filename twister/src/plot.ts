@@ -737,6 +737,27 @@ export type Note = ThreadCommon & {
    * When set (even to []), the note is private to the listed contacts plus the creator.
    */
   accessContacts: ActorId[] | null;
+  /**
+   * Outbound recipients for this note, pre-resolved by the runtime — the
+   * reply-path analogue of {@link CreateLinkDraft.recipients}. Populated only
+   * for connectors whose link type addresses by recipient
+   * (`compose.targets: "contacts"` or `"addresses"`, e.g. email) AND only when
+   * the user curated the recipient set (`accessContacts` is non-null). `null`
+   * when the note inherits the conversation's recipients — a plain "reply-all"
+   * where the connector should address the external conversation's existing
+   * participants itself.
+   *
+   * Each entry carries the platform account id / email to address
+   * (`externalAccountId`) and the `to`/`cc`/`bcc` `role`. The runtime has
+   * already removed the acting user's own identities (every linked contact,
+   * not just the connected account), so this is the complete, self-excluded
+   * recipient list — a connector should send to exactly these and never
+   * re-derive recipients from the message headers when this is set.
+   *
+   * Optional (may be `undefined` on note shapes the runtime builds for other
+   * purposes); treat `undefined` the same as `null`. Test with `!= null`.
+   */
+  recipients?: ResolvedRecipient[] | null;
   /** Focus twist IDs (twists/connectors) mentioned for dispatch routing. Does not include user contacts. */
   mentions: ActorId[];
   /**
@@ -774,7 +795,7 @@ export type Note = ThreadCommon & {
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "id" | "key" | "reNote" | "tagActors"
+    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "recipients" | "id" | "key" | "reNote" | "tagActors"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
@@ -962,6 +983,44 @@ export type Contact = {
   email: string | null;
   /** Display name, or null if not set */
   name: string | null;
+};
+
+/**
+ * A Plot contact pre-resolved to its platform account ID, ready for use in a
+ * messaging dispatch — the outbound recipient of a composed item
+ * ({@link CreateLinkDraft.recipients}) or of a reply ({@link Note.recipients}).
+ *
+ * Populated by the runtime for link types whose `compose.targets` is
+ * `"contacts"` or `"addresses"`. The connector should address the recipient
+ * with `externalAccountId` directly (e.g. Slack user ID, LinkedIn URN, Gmail
+ * email address) without performing its own contact lookup, and MUST honor
+ * `role` so `"cc"`/`"bcc"` recipients are placed in the right headers.
+ *
+ * The runtime already excludes the acting user's own contacts (all of their
+ * linked identities, not just the connected mailbox), so a connector must not
+ * re-add itself and can trust this list as the complete recipient set.
+ */
+export type ResolvedRecipient = {
+  /** Plot contact UUID */
+  id: Uuid;
+  /** Display name, or null if not set */
+  name: string | null;
+  /** Platform-specific account identifier pre-resolved at dispatch time (e.g. Slack `U…`, LinkedIn URN, Gmail email address) */
+  externalAccountId: string;
+  /**
+   * The contact's role on the originating thread, resolved from
+   * `thread.contact_meta` against the link type's `contactRoles` (e.g.
+   * `"to"` / `"cc"` / `"bcc"` for Gmail). `null` when the contact had no
+   * explicit role entry — connectors should treat `null` as the link
+   * type's default role (the `contactRoles` entry marked `default: true`).
+   *
+   * Connectors that distinguish roles MUST honor this when addressing the
+   * recipient — e.g. Gmail must place `"cc"`/`"bcc"` recipients in the
+   * Cc/Bcc headers, never the To header, so BCC recipients are not
+   * exposed to the other recipients. Connectors that don't distinguish
+   * roles (Slack, Linear) can ignore it.
+   */
+  role: string | null;
 };
 
 /**

@@ -22,6 +22,7 @@
 import {
   type CreateLinkDraft,
   type NoteWriteBackResult,
+  resolveOutboundReplyRecipients,
 } from "@plotday/twister";
 import { ActionType } from "@plotday/twister/plot";
 import type {
@@ -299,32 +300,6 @@ export function fnv1aHex(input: string): string {
     h = Math.imul(h, 0x01000193);
   }
   return (h >>> 0).toString(16).padStart(8, "0");
-}
-
-/**
- * Compute the outbound email recipient list for a single role (To or Cc),
- * applying the per-note access_contacts constraint when set.
- *
- * @param args.accessContactEmails - Allowed email addresses derived from
- *   note.accessContacts (contact IDs resolved to emails via thread.accessContacts),
- *   or null when the note has no access restriction (send to everyone).
- * @param args.candidates - Email addresses for this role from the message.
- * @param args.self - Sender email; always excluded regardless of constraint.
- * @returns Filtered list of email addresses for the role.
- */
-export function recipientsFor(args: {
-  accessContactEmails: Set<string> | null;
-  candidates: string[];
-  self: string;
-}): string[] {
-  const { accessContactEmails, candidates, self } = args;
-  const selfLower = self.toLowerCase();
-  return candidates.filter((email) => {
-    const lower = email.toLowerCase();
-    if (lower === selfLower) return false; // sender is never a recipient
-    if (accessContactEmails === null) return true; // no constraint: include all
-    return accessContactEmails.has(lower); // constrained: only allowed contacts
-  });
 }
 
 /**
@@ -1681,13 +1656,20 @@ export async function onNoteCreatedFn(
 
   const senderEmail = (await ensureUserEmailFn(host, api)).toLowerCase();
 
-  // Build per-note access constraint: when note.accessContacts is set,
-  // resolve contact IDs to lowercase email addresses using
-  // thread.accessContacts so we can filter the outbound recipient list.
-  // null means no constraint (send to all). A note with accessContacts =
-  // [self] is a Private note and must not be sent via Outlook at all.
+  // The acting user's own addresses must never receive their own reply: the
+  // connected mailbox plus the authoring identity (which may be a different
+  // linked email). Used only for the header-derived cases — the runtime's
+  // note.recipients are already self-excluded across every linked identity.
+  const selfEmails = new Set<string>([senderEmail]);
+  const authorEmail = (thread.accessContacts ?? []).find(
+    (contact) => contact.id === note.author.id
+  )?.email;
+  if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
+
+  // Fallback access constraint (used only when the runtime didn't resolve
+  // note.recipients): resolve the note's access list to lowercased emails.
   let accessContactEmails: Set<string> | null = null;
-  if (note.accessContacts !== null) {
+  if (note.accessContacts != null) {
     const allowedIds = new Set<ActorId>(note.accessContacts);
     accessContactEmails = new Set<string>();
     for (const contact of thread.accessContacts ?? []) {
@@ -1697,43 +1679,55 @@ export async function onNoteCreatedFn(
     }
   }
 
-  // Reply-all candidates: From + To (deduped) become To; Cc stays Cc.
-  const allCandidates = new Set<string>();
+  // Original-message participants: From ∪ To → To, Cc → Cc.
+  const fromToCandidates = new Set<string>();
   for (const email of recipientEmails(
     targetMessage.from ? [targetMessage.from] : []
   )) {
-    allCandidates.add(email.toLowerCase());
+    fromToCandidates.add(email.toLowerCase());
   }
   for (const email of recipientEmails(targetMessage.toRecipients)) {
-    allCandidates.add(email.toLowerCase());
+    fromToCandidates.add(email.toLowerCase());
   }
   const ccCandidates = new Set<string>();
   for (const email of recipientEmails(targetMessage.ccRecipients)) {
     ccCandidates.add(email.toLowerCase());
   }
-
-  const toCandidates = Array.from(allCandidates).filter(
+  const toCandidates = Array.from(fromToCandidates).filter(
     (email) => !ccCandidates.has(email)
   );
-  const to = recipientsFor({
+
+  // Resolve the outbound recipients via the shared helper: prefer the runtime's
+  // pre-resolved note.recipients (curated, self-excluded, role-aware), else
+  // narrow/augment the original participants by the access constraint, else
+  // reply-all. Identical logic to every other email-style connector.
+  const { to, cc, bcc } = resolveOutboundReplyRecipients({
+    recipients: note.recipients ?? null,
     accessContactEmails,
-    candidates: toCandidates,
-    self: senderEmail,
-  });
-  const cc = recipientsFor({
-    accessContactEmails,
-    candidates: Array.from(ccCandidates),
-    self: senderEmail,
+    headerTo: toCandidates,
+    headerCc: Array.from(ccCandidates),
+    selfEmails,
   });
 
-  if (to.length === 0 && cc.length === 0) {
-    if (note.accessContacts !== null) {
-      console.log(
-        `[outlook-mail] onNoteCreated: note ${note.id} has access_contacts constraint with no outbound recipients; skipping send`
-      );
-    } else {
-      console.error("No recipients for Outlook reply");
+  if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+    // If the user explicitly chose recipients (anyone other than themselves)
+    // and none are deliverable, surface it instead of dropping silently. A
+    // private note (access list = the author only) or an empty reply-all just
+    // skips quietly.
+    const choseOthers = (note.accessContacts ?? []).some(
+      (id) => id !== note.author.id
+    );
+    if (choseOthers) {
+      return {
+        deliveryError: {
+          code: "no_recipients",
+          message: "This reply had no deliverable recipients.",
+        },
+      };
     }
+    console.log(
+      `[outlook-mail] onNoteCreated: note ${note.id} resolved to no outbound recipients; skipping send`
+    );
     return;
   }
 
@@ -1750,6 +1744,7 @@ export async function onNoteCreatedFn(
     body: { contentType: "html", content: markdownToHtml(note.content ?? "") },
     toRecipients: to.map(addr),
     ccRecipients: cc.map(addr),
+    ...(bcc.length > 0 ? { bccRecipients: bcc.map(addr) } : {}),
   });
 
   // Attach files from note actions (skip failures rather than failing

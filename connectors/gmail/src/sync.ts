@@ -20,6 +20,7 @@
 import {
   type CreateLinkDraft,
   type NoteWriteBackResult,
+  resolveOutboundReplyRecipients,
 } from "@plotday/twister";
 import { ActionType } from "@plotday/twister/plot";
 import type {
@@ -365,42 +366,6 @@ export function fnv1aHex(input: string): string {
     h = Math.imul(h, 0x01000193);
   }
   return (h >>> 0).toString(16).padStart(8, "0");
-}
-
-/**
- * Compute the outbound email recipient list for a single role (To, Cc, or Bcc),
- * applying the per-note access_contacts constraint when set.
- *
- * @param args.accessContactEmails - Allowed email addresses derived from
- *   note.accessContacts (contact IDs resolved to emails via thread.accessContacts),
- *   or null when the note has no access restriction (send to everyone).
- * @param args.candidates - Email addresses for this role from the Gmail headers.
- * @param args.self - Sender email; always excluded regardless of constraint.
- * @returns Filtered list of email addresses for the role.
- *
- * @example
- * // Private note — accessContactEmails is an empty set → empty result
- * recipientsFor({ accessContactEmails: new Set(), candidates: ["a@b.com"], self: "me@b.com" })
- * // => []
- *
- * @example
- * // No constraint — send to all non-self candidates
- * recipientsFor({ accessContactEmails: null, candidates: ["a@b.com", "me@b.com"], self: "me@b.com" })
- * // => ["a@b.com"]
- */
-export function recipientsFor(args: {
-  accessContactEmails: Set<string> | null;
-  candidates: string[];
-  self: string;
-}): string[] {
-  const { accessContactEmails, candidates, self } = args;
-  const selfLower = self.toLowerCase();
-  return candidates.filter((email) => {
-    const lower = email.toLowerCase();
-    if (lower === selfLower) return false; // sender is never a recipient
-    if (accessContactEmails === null) return true; // no constraint: include all
-    return accessContactEmails.has(lower); // constrained: only allowed contacts
-  });
 }
 
 /**
@@ -1584,14 +1549,20 @@ export async function onNoteCreatedFn(
   const profile = await api.getProfile();
   const senderEmail = profile.emailAddress.toLowerCase();
 
-  // Build per-note access constraint: when note.accessContacts is set, resolve
-  // contact IDs to lowercase email addresses using thread.accessContacts so we
-  // can filter the outbound recipient list. null means no constraint (send to all).
-  //
-  // This implements the design rule: a note with accessContacts = [self] is a
-  // Private note and must not be sent via Gmail at all.
+  // The acting user's own addresses must never receive their own reply: the
+  // connected mailbox plus the authoring identity (which may be a different
+  // linked email). Used only for the header-derived cases below — the runtime's
+  // `note.recipients` are already self-excluded across every linked identity.
+  const selfEmails = new Set<string>([senderEmail]);
+  const authorEmail = (thread.accessContacts ?? []).find(
+    (contact) => contact.id === note.author.id
+  )?.email;
+  if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
+
+  // Fallback access constraint (used only when the runtime didn't resolve
+  // note.recipients): resolve the note's access list to lowercased emails.
   let accessContactEmails: Set<string> | null = null;
-  if (note.accessContacts !== null) {
+  if (note.accessContacts != null) {
     const allowedIds = new Set<ActorId>(note.accessContacts);
     accessContactEmails = new Set<string>();
     for (const contact of thread.accessContacts ?? []) {
@@ -1601,45 +1572,53 @@ export async function onNoteCreatedFn(
     }
   }
 
-  // Build reply-all candidates: all From + To + Cc, deduplicated
-  const allCandidates = new Set<string>();
+  // Original-message participants: From ∪ To → To, Cc → Cc.
+  const fromToCandidates = new Set<string>();
   for (const email of parseEmailAddresses(fromHeader)) {
-    allCandidates.add(email.toLowerCase());
+    fromToCandidates.add(email.toLowerCase());
   }
   for (const email of parseEmailAddresses(toHeader)) {
-    allCandidates.add(email.toLowerCase());
+    fromToCandidates.add(email.toLowerCase());
   }
-
   const ccCandidates = new Set<string>();
   for (const email of parseEmailAddresses(ccHeader)) {
     ccCandidates.add(email.toLowerCase());
   }
-
-  // To = all direct recipients (From + To), Cc = remaining Cc.
-  // Apply the per-note access constraint (and always exclude sender).
-  const toCandidates = Array.from(allCandidates).filter(
+  const toCandidates = Array.from(fromToCandidates).filter(
     (email) => !ccCandidates.has(email)
   );
-  const to = recipientsFor({
+
+  // Resolve the outbound recipients via the shared helper: prefer the runtime's
+  // pre-resolved `note.recipients` (curated, self-excluded, role-aware), else
+  // narrow/augment the original participants by the access constraint, else
+  // reply-all. This is the same logic every email-style connector runs.
+  const { to, cc, bcc } = resolveOutboundReplyRecipients({
+    recipients: note.recipients ?? null,
     accessContactEmails,
-    candidates: toCandidates,
-    self: senderEmail,
-  });
-  const cc = recipientsFor({
-    accessContactEmails,
-    candidates: Array.from(ccCandidates),
-    self: senderEmail,
+    headerTo: toCandidates,
+    headerCc: Array.from(ccCandidates),
+    selfEmails,
   });
 
-  if (to.length === 0 && cc.length === 0) {
-    if (note.accessContacts !== null) {
-      // Private note or custom subset that excluded everyone — do not send.
-      console.log(
-        `[gmail] onNoteCreated: note ${note.id} has access_contacts constraint with no outbound recipients; skipping send`
-      );
-    } else {
-      console.error("No recipients for Gmail reply");
+  if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+    // If the user explicitly chose recipients (anyone other than themselves)
+    // and none are deliverable, surface it instead of dropping silently. A
+    // private note (access list = the author only) or an empty reply-all just
+    // skips quietly.
+    const choseOthers = (note.accessContacts ?? []).some(
+      (id) => id !== note.author.id
+    );
+    if (choseOthers) {
+      return {
+        deliveryError: {
+          code: "no_recipients",
+          message: "This reply had no deliverable recipients.",
+        },
+      };
     }
+    console.log(
+      `[gmail] onNoteCreated: note ${note.id} resolved to no outbound recipients; skipping send`
+    );
     return;
   }
 
@@ -1668,6 +1647,7 @@ export async function onNoteCreatedFn(
   const raw = buildReplyMessage({
     to,
     cc,
+    bcc,
     from: senderEmail,
     subject,
     body: note.content ?? "",

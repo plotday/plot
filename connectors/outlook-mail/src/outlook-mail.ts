@@ -47,7 +47,6 @@ import {
   onThreadReadFn,
   onThreadToDoFn,
   pickChannelForConversation,
-  recipientsFor,
   recoverMailboxDeliveryFn,
   removeEnabledChannelFn,
   renewMailboxSubscriptionFn,
@@ -58,7 +57,7 @@ import {
 
 // Re-export the pure helpers so existing imports (and tests that import them
 // from "./outlook-mail") keep working unchanged.
-export { pickChannelForConversation, recipientsFor };
+export { pickChannelForConversation };
 
 /**
  * Microsoft Outlook Mail connector.

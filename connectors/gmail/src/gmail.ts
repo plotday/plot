@@ -53,7 +53,6 @@ import {
 
 // Re-export the pure recipient helper so existing imports (and tests that
 // import it from "./gmail") keep working unchanged.
-export { recipientsFor } from "./sync";
 
 type MessageChannel = {
   id: string;

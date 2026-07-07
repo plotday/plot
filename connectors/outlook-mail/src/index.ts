@@ -28,7 +28,6 @@ export {
   COMPOSE_DEDUP_WINDOW_MS,
   DIRECT_ATTACH_MAX_BYTES,
   fnv1aHex,
-  recipientsFor,
   pickChannelForConversation,
   mergePendingMessages,
   getApiFn,
