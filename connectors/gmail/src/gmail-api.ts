@@ -1524,6 +1524,7 @@ export type AttachmentData = {
 export function buildReplyMessage(options: {
   to: string[];
   cc: string[];
+  bcc?: string[];
   from: string;
   subject: string;
   body: string;
@@ -1531,13 +1532,14 @@ export function buildReplyMessage(options: {
   references: string;
   attachments?: AttachmentData[];
 }): string {
-  const { to, cc, from, subject, body, messageId, references, attachments } = options;
+  const { to, cc, bcc = [], from, subject, body, messageId, references, attachments } = options;
 
   // Sanitize every value interpolated into a header to prevent CRLF header
   // injection (RFC 5322) via attacker-controlled subjects or addresses.
   const fromHeader = sanitizeHeaderValue(from);
   const toHeader = to.map(sanitizeHeaderValue).join(", ");
   const ccHeader = cc.map(sanitizeHeaderValue).join(", ");
+  const bccHeader = bcc.map(sanitizeHeaderValue).join(", ");
   const safeMessageId = sanitizeHeaderValue(messageId);
   const safeReferences = sanitizeHeaderValue(references);
 
@@ -1549,6 +1551,9 @@ export function buildReplyMessage(options: {
   // Shared headers for both the attachment and no-attachment paths.
   const headerLines: string[] = [`From: ${fromHeader}`, `To: ${toHeader}`];
   if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
+  // Gmail's messages.send honors a Bcc header and strips it from the delivered
+  // copy, so bcc recipients stay hidden from To/Cc recipients.
+  if (bcc.length > 0) headerLines.push(`Bcc: ${bccHeader}`);
   headerLines.push(`Subject: ${reSubject}`);
   headerLines.push(`In-Reply-To: ${safeMessageId}`);
   const refChain = safeReferences
