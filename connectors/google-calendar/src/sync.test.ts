@@ -1162,6 +1162,103 @@ describe("processCalendarEventsFn — past cancellations", () => {
   });
 });
 
+describe("processCalendarEventsFn — re-confirmation after cancellation", () => {
+  const iso = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("un-archives the base schedule and clears the cancellation note when a cancelled event returns confirmed", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    // Calendar has been synced for a while, so the cancellation is not treated
+    // as an unimported/never-seen event.
+    host.store.set(`first_sync_at_${calendarId}`, iso(-60));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const iCalUID = "aqua@google.com";
+    const canonical = `google-calendar:${iCalUID}`;
+    const start = { dateTime: iso(30) };
+    const end = { dateTime: iso(30.5) }; // future — cancellation must surface
+
+    // 1) Google reports the recurring master as cancelled (incremental sync).
+    const cancelled = {
+      id: "aqua-master",
+      iCalUID,
+      status: "cancelled" as const,
+      summary: "Aqua fit",
+      start,
+      end,
+      updated: iso(-1),
+    };
+    await processCalendarEventsFn(host, [cancelled], calendarId, false);
+
+    const cancelLink = host.savedLinks
+      .flat()
+      .find((l) => l.source === canonical);
+    expect(cancelLink?.schedules?.[0]).toMatchObject({ archived: true });
+    expect(
+      cancelLink?.notes?.some(
+        (n) => (n as { key?: string }).key === "cancellation"
+      )
+    ).toBe(true);
+    expect(host.store.get(`cancel_seen:${canonical}`)).toBeTruthy();
+
+    // 2) Google now reports the same master as confirmed (incremental sync).
+    const confirmed = {
+      id: "aqua-master",
+      iCalUID,
+      status: "confirmed" as const,
+      summary: "Aqua fit",
+      start,
+      end,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=SU;COUNT=7"],
+    };
+    await processCalendarEventsFn(host, [confirmed], calendarId, false);
+
+    const confirmLink = [...host.savedLinks.flat()]
+      .reverse()
+      .find((l) => l.source === canonical);
+    expect(confirmLink?.schedules?.length).toBeGreaterThan(0);
+    // Every schedule the confirmed sync emits must be explicitly un-archived,
+    // so the app stops treating the series as cancelled.
+    for (const s of confirmLink!.schedules!) {
+      expect((s as { archived?: boolean }).archived).toBe(false);
+    }
+    // The stale "This event was cancelled." note must be archived.
+    const cancelNote = confirmLink?.notes?.find(
+      (n) => (n as { key?: string }).key === "cancellation"
+    );
+    expect(cancelNote).toBeDefined();
+    expect((cancelNote as { archived?: boolean }).archived).toBe(true);
+    // Marker cleared so the reversal doesn't repeat on every subsequent sync.
+    expect(host.store.get(`cancel_seen:${canonical}`)).toBeFalsy();
+  });
+
+  it("does not emit a spurious cancellation note for a normal confirmed event", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, iso(-60));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const confirmed = {
+      id: "plain",
+      iCalUID: "plain@google.com",
+      status: "confirmed" as const,
+      summary: "Standup",
+      start: { dateTime: iso(1) },
+      end: { dateTime: iso(1.05) },
+    };
+    await processCalendarEventsFn(host, [confirmed], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:plain@google.com");
+    expect(link).toBeDefined();
+    expect(
+      link?.notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(false);
+  });
+});
+
 describe("cancellationWasSelfInitiatedFn", () => {
   it("treats a cancellation the user organized as self-initiated", () => {
     expect(
