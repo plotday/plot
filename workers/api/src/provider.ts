@@ -546,6 +546,16 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     emailScopes: ["openid", "email"],
     parseTokenResponse: parseMicrosoftTokenResponse,
     extractAccountLabel: (d) => (d as MicrosoftProviderData).email || null,
+    // Plot's Azure app registration is a confidential client (it authenticates
+    // with AUTH_MICROSOFT_SECRET), so its redirect URIs live under Azure's "Web"
+    // platform, which only accepts https:// (and http://localhost) callbacks.
+    // Custom URI schemes like plotday:// are categorically rejected by Azure for
+    // Web apps ("invalid_request: The provided value for the input parameter
+    // 'redirect_uri' is not valid"), so route every Microsoft OAuth redirect
+    // through the server-rendered ${API_ROOT}/auth/bridge — the one https URL
+    // registered in Azure — which then deep-links back to the client's real
+    // callback (plotday://, https://app…, or http://localhost:<port>).
+    requiresHttpsRedirect: true,
     additionalParams: {
       prompt: "consent",  // Microsoft only supports single values; consent ensures permission screen shows
     },
