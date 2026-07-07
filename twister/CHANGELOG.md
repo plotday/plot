@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.72.0
+
+### Added
+
+- `Note.recipients` — the reply-path analogue of `CreateLinkDraft.recipients`. For connectors whose link type addresses by recipient (`compose.targets: "contacts"` or `"addresses"`, e.g. email), the runtime now pre-resolves a curated reply's recipients to platform account ids / addresses with `to`/`cc`/`bcc` roles, with the acting user's own identities already removed. `null` when the note inherits the conversation's recipients (a plain reply-all).
+
 ## 0.71.0
 
 ### Added
