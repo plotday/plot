@@ -90,6 +90,17 @@ void main() {
       expect(diff.isEmpty, isTrue);
     });
 
+    test('a pinned event and its unpinned copy get distinct keys', () {
+      // The same event appears twice in one feed: once pinned in the "Event
+      // Agenda" prefix and once in the Scheduled section. Their identity keys
+      // must differ so the two sibling rows (and their stateful RSVP chips)
+      // reconcile independently in the InfiniteList instead of colliding.
+      final event = thread('event');
+      final pinned = AgendaThreadItem(event, pinned: true);
+      final scheduled = AgendaThreadItem(event);
+      expect(feedItemKey(pinned), isNot(feedItemKey(scheduled)));
+    });
+
     test('mass changes beyond the cap bail out', () {
       final oldItems = [
         hDoing,

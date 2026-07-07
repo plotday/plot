@@ -7,11 +7,16 @@ import 'package:plot/store/store.dart';
 /// the page's widget-key identities.
 String feedItemKey(AgendaItem item) => item.when(
   header: (h) => h.date != null ? 'h_date_${h.date}' : 'h_text_${h.text}',
+  // The pinned "Event Agenda" copy and the Scheduled copy of one event are
+  // both unassociated, so `_pinned` is what keeps their identities distinct —
+  // without it the two sibling rows share a key and the second one's state
+  // (its RSVP chip) collides with the first's.
   activity: (a) =>
       't_${a.thread.id}'
       '${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}'
       '${a.thread.isLinkScheduleInstance ? '_link' : ''}'
-      '${a.isAssociated ? '_assoc_${a.associationParentId ?? ''}' : ''}',
+      '${a.isAssociated ? '_assoc_${a.associationParentId ?? ''}' : ''}'
+      '${a.pinned ? '_pinned' : ''}',
 );
 
 /// A collapsing ghost: [item]'s pre-move row, rendered directly after the

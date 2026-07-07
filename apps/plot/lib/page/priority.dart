@@ -1726,12 +1726,17 @@ class _PriorityPageState extends State<PriorityPage>
               ],
               activity: (agendaActivity) {
                 final baseThread = agendaActivity.thread;
+                // Must track feedItemKey's identity: the pinned "Event Agenda"
+                // copy needs a key distinct from the same event's Scheduled
+                // copy, or the two sibling rows collide in the InfiniteList.
                 final rowKey = entry.ghost
                     ? ValueKey('feed_ghost_row_$itemKey')
                     : agendaActivity.isAssociated
                     ? ValueKey(
                         'feed_activitywidget_${baseThread.id}_assoc_${agendaActivity.associationParentId ?? ''}',
                       )
+                    : agendaActivity.pinned
+                    ? ValueKey('feed_activitywidget_${baseThread.id}_pinned')
                     : ValueKey('feed_activitywidget_${baseThread.id}');
                 final item = ActivityFeedThreadRow(
                   key: rowKey,

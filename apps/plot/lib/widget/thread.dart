@@ -1314,10 +1314,7 @@ class ThreadCommands extends HookWidget {
     );
     final primaryLink = Thread.primaryLink(linksSnapshot.data ?? const []);
     final conferencingActions = showEventButtons
-        ? (linksSnapshot.data ?? [])
-              .expand((link) => link.actions ?? <UserAction>[])
-              .whereType<ConferencingUserAction>()
-              .toList()
+        ? Thread.conferencingActions(linksSnapshot.data ?? const [])
         : <ConferencingUserAction>[];
 
     // RSVP chip for calendar events with other invitees. Replaces the old

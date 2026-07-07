@@ -4982,6 +4982,21 @@ SELECT
     return canonical.isEmpty ? null : canonical.first;
   }
 
+  /// Distinct conferencing "join" actions across all of the thread's links,
+  /// deduped by URL. An event thread commonly carries the same join link on
+  /// more than one link (e.g. a base calendar link and a link-schedule
+  /// instance), which would otherwise render one identical "Join" icon per
+  /// link. First occurrence of each URL wins, preserving link order so genuine
+  /// distinct links (a Meet and a Zoom) are all kept.
+  static List<ConferencingUserAction> conferencingActions(List<Link> links) {
+    final seen = <String>{};
+    return [
+      for (final link in links)
+        for (final action in link.actions ?? const <UserAction>[])
+          if (action is ConferencingUserAction && seen.add(action.url)) action,
+    ];
+  }
+
   /// Resolved sharing model for this thread, derived from the primary
   /// canonical link's [LinkTypeConfig.sharingModel]. Threads
   /// with no link default to [SharingModel.thread].
