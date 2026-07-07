@@ -1,3 +1,18 @@
+## 1.5.4+379 — 2026-07-07
+
+### Connections
+
+- New emails, calendar changes, and updates like stars now reach Plot much sooner after they happen — typically within a few seconds instead of most of a minute.
+- Connecting a Gmail account imports your mailbox much faster: messages are fetched and saved several at a time, and the import now stops at your plan's history window instead of walking the entire mailbox.
+
+### Fixes
+
+- Deleting a calendar event you organize (or a solo event only you were invited to) no longer marks its thread unread. Cancellations by someone else still notify you.
+- Fixed the "sending" label — shown briefly while a note is being sent — clipping the bottom of its letters.
+- Forwarding a Gmail email through the same account now sends a real Gmail forward carrying the original message, instead of a quoted copy — including after you reconnect your Google account.
+- When you edit the recipients of a reply, the recipient count next to "Reply all" now updates right away instead of only after you send.
+- On Windows, you can now drag the app window by its top bar before signing in.
+
 ## 1.5.3+378 — 2026-07-05
 
 ### Connections
