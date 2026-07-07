@@ -842,6 +842,16 @@ export async function processCalendarEventsFn(
 
         const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
 
+        // If a prior sync recorded this event as cancelled (whole-event), it
+        // archived the base schedule and left a "This event was cancelled."
+        // note. Google now reports the event live again, so we must reverse
+        // both: un-archive the schedule(s) below and archive the stale
+        // cancellation note. Without this the app keeps treating the series as
+        // cancelled (an archived base recurring schedule = whole series
+        // cancelled) even though the link's status is Confirmed.
+        const wasCancelled =
+          (await host.get<string>(`cancel_seen:${canonicalUrl}`)) != null;
+
         const descHash = hasDescription
           ? await hashContent(description)
           : null;
@@ -877,7 +887,22 @@ export async function processCalendarEventsFn(
           }
         }
 
-        const notes = descriptionNote ? [descriptionNote] : [];
+        const notes = [
+          ...(descriptionNote ? [descriptionNote] : []),
+          // Archive the "This event was cancelled." note the cancellation pass
+          // added under this key. Only emitted when a cancellation was actually
+          // recorded, so we never insert a spurious archived note.
+          ...(wasCancelled
+            ? [
+                {
+                  key: "cancellation" as const,
+                  content: "This event was cancelled.",
+                  contentType: "text" as const,
+                  archived: true,
+                },
+              ]
+            : []),
+        ];
 
         const link: NewLinkWithNotes = {
           source: canonicalUrl,
@@ -907,7 +932,12 @@ export async function processCalendarEventsFn(
           sourceUrl: event.htmlLink ?? null,
           notes,
           preview: hasDescription ? description : null,
-          schedules: activityData.schedules,
+          // Explicitly un-archive the base schedule when reversing a prior
+          // cancellation; otherwise leave `archived` unset (incremental syncs
+          // don't touch it — see the initial/incremental convention below).
+          schedules: wasCancelled
+            ? activityData.schedules?.map((s) => ({ ...s, archived: false }))
+            : activityData.schedules,
           scheduleOccurrences: activityData.scheduleOccurrences,
           ...(initialSync ? { unread: false } : {}),
           ...(initialSync ? { archived: false } : {}),
@@ -921,6 +951,13 @@ export async function processCalendarEventsFn(
         };
 
         addLink(link as LinkWithSource);
+
+        if (wasCancelled) {
+          // Reversal recorded on this link — drop the marker so we don't keep
+          // re-archiving the (now already-archived) cancellation note on every
+          // subsequent sync of this confirmed event.
+          await host.clear(`cancel_seen:${canonicalUrl}`);
+        }
       }
     } catch (error) {
       console.error(`Failed to process event ${event.id}:`, error);
