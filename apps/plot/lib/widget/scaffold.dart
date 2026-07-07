@@ -79,12 +79,24 @@ class Scaffold extends StatelessWidget {
       child: wrappedBody,
     );
 
-    // On Windows in single-panel mode, when no header is provided, add a minimal
-    // drag bar with app name. In multi-panel mode, UnifiedHeader handles dragging.
+    // On Windows the native title bar is hidden, so the only way to move the
+    // frameless window is a Flutter drag region. When a page supplies no
+    // header of its own we add a minimal drag bar with the app name — UNLESS
+    // an ancestor panel shell already provides a draggable [UnifiedHeader]
+    // strip above this page (the signed-in multi-panel layout marks its
+    // subtree with [WindowDragProvider]).
+    //
+    // In single-panel mode there is never a shell header above a bare page,
+    // so the fallback always applies there. In multi-panel mode it applies
+    // only to pages rendered OUTSIDE the panel shell — notably the pre-sign-in
+    // pages (sign-in, loading, email), which render at multi-panel width but
+    // have no [UnifiedHeader], and would otherwise leave the window impossible
+    // to drag.
+    final needsWindowsDragBar =
+        Platform.instance.isWindows &&
+        (!context.isMultiPanel || !WindowDragProvider.isProvided(context));
     final effectiveHeader =
-        header ?? (Platform.instance.isWindows && !context.isMultiPanel
-            ? _WindowsDragBar()
-            : null);
+        header ?? (needsWindowsDragBar ? _WindowsDragBar() : null);
 
     final scaffold = FScaffold(
       header: effectiveHeader,
@@ -128,6 +140,40 @@ class Scaffold extends StatelessWidget {
       child: result,
     );
   }
+}
+
+/// Marks a subtree where an ancestor already supplies the OS window-drag
+/// handle — a [UnifiedHeader]/[DragToMoveArea] strip at the top of the panel
+/// shell. A [Scaffold] rendered below this in multi-panel mode therefore
+/// skips its own [_WindowsDragBar] fallback: the shell header is what the
+/// user grabs to move the frameless Windows window.
+///
+/// Pages shown OUTSIDE the panel shell (the sign-in / loading / email pages,
+/// which render at multi-panel width but have no [UnifiedHeader] above them)
+/// are not wrapped in this marker, so they still get the fallback drag bar —
+/// without it the frameless window has no draggable region at all before
+/// sign-in.
+class WindowDragProvider extends InheritedWidget {
+  const WindowDragProvider({
+    required this.provided,
+    required super.child,
+    super.key,
+  });
+
+  /// Whether an ancestor supplies a window-drag handle.
+  final bool provided;
+
+  /// True when an enclosing [WindowDragProvider] declares that a drag handle
+  /// is already present above the calling widget.
+  static bool isProvided(BuildContext context) {
+    final provider = context
+        .dependOnInheritedWidgetOfExactType<WindowDragProvider>();
+    return provider?.provided ?? false;
+  }
+
+  @override
+  bool updateShouldNotify(WindowDragProvider oldWidget) =>
+      provided != oldWidget.provided;
 }
 
 /// Minimal draggable title bar for Windows pages that don't have a Header.

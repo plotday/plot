@@ -19,6 +19,7 @@ import 'button.dart';
 import 'note_viewer.dart';
 import 'header.dart';
 import 'panel_content_clip.dart';
+import 'scaffold.dart';
 import 'unified_header.dart';
 import 'window.dart';
 
@@ -527,112 +528,124 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
             if (snapshot.connectionState != ConnectionState.done) {
               return const LoadingPage();
             }
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                return BlocBuilder<LayoutBloc, LayoutState>(
-                  buildWhen: (previous, current) =>
-                      previous.multiPanel != current.multiPanel ||
-                      previous.leftPanelVisible != current.leftPanelVisible ||
-                      previous.middlePanelVisible !=
-                          current.middlePanelVisible ||
-                      previous.drawerOpen != current.drawerOpen ||
-                      previous.canDockSidebar != current.canDockSidebar,
-                  builder: (context, layoutState) {
-                    if (!layoutState.multiPanel) {
-                      // Single-panel: the page-level header is rendered
-                      // above this widget. Stack the viewer on top of the
-                      // route content (not replacing it) so the thread
-                      // route's state is preserved.
-                      if (viewedNote != null) {
+            // Everything below this shell renders a [UnifiedHeader] strip at
+            // its top (see [_buildMainColumn] / [_buildSidebarColumn]) that is
+            // wrapped in a [DragToMoveArea]. Mark the subtree so nested
+            // [Scaffold]s skip their own Windows drag-bar fallback — the shell
+            // header already lets the user move the window. (The transient
+            // prefs-loading [LoadingPage] above is intentionally left
+            // unmarked so it keeps its own fallback drag bar.)
+            return WindowDragProvider(
+              provided: true,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return BlocBuilder<LayoutBloc, LayoutState>(
+                    buildWhen: (previous, current) =>
+                        previous.multiPanel != current.multiPanel ||
+                        previous.leftPanelVisible != current.leftPanelVisible ||
+                        previous.middlePanelVisible !=
+                            current.middlePanelVisible ||
+                        previous.drawerOpen != current.drawerOpen ||
+                        previous.canDockSidebar != current.canDockSidebar,
+                    builder: (context, layoutState) {
+                      if (!layoutState.multiPanel) {
+                        // Single-panel: the page-level header is rendered
+                        // above this widget. Stack the viewer on top of the
+                        // route content (not replacing it) so the thread
+                        // route's state is preserved.
+                        if (viewedNote != null) {
+                          return Stack(
+                            children: [
+                              Positioned.fill(child: widget.child),
+                              Positioned.fill(
+                                child: NoteViewer(note: viewedNote),
+                              ),
+                            ],
+                          );
+                        }
+                        return widget.child;
+                      }
+
+                      final totalWidth = constraints.maxWidth;
+                      final leftWidth = _getLeftPanelWidth(
+                        totalWidth,
+                        layoutState,
+                      );
+                      final leftVisible =
+                          layoutState.leftPanelVisible && leftWidth > 0;
+
+                      // The viewer overlay lives inside the middle panel's
+                      // squircle (added in [_buildMainBody]); the sidebar is
+                      // never collapsed. Changing the tree shape between
+                      // 3-panel and 2-panel (e.g. by forcing the sidebar
+                      // hidden when viewing) causes the inner AutoRouter to
+                      // briefly fall back to its default route — which fires
+                      // `_PriorityOnlyPageState.initState` and navigates to
+                      // NewThreadRoute, wiping the open thread. Keeping the
+                      // tree shape stable preserves the thread panel's state.
+                      if (!leftVisible) {
+                        // Inset the main column below the OS status bar. The
+                        // drawer (below) is deliberately left outside this inset
+                        // so its opaque surface can paint up behind the status
+                        // bar; it pads its own content clear of it instead.
+                        final mainColumn = _withTopInset(
+                          _buildMainColumn(
+                            context,
+                            hasLeftSidebar: false,
+                            viewedNote: viewedNote,
+                          ),
+                        );
+                        // Two-panel band: the sidebar is too wide to dock as a
+                        // third column, so it's reachable as an overlay drawer
+                        // stacked over the two panels (opened from the main
+                        // header's menu button). Outside that band there's no
+                        // drawer — single-panel uses the bottom nav, three-panel
+                        // docks the sidebar.
+                        if (!layoutState.sidebarIsOverlay) return mainColumn;
+                        final double drawerWidth = _leftPanelWidth
+                            .clamp(
+                              LayoutState.leftPanelMinWidth,
+                              math.max(
+                                LayoutState.leftPanelMinWidth,
+                                totalWidth * 0.85,
+                              ),
+                            )
+                            .toDouble();
                         return Stack(
                           children: [
-                            Positioned.fill(child: widget.child),
-                            Positioned.fill(
-                              child: NoteViewer(note: viewedNote),
+                            mainColumn,
+                            _SidebarDrawerOverlay(
+                              open: layoutState.drawerOpen,
+                              width: drawerWidth,
+                              onDismiss: () => context
+                                  .read<LayoutBloc>()
+                                  .setDrawerOpen(false),
+                              sidebar: _buildDrawerContent(context),
                             ),
                           ],
                         );
                       }
-                      return widget.child;
-                    }
-
-                    final totalWidth = constraints.maxWidth;
-                    final leftWidth = _getLeftPanelWidth(
-                      totalWidth,
-                      layoutState,
-                    );
-                    final leftVisible =
-                        layoutState.leftPanelVisible && leftWidth > 0;
-
-                    // The viewer overlay lives inside the middle panel's
-                    // squircle (added in [_buildMainBody]); the sidebar is
-                    // never collapsed. Changing the tree shape between
-                    // 3-panel and 2-panel (e.g. by forcing the sidebar
-                    // hidden when viewing) causes the inner AutoRouter to
-                    // briefly fall back to its default route — which fires
-                    // `_PriorityOnlyPageState.initState` and navigates to
-                    // NewThreadRoute, wiping the open thread. Keeping the
-                    // tree shape stable preserves the thread panel's state.
-                    if (!leftVisible) {
-                      // Inset the main column below the OS status bar. The
-                      // drawer (below) is deliberately left outside this inset
-                      // so its opaque surface can paint up behind the status
-                      // bar; it pads its own content clear of it instead.
-                      final mainColumn = _withTopInset(
-                        _buildMainColumn(
-                          context,
-                          hasLeftSidebar: false,
-                          viewedNote: viewedNote,
-                        ),
-                      );
-                      // Two-panel band: the sidebar is too wide to dock as a
-                      // third column, so it's reachable as an overlay drawer
-                      // stacked over the two panels (opened from the main
-                      // header's menu button). Outside that band there's no
-                      // drawer — single-panel uses the bottom nav, three-panel
-                      // docks the sidebar.
-                      if (!layoutState.sidebarIsOverlay) return mainColumn;
-                      final double drawerWidth = _leftPanelWidth
-                          .clamp(
-                            LayoutState.leftPanelMinWidth,
-                            math.max(
-                              LayoutState.leftPanelMinWidth,
-                              totalWidth * 0.85,
-                            ),
-                          )
-                          .toDouble();
-                      return Stack(
-                        children: [
-                          mainColumn,
-                          _SidebarDrawerOverlay(
-                            open: layoutState.drawerOpen,
-                            width: drawerWidth,
-                            onDismiss: () =>
-                                context.read<LayoutBloc>().setDrawerOpen(false),
-                            sidebar: _buildDrawerContent(context),
+                      // Docked three-panel layout: inset the whole resizable as a
+                      // unit (matches the old shared top SafeArea exactly).
+                      return _withTopInset(
+                        _OuterHoverableResizable(
+                          leftWidth: leftWidth,
+                          totalWidth: totalWidth,
+                          layoutState: layoutState,
+                          onLeftWidthChanged: (width) =>
+                              _leftPanelWidth = width,
+                          left: _buildSidebarColumn(context),
+                          right: _buildMainColumn(
+                            context,
+                            hasLeftSidebar: true,
+                            viewedNote: viewedNote,
                           ),
-                        ],
-                      );
-                    }
-                    // Docked three-panel layout: inset the whole resizable as a
-                    // unit (matches the old shared top SafeArea exactly).
-                    return _withTopInset(
-                      _OuterHoverableResizable(
-                        leftWidth: leftWidth,
-                        totalWidth: totalWidth,
-                        layoutState: layoutState,
-                        onLeftWidthChanged: (width) => _leftPanelWidth = width,
-                        left: _buildSidebarColumn(context),
-                        right: _buildMainColumn(
-                          context,
-                          hasLeftSidebar: true,
-                          viewedNote: viewedNote,
                         ),
-                      ),
-                    );
-                  },
-                );
-              },
+                      );
+                    },
+                  );
+                },
+              ),
             );
           },
         );
