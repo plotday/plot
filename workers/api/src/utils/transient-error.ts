@@ -1,3 +1,5 @@
+import { isInsufficientScopeError } from "../twist/tools/auth-scope";
+
 /**
  * Detect transient infrastructure errors that should be retried without
  * paging PostHog Error Tracking. The bar for inclusion is high: we only
@@ -157,8 +159,22 @@ export function isRateLimitError(error: unknown): boolean {
  * `InvalidAuthenticationToken`, the `401 Unauthorized` statusText, and the
  * Google-Calendar connector's `Authentication failed` wrapper. Deliberately
  * NOT a bare `401` substring, which could match unrelated payloads (ids,
- * timestamps, quota bodies). Scope-insufficient 403s are intentionally NOT
- * here — `isInsufficientScopeError` owns that case.
+ * timestamps, quota bodies).
+ *
+ * Insufficient-scope 403s (Google `ACCESS_TOKEN_SCOPE_INSUFFICIENT` /
+ * `insufficientPermissions`) are ALSO terminal here: the stored token is valid
+ * but permanently missing a scope the user never granted (an ungranted optional
+ * permission, or a required scope declined on the granular consent screen). We
+ * classify granted-scope handling at auth time (`findMissingRequiredScopes`),
+ * so a downstream scope 403 is an EXPECTED outcome, not a bug — retrying loops
+ * the same 403 and paging it is noise (the PostHog 019f0950 flood was a
+ * `calendar.v3.Calendars.Get` scope 403 captured on every queue retry). ACK it
+ * like the credential rejections above. Detection is delegated to
+ * `isInsufficientScopeError` (single source of truth for the scope markers),
+ * which also unwraps the `__TWIST_ERROR__` RPC envelope. Note the daily channel
+ * sweep still owns re-auth *flagging* via `flagReauthIfInsufficientScope`'s own
+ * `isInsufficientScopeError` call — this classifier only governs the
+ * capture/retry decision in the queue consumers.
  */
 export function isAuthError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -176,6 +192,9 @@ export function isAuthError(error: unknown): boolean {
     // credentials — reconnect" and also flags needs_reauth, so retrying only
     // re-throws the same terminal error until the queue cap (the LinkedIn
     // stuck-"Syncing" storm). ACK it like the other credential rejections.
-    msg.includes("no stored credentials")
+    msg.includes("no stored credentials") ||
+    // Permanently under-scoped token — expected (user declined a permission),
+    // terminal until re-auth. See the docstring above.
+    isInsufficientScopeError(msg)
   );
 }

@@ -209,6 +209,32 @@ describe("isAuthError", () => {
     ).toBe(true);
   });
 
+  it("matches insufficient-scope 403s (token permanently under-scoped)", () => {
+    // Real Google Calendar 403 body (PostHog issue 019f0950). The user did not
+    // grant the required/optional scope, so `calendar.v3.Calendars.Get` returns
+    // ACCESS_TOKEN_SCOPE_INSUFFICIENT. Terminal until re-auth — retrying loops
+    // the same 403, so it must ACK-and-drop like other terminal auth errors and
+    // never page. `flagReauthIfInsufficientScope` (the daily channel sweep)
+    // owns re-auth flagging; here we only classify for capture/retry semantics.
+    const scope403 =
+      'Error: HTTP 403: {"error":{"code":403,"message":"Request had ' +
+      'insufficient authentication scopes.","errors":[{"message":' +
+      '"Insufficient Permission","domain":"global","reason":' +
+      '"insufficientPermissions"}],"status":"PERMISSION_DENIED","details":[{' +
+      '"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":' +
+      '"ACCESS_TOKEN_SCOPE_INSUFFICIENT","domain":"googleapis.com"}]}}';
+    expect(isAuthError(new Error(scope403))).toBe(true);
+    // Also matches when flattened across the __TWIST_ERROR__ RPC boundary.
+    expect(
+      isAuthError(
+        new Error(
+          '__TWIST_ERROR__{"originalError":"Error","message":"HTTP 403: ' +
+            'ACCESS_TOKEN_SCOPE_INSUFFICIENT","twistStack":"..."}'
+        )
+      )
+    ).toBe(true);
+  });
+
   it("does NOT match rate-limits, 404s, bare 401, or non-Errors", () => {
     expect(isAuthError(new Error("HTTP 404: Not Found"))).toBe(false);
     expect(isAuthError(new Error("Gmail API error: 403 rateLimitExceeded"))).toBe(
@@ -216,6 +242,8 @@ describe("isAuthError", () => {
     );
     // A bare "401" inside an unrelated payload must not trip the classifier.
     expect(isAuthError(new Error("synced 401 messages"))).toBe(false);
+    // A generic 403 (ACL/WAF) without the scope markers is left alone.
+    expect(isAuthError(new Error("HTTP 403: Forbidden"))).toBe(false);
     expect(isAuthError("Invalid Credentials")).toBe(false);
   });
 });
