@@ -400,6 +400,19 @@ class _NoteWidgetState extends State<NoteWidget> {
                             style: ghostSizedStyleDelta(
                               context,
                               textStyle: context.theme.typography.xs,
+                              // The footer slot is a fixed 30px-tall Stack. The
+                              // ghost button's default 10/14px vertical padding
+                              // leaves only ~10px (desktop) / ~2px (mobile) for
+                              // the text, clamping the line box below the font's
+                              // natural height and clipping the "g" descender.
+                              // Trim vertical padding so the glyphs get their
+                              // full height; horizontal padding is kept at the
+                              // ghost default to preserve the right-edge
+                              // alignment with the timestamp slot.
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isMobilePlatform() ? 14 : 10,
+                                vertical: 5,
+                              ),
                             ),
                             mainAxisSize: MainAxisSize.min,
                             child: Row(
@@ -461,6 +474,19 @@ class _NoteWidgetState extends State<NoteWidget> {
                             style: ghostSizedStyleDelta(
                               context,
                               textStyle: context.theme.typography.xs,
+                              // The footer slot is a fixed 30px-tall Stack. The
+                              // ghost button's default 10/14px vertical padding
+                              // leaves only ~10px (desktop) / ~2px (mobile) for
+                              // the text, clamping the line box below the font's
+                              // natural height and clipping the "g" descender.
+                              // Trim vertical padding so the glyphs get their
+                              // full height; horizontal padding is kept at the
+                              // ghost default to preserve the right-edge
+                              // alignment with the timestamp slot.
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isMobilePlatform() ? 14 : 10,
+                                vertical: 5,
+                              ),
                             ),
                             mainAxisSize: MainAxisSize.min,
                             child: Row(
