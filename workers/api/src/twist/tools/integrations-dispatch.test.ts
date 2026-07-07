@@ -30,6 +30,9 @@ function makeThis(linkRow: unknown) {
     buildNoteAndThread: (Integrations.prototype as any).buildNoteAndThread,
     loadThreadAccessContacts: (Integrations.prototype as any)
       .loadThreadAccessContacts,
+    // buildNoteAndThread resolves note.recipients; recipient resolution is
+    // covered by integrations-note-recipients.test.ts, so stub it here.
+    resolveNoteRecipients: async () => null,
     // dispatch also calls enrichTagActors (hydrates note.tagActors from the DB).
     // These routing tests don't assert enrichment — that's covered by
     // integrations.tagactors.test.ts — so stub it as a no-op.
@@ -76,6 +79,8 @@ function makeThisMulti(tables: Parameters<typeof mockDbByTable>[0]) {
     buildNoteAndThread: (Integrations.prototype as any).buildNoteAndThread,
     loadThreadAccessContacts: (Integrations.prototype as any)
       .loadThreadAccessContacts,
+    // See makeThis: recipient resolution is covered separately; stub it.
+    resolveNoteRecipients: async () => null,
     // See makeThis: dispatch calls enrichTagActors; not asserted here.
     enrichTagActors: async () => {},
   } as any;

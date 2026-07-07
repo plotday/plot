@@ -2479,7 +2479,7 @@ export class Integrations extends Tool implements IAuth {
   private async buildNoteAndThread(item: any): Promise<{ note: Note; thread: Thread }> {
     const link = await this.db
       .selectFrom("link")
-      .select(["meta", "channel_id", "source"])
+      .select(["meta", "channel_id", "source", "type"])
       .where("thread_id", "=", item.thread_id!)
       .where("created_by", "=", this.twistInstanceId)
       .executeTakeFirst();
@@ -2509,6 +2509,9 @@ export class Integrations extends Tool implements IAuth {
       tags: item.tags || {},
       reactions: {},
       accessContacts: (item.access_contacts as any) ?? null,
+      // Populated below for recipient-addressed link types (email) on a curated
+      // reply; null (inherit conversation recipients) otherwise.
+      recipients: null,
       archived: item.archived_at !== null,
       actions: item.actions,
       cta: null,
@@ -2520,6 +2523,14 @@ export class Integrations extends Tool implements IAuth {
       itemPosition: item.item_position ?? null,
       tagActors: {}, // hydrated by enrichTagActors after this builder returns (or {} if enrichment is skipped/fails)
     };
+
+    note.recipients = await this.resolveNoteRecipients({
+      accessContacts: (item.access_contacts as string[] | null) ?? null,
+      createdBy: item.created_by,
+      threadId: item.thread_id!,
+      linkType: link?.type,
+      channelId: link?.channel_id,
+    });
 
     const meta: ThreadMeta = { ...(link?.meta as any ?? {}) };
     meta.channelId = link?.channel_id ?? null;
@@ -2662,6 +2673,167 @@ export class Integrations extends Tool implements IAuth {
     return sourceLinkTypes?.find((lt) => lt.type === type);
   }
 
+  /**
+   * Resolve Plot contact IDs into {@link ResolvedRecipient}s for a
+   * recipient-addressed link type (`compose.targets` `"contacts"` |
+   * `"addresses"`). Shared by the compose path (`draft.recipients`) and the
+   * reply path (`note.recipients`) so recipient resolution — roles from the
+   * thread's `contact_meta`, account IDs from this connection's
+   * `contact_external_account` rows, and an email fallback for `"addresses"` —
+   * lives in one place. Contacts with neither an account row nor (for
+   * `"addresses"`) an email are dropped. `contactIds` order is preserved.
+   */
+  private async resolveDispatchRecipients(
+    contactIds: string[],
+    composeTargets: "contacts" | "addresses",
+    threadId: string,
+  ): Promise<ResolvedRecipient[]> {
+    if (contactIds.length === 0) return [];
+
+    // Resolve each contact's role (to/cc/bcc) from the thread's contact_meta so
+    // role-aware connectors keep CC/BCC recipients out of the To: header.
+    const roleByContactId = new Map<string, string>();
+    try {
+      const threadRow = await this.db
+        .selectFrom("thread")
+        .select("contact_meta")
+        .where("id", "=", threadId)
+        .executeTakeFirst();
+      const meta: unknown =
+        threadRow?.contact_meta == null
+          ? null
+          : typeof threadRow.contact_meta === "string"
+            ? JSON.parse(threadRow.contact_meta)
+            : threadRow.contact_meta;
+      if (meta && typeof meta === "object") {
+        for (const [cid, entry] of Object.entries(
+          meta as Record<string, unknown>,
+        )) {
+          const role = (entry as { role?: unknown } | null)?.role;
+          if (typeof role === "string") roleByContactId.set(cid, role);
+        }
+      }
+    } catch {
+      // Non-fatal: recipients fall back to null role (connector default).
+    }
+
+    // Scope by twist_instance_id (the connection): two accounts of the same
+    // provider with the same Plot contact have separate rows, one per
+    // connection. Returning only this connection's rows routes correctly.
+    const rows = await this.db
+      .selectFrom("contact_external_account")
+      .innerJoin("contact", "contact.id", "contact_external_account.contact_id")
+      .where("contact_external_account.twist_instance_id", "=", this.twistInstanceId)
+      .where("contact_external_account.contact_id", "in", contactIds)
+      .select([
+        "contact.id",
+        "contact.name",
+        "contact_external_account.account_id",
+      ])
+      .execute();
+
+    if (composeTargets === "contacts") {
+      return rows.map((r) => ({
+        id: r.id as Uuid,
+        name: r.name ?? null,
+        externalAccountId: r.account_id,
+        role: roleByContactId.get(r.id) ?? null,
+      }));
+    }
+
+    // "addresses": fall back to contact.email (lowercased) for any contact
+    // without a connection-scoped row.
+    const byContactId = new Map(rows.map((r) => [r.id, r] as const));
+    const missingIds = contactIds.filter((id) => !byContactId.has(id as Uuid));
+    const fallbackRows = missingIds.length
+      ? await this.db
+          .selectFrom("contact")
+          .select(["id", "name", "email"])
+          .where("id", "in", missingIds)
+          .execute()
+      : [];
+    const fallbackById = new Map(fallbackRows.map((r) => [r.id, r] as const));
+    const recipients: ResolvedRecipient[] = [];
+    for (const contactId of contactIds) {
+      const row = byContactId.get(contactId as Uuid);
+      if (row) {
+        recipients.push({
+          id: row.id as Uuid,
+          name: row.name ?? null,
+          externalAccountId: row.account_id,
+          role: roleByContactId.get(row.id) ?? null,
+        });
+        continue;
+      }
+      const fallback = fallbackById.get(contactId);
+      if (fallback?.email) {
+        recipients.push({
+          id: fallback.id as Uuid,
+          name: fallback.name ?? null,
+          externalAccountId: fallback.email.toLowerCase(),
+          role: roleByContactId.get(fallback.id) ?? null,
+        });
+      }
+    }
+    return recipients;
+  }
+
+  /**
+   * Resolve `note.recipients` for a reply write-back: the curated recipient set
+   * a user chose on a reply, pre-resolved to addresses/roles with the acting
+   * user's OWN identities removed. Returns `null` — meaning "inherit the
+   * conversation's recipients" (reply-all) — unless ALL of: the note carries an
+   * explicit access list (`accessContacts != null`), the connector owns a link
+   * on the thread whose link type addresses by recipient
+   * (`compose.targets: "contacts"|"addresses"`). The acting user's contacts are
+   * excluded via `user.user_contact_ids` so a reply is never sent back to any
+   * of the sender's own addresses (not just the connected mailbox).
+   */
+  private async resolveNoteRecipients(args: {
+    accessContacts: string[] | null | undefined;
+    createdBy: string | null | undefined;
+    threadId: string;
+    linkType: string | null | undefined;
+    channelId: string | null | undefined;
+  }): Promise<ResolvedRecipient[] | null> {
+    const { accessContacts, createdBy, threadId, linkType, channelId } = args;
+    if (accessContacts == null || !linkType) return null;
+
+    const linkTypeConfig = await this.resolveComposeLinkType(
+      linkType,
+      channelId ?? null,
+    );
+    const composeTargets = linkTypeConfig?.compose?.targets;
+    if (composeTargets !== "contacts" && composeTargets !== "addresses") {
+      return null;
+    }
+
+    // Exclude the acting user's own contacts (all linked identities, not just
+    // the connected mailbox) so a reply is never addressed back to the sender.
+    const selfIds = createdBy
+      ? await this.userContactIds(createdBy)
+      : new Set<string>();
+    const contactIds = accessContacts.filter((id) => !selfIds.has(id));
+    return this.resolveDispatchRecipients(contactIds, composeTargets, threadId);
+  }
+
+  /**
+   * Every contact id linked to a user (all their identities), via
+   * `user.user_contact_ids`. Used to keep a reply from being addressed back to
+   * any of the sender's own addresses. Returns an empty set on any error
+   * (non-fatal: the connector still drops its own connected mailbox).
+   */
+  private async userContactIds(userId: string): Promise<Set<string>> {
+    try {
+      const res = await sql<{ ids: string[] | null }>`
+        SELECT "user".user_contact_ids(${userId}::uuid) AS ids
+      `.execute(this.db);
+      return new Set(res.rows[0]?.ids ?? []);
+    } catch {
+      return new Set<string>();
+    }
+  }
+
   async dispatch(
     dispatchItem: any
   ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; forwardTo?: { functionName: string; prependArgs: any[] }; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
@@ -2786,6 +2958,11 @@ export class Integrations extends Tool implements IAuth {
         tags: item.tags || {},
         reactions: {},
         accessContacts: (item.access_contacts as any) ?? null,
+        // Reply-recipient resolution runs on the mention path (buildNoteAndThread);
+        // this channel-note path returns early for mentioned notes, and a
+        // curated access list is still honored by the connector's own
+        // access-contact fallback, so leave recipients unresolved here.
+        recipients: null,
         archived: item.archived_at !== null,
         actions: item.actions,
         cta: null,
@@ -3298,100 +3475,15 @@ export class Integrations extends Tool implements IAuth {
           composeTargets === "contacts" ||
           composeTargets === "addresses"
         ) {
-          const contactIds = draft.contacts.map((c) => c.id);
-
-          // Resolve each contact's role (e.g. to/cc/bcc) from the
-          // originating thread's contact_meta so role-aware connectors can
-          // honor it. Gmail in particular must keep CC/BCC recipients out
-          // of the To: header — placing a BCC recipient in To: exposes them
-          // to everyone else on the message (privacy leak). Missing entries
-          // → null, which the connector treats as its default role.
-          const roleByContactId = new Map<string, string>();
-          try {
-            const threadRow = await this.db
-              .selectFrom("thread")
-              .select("contact_meta")
-              .where("id", "=", threadId)
-              .executeTakeFirst();
-            const meta: unknown =
-              threadRow?.contact_meta == null
-                ? null
-                : typeof threadRow.contact_meta === "string"
-                  ? JSON.parse(threadRow.contact_meta)
-                  : threadRow.contact_meta;
-            if (meta && typeof meta === "object") {
-              for (const [cid, entry] of Object.entries(
-                meta as Record<string, unknown>,
-              )) {
-                const role = (entry as { role?: unknown } | null)?.role;
-                if (typeof role === "string") roleByContactId.set(cid, role);
-              }
-            }
-          } catch {
-            // Non-fatal: recipients fall back to null role (connector default).
-          }
-
-          // Scope by twist_instance_id (the connection): two Slack workspaces
-          // with the same Plot contact have separate `contact_external_account`
-          // rows, one per workspace. Returning only this connection's rows is
-          // what lets the dispatched message route to the right workspace.
-          const rows = await this.db
-            .selectFrom("contact_external_account")
-            .innerJoin("contact", "contact.id", "contact_external_account.contact_id")
-            .where("contact_external_account.twist_instance_id", "=", this.twistInstanceId)
-            .where("contact_external_account.contact_id", "in", contactIds)
-            .select([
-              "contact.id",
-              "contact.name",
-              "contact_external_account.account_id",
-            ])
-            .execute();
-
-          if (composeTargets === "contacts") {
-            draft.recipients = rows.map((r) => ({
-              id: r.id as Uuid,
-              name: r.name ?? null,
-              externalAccountId: r.account_id,
-              role: roleByContactId.get(r.id) ?? null,
-            }));
-          } else {
-            // "addresses": fall back to contact.email (lowercased) for any
-            // picked contact without a connection-scoped row. Contacts with
-            // neither a row nor an email are dropped silently.
-            const byContactId = new Map(rows.map((r) => [r.id, r] as const));
-            const missingIds = contactIds.filter((id) => !byContactId.has(id as Uuid));
-            const fallbackRows = missingIds.length
-              ? await this.db
-                  .selectFrom("contact")
-                  .select(["id", "name", "email"])
-                  .where("id", "in", missingIds)
-                  .execute()
-              : [];
-            const fallbackById = new Map(fallbackRows.map((r) => [r.id, r] as const));
-            const recipients: ResolvedRecipient[] = [];
-            for (const contactId of contactIds) {
-              const row = byContactId.get(contactId as Uuid);
-              if (row) {
-                recipients.push({
-                  id: row.id as Uuid,
-                  name: row.name ?? null,
-                  externalAccountId: row.account_id,
-                  role: roleByContactId.get(row.id) ?? null,
-                });
-                continue;
-              }
-              const fallback = fallbackById.get(contactId);
-              if (fallback?.email) {
-                recipients.push({
-                  id: fallback.id as Uuid,
-                  name: fallback.name ?? null,
-                  externalAccountId: fallback.email.toLowerCase(),
-                  role: roleByContactId.get(fallback.id) ?? null,
-                });
-              }
-            }
-            draft.recipients = recipients;
-          }
+          // Shared with the reply path (note.recipients). Resolves roles from
+          // the thread's contact_meta and account IDs from this connection's
+          // contact_external_account rows, with an email fallback for
+          // "addresses". draft.contacts already excludes the creating user.
+          draft.recipients = await this.resolveDispatchRecipients(
+            draft.contacts.map((c) => c.id),
+            composeTargets,
+            threadId,
+          );
         }
       }
 
