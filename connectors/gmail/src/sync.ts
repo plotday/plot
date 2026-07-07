@@ -48,6 +48,7 @@ import {
   extractBody,
   getHeader,
   isGmailRateLimitError,
+  mapWithConcurrency,
   parseEmailAddresses,
   syncGmailChannel,
   syncGmailMailboxIncremental,
@@ -97,6 +98,13 @@ export type IncrementalState = {
 export type InitialSyncState = {
   pageToken?: string;
   lastSyncTime?: Date;
+  /**
+   * Oldest mail the backfill should fetch (the account's sync-history
+   * window at enable time), applied as a Gmail `after:` bound on every
+   * page of the walk. Absent on cursors persisted before this field
+   * existed — those complete their walk unbounded.
+   */
+  historyFloor?: Date;
 };
 
 // ---------------------------------------------------------------------------
@@ -145,9 +153,20 @@ export const MAX_INCREMENTAL_THREADS_PER_BATCH = 20;
  * a burst of notifications collapses into a single pass that runs at most this
  * long after the first notification, and a notification arriving mid-pass
  * schedules exactly one follow-up. Kept short so mail latency stays negligible
- * relative to the pass itself.
+ * relative to the pass itself: this window is a flat add-on to how long a new
+ * email takes to appear in Plot, and 3s still collapses the multi-notification
+ * burst Gmail sends for a single change (those arrive within ~a second).
  */
-export const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
+export const INCREMENTAL_SYNC_COALESCE_MS = 3_000;
+
+/**
+ * Concurrent `saveLink` persists per processing pass. Each save is a full
+ * server round-trip; saving 20 threads one-at-a-time made persistence the
+ * dominant wall-clock cost of a backfill batch. Matches the server's own
+ * per-call save fan-out so the connector never asks for more concurrency
+ * than the save path itself uses.
+ */
+export const SAVE_CONCURRENCY = 5;
 
 /**
  * Task key for the coalesced mailbox-wide incremental sync pass (see
@@ -1167,6 +1186,7 @@ export async function initialSyncBatchFn(
       channelId,
       pageToken: cursor.pageToken,
       lastSyncTime: cursor.lastSyncTime,
+      historyFloor: cursor.historyFloor,
     };
     const result = await syncGmailChannel(api, syncState, 20);
 
@@ -1180,6 +1200,7 @@ export async function initialSyncBatchFn(
       await host.set(`initial_state_${channelId}`, {
         pageToken: result.state.pageToken,
         lastSyncTime: result.state.lastSyncTime,
+        historyFloor: result.state.historyFloor,
       } satisfies InitialSyncState);
       return { next: { batchNumber: batchNumber + 1 } };
     } else {
@@ -1288,6 +1309,13 @@ export async function incrementalSyncBatchFn(
 // Thread processing
 // ---------------------------------------------------------------------------
 
+/** A Gmail thread paired with its Plot transform and owning channel. */
+type TransformedGmailThread = {
+  thread: GmailThread;
+  plot: ReturnType<typeof transformGmailThread>;
+  channelId: string;
+};
+
 export async function processEmailThreadsFn(
   host: GmailSyncHost,
   threads: GmailThread[],
@@ -1306,11 +1334,7 @@ export async function processEmailThreadsFn(
   // batch in one People API pass. Gmail headers don't carry avatars, so
   // without this every email-only contact lands with `avatar = undefined`
   // and shows initials forever.
-  const transformed: {
-    thread: GmailThread;
-    plot: ReturnType<typeof transformGmailThread>;
-    channelId: string;
-  }[] = [];
+  const transformed: TransformedGmailThread[] = [];
   const allEmails = new Set<string>();
   for (const thread of threads) {
     const plot = transformGmailThread(thread);
@@ -1376,106 +1400,126 @@ export async function processEmailThreadsFn(
     await host.setMany(messageChannelEntries);
   }
 
-  for (const { thread, plot: plotThread, channelId } of transformed) {
-    try {
-      if (!plotThread.notes || plotThread.notes.length === 0) continue;
+  // Persist threads with a bounded number of saves in flight. Each save is a
+  // full server round-trip (classification, storage) that dominated the
+  // pass's wall-clock when run one-at-a-time; five matches the server's own
+  // per-call save fan-out. Threads are independent — all per-thread state
+  // keys (`sent:`, `unread:`, `starred:`) are keyed by thread/message id —
+  // so ordering across threads carries no meaning.
+  await mapWithConcurrency(transformed, SAVE_CONCURRENCY, (item) =>
+    saveTransformedThread(host, item, initialSync)
+  );
+}
 
-      // Filter out notes for messages we sent (dedup)
-      const filtered = [];
-      for (const note of plotThread.notes) {
-        const noteKey = "key" in note ? (note as { key: string }).key : null;
-        if (noteKey) {
-          const wasSent = await host.get<boolean>(`sent:${noteKey}`);
-          if (wasSent) {
-            await host.clear(`sent:${noteKey}`);
-            continue;
-          }
-        }
-        filtered.push(note);
-      }
-      plotThread.notes = filtered;
+/**
+ * Persists one transformed Gmail thread: sent-note dedup, unread-state
+ * mirroring, facet computation, the `saveLink` round-trip, and star↔to-do
+ * sync. Failures are logged and swallowed so one bad thread never aborts the
+ * rest of the pass.
+ */
+async function saveTransformedThread(
+  host: GmailSyncHost,
+  { thread, plot: plotThread, channelId }: TransformedGmailThread,
+  initialSync: boolean
+): Promise<void> {
+  try {
+    if (!plotThread.notes || plotThread.notes.length === 0) return;
 
-      if (plotThread.notes.length === 0) continue;
-
-      const isUnread =
-        thread.messages?.some((m) => m.labelIds?.includes("UNREAD")) ?? false;
-
-      if (initialSync) {
-        plotThread.unread = false;
-        plotThread.archived = false;
-        await host.set(`unread:${thread.id}`, isUnread);
-      } else {
-        const wasUnread = await host.get<boolean>(`unread:${thread.id}`);
-        if (wasUnread == null) {
-          // First time seeing this thread incrementally.
-          // If it is already read in Gmail, align Plot's state.
-          if (!isUnread) {
-            plotThread.unread = false;
-          }
-        } else if (isUnread !== wasUnread) {
-          // The unread state changed in Gmail, so write it to Plot.
-          plotThread.unread = isUnread;
-        }
-        await host.set(`unread:${thread.id}`, isUnread);
-      }
-
-      // Inject channel ID for priority routing and sync metadata
-      plotThread.channelId = channelId;
-      plotThread.meta = {
-        ...plotThread.meta,
-        syncProvider: "google",
-        syncableId: channelId,
-      };
-
-      // Compute classifier facets from the parent message's headers + body.
-      const facetParent = thread.messages.find(
-        (m) => !m.labelIds?.includes("DRAFT")
-      );
-      if (facetParent) {
-        // Use the parent message's full note body (not the short preview snippet)
-        // so the classifier's reading-vs-notification length split can fire.
-        const facetNote = plotThread.notes?.find(
-          (n) => "key" in n && (n as { key: string }).key === facetParent.id
-        );
-        const facetBody = facetNote?.content ?? plotThread.preview ?? "";
-        const { facets, cta } = gmailFacets(facetParent, facetBody);
-        plotThread.facets = cta ? { ...facets, format: cta.kind } : facets;
-        if (cta && facetNote) {
-          (facetNote as { cta?: Cta | null }).cta = cta;
+    // Filter out notes for messages we sent (dedup)
+    const filtered = [];
+    for (const note of plotThread.notes) {
+      const noteKey = "key" in note ? (note as { key: string }).key : null;
+      if (noteKey) {
+        const wasSent = await host.get<boolean>(`sent:${noteKey}`);
+        if (wasSent) {
+          await host.clear(`sent:${noteKey}`);
+          continue;
         }
       }
-
-      // Star ↔ todo sync: detect star changes and sync to Plot todo status.
-      // Statuses have been removed; every thread (including archived) is saved
-      // with no status and treated like any other thread.
-      const isStarred = GmailApi.isStarred(thread);
-      // Save link directly via integrations
-      const savedThreadId = await host.tools.integrations.saveLink(plotThread);
-      if (!savedThreadId) continue; // Link was filtered (e.g., older than sync history) — skip star sync
-
-      const wasStarred = await host.get<boolean>(`starred:${thread.id}`);
-
-      // Echo suppression relies entirely on the `starred` state: when
-      // Plot→Gmail writes STARRED, onThreadToDo updates this
-      // state *before* the API call. The resulting Gmail webhook sees
-      // isStarred === wasStarred and this branch doesn't run.
-      if (isStarred !== !!wasStarred) {
-        const actorId = await host.get<ActorId>("auth_actor_id");
-        // Use the canonical Gmail thread URL as the source identifier
-        const sourceUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
-        if (actorId) {
-          await host.tools.integrations.setThreadToDo(
-            sourceUrl,
-            actorId,
-            isStarred
-          );
-        }
-        await host.set(`starred:${thread.id}`, isStarred);
-      }
-    } catch (error) {
-      console.error(`Failed to process Gmail thread ${thread.id}:`, error);
-      // Continue processing other threads
+      filtered.push(note);
     }
+    plotThread.notes = filtered;
+
+    if (plotThread.notes.length === 0) return;
+
+    const isUnread =
+      thread.messages?.some((m) => m.labelIds?.includes("UNREAD")) ?? false;
+
+    if (initialSync) {
+      plotThread.unread = false;
+      plotThread.archived = false;
+      await host.set(`unread:${thread.id}`, isUnread);
+    } else {
+      const wasUnread = await host.get<boolean>(`unread:${thread.id}`);
+      if (wasUnread == null) {
+        // First time seeing this thread incrementally.
+        // If it is already read in Gmail, align Plot's state.
+        if (!isUnread) {
+          plotThread.unread = false;
+        }
+      } else if (isUnread !== wasUnread) {
+        // The unread state changed in Gmail, so write it to Plot.
+        plotThread.unread = isUnread;
+      }
+      await host.set(`unread:${thread.id}`, isUnread);
+    }
+
+    // Inject channel ID for priority routing and sync metadata
+    plotThread.channelId = channelId;
+    plotThread.meta = {
+      ...plotThread.meta,
+      syncProvider: "google",
+      syncableId: channelId,
+    };
+
+    // Compute classifier facets from the parent message's headers + body.
+    const facetParent = thread.messages.find(
+      (m) => !m.labelIds?.includes("DRAFT")
+    );
+    if (facetParent) {
+      // Use the parent message's full note body (not the short preview snippet)
+      // so the classifier's reading-vs-notification length split can fire.
+      const facetNote = plotThread.notes?.find(
+        (n) => "key" in n && (n as { key: string }).key === facetParent.id
+      );
+      const facetBody = facetNote?.content ?? plotThread.preview ?? "";
+      const { facets, cta } = gmailFacets(facetParent, facetBody);
+      plotThread.facets = cta ? { ...facets, format: cta.kind } : facets;
+      if (cta && facetNote) {
+        (facetNote as { cta?: Cta | null }).cta = cta;
+      }
+    }
+
+    // Star ↔ todo sync: detect star changes and sync to Plot todo status.
+    // Statuses have been removed; every thread (including archived) is saved
+    // with no status and treated like any other thread.
+    const isStarred = GmailApi.isStarred(thread);
+    // Save link directly via integrations
+    const savedThreadId = await host.tools.integrations.saveLink(plotThread);
+    if (!savedThreadId) return; // Link was filtered (e.g., older than sync history) — skip star sync
+
+    const wasStarred = await host.get<boolean>(`starred:${thread.id}`);
+
+    // Echo suppression relies entirely on the `starred` state: when
+    // Plot→Gmail writes STARRED, onThreadToDo updates this
+    // state *before* the API call. The resulting Gmail webhook sees
+    // isStarred === wasStarred and this branch doesn't run.
+    if (isStarred !== !!wasStarred) {
+      const actorId = await host.get<ActorId>("auth_actor_id");
+      // Use the canonical Gmail thread URL as the source identifier
+      const sourceUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
+      if (actorId) {
+        await host.tools.integrations.setThreadToDo(
+          sourceUrl,
+          actorId,
+          isStarred
+        );
+      }
+      await host.set(`starred:${thread.id}`, isStarred);
+    }
+  } catch (error) {
+    console.error(`Failed to process Gmail thread ${thread.id}:`, error);
+    // Continue processing other threads
   }
 }
 

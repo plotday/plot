@@ -682,6 +682,10 @@ export class Google extends Connector<Google> {
     if (!context?.observeOnly) {
       const initialState: InitialSyncState = {
         lastSyncTime: syncHistoryMin ?? undefined,
+        // Bounds the backfill walk itself (Gmail `after:` query) — without
+        // it the walk pages the whole mailbox and the server discards
+        // everything older than the window after it was already fetched.
+        historyFloor: syncHistoryMin ?? undefined,
       };
       await host.set(`initial_state_${rawId}`, initialState);
       const initialCallback = await this.callback(

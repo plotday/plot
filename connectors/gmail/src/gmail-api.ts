@@ -65,6 +65,16 @@ export type SyncState = {
   historyId?: string;
   lastSyncTime?: Date;
   watchExpiration?: Date;
+  /**
+   * Oldest mail the backfill should fetch (the account's sync-history window).
+   * Applied as a Gmail `after:` search bound so a label backfill stops at the
+   * window edge instead of paginating the entire mailbox history — everything
+   * older would be fetched, transformed, and then discarded on save anyway.
+   * Unset on cursors persisted before this field existed; those finish their
+   * walk unbounded. May round-trip storage as an ISO string, so consumers
+   * re-wrap it in `new Date(...)`.
+   */
+  historyFloor?: Date;
 };
 
 export class GmailApiError extends Error {
@@ -1097,6 +1107,58 @@ async function syncGmailChannelIncremental(
 }
 
 /**
+ * Concurrent `threads.get` fetches per pass. Serial fetching made the Gmail
+ * round-trip (~hundreds of ms each) the pass's floor: 20 threads = 20 summed
+ * round-trips. Five in flight keeps a 20-thread batch to ~4 round-trip spans
+ * while staying far under Gmail's per-user quota (threads.get is 10 quota
+ * units against a 250 units/sec budget).
+ */
+const THREAD_FETCH_CONCURRENCY = 5;
+
+/**
+ * Maps `items` with at most `limit` mappers in flight, resolving to results in
+ * input order. A mapper rejection rejects the whole call — callers that want
+ * per-item failure semantics catch inside `fn`.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const index = next++;
+        results[index] = await fn(items[index], index);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Builds the Gmail search bound for a backfill cursor: the channel's own query
+ * (for `search:` pseudo-channels) combined with the sync-history floor as an
+ * `after:` term (epoch seconds). Returns `undefined` when neither applies.
+ */
+function buildFullSyncQuery(
+  channelQuery: string | undefined,
+  historyFloor: Date | undefined
+): string | undefined {
+  const terms: string[] = [];
+  if (channelQuery) terms.push(channelQuery);
+  if (historyFloor) {
+    const epochSeconds = Math.floor(new Date(historyFloor).getTime() / 1000);
+    if (Number.isFinite(epochSeconds)) terms.push(`after:${epochSeconds}`);
+  }
+  return terms.length > 0 ? terms.join(" ") : undefined;
+}
+
+/**
  * Full sync: list all threads in the label, paginated.
  * Used for initial sync and when no historyId is available.
  */
@@ -1111,10 +1173,10 @@ async function syncGmailChannelFull(
 }> {
   // Extract query from channelId if it's a search filter
   let labelId = state.channelId;
-  let query: string | undefined;
+  let channelQuery: string | undefined;
 
   if (state.channelId.startsWith("search:")) {
-    query = state.channelId.substring(7);
+    channelQuery = state.channelId.substring(7);
     labelId = "INBOX"; // Default to inbox for searches
   }
 
@@ -1122,24 +1184,30 @@ async function syncGmailChannelFull(
     labelId,
     state.pageToken,
     batchSize,
-    query
+    buildFullSyncQuery(channelQuery, state.historyFloor)
   );
 
-  // Fetch full thread details
-  const threads: GmailThread[] = [];
-  for (const threadRef of threadRefs) {
-    try {
-      const thread = await api.getThread(threadRef.id);
-      threads.push(thread);
-    } catch (error) {
-      console.error(`Failed to fetch thread ${threadRef.id}:`, error);
-    }
-  }
+  // Fetch full thread details, a bounded number in flight, in listing order.
+  const threads = (
+    await mapWithConcurrency(
+      threadRefs,
+      THREAD_FETCH_CONCURRENCY,
+      async (threadRef): Promise<GmailThread | null> => {
+        try {
+          return await api.getThread(threadRef.id);
+        } catch (error) {
+          console.error(`Failed to fetch thread ${threadRef.id}:`, error);
+          return null;
+        }
+      }
+    )
+  ).filter((thread): thread is GmailThread => thread !== null);
 
   const newState: SyncState = {
     channelId: state.channelId,
     pageToken: nextPageToken,
     lastSyncTime: new Date(),
+    historyFloor: state.historyFloor,
   };
 
   // Update historyId from the last thread if available
@@ -1264,16 +1332,25 @@ export async function syncGmailMailboxIncremental(
   const toFetch = ordered.slice(0, maxThreads);
   const deferredThreadIds = ordered.slice(toFetch.length);
 
-  const threads: GmailThread[] = [];
-  const failedThreadIds: string[] = [];
-  for (const threadId of toFetch) {
-    try {
-      threads.push(await api.getThread(threadId));
-    } catch (error) {
-      console.error(`Failed to fetch thread ${threadId}:`, error);
-      failedThreadIds.push(threadId);
+  // Fetch a bounded number of threads in flight; results (and the failed
+  // list) keep `toFetch` order — retry ids first — so downstream processing
+  // is deterministic.
+  const fetched = await mapWithConcurrency(
+    toFetch,
+    THREAD_FETCH_CONCURRENCY,
+    async (threadId): Promise<GmailThread | null> => {
+      try {
+        return await api.getThread(threadId);
+      } catch (error) {
+        console.error(`Failed to fetch thread ${threadId}:`, error);
+        return null;
+      }
     }
-  }
+  );
+  const threads = fetched.filter(
+    (thread): thread is GmailThread => thread !== null
+  );
+  const failedThreadIds = toFetch.filter((_, i) => fetched[i] === null);
 
   return {
     expired: false,
