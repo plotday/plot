@@ -735,8 +735,10 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     // the correct surface when the user is already in the app.
     if (type == 'otp') {
       log.info('Received otp push notification — triggering sync');
+      // Store may not be open (e.g. push arrives around sign-out)
+      if (!Store.isAvailable) return;
       try {
-        await SyncOrchestrator.instance.syncAll();
+        await Store.get.catchUpSync(trigger: 'push');
       } catch (e, st) {
         log.warning('Error handling otp notification sync', e);
         Tracker.captureException(e, st);
@@ -748,10 +750,13 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
     log.info('Received sync_wake push notification');
 
+    // Store may not be open (e.g. push arrives around sign-out)
+    if (!Store.isAvailable) return;
+
     try {
       // 1. Trigger a data sync
       final store = Store.get;
-      await SyncOrchestrator.instance.syncAll();
+      await store.catchUpSync(trigger: 'push');
 
       // 2. Query local DB for unread threads grouped by first-level priority
       final batches = await _buildNotificationBatches(store);

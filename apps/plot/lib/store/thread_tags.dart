@@ -13,7 +13,7 @@ class ThreadTags extends Table with SyncableTable, UuidTable {
 }
 
 class ThreadTagsBase extends BaseTable {
-  ThreadTagsBase({this.priorityId})
+  ThreadTagsBase({this.priorityId, int limit = 200})
     : super(
         table: 'user_thread_tags',
         syncEndpoint: 'thread-tags',
@@ -22,6 +22,7 @@ class ThreadTagsBase extends BaseTable {
         order: 'updated_at',
         ascending:
             false, // Get latest items first for reverse chronological sync
+        limit: limit,
       );
 
   final PriorityId? priorityId;

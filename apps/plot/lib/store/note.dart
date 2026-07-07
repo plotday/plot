@@ -126,13 +126,14 @@ class Notes extends Table
 }
 
 class NotesBase extends BaseTable {
-  NotesBase({this.threadId})
+  NotesBase({this.threadId, int limit = 200})
     : super(
         table: 'user_note',
         syncEndpoint: 'notes',
         name: "notes",
         filterName: threadId?.toString(),
         ascending: true, // Order by created_at ascending within an activity
+        limit: limit,
       );
 
   final ThreadId? threadId;
@@ -479,9 +480,17 @@ class Note extends Equatable implements Comparable<Note> {
   /// a new note on a thread that just became unread/active is pulled in the
   /// same sync that surfaces the thread. Tracked in SyncStates as "notes".
   static Future<void> pullUpdates() async {
-    await Store.get.pull(Store.get.notes, NotesBase());
-    await Store.get.pull(Store.get.noteTags, NoteTagsBase());
-    await Store.get.pull(Store.get.noteReactions, NoteReactionsBase());
+    // Independent cursors, concurrent. Notes-before-tags only matters on
+    // PUSH (the server rejects tags for unpersisted notes); on pull an
+    // orphan tag row simply doesn't render until its note lands.
+    await Future.wait([
+      Store.get.pull(Store.get.notes, NotesBase(limit: kCatchUpPageLimit)),
+      Store.get.pull(
+        Store.get.noteTags,
+        NoteTagsBase(limit: kCatchUpPageLimit),
+      ),
+      Store.get.pull(Store.get.noteReactions, NoteReactionsBase()),
+    ], eagerError: false);
   }
 
   /// Backfill notes (and tags/reactions) for every locally-unread or active

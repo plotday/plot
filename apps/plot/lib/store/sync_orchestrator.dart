@@ -205,6 +205,39 @@ class SyncOrchestrator {
     note,
   ];
 
+  /// Pull order for incremental catch-up ([syncAll]) — replaces the
+  /// dependency-topo levels there. On incremental sync, ordering is a
+  /// latency decision, not a correctness one: rows are idempotent
+  /// insertOrReplace upserts, cross-entity reads join at query time, and
+  /// the UI skips missing referents until their row lands (watch streams
+  /// re-emit — same as the documented unresolved-contact pattern). Wave 1
+  /// is what the user is waiting for after reopening; wave 2 (typically
+  /// all 0-row on reopen) follows. Initial syncs (syncInitialCritical /
+  /// syncInitialDeferred) keep strict dependency ordering, and every
+  /// entity's pullFn still runs its own pullInitial, so an uninitialized
+  /// entity self-seeds regardless of wave order.
+  static final _incrementalPullWaves = <List<SyncEntity>>[
+    [thread, note],
+    [
+      actor,
+      group,
+      topic,
+      teamUser,
+      userSettings,
+      role,
+      priority,
+      priorityBlock,
+      twistInstance,
+      channel,
+      twistConnection,
+      session,
+    ],
+  ];
+
+  /// Exposed for tests to lock the wave composition.
+  @visibleForTesting
+  List<List<SyncEntity>> incrementalPullWaves() => _incrementalPullWaves;
+
   // ============================================================================
   // INITIAL SYNC ENTITY DEFINITIONS
   // ============================================================================
@@ -359,12 +392,13 @@ class SyncOrchestrator {
     _pushCompleters.clear();
 
     try {
-      // Phase 1: Pull all (parents → children)
-      final pullLevels = _computePullLevels();
+      // Phase 1: Pull all (thread+note first, then everything else)
+      final pullLevels = _incrementalPullWaves;
       for (var i = 0; i < pullLevels.length; i++) {
         final level = pullLevels[i];
         final levelSw = Stopwatch()..start();
         await _executePullLevel(level);
+        SyncCatchupStats.current?.recordWave(i, levelSw.elapsedMilliseconds);
         if (syncPerfLog) {
           _syncOrchestratorLog.info(
             'syncAll: pull L$i (${level.length}) ${levelSw.elapsedMilliseconds}ms '
@@ -780,19 +814,14 @@ class SyncOrchestrator {
     _rateLimitCooldown = const Duration(seconds: 5);
   }
 
-  /// Computes pull levels using topological sort (parent → child order)
-  ///
-  /// Returns a list of levels, where each level contains entities that can be
-  /// pulled in parallel. Dependencies are guaranteed to be in earlier levels.
-  List<List<SyncEntity>> _computePullLevels() {
-    return _topologicalSort(allEntities, forward: true);
-  }
-
   /// Computes push levels using topological sort (parent → child order)
   ///
   /// Returns a list of levels, where each level contains entities that can be
   /// pushed in parallel. Dependencies are guaranteed to be in earlier levels.
-  /// Push order is the same as pull order: parents must exist before children.
+  /// Push always keeps this topological parent→child order. Pull does too in
+  /// most callers ([_topologicalSort] with `forward: true`), but syncAll's
+  /// incremental pull phase does NOT reuse this: it walks the explicit,
+  /// hand-ordered waves in [_incrementalPullWaves] instead.
   List<List<SyncEntity>> _computePushLevels() {
     return _topologicalSort(allEntities, forward: true);
   }

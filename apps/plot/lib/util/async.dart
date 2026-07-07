@@ -351,3 +351,48 @@ class BatchDebouncer<T> {
     _collectedKeys.clear();
   }
 }
+
+/// Coalesces concurrent invocations of one async operation: while a run is
+/// in flight, additional callers share its future instead of starting
+/// another run. Used for the sync catch-up sweep, where app-resume and the
+/// WebSocket reconnect can both fire within milliseconds — the in-flight
+/// sweep already covers the second trigger's window (every pull fetches up
+/// to the server's current horizon at request time), so a second sweep
+/// would only queue a redundant ~19-request dirty re-pull.
+class CoalescedRunner {
+  Future<void>? _inFlight;
+
+  bool get isRunning => _inFlight != null;
+
+  Future<void> run(Future<void> Function() action) {
+    final existing = _inFlight;
+    if (existing != null) return existing;
+
+    final completer = Completer<void>();
+    _inFlight = completer.future;
+    () async {
+      try {
+        await action();
+        _inFlight = null;
+        completer.complete();
+      } catch (e, stackTrace) {
+        _inFlight = null;
+        completer.completeError(e, stackTrace);
+      }
+    }();
+    return completer.future;
+  }
+
+  /// Completes once no run is in flight. Never throws — a failed run still
+  /// counts as finished. Used by destructive flows (full resync) that must
+  /// not overlap a sweep started before their state reset.
+  Future<void> waitIdle() async {
+    while (true) {
+      final inFlight = _inFlight;
+      if (inFlight == null) return;
+      try {
+        await inFlight;
+      } catch (_) {}
+    }
+  }
+}

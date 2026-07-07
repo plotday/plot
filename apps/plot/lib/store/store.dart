@@ -55,6 +55,7 @@ import 'attention.dart';
 import 'types.dart';
 import 'logging.dart';
 import 'sync_entity.dart';
+import 'sync_catchup_stats.dart';
 
 export 'package:plot/util/value.dart';
 export 'package:plot/util/time.dart';
@@ -223,6 +224,13 @@ dynamic toEncodableSyncValue(dynamic value) {
   log.warning('toEncodableSyncValue: stringifying unhandled type ${value.runtimeType}');
   return value.toString();
 }
+
+/// Page size for incremental catch-up seq pulls on high-churn entities
+/// (threads, notes, links, tags, schedules). The server clamps limits at
+/// 1000; 500 cuts the page-loop round trips ~2.5× after a long absence and
+/// changes nothing when fewer than 200 rows changed. On-demand pullTo
+/// slices (feed/agenda scrolling) keep [BaseTable]'s 200 default.
+const int kCatchUpPageLimit = 500;
 
 /// A table in the remote database that can be synced with the local database.
 abstract class BaseTable {
@@ -1055,7 +1063,10 @@ class Store extends _$Store {
     if (Injector.appInstance.exists<Store>()) {
       _syncRetryTimer = Timer(Duration(seconds: delaySec), () {
         if (Injector.appInstance.exists<Store>()) {
-          Store.get._startSync().catchError((Object e, StackTrace s) {
+          Store.get._startSync(trigger: 'retry').catchError((
+            Object e,
+            StackTrace s,
+          ) {
             log.warning("Retry sync failed", e, s);
           });
         }
@@ -1552,6 +1563,15 @@ class Store extends _$Store {
   static String buildDraftFilter(TableInfo<Table, DataClass> table) =>
       _buildDraftFilter(table);
 
+  /// True once [entity] has completed a pull — a seq horizon or legacy
+  /// pulledAt stamp exists. Mirrors the "initialized" check inside [pull].
+  Future<bool> isEntityInitialized(String entity) async {
+    final state = await (select(syncStates)
+          ..where((row) => row.entity.equals(entity)))
+        .getSingleOrNull();
+    return state?.lastHorizon != null || state?.pulledAt != null;
+  }
+
   /// Pulls data from the remote database and syncs it to the local store.
   ///
   /// ## Sync State Management
@@ -1830,6 +1850,13 @@ class Store extends _$Store {
         '${stamped ? ", stamped" : ""})',
       );
     }
+
+    SyncCatchupStats.current?.recordPull(
+      baseTable.fullName,
+      sw.elapsedMilliseconds,
+      pages,
+      totalRows,
+    );
 
     // No caller reads pull()'s return value (all callsites await without
     // assigning), so skip the trailing `sync_states` re-read that this
@@ -2324,50 +2351,82 @@ class Store extends _$Store {
     }
   }
 
-  Future<void> _syncAll() async {
-    // Snapshot the count before sync. SyncOrchestrator swallows auth errors
-    // (treats them as expected) so syncAll() can return normally even when every
-    // operation got a 401. Only reset if no new auth failures occurred during
-    // this sync — otherwise we'd falsely log "recovered" and reset the backoff.
-    final countBefore = _syncRetryCount;
-    try {
-      // Use orchestrator for dependency-aware sync
-      // This pulls all entities (parents→children), then pushes all (children→parents)
-      await SyncOrchestrator.instance.syncAll();
-      _hasSyncedSuccessfully = true;
-      if (_syncRetryCount == countBefore) {
-        _resetSyncRetry();
-      }
-    } catch (e, stackTrace) {
-      // Check if this is an auth error - if so, schedule retry
-      if (_isAuthError(e)) {
-        log.warning("Auth error during sync", e, stackTrace);
-        await _handleAuthError();
-        rethrow; // Stop sync on auth errors
-      } else if (_isRlsViolation(e)) {
-        log.warning(
-          "RLS policy violation during sync - this indicates an app bug",
-          e,
-          stackTrace,
-        );
+  /// Coalesces overlapping catch-up triggers (resume + reconnect firing
+  /// within milliseconds) onto one sweep. The per-entity _pullDirty
+  /// machinery still covers broadcast-driven changes that land mid-pull.
+  final _catchUpRunner = CoalescedRunner();
 
-        // Report RLS violations to PostHog (indicates app bugs)
-        Tracker.trackError(
-          'database',
-          errorType: e.runtimeType.toString(),
-          errorMessage: e.toString(),
-          stackTrace: stackTrace.toString(),
-          context: 'sync_rls_violation',
-        );
-      } else {
-        // Transient (network/5xx) failure — schedule a retry so we recover
-        // without needing a lifecycle or connectivity event to fire. The
-        // WebSocket-reconnect path also kicks a sync, but it only helps if
-        // the socket itself reconnected; an HTTP-only outage (socket up,
-        // 5xx on /sync/*) wouldn't trigger anything.
-        _scheduleSyncRetry();
+  Future<void> _syncAll({required String trigger}) =>
+      _catchUpRunner.run(() => _syncAllInner(trigger));
+
+  /// Public entry for externally-triggered catch-up syncs (e.g. FCM push
+  /// wake). Routes through the same coalescing and telemetry as every other
+  /// catch-up trigger — a push arriving while a sweep is in flight joins it
+  /// instead of running a second unguarded sweep (which would also corrupt
+  /// the in-flight sync_catchup stats).
+  Future<void> catchUpSync({required String trigger}) {
+    if (_closing) return Future.value();
+    return _syncAll(trigger: trigger);
+  }
+
+  Future<void> _syncAllInner(String trigger) async {
+    SyncCatchupStats.current = SyncCatchupStats(trigger);
+    try {
+      // Snapshot the count before sync. SyncOrchestrator swallows auth errors
+      // (treats them as expected) so syncAll() can return normally even when every
+      // operation got a 401. Only reset if no new auth failures occurred during
+      // this sync — otherwise we'd falsely log "recovered" and reset the backoff.
+      final countBefore = _syncRetryCount;
+      try {
+        // Use orchestrator for dependency-aware sync
+        // This pulls all entities (parents→children), then pushes all (children→parents)
+        await SyncOrchestrator.instance.syncAll();
+        _hasSyncedSuccessfully = true;
+        if (_syncRetryCount == countBefore) {
+          _resetSyncRetry();
+        }
+      } catch (e, stackTrace) {
+        // Mark the sweep as failed so the `sync_catchup` event's `ok` flag
+        // reflects it — a failed sweep (auth/RLS/transient) often bails out
+        // early, and its short total_ms would otherwise skew the latency
+        // dashboard optimistically alongside genuinely fast successful runs.
+        SyncCatchupStats.current?.failed = true;
+        // Check if this is an auth error - if so, schedule retry
+        if (_isAuthError(e)) {
+          log.warning("Auth error during sync", e, stackTrace);
+          await _handleAuthError();
+          rethrow; // Stop sync on auth errors
+        } else if (_isRlsViolation(e)) {
+          log.warning(
+            "RLS policy violation during sync - this indicates an app bug",
+            e,
+            stackTrace,
+          );
+
+          // Report RLS violations to PostHog (indicates app bugs)
+          Tracker.trackError(
+            'database',
+            errorType: e.runtimeType.toString(),
+            errorMessage: e.toString(),
+            stackTrace: stackTrace.toString(),
+            context: 'sync_rls_violation',
+          );
+        } else {
+          // Transient (network/5xx) failure — schedule a retry so we recover
+          // without needing a lifecycle or connectivity event to fire. The
+          // WebSocket-reconnect path also kicks a sync, but it only helps if
+          // the socket itself reconnected; an HTTP-only outage (socket up,
+          // 5xx on /sync/*) wouldn't trigger anything.
+          _scheduleSyncRetry();
+        }
+        log.warning("Error during _syncAll", e, stackTrace);
       }
-      log.warning("Error during _syncAll", e, stackTrace);
+    } finally {
+      final stats = SyncCatchupStats.current;
+      SyncCatchupStats.current = null;
+      if (stats != null) {
+        unawaited(Tracker.track('sync_catchup', stats.finish()));
+      }
     }
   }
 
@@ -2420,7 +2479,10 @@ class Store extends _$Store {
   void _handleReconnected() {
     if (_closing) return;
     log.info('WebSocket reconnected, triggering catch-up sync');
-    _syncAll().catchError((Object error, StackTrace stackTrace) {
+    _syncAll(trigger: 'reconnect').catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
       log.warning('Reconnection-triggered sync failed', error, stackTrace);
       return null;
     });
@@ -2604,7 +2666,7 @@ class Store extends _$Store {
     }
   }
 
-  Future<void> _startSync() async {
+  Future<void> _startSync({required String trigger}) async {
     if (_closing) return;
     // Prevent concurrent sync attempts
     if (_isSyncing) {
@@ -2638,7 +2700,7 @@ class Store extends _$Store {
       _bufferedTables.clear();
       await _subscribeToUpdates();
 
-      await _syncAll();
+      await _syncAll(trigger: trigger);
       if (_closing) return;
 
       // Process any messages received during sync
@@ -2669,7 +2731,7 @@ class Store extends _$Store {
         (result) => result != ConnectivityResult.none,
       );
       if (_isOnline) {
-        await _startSync();
+        await _startSync(trigger: 'startup');
       }
 
       // Monitor connectivity changes throughout app lifecycle
@@ -2686,7 +2748,10 @@ class Store extends _$Store {
         if (!wasOnline && isOnline && !_isSyncing) {
           log.info("Connectivity restored, attempting to sync");
           // Attempt sync when connectivity is restored (fire and forget)
-          _startSync().catchError((Object error, StackTrace stackTrace) {
+          _startSync(trigger: 'connectivity').catchError((
+            Object error,
+            StackTrace stackTrace,
+          ) {
             log.warning(
               "Connectivity-triggered sync failed",
               error,
@@ -2947,11 +3012,24 @@ class Store extends _$Store {
   /// on items that still exist), then deletes orphaned rows that still have
   /// the sentinel. Regular sync is suspended during the entire operation.
   Future<void> fullResync() async {
-    // Wait briefly for any in-progress regular sync to finish (up to 5s)
-    for (var i = 0; i < 50 && _isSyncing; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+    // Wait for any in-progress sync to finish before we stamp the resync
+    // sentinel below. This must drain BOTH _isSyncing (set by regular
+    // startup/connectivity syncs) and _catchUpRunner (used by the reconnect
+    // and app-resume triggers, which never set _isSyncing). A sweep already
+    // in flight when the sentinel stamp runs pulls using its own pre-clear
+    // sync-state cursors, so it won't refresh sentinels on rows it doesn't
+    // touch — joining it (instead of waiting for it to finish) would make
+    // step 5 below delete every row that sweep didn't happen to touch. Loop
+    // because another sync/sweep can start again in the gap between the two
+    // waits.
+    while (_isSyncing || _catchUpRunner.isRunning) {
+      // Wait briefly for any in-progress regular sync to finish (up to 5s)
+      for (var i = 0; i < 50 && _isSyncing; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (_isSyncing) throw StateError('A sync is already in progress');
+      await _catchUpRunner.waitIdle();
     }
-    if (_isSyncing) throw StateError('A sync is already in progress');
     _isSyncing = true;
     _isBufferingBroadcasts = true;
     _bufferedTables.clear();
@@ -2990,7 +3068,14 @@ class Store extends _$Store {
       // 4. Re-subscribe and run full sync cycle
       _unsubscribeFromUpdates();
       await _subscribeToUpdates();
-      await _syncAll();
+      // Drain again right before our sweep: a runner-only sweep (push-wake /
+      // reconnect) that started during steps 1-3 read PRE-clear cursors, so
+      // joining it would leave sentinels unrefreshed and step 5 would delete
+      // live rows. This waitIdle → _syncAll continuation has no interleave
+      // point, and any sweep starting after step 3's clear pulls from
+      // scratch, so joining one of those is safe.
+      await _catchUpRunner.waitIdle();
+      await _syncAll(trigger: 'resync');
 
       // 4b. Pull first page of activity feed and agenda (global, no priority filter)
       // This ensures recent/relevant threads survive orphan deletion.
@@ -4677,13 +4762,19 @@ class _StoreLifecycleObserver extends WidgetsBindingObserver {
       if (syncPerfLog) {
         _log.info('App resumed — pulling for catch-up');
       }
-      store._syncAll().catchError((Object error, StackTrace stackTrace) {
+      store._syncAll(trigger: 'resume').catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
         _log.warning('Resume-triggered pull failed', error, stackTrace);
         return null;
       });
     } else {
       _log.info('App resumed, WebSocket disconnected — triggering full sync');
-      store._startSync().catchError((Object error, StackTrace stackTrace) {
+      store._startSync(trigger: 'resume').catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
         _log.warning('Resume-triggered sync failed', error, stackTrace);
         return null;
       });

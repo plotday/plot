@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:meta/meta.dart';
 import 'package:mime/mime.dart';
 
 import 'package:plot/api/api_exception.dart';
@@ -192,6 +193,54 @@ Future<http.Response> _retryOn401(
   return response;
 }
 
+/// Shared keep-alive client. package:http's top-level functions create and
+/// close a client per call, paying a fresh TCP+TLS handshake on EVERY
+/// request (~50-150ms+, worse on mobile radio). One long-lived client
+/// reuses connections; on web it delegates to the browser's fetch pool
+/// exactly like the top-level functions did.
+http.Client Function() _httpClientFactory = http.Client.new;
+http.Client _httpClient = _httpClientFactory();
+
+@visibleForTesting
+void debugSetHttpClientFactory(http.Client Function() factory) {
+  _httpClient.close();
+  _httpClientFactory = factory;
+  _httpClient = _httpClientFactory();
+}
+
+/// Runs [send] against the shared client. A [http.ClientException] usually
+/// means the kept-alive socket died while the app was backgrounded: the
+/// client is recreated, and [idempotent] sends (GET) are retried once on
+/// the fresh client. Mutating sends (POST/PUT/PATCH/DELETE) are NOT
+/// retried — a blind retry could double-apply a write (e.g. double-send a
+/// note) — they surface the exception to the existing NetworkException
+/// mapping unchanged.
+Future<http.Response> sendWithReconnect(
+  Future<http.Response> Function(http.Client client) send, {
+  required bool idempotent,
+}) async {
+  final client = _httpClient;
+  try {
+    return await send(client);
+  } on http.ClientException {
+    // Recreate the shared client — but only if no other failing request
+    // beat us to it (identical check), so concurrent failures produce one
+    // recreation, not a cascade.
+    if (identical(client, _httpClient)) {
+      _httpClient = _httpClientFactory();
+      // Do NOT close the dead client immediately: IOClient.close()
+      // force-terminates every connection it still holds, which would
+      // abort unrelated in-flight requests (e.g. a healthy note-send POST)
+      // as collateral. Defer the close past the longest request timeout
+      // (120s for file bytes) so nothing legitimate can still be running;
+      // idle keep-alive sockets expire on their own in the meantime.
+      Timer(const Duration(seconds: 150), client.close);
+    }
+    if (!idempotent) rethrow;
+    return await send(_httpClient);
+  }
+}
+
 final _random = Random();
 
 /// Retries a request up to 3 times on 429 with exponential backoff + jitter.
@@ -233,11 +282,16 @@ Future<Map<String, String>> getHeaders() async {
 Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
   try {
     final response = await _retryOn401(
-      (headers) => _retryOn429(() => http.post(
-        Uri.parse(Env.apiRoot + url),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30))),
+      (headers) => _retryOn429(() => sendWithReconnect(
+        (client) => client
+            .post(
+              Uri.parse(Env.apiRoot + url),
+              headers: headers,
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 30)),
+        idempotent: false,
+      )),
       url,
     );
     if (response.statusCode != 200) {
@@ -274,11 +328,16 @@ Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
 Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
   try {
     final response = await _retryOn401(
-      (headers) => _retryOn429(() => http.put(
-        Uri.parse(Env.apiRoot + url),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30))),
+      (headers) => _retryOn429(() => sendWithReconnect(
+        (client) => client
+            .put(
+              Uri.parse(Env.apiRoot + url),
+              headers: headers,
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 30)),
+        idempotent: false,
+      )),
       url,
     );
     if (response.statusCode != 200) {
@@ -315,11 +374,16 @@ Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
 Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
   try {
     final response = await _retryOn401(
-      (headers) => _retryOn429(() => http.patch(
-        Uri.parse(Env.apiRoot + url),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30))),
+      (headers) => _retryOn429(() => sendWithReconnect(
+        (client) => client
+            .patch(
+              Uri.parse(Env.apiRoot + url),
+              headers: headers,
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 30)),
+        idempotent: false,
+      )),
       url,
     );
     if (response.statusCode != 200) {
@@ -356,10 +420,12 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
 Future<T> get<T>(String url) async {
   try {
     final response = await _retryOn401(
-      (headers) => _retryOn429(() => http.get(
-        Uri.parse(Env.apiRoot + url),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30))),
+      (headers) => _retryOn429(() => sendWithReconnect(
+        (client) => client
+            .get(Uri.parse(Env.apiRoot + url), headers: headers)
+            .timeout(const Duration(seconds: 30)),
+        idempotent: true,
+      )),
       url,
     );
     if (response.statusCode != 200) {
@@ -396,10 +462,12 @@ Future<T> get<T>(String url) async {
 Future<T> delete<T>(String url) async {
   try {
     final response = await _retryOn401(
-      (headers) => _retryOn429(() => http.delete(
-        Uri.parse(Env.apiRoot + url),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30))),
+      (headers) => _retryOn429(() => sendWithReconnect(
+        (client) => client
+            .delete(Uri.parse(Env.apiRoot + url), headers: headers)
+            .timeout(const Duration(seconds: 30)),
+        idempotent: false,
+      )),
       url,
     );
     if (response.statusCode != 200) {
@@ -439,11 +507,16 @@ Future<T> deleteWithBody<T>(
 }) async {
   try {
     final response = await _retryOn401(
-      (headers) => _retryOn429(() => http.delete(
-        Uri.parse(Env.apiRoot + url),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30))),
+      (headers) => _retryOn429(() => sendWithReconnect(
+        (client) => client
+            .delete(
+              Uri.parse(Env.apiRoot + url),
+              headers: headers,
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 30)),
+        idempotent: false,
+      )),
       url,
     );
     if (response.statusCode != 200) {
@@ -507,6 +580,8 @@ Future<Map<String, dynamic>> uploadFile({
       );
     }
 
+    // Uses a fresh per-call client (not sendWithReconnect): a streamed
+    // multipart request can't be blindly re-sent after a ClientException.
     final streamed = await request.send().timeout(const Duration(seconds: 120));
     final response = await http.Response.fromStream(streamed);
 
@@ -544,10 +619,15 @@ Future<Uint8List> getFileRefBytes(String noteId, int actionIndex) async {
   final endpoint = '/files/ref/$noteId/$actionIndex';
   try {
     final headers = await getHeaders()..remove('Content-Type');
-    final response = await http.get(
-      buildFileRefUri(Env.apiRoot, noteId, actionIndex),
-      headers: headers,
-    ).timeout(const Duration(seconds: 120));
+    final response = await sendWithReconnect(
+      (client) => client
+          .get(
+            buildFileRefUri(Env.apiRoot, noteId, actionIndex),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 120)),
+      idempotent: true,
+    );
     if (response.statusCode != 200) {
       await _checkAuthError(response, endpoint);
       final errorMessage = _parseErrorMessage(response);
@@ -574,10 +654,15 @@ Future<Uint8List> getFileRefBytes(String noteId, int actionIndex) async {
 Future<Uint8List> getFileBytes(String fileId, {int? width}) async {
   try {
     final headers = await getHeaders()..remove('Content-Type');
-    final response = await http.get(
-      buildFileBytesUri(Env.apiRoot, fileId, width: width),
-      headers: headers,
-    ).timeout(const Duration(seconds: 120));
+    final response = await sendWithReconnect(
+      (client) => client
+          .get(
+            buildFileBytesUri(Env.apiRoot, fileId, width: width),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 120)),
+      idempotent: true,
+    );
     if (response.statusCode != 200) {
       await _checkAuthError(response, '/files/$fileId');
       final errorMessage = _parseErrorMessage(response);

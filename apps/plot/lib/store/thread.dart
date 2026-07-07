@@ -333,6 +333,7 @@ class ThreadsBase extends BaseTable {
     String? syncName,
     String? sortBy,
     super.ascending = false,
+    int limit = 200,
   }) : super(
          table: 'user_thread',
          syncEndpoint: 'threads',
@@ -343,8 +344,8 @@ class ThreadsBase extends BaseTable {
          filterName: priorityId?.toString(),
          order: sortBy ?? 'activity_at',
          limit: initial
-             ? null
-             : 200, // No limit for initial pull (active OR unread)
+             ? null // No limit for initial pull (active OR unread)
+             : limit,
        );
 
   final PriorityId? priorityId;
@@ -724,7 +725,7 @@ class ThreadsBase extends BaseTable {
 }
 
 class SchedulesBase extends BaseTable {
-  SchedulesBase({this.priorityId})
+  SchedulesBase({this.priorityId, int limit = 200})
     : super(
         table: 'user_schedule',
         syncEndpoint: 'schedules',
@@ -732,6 +733,7 @@ class SchedulesBase extends BaseTable {
         filterName: priorityId?.toString(),
         order: 'updated_at',
         ascending: false,
+        limit: limit,
       );
 
   final PriorityId? priorityId;
@@ -940,6 +942,19 @@ class Thread extends Equatable implements Comparable<Thread> {
   static const plotIconBucket = 'plot';
 
   static Future<void> pullInitial() async {
+    // Recurring syncs skip this method entirely — everything in it is
+    // initial-only seeding. The seq pulls below are `initial:`-gated
+    // (no-op once a cursor exists), but the agenda/feed pullTo calls and
+    // the links baseline are NOT: they re-ran on every sync, paging ever
+    // deeper into feed history (one 200-row page + 3 slice pulls per
+    // sync, on every syncAll AND every broadcast-driven thread sync).
+    // See docs/superpowers/specs/2026-07-06-app-open-sync-latency-design.md.
+    //
+    // Keyed on the LAST initial-gated entity seeded here so a crash midway
+    // through a genuine initial run re-enters (idempotent) instead of
+    // stranding the unseeded tail.
+    if (await Store.get.isEntityInitialized('thread_associations')) return;
+
     // Set pulledAt baseline for links so future incremental pulls work.
     // Links for visible threads are fetched via pullTo in pullAgenda/pullActivityFeed.
     await Store.get.pull(Store.get.links, LinksBase());
@@ -966,16 +981,31 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   static Future<void> pull() async {
-    // Pull links first so activity_at can be computed correctly when threads arrive.
-    await Store.get.pull(Store.get.links, LinksBase());
-    await Store.get.pull(Store.get.threads, ThreadsBase());
-    await Store.get.pull(Store.get.schedules, SchedulesBase());
-    await Store.get.pull(Store.get.threadTags, ThreadTagsBase());
-    await Store.get.pull(Store.get.threadReactions, ThreadReactionsBase());
-    await Store.get.pull(
-      Store.get.threadAssociations,
-      ThreadAssociationsBase(),
-    );
+    // All six cursors are independent — run them concurrently. Ordering is
+    // a non-issue for correctness: rows are insertOrReplace upserts and all
+    // cross-entity reads join at query time. A thread landing a beat before
+    // its link briefly sorts by stale activity_at and self-heals on the
+    // next watch-stream emit — already true across page boundaries today.
+    // eagerError:false so one failing pull doesn't abort the other five;
+    // the first error still propagates to the orchestrator's expected-error
+    // handling after all complete.
+    await Future.wait([
+      Store.get.pull(Store.get.links, LinksBase(limit: kCatchUpPageLimit)),
+      Store.get.pull(Store.get.threads, ThreadsBase(limit: kCatchUpPageLimit)),
+      Store.get.pull(
+        Store.get.schedules,
+        SchedulesBase(limit: kCatchUpPageLimit),
+      ),
+      Store.get.pull(
+        Store.get.threadTags,
+        ThreadTagsBase(limit: kCatchUpPageLimit),
+      ),
+      Store.get.pull(Store.get.threadReactions, ThreadReactionsBase()),
+      Store.get.pull(
+        Store.get.threadAssociations,
+        ThreadAssociationsBase(),
+      ),
+    ], eagerError: false);
   }
 
   /// Targeted fetch of specific thread rows by id, used by the notification
@@ -2824,6 +2854,14 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       Store.get.threads,
       Store.get.schedules,
       Store.get.links,
+      // Threads render only when their priority row is present
+      // (_mapResultsToThreads skips them otherwise), and the parallel
+      // catch-up waves can land a thread before its brand-new priority
+      // (threads pull in wave 1, priorities in wave 2). Watch priorities so
+      // priority writes re-emit the feed and the skipped thread appears the
+      // moment its priority lands. Priority writes are rare, so the added
+      // re-query cost is negligible.
+      Store.get.priorities,
     };
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
       readsFrom.add(Store.get.threadTags);
@@ -3087,6 +3125,11 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       Store.get.threads,
       Store.get.schedules,
       Store.get.links,
+      // Threads render only when their priority row is present; catch-up
+      // waves can land a thread before its priority. Watch priorities so
+      // the feed re-emits when the priority row lands — see the identical
+      // entry in _buildFeedFilter's readsFrom for the full rationale.
+      Store.get.priorities,
     };
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
       readsFrom.add(Store.get.threadTags);

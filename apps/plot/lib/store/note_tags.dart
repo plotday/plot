@@ -8,7 +8,7 @@ class NoteTags extends Table with SyncableTable, UuidTable {
 }
 
 class NoteTagsBase extends BaseTable {
-  NoteTagsBase({this.threadId})
+  NoteTagsBase({this.threadId, int limit = 200})
     : super(
         table: 'user_note_tags',
         syncEndpoint: 'note-tags',
@@ -17,6 +17,7 @@ class NoteTagsBase extends BaseTable {
         order: 'updated_at',
         ascending:
             false, // Get latest items first for reverse chronological sync
+        limit: limit,
       );
 
   final Uuid? threadId;

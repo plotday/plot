@@ -373,6 +373,27 @@ class PriorityBloc extends Cubit<PriorityState> {
           draft: Thread(priority: inbox, draft: true),
         ),
       );
+      // Queue the deferred GLOBAL activity-feed sync, mirroring
+      // [_loadPriority]'s tail bookkeeping. Entering Everything does NOT go
+      // through [_loadPriority] / [setPriority] — the priority page mirrors
+      // NowBloc.everything straight into this method and reuses the existing
+      // PriorityBloc instance (see [PriorityBloc.shouldApplyRoutePrioritySwitch],
+      // which explicitly skips the route-driven setPriority while Everything
+      // is active) — so without this, Everything never queued a sync at all.
+      // Fired by the flat-mode head stream's first post-restart emission
+      // ([_subscribeAllTabHead]'s `_firePendingFeedSync()` call, set up below
+      // by [_restartActiveTabSubscription]) or the fallback timer.
+      // Reset the noMore latch (mirrors [_loadPriority]) so a stale "exhausted"
+      // flag left over from the previously scoped feed can't suppress the
+      // deep-scroll pull for this newly-entered Everything view.
+      _activityFeedSyncNoMore = false;
+      _pendingFeedSync = null;
+      _pendingFeedSyncEverything = true;
+      _pendingFeedSyncFallback?.cancel();
+      _pendingFeedSyncFallback = Timer(
+        const Duration(milliseconds: 1500),
+        _firePendingFeedSync,
+      );
     } else {
       // Leave Everything: restore a non-null context to satisfy the
       // invariant. A following [setPriority] swaps in the actual focus the
@@ -384,6 +405,12 @@ class PriorityBloc extends Cubit<PriorityState> {
           draft: Thread(priority: inbox, draft: true),
         ),
       );
+      // Clear the owed-sync flag so a still-armed Everything sync (queued on
+      // entry but not yet fired, e.g. the user toggled back out before the
+      // feed re-emitted) doesn't pull the GLOBAL feed once we've left it. A
+      // following [setPriority] (if any) re-arms the correct focus-scoped
+      // sync via [_loadPriority].
+      _pendingFeedSyncEverything = false;
     }
     _restartActiveTabSubscription();
   }
@@ -1605,6 +1632,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
+    var globalPulls = 0;
     while (!_computeActiveTabDoneEnd() &&
         (_activeTabHead.length + _activeTabAppended.length < needed ||
             needsProbeBeyondHead())) {
@@ -1653,6 +1681,32 @@ class PriorityBloc extends Cubit<PriorityState> {
           .where((t) => !headIds.contains(t.id))
           .toList();
       _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
+      if (!page.saturated &&
+          state.everything &&
+          !_activityFeedSyncNoMore &&
+          globalPulls < 3) {
+        // Everything: the local page came back short (fewer than `limit`
+        // rows) — this is the REAL local-exhaustion signal (a saturated head
+        // always carries a non-null tailCursor, so the old `cursor == null`
+        // branch above could never actually observe exhaustion). Pull more
+        // global feed history on demand (mirrors per-focus feeds) before
+        // declaring the end. Advance the append cursor to just past what we
+        // already appended so the retry can't re-fetch — and double-append —
+        // the same rows: `page.nextCursor` is the last fetched row's own
+        // boundary on a non-empty short page, but falls back to `cursor`
+        // (this fetch's own `after` boundary, unchanged) when the page came
+        // back fully empty — never regress to null, which would replay
+        // rows already appended by an earlier pull in this same loop.
+        // Bounded by `globalPulls`; `_activityFeedSyncNoMore` short-circuits
+        // once the server itself is exhausted.
+        _allTabAppendCursor = page.nextCursor ?? cursor;
+        globalPulls++;
+        _rebuildActiveTabSection();
+        await _triggerActivityFeedSync(null);
+        if (isClosed) return;
+        if (gen != _activeTabAppendGeneration) return;
+        continue;
+      }
       _allTabAppendCursor = page.saturated ? page.nextCursor : null;
       if (!page.saturated) {
         _activeTabAppendsExhausted = true;
@@ -2529,6 +2583,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activeTabSubscription?.cancel();
     _pendingFeedSyncFallback?.cancel();
     _pendingFeedSync = null;
+    _pendingFeedSyncEverything = false;
     _pendingMoveIds.clear();
     return super.close();
   }
@@ -3923,6 +3978,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // the live streams pick its rows up. The fallback timer covers any path
     // where the tab-head stream doesn't emit promptly.
     _pendingFeedSync = state.context;
+    _pendingFeedSyncEverything = state.everything;
     _pendingFeedSyncFallback?.cancel();
     _pendingFeedSyncFallback = Timer(
       const Duration(milliseconds: 1500),
@@ -3932,18 +3988,22 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Focus whose activity-feed sync is owed once the feed has rendered (or
   /// the fallback timer fires). Overwritten by a newer [_loadPriority] —
-  /// only the most recent focus is synced.
+  /// only the most recent focus is synced. When [_pendingFeedSyncEverything]
+  /// is set the owed sync is the GLOBAL scope (Everything has no context).
   Priority? _pendingFeedSync;
+  bool _pendingFeedSyncEverything = false;
   Timer? _pendingFeedSyncFallback;
 
   void _firePendingFeedSync() {
     final priority = _pendingFeedSync;
-    if (priority == null) return;
+    final isEverything = _pendingFeedSyncEverything;
     _pendingFeedSync = null;
+    _pendingFeedSyncEverything = false;
     _pendingFeedSyncFallback?.cancel();
     _pendingFeedSyncFallback = null;
     if (isClosed) return;
-    unawaited(_triggerActivityFeedSync(priority));
+    if (priority == null && !isEverything) return;
+    unawaited(_triggerActivityFeedSync(isEverything ? null : priority));
   }
 
   ThreadId? _watchingThreadId;
@@ -4626,13 +4686,27 @@ class PriorityBloc extends Cubit<PriorityState> {
     return items;
   }
 
-  Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
+  /// Test-only counter of GLOBAL (Everything) activity-feed syncs, i.e.
+  /// calls to [_triggerActivityFeedSync] with `priorityToLoad == null`.
+  /// Exposed so tests can assert the Everything entry-sync wiring
+  /// ([setEverything]) and the on-demand global pull ([_fetchMoreAllTab])
+  /// actually invoke the trigger, without depending on stream timing to
+  /// observe a network side effect.
+  @visibleForTesting
+  int debugGlobalFeedSyncCount = 0;
+
+  /// [priorityToLoad] == null → the Everything view's GLOBAL feed scope
+  /// (sync-state entity 'activity-feed', no scope suffix).
+  Future<void> _triggerActivityFeedSync(Priority? priorityToLoad) async {
+    if (priorityToLoad == null) debugGlobalFeedSyncCount++;
     final archived = _effectiveShowArchived;
     // The sync cursor anchor keys on the priority id string (path-independent),
-    // matching [ThreadsBase.filterName].
-    final scopeKey = priorityToLoad.id.toString();
+    // matching [ThreadsBase.filterName]. Null scope = global feed.
+    final scopeKey = priorityToLoad?.id.toString();
     final suffix = archived ? '_archived' : '';
-    final entityName = 'activity-feed:$scopeKey$suffix';
+    final entityName = scopeKey == null
+        ? 'activity-feed$suffix'
+        : 'activity-feed:$scopeKey$suffix';
 
     // True when the loop exits because the sync boundary now covers the
     // last locally-visible item — i.e. we've pulled everything the feed
@@ -4644,7 +4718,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // sync boundary covers the last visible item's date, or server has no more.
     for (var i = 0; i < 10; i++) {
       await Thread.pullActivityFeed(
-        priorityToLoad.id,
+        priorityToLoad?.id,
         archived: archived,
       );
 
@@ -4655,9 +4729,13 @@ class PriorityBloc extends Cubit<PriorityState> {
 
       if (_activityFeedSyncNoMore) break;
 
-      // Check local activity feed to decide if we need more pages.
+      // Check local activity feed to decide if we need more pages. When
+      // [priorityToLoad] is null, [Thread.get] skips the priority filter
+      // entirely (see `_getQuery`), returning the same unscoped feed
+      // `fetchAllTabPage` renders from — so this stays correct for both
+      // per-focus and global (Everything) scopes.
       final localThreads = await Thread.get(
-        priorityId: priorityToLoad.id,
+        priorityId: priorityToLoad?.id,
         archived: archived,
         order: ThreadOrder.reverse,
         limit: _activityFeedLimit,
@@ -4764,6 +4842,15 @@ class PriorityBloc extends Cubit<PriorityState> {
   static const int _boundedSectionLimit = 1000;
   bool _agendaSyncNoMore = false;
   bool _activityFeedSyncNoMore = false;
+
+  /// Test-only override of the remote-exhaustion latch so a test can arm the
+  /// on-demand global pull in [_fetchMoreAllTab] after an earlier sync (run
+  /// against seeded `noMore` sync state, to avoid network) already latched it
+  /// to true.
+  @visibleForTesting
+  set debugActivityFeedSyncNoMore(bool value) =>
+      _activityFeedSyncNoMore = value;
+
   Future<void>? _agendaSyncFuture;
 }
 

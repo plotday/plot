@@ -92,6 +92,9 @@ class _SearchViewState extends State<_SearchView> {
   void initState() {
     super.initState();
     // Force the spanning "Everything" feed so search covers every focus.
+    // This also arms the deferred global activity-feed sync — intentional
+    // here: search spans the global scope, so fresher local data improves
+    // result quality.
     final bloc = context.read<PriorityBloc>();
     bloc.setEverything(true);
     // Seed the field from any query the bloc already holds (it survives tab

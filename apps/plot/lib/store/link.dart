@@ -384,7 +384,7 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
 }
 
 class LinksBase extends BaseTable {
-  LinksBase({this.priorityId})
+  LinksBase({this.priorityId, int limit = 200})
     : super(
         table: 'user_link',
         syncEndpoint: 'links',
@@ -393,6 +393,7 @@ class LinksBase extends BaseTable {
         order: 'updated_at',
         ascending: false,
         supportsArchiving: false,
+        limit: limit,
       );
 
   final PriorityId? priorityId;
