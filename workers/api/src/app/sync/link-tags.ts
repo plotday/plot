@@ -138,6 +138,33 @@ export async function propagateLinkStatusTagsFromDb(
 }
 
 /**
+ * Match a link's `channel_id` against a connection's channel rows, tolerating
+ * the composite-connector namespace prefix.
+ *
+ * Composite connectors (e.g. the Google "Gmail & Calendar" connector) register
+ * their channels with a namespaced id `"<product>:<rawId>"` (`mail:INBOX`,
+ * `calendar:<calId>`, `tasks:<listId>`) but save links with the BARE `rawId`
+ * (`INBOX`, `<calId>`, `<listId>`). A plain equality lookup therefore misses
+ * every composite link and falls through to the (empty) twist-level linkTypes,
+ * so no channel-level config is ever resolved for them.
+ *
+ * Resolution: exact match wins; otherwise fall back to a row whose id equals
+ * `"<anything>:<channelId>"`, splitting on the FIRST ':' to mirror
+ * `public/connectors/google/src/product-channel.ts` `parse()`.
+ */
+export function matchChannelByLinkId<T extends { channel_id: string }>(
+  channels: T[],
+  linkChannelId: string
+): T | undefined {
+  const exact = channels.find((c) => c.channel_id === linkChannelId);
+  if (exact) return exact;
+  return channels.find((c) => {
+    const idx = c.channel_id.indexOf(":");
+    return idx >= 0 && c.channel_id.slice(idx + 1) === linkChannelId;
+  });
+}
+
+/**
  * Look up channel-level linkTypes for a link.
  * Queries the link's channel_id, then looks up link_types from channel.
  */
@@ -153,12 +180,16 @@ export async function getChannelLinkTypes(
     .executeTakeFirst();
   if (!linkRow?.channel_id) return [];
 
-  const channel = await db
+  // Fetch the connection's channels (a small, bounded set — one row per
+  // enabled resource) and match prefix-tolerantly: composite links carry the
+  // bare rawId while the channel row is stored namespaced. See
+  // matchChannelByLinkId.
+  const channels = await db
     .selectFrom("channel")
-    .select("link_types")
+    .select(["channel_id", "link_types"])
     .where("twist_instance_id", "=", createdBy)
-    .where("channel_id", "=", linkRow.channel_id)
-    .executeTakeFirst();
+    .execute();
+  const channel = matchChannelByLinkId(channels, linkRow.channel_id);
   if (!channel?.link_types) return [];
 
   try {

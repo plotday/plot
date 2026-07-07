@@ -35,11 +35,24 @@ export type ForwardSource = {
  * `fwdNoteId` is client-controlled (POST /sync/notes `fwd_note`, POST
  * /sync/threads `note_fwd_note`), so it must never be trusted to name a note
  * the caller actually has access to.
+ *
+ * `targetConnectionId` is the connection the forward is being composed
+ * through. When provided and that connection has its own link on the source
+ * thread, we resolve `key`/`sourceConnectionId`/`supportsForward` from THAT
+ * link rather than the thread's earliest connector link. This is what lets a
+ * native forward survive a reconnect: reconnecting an account archives the old
+ * connection and mints a new one, so the source thread's earliest link belongs
+ * to the now-archived connection (whose `twist_instance_id` no longer matches
+ * the compose target, and whose stored channel snapshot may predate
+ * `supportsForward`). Preferring the target connection's own link — which
+ * proves that connection synced this thread — makes `decideForward`'s
+ * same-connection check pass and reads the live channel config.
  */
 export async function resolveForwardSource(
   db: Kysely<DB>,
   userId: string,
-  fwdNoteId: string
+  fwdNoteId: string,
+  targetConnectionId: string | null = null
 ): Promise<ForwardSource | null> {
   // AUTHORIZATION: only resolve a source note the requesting user can
   // actually see (thread- AND note-level visibility), via the canonical
@@ -68,15 +81,24 @@ export async function resolveForwardSource(
     .where("id", "=", visible.thread_id)
     .executeTakeFirst();
 
-  // Primary link = the connector link on the source thread (created_by is the
-  // owning twist_instance). Null for a plain Plot thread.
-  const link = await db
+  // Connector links on the source thread (created_by is the owning
+  // twist_instance). Empty for a plain Plot thread.
+  const links = await db
     .selectFrom("link")
     .select(["id", "created_by", "type"])
     .where("thread_id", "=", visible.thread_id)
     .where("created_by", "is not", null)
     .orderBy("created_at", "asc")
-    .executeTakeFirst();
+    .execute();
+
+  // Prefer the link owned by the compose target connection (only that
+  // connection can natively rebuild the item, and after a reconnect the
+  // earliest link belongs to the archived old connection). Fall back to the
+  // earliest connector link when the target has no link here (or wasn't given).
+  const link =
+    (targetConnectionId
+      ? links.find((l) => l.created_by === targetConnectionId)
+      : undefined) ?? links[0];
 
   // author_id is NOT NULL on the base note table; user.note types it nullable
   // only because it's a view. resolveActorName already returns "" for an

@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 
 import { createDb, type DB } from "../db";
 import type { Bindings } from "../env";
+import { decideForward } from "../app/sync/create-link-dispatch";
 import {
   blockquote,
   buildFallbackContent,
@@ -203,6 +204,101 @@ describe.skipIf(!DATABASE_URL)("resolveForwardSource authorization (IDOR)", () =
       expect(result?.snapshot.quotedContent).toContain(
         "Secret note only the author can see",
       );
+    });
+  });
+});
+
+/**
+ * Seed a reconnect: the source thread carries two Gmail connector links from
+ * the same user — an OLD (archived) connection whose stored channel snapshot
+ * predates `supportsForward`, and a NEW (live) connection whose channel
+ * snapshot has it. Both links use the BARE label `INBOX` while the channel
+ * rows are namespaced `mail:INBOX` (the composite Google connector shape), so
+ * this also exercises the prefix-tolerant channel match.
+ */
+async function seedReconnectedGmailLinks(
+  trx: Kysely<DB>,
+  seeded: Seeded,
+): Promise<{ oldConn: string; newConn: string; messageKey: string }> {
+  const handle = `gmail-cal-${randomUUID()}`;
+  const oldConn = randomUUID();
+  const newConn = randomUUID();
+  const messageKey = `gmail-msg-${randomUUID()}`;
+
+  await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+
+  // twist.id and channel.id are IDENTITY columns — never supply them.
+  const twistRows = await sql<{ id: string }>`
+    INSERT INTO twist (name, version, twist_package_id, handle, environment, user_id)
+    VALUES ('Gmail & Calendar', '1.0.0', ${randomUUID()}::uuid, ${handle},
+            'personal', ${seeded.authorUserId}::uuid)
+    RETURNING id`.execute(trx);
+  const twistId = twistRows.rows[0].id;
+
+  await sql`INSERT INTO twist_instance (id, twist_id, owner_id, name, archived_at) VALUES
+    (${oldConn}::uuid, ${twistId}, ${seeded.authorUserId}::uuid, 'Gmail & Calendar', now()),
+    (${newConn}::uuid, ${twistId}, ${seeded.authorUserId}::uuid, 'Gmail & Calendar', NULL)`.execute(
+    trx,
+  );
+
+  // Namespaced channel rows (mail:INBOX). Old connection's snapshot is stale
+  // (no supportsForward); the new connection's has it.
+  await sql`INSERT INTO channel (twist_instance_id, channel_id, title, link_types) VALUES
+    (${oldConn}::uuid, 'mail:INBOX', 'Inbox',
+     ${JSON.stringify([{ type: "email", label: "Thread" }])}::jsonb),
+    (${newConn}::uuid, 'mail:INBOX', 'Inbox',
+     ${JSON.stringify([{ type: "email", label: "Thread", supportsForward: true }])}::jsonb)`.execute(
+    trx,
+  );
+
+  // Two links on the source thread — bare label INBOX, old one created first.
+  await sql`INSERT INTO link (thread_id, created_by, type, channel_id, created_at) VALUES
+    (${seeded.threadId}::uuid, ${oldConn}::uuid, 'email', 'INBOX', now() - interval '2 days'),
+    (${seeded.threadId}::uuid, ${newConn}::uuid, 'email', 'INBOX', now())`.execute(trx);
+
+  // The forwarded note needs a connector key for a native forward.
+  await sql`UPDATE note SET key = ${messageKey} WHERE id = ${seeded.noteId}::uuid`.execute(trx);
+
+  await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
+
+  return { oldConn, newConn, messageKey };
+}
+
+describe.skipIf(!DATABASE_URL)("resolveForwardSource native forward across a reconnect", () => {
+  it("resolves supportsForward from the TARGET connection's link → native forward", async () => {
+    await withRollback(async (trx) => {
+      const seeded = await seedPrivateThreadWithNote(trx);
+      const { newConn, messageKey } = await seedReconnectedGmailLinks(trx, seeded);
+
+      const source = await resolveForwardSource(
+        trx,
+        seeded.authorUserId,
+        seeded.noteId,
+        newConn,
+      );
+
+      expect(source).not.toBeNull();
+      expect(source?.sourceConnectionId).toBe(newConn);
+      expect(source?.supportsForward).toBe(true);
+      expect(source?.key).toBe(messageKey);
+      expect(decideForward(source!, newConn)).toEqual({ mode: "native", key: messageKey });
+    });
+  });
+
+  it("without a target connection it picks the earliest (archived, stale) link → fallback", async () => {
+    await withRollback(async (trx) => {
+      const seeded = await seedPrivateThreadWithNote(trx);
+      const { oldConn, newConn } = await seedReconnectedGmailLinks(trx, seeded);
+
+      // Legacy call shape (no target): earliest link belongs to the archived
+      // old connection, whose channel snapshot lacks supportsForward.
+      const source = await resolveForwardSource(trx, seeded.authorUserId, seeded.noteId);
+
+      expect(source?.sourceConnectionId).toBe(oldConn);
+      expect(source?.supportsForward).toBe(false);
+      // Composing through the new connection would fall back (both because the
+      // stale link lacks supportsForward and because the connections differ).
+      expect(decideForward(source!, newConn)).toEqual({ mode: "fallback" });
     });
   });
 });

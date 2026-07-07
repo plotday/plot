@@ -1225,7 +1225,12 @@ threads.post("/sync/threads", async (c) => {
           // rebuild it natively (same connection as the source + link type
           // supports it). Only the native branch is handled here.
           if (noteFwdNoteId) {
-            const source = await resolveForwardSource(db, userId, noteFwdNoteId);
+            const source = await resolveForwardSource(
+              db,
+              userId,
+              noteFwdNoteId,
+              createLinkSpec.twist_instance_id ?? null,
+            );
             if (source) {
               const decision = decideForward(source, createLinkSpec.twist_instance_id ?? null);
               if (decision.mode === "native") {
