@@ -216,7 +216,9 @@
           {
             "queue": "run-development",
             "max_batch_size": 10,
-            "max_batch_timeout": 5,
+            // Mirrors production (see run-production consumer): a long batch
+            // window adds its full duration to every low-traffic task hop.
+            "max_batch_timeout": 2,
             "max_concurrency": 5,
             "max_retries": 3,
             "dead_letter_queue": "run-dlq-development"
@@ -512,7 +514,14 @@
           {
             "queue": "run-production",
             "max_batch_size": 10,
-            "max_batch_timeout": 30,
+            // Keep this batch window short: every runTask/scheduleTask hop
+            // (incremental sync passes, drain continuations, initial-sync page
+            // batches) waits out the full window whenever traffic is below
+            // 10 msgs at once — which is the steady state (~2 msgs/min). At the
+            // original 30s this added a flat ~30s to every sync hop (measured
+            // p50 queue_wait_ms was 30.2s); at 2s the wait is bounded by ~2s
+            // while bursts still batch.
+            "max_batch_timeout": 2,
             // Bounded so the api worker's queue consumers no longer ALONE
             // over-subscribe the Hyperdrive pool, which is SHARED with the
             // classify worker (same hyperdrive config id) plus DO alarms and
