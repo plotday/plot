@@ -1693,6 +1693,14 @@ class Store extends _$Store {
     // failures here, suppress the horizon commit at the end, and let the
     // next sync re-pull from the prior cursor.
     var rowParseFailed = false;
+    // Some processPulledRows overrides (e.g. SchedulesBase,
+    // ThreadAssociationsBase) drop rows whose local copy has an in-flight
+    // `pending` edit, to avoid clobbering the user's unsent change. Those
+    // rows must not count toward the cursor advance below: the server only
+    // re-emits rows with `seq >= last_horizon`, so once the cursor passes a
+    // dropped row's seq it is never resent — the update would be lost, not
+    // just deferred to "the next pull" as the drop sites assume.
+    var rowsDroppedForPending = false;
 
     do {
       pages++;
@@ -1754,7 +1762,19 @@ class Store extends _$Store {
 
       final writeSw = Stopwatch()..start();
       // Allow base table to merge with local pending state
-      final processedRows = await baseTable.processPulledRows(this, storeRows);
+      final storeRowsList = storeRows.toList();
+      final processedRows = await baseTable.processPulledRows(
+        this,
+        storeRowsList,
+      );
+      if (processedRows.length < storeRowsList.length) {
+        rowsDroppedForPending = true;
+        log.fine(
+          "${baseTable.table}: processPulledRows dropped "
+          "${storeRowsList.length - processedRows.length} row(s) with "
+          "in-flight local edits — suppressing cursor advance for this pull",
+        );
+      }
 
       // Skip opening a write transaction when there's nothing to write.
       // Drift's `batch()` acquires an exclusive lock regardless of payload,
@@ -1773,12 +1793,12 @@ class Store extends _$Store {
       dbMs += writeSw.elapsedMilliseconds;
 
       totalRows += baseRows.length;
-      // If any row in this batch failed to parse, drop out of the
-      // pagination loop and skip the horizon commit below. Continuing
-      // would advance the cursor past further rows that may also be
-      // unparseable, compounding the data loss. The current `syncState`
-      // cursor stays put; the next sync re-fetches from the same place.
-      if (rowParseFailed) break;
+      // If any row in this batch failed to parse, or was dropped for an
+      // in-flight local edit, drop out of the pagination loop and skip the
+      // horizon commit below. Continuing would advance the cursor past rows
+      // that were never actually written. The current `syncState` cursor
+      // stays put; the next sync re-fetches from the same place.
+      if (rowParseFailed || rowsDroppedForPending) break;
     } while (more && (maxPages == null || pages < maxPages));
 
     if (totalRows > 0) {
@@ -1789,15 +1809,17 @@ class Store extends _$Store {
     // code paths that check `pulledAt != null` to detect "entity is
     // initialized" continue to work during the expand-contract rollout.
     //
-    // Skip the entire stamp when a row failed to parse: advancing
-    // `last_horizon` (or stamping `pulledAt` on initial sync, which also
-    // gates the "initialized" check on the next pull) would lock us past
-    // the unparseable rows. Leaving syncStates untouched lets the next
-    // sync attempt re-pull from the same cursor with — hopefully — a
-    // fixed deserializer.
+    // Skip the entire stamp when a row failed to parse, or was dropped for
+    // an in-flight local edit: advancing `last_horizon` (or stamping
+    // `pulledAt` on initial sync, which also gates the "initialized" check
+    // on the next pull) would lock us past rows that were never actually
+    // written. Leaving syncStates untouched lets the next sync attempt
+    // re-pull from the same cursor — with, hopefully, a fixed deserializer
+    // or a cleared local `pending` flag.
     final shouldStamp =
         stampCursor &&
         !rowParseFailed &&
+        !rowsDroppedForPending &&
         (finalHorizon != null ||
             (initial && baseTable.filterName == null));
     var stamped = false;
@@ -2243,7 +2265,20 @@ class Store extends _$Store {
       });
 
       // Allow base table to merge with local pending state
-      final processedRows = await baseTable.processPulledRows(this, storeRows);
+      final storeRowsList = storeRows.toList();
+      final processedRows = await baseTable.processPulledRows(
+        this,
+        storeRowsList,
+      );
+      final pullToRowsDroppedForPending =
+          processedRows.length < storeRowsList.length;
+      if (pullToRowsDroppedForPending) {
+        log.fine(
+          "${baseTable.table}: processPulledRows dropped "
+          "${storeRowsList.length - processedRows.length} row(s) with "
+          "in-flight local edits — suppressing pullTo cursor advance",
+        );
+      }
 
       await batch((batch) {
         // Use insertOrReplace mode to ensure null values are explicitly set.
@@ -2256,12 +2291,12 @@ class Store extends _$Store {
 
       totalRows += baseRows.length;
 
-      // Skip the cursor + noMore stamp when a row failed to deserialize.
-      // pullTo paginates by the `last` column derived from `baseRows.last`,
-      // which would advance past any unparseable rows in the batch and
-      // strand them. Leaving the sync state untouched lets the next pull
-      // retry from the same place.
-      if (pullToParseFailed) {
+      // Skip the cursor + noMore stamp when a row failed to deserialize, or
+      // was dropped for an in-flight local edit. pullTo paginates by the
+      // `last` column derived from `baseRows.last`, which would advance past
+      // rows that were never actually written and strand them. Leaving the
+      // sync state untouched lets the next pull retry from the same place.
+      if (pullToParseFailed || pullToRowsDroppedForPending) {
         completer.complete(null);
         return null;
       }
