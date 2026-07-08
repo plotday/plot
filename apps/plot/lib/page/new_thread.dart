@@ -97,7 +97,11 @@ List<Uuid> suggestedFocusRanking({
 /// STUB: this task only defines the type and stashes it; applying it to the
 /// draft is implemented by a follow-up task.
 class ForwardSeed {
-  const ForwardSeed({required this.sourceNote, required this.primaryLink});
+  const ForwardSeed({
+    required this.sourceNote,
+    required this.primaryLink,
+    required this.sourceThreadTitle,
+  });
 
   /// The note being forwarded.
   final Note sourceNote;
@@ -105,6 +109,11 @@ class ForwardSeed {
   /// The source thread's primary (canonical) link, if any — null when the
   /// thread has no connector link (plain Plot thread).
   final Link? primaryLink;
+
+  /// The source thread's [Thread.displayTitle] — e.g. the original email's
+  /// subject — shown in the "Forwarding" takeover bar instead of the source
+  /// note's raw (often markdown) content.
+  final String sourceThreadTitle;
 }
 
 /// Whether a forwarded source link matches a compose target, so a forward can
@@ -562,6 +571,14 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// normal compose.
   Note? _forwardSourceNote;
 
+  /// The source thread's [Thread.displayTitle] for [_forwardSourceNote], shown
+  /// in the "Forwarding" takeover bar and used by [_applyForward] to pre-fill
+  /// the draft's title as "Fwd: …" (so the Drafts list shows something more
+  /// useful than "Untitled draft" while the forward is in progress).
+  /// Set/cleared alongside [_forwardSourceNote]; see its doc for lifecycle
+  /// details.
+  String? _forwardSourceTitle;
+
   /// True once the user has added at least one contact (including groups /
   /// invite-emails) during this compose session. Keeps the Chat placeholder
   /// and "Send" label active even if the user later removes all contacts.
@@ -715,6 +732,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       _stashedSectionsQuery = '';
       _selectedTwist = null;
       _forwardSourceNote = null;
+      _forwardSourceTitle = null;
       _hadContactsThisSession = false;
       _focusSuggestionOrder = const [];
       _feedbackMode = false;
@@ -1355,12 +1373,28 @@ class NewThreadPageState extends State<NewThreadPage> {
   Future<void> _applyForward(ForwardSeed seed) async {
     setState(() {
       _forwardSourceNote = seed.sourceNote;
+      _forwardSourceTitle = seed.sourceThreadTitle;
       _step = _ComposeStep.compose;
     });
     _publishHeaderBack();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _threadEditorKey.currentState?.focus();
     });
+
+    // Pre-fill the title as "Fwd: <source subject>" (mirrors every email
+    // client's forward convention) so the draft is both recognizable in the
+    // Drafts list (which reads Thread.title — see [_loadDraftSummaries]) and
+    // sent with the right subject even if the user never touches the title
+    // field. Skips a title the draft already carries (defensive — this is
+    // always a fresh compose in practice) so it never clobbers a user edit.
+    // Reverted by [_clearForward] if the user cancels the forward without
+    // having edited it further.
+    final bloc = _priorityBloc;
+    if (bloc != null && (bloc.state.draft.title?.trim().isEmpty ?? true)) {
+      await bloc.updateDraft(
+        bloc.state.draft.copyWith(title: Value('Fwd: ${seed.sourceThreadTitle}')),
+      );
+    }
 
     // Default the connection to the source note's connection. Only the Via is
     // seeded — the roster starts empty so the user chooses new recipients.
@@ -1373,6 +1407,29 @@ class NewThreadPageState extends State<NewThreadPage> {
     final link = seed.primaryLink;
     if (link != null && link.createdBy != null) {
       await _applyForwardVia(link);
+    }
+  }
+
+  /// Cancels an in-progress forward (the takeover bar's ×): clears the local
+  /// forwarding state and, if the title still holds the "Fwd: …" value
+  /// [_applyForward] pre-filled (i.e. the user hasn't edited it since),
+  /// reverts it to null so the compose falls back to Auto-title. Leaves a
+  /// user-edited title alone.
+  Future<void> _clearForward() async {
+    final bloc = _priorityBloc;
+    final expectedTitle = _forwardSourceTitle != null
+        ? 'Fwd: $_forwardSourceTitle'
+        : null;
+    setState(() {
+      _forwardSourceNote = null;
+      _forwardSourceTitle = null;
+    });
+    if (bloc != null &&
+        expectedTitle != null &&
+        bloc.state.draft.title == expectedTitle) {
+      await bloc.updateDraft(
+        bloc.state.draft.copyWith(title: const Value(null)),
+      );
     }
   }
 
@@ -2792,12 +2849,9 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                   _twistMentions,
                                               forwardSource:
                                                   _forwardSourceNote,
-                                              onClearForward: () =>
-                                                  setState(
-                                                    () =>
-                                                        _forwardSourceNote =
-                                                            null,
-                                                  ),
+                                              forwardSourceTitle:
+                                                  _forwardSourceTitle,
+                                              onClearForward: _clearForward,
                                               onSubmitted: _onChatSubmitted,
                                               submitValidator:
                                                   _validateDmSubmit,
@@ -2876,12 +2930,10 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                         _twistMentions,
                                                     forwardSource:
                                                         _forwardSourceNote,
-                                                    onClearForward: () =>
-                                                        setState(
-                                                          () =>
-                                                              _forwardSourceNote =
-                                                                  null,
-                                                        ),
+                                                    forwardSourceTitle:
+                                                        _forwardSourceTitle,
+                                                    onClearForward:
+                                                        _clearForward,
                                                     onSubmitted:
                                                         _onChatSubmitted,
                                                     submitValidator:

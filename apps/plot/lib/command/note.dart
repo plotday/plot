@@ -836,7 +836,11 @@ class ForwardNote extends NoteCommand {
 
       NewThreadPageState.activateOnOpen();
       NewThreadPageState.requestForward(
-        ForwardSeed(sourceNote: note, primaryLink: primaryLink),
+        ForwardSeed(
+          sourceNote: note,
+          primaryLink: primaryLink,
+          sourceThreadTitle: parentThread.displayTitle,
+        ),
       );
 
       var routePriority = parentThread.priority;

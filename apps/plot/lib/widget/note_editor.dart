@@ -188,6 +188,7 @@ class NoteEditor extends StatefulWidget {
     this.sendLabel,
     this.additionalMentions,
     this.forwardSource,
+    this.forwardSourceTitle,
     this.onClearForward,
     this.onSubmitted,
     this.submitValidator,
@@ -233,6 +234,12 @@ class NoteEditor extends StatefulWidget {
   /// forwarding state cleanly cancels the forward with no stale pointer left
   /// on the draft. Only used in new-thread mode.
   final Note? forwardSource;
+
+  /// The source thread's display title (e.g. the original email's subject),
+  /// shown in the "Forwarding" takeover bar's quote preview instead of
+  /// [forwardSource]'s raw (often markdown) note content. Falls back to a
+  /// content-derived preview when null. Only used in new-thread mode.
+  final String? forwardSourceTitle;
 
   /// Called when the user dismisses the "Forwarding" takeover bar's ×. The
   /// parent (new-thread mode) clears its forwarding state in response. Only
@@ -884,7 +891,11 @@ class NoteEditorState extends State<NoteEditor> {
     final source = widget.forwardSource;
     if (source == null) return const SizedBox.shrink();
     return NoteEditorTopBar(
-      state: ForwardingState(quotePreview: _previewOf(source.content)),
+      state: ForwardingState(
+        quotePreview: widget.forwardSourceTitle != null
+            ? _previewOf(widget.forwardSourceTitle)
+            : _previewOf(source.content),
+      ),
       // bodyOnly / flushToBottom editors are square-topped (see [_buildTopBar]).
       roundTop: !widget.bodyOnly && !widget.flushToBottom,
       onClearReply: () {},
@@ -905,7 +916,11 @@ class NoteEditorState extends State<NoteEditor> {
   TopBarState _computeTopBarState(ThreadState s) {
     final forwardSource = widget.forwardSource;
     if (forwardSource != null) {
-      return ForwardingState(quotePreview: _previewOf(forwardSource.content));
+      return ForwardingState(
+        quotePreview: widget.forwardSourceTitle != null
+            ? _previewOf(widget.forwardSourceTitle)
+            : _previewOf(forwardSource.content),
+      );
     }
     final replyTo = s.replyTo;
     if (replyTo != null) {
@@ -1835,17 +1850,22 @@ class NoteEditorState extends State<NoteEditor> {
           ),
           style: ButtonStyle.primary,
           loading: _saving,
-          // Body-less submit is allowed only when there's an external link —
-          // the link stays on the note (via AddThreadWithNote). Other action
-          // types (file attachments, connector create-actions) still need a
-          // body because they piggyback on the saved Note.
+          // Body-less submit is allowed when there's an external link — the
+          // link stays on the note (via AddThreadWithNote) — or when this
+          // compose is a forward: the quoted original supplies the content,
+          // so requiring the forwarder to type something is unnecessary
+          // friction (mirrors the note-creation bypass in
+          // [finalizeThreadDraft]). Other action types (file attachments,
+          // connector create-actions) still need a body because they
+          // piggyback on the saved Note.
           enabled:
               !_saving &&
               (!_isEmpty ||
                   (widget.draft.actions
                           ?.whereType<ExternalUserAction>()
                           .isNotEmpty ??
-                      false)),
+                      false) ||
+                  widget.forwardSource != null),
         ),
       ],
     );
@@ -2346,7 +2366,14 @@ class NoteEditorState extends State<NoteEditor> {
     // must still create a note so the attachment isn't dropped on send.
     final hasFileAttachment =
         resolvedActions.whereType<FileUserAction>().isNotEmpty;
-    if (body.trim().isNotEmpty || hasLinkAction || hasFileAttachment) {
+    // A forward must always produce a note, even with an empty body — the
+    // note is what carries `fwdNoteId` a few lines down, and that's what
+    // `Thread.stashPendingCreateLink` needs to stash `note_fwd_note` on the
+    // thread POST. Without it the connector never learns this is a forward
+    // and silently falls back to a blank new email (see the send-button
+    // bypass above for the matching UI-side rule).
+    final isForward = widget.forwardSource != null;
+    if (body.trim().isNotEmpty || hasLinkAction || hasFileAttachment || isForward) {
       note = widget.draft.copyWith(content: body, actions: resolvedActions);
     }
 
