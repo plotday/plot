@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/store/store.dart';
@@ -44,14 +46,14 @@ class ThreadAssignee extends HookWidget {
     final assignee = assigneeSnapshot.data ??
         (assigneeId != null ? Actor.fromCache(assigneeId) : null);
 
-    // Expand the avatar circle into the button's icon padding so the initials
-    // are legible while overall height matches neighbouring icon buttons —
-    // same sizing approach as the sharing button.
+    // Avatar circle expands into the button's icon padding (see
+    // [assigneeAvatarSize]); the button keeps its full icon-button height via
+    // `minHeight` below, so vertical alignment with sibling icon buttons holds.
     final iconContentStyle =
         context.theme.buttonStyles.ghost.md.iconContentStyle;
     final iconPadding = iconContentStyle.padding.resolve(TextDirection.ltr);
     final iconSize = context.theme.iconSizes.base;
-    final avatarSize = iconSize + iconPadding.top + iconPadding.bottom;
+    final avatarSize = assigneeAvatarSize(iconSize, iconPadding);
 
     // Track hover so the unassigned icon matches sibling `Button.icon`s:
     // resting `muted`, hover lifts to `hover`.
@@ -132,6 +134,20 @@ class ThreadAssignee extends HookWidget {
     );
   }
 }
+
+/// Diameter for the thread-row assignee avatar.
+///
+/// Derived to visually fill the ghost icon-button — the circle expands into the
+/// button's icon padding so single-letter initials stay legible and the button
+/// height matches sibling icon buttons (same approach as the sharing button).
+///
+/// Capped at [listRowGutter] (24, the shared list-row avatar size) so it never
+/// grows larger than the New Thread picker avatars. On mobile the ghost
+/// button's icon padding is 14, which pushed the uncapped diameter to
+/// `16 + 14 + 14 = 44px` — larger than the row is tall, so adjacent rows'
+/// avatars overlapped.
+double assigneeAvatarSize(double iconSize, EdgeInsets iconPadding) =>
+    math.min(iconSize + iconPadding.top + iconPadding.bottom, listRowGutter);
 
 /// Selection option for the assignee picker — equality by actor id.
 class _AssigneeOption {
