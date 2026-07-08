@@ -92,6 +92,14 @@ import { PRODUCTS_BY_KEY } from "./products/product";
  * respective product modules.
  */
 export class Google extends Connector<Google> {
+  // Bidirectional: Gmail replies are written back via onNoteCreated. This
+  // static flag is what the runtime reads (Connector.handleReplies) to mark
+  // the connector as reply-handling, which in turn makes the app auto-mention
+  // it on a reply so the note is dispatched to onNoteCreated. Without it,
+  // replies are saved as plain notes that never reach the connector and are
+  // never sent — mirroring the standalone Gmail connector, which sets this.
+  static readonly handleReplies = true;
+
   readonly provider = AuthProvider.Google;
 
   readonly dynamicLinkTypes = true;
