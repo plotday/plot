@@ -91,13 +91,16 @@ describe("buildPostLink", () => {
     const comments: LinkedInComment[] = [
       { id: "c1", text: "nice", createdAt: new Date("2026-06-20T12:05:00Z"), author: prof({ id: "u2", name: "Ada" }), parentCommentId: null },
     ];
-    const link = buildPostLink({ accountId: "acct", channelId: "acct#posts", post, comments, initialSync: true }) as { source: string; type: string; meta: { syncProvider: string; accountId: string; channelId: string; postId: string }; notes?: Array<{ key?: string }>; unread?: boolean };
+    const link = buildPostLink({ accountId: "acct", channelId: "acct#posts", post, comments, initialSync: true }) as { source: string; type: string; channelId: string | null; meta: { syncProvider: string; accountId: string; channelId: string; postId: string }; notes?: Array<{ key?: string }>; unread?: boolean };
     expect(link.source).toBe("linkedin:post:urn:li:activity:7");
     expect(link.type).toBe("post");
     expect(link.meta).toMatchObject({ syncProvider: "linkedin", accountId: "acct", channelId: "acct#posts", postId: "urn:li:activity:7" });
     expect(link.notes?.[0]?.key).toBe("post-urn:li:activity:7");
     expect(link.notes?.[1]?.key).toBe("comment-c1");
     expect(link.unread).toBe(false); // initialSync
+    // Top-level channelId must be set (not just inside meta) — see the
+    // matching assertion in connector-helpers.test.ts for why.
+    expect(link.channelId).toBe("acct#posts");
   });
 });
 

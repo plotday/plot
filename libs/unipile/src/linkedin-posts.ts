@@ -161,6 +161,9 @@ export function buildPostLink(opts: {
     created: post.createdAt,
     accessContacts: [profileToContact(post.author)],
     notes,
+    // Top-level channelId (not just inside meta) — see the comment in
+    // connector-helpers.ts's assembleConversationLink for why this matters.
+    channelId,
     meta: { syncProvider: PROVIDER, accountId, channelId, postId: post.id },
     ...(initialSync ? { unread: false, archived: false } : {}),
   } satisfies NewLinkWithNotes;

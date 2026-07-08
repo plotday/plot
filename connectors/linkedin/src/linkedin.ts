@@ -1347,6 +1347,9 @@ export function buildInvitationLink(
     created: inv.sentAt,
     accessContacts: [contact],
     notes,
+    // Top-level channelId (not just inside meta) — see the comment in
+    // connector-helpers.ts's assembleConversationLink for why this matters.
+    channelId,
     meta: {
       syncProvider: PROVIDER_KEY,
       channelId,

@@ -7,6 +7,7 @@ import {
   type ActorId,
   ActorType,
   type Contact,
+  type CreateLinkResult,
   type Link,
   type NewContact,
   type NewLinkWithNotes,
@@ -1804,7 +1805,7 @@ export class Integrations extends Tool implements IAuth {
     threadId: Uuid,
     defaultChannelId: string,
     defaultType: string,
-    link: NewLinkWithNotes | null
+    link: CreateLinkResult | null
   ): Promise<void> {
     if (!link) return;
 

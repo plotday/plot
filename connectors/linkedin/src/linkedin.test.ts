@@ -169,6 +169,15 @@ describe("buildInvitationLink", () => {
     // Message note stays authored by the inviter, no actions.
     expect(link.notes![1].actions ?? null).toBeNull();
   });
+
+  it("sets top-level channelId (not just inside meta)", () => {
+    // link.channelId is what the platform persists and later reads back to
+    // populate thread.meta.channelId for connector callbacks — a channelId
+    // set only inside meta leaves accept/ignore write-back unable to resolve
+    // a client for the connection.
+    const link = buildInvitationLink("chan-1", fakeInvitation(), true, fakeActions);
+    expect(link.channelId).toBe("chan-1");
+  });
 });
 
 type BuildActions = (c: string, i: LinkedInInvitation) => Promise<Action[]>;
