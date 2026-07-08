@@ -507,8 +507,20 @@ class _AuthButtonState extends State<AuthButton>
       }
       return;
     } catch (e, t) {
-      log.warning('Apple sign-in failed', e, t);
-      Tracker.captureException(e, t);
+      // The web Sign in with Apple popup can fail without it being a Plot bug:
+      // the user closes/dismisses it, the popup is blocked, or Apple's JS SDK
+      // is unreachable. The sign_in_with_apple_web plugin surfaces these either
+      // as a SignInWithAppleCredentialsException or — when its own
+      // `e as SignInErrorI` cast (sign_in_with_apple_web.dart:61) meets a
+      // non-JS rejection — as a "not a subtype of type 'JSObject'" TypeError
+      // that masks the real cause. The user still sees the retry toast below,
+      // but neither should be reported to error tracking.
+      if (isAppleWebSignInFailure(e)) {
+        log.info('Apple sign-in (web) did not complete: $e');
+      } else {
+        log.warning('Apple sign-in failed', e, t);
+        Tracker.captureException(e, t);
+      }
       final message = 'Unable to connect with Apple. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
@@ -1166,6 +1178,38 @@ bool isAuthCallbackTimeout(Object e) =>
     e is PlatformException &&
     e.code == 'error' &&
     e.message == 'Timeout waiting for callback value';
+
+/// True when a web Sign in with Apple attempt failed for a user-recoverable or
+/// environmental reason rather than a bug in Plot — the user closing/dismissing
+/// the popup, a blocked popup, or Apple's JS SDK being unreachable.
+///
+/// The `sign_in_with_apple_web` plugin reports a failed sign-in by casting
+/// Apple's JS rejection inside its own error handler (`e as SignInErrorI`,
+/// sign_in_with_apple_web.dart:61, where `SignInErrorI` is an extension type
+/// implementing `JSObject`). Two shapes reach us, neither a Plot bug:
+///  * a [SignInWithAppleCredentialsException] — the rejection was a JS object
+///    (e.g. the user closed the popup → `popup_closed_by_user`), so the plugin
+///    wrapped it as intended; and
+///  * a `type '…' is not a subtype of type 'JSObject'` [TypeError] — the
+///    rejection was not a JS object (popup blocked, `AppleID.auth` unreachable),
+///    so the plugin's own cast crashed and masked the real cause.
+///
+/// Both surface a retry toast to the user; neither should be captured to error
+/// tracking (PostHog issue 019f43c5, "type '…' is not a subtype of type
+/// 'JSObject'"), matching how Google cancellations and native Apple
+/// cancellations are already treated.
+@visibleForTesting
+bool isAppleWebSignInFailure(Object e) =>
+    e is SignInWithAppleCredentialsException ||
+    (e is TypeError && isAppleWebInteropCastFailure(e.toString()));
+
+/// Matches the `sign_in_with_apple_web` interop cast crash by its error message
+/// (see [isAppleWebSignInFailure]). Concrete type names are minified in release
+/// web builds (e.g. `minified:ahF`), but the `'JSObject'` target type stays
+/// literal, so the invariant tail of the message is the reliable signal.
+@visibleForTesting
+bool isAppleWebInteropCastFailure(String errorMessage) =>
+    errorMessage.contains("not a subtype of type 'JSObject'");
 
 /// How long the auth button keeps its spinner running after launching the
 /// OAuth popup. The popup can take several seconds to actually appear (notably
