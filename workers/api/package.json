@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:watch": "vitest --config vitest.integration.config.ts",
-    "test:all": "pnpm test && pnpm test:integration"
+    "test:all": "pnpm test && pnpm test:integration",
+    "eval:twist-gen": "tsx evals/run.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.7",
@@ -67,7 +68,9 @@
     "@types/pg": "^8.16.0",
     "kysely-codegen": "^0.20.0",
     "postgres-interval": "^4.1.0",
-    "vitest": "^3.2.6"
+    "tsx": "^4.19.2",
+    "vitest": "^3.2.6",
+    "yaml": "^2.9.0"
   },
   "nx": {
     "tags": [

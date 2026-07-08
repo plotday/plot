@@ -20,12 +20,77 @@ const twistSourceSchema = z.object({
   dependencies: z.record(z.string(), z.string()),
 });
 
+export const DEFAULT_GENERATION_MODEL = "claude-sonnet-4-6";
+
+/**
+ * Structured telemetry emitted during generation. Consumed by the eval
+ * harness (workers/api/evals); optional and side-effect free for all other
+ * callers.
+ */
+export type GenerateAttemptEvent =
+  | { type: "attempt_start"; attempt: number }
+  | {
+      type: "llm_complete";
+      attempt: number;
+      durationMs: number;
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadInputTokens?: number;
+        cacheCreationInputTokens?: number;
+      };
+    }
+  | {
+      type: "build_complete";
+      attempt: number;
+      durationMs: number;
+      success: boolean;
+      errors?: string[];
+    };
+
+function safeEmit(
+  onEvent: ((event: GenerateAttemptEvent) => void) | undefined,
+  event: GenerateAttemptEvent
+) {
+  if (!onEvent) return;
+  try {
+    onEvent(event);
+  } catch {
+    // Telemetry listeners must never affect generation.
+  }
+}
+
+function extractUsage(result: {
+  usage?: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number };
+  providerMetadata?: Record<string, Record<string, unknown>>;
+}): Extract<GenerateAttemptEvent, { type: "llm_complete" }>["usage"] {
+  const usage = result.usage;
+  const anthropic = result.providerMetadata?.anthropic ?? {};
+  if (!usage && !result.providerMetadata) return undefined;
+  return {
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+    cacheReadInputTokens:
+      typeof anthropic.cacheReadInputTokens === "number"
+        ? anthropic.cacheReadInputTokens
+        : usage?.cachedInputTokens,
+    cacheCreationInputTokens:
+      typeof anthropic.cacheCreationInputTokens === "number"
+        ? anthropic.cacheCreationInputTokens
+        : undefined,
+  };
+}
+
 export interface GenerateTwistOptions {
   spec: string;
   env: Bindings;
   onProgress?: (message: string) => void;
   // Optional user for PostHog attribution of generation failures.
   userId?: string | null;
+  // Override the generation model (eval harness A/B). Default unchanged.
+  model?: string;
+  // Structured telemetry (eval harness). Errors in the listener are swallowed.
+  onEvent?: (event: GenerateAttemptEvent) => void;
 }
 
 /**
@@ -55,6 +120,8 @@ export async function generateTwist({
   env,
   onProgress,
   userId,
+  model,
+  onEvent,
 }: GenerateTwistOptions): Promise<TwistSource> {
   let currentAttempt = 0;
   try {
@@ -62,6 +129,8 @@ export async function generateTwist({
       spec,
       env,
       onProgress,
+      model,
+      onEvent,
       onAttempt: (n) => {
         currentAttempt = n;
       },
@@ -82,11 +151,15 @@ async function generateTwistInner({
   spec,
   env,
   onProgress,
+  model: modelOverride,
+  onEvent,
   onAttempt,
 }: {
   spec: string;
   env: Bindings;
   onProgress?: (message: string) => void;
+  model?: string;
+  onEvent?: (event: GenerateAttemptEvent) => void;
   onAttempt: (n: number) => void;
 }): Promise<TwistSource> {
   if (
@@ -96,6 +169,8 @@ async function generateTwistInner({
   ) {
     throw new Error("AI Gateway configuration is missing");
   }
+
+  const modelId = modelOverride ?? DEFAULT_GENERATION_MODEL;
 
   // Configure Anthropic provider with AI Gateway
   const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}`;
@@ -115,6 +190,7 @@ async function generateTwistInner({
   while (attempt < MAX_ATTEMPTS) {
     attempt++;
     onAttempt(attempt);
+    safeEmit(onEvent, { type: "attempt_start", attempt });
 
     // Report progress
     onProgress?.(
@@ -175,7 +251,8 @@ ${TWIST_GUIDE}`;
     // Marking it with cache_control ephemeral lets the Anthropic provider cache
     // it for ~5 minutes; retries within a single generation call (and back-to-
     // back generations) read it at ~10% cost.
-    const model: any = anthropicProvider("claude-sonnet-4-6");
+    const model: any = anthropicProvider(modelId);
+    const llmStart = Date.now();
     const result = await generateObject({
       model,
       schema: twistSourceSchema,
@@ -183,16 +260,20 @@ ${TWIST_GUIDE}`;
       schemaDescription:
         "Twist source code structure containing source files and npm dependencies",
       maxOutputTokens: 16_000,
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-          providerOptions: {
-            anthropic: { cacheControl: { type: "ephemeral" } },
-          },
+      instructions: {
+        role: "system",
+        content: systemPrompt,
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
         },
-        { role: "user", content: userPrompt },
-      ],
+      },
+      messages: [{ role: "user", content: userPrompt }],
+    });
+    safeEmit(onEvent, {
+      type: "llm_complete",
+      attempt,
+      durationMs: Date.now() - llmStart,
+      usage: extractUsage(result),
     });
 
     // Get the validated object from the result
@@ -209,7 +290,15 @@ ${TWIST_GUIDE}`;
     }
 
     // Try to build the twist
+    const buildStart = Date.now();
     const buildResult = await buildTwist(source, env, onProgress);
+    safeEmit(onEvent, {
+      type: "build_complete",
+      attempt,
+      durationMs: Date.now() - buildStart,
+      success: buildResult.success,
+      errors: buildResult.success ? undefined : buildResult.errors,
+    });
 
     if (buildResult.success) {
       // Success! Return the source

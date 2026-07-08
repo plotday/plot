@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "evals/**/*.test.ts"],
     exclude: ["src/**/__tests__/**/*.test.ts"], // Integration tests use separate config
     coverage: {
       provider: "v8",

@@ -1,7 +1,28 @@
-import { getContainer } from "@cloudflare/containers";
-
 import type { Bindings } from "../env";
 import type { TwistSource, BuildResult } from "./types";
+
+/**
+ * Resolve `getContainer` from `@cloudflare/containers` lazily via a dynamic
+ * import. A dynamic import turns a module-load failure into a catchable
+ * rejection (a static import instead crashes the whole module graph), so
+ * this can fall back to a byte-for-byte reimplementation of the same
+ * two-line helper. The fallback is ONLY reachable outside a real Workers
+ * runtime — e.g. the local eval harness (workers/api/evals) running under
+ * plain Node/tsx, where `cloudflare:workers` (a transitive dependency of
+ * @cloudflare/containers) isn't available. Real Workers deployments always
+ * resolve the real package below.
+ */
+async function getContainer(
+  binding: Bindings["TWIST_BUILDER"],
+  name: string
+): Promise<DurableObjectStub> {
+  try {
+    const { getContainer: real } = await import("@cloudflare/containers");
+    return real(binding, name);
+  } catch {
+    return binding.get(binding.idFromName(name));
+  }
+}
 
 /**
  * Builds a twist from source code in an isolated container environment.
@@ -51,7 +72,7 @@ export async function buildTwist(
     // Get a container instance
     // We use a consistent ID "builder" to reuse the same container instance
     // for better performance (warm starts)
-    const container = getContainer(env.TWIST_BUILDER, "builder");
+    const container = await getContainer(env.TWIST_BUILDER, "builder");
 
     // Send build request to the container's HTTP server
     const response = await container.fetch("http://localhost:3000/build", {

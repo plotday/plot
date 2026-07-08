@@ -1,5 +1,6 @@
 {
   "name": "@plotday/worker-util",
+  "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "sideEffects": false,

@@ -2,3 +2,6 @@
 
 # Sentry Config File
 .sentryclirc
+
+# Eval harness output
+evals/results/
