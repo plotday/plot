@@ -37,6 +37,7 @@ class RoleHeader extends StatefulWidget {
     this.monochrome = false,
     this.borderRadius,
     this.reorderableIndex,
+    this.roomy = false,
     super.key,
   });
 
@@ -71,6 +72,12 @@ class RoleHeader extends StatefulWidget {
   /// Border radius for the hover/selection highlight (rounded pill in the
   /// left panel, rectangular edge-to-edge single-panel).
   final BorderRadius? borderRadius;
+
+  /// Roomier single-panel mobile treatment: a larger (body-size) eyebrow, its
+  /// left edge aligned to the roomy focus rows' leading gutter, and a taller
+  /// hover pill matching those 36px rows. Off (the compact eyebrow) elsewhere.
+  /// Set by [PrioritiesList] only.
+  final bool roomy;
 
   @override
   State<RoleHeader> createState() => _RoleHeaderState();
@@ -120,9 +127,12 @@ class _RoleHeaderState extends State<RoleHeader> {
     // role: the tile overflows that gap symmetrically instead of pushing its
     // neighbours. The eyebrow (centred in the tile) stays put, and the row
     // height is identical collapsed vs expanded, so the disclosure never jumps.
-    final tileHeight = context.theme.iconSizes.base * 2;
+    final tileHeight = widget.roomy
+        ? listRowGutter + context.theme.spacing.sm * 2
+        : context.theme.iconSizes.base * 2;
     final layoutHeight =
-        context.theme.iconSizes.base + context.theme.spacing.md;
+        context.theme.iconSizes.base +
+        (widget.roomy ? context.theme.spacing.lg : context.theme.spacing.md);
     // Let the tile lay out at its own natural (focus-tile) height — capping it
     // would clip the body once the 1px border is accounted for — and centre it
     // in the shorter [layoutHeight] footprint, overflowing the gap evenly.
@@ -166,8 +176,14 @@ class _RoleHeaderState extends State<RoleHeader> {
       // left spacer (the shared sidebar left inset) pulls the role name to the
       // same left edge as the FYI / Everything tiles and the focus icons below
       // it, so the whole sidebar shares one left margin.
-      leadingBuilder: (isHovered, hasFocus) =>
-          SizedBox(width: context.theme.spacing.lg),
+      leadingBuilder: (isHovered, hasFocus) => SizedBox(
+        // Align the eyebrow's left edge with the focus rows' leading gutter
+        // below it: sm in roomy mode (the compose picker's header indent), lg
+        // in the compact sidebar.
+        width: widget.roomy
+            ? context.theme.spacing.sm
+            : context.theme.spacing.lg,
+      ),
       // Role name as an uppercase eyebrow + (collapsed) unread dot. The dot
       // sits outside the Flexible so it survives title truncation. The name is
       // uppercased render-only (the stored [Role.name] keeps its original
@@ -185,6 +201,14 @@ class _RoleHeaderState extends State<RoleHeader> {
               style: eyebrowLabelStyle(context.theme.typography).copyWith(
                 color: labelColor,
                 fontWeight: FontWeight.w600,
+                // Roomy role headers step up to the body size (md) — larger than
+                // the compose picker's section headers, since a role is a
+                // tappable section in its own right — while keeping the
+                // uppercase + tracking + colour eyebrow treatment. Compact keeps
+                // the small xs eyebrow.
+                fontSize: widget.roomy
+                    ? context.theme.typography.md.fontSize
+                    : null,
               ),
             ),
           ),

@@ -31,6 +31,7 @@ class PriorityWidget extends StatefulWidget {
     this.expandable = false,
     this.expanded = false,
     this.onToggleExpand,
+    this.roomy = false,
     super.key,
   });
 
@@ -109,6 +110,13 @@ class PriorityWidget extends StatefulWidget {
 
   /// Callback fired when the user taps the caret.
   final VoidCallback? onToggleExpand;
+
+  /// Roomier layout for the single-panel mobile focus sidebar: a larger leading
+  /// glyph in a [listRowGutter] gutter and a taller (~36px) row, matching the
+  /// NewThreadPage compose rows so the two mobile lists read as one. Off (the
+  /// compact desktop / docked-left-panel rhythm) everywhere else. Set by
+  /// [PrioritiesList] only.
+  final bool roomy;
 
   @override
   State<PriorityWidget> createState() => _PriorityWidgetState();
@@ -226,8 +234,12 @@ class _PriorityWidgetState extends State<PriorityWidget> {
         final hovered = isHovered || hasFocus;
         // Reserve vertical space so the tile height doesn't jump when hover
         // buttons appear. Width collapses to 0 when not hovered so the body
-        // gets full width.
-        final buttonSlotHeight = buildContext.theme.iconSizes.base * 2;
+        // gets full width. Roomy mode matches the compose pill row height
+        // (gutter + sm padding top & bottom = 36) so a focus row and a
+        // NewThreadPage pill are the same height.
+        final buttonSlotHeight = widget.roomy
+            ? listRowGutter + buildContext.theme.spacing.sm * 2
+            : buildContext.theme.iconSizes.base * 2;
 
         return Padding(
           padding: EdgeInsets.only(right: leadingH),
@@ -265,29 +277,31 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       indentLevel: widget.indentLevel,
       textStyle: effectiveTextStyle,
       leadingBuilder: (isHovered, hasFocus) {
-        // Cap-height leading size so the focus glyph sits level with the label
-        // instead of looming at the full `base` (1:1) size — see
-        // [PlotIconSizes.leading].
-        final iconSize = buildContext.theme.iconSizes.leading;
-        // Leading focus icon in the shared sidebar leading slot (md inset on
-        // either side — see sidebarLeading). The unread dot now trails the
-        // title — see _buildLabel.
+        // Roomy (mobile) rows match the compose pill: a full [listRowIconSize]
+        // glyph in a [listRowGutter] gutter. Compact rows use the cap-height
+        // leading size so the glyph sits level with the label instead of
+        // looming at the full `base` (1:1) size — see [PlotIconSizes.leading].
+        final iconSize = widget.roomy
+            ? listRowIconSize
+            : buildContext.theme.iconSizes.leading;
+        // Leading focus icon in the shared sidebar leading slot. The unread dot
+        // now trails the title — see _buildLabel.
         // The Inbox focus always shows the inbox glyph and the FYI focus the
         // newspaper glyph, never the focus's own icon (or the default focus
         // icon when it has none). Mirror [Priority.displayTitle] / [FocusLabel].
         final isInbox = priority.isInbox;
-        return sidebarLeading(
-          buildContext,
-          Icon(
-            isInbox
-                ? PlotIcon.inbox
-                : priority.isFyi
-                ? PlotIcon.newspaper
-                : PlotIcon.focusIcon(priority.icon),
-            size: iconSize,
-            color: labelColor,
-          ),
+        final glyph = Icon(
+          isInbox
+              ? PlotIcon.inbox
+              : priority.isFyi
+              ? PlotIcon.newspaper
+              : PlotIcon.focusIcon(priority.icon),
+          size: iconSize,
+          color: labelColor,
         );
+        return widget.roomy
+            ? roomyLeading(buildContext, glyph)
+            : sidebarLeading(buildContext, glyph);
       },
     );
 

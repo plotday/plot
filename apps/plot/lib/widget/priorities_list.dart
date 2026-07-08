@@ -229,6 +229,14 @@ class _PrioritiesListState extends State<PrioritiesList> {
       builder: (context, layoutState) {
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
+        // Roomy single-panel mobile treatment: focus rows and role headers grow
+        // to match the NewThreadPage compose rows (larger leading glyph in a
+        // shared gutter, ~36px rows, body-size role eyebrows) so the two mobile
+        // lists read as one. Gated to touch platforms when this list is the
+        // whole screen; desktop and the docked left panel keep the compact
+        // sidebar rhythm (isLeftPanel already selects the tighter `sm` item text
+        // below).
+        final bool roomy = isMobilePlatform() && !isLeftPanel;
         // Single panel: a role tap only discloses its focuses (no navigation),
         // tracked locally in [_manualExpandedRoleId]. Left panel: a role tap
         // selects its first focus, so expansion stays purely selection-derived.
@@ -266,13 +274,19 @@ class _PrioritiesListState extends State<PrioritiesList> {
             : null;
         final bool monochrome = isLeftPanel;
 
-        // Vertical gap above each role group (between groups). Touch devices get
-        // a touch more air so the groups stay easy to separate by eye and tap;
-        // desktop (mouse) reads cleanly tighter. Both are well below the old
-        // [PlotSpacing.xl] (20), which left the sidebar feeling loose.
-        final double roleGroupGap = isMobilePlatform()
-            ? context.theme.spacing.lg // 14
-            : context.theme.spacing.md; // 10
+        // Vertical gap above each role group (between groups). Roomy mode uses
+        // the compose picker's inter-section gap (xl) so grouped focuses read
+        // the same on both mobile lists. Other touch layouts get a touch of air
+        // (lg) so the groups stay easy to separate by eye and tap; desktop
+        // (mouse) reads cleanly tighter (md).
+        final double roleGroupGap;
+        if (roomy) {
+          roleGroupGap = context.theme.spacing.xl; // 20
+        } else if (isMobilePlatform()) {
+          roleGroupGap = context.theme.spacing.lg; // 14
+        } else {
+          roleGroupGap = context.theme.spacing.md; // 10
+        }
 
         TextStyle focusStyle(Priority p) => itemStyle.copyWith(
           color: p.archivedAt != null
@@ -308,6 +322,7 @@ class _PrioritiesListState extends State<PrioritiesList> {
               textStyle: focusStyle(priority),
               unread: priority.unread ? true : null,
               reorderableIndex: reorderableIndex,
+              roomy: roomy,
             ),
             onReorder: (oldIndex, newIndex) =>
                 _onReorderFocus(list, oldIndex, newIndex),
@@ -344,6 +359,7 @@ class _PrioritiesListState extends State<PrioritiesList> {
           borderRadius: itemBorderRadius,
           textStyle: itemStyle,
           monochrome: monochrome,
+          roomy: roomy,
         );
 
         // The list body: an outer reorderable of role sections (accordion) or
@@ -379,6 +395,7 @@ class _PrioritiesListState extends State<PrioritiesList> {
                   monochrome: monochrome,
                   borderRadius: itemBorderRadius,
                   reorderableIndex: reorderableIndex,
+                  roomy: roomy,
                   onTap: () {
                     if (singlePanel) {
                       // Single panel: the sidebar is the whole screen, so a role
@@ -653,6 +670,10 @@ class FixedFocusTile extends StatefulWidget {
   final TextStyle textStyle;
   final bool monochrome;
 
+  /// Roomier single-panel mobile treatment, matching [PriorityWidget.roomy] so
+  /// the Everything tile lines up with the focus rows above it.
+  final bool roomy;
+
   const FixedFocusTile({
     required this.title,
     required this.icon,
@@ -664,6 +685,7 @@ class FixedFocusTile extends StatefulWidget {
     required this.borderRadius,
     required this.textStyle,
     required this.monochrome,
+    this.roomy = false,
     super.key,
   });
 
@@ -711,13 +733,16 @@ class FixedFocusTileState extends State<FixedFocusTile> {
         }
       },
       leadingBuilder: (isHovered, hasFocus) {
-        // Cap-height leading size so this fixed tile's glyph matches the focus
+        // Match the focus rows: a roomy gutter glyph on mobile, else the cap-
+        // height leading size so this fixed tile's glyph lines up with the focus
         // and connection tiles in the same sidebar column.
-        final iconSize = context.theme.iconSizes.leading;
-        return sidebarLeading(
-          context,
-          Icon(widget.icon, size: iconSize, color: labelColor),
-        );
+        final iconSize = widget.roomy
+            ? listRowIconSize
+            : context.theme.iconSizes.leading;
+        final glyph = Icon(widget.icon, size: iconSize, color: labelColor);
+        return widget.roomy
+            ? roomyLeading(context, glyph)
+            : sidebarLeading(context, glyph);
       },
       // Title in the accent colour, with the unread dot trailing it (kept
       // outside the Flexible so it survives title truncation). Bold when the
@@ -745,7 +770,9 @@ class FixedFocusTileState extends State<FixedFocusTile> {
       // Always reserve the menu-button slot height so the row height matches
       // the focus tiles. Mirrors PriorityWidget's buttonSlotHeight.
       trailingBuilder: (isHovered, hasFocus) {
-        final buttonSlotHeight = context.theme.iconSizes.base * 2;
+        final buttonSlotHeight = widget.roomy
+            ? listRowGutter + context.theme.spacing.sm * 2
+            : context.theme.iconSizes.base * 2;
         return SizedBox(
           height: buttonSlotHeight,
           child: menuCommand == null

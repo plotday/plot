@@ -5,6 +5,8 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/store/store.dart' show Actor, GroupRow, Priority;
+import 'package:plot/style/layout.dart'
+    show listRowGutter, listRowIconGap, listRowIconSize;
 import 'package:plot/widget/avatar.dart';
 import 'package:plot/widget/compose/compose_target.dart';
 import 'package:plot/widget/icon.dart';
@@ -16,16 +18,17 @@ import 'package:plot/widget/priority.dart';
 /// Fixed leading-glyph gutter shared by every pill variant. Sized to the widest
 /// glyph (the 24px avatar / count badge); narrower glyphs — logos, focus and
 /// twist icons — are centred within it, so every row's name starts at the same
-/// x and the glyphs line up on a single vertical centreline.
-const double composePillGutter = 24;
+/// x and the glyphs line up on a single vertical centreline. Aliases the shared
+/// [listRowGutter] so the roomy mobile focus sidebar presents the same rhythm.
+const double composePillGutter = listRowGutter;
 
-/// Gap between the leading-glyph gutter and the name.
-const double composePillIconGap = 8;
+/// Gap between the leading-glyph gutter and the name. Aliases [listRowIconGap].
+const double composePillIconGap = listRowIconGap;
 
 /// Size of the smaller leading glyphs — connector/twist logos and focus icons.
 /// Matches the thread list's logo size, sitting centred within the wider
-/// [composePillGutter] (which is sized to the 24px avatars / count badges).
-const double composePillLogoSize = 16;
+/// [composePillGutter]. Aliases the shared [listRowIconSize].
+const double composePillLogoSize = listRowIconSize;
 
 // ─── Data model ──────────────────────────────────────────────────────────────
 
