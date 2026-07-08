@@ -93,6 +93,41 @@ String messageReplyPillId({
   return (contacts: contacts, groupCount: threadGroupCount);
 }
 
+/// Resolves the `access_contacts` a message-mode reply must be PERSISTED with
+/// so the sent audience matches the "Reply all (N)" badge
+/// ([messageReplyAudienceBase]).
+///
+/// The bug this prevents: a fresh reply draft carries null access fields until
+/// the user taps a pill / edits recipients. Persisting null lets the server's
+/// message-mode fallback broaden the audience to the ENTIRE thread roster —
+/// re-adding participants who dropped off the recent exchange — even though the
+/// badge only ever counted the latest note's audience. This materializes that
+/// same badge audience (`{self} ∪ latestNoteAudience`) so what's sent matches
+/// what's shown, i.e. the default reply equals tapping "Reply all".
+///
+/// Returns null to mean "leave `access_contacts` unset" — the caller keeps the
+/// existing thread-wide default. That is the right outcome when:
+/// - the thread isn't message-mode (chat/thread/none keep thread-wide replies),
+/// - the draft already narrowed recipients (honour the user's explicit choice),
+/// - the note is private (addressed separately to self), or
+/// - there are no notes to reply to (fall back to the thread default).
+///
+/// Pure so the resolution can be unit-tested without a mounted editor.
+@visibleForTesting
+List<ActorId>? resolveReplyAccessContacts({
+  required bool isMessageMode,
+  required bool isPrivate,
+  required List<ActorId>? draftAccessContacts,
+  required List<ActorId>? draftAccessGroups,
+  required ActorId self,
+  required Set<ActorId> latestNoteAudience,
+}) {
+  if (!isMessageMode || isPrivate) return null;
+  if (draftAccessContacts != null || draftAccessGroups != null) return null;
+  if (latestNoteAudience.isEmpty) return null;
+  return {self, ...latestNoteAudience}.toList();
+}
+
 /// Whether the composer should hold an empty, height-reserving placeholder top
 /// bar while a thread's links finish their first load.
 ///
@@ -2155,6 +2190,23 @@ class NoteEditorState extends State<NoteEditor> {
     final draftContacts = widget.draft.accessContacts;
     final draftGroups = widget.draft.accessGroups;
 
+    // For a message-mode (email-style) reply that the user hasn't explicitly
+    // narrowed, persist the same audience the "Reply all (N)" badge shows
+    // ({self} ∪ latest note audience). Without this the note goes out with null
+    // access_contacts and the server broadens it to the WHOLE thread roster,
+    // re-adding participants who dropped off the recent exchange — so the reply
+    // reaches more people than the badge advertised. Null = keep thread default.
+    final defaultReplyContacts = resolveReplyAccessContacts(
+      isMessageMode:
+          activityBloc.state.primaryLinkTypeConfig?.sharingModel ==
+          SharingModel.message,
+      isPrivate: isPrivateNote,
+      draftAccessContacts: draftContacts,
+      draftAccessGroups: draftGroups,
+      self: Base.actorId,
+      latestNoteAudience: Thread.latestNoteAudience(activityBloc.state.notes),
+    );
+
     final Value<List<ActorId>?> accessContactsValue =
         (widget.viewerMode || replyRestricted)
         ? Value(
@@ -2165,6 +2217,8 @@ class NoteEditorState extends State<NoteEditor> {
                     ...readOnlyShareContacts,
                   }.toList(),
           )
+        : defaultReplyContacts != null
+        ? Value(defaultReplyContacts)
         : const Value.absent();
 
     final Value<List<ActorId>?> accessGroupsValue = readOnlyViewer

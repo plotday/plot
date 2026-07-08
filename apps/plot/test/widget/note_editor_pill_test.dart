@@ -189,4 +189,99 @@ void main() {
       );
     });
   });
+
+  group('resolveReplyAccessContacts', () {
+    // The audience a message-mode reply must be PERSISTED with so the sent
+    // recipients match the "Reply all (N)" badge. Null means "leave unset"
+    // (keep the thread-wide default).
+
+    test('un-narrowed message reply materializes {self} ∪ latest note audience '
+        '— not the whole thread roster', () {
+      // Regression: a fresh reply left access_contacts null, so the server
+      // broadened it to every thread participant (re-adding people who dropped
+      // off the recent exchange). It must instead persist exactly the badge
+      // audience: self plus whoever was on the latest note.
+      final result = resolveReplyAccessContacts(
+        isMessageMode: true,
+        isPrivate: false,
+        draftAccessContacts: null,
+        draftAccessGroups: null,
+        self: self,
+        latestNoteAudience: {other},
+      );
+      expect(result, isNotNull);
+      expect(result!.toSet(), {self, other});
+    });
+
+    test('a draft that already narrowed recipients is left unchanged', () {
+      expect(
+        resolveReplyAccessContacts(
+          isMessageMode: true,
+          isPrivate: false,
+          draftAccessContacts: [self, original],
+          draftAccessGroups: null,
+          self: self,
+          latestNoteAudience: {other},
+        ),
+        isNull,
+      );
+    });
+
+    test('a draft narrowed to a group is left unchanged', () {
+      final group = ActorId.fromUuid(Uuid.generate());
+      expect(
+        resolveReplyAccessContacts(
+          isMessageMode: true,
+          isPrivate: false,
+          draftAccessContacts: null,
+          draftAccessGroups: [group],
+          self: self,
+          latestNoteAudience: {other},
+        ),
+        isNull,
+      );
+    });
+
+    test('non-message threads keep the thread-wide default (null)', () {
+      expect(
+        resolveReplyAccessContacts(
+          isMessageMode: false,
+          isPrivate: false,
+          draftAccessContacts: null,
+          draftAccessGroups: null,
+          self: self,
+          latestNoteAudience: {other},
+        ),
+        isNull,
+      );
+    });
+
+    test('a private note is not broadened to the reply audience', () {
+      expect(
+        resolveReplyAccessContacts(
+          isMessageMode: true,
+          isPrivate: true,
+          draftAccessContacts: null,
+          draftAccessGroups: null,
+          self: self,
+          latestNoteAudience: {other},
+        ),
+        isNull,
+      );
+    });
+
+    test('no notes to reply to falls back to the thread default (null)', () {
+      expect(
+        resolveReplyAccessContacts(
+          isMessageMode: true,
+          isPrivate: false,
+          draftAccessContacts: null,
+          draftAccessGroups: null,
+          self: self,
+          latestNoteAudience: const {},
+        ),
+        isNull,
+      );
+    });
+  });
 }
