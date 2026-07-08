@@ -89,6 +89,11 @@ describe("assembleConversationLink", () => {
     expect(link!.status).toBe("inbox");
     expect(link!.meta).toMatchObject({ syncProvider: "whatsapp", channelId: "acc1", chatId: "c1", profileId: "p2" });
     expect(link!.notes).toHaveLength(1);
+    // Top-level channelId must be set (not just inside meta) — it's what
+    // persists to the link.channel_id DB column, which onNoteCreated's
+    // write-back path reads to know where to send outbound replies. Without
+    // it, every reply on a synced conversation silently fails to send.
+    expect(link!.channelId).toBe("acc1");
   });
   test("returns null when no counterparty", () => {
     const link = assembleConversationLink({
@@ -245,6 +250,8 @@ describe("assembleGroupLink", () => {
     expect(link.source).toBe("instagram:chat:c1");
     expect(link.accessContacts).toHaveLength(2);
     expect(link.title).toBe("Bob, Cy");
+    // See the matching comment in the assembleConversationLink test above.
+    expect(link.channelId).toBe("acc1");
   });
   // WhatsApp groups return no participant roster, so `others` is empty. Derive
   // the member contacts from the distinct non-self message senders instead, so

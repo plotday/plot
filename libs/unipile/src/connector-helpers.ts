@@ -239,6 +239,12 @@ export function assembleConversationLink(opts: {
     created: chat.lastActivityAt,
     accessContacts: [profileToContact(other)],
     notes,
+    // Top-level channelId (not just inside meta) so it lands in the
+    // link.channel_id DB column — onNoteCreated's write-back path
+    // (Integrations.buildNoteAndThread) reads thread.meta.channelId from
+    // that column, not from the meta blob, so omitting this silently
+    // breaks every outbound reply on a synced conversation.
+    channelId,
     meta: { syncProvider: provider, channelId, profileId: other.id, chatId: chat.id },
     ...(initialSync ? { unread: false, archived: false } : {}),
   } satisfies NewLinkWithNotes;
@@ -280,6 +286,10 @@ export function assembleGroupLink(opts: {
     created: chat.lastActivityAt,
     accessContacts: members.map((p) => profileToContact(p)),
     notes,
+    // See the matching comment in assembleConversationLink above: this must
+    // be set at the top level (not just inside meta) so it reaches the
+    // link.channel_id DB column that onNoteCreated's write-back path reads.
+    channelId,
     meta: { syncProvider: provider, channelId, chatId: chat.id },
     ...(initialSync ? { unread: false, archived: false } : {}),
   } satisfies NewLinkWithNotes;
