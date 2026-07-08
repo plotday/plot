@@ -45,22 +45,6 @@ export function senderFallbackContact(msg: ChatMessage, provider: string): NewCo
   return { name: msg.sentByMe ? "You" : `${titleCase(provider)} user`, source: { accountId: msg.senderId } };
 }
 
-/**
- * Author contact for the connected user's OWN ("sent-by-me") messages.
- *
- * Providers return an empty (or absent) `sender_id` on own messages and, for
- * 1:1 chats, don't list self among the participants, so `msg.senderId` can't be
- * used to attribute them. Keying on the self profile's provider id instead —
- * the same id the account was bound to at connect (`users/me`) — makes
- * `addContacts` dedup this onto the owner's existing contact so the note is
- * credited to the user, not the connector. Email is deliberately omitted so
- * resolution always takes the deterministic source-id path (which matches the
- * owner's `contact_external_account` row) rather than a global email upsert.
- */
-export function selfAuthorContact(self: ChatProfile): NewContact {
-  return { name: self.name, avatar: self.pictureUrl ?? undefined, source: { accountId: self.id } };
-}
-
 function titleCase(s: string): string {
   return s.length ? s[0]!.toUpperCase() + s.slice(1) : s;
 }
@@ -180,34 +164,30 @@ export function buildNoteFromMessage(
   msg: ChatMessage,
   chat: ChatThread,
   provider: string,
-  threadPersonId?: string,
-  self?: ChatProfile | null
+  threadPersonId?: string
 ): NewNote {
   // Author resolution, richest source first:
-  //   1. Own ("sent-by-me") messages → the connected account's own profile
-  //      (`self`), keyed on its provider id so the note is credited to the
-  //      owner's contact. `msg.senderId` is unreliable here (providers send it
-  //      empty on own messages, and 1:1 chats omit self from the roster), so
-  //      without `self` these fall through to the "You" stub, which resolves to
-  //      no linked contact and surfaces as connector-authored.
-  //   2. A matched participant carries the fullest profile (phone/email for
+  //   1. A matched participant carries the fullest profile (phone/email for
   //      cross-connector merge).
-  //   3. No roster (WhatsApp groups) → the per-message embedded `sender`.
-  //   4. Otherwise the generic stub.
+  //   2. No roster (WhatsApp groups) → the per-message embedded `sender`.
+  //   3. Otherwise the generic stub.
+  //
+  // Own ("sent-by-me") messages are NOT attributed here — providers send an
+  // empty/absent `sender_id` for them, and 1:1 chats omit self from the roster,
+  // so there is no reliable provider-side self identity. Instead we set
+  // `authoredBySelf` below and let the runtime credit the note to the
+  // connection owner's own contact (which it already knows), no extra API call.
   const participant = chat.participants.find((p) => p.id === msg.senderId) ?? null;
   // Unipile occasionally reports a real person's group message with the group's
   // own JID as the sender (`sender.id === chat.id`, display_name = the group
   // name). That is not a person — fall through to the generic stub rather than
   // labelling the note with the group's name.
   const embeddedSender = msg.sender && msg.sender.id !== chat.id ? msg.sender : null;
-  const author =
-    msg.sentByMe && self
-      ? selfAuthorContact(self)
-      : participant
-        ? profileToContact(participant)
-        : embeddedSender && !msg.sentByMe
-          ? profileToContact(embeddedSender)
-          : senderFallbackContact(msg, provider);
+  const author = participant
+    ? profileToContact(participant)
+    : embeddedSender && !msg.sentByMe
+      ? profileToContact(embeddedSender)
+      : senderFallbackContact(msg, provider);
   const actions: Action[] = msg.attachments.map((a: ChatAttachment) => ({
     type: ActionType.fileRef as typeof ActionType.fileRef,
     ref: `${msg.id}:${a.id}`,
@@ -224,6 +204,10 @@ export function buildNoteFromMessage(
     content: msg.text,
     contentType: "text",
     author,
+    // Credit the connection owner for messages they sent. The runtime resolves
+    // this to the owner's own contact — see `authoredBySelf` in the SDK. `author`
+    // stays a best-effort stub in case the owner has no resolvable contact.
+    ...(msg.sentByMe ? { authoredBySelf: true } : {}),
     ...(reactions ? { reactions } : {}),
     ...(actions.length > 0 ? { actions } : {}),
   };
@@ -237,14 +221,12 @@ export function assembleConversationLink(opts: {
   messages: ChatMessage[];
   initialSync: boolean;
   status?: string; // defaults to "inbox" on initial sync
-  /** Connected account's own profile, for attributing sent-by-me messages. */
-  self?: ChatProfile | null;
 }): NewLinkWithNotes | null {
-  const { provider, channelId, chat, messages, initialSync, self } = opts;
+  const { provider, channelId, chat, messages, initialSync } = opts;
   const other = chat.participants.find((p) => !p.isSelf);
   if (!other) return null;
   const items = messages.filter((m) => m.eventType === null);
-  const notes: NewNote[] = items.slice().reverse().map((m) => buildNoteFromMessage(m, chat, provider, other.id, self));
+  const notes: NewNote[] = items.slice().reverse().map((m) => buildNoteFromMessage(m, chat, provider, other.id));
   const status = opts.status ?? "inbox";
   return {
     source: `${provider}:person:${other.id}`,
@@ -276,10 +258,8 @@ export function assembleGroupLink(opts: {
   messages: ChatMessage[];
   initialSync: boolean;
   type?: string;
-  /** Connected account's own profile, for attributing sent-by-me messages. */
-  self?: ChatProfile | null;
 }): NewLinkWithNotes {
-  const { provider, channelId, chat, messages, initialSync, self } = opts;
+  const { provider, channelId, chat, messages, initialSync } = opts;
   const items = messages.filter((m) => m.eventType === null);
   const others = chat.participants.filter((p) => !p.isSelf);
   // WhatsApp groups return no participant roster, so `others` is empty. Derive
@@ -288,7 +268,7 @@ export function assembleGroupLink(opts: {
   // rather than only the connected user. Limited to senders seen in the fetched
   // message window — a silent member who never spoke won't appear until they do.
   const members = others.length > 0 ? others : deriveMembersFromMessages(items, chat.id);
-  const notes: NewNote[] = items.slice().reverse().map((m) => buildNoteFromMessage(m, chat, provider, undefined, self));
+  const notes: NewNote[] = items.slice().reverse().map((m) => buildNoteFromMessage(m, chat, provider));
   return {
     source: `${provider}:chat:${chat.id}`,
     sources: [`${provider}:chat:${chat.id}`],
@@ -336,10 +316,6 @@ export async function buildLinkForChat(opts: {
     limit: opts.msgLimit ?? 20,
     since: initialSync ? undefined : since,
   });
-  // Resolve the connected account's own profile so sent-by-me messages are
-  // credited to the owner (see `buildNoteFromMessage`). Non-fatal and cached
-  // per tool instance — a failure just leaves own messages on the "You" stub.
-  const self = await resolveSelf(tool, channelId);
   // The assemblers filter out synthetic events themselves; pass raw messages
   // and only filter here for the attachment-cache loop.
   if (opts.onAttachmentMessage) {
@@ -348,25 +324,8 @@ export async function buildLinkForChat(opts: {
     }
   }
   return chat.isGroup
-    ? assembleGroupLink({ provider, channelId, chat, messages: page.messages, initialSync, type: opts.groupType, self })
-    : assembleConversationLink({ provider, channelId, chat, messages: page.messages, initialSync, status: opts.conversationStatus, self });
-}
-
-/**
- * The connected account's own profile for `channelId`, or null when it can't be
- * fetched. Best-effort: own-message attribution degrades to the "You" stub
- * rather than failing the sync. `getOwnProfile` caches per tool instance, so a
- * backfill over many chats issues a single `users/me`.
- */
-async function resolveSelf(
-  tool: UnipileMessaging,
-  channelId: string
-): Promise<ChatProfile | null> {
-  try {
-    return await tool.getOwnProfile({ channelId });
-  } catch {
-    return null;
-  }
+    ? assembleGroupLink({ provider, channelId, chat, messages: page.messages, initialSync, type: opts.groupType })
+    : assembleConversationLink({ provider, channelId, chat, messages: page.messages, initialSync, status: opts.conversationStatus });
 }
 
 /**

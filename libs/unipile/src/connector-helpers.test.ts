@@ -206,7 +206,11 @@ describe("buildNoteFromMessage", () => {
     const note = buildNoteFromMessage(msg({ senderId: "277510822584518@lid", sender: null }), c, "whatsapp");
     expect(note.author).toEqual({ name: "Whatsapp user", source: { accountId: "277510822584518@lid" } });
   });
-  test("own messages stay attributed to You even when sender is embedded", () => {
+  // Own ("sent-by-me") messages are flagged `authoredBySelf` so the runtime
+  // credits the connection owner's own contact. Provider self ids are
+  // unreliable (empty `senderId`, self absent from 1:1 rosters), so the note's
+  // own `author` stays a best-effort stub — the flag is what carries the truth.
+  test("own group message is flagged authoredBySelf", () => {
     const c = chat({ id: "g1", isGroup: true, participants: [] });
     const m = msg({
       senderId: "self@lid",
@@ -214,34 +218,19 @@ describe("buildNoteFromMessage", () => {
       sender: prof({ id: "self@lid", name: "You", isSelf: true }),
     });
     const note = buildNoteFromMessage(m, c, "whatsapp");
-    expect(note.author).toEqual({ name: "You", source: { accountId: "self@lid" } });
+    expect((note as { authoredBySelf?: boolean }).authoredBySelf).toBe(true);
   });
-  // Own messages arrive with an empty `senderId` on some providers (LinkedIn),
-  // and 1:1 chats omit self from the roster — so without `self` the note is
-  // credited to the connector. Given `self`, it is keyed on the owner's
-  // provider id and resolves to the owner's contact.
-  test("own message with empty senderId is attributed to the connection owner via self", () => {
+  test("own 1:1 message with empty senderId is flagged authoredBySelf", () => {
     const c = chat({ participants: [prof({ id: "them", name: "Komal" })] });
     const m = msg({ senderId: "", sentByMe: true, sender: null, text: "thanks!" });
-    const self = prof({ id: "ACoAA-self", name: "Kris Braun", isSelf: true });
-    const note = buildNoteFromMessage(m, c, "linkedin", "them", self);
-    expect(note.author).toEqual({
-      name: "Kris Braun",
-      avatar: undefined,
-      source: { accountId: "ACoAA-self" },
-    });
-  });
-  test("without self, an own message with empty senderId falls back to the You stub (pre-fix behavior)", () => {
-    const c = chat({ participants: [prof({ id: "them", name: "Komal" })] });
-    const m = msg({ senderId: "", sentByMe: true, sender: null });
     const note = buildNoteFromMessage(m, c, "linkedin", "them");
-    expect(note.author).toEqual({ name: "You", source: { accountId: "" } });
+    expect((note as { authoredBySelf?: boolean }).authoredBySelf).toBe(true);
   });
-  test("self is ignored for messages from other people", () => {
+  test("messages from other people are NOT flagged authoredBySelf and keep their sender author", () => {
     const c = chat({ participants: [prof({ id: "them", name: "Komal" })] });
     const m = msg({ senderId: "them", sentByMe: false });
-    const self = prof({ id: "ACoAA-self", name: "Kris Braun", isSelf: true });
-    const note = buildNoteFromMessage(m, c, "linkedin", "them", self);
+    const note = buildNoteFromMessage(m, c, "linkedin", "them");
+    expect((note as { authoredBySelf?: boolean }).authoredBySelf).toBeUndefined();
     expect(note.author).toEqual({ name: "Komal", avatar: undefined, source: { accountId: "them" } });
   });
 });

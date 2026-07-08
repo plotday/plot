@@ -1458,6 +1458,29 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Credits `note.authoredBySelf` notes to the connection owner's own contact.
+   *
+   * A connector marks messages the owner sent (their own replies) with that
+   * flag rather than trying to identify the owner from the external service,
+   * which is unreliable — many providers send an empty sender id for your own
+   * messages and omit you from 1:1 chat rosters, so a per-message id can't
+   * attribute them. The owner is already known from the connection, so we
+   * attribute by their existing contact id (deterministic, no extra API call,
+   * and it can't be re-created or dropped). If the owner has no resolvable
+   * contact the note keeps whatever `author` the connector set.
+   */
+  private async applyAuthoredBySelf(
+    notes: Array<Pick<NewNote, "author" | "authoredBySelf">> | undefined
+  ): Promise<void> {
+    if (!notes?.some((n) => n.authoredBySelf)) return;
+    const account = await this.getAccountContact();
+    if (!account) return;
+    for (const note of notes) {
+      if (note.authoredBySelf) note.author = { id: account.id };
+    }
+  }
+
+  /**
    * Ensures the connector's account-owner contact is present on the thread's
    * accessContacts and on every note whose accessContacts is non-null. The
    * owner is implicitly a participant in everything we sync from their own
@@ -1471,6 +1494,8 @@ export class Integrations extends Tool implements IAuth {
    * "inherit thread visibility" on a per-note basis.
    */
   private async injectAccountContact(link: NewLinkWithNotes): Promise<void> {
+    await this.applyAuthoredBySelf(link.notes);
+
     const account = await this.getAccountContact();
     if (!account) return;
 
@@ -1685,6 +1710,7 @@ export class Integrations extends Tool implements IAuth {
    */
   async saveNotes(notes: NewNote[]): Promise<(Uuid | null)[]> {
     if (notes.length === 0) return [];
+    await this.applyAuthoredBySelf(notes);
     const plot = this.getPlot();
     // `createNotes` collapses its result — failed/empty notes are dropped
     // rather than returned as null in-slot, so calling it once with the whole

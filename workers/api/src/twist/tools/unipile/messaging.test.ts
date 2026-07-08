@@ -90,34 +90,3 @@ describe("withAccount auth-rejection handling", () => {
     expect(flag).not.toHaveBeenCalled();
   });
 });
-
-describe("getOwnProfile", () => {
-  function enabled() {
-    return make((k) =>
-      k.startsWith("channel_config:") ? { enabledBy: "actor1" } : k.startsWith("auth_token:") ? { access_token: "tok" } : null,
-    );
-  }
-
-  test("normalizes users/me with isSelf and caches per channel (one fetch)", async () => {
-    const t = enabled();
-    const getOwn = vi.fn(async () => ({
-      object: "UserProfile",
-      id: "ACoAA-self",
-      display_name: "Kris Braun",
-      emails: ["kris@plot.day"],
-    }));
-    (t as any).client = { getOwnProfile: getOwn };
-    // Object.create bypasses the constructor, so init the class-field cache.
-    (t as any)._ownProfile = new Map();
-
-    const first = await t.getOwnProfile({ channelId: "acc1" });
-    const second = await t.getOwnProfile({ channelId: "acc1" });
-
-    expect(first.id).toBe("ACoAA-self");
-    expect(first.isSelf).toBe(true);
-    expect(first.name).toBe("Kris Braun");
-    // Cached: the underlying users/me call fires exactly once.
-    expect(getOwn).toHaveBeenCalledTimes(1);
-    expect(second).toBe(first);
-  });
-});
