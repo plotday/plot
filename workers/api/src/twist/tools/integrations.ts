@@ -5657,21 +5657,26 @@ export class Integrations extends Tool implements IAuth {
             .where("id", "=", this.twistInstanceId)
             .executeTakeFirst();
           if (twistInstance?.owner_id) {
-            const newContact = await this.db
-              .insertInto("contact")
-              .values({
-                email: null,
-                user_id: twistInstance.owner_id,
-                name: null,
-                avatar_url: null,
-                inviteable: false,
-              })
-              .returning(["id"])
-              .executeTakeFirst();
-            if (newContact?.id) {
+            // The connecting owner IS the account holder, so bind this
+            // no-email account to their existing (primary) contact rather
+            // than minting a fresh blank one. Mirrors the hosted-auth branch
+            // in onAuth (resolveOwnerContact). Minting a per-connection blank
+            // contact (user_id = owner, no email/name) made it a linked
+            // "self" identity via the sync_user_contact_from_contact trigger;
+            // when the connection's contact_external_account row was later
+            // cascade-deleted (connection removed/recreated) the contact
+            // lingered, orphaned and nameless, and rendered as "Unknown" in
+            // the app. resolveOwnerContact keeps currentUserHasAccess true
+            // (the primary contact is linked to the owner) without that leak.
+            const ownerContact = await resolveOwnerContact(
+              this.db,
+              twistInstance.owner_id
+            );
+            if (ownerContact?.id) {
               return {
-                id: newContact.id as ActorId,
+                id: ownerContact.id as ActorId,
                 type: ActorType.Contact,
+                name: ownerContact.name ?? null,
               };
             }
           }
