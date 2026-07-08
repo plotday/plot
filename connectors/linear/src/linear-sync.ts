@@ -215,6 +215,7 @@ export function buildIssueLink(
   }
 
   return {
+    channelId: projectId,
     source: `linear:issue:${issue.id}`,
     type: "issue",
     title: issue.title,

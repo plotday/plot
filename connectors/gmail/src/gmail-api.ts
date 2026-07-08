@@ -855,8 +855,11 @@ export function collectAttachments(
  */
 export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
   if (!thread.messages || thread.messages.length === 0) {
-    // Return empty structure for invalid threads
+    // Return empty structure for invalid threads. channelId is unknown at
+    // this call site — the caller always sets the real value right after
+    // (see "Inject channel ID" in sync.ts) before saving.
     return {
+      channelId: null,
       type: "email",
       title: "",
       notes: [],
@@ -909,8 +912,10 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     }
   }
 
-  // Create link
+  // Create link. channelId is unknown here — the caller always sets the
+  // real value right after (see "Inject channel ID" in sync.ts) before saving.
   const plotThread: NewLinkWithNotes = {
+    channelId: null,
     source: canonicalUrl,
     type: "email",
     title: subject || "Email",

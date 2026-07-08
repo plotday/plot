@@ -83,6 +83,7 @@ describe("enrichLinkContactsFromOutlook", () => {
         : { value: [] }
     );
     const link: NewLinkWithNotes = {
+      channelId: null,
       type: "email",
       title: "t",
       accessContacts: [
@@ -110,6 +111,7 @@ describe("enrichLinkContactsFromOutlook", () => {
     vi.stubGlobal("fetch", fetchSpy);
 
     const link: NewLinkWithNotes = {
+      channelId: null,
       type: "email",
       title: "t",
       accessContacts: [{ email: "ann@x.com" }],

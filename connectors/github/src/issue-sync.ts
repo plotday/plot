@@ -94,7 +94,6 @@ export async function syncIssueBatch(
     );
 
     if (link) {
-      link.channelId = repositoryId;
       link.meta = {
         ...link.meta,
         syncProvider: "github",
@@ -209,6 +208,7 @@ async function convertIssueToLink(
   }
 
   const link: NewLinkWithNotes = {
+    channelId: repositoryId,
     source: `github:issue:${owner}/${repo}/${issue.number}`,
     type: "issue",
     title: issue.title,

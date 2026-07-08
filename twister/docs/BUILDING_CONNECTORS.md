@@ -173,7 +173,7 @@ private transformItem(item: any, channelId: string, initialSync: boolean): NewLi
     title: item.title,
     status: item.state,                   // Matches a statuses[].status
     created: new Date(item.createdAt),    // External timestamp, not sync time
-    channelId,                            // Required for bulk operations
+    channelId,                            // Required — write-back reads this, not meta.channelId
     meta: {
       externalId: item.id,
       syncProvider: "myprovider",         // Required for bulk operations
@@ -437,7 +437,7 @@ link types. For closed-roster DM-style compose set
 ### 2. Implement `onCreateLink(draft)`
 
 ```typescript
-async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+async onCreateLink(draft: CreateLinkDraft): Promise<CreateLinkResult | null> {
   const client = await this.getClient(draft.channelId);
   const payload = await client.createIssue({
     teamId: draft.channelId,

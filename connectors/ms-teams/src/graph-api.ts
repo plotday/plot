@@ -634,6 +634,7 @@ export function transformChannelThread(
   const allMessages = [parentMessage, ...replies];
 
   return {
+    channelId,
     source: `ms-teams:channel:${channelId}:message:${parentMessage.id}`,
     type: "thread",
     title,
@@ -678,7 +679,11 @@ export function transformDmThread(
   );
   const firstMessage = messages[0];
   if (!firstMessage) {
+    // channelId is the DM sentinel constant, which lives in ms-teams.ts and
+    // isn't visible here — the caller always patches the real value in right
+    // after (see "Inject channel ID" in ms-teams.ts) before saving.
     return {
+      channelId: null,
       source: `ms-teams:dm:${chatId}`,
       type: "dm",
       title: "Empty chat",
@@ -692,6 +697,7 @@ export function transformDmThread(
     stripHtml(firstMessage.body.content).substring(0, 50) || "Teams chat";
 
   return {
+    channelId: null,
     source: `ms-teams:dm:${chatId}`,
     type: "dm",
     title,

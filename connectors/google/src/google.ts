@@ -67,7 +67,7 @@ import type {
   Thread,
   ToolBuilder,
 } from "@plotday/twister";
-import type { NewLinkWithNotes, Note } from "@plotday/twister/plot";
+import type { CreateLinkResult, Note } from "@plotday/twister/plot";
 import type { ScheduleContactStatus } from "@plotday/twister/schedule";
 import {
   AuthProvider,
@@ -863,7 +863,7 @@ export class Google extends Connector<Google> {
    */
   override async onCreateLink(
     draft: CreateLinkDraft
-  ): Promise<NewLinkWithNotes | null> {
+  ): Promise<CreateLinkResult | null> {
     if (draft.type === "task") {
       return tasksOnCreateLinkFn(this.makeTasksHost(), draft);
     }

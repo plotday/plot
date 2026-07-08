@@ -1326,10 +1326,24 @@ export type AutoThreadConfig = {
 };
 
 /**
- * A new link with notes to save via integrations.saveLink().
+ * A new link with notes to save via integrations.saveLink()/saveLinks().
  * Creates a thread+link pair, with notes attached to the thread.
+ *
+ * `channelId` is required (pass `null` if the item genuinely has none): every
+ * sync/backfill/webhook builder already knows its channel before constructing
+ * the link (it's how it fetched the data), and there is no fallback if it's
+ * missing here. The platform persists this field to the link's `channelId`
+ * column and later reads it back — NOT from `meta` — to populate
+ * `thread.meta.channelId`/`link.meta.channelId` for connector callbacks like
+ * `onNoteCreated`. Omitting it (or only setting a duplicate inside `meta`)
+ * silently breaks those callbacks with no error anywhere. If you're
+ * implementing `onCreateLink`, return {@link CreateLinkResult} instead — that
+ * hook's `channelId` is genuinely optional, since the platform auto-fills it
+ * from the compose draft.
  */
-export type NewLinkWithNotes = NewLink & {
+export type NewLinkWithNotes = Omit<NewLink, "channelId"> & {
+  /** Channel that produced this link. See the type-level doc above. */
+  channelId: string | null;
   /**
    * Title for the link and its thread container.
    * Must be the real entity title (e.g. issue title, message subject),
@@ -1374,6 +1388,19 @@ export type NewLinkWithNotes = NewLink & {
      */
     deliveryError?: DeliveryError | null;
   };
+};
+
+/**
+ * Return type for {@link Connector.onCreateLink}. Identical to
+ * {@link NewLinkWithNotes} except `channelId` may be omitted: the platform
+ * already knows which channel the user composed into (from the create
+ * draft) and auto-fills `channelId` from it when omitted. Connectors
+ * building links directly for `integrations.saveLink()`/`saveLinks()` (sync,
+ * backfill, webhook ingestion) must use {@link NewLinkWithNotes} instead,
+ * where `channelId` is required — that path has no equivalent auto-fill.
+ */
+export type CreateLinkResult = Omit<NewLinkWithNotes, "channelId"> & {
+  channelId?: string | null;
 };
 
 /**

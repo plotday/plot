@@ -13,6 +13,7 @@ import {
   type Note,
   type Thread,
   ThreadMeta,
+  type CreateLinkResult,
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
@@ -490,7 +491,6 @@ export class Linear extends Connector<Linear> {
       const link = buildIssueLink(issue, projectId, state.initialSync);
 
       // Inject sync metadata for bulk operations (e.g. disable filtering)
-      link.channelId = projectId;
       link.meta = {
         ...link.meta,
         syncProvider: "linear",
@@ -544,7 +544,7 @@ export class Linear extends Connector<Linear> {
    */
   async onCreateLink(
     draft: CreateLinkDraft
-  ): Promise<NewLinkWithNotes | null> {
+  ): Promise<CreateLinkResult | null> {
     if (draft.type !== "issue") return null;
 
     const client = await this.getClient(draft.channelId);

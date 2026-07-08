@@ -4,7 +4,7 @@ import {
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { Actor, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
+import type { Actor, CreateLinkResult, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -774,7 +774,7 @@ export class Gmail extends Connector<Gmail> {
    */
   override async onCreateLink(
     draft: CreateLinkDraft
-  ): Promise<NewLinkWithNotes | null> {
+  ): Promise<CreateLinkResult | null> {
     return onCreateLinkFn(this.makeHost(), draft);
   }
 

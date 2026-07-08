@@ -601,15 +601,17 @@ export function transformOutlookConversation(opts: {
   attachmentsByMessageId: Map<string, GraphAttachmentMeta[]>;
   accountEmail: string;
 }): NewLinkWithNotes {
+  // channelId is unknown at this call site — the caller always sets the
+  // real value right after (see "Inject channel ID" in sync.ts) before saving.
   const sorted = sortConversation(opts.messages).filter((m) => !m.isDraft);
   if (sorted.length === 0) {
-    return { type: "email", title: "", notes: [] };
+    return { channelId: null, type: "email", title: "", notes: [] };
   }
 
   const parent = sorted[0];
   const conversationId = parent.conversationId;
   if (!conversationId) {
-    return { type: "email", title: "", notes: [] };
+    return { channelId: null, type: "email", title: "", notes: [] };
   }
   const source = conversationSource(opts.accountEmail, conversationId);
 
@@ -634,6 +636,7 @@ export function transformOutlookConversation(opts: {
   }
 
   const plotThread: NewLinkWithNotes = {
+    channelId: null,
     source,
     type: "email",
     title: parent.subject || "Email",

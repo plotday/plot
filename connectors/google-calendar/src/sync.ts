@@ -725,6 +725,7 @@ export async function processCalendarEventsFn(
           };
 
           const link: NewLinkWithNotes = {
+            channelId: calendarId,
             source: canonicalUrl,
             sources: buildEventSources({
               iCalUID: event.iCalUID,
@@ -760,7 +761,6 @@ export async function processCalendarEventsFn(
             ...(initialSync ? { archived: false } : {}),
           };
 
-          link.channelId = calendarId;
           link.meta = {
             ...link.meta,
             syncProvider: "google",
@@ -880,6 +880,7 @@ export async function processCalendarEventsFn(
         const notes = descriptionNote ? [descriptionNote] : [];
 
         const link: NewLinkWithNotes = {
+          channelId: calendarId,
           source: canonicalUrl,
           sources: buildEventSources({
             iCalUID: event.iCalUID,
@@ -913,7 +914,6 @@ export async function processCalendarEventsFn(
           ...(initialSync ? { archived: false } : {}),
         };
 
-        link.channelId = calendarId;
         link.meta = {
           ...link.meta,
           syncProvider: "google",

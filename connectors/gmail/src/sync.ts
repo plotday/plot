@@ -26,6 +26,7 @@ import { ActionType } from "@plotday/twister/plot";
 import type {
   Actor,
   ActorId,
+  CreateLinkResult,
   NewLinkWithNotes,
   Note,
   Thread,
@@ -1968,7 +1969,7 @@ async function onCreateLinkForwardFn(
   host: GmailSyncHost,
   draft: CreateLinkDraft,
   forwardKey: string
-): Promise<NewLinkWithNotes | null> {
+): Promise<CreateLinkResult | null> {
   const api = await getApiAnyFn(host);
   if (!api) {
     console.error(
@@ -2154,7 +2155,7 @@ async function onCreateLinkForwardFn(
 export async function onCreateLinkFn(
   host: GmailSyncHost,
   draft: CreateLinkDraft
-): Promise<NewLinkWithNotes | null> {
+): Promise<CreateLinkResult | null> {
   if (draft.type !== "email") return null;
 
   if (draft.forward) {
