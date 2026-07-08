@@ -48,6 +48,7 @@ import {
   buildReplyMessage,
   collectAttachments,
   extractBody,
+  formatFromHeader,
   getHeader,
   isGmailRateLimitError,
   mapWithConcurrency,
@@ -1493,6 +1494,27 @@ async function saveTransformedThread(
 // Outbound: reply / read / star / compose
 // ---------------------------------------------------------------------------
 
+/**
+ * Builds the `From` header value for an outbound send: `"Display Name"
+ * <email>` when the account's Google profile has a name, otherwise a bare
+ * email address. The userinfo lookup is best-effort — Gmail's own
+ * `/profile` endpoint (used for `email`) has no name field, and if the
+ * separate userinfo call fails for any reason, sends still go out with the
+ * bare address rather than being blocked.
+ */
+async function getFromHeaderFn(api: GmailApi, email: string): Promise<string> {
+  try {
+    const userInfo = await api.getUserInfo();
+    return formatFromHeader(email, userInfo.name);
+  } catch (error) {
+    console.warn(
+      "[gmail] failed to fetch display name for From header:",
+      error
+    );
+    return email;
+  }
+}
+
 export async function onNoteCreatedFn(
   host: GmailSyncHost,
   note: Note,
@@ -1649,7 +1671,7 @@ export async function onNoteCreatedFn(
     to,
     cc,
     bcc,
-    from: senderEmail,
+    from: await getFromHeaderFn(api, profile.emailAddress),
     subject,
     body: note.content ?? "",
     messageId,
@@ -2101,7 +2123,7 @@ async function onCreateLinkForwardFn(
     to,
     cc,
     bcc,
-    from: profile.emailAddress,
+    from: await getFromHeaderFn(api, profile.emailAddress),
     subject,
     body,
     originalHeader,
@@ -2210,7 +2232,6 @@ export async function onCreateLinkFn(
   }
 
   const profile = await api.getProfile();
-  const fromEmail = profile.emailAddress;
 
   const subject = draft.title || "";
   const body = draft.noteContent ?? "";
@@ -2272,7 +2293,7 @@ export async function onCreateLinkFn(
     to: toEmails,
     cc: ccEmails,
     bcc: bccEmails,
-    from: fromEmail,
+    from: await getFromHeaderFn(api, profile.emailAddress),
     subject,
     body,
   });

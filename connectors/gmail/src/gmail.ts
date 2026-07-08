@@ -112,6 +112,7 @@ export class Gmail extends Connector<Gmail> {
         urls: [
           "https://gmail.googleapis.com/gmail/v1/*",
           "https://people.googleapis.com/v1/*",
+          "https://www.googleapis.com/oauth2/v3/userinfo",
         ],
       }),
       files: build(Files),

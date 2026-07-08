@@ -382,6 +382,25 @@ export class GmailApi {
   }
 
   /**
+   * Fetches the authenticated user's profile via Google's userinfo endpoint
+   * to get their display name — Gmail's own `/profile` only returns the
+   * email address. Used to populate the `From` header with `"Name" <email>`
+   * instead of a bare address (which Gmail displays without a name).
+   */
+  public async getUserInfo(): Promise<{ email: string; name?: string }> {
+    const response = await fetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      { headers: { Authorization: `Bearer ${this.accessToken}` } }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `UserInfo error: ${response.status} ${response.statusText}`
+      );
+    }
+    return response.json() as Promise<{ email: string; name?: string }>;
+  }
+
+  /**
    * Fetches a message attachment by its attachment ID.
    * Returns the base64url-encoded attachment data.
    */
@@ -1375,6 +1394,20 @@ export async function syncGmailMailboxIncremental(
  */
 function sanitizeHeaderValue(value: string): string {
   return value.replace(/[\r\n\x00]+/g, " ").trim();
+}
+
+/**
+ * Formats a `From` header value as `"Display Name" <email>` per RFC 5322,
+ * falling back to a bare email address when no display name is available.
+ * The name is quoted with internal quotes/backslashes escaped since Google
+ * account names may contain commas or other special characters.
+ */
+export function formatFromHeader(email: string, name?: string | null): string {
+  const cleanEmail = sanitizeHeaderValue(email);
+  const cleanName = name ? sanitizeHeaderValue(name) : "";
+  if (!cleanName) return cleanEmail;
+  const escapedName = cleanName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escapedName}" <${cleanEmail}>`;
 }
 
 /**
