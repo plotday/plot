@@ -803,7 +803,21 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                             ),
                             ConstrainedBox(
                               constraints: BoxConstraints(
-                                maxHeight: panelConstraints.maxHeight * 0.4,
+                                // On phones (single-panel) the panel height is
+                                // already reduced by the open keyboard, so a
+                                // 0.4 cap leaves only ~3 text lines once the
+                                // note-type tabs and action-button row are
+                                // subtracted. Give the composer more room there
+                                // (up to ~55%) while still keeping the newest
+                                // message visible above it; its content is
+                                // internally scrollable past that. Desktop
+                                // panels are tall enough that 0.4 already yields
+                                // plenty of lines, so leave multi-panel as is.
+                                maxHeight:
+                                    panelConstraints.maxHeight *
+                                    (layoutStateForPanels.multiPanel
+                                        ? 0.4
+                                        : 0.55),
                               ),
                               child: Padding(
                                 padding: EdgeInsets.only(
