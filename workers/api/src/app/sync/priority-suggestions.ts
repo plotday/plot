@@ -535,10 +535,8 @@ Each suggestion's rationale must cite the concrete signal used (a connection nam
           'An object with a `suggestions` array. Each suggestion has `path` (an array of 1 to 3 strings going from root to leaf) and a `rationale` string. Example: { "suggestions": [{ "path": ["Acme Corp", "Engineering"], "rationale": "Linear workspace + #eng-onboarding Slack channel" }, { "path": ["Personal", "Family"], "rationale": "Family Calendar channel + family-related thread titles" }] }',
         maxOutputTokens: 4_000,
         providerOptions: SYSTEM_PROVIDER_OPTIONS,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+        instructions: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
       });
       return { ok: true, value: result.object };
     } catch (error) {

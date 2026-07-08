@@ -411,10 +411,8 @@ Priority hierarchy uses ltree paths (dot-separated labels from root to leaf). Pa
         "An object with a `results` array, one entry per input channel, each carrying channelPk (number), priorityId (uuid string or null), and reason (short string).",
       maxOutputTokens: 8_000,
       providerOptions: SYSTEM_PROVIDER_OPTIONS,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
+      instructions: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
     });
     return result.object.results;
   } catch (error) {

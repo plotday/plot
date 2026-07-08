@@ -51,10 +51,8 @@ Return the facet filters for this focus.`;
         "Per-dimension include/exclude sets (format/automation/reach) plus an optional trustedSendersOnly boolean.",
       maxOutputTokens: 1_000,
       providerOptions: SYSTEM_PROVIDER_OPTIONS,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
+      instructions: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
     });
     return result.object;
   } catch (error) {
