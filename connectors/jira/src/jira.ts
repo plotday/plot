@@ -6,6 +6,7 @@ import {
   type Link,
   type Note,
   type Thread,
+  type CreateLinkResult,
   type NewLinkWithNotes,
   NewContact,
 } from "@plotday/twister";
@@ -579,7 +580,6 @@ export class Jira extends Connector<Jira> {
       // Set unread based on sync type (false for initial sync to avoid notification overload)
       linkWithNotes.unread = !state.initialSync;
       // Inject sync metadata for filtering on disable
-      linkWithNotes.channelId = projectId;
       linkWithNotes.meta = { ...linkWithNotes.meta, syncProvider: "atlassian", syncableId: projectId };
       await this.tools.integrations.saveLink(linkWithNotes);
     }
@@ -749,6 +749,7 @@ export class Jira extends Connector<Jira> {
     }
 
     return {
+      channelId: projectId,
       ...(source ? { source } : {}),
       type: "issue",
       title: fields.summary || issue.key,
@@ -903,7 +904,7 @@ export class Jira extends Connector<Jira> {
    */
   async onCreateLink(
     draft: CreateLinkDraft
-  ): Promise<NewLinkWithNotes | null> {
+  ): Promise<CreateLinkResult | null> {
     if (draft.type !== "issue") return null;
 
     const projectId = draft.channelId;
@@ -1288,6 +1289,7 @@ export class Jira extends Connector<Jira> {
 
     // Create partial link update (empty notes = doesn't touch existing notes)
     const link: NewLinkWithNotes = {
+      channelId: projectId,
       ...(source ? { source } : {}),
       type: "issue",
       title: fields.summary || issue.key,
@@ -1359,6 +1361,7 @@ export class Jira extends Connector<Jira> {
 
     // Create link update with single comment note
     const link: NewLinkWithNotes = {
+      channelId: projectId,
       ...(source ? { source } : {}),
       type: "issue",
       title: issue.fields?.summary || issue.key,

@@ -654,6 +654,7 @@ export function transformSlackThread(
   if (!parentMessage) {
     // Return empty structure for invalid threads
     return {
+      channelId,
       type: "thread",
       title: "Empty thread",
       notes: [],
@@ -669,6 +670,7 @@ export function transformSlackThread(
 
   // Create link
   const thread: NewLinkWithNotes = {
+    channelId,
     source: canonicalUrl,
     type: "thread",
     title,

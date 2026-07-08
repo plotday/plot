@@ -1,4 +1,4 @@
-import { type Actor, type ActorId, type Contact, type DeliveryError, type Link, type NewLinkWithNotes, type Note, type ResolvedRecipient, type Thread } from "./plot";
+import { type Actor, type ActorId, type Contact, type CreateLinkResult, type DeliveryError, type Link, type Note, type ResolvedRecipient, type Thread } from "./plot";
 import type { ScheduleContactStatus } from "./schedule";
 
 // ResolvedRecipient now lives in ./plot (so Note.recipients can reference it).
@@ -115,7 +115,7 @@ export type NoteWriteBackResult = {
  * item via a connector's `onCreateLink` hook.
  *
  * Thread-agnostic on purpose — connectors do not receive the Plot thread.
- * The platform attaches the returned `NewLinkWithNotes` to the originating
+ * The platform attaches the returned `CreateLinkResult` to the originating
  * thread once `onCreateLink` resolves.
  */
 export type CreateLinkDraft = {
@@ -603,9 +603,10 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * with the draft fields.
    *
    * Implementations should create the item in the external service and
-   * return a `NewLinkWithNotes` describing the created item. The platform
+   * return a `CreateLinkResult` describing the created item. The platform
    * attaches the returned link to the originating thread — do not call
-   * `integrations.saveLink` yourself.
+   * `integrations.saveLink` yourself. `channelId` may be omitted; the
+   * platform auto-fills it from the compose draft.
    *
    * Returning `null` aborts creation silently (the thread is still saved
    * without a link).
@@ -614,7 +615,7 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * @returns The link to attach, or null to abort creation.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+  onCreateLink(draft: CreateLinkDraft): Promise<CreateLinkResult | null> {
     return Promise.resolve(null);
   }
 

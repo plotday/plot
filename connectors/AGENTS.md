@@ -301,12 +301,16 @@ Previews (`preview` fields) always use plain text — `snippet` or truncated tit
 
 ## Sync metadata injection
 
-Every synced link must carry provider and channel metadata — bulk operations (e.g. `integrations.archiveLinks({ channelId })` on disable) rely on it:
+Every synced link must carry provider and channel metadata:
 
 ```typescript
-link.channelId = resourceId; // first-class field on NewLink
+link.channelId = resourceId; // first-class field on NewLinkWithNotes — REQUIRED
 link.meta = { ...link.meta, syncProvider: "myprovider" };
 ```
+
+`channelId` is required on `NewLinkWithNotes` (the type `saveLink()`/`saveLinks()` accept) precisely because it's easy to set only inside `meta` and forget the top-level field — the type system will reject a link built that way. This isn't just about bulk operations like `integrations.archiveLinks({ channelId })` on disable: the platform persists `channelId` to the link's DB row and reads it back from there — not from `meta` — to populate `thread.meta.channelId` for connector callbacks like `onNoteCreated`. A link with `channelId` only inside `meta` will send replies to nobody: the connector's own `onNoteCreated` reads a channelId that was never actually saved, and typically no-ops silently (no error, nothing captured) because it can't resolve a client for the reply. Set `channelId` at the top level on every value you pass to `saveLink()`/`saveLinks()`.
+
+`onCreateLink` is the one exception: its return type is `CreateLinkResult`, where `channelId` is optional — the platform auto-fills it from `draft.channelId` (the channel the user composed into) if you omit it.
 
 ## Classifier facets (optional)
 
@@ -520,7 +524,7 @@ For closed-roster DM-style compose set `compose.targets: "contacts"`; for open a
 Then implement `onCreateLink` — return the link, do NOT call `integrations.saveLink()` (platform wires it to the originating thread):
 
 ```typescript
-async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+async onCreateLink(draft: CreateLinkDraft): Promise<CreateLinkResult | null> {
   if (draft.type !== "issue") return null;
   const client = await this.getClient(draft.channelId);
   const payload = await client.createIssue({
@@ -609,7 +613,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 - [ ] Batch state writes use `this.setMany()`, never a per-item `set()` loop
 - [ ] Canonical, globally-unique `source` using immutable ids; mutable keys in `meta` only
 - [ ] `note.key` for note-level upserts
-- [ ] Set `link.channelId` and inject `syncProvider` into `link.meta`
+- [ ] Set `link.channelId` (top-level field, required) and inject `syncProvider` into `link.meta`
 - [ ] `contentType: "html"` for HTML — never strip tags locally
 - [ ] `created` on notes = external timestamp, not sync time
 - [ ] `initialSync` propagated through every entry point and batch; set `unread: false, archived: false` on initial, omit on incremental
@@ -622,7 +626,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 ## Common pitfalls
 
 1. Passing functions/`undefined`/RPC stubs to `this.callback()` → use tokens + `null`.
-2. Forgetting sync metadata (`link.channelId`, `meta.syncProvider`) → breaks bulk archive on disable.
+2. Setting `channelId` only inside `link.meta` instead of at the top level → `NewLinkWithNotes.channelId` is what the platform actually persists and reads back for connector callbacks (`thread.meta.channelId` in `onNoteCreated`, etc.) and for bulk operations like `integrations.archiveLinks({ channelId })` on disable. A `meta`-only channelId compiles fine structurally but leaves outbound replies (and disable-time cleanup) silently broken — no error, nothing captured. The type system now requires the top-level field on `NewLinkWithNotes`, so this fails to compile instead of failing silently in production.
 3. Not propagating `initialSync` through the whole pipeline → notification spam.
 4. Mutable ids in `source` (e.g. Jira issue key) → use immutable id, store key in `meta`.
 5. `source` that's only unique within one user's account → breaks cross-user dedup; add workspace/tenant/mailbox qualifier.

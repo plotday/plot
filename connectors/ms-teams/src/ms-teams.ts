@@ -355,7 +355,6 @@ export class MsTeams extends Connector<MsTeams> {
             isInitial
           );
 
-          link.channelId = channelId;
           link.meta = {
             ...link.meta,
             syncProvider: "teams",

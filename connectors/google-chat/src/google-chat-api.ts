@@ -657,6 +657,7 @@ export function transformChatThread(
   const preview = firstMessage.text?.substring(0, 200) ?? null;
 
   return {
+    channelId: spaceId,
     source: `google-chat:${spaceId}:thread:${threadKey}`,
     type: "thread",
     title,

@@ -567,7 +567,6 @@ export class Slack extends Connector<Slack> {
         if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
-        activityThread.channelId = channelId;
         activityThread.meta = {
           ...activityThread.meta,
           syncProvider: "slack",
@@ -760,7 +759,6 @@ export class Slack extends Connector<Slack> {
     );
     link.notes = await this.dropSentEchoNotes(link.notes);
     if (!link.notes || link.notes.length === 0) return;
-    link.channelId = channelId;
     link.meta = {
       ...link.meta,
       syncProvider: "slack",
@@ -994,7 +992,6 @@ export class Slack extends Connector<Slack> {
     // replaces the old status="later" + active:true bridge — the connector
     // save path does not run status `active` propagation.
     link.todo = true;
-    link.channelId = channelId;
     link.meta = {
       ...link.meta,
       syncProvider: "slack",

@@ -102,7 +102,6 @@ export async function syncPRBatch(
     );
 
     if (thread) {
-      thread.channelId = repositoryId;
       thread.meta = {
         ...thread.meta,
         syncProvider: "github",
@@ -219,6 +218,7 @@ async function convertPRToThread(
   }
 
   const thread: NewLinkWithNotes = {
+    channelId: repositoryId,
     source: `github:pr:${owner}/${repo}/${pr.number}`,
     type: "pull_request",
     title: pr.title,
