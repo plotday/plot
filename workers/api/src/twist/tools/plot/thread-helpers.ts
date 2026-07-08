@@ -376,6 +376,48 @@ function isEmptyMarkdownBlock(line: string): boolean {
  * blocks (empty headings, list items, emphasis, blockquotes) are dropped so they
  * never produce stray empty paragraphs in the rendered output.
  */
+/**
+ * Collapse duplicate links to the same href. Newsletter/digest layouts link the
+ * poster image, headline, and dek all to one story URL, so each story renders its
+ * link 2–3×. Keep the FIRST link of a run of same-href links that are contiguous
+ * (separated only by whitespace) and de-link the rest to their plain text. A
+ * same-href link separated from the previous one by other content (prose, a
+ * different link) starts a new run and stays a link — so a genuinely repeated CTA
+ * later in the note is preserved. Inline image-links (`![alt](src)`) are ignored.
+ */
+function dedupeAdjacentSameHrefLinks(markdown: string): string {
+  // Inline links only. `(?<!!)` excludes image syntax `![alt](src)`; the href
+  // capture runs up to whitespace or the closing paren.
+  const linkRe = /(?<!!)\[([^\]]+)\]\(([^)\s]+)\)/g;
+  type Hit = { start: number; end: number; text: string; href: string };
+  const hits: Hit[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(markdown)) !== null) {
+    // Skip image-links like `[ ![alt](src) ](url)` — leave them untouched.
+    if (m[1].includes("![")) continue;
+    hits.push({ start: m.index, end: linkRe.lastIndex, text: m[1], href: m[2] });
+  }
+
+  const lastEndByHref = new Map<string, number>();
+  const delink: Hit[] = [];
+  for (const hit of hits) {
+    const prevEnd = lastEndByHref.get(hit.href);
+    if (prevEnd !== undefined && markdown.slice(prevEnd, hit.start).trim() === "") {
+      // Contiguous repeat of the same href → de-link this one.
+      delink.push(hit);
+    }
+    // Advance the marker whether kept or de-linked so a run of 3+ collapses.
+    lastEndByHref.set(hit.href, hit.end);
+  }
+
+  // Apply de-link replacements right-to-left so offsets stay valid.
+  for (let i = delink.length - 1; i >= 0; i--) {
+    const hit = delink[i];
+    markdown = markdown.slice(0, hit.start) + hit.text + markdown.slice(hit.end);
+  }
+  return markdown;
+}
+
 export function cleanConvertedMarkdown(markdown: string): string {
   // Strip invisible/zero-width characters used as email preheader padding.
   // Leave regular whitespace alone so real paragraph spacing survives.
@@ -452,6 +494,10 @@ export function cleanConvertedMarkdown(markdown: string): string {
     .replace(/([A-Za-z0-9])(\[[^\]\n]*\]\([^)\n]*\))/g, "$1 $2")
     // bold close `**` glued to a following word or inline element
     .replace(/([A-Za-z0-9])\*\*(?=[A-Za-z0-9[])/g, "$1** ");
+
+  // Collapse duplicate links to the same href (digest layouts link the poster
+  // image, headline, and dek all to one story URL).
+  markdown = dedupeAdjacentSameHrefLinks(markdown);
 
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
@@ -543,6 +589,25 @@ export function cleanConvertedMarkdown(markdown: string): string {
 }
 
 /**
+ * True when an element's inline `style` marks it visually hidden: `display:none`,
+ * `visibility:hidden`, or fully transparent (`opacity:0`). Email newsletters use
+ * these for preheader teasers and tracking-pixel wrappers — content the recipient
+ * never saw. `opacity:0` must not match `opacity:0.9`, so the `0` may not be
+ * followed by a dot or digit.
+ */
+function isHiddenStyle(el: Element): boolean {
+  const style = (el.getAttribute("style") ?? "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+  if (!style) return false;
+  return (
+    style.includes("display:none") ||
+    style.includes("visibility:hidden") ||
+    /opacity:0(?![.\d])/.test(style)
+  );
+}
+
+/**
  * Pre-processes email HTML before ai.toMarkdown() runs. Unwraps layout tables
  * (almost all email tables are layout, not data) so the AI converter produces
  * clean paragraphs instead of Markdown tables riddled with pipes. Also drops
@@ -555,8 +620,30 @@ export async function preprocessEmailHtml(html: string): Promise<string> {
     headers: { "Content-Type": "text/html" },
   });
   const remove = { element: (el: Element) => { el.remove(); } };
-  const unwrap = { element: (el: Element) => { el.removeAndKeepContent(); } };
-  const toDiv = { element: (el: Element) => { el.tagName = "div"; } };
+  const removeIfHidden = {
+    element: (el: Element) => { if (isHiddenStyle(el)) el.remove(); },
+  };
+  const unwrap = {
+    element: (el: Element) => {
+      if (isHiddenStyle(el)) { el.remove(); return; }
+      el.removeAndKeepContent();
+    },
+  };
+  const toDiv = {
+    element: (el: Element) => {
+      if (isHiddenStyle(el)) { el.remove(); return; }
+      el.tagName = "div";
+    },
+  };
+  const dropImg = {
+    element: (el: Element) => {
+      if (isHiddenStyle(el)) { el.remove(); return; }
+      // 1×1 (or smaller) images are tracking pixels, not content.
+      const w = parseInt(el.getAttribute("width") ?? "", 10);
+      const h = parseInt(el.getAttribute("height") ?? "", 10);
+      if ((w > 0 && w <= 1) || (h > 0 && h <= 1)) el.remove();
+    },
+  };
   const rewriter = new HTMLRewriter()
     // Drop HTML comments. React/JSX-rendered emails insert empty `<!-- -->`
     // comments between adjacent text segments (e.g. `Hi {name},`); Outlook
@@ -568,13 +655,32 @@ export async function preprocessEmailHtml(html: string): Promise<string> {
     .on("style", remove)
     .on("script", remove)
     .on("head", remove)
+    // Drop empty-recipient mailto anchors (`mailto:` / `mailto:?…`). These are
+    // compose/share widgets ("Share via…") that newsletters attach to every
+    // item — never "email this person" — so remove the anchor and its text. A
+    // real `mailto:someone@example.com` link is preserved.
+    .on("a", {
+      element: (el: Element) => {
+        const href = (el.getAttribute("href") ?? "").trim();
+        if (/^mailto:(\?|$)/i.test(href)) {
+          el.remove();
+        }
+      },
+    })
     .on("table", unwrap)
     .on("tbody", unwrap)
     .on("thead", unwrap)
     .on("tfoot", unwrap)
     .on("tr", toDiv)
     .on("td", toDiv)
-    .on("th", toDiv);
+    .on("th", toDiv)
+    // Drop visually-hidden containers (preheader teasers, spacer/pixel wrappers)
+    // and standalone <=1x1 tracking-pixel images. Hidden = the recipient never
+    // saw it, so removing it matches what they read.
+    .on("div", removeIfHidden)
+    .on("span", removeIfHidden)
+    .on("p", removeIfHidden)
+    .on("img", dropImg);
   const transformed = rewriter.transform(response);
   return await transformed.text();
 }

@@ -133,6 +133,47 @@ describe("preprocessEmailHtml", () => {
     expect(out).toContain("<div>Cell A</div>");
     expect(out).toContain("<div>Cell B</div>");
   });
+
+  it("drops empty-recipient mailto: share buttons", async () => {
+    const html = `<p>Story headline</p>
+      <a href="mailto:?subject=Shared%20Via%20Firefox&body=Check%20this%20out">Share</a>`;
+    const out = await preprocessEmailHtml(html);
+    expect(out).not.toMatch(/mailto:\?/i);
+    expect(out).not.toContain("Share");
+    expect(out).toContain("Story headline");
+  });
+
+  it("preserves real mailto: links to a specific address", async () => {
+    const html = `<p>Contact <a href="mailto:kris@example.com">Kris</a> directly.</p>`;
+    const out = await preprocessEmailHtml(html);
+    expect(out).toContain("mailto:kris@example.com");
+    expect(out).toContain("Kris");
+  });
+
+  it("drops hidden preheader/teaser containers", async () => {
+    const html = `
+      <div style="display:none !important;visibility:hidden;opacity:0;max-height:0;">Plus: the hidden teaser</div>
+      <span style="visibility:hidden">invisible span</span>
+      <p style="opacity:0">transparent para</p>
+      <p style="opacity:0.9">faint but visible</p>
+      <p>Visible body.</p>`;
+    const out = await preprocessEmailHtml(html);
+    expect(out).not.toContain("hidden teaser");
+    expect(out).not.toContain("invisible span");
+    expect(out).not.toContain("transparent para");
+    expect(out).toContain("faint but visible");
+    expect(out).toContain("Visible body.");
+  });
+
+  it("drops 1x1 tracking-pixel images but keeps normal images", async () => {
+    const html = `<p>Body</p>
+      <img src="https://track.example/pixel.gif" width="1" height="1" alt="" />
+      <img src="https://cdn.example/photo.jpg" width="600" height="400" alt="Photo" />`;
+    const out = await preprocessEmailHtml(html);
+    expect(out).not.toContain("track.example/pixel.gif");
+    expect(out).toContain("cdn.example/photo.jpg");
+    expect(out).toContain("Body");
+  });
 });
 
 describe("cleanConvertedMarkdown — empty lines and paragraphs", () => {
@@ -396,6 +437,60 @@ describe("cleanConvertedMarkdown — glued inline elements", () => {
 
   it("does not split an inline image from its surrounding text", () => {
     const input = "Read ![Logo](https://cdn.example.com/logo.png) now.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+});
+
+describe("cleanConvertedMarkdown — duplicate same-href links", () => {
+  it("keeps the first link and de-links a contiguous same-href repeat", () => {
+    // Digest layout: headline and dek both link to the same story URL.
+    const input = [
+      "[What we learned from the exit](https://ex.com/story)",
+      "",
+      "[This generation may still turn out golden.](https://ex.com/story)",
+    ].join("\n");
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(
+      "[What we learned from the exit](https://ex.com/story)\n\nThis generation may still turn out golden."
+    );
+  });
+
+  it("collapses a run of three same-href links to one", () => {
+    const input = [
+      "[Headline](https://ex.com/a)",
+      "",
+      "[Dek](https://ex.com/a)",
+      "",
+      "[Read more](https://ex.com/a)",
+    ].join("\n");
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("[Headline](https://ex.com/a)\n\nDek\n\nRead more");
+  });
+
+  it("keeps links to different hrefs", () => {
+    const input = "[Story A](https://ex.com/a)\n\n[Story B](https://ex.com/b)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+
+  it("keeps a same-href link that recurs after intervening prose", () => {
+    const input = [
+      "[Sign up](https://ex.com/join)",
+      "",
+      "We would love to have you at the event next week.",
+      "",
+      "[Sign up](https://ex.com/join)",
+    ].join("\n");
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+
+  it("does not treat an inline image-link as a duplicate link", () => {
+    // Inline image-links survive cleanup; the dedupe must ignore them so it
+    // neither de-links them nor mis-reads their inner href.
+    const input =
+      "Read ![icon](https://cdn.example/i.png) then [Story](https://ex.com/a).";
     const out = cleanConvertedMarkdown(input);
     expect(out).toBe(input);
   });
