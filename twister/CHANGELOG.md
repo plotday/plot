@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.73.0
+
+### Added
+
+- `NewNote.authoredBySelf` — mark a note as authored by the connection owner. The runtime attributes it to the owner's own contact for that connection, so messaging connectors no longer need to resolve the connected user's own identity from the external service (which is unreliable — a message you sent often carries no usable sender id, and 1:1 chats omit you from the participant roster). ([#271](https://github.com/plotday/plot/pull/271) [`9fc045a`](https://github.com/plotday/plot/commit/9fc045aec9752646b3544fe6a32216646700ba73))
+
+### Changed
+
+- `NewLinkWithNotes.channelId` (the type `integrations.saveLink()`/`saveLinks()` accept) is now required instead of optional. It was easy to set `channelId` only inside `meta` and forget the top-level field — that compiled fine but silently broke outbound write-back (`onNoteCreated` reads the channel back from the persisted `channelId`, not from `meta`) and bulk operations like `archiveLinks({ channelId })` on disable, with no error anywhere. The type system now catches this at compile time instead.
+
 ## 0.72.0
 
 ### Added
