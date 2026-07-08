@@ -50,4 +50,10 @@ describe("parseCliArgs", () => {
     expect(() => parseCliArgs(["--runs", "0"])).toThrow(/positive integer/);
     expect(() => parseCliArgs(["--concurrency", "nope"])).toThrow(/positive integer/);
   });
+
+  it("rejects a model id with an unknown provider prefix", () => {
+    expect(() => parseCliArgs(["--model", "gpt-4o"])).toThrow(
+      /--model must start with "gemini" or "claude"/
+    );
+  });
 });

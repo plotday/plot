@@ -31,16 +31,45 @@ describe("loadDevVars", () => {
 });
 
 describe("assertRequiredVars", () => {
-  it("names every missing var", () => {
-    expect(() => assertRequiredVars({ ANTHROPIC_API_KEY: "x" })).toThrow(
-      /AI_GATEWAY_ACCOUNT_ID.*AI_GATEWAY_ID.*AI_GATEWAY_TOKEN/s
-    );
+  it("names every missing var for a gemini model", () => {
+    expect(() =>
+      assertRequiredVars({ GOOGLE_GENERATIVE_AI_API_KEY: "g" }, "gemini-3-pro-preview")
+    ).toThrow(/AI_GATEWAY_ACCOUNT_ID.*AI_GATEWAY_ID.*AI_GATEWAY_TOKEN/s);
+  });
+
+  it("does not require ANTHROPIC_API_KEY for gemini models", () => {
+    expect(() =>
+      assertRequiredVars(
+        {
+          GOOGLE_GENERATIVE_AI_API_KEY: "g",
+          AI_GATEWAY_ACCOUNT_ID: "a",
+          AI_GATEWAY_ID: "i",
+          AI_GATEWAY_TOKEN: "t",
+        },
+        "gemini-3-pro-preview"
+      )
+    ).not.toThrow();
+  });
+
+  it("requires ANTHROPIC_API_KEY for claude models", () => {
+    expect(() =>
+      assertRequiredVars(
+        {
+          GOOGLE_GENERATIVE_AI_API_KEY: "g",
+          AI_GATEWAY_ACCOUNT_ID: "a",
+          AI_GATEWAY_ID: "i",
+          AI_GATEWAY_TOKEN: "t",
+        },
+        "claude-sonnet-4-6"
+      )
+    ).toThrow(/ANTHROPIC_API_KEY/);
   });
 });
 
 describe("buildEvalEnv", () => {
   const vars = {
     ANTHROPIC_API_KEY: "k",
+    GOOGLE_GENERATIVE_AI_API_KEY: "g",
     AI_GATEWAY_ACCOUNT_ID: "a",
     AI_GATEWAY_ID: "g",
     AI_GATEWAY_TOKEN: "t",
@@ -50,6 +79,7 @@ describe("buildEvalEnv", () => {
   it("includes only the generation vars plus the container stub", () => {
     const env = buildEvalEnv(vars, 12345);
     expect(env.ANTHROPIC_API_KEY).toBe("k");
+    expect(env.GOOGLE_GENERATIVE_AI_API_KEY).toBe("g");
     expect(env.POSTHOG_API_KEY).toBeUndefined();
     expect(env.TWIST_BUILDER).toBeDefined();
   });

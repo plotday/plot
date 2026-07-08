@@ -10,9 +10,11 @@ Spec: `docs/superpowers/specs/2026-07-07-twist-generation-eval-harness-design.md
 ## Prerequisites
 
 - Docker running (the twist-builder container is built and booted locally).
-- `workers/api/.dev.vars` with `ANTHROPIC_API_KEY`, `AI_GATEWAY_ACCOUNT_ID`,
-  `AI_GATEWAY_ID`, `AI_GATEWAY_TOKEN` (`pnpm --filter @plotday/api get-env`,
-  or `pnpm cp-env <main-repo>` in a worktree).
+- `workers/api/.dev.vars` with `GOOGLE_GENERATIVE_AI_API_KEY`,
+  `AI_GATEWAY_ACCOUNT_ID`, `AI_GATEWAY_ID`, `AI_GATEWAY_TOKEN`
+  (`pnpm --filter @plotday/api get-env`, or `pnpm cp-env <main-repo>` in a
+  worktree). `ANTHROPIC_API_KEY` is additionally required only for
+  `--model claude-*` runs.
 - Built SDK types: `cd public/twister && pnpm build`.
 
 ## Usage
@@ -26,7 +28,7 @@ pnpm --filter @plotday/api eval:twist-gen --only hello-thread
 
 # A/B a model, then compare:
 pnpm --filter @plotday/api eval:twist-gen --label baseline
-pnpm --filter @plotday/api eval:twist-gen --model claude-opus-4-8 \
+pnpm --filter @plotday/api eval:twist-gen --model claude-sonnet-4-6 \
   --compare evals/results/<baseline-file>.json
 ```
 

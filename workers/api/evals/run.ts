@@ -73,7 +73,13 @@ async function runSpec(
 
   try {
     source = await withTimeout(
-      generateTwist({ spec: spec.body, env, model, onEvent: (e) => events.push(e) }),
+      generateTwist({
+        spec: spec.body,
+        env,
+        model,
+        onEvent: (e) => events.push(e),
+        skipGatewayCache: true,
+      }),
       SPEC_TIMEOUT_MS
     );
     const outcome = await runChecks(spec, source);
@@ -196,14 +202,14 @@ async function main(): Promise<void> {
   // Preflight — fail fast with actionable messages.
   assertDockerAvailable();
   const vars = loadDevVars();
-  assertRequiredVars(vars);
+  const model = opts.model ?? DEFAULT_GENERATION_MODEL;
+  assertRequiredVars(vars, model);
   if (!existsSync(join(TWISTER_DIST, "index.d.ts"))) {
     throw new EvalInfraError(
       "public/twister/dist is missing — run 'cd public/twister && pnpm build'"
     );
   }
   const selected = selectSpecs(corpus, opts.only);
-  const model = opts.model ?? DEFAULT_GENERATION_MODEL;
   const label = opts.label ?? model;
 
   log(`building container image…`);

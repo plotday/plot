@@ -37,6 +37,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
     return n;
   };
+  if (values.model && !/^(gemini|claude)/.test(values.model)) {
+    throw new Error('--model must start with "gemini" or "claude"');
+  }
   return {
     only: values.only ?? null,
     model: values.model ?? null,

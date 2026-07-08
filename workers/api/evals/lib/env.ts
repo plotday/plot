@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { API_ROOT } from "./paths";
 
 export const REQUIRED_VARS = [
-  "ANTHROPIC_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
   "AI_GATEWAY_ACCOUNT_ID",
   "AI_GATEWAY_ID",
   "AI_GATEWAY_TOKEN",
@@ -33,8 +33,14 @@ export function loadDevVars(
   return out;
 }
 
-export function assertRequiredVars(vars: Record<string, string>): void {
-  const missing = REQUIRED_VARS.filter((key) => !vars[key]);
+export function assertRequiredVars(
+  vars: Record<string, string>,
+  model: string
+): void {
+  const required: string[] = [...REQUIRED_VARS];
+  // Anthropic is only needed when a claude model is explicitly selected.
+  if (model.startsWith("claude")) required.push("ANTHROPIC_API_KEY");
+  const missing = required.filter((key) => !vars[key]);
   if (missing.length > 0) {
     throw new Error(
       `Missing in workers/api/.dev.vars: ${missing.join(", ")} — ` +
@@ -68,6 +74,7 @@ export function buildEvalEnv(
 ): Record<string, unknown> {
   return {
     ANTHROPIC_API_KEY: vars.ANTHROPIC_API_KEY,
+    GOOGLE_GENERATIVE_AI_API_KEY: vars.GOOGLE_GENERATIVE_AI_API_KEY,
     AI_GATEWAY_ACCOUNT_ID: vars.AI_GATEWAY_ACCOUNT_ID,
     AI_GATEWAY_ID: vars.AI_GATEWAY_ID,
     AI_GATEWAY_TOKEN: vars.AI_GATEWAY_TOKEN,

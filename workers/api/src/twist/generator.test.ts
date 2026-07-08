@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { generateTwist, type GenerateAttemptEvent } from "./generator";
-import type { TwistSource } from "./types";
 
 // Stub the twister docs exports — they're huge static strings and we don't
 // need their real content for unit tests.
@@ -41,12 +40,29 @@ vi.mock("@ai-sdk/anthropic", () => ({
   },
 }));
 
-const validSource: TwistSource = {
-  displayName: "Sample Twist",
-  dependencies: {},
-  files: {
-    "index.ts": "export default class SampleTwist {}",
+// Google provider factory — same sentinel pattern as the Anthropic mock.
+const googleModelSentinel = { __sentinel: "google-model" };
+const createGoogleMock = vi.fn();
+const googleModelIdMock = vi.fn();
+vi.mock("@ai-sdk/google", () => ({
+  createGoogleGenerativeAI: (opts?: unknown) => {
+    createGoogleMock(opts);
+    return (modelId: string) => {
+      googleModelIdMock(modelId);
+      return googleModelSentinel;
+    };
   },
+}));
+
+// What the MODEL now returns (array-shaped, Gemini-compatible); generateTwist
+// maps it back into the Record-shaped TwistSource that all downstream
+// consumers (builder, container, harness checks) still expect unchanged.
+const validGenerated = {
+  displayName: "Sample Twist",
+  dependencies: [] as Array<{ name: string; version: string }>,
+  files: [
+    { path: "index.ts", content: "export default class SampleTwist {}" },
+  ],
 };
 
 function makeEnv(overrides: Record<string, string | undefined> = {}) {
@@ -55,21 +71,29 @@ function makeEnv(overrides: Record<string, string | undefined> = {}) {
     AI_GATEWAY_ID: "gw",
     AI_GATEWAY_TOKEN: "token",
     ANTHROPIC_API_KEY: "key",
+    GOOGLE_GENERATIVE_AI_API_KEY: "gkey",
     TWIST_BUILDER: {},
     ...overrides,
   } as any;
 }
 
-describe("generateTwist", () => {
-  beforeEach(() => {
-    buildTwistMock.mockReset();
-    generateObjectMock.mockReset();
-    createAnthropicMock.mockClear();
-    modelIdMock.mockClear();
-    // Default: model returns a valid source.
-    generateObjectMock.mockResolvedValue({ object: { ...validSource } });
-  });
+// File-scope (not nested in a single describe) so every test in every
+// describe below gets a fresh, valid default mock — several tests further
+// down rely on this ambient default rather than setting their own, and a
+// scoped-to-one-describe reset would let state leak across sibling describes
+// depending on declaration order.
+beforeEach(() => {
+  buildTwistMock.mockReset();
+  generateObjectMock.mockReset();
+  createAnthropicMock.mockClear();
+  modelIdMock.mockClear();
+  createGoogleMock.mockClear();
+  googleModelIdMock.mockClear();
+  // Default: model returns a valid source.
+  generateObjectMock.mockResolvedValue({ object: { ...validGenerated } });
+});
 
+describe("generateTwist", () => {
   it("throws when AI Gateway config is missing", async () => {
     await expect(
       generateTwist({
@@ -99,15 +123,43 @@ describe("generateTwist", () => {
     expect(onProgress).toHaveBeenCalledWith("Generating twist code");
   });
 
-  it("uses sonnet 4.6, a reasonable token budget, and caches the system prompt", async () => {
+  it("defaults to Gemini with a plain-string system prompt via instructions", async () => {
     buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
 
     await generateTwist({ spec: "anything", env: makeEnv() });
 
-    expect(createAnthropicMock).toHaveBeenCalledTimes(1);
+    expect(createGoogleMock).toHaveBeenCalledTimes(1);
+    expect(createAnthropicMock).not.toHaveBeenCalled();
+    // Routed through the AI Gateway's Google AI Studio endpoint.
+    const providerOpts = createGoogleMock.mock.calls[0][0] as { baseURL: string };
+    expect(providerOpts.baseURL).toContain("/google-ai-studio/v1beta");
 
     const call = generateObjectMock.mock.calls[0][0];
     expect(call.maxOutputTokens).toBeGreaterThanOrEqual(16_000);
+    // Gemini 2.5+/3 caches large repeated prefixes implicitly — no provider
+    // options needed, so instructions is a plain string.
+    expect(typeof call.instructions).toBe("string");
+    expect(call.instructions).toContain("<SDK_DOCS>");
+    expect(call.instructions).toContain("<TWIST_GUIDE>");
+    // messages must contain ONLY the user message — a system entry here
+    // would make ai@7's generateObject throw before any network call.
+    expect(call.messages).toHaveLength(1);
+    expect(call.messages[0].role).toBe("user");
+  });
+
+  it("keeps the anthropic cacheControl instructions shape for claude models", async () => {
+    buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+
+    await generateTwist({
+      spec: "anything",
+      env: makeEnv(),
+      model: "claude-sonnet-4-6",
+    });
+
+    expect(createAnthropicMock).toHaveBeenCalledTimes(1);
+    expect(createGoogleMock).not.toHaveBeenCalled();
+
+    const call = generateObjectMock.mock.calls[0][0];
     // ai@7 forbids system-role entries in `messages` — the system prompt goes
     // through the `instructions` option as a SystemModelMessage, which is the
     // only shape that still carries the anthropic cacheControl marker.
@@ -119,12 +171,8 @@ describe("generateTwist", () => {
         },
       })
     );
-    // System content must include both the SDK docs stub and the twist guide
-    // stub so the big static prefix is part of the cached block.
     expect(call.instructions.content).toContain("<SDK_DOCS>");
     expect(call.instructions.content).toContain("<TWIST_GUIDE>");
-    // messages must contain ONLY the user message — a system entry here
-    // would make ai@7's generateObject throw before any network call.
     expect(call.messages).toHaveLength(1);
     expect(call.messages[0].role).toBe("user");
   });
@@ -160,28 +208,14 @@ describe("generateTwist", () => {
     expect(generateObjectMock).toHaveBeenCalledTimes(3);
     expect(buildTwistMock).toHaveBeenCalledTimes(3);
   });
-
-  it("throws when the model omits index.ts", async () => {
-    generateObjectMock.mockResolvedValueOnce({
-      object: {
-        displayName: "Bad",
-        dependencies: {},
-        files: { "other.ts": "..." },
-      },
-    });
-
-    await expect(
-      generateTwist({ spec: "x", env: makeEnv() })
-    ).rejects.toThrow(/missing required 'index\.ts'/);
-    expect(buildTwistMock).not.toHaveBeenCalled();
-  });
 });
 
 describe("generateTwist telemetry hooks", () => {
   it("uses the default model when no override is given", async () => {
     buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
     await generateTwist({ spec: "hello", env: makeEnv() });
-    expect(modelIdMock).toHaveBeenCalledWith("claude-sonnet-4-6");
+    expect(googleModelIdMock).toHaveBeenCalledWith("gemini-3.1-pro-preview");
+    expect(modelIdMock).not.toHaveBeenCalled();
   });
 
   it("honors the model override", async () => {
@@ -216,7 +250,7 @@ describe("generateTwist telemetry hooks", () => {
 
   it("passes token usage through to llm_complete", async () => {
     generateObjectMock.mockResolvedValue({
-      object: { ...validSource },
+      object: { ...validGenerated },
       usage: { inputTokens: 100, outputTokens: 42 },
       providerMetadata: {
         anthropic: { cacheReadInputTokens: 70, cacheCreationInputTokens: 30 },
@@ -245,5 +279,107 @@ describe("generateTwist telemetry hooks", () => {
       },
     });
     expect(source.files["index.ts"]).toBeTruthy();
+  });
+});
+
+describe("generateTwist provider routing", () => {
+  it("rejects an unsupported model id", async () => {
+    await expect(
+      generateTwist({ spec: "hello", env: makeEnv(), model: "gpt-4o" })
+    ).rejects.toThrow(/Unsupported generation model: gpt-4o/);
+  });
+
+  it("rejects a gemini model when GOOGLE_GENERATIVE_AI_API_KEY is missing", async () => {
+    await expect(
+      generateTwist({
+        spec: "hello",
+        env: makeEnv({ GOOGLE_GENERATIVE_AI_API_KEY: undefined }),
+      })
+    ).rejects.toThrow(/GOOGLE_GENERATIVE_AI_API_KEY is missing/);
+  });
+
+  it("rejects a claude model when ANTHROPIC_API_KEY is missing", async () => {
+    await expect(
+      generateTwist({
+        spec: "hello",
+        env: makeEnv({ ANTHROPIC_API_KEY: undefined }),
+        model: "claude-sonnet-4-6",
+      })
+    ).rejects.toThrow(/ANTHROPIC_API_KEY is missing/);
+  });
+
+  it("maps google cached-content metadata into llm_complete usage", async () => {
+    generateObjectMock.mockResolvedValue({
+      object: { ...validGenerated },
+      usage: { inputTokens: 100, outputTokens: 42 },
+      providerMetadata: { google: { cachedContentTokenCount: 55 } },
+    });
+    buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+    const events: GenerateAttemptEvent[] = [];
+    await generateTwist({ spec: "hello", env: makeEnv(), onEvent: (e) => events.push(e) });
+    const llm = events.find((e) => e.type === "llm_complete");
+    if (!llm || llm.type !== "llm_complete") throw new Error("expected llm_complete");
+    expect(llm.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 42,
+      cacheReadInputTokens: 55,
+      cacheCreationInputTokens: undefined,
+    });
+  });
+});
+
+describe("generated-shape mapping", () => {
+  it("maps files and dependencies arrays into TwistSource records", async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        displayName: "Mapper",
+        files: [
+          { path: "index.ts", content: "export default class M {}" },
+          { path: "lib/util.ts", content: "export const x = 1;" },
+        ],
+        dependencies: [{ name: "zod", version: "^4.0.0" }],
+      },
+    });
+    buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+    const source = await generateTwist({ spec: "hello", env: makeEnv() });
+    expect(source.files["index.ts"]).toContain("class M");
+    expect(source.files["lib/util.ts"]).toBe("export const x = 1;");
+    expect(source.dependencies).toEqual({
+      zod: "^4.0.0",
+      "@plotday/twister": "latest",
+    });
+  });
+
+  it("still rejects when no files entry has path index.ts", async () => {
+    generateObjectMock.mockResolvedValue({
+      object: {
+        displayName: "NoEntry",
+        files: [{ path: "main.ts", content: "export {}" }],
+        dependencies: [],
+      },
+    });
+    await expect(
+      generateTwist({ spec: "hello", env: makeEnv() })
+    ).rejects.toThrow(/missing required 'index.ts'/);
+  });
+});
+
+describe("gateway cache bypass", () => {
+  it("adds cf-aig-skip-cache when skipGatewayCache is set", async () => {
+    buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+    await generateTwist({ spec: "hello", env: makeEnv(), skipGatewayCache: true });
+    const opts = createGoogleMock.mock.calls[0][0] as {
+      headers: Record<string, string>;
+    };
+    expect(opts.headers["cf-aig-skip-cache"]).toBe("true");
+  });
+
+  it("omits cf-aig-skip-cache by default", async () => {
+    buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+    await generateTwist({ spec: "hello", env: makeEnv() });
+    const opts = createGoogleMock.mock.calls[0][0] as {
+      headers: Record<string, string>;
+    };
+    expect(opts.headers["cf-aig-skip-cache"]).toBeUndefined();
   });
 });

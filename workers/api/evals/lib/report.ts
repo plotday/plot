@@ -2,14 +2,21 @@ import type { GenerateAttemptEvent } from "../../src/twist/generator";
 import type { RunResults, SpecResult, TokenTotals } from "./types";
 
 // USD per million tokens. Estimates for reporting only — update as pricing
-// moves; unknown models fall back to Sonnet rates.
+// moves; unknown models fall back to the default model's rates.
 const MODEL_RATES: Record<
   string,
   { input: number; output: number; cacheRead: number; cacheWrite: number }
 > = {
   "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  // Gemini list prices (estimates as of 2026-07). Implicit caching bills
+  // cached input at ~25% of the input rate; there is no separate write
+  // charge, so cacheWrite mirrors the input rate (and is always 0 tokens
+  // for gemini in practice — extractUsage only sets it for anthropic).
+  "gemini-3-pro-preview": { input: 2, output: 12, cacheRead: 0.5, cacheWrite: 2 },
+  "gemini-3.1-pro-preview": { input: 2, output: 12, cacheRead: 0.5, cacheWrite: 2 },
+  "gemini-3-flash-preview": { input: 0.3, output: 2.5, cacheRead: 0.075, cacheWrite: 0.3 },
 };
-const DEFAULT_RATES = MODEL_RATES["claude-sonnet-4-6"];
+const DEFAULT_RATES = MODEL_RATES["gemini-3.1-pro-preview"];
 
 export function sumTokens(events: GenerateAttemptEvent[]): TokenTotals {
   const totals: TokenTotals = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };

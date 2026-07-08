@@ -71,6 +71,16 @@ describe("estimateCostUsd", () => {
       )
     ).toBeCloseTo(0.3, 5);
   });
+
+  it("prices gemini pro tokens", () => {
+    // 1M fresh input at $2 + 1M output at $12 = $14
+    expect(
+      estimateCostUsd(
+        { input: 1_000_000, cacheRead: 0, cacheWrite: 0, output: 1_000_000 },
+        "gemini-3-pro-preview"
+      )
+    ).toBeCloseTo(14, 5);
+  });
 });
 
 describe("computeAggregates", () => {

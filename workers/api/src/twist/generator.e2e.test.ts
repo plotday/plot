@@ -5,16 +5,17 @@
  *
  * Prerequisites
  *   - Docker running (container builder is booted locally).
- *   - workers/api/.dev.vars populated with ANTHROPIC_API_KEY,
+ *   - workers/api/.dev.vars populated with GOOGLE_GENERATIVE_AI_API_KEY,
  *     AI_GATEWAY_ACCOUNT_ID, AI_GATEWAY_ID, AI_GATEWAY_TOKEN. The test loads
  *     them automatically, so no env setup is required beyond the opt-in flag.
  *
  * What it covers
- *   Feeds a real spec to `generateTwist()`, which calls Anthropic through the
- *   Cloudflare AI Gateway and bundles the result inside the twist-builder
- *   container. This is the same pipeline `POST /v1/twist/generate` serves in
- *   production. If this passes, the whole path — prompt shape, schema
- *   validation, retry loop, container build — works against the live SDK.
+ *   Feeds a real spec to `generateTwist()`, which calls the default model's
+ *   provider through the Cloudflare AI Gateway and bundles the result inside
+ *   the twist-builder container. This is the same pipeline
+ *   `POST /v1/twist/generate` serves in production. If this passes, the
+ *   whole path — prompt shape, schema validation, retry loop, container
+ *   build — works against the live SDK.
  *
  * Running
  *   E2E_TWIST_GENERATE=1 pnpm -F @plotday/api test -- generator.e2e
@@ -111,7 +112,7 @@ suite("spec-driven twist generation (E2E)", () => {
   beforeAll(async () => {
     const vars = loadDevVars();
     for (const required of [
-      "ANTHROPIC_API_KEY",
+      "GOOGLE_GENERATIVE_AI_API_KEY",
       "AI_GATEWAY_ACCOUNT_ID",
       "AI_GATEWAY_ID",
       "AI_GATEWAY_TOKEN",
@@ -144,6 +145,7 @@ suite("spec-driven twist generation (E2E)", () => {
 
     env = {
       ANTHROPIC_API_KEY: vars.ANTHROPIC_API_KEY,
+      GOOGLE_GENERATIVE_AI_API_KEY: vars.GOOGLE_GENERATIVE_AI_API_KEY,
       AI_GATEWAY_ACCOUNT_ID: vars.AI_GATEWAY_ACCOUNT_ID,
       AI_GATEWAY_ID: vars.AI_GATEWAY_ID,
       AI_GATEWAY_TOKEN: vars.AI_GATEWAY_TOKEN,
