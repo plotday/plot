@@ -812,6 +812,21 @@ export type NewNote = Partial<
     author?: NewActor;
 
     /**
+     * Mark this note as authored by the connection owner (the person whose
+     * account the connector is syncing) — e.g. a message you sent in a chat.
+     *
+     * When true, the runtime attributes the note to your own contact for this
+     * connection, ignoring `author`. Use this instead of trying to resolve your
+     * own identity from the external service: for many providers a message you
+     * sent carries no usable sender id (and 1:1 chats omit you from the
+     * participant roster), so `author` cannot identify you reliably. The owner
+     * is already known from the connection, so this is deterministic and needs
+     * no extra API call. If the owner has no resolvable contact, the note falls
+     * back to `author`.
+     */
+    authoredBySelf?: boolean;
+
+    /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
      * - 'markdown': Already in markdown format (default, no conversion)
