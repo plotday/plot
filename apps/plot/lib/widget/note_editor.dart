@@ -2385,11 +2385,14 @@ class NoteEditorState extends State<NoteEditor> {
     }
 
     // Forward: stamp the source-note pointer onto the outgoing note so it sends
-    // as a forward. Applied here (send time) from the parent's live forwarding
-    // state — NOT pre-stamped on the draft — so a cancelled forward carries no
-    // pointer. Flows to the note sync (fwd_note) and, on a connector channel,
-    // the create-link thread POST (note_fwd_note via
-    // ThreadsBase.stashPendingCreateLink, which reads THIS final note).
+    // as a forward. The parent (new_thread.dart's _applyForward) already
+    // stamps this on the draft note as soon as the forward starts (so it
+    // survives a park/resume cycle — see its doc), but re-derive from the
+    // live [widget.forwardSource] here too so send time is authoritative and
+    // a cancelled forward (which clears both the live state and the draft's
+    // stamp) never carries a stale pointer. Flows to the note sync (fwd_note)
+    // and, on a connector channel, the create-link thread POST (note_fwd_note
+    // via ThreadsBase.stashPendingCreateLink, which reads THIS final note).
     if (widget.forwardSource != null && note != null) {
       note = note.copyWith(fwdNoteId: widget.forwardSource!.id);
     }

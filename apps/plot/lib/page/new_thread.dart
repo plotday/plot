@@ -770,6 +770,12 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// discarded ones — when [archived] is true, this method clears [archived_at]
   /// directly so edits autosave back into the active list (spec: tap restores
   /// and opens the draft).
+  ///
+  /// Also reconstructs [_forwardSourceNote]/[_forwardSourceTitle] from the
+  /// resumed note's `fwdNoteId` (stamped by [_applyForward]) — otherwise a
+  /// forward-in-progress draft would resume with no "Forwarding" takeover bar
+  /// and, worse, send as a plain new email (finalizeThreadDraft has no live
+  /// forward state to re-stamp `fwdNoteId` from).
   Future<void> _resumeDraft(Uuid threadId, bool archived) async {
     try {
       final threads = await Thread.get(
@@ -791,12 +797,34 @@ class NewThreadPageState extends State<NewThreadPage> {
           await Note.getDraftByActivity(threadId) ??
           Note.draft(threadId: threadId);
       if (!mounted) return;
+
+      Note? forwardSourceNote;
+      String? forwardSourceTitle;
+      final fwdId = note.fwdNoteId;
+      if (fwdId != null) {
+        try {
+          final sourceNote = await Note.get(fwdId);
+          if (sourceNote != null) {
+            final sourceThread = await Thread.getOne(sourceNote.threadId);
+            forwardSourceNote = sourceNote;
+            forwardSourceTitle = sourceThread.displayTitle;
+          }
+        } catch (_) {
+          // Expected when the forwarded-from note/thread hasn't synced to
+          // this device (or was deleted) — resume without forward state
+          // rather than blocking the draft from opening.
+        }
+        if (!mounted) return;
+      }
+
       final bloc = _priorityBloc ?? context.read<PriorityBloc>();
       bloc.resumeDraft(thread, note);
       setState(() {
         _step = _ComposeStep.compose;
         _selectedRecipient = null;
         _draftsRevision++;
+        _forwardSourceNote = forwardSourceNote;
+        _forwardSourceTitle = forwardSourceTitle;
       });
       _publishHeaderBack();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1382,28 +1410,33 @@ class NewThreadPageState extends State<NewThreadPage> {
     });
 
     // Pre-fill the title as "Fwd: <source subject>" (mirrors every email
-    // client's forward convention) so the draft is both recognizable in the
-    // Drafts list (which reads Thread.title — see [_loadDraftSummaries]) and
-    // sent with the right subject even if the user never touches the title
-    // field. Skips a title the draft already carries (defensive — this is
-    // always a fresh compose in practice) so it never clobbers a user edit.
-    // Reverted by [_clearForward] if the user cancels the forward without
-    // having edited it further.
+    // client's forward convention) and stamp the draft note's `fwdNoteId` —
+    // both persisted immediately via [PriorityBloc.updateDraft] rather than
+    // only at send time. This is what makes the forward survive a
+    // park/resume cycle: [_forwardSourceNote]/[_forwardSourceTitle] are page
+    // State, not derived from the draft, so navigating away (parking the
+    // draft) and back (see [_resumeDraft]) would otherwise silently drop the
+    // forward — the takeover bar disappears AND the eventual send loses the
+    // quoted original/attachments, since finalizeThreadDraft has nothing to
+    // stamp `fwdNoteId` from. [_resumeDraft] reads `fwdNoteId` back off the
+    // resumed note to reconstruct this same state. [_clearForward] clears
+    // both symmetrically so canceling never leaves a stale pointer.
+    // Skips a title the draft already carries (defensive — this is always a
+    // fresh compose in practice) so it never clobbers a user edit.
     final bloc = _priorityBloc;
-    if (bloc != null && (bloc.state.draft.title?.trim().isEmpty ?? true)) {
+    if (bloc != null) {
+      final currentDraft = bloc.state.draft;
+      final titledDraft = (currentDraft.title?.trim().isEmpty ?? true)
+          ? currentDraft.copyWith(title: Value('Fwd: ${seed.sourceThreadTitle}'))
+          : currentDraft;
       await bloc.updateDraft(
-        bloc.state.draft.copyWith(title: Value('Fwd: ${seed.sourceThreadTitle}')),
+        titledDraft,
+        note: bloc.state.draftNote.copyWith(fwdNoteId: seed.sourceNote.id),
       );
     }
 
     // Default the connection to the source note's connection. Only the Via is
     // seeded — the roster starts empty so the user chooses new recipients.
-    //
-    // The forward pointer itself is NOT stamped on the draft note here. It's
-    // applied at SEND time from the live [_forwardSourceNote] (passed to the
-    // NoteEditor as `forwardSource`, stamped in finalizeThreadDraft), so
-    // clearing the forwarding state cleanly cancels the forward — there's no
-    // stale draft pointer to leak a forward into a later send.
     final link = seed.primaryLink;
     if (link != null && link.createdBy != null) {
       await _applyForwardVia(link);
@@ -1411,26 +1444,30 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   /// Cancels an in-progress forward (the takeover bar's ×): clears the local
-  /// forwarding state and, if the title still holds the "Fwd: …" value
-  /// [_applyForward] pre-filled (i.e. the user hasn't edited it since),
-  /// reverts it to null so the compose falls back to Auto-title. Leaves a
-  /// user-edited title alone.
+  /// forwarding state and, symmetrically, the persisted `fwdNoteId` /
+  /// pre-filled title [_applyForward] stamped onto the draft — provided
+  /// neither has been changed since (a user edit to either is left alone).
   Future<void> _clearForward() async {
     final bloc = _priorityBloc;
     final expectedTitle = _forwardSourceTitle != null
         ? 'Fwd: $_forwardSourceTitle'
         : null;
+    final sourceId = _forwardSourceNote?.id;
     setState(() {
       _forwardSourceNote = null;
       _forwardSourceTitle = null;
     });
-    if (bloc != null &&
-        expectedTitle != null &&
-        bloc.state.draft.title == expectedTitle) {
-      await bloc.updateDraft(
-        bloc.state.draft.copyWith(title: const Value(null)),
-      );
-    }
+    if (bloc == null) return;
+    final currentDraft = bloc.state.draft;
+    final revertTitle =
+        expectedTitle != null && currentDraft.title == expectedTitle;
+    final currentNote = bloc.state.draftNote;
+    final clearFwd = sourceId != null && currentNote.fwdNoteId == sourceId;
+    if (!revertTitle && !clearFwd) return;
+    await bloc.updateDraft(
+      revertTitle ? currentDraft.copyWith(title: const Value(null)) : currentDraft,
+      note: clearFwd ? currentNote.copyWith(clearFwdNoteId: true) : null,
+    );
   }
 
   /// Defaults the draft's connection ("Via") to the connection that owns
