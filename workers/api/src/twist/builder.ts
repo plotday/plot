@@ -1,5 +1,9 @@
 import type { Bindings } from "../env";
 import type { TwistSource, BuildResult } from "./types";
+// The twister exports map has no ./package.json entry, so import it by
+// path. This is the SAME package the prompt docs come from — sending its
+// version pins container builds to the docs the model saw.
+import twisterPackage from "../../node_modules/@plotday/twister/package.json";
 
 /**
  * Resolve `getContainer` from `@cloudflare/containers` lazily via a dynamic
@@ -80,7 +84,7 @@ export async function buildTwist(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(source),
+      body: JSON.stringify({ ...source, twisterVersion: twisterPackage.version }),
     });
 
     // Check if the HTTP request was successful

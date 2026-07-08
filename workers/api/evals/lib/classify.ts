@@ -13,6 +13,9 @@ export function classifyBuildErrors(errors: string[]): BuildFailureClass {
   ) {
     return "build_container_infra";
   }
+  if (joined.includes("Type check failed")) {
+    return "build_typecheck";
+  }
   return "build_bundle";
 }
 

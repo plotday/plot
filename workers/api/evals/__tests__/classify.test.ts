@@ -31,6 +31,30 @@ describe("classifyBuildErrors", () => {
       "build_bundle"
     );
   });
+
+  it("detects typecheck failures", () => {
+    expect(
+      classifyBuildErrors(["Type check failed:\nsrc/index.ts(3,7): error TS2322: ..."])
+    ).toBe("build_typecheck");
+  });
+
+  it("prefers typecheck over bundle when both are present", () => {
+    expect(
+      classifyBuildErrors([
+        "Type check failed:\nsrc/index.ts(3,7): error TS2322: ...",
+        "Build failed:\nesbuild: Expected ';'",
+      ])
+    ).toBe("build_typecheck");
+  });
+
+  it("still prefers npm-install failures over typecheck", () => {
+    expect(
+      classifyBuildErrors([
+        "Failed to install dependencies:\nnpm ERR! 404",
+        "Type check failed:\nerror TS2304",
+      ])
+    ).toBe("build_npm_install");
+  });
 });
 
 describe("classifyGenerationError", () => {

@@ -35,6 +35,7 @@ export type FailureClass =
   | "output_truncated"
   | "schema_mismatch"
   | "build_npm_install"
+  | "build_typecheck"
   | "build_bundle"
   | "build_container_infra"
   | "max_attempts_exhausted"
@@ -45,6 +46,7 @@ export type FailureClass =
 
 export type BuildFailureClass =
   | "build_npm_install"
+  | "build_typecheck"
   | "build_bundle"
   | "build_container_infra";
 

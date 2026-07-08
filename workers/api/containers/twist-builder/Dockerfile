@@ -7,6 +7,12 @@ RUN apk add --no-cache git
 # Install Plot SDK globally
 RUN npm install -g @plotday/twister@latest
 
+# tsc for in-loop typechecking; pinned to match the server's devDependency major
+RUN npm install -g typescript@5.8.3
+
+# Version-keyed dependency templates (populated at runtime)
+RUN mkdir -p /templates
+
 # Set working directory for the server
 WORKDIR /app
 

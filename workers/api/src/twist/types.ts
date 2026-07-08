@@ -30,6 +30,8 @@ export interface BuildSuccess {
   module: string;
   /** Optional sourcemap for the bundled module (for stack trace translation) */
   sourcemap?: string;
+  /** Whether the container's template cache was hit or missed for this build (e2e/eval observability) */
+  templateCache?: "hit" | "miss";
 }
 
 /**

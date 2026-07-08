@@ -15,6 +15,14 @@
  *   back. If this passes, the generator's output will build too, provided the
  *   model emits syntactically valid code against the current @plotday/twister.
  *
+ *   The container now type-checks sources with `tsc` (in parallel with the
+ *   esbuild bundle) before returning success, and reuses a per-version
+ *   dependency template across builds instead of running `npm install` on
+ *   every request. All fixtures in this suite — including the "minimal
+ *   twist" one — must therefore be type-valid against the current
+ *   @plotday/twister, e.g. `class X extends Twist<X>` (the bare `Twist` with
+ *   no type argument does not compile).
+ *
  * Running
  *   E2E_TWIST_BUILDER=1 pnpm -F @plotday/api test -- builder.e2e
  */
@@ -102,7 +110,7 @@ suite("twist-builder container (E2E)", () => {
         "index.ts": `
 import { Twist, type ToolBuilder } from "@plotday/twister";
 
-export default class MinimalTwist extends Twist {
+export default class MinimalTwist extends Twist<MinimalTwist> {
   build(_builder: ToolBuilder) {
     return {};
   }
@@ -126,7 +134,12 @@ export default class MinimalTwist extends Twist {
 
     expect(response.ok).toBe(true);
     const result = (await response.json()) as
-      | { success: true; module: string; sourcemap?: string }
+      | {
+          success: true;
+          module: string;
+          sourcemap?: string;
+          templateCache?: "hit" | "miss";
+        }
       | { success: false; errors: string[] };
 
     if (!result.success) {
@@ -135,6 +148,7 @@ export default class MinimalTwist extends Twist {
       );
     }
     expect(result.module.length).toBeGreaterThan(100);
+    expect((result as any).templateCache).toBeDefined();
   }, 5 * 60_000);
 
   it("surfaces build errors for invalid source", async () => {
@@ -164,4 +178,102 @@ export default class MinimalTwist extends Twist {
       expect(result.errors.join("\n")).toMatch(/\w/);
     }
   }, 2 * 60_000);
+
+  it("fails a type-broken source with a Type check marker", async () => {
+    const source = {
+      displayName: "TypeBroken",
+      dependencies: { "@plotday/twister": "latest" },
+      files: {
+        "index.ts": `
+import { Twist, type ToolBuilder } from "@plotday/twister";
+
+export default class TypeBroken extends Twist<TypeBroken> {
+  build(_builder: ToolBuilder) {
+    const n: number = "not a number";
+    return {};
+  }
+}
+`.trimStart(),
+      },
+    };
+    const response = await fetch(`http://127.0.0.1:${CONTAINER_PORT}/build`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(source),
+    });
+    const result = (await response.json()) as
+      | { success: true }
+      | { success: false; errors: string[] };
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.errors.join("\n")).toContain("Type check failed:");
+      expect(result.errors.join("\n")).toMatch(/TS2322|not assignable/);
+    }
+  }, 5 * 60_000);
+
+  it("reuses the version template on a second build (cache hit, no install)", async () => {
+    const source = {
+      displayName: "CacheProbe",
+      dependencies: { "@plotday/twister": "latest" },
+      files: {
+        "index.ts": `
+import { Twist, type ToolBuilder } from "@plotday/twister";
+
+export default class CacheProbe extends Twist<CacheProbe> {
+  build(_builder: ToolBuilder) {
+    return {};
+  }
+}
+`.trimStart(),
+      },
+    };
+    const post = () =>
+      fetch(`http://127.0.0.1:${CONTAINER_PORT}/build`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(source),
+      }).then((r) => r.json() as Promise<{ success: boolean; templateCache?: string }>);
+    const first = await post();
+    expect(first.success).toBe(true);
+    const started = Date.now();
+    const second = await post();
+    const elapsed = Date.now() - started;
+    expect(second.success).toBe(true);
+    expect(second.templateCache).toBe("hit");
+    expect(elapsed).toBeLessThan(30_000); // no npm install on the hot path
+  }, 5 * 60_000);
+
+  it("installs model-requested extra dependencies on top of the template", async () => {
+    const source = {
+      displayName: "ExtraDeps",
+      dependencies: { "@plotday/twister": "latest", zod: "^4.0.0" },
+      files: {
+        "index.ts": `
+import { z } from "zod";
+import { Twist, type ToolBuilder } from "@plotday/twister";
+
+const schema = z.object({ ok: z.boolean() });
+
+export default class ExtraDeps extends Twist<ExtraDeps> {
+  build(_builder: ToolBuilder) {
+    schema.parse({ ok: true });
+    return {};
+  }
+}
+`.trimStart(),
+      },
+    };
+    const response = await fetch(`http://127.0.0.1:${CONTAINER_PORT}/build`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(source),
+    });
+    const result = (await response.json()) as
+      | { success: true; module: string }
+      | { success: false; errors: string[] };
+    if (!result.success) {
+      throw new Error(`ExtraDeps build failed:\n${result.errors.join("\n\n")}`);
+    }
+    expect(result.module).toContain("ok");
+  }, 5 * 60_000);
 });
