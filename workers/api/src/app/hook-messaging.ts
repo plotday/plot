@@ -4,9 +4,6 @@ import superjson from "superjson";
 import { createLogger } from "@plotday/worker-util";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
-import { isCallbackError, getCallbackErrorType } from "../errors";
-import { invokeWebhookCallback } from "../twist/invoke-webhook";
-import { disposeRpc } from "../utils/rpc";
 import { notifyUserSyncByEnv } from "./sync/notify";
 import { captureServerError } from "../utils/error-capture";
 import { classifyEvent, type HostedWebhookEvent } from "./hook-messaging-classify";
@@ -78,7 +75,6 @@ hookMessaging.post("/hook/messaging", async (c) => {
   });
 
   const dispatch = classifyEvent(event);
-  const ctx = c.executionCtx as unknown as { exports: ExecutionContext["exports"] };
 
   try {
     switch (dispatch) {
@@ -89,13 +85,13 @@ hookMessaging.post("/hook/messaging", async (c) => {
         await handleAccountNeedsReauth(c.env, event, logger);
         break;
       case "messaging.new_message":
-        await handleNewMessage(c.env, ctx, event, logger);
+        await handleNewMessage(c.env, event, logger);
         break;
       case "users.invitation.received":
-        await handleInvitationReceived(c.env, ctx, event, logger);
+        await handleInvitationReceived(c.env, event, logger);
         break;
       case "users.new_relation":
-        await handleNewRelation(c.env, ctx, event, logger);
+        await handleNewRelation(c.env, event, logger);
         break;
       default:
         logger.info("Unhandled hosted-auth event", {
@@ -242,9 +238,61 @@ async function loadConnectorCallback(
   }
 }
 
-async function handleNewMessage(
+/**
+ * Resolve the twist_instance that owns a Unipile account (channel_id ===
+ * account_id). Returns undefined when no channel is registered yet. Uses a
+ * short-lived connection destroyed in `finally`.
+ */
+async function lookupTwistInstanceId(
   env: Bindings,
-  ctx: { exports: ExecutionContext["exports"] },
+  accountId: string
+): Promise<string | undefined> {
+  const db = createDb(env);
+  try {
+    const row = await db
+      .selectFrom("channel")
+      .select("twist_instance_id")
+      .where("channel_id", "=", accountId)
+      .executeTakeFirst();
+    return row?.twist_instance_id;
+  } finally {
+    await db.destroy();
+  }
+}
+
+/**
+ * Enqueue a resolved connector callback onto WEBHOOK_QUEUE for durable,
+ * bounded-concurrency, retried processing by the webhook queue consumer.
+ *
+ * The Unipile `/hook/messaging` handlers resolve the channel → callback token
+ * with fast DB/DO reads, then enqueue here and ACK Unipile immediately. The
+ * SLOW connector RPC (getChat + listMessages + saveLinks — several Unipile
+ * round-trips) then runs in the consumer instead of inline in the inbound
+ * request. Previously the inline RPC routinely exceeded Unipile's delivery
+ * timeout, so Unipile disconnected and Cloudflare canceled the invocation
+ * mid-save (`outcome: "canceled"`); with no reconciliation poll, a trailing
+ * message — most often the user's own reply typed natively in LinkedIn — was
+ * stranded permanently. The queue supplies the retry/recovery the connector
+ * itself lacks.
+ *
+ * Payload is intentionally tiny (event kind + ids), well under Cloudflare
+ * Queues' 128 KB message cap. If the send throws, the error propagates to the
+ * route handler (→ 5xx) so Unipile retries the delivery rather than dropping it.
+ */
+async function enqueueConnectorCallback(
+  env: Bindings,
+  token: string,
+  event: Record<string, unknown>
+): Promise<void> {
+  await env.WEBHOOK_QUEUE.send({
+    type: "connector-callback",
+    token,
+    args: [event],
+  });
+}
+
+export async function handleNewMessage(
+  env: Bindings,
   event: HostedWebhookEvent,
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
@@ -262,20 +310,7 @@ async function handleNewMessage(
     return;
   }
 
-  // Look up twist_instance_id for this Unipile account.
-  const db = createDb(env);
-  let twistInstanceId: string | undefined;
-  try {
-    const row = await db
-      .selectFrom("channel")
-      .select("twist_instance_id")
-      .where("channel_id", "=", accountId)
-      .executeTakeFirst();
-    twistInstanceId = row?.twist_instance_id;
-  } finally {
-    await db.destroy();
-  }
-
+  const twistInstanceId = await lookupTwistInstanceId(env, accountId);
   if (!twistInstanceId) {
     logger.warn("No channel found for account_id, dropping new_message", {
       account_id: accountId,
@@ -287,7 +322,6 @@ async function handleNewMessage(
   const token = await loadConnectorCallback(env, twistInstanceId, callbackKey);
   if (!token) {
     // Connector may not have finished onChannelEnabled yet (race condition).
-    // The polling backstop will catch up.
     logger.warn(
       "Webhook callback not yet stored for account, dropping new_message",
       { account_id: accountId, twist_instance_id: twistInstanceId }
@@ -295,42 +329,19 @@ async function handleNewMessage(
     return;
   }
 
-  try {
-    const result = await invokeWebhookCallback(env, ctx, token, {
-      kind: "message.received",
-      chatId,
-      messageId,
-    });
-    disposeRpc(result);
-    logger.info("new_message callback invoked", {
-      account_id: accountId,
-      twist_instance_id: twistInstanceId,
-    });
-  } catch (error) {
-    if (isCallbackError(error)) {
-      const errorType = getCallbackErrorType(error as Error);
-      if (
-        errorType === "NOT_FOUND" ||
-        errorType === "EXPIRED" ||
-        errorType === "INVALID_TOKEN" ||
-        errorType === "INVALID_TOKEN_FORMAT"
-      ) {
-        // Connector was uninstalled between webhook delivery and processing.
-        logger.warn(
-          "Webhook callback permanently unavailable for new_message",
-          { account_id: accountId, error_type: errorType }
-        );
-        return;
-      }
-    }
-    // Re-throw for unexpected errors — the route handler will capture them.
-    throw error;
-  }
+  await enqueueConnectorCallback(env, token, {
+    kind: "message.received",
+    chatId,
+    messageId,
+  });
+  logger.info("new_message enqueued", {
+    account_id: accountId,
+    twist_instance_id: twistInstanceId,
+  });
 }
 
-async function handleInvitationReceived(
+export async function handleInvitationReceived(
   env: Bindings,
-  ctx: { exports: ExecutionContext["exports"] },
   event: HostedWebhookEvent,
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
@@ -346,20 +357,7 @@ async function handleInvitationReceived(
     return;
   }
 
-  // Look up twist_instance_id for this Unipile account.
-  const db = createDb(env);
-  let twistInstanceId: string | undefined;
-  try {
-    const row = await db
-      .selectFrom("channel")
-      .select("twist_instance_id")
-      .where("channel_id", "=", accountId)
-      .executeTakeFirst();
-    twistInstanceId = row?.twist_instance_id;
-  } finally {
-    await db.destroy();
-  }
-
+  const twistInstanceId = await lookupTwistInstanceId(env, accountId);
   if (!twistInstanceId) {
     logger.warn(
       "No channel found for account_id, dropping invitation.received",
@@ -379,40 +377,18 @@ async function handleInvitationReceived(
     return;
   }
 
-  try {
-    const result = await invokeWebhookCallback(env, ctx, token, {
-      kind: "invitation.received",
-      invitationId,
-    });
-    disposeRpc(result);
-    logger.info("invitation.received callback invoked", {
-      account_id: accountId,
-      twist_instance_id: twistInstanceId,
-    });
-  } catch (error) {
-    if (isCallbackError(error)) {
-      const errorType = getCallbackErrorType(error as Error);
-      if (
-        errorType === "NOT_FOUND" ||
-        errorType === "EXPIRED" ||
-        errorType === "INVALID_TOKEN" ||
-        errorType === "INVALID_TOKEN_FORMAT"
-      ) {
-        logger.warn(
-          "Webhook callback permanently unavailable for invitation.received",
-          { account_id: accountId, error_type: errorType }
-        );
-        return;
-      }
-    }
-    // Re-throw for unexpected errors — the route handler will capture them.
-    throw error;
-  }
+  await enqueueConnectorCallback(env, token, {
+    kind: "invitation.received",
+    invitationId,
+  });
+  logger.info("invitation.received enqueued", {
+    account_id: accountId,
+    twist_instance_id: twistInstanceId,
+  });
 }
 
-async function handleNewRelation(
+export async function handleNewRelation(
   env: Bindings,
-  ctx: { exports: ExecutionContext["exports"] },
   event: HostedWebhookEvent,
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
@@ -439,19 +415,7 @@ async function handleNewRelation(
     return;
   }
 
-  const db = createDb(env);
-  let twistInstanceId: string | undefined;
-  try {
-    const row = await db
-      .selectFrom("channel")
-      .select("twist_instance_id")
-      .where("channel_id", "=", accountId)
-      .executeTakeFirst();
-    twistInstanceId = row?.twist_instance_id;
-  } finally {
-    await db.destroy();
-  }
-
+  const twistInstanceId = await lookupTwistInstanceId(env, accountId);
   if (!twistInstanceId) {
     logger.warn("No channel found for account_id, dropping new_relation", {
       account_id: accountId,
@@ -469,34 +433,14 @@ async function handleNewRelation(
     return;
   }
 
-  try {
-    const result = await invokeWebhookCallback(env, ctx, token, {
-      kind: "relation.new",
-      profileId,
-    });
-    disposeRpc(result);
-    logger.info("new_relation callback invoked", {
-      account_id: accountId,
-      twist_instance_id: twistInstanceId,
-    });
-  } catch (error) {
-    if (isCallbackError(error)) {
-      const errorType = getCallbackErrorType(error as Error);
-      if (
-        errorType === "NOT_FOUND" ||
-        errorType === "EXPIRED" ||
-        errorType === "INVALID_TOKEN" ||
-        errorType === "INVALID_TOKEN_FORMAT"
-      ) {
-        logger.warn(
-          "Webhook callback permanently unavailable for new_relation",
-          { account_id: accountId, error_type: errorType }
-        );
-        return;
-      }
-    }
-    throw error;
-  }
+  await enqueueConnectorCallback(env, token, {
+    kind: "relation.new",
+    profileId,
+  });
+  logger.info("new_relation enqueued", {
+    account_id: accountId,
+    twist_instance_id: twistInstanceId,
+  });
 }
 
 export default hookMessaging;

@@ -112,28 +112,50 @@ export type TwistBatchMessage = {
  * Webhook callback message queued for async processing.
  *
  * Ingested by /hook/:token, /hook/gmail/:topicId, /hook/pubsub/:topicId,
- * and /hook/slack (one message per matching team callback). Consumed by
- * the webhook queue consumer, which dispatches through
- * `invokeWebhookCallback` so each message executes independently — no
- * shared blast radius, no shared retry fate.
+ * /hook/slack (one message per matching team callback), and /hook/messaging
+ * (Unipile — as `connector-callback`). Consumed by the webhook queue consumer,
+ * which dispatches through `invokeWebhookCallback` so each message executes
+ * independently — no shared blast radius, no shared retry fate.
  *
  * The consumer never inspects the callback's return value — callbacks that
  * need a synchronous response (e.g. Microsoft Graph validation echoes) must
  * register with `{ async: false }` so the SDK returns a /hook-sync/:token
  * URL instead.
+ *
+ * Two shapes:
+ * - `webhook`: a raw external delivery. The consumer reconstructs a
+ *   request-shaped arg (`{ method, headers, params, body, rawBody }`) and
+ *   invokes the callback with it.
+ * - `connector-callback`: a resolved callback token plus the exact args to
+ *   invoke it with. The /hook/messaging (Unipile) producer resolves the
+ *   channel → callback token synchronously (fast DB/DO reads) then enqueues
+ *   this so the SLOW connector RPC (getChat + listMessages + saveLinks) runs
+ *   durably in the consumer, with retries, instead of inline in the inbound
+ *   Unipile request — where exceeding Unipile's delivery timeout got the
+ *   invocation canceled mid-save and stranded trailing messages.
  */
-export type WebhookMessage = {
-  type: "webhook";
-  token: string;
-  method: string;
-  headers: Record<string, string>;
-  params: Record<string, string>;
-  // Optional because the generic /hook/:token producer omits it to avoid
-  // duplicating rawBody (Cloudflare Queues caps messages at 128 KB). The
-  // consumer re-parses body from rawBody + Content-Type when absent.
-  body?: any;
-  rawBody?: string;
-};
+export type WebhookMessage =
+  | {
+      type: "webhook";
+      token: string;
+      method: string;
+      headers: Record<string, string>;
+      params: Record<string, string>;
+      // Optional because the generic /hook/:token producer omits it to avoid
+      // duplicating rawBody (Cloudflare Queues caps messages at 128 KB). The
+      // consumer re-parses body from rawBody + Content-Type when absent.
+      body?: any;
+      rawBody?: string;
+    }
+  | {
+      type: "connector-callback";
+      token: string;
+      // Pre-built args passed verbatim to `invokeWebhookCallback(token, ...args)`.
+      // Kept tiny (event kind + ids) so the queue message stays well under the
+      // 128 KB cap. The connector's bound `extraArgs` (e.g. channelId) are
+      // appended by `invokeWebhookCallback`, exactly as on the inline path.
+      args: unknown[];
+    };
 
 /**
  * Article-extraction job dispatched to the EXTRACT_QUEUE. The producer

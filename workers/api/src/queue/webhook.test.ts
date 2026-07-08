@@ -51,6 +51,50 @@ async function run(error: Error, { attempts = 1 } = {}) {
   return { message, captureException };
 }
 
+describe("processWebhooks routes connector-callback messages", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("invokes the callback token with the pre-built connector args, then acks", async () => {
+    // Unipile message/invitation/relation events are enqueued as
+    // `connector-callback` messages so the slow connector RPC runs durably in
+    // the consumer (with retries) instead of inline in the inbound webhook
+    // request, where it was canceled mid-save.
+    invokeWebhookCallback.mockResolvedValueOnce(undefined);
+    const message = {
+      id: "msg-cc",
+      timestamp: new Date(),
+      attempts: 1,
+      body: {
+        type: "connector-callback" as const,
+        token: "doid:tok",
+        args: [{ kind: "message.received", chatId: "c1", messageId: "m1" }],
+      },
+      ack: vi.fn(),
+      retry: vi.fn(),
+    };
+    const batch = {
+      queue: "webhook-queue",
+      messages: [message],
+    } as unknown as MessageBatch<WebhookMessage>;
+    const postHog = { captureException: vi.fn() } as unknown as PostHog;
+    const ctx = { exports: {} } as unknown as Parameters<typeof processWebhooks>[2];
+
+    await processWebhooks(batch, {} as Bindings, ctx, postHog);
+
+    expect(invokeWebhookCallback).toHaveBeenCalledTimes(1);
+    expect(invokeWebhookCallback).toHaveBeenCalledWith(
+      {},
+      ctx,
+      "doid:tok",
+      { kind: "message.received", chatId: "c1", messageId: "m1" }
+    );
+    expect(message.ack).toHaveBeenCalledTimes(1);
+    expect(message.retry).not.toHaveBeenCalled();
+  });
+});
+
 describe("processWebhooks suppresses expected provider errors", () => {
   afterEach(() => {
     vi.clearAllMocks();

@@ -68,22 +68,37 @@ export async function processWebhooks(
   const handleMessage = async (
     message: Message<WebhookMessage>
   ): Promise<void> => {
-    const { token, method, headers, params, rawBody } = message.body;
-    // The /hook/:token producer omits the parsed `body` to halve the queue
-    // payload (Cloudflare Queues caps messages at 128 KB). Reconstruct it
-    // here so the downstream `invokeWebhookCallback` contract is unchanged.
-    const body =
-      message.body.body !== undefined
-        ? message.body.body
-        : parseBodyFromRaw(rawBody, headers?.["content-type"], logger);
+    const token = message.body.token;
     try {
-      const result = await invokeWebhookCallback(env, ctx, token, {
-        method,
-        headers,
-        params,
-        body,
-        rawBody,
-      });
+      let result: unknown;
+      if (message.body.type === "connector-callback") {
+        // Unipile message/invitation/relation events: the /hook/messaging
+        // producer already resolved the callback token and pre-built the args
+        // (`{ kind, ... }`). Invoke verbatim — the connector's bound extraArgs
+        // (e.g. channelId) are appended inside invokeWebhookCallback.
+        result = await invokeWebhookCallback(
+          env,
+          ctx,
+          token,
+          ...message.body.args
+        );
+      } else {
+        const { method, headers, params, rawBody } = message.body;
+        // The /hook/:token producer omits the parsed `body` to halve the queue
+        // payload (Cloudflare Queues caps messages at 128 KB). Reconstruct it
+        // here so the downstream `invokeWebhookCallback` contract is unchanged.
+        const body =
+          message.body.body !== undefined
+            ? message.body.body
+            : parseBodyFromRaw(rawBody, headers?.["content-type"], logger);
+        result = await invokeWebhookCallback(env, ctx, token, {
+          method,
+          headers,
+          params,
+          body,
+          rawBody,
+        });
+      }
       // The twist worker may return an RPC stub (e.g. wrapped tool
       // response). Dispose to avoid "RPC stub was not disposed properly"
       // warnings in the runtime.
