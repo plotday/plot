@@ -1,11 +1,8 @@
-import 'dart:io' show File;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:forui/forui.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
@@ -18,6 +15,7 @@ import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/tapable.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/util/download.dart';
+import 'package:plot/util/open_file.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
 
@@ -88,17 +86,11 @@ class _FileRefLinkButtonState extends State<FileRefLinkButton> {
 
     try {
       final bytes = await api.getFileRefBytes(widget.noteId, widget.actionIndex);
-
-      if (kIsWeb) {
-        final blob = Uri.dataFromBytes(bytes, mimeType: widget.link.mimeType);
-        await launchUrl(blob);
-      } else {
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/${widget.link.fileName}');
-        await file.writeAsBytes(bytes);
-        final uri = Uri.file(file.path);
-        await launchUrl(uri);
-      }
+      await openFileBytes(
+        bytes: bytes,
+        fileName: widget.link.fileName,
+        mimeType: widget.link.mimeType,
+      );
     } on ApiException catch (e) {
       if (e.statusCode == 410) {
         if (mounted) {

@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:io' show File;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:forui/forui.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -27,6 +25,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/util/download.dart';
+import 'package:plot/util/open_file.dart';
 import 'package:plot/widget/spinner.dart';
 import 'logging.dart';
 
@@ -970,18 +969,11 @@ class _FileLinkButtonState extends State<FileLinkButton> {
 
     try {
       final bytes = await api.getFileBytes(widget.link.fileId);
-
-      if (kIsWeb) {
-        final blob = Uri.dataFromBytes(bytes, mimeType: widget.link.mimeType);
-        await launchUrl(blob);
-      } else {
-        // Save to temp dir and open with system viewer
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/${widget.link.fileName}');
-        await file.writeAsBytes(bytes);
-        final uri = Uri.file(file.path);
-        await launchUrl(uri);
-      }
+      await openFileBytes(
+        bytes: bytes,
+        fileName: widget.link.fileName,
+        mimeType: widget.link.mimeType,
+      );
     } on NetworkException {
       if (mounted) {
         context.showToast(

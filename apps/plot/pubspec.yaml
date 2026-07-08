@@ -142,6 +142,7 @@ dependencies:
   # cross-platform API. Already pulled in transitively by `in_app_purchase`;
   # declared directly because we import it.
   in_app_purchase_storekit: ^0.4.9
+  open_filex: ^4.7.0
 
 dependency_overrides:
   # ⚠️  PATCHED LOCAL FORK — see third_party/sqlite3/hook/build.dart
