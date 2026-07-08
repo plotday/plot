@@ -119,6 +119,10 @@ describe("onCreateLinkFn — draft.forward", () => {
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
       emailAddress: "me@example.com",
     });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
     const sendNewMessage = vi
       .spyOn(GmailApi.prototype, "sendNewMessage")
       .mockResolvedValue({ id: "sent-1", threadId: "sent-thread-1" });
@@ -132,6 +136,9 @@ describe("onCreateLinkFn — draft.forward", () => {
     expect(raw).toContain("Subject: Fwd: Q3");
     expect(raw).toContain("To: bob@example.com");
     expect(raw).not.toContain("In-Reply-To:");
+    // From carries the account's display name, not a bare address, so Gmail
+    // shows the sender's name in the recipient's inbox.
+    expect(raw).toContain('From: "Me Myself" <me@example.com>');
 
     const text = decodeMimePart(raw, "text/plain");
     expect(text).toContain("fyi"); // forwarder's own message
@@ -148,6 +155,10 @@ describe("onCreateLinkFn — draft.forward", () => {
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
       emailAddress: "me@example.com",
     });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
     const sendNewMessage = vi
       .spyOn(GmailApi.prototype, "sendNewMessage")
       .mockResolvedValue({ id: "sent-2", threadId: "sent-thread-2" });
@@ -163,6 +174,10 @@ describe("onCreateLinkFn — draft.forward", () => {
     vi.spyOn(GmailApi.prototype, "getMessage").mockResolvedValue(sourceMessage());
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
       emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
     });
     vi.spyOn(GmailApi.prototype, "sendNewMessage").mockRejectedValue(
       new GmailApiError(400, "Bad Request", "Recipient address rejected")
@@ -223,6 +238,10 @@ describe("onCreateLinkFn — draft.forward", () => {
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
       emailAddress: "me@example.com",
     });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
     const sendNewMessage = vi
       .spyOn(GmailApi.prototype, "sendNewMessage")
       .mockResolvedValue({ id: "sent-3", threadId: "sent-thread-3" });
@@ -253,5 +272,25 @@ describe("onCreateLinkFn — draft.forward", () => {
     expect(raw).toContain("Bcc: eve@example.com");
     expect(raw).toContain("To: bob@example.com");
     expect(raw).not.toContain("To: bob@example.com, eve@example.com");
+  });
+
+  it("falls back to a bare email From header when the display-name lookup fails", async () => {
+    vi.spyOn(GmailApi.prototype, "getMessage").mockResolvedValue(sourceMessage());
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockRejectedValue(
+      new Error("UserInfo error: 401 Unauthorized")
+    );
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-4", threadId: "sent-thread-4" });
+    const { host } = makeHost();
+
+    await onCreateLinkFn(host, forwardDraft());
+
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    expect(raw).toContain("From: me@example.com");
+    expect(raw).not.toContain('From: "');
   });
 });

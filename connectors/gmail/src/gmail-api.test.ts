@@ -4,6 +4,7 @@ import {
   buildForwardMessage,
   buildNewEmailMessage,
   buildReplyMessage,
+  formatFromHeader,
   stripQuotedReply,
   transformGmailThread,
   type AttachmentData,
@@ -127,6 +128,68 @@ describe("GmailApi.call empty-body responses", () => {
     await expect(api.getProfile()).resolves.toEqual({
       emailAddress: "kris@plot.day",
     });
+  });
+
+  it("getUserInfo fetches the display name from Google's userinfo endpoint", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ email: "kris@plot.day", name: "Kris Braun" }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new GmailApi("test-token");
+
+    await expect(api.getUserInfo()).resolves.toEqual({
+      email: "kris@plot.day",
+      name: "Kris Braun",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      { headers: { Authorization: "Bearer test-token" } }
+    );
+  });
+
+  it("getUserInfo throws on a non-OK response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(null, { status: 401, statusText: "Unauthorized" })
+      )
+    );
+    const api = new GmailApi("test-token");
+
+    await expect(api.getUserInfo()).rejects.toThrow("UserInfo error: 401");
+  });
+});
+
+describe("formatFromHeader", () => {
+  it("quotes the display name around the email when a name is available", () => {
+    expect(formatFromHeader("kris@plot.day", "Kris Braun")).toBe(
+      '"Kris Braun" <kris@plot.day>'
+    );
+  });
+
+  it("falls back to a bare email when no name is available", () => {
+    expect(formatFromHeader("kris@plot.day")).toBe("kris@plot.day");
+    expect(formatFromHeader("kris@plot.day", null)).toBe("kris@plot.day");
+    expect(formatFromHeader("kris@plot.day", "")).toBe("kris@plot.day");
+  });
+
+  it("escapes quotes and backslashes in the name", () => {
+    expect(formatFromHeader("kris@plot.day", 'Kris "K" Braun')).toBe(
+      '"Kris \\"K\\" Braun" <kris@plot.day>'
+    );
+    expect(formatFromHeader("kris@plot.day", "Kris\\Braun")).toBe(
+      '"Kris\\\\Braun" <kris@plot.day>'
+    );
+  });
+
+  it("strips CRLF injection attempts from both name and email", () => {
+    expect(
+      formatFromHeader("kris@plot.day", "Kris\r\nBcc: evil@example.com")
+    ).toBe('"Kris Bcc: evil@example.com" <kris@plot.day>');
   });
 });
 
