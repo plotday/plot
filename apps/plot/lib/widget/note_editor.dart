@@ -1232,12 +1232,28 @@ class NoteEditorState extends State<NoteEditor> {
           ]
         : const <String>[];
 
+    // Default the picker's selection to the SAME audience the "Reply (N)" badge
+    // and the "Reply all" pill use when the draft hasn't narrowed recipients:
+    // the latest note's participants (self + its access), falling back to the
+    // thread's active contacts only when there are no notes yet. Previously this
+    // seeded the entire thread roster (thread.contacts), which pre-checked
+    // non-recipients — e.g. an email's automated sender or a duplicate self
+    // contact — and contradicted the "Reply (2)" count. Mirrors
+    // messageReplyAudienceBase's default branch so badge and picker can't drift.
+    final latestAudience = Thread.latestNoteAudience(s.notes);
+    final defaultContactSelection = <String>{
+      self.toString(),
+      ...(latestAudience.isEmpty
+          ? s.thread.activeContacts.map((c) => c.toString())
+          : latestAudience.map((a) => a.toUuid().toString())),
+    }.toList();
+
     final picker = RecipientPickerModal(
       threadContacts: s.thread.contacts.map((c) => c.toString()).toList(),
       threadGroups: s.thread.groups.map((g) => g.toString()).toList(),
       initialContactSelection:
-          (draft.accessContacts?.map((a) => a.toUuid().toString()).toList()) ??
-          s.thread.contacts.map((c) => c.toString()).toList(),
+          draft.accessContacts?.map((a) => a.toUuid().toString()).toList() ??
+          defaultContactSelection,
       initialGroupSelection:
           (draft.accessGroups?.map((a) => a.toUuid().toString()).toList()) ??
           s.thread.groups.map((g) => g.toString()).toList(),
