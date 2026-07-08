@@ -771,6 +771,14 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // A cross-priority thread-open (e.g. tapping an agenda event for a
+      // different focus) navigates this router to PriorityRoute, then polls
+      // across frames for its inner router to mount before replacing the
+      // stack with ThreadRoute — see _replaceWithThreadWhenInnerReady in
+      // widget/agenda.dart. That poll can win the race and land ThreadRoute
+      // before this deferred callback runs. Bail if we're no longer the
+      // active route so we don't clobber it back to NewThreadRoute.
+      if (context.router.current.name != PriorityOnlyRoute.name) return;
       // This route means no thread is selected — clear any stale thread state.
       // Handles browser back / gesture back which bypass PopScope.
       context.read<PriorityBloc>().setThread(null);
