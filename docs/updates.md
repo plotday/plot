@@ -1,3 +1,41 @@
+## 1.5.5+380 — 2026-07-08
+
+### Focuses
+
+- On phones, the Focus list is roomier and easier to read and tap: focuses have larger icons and taller rows, and each role heading is bigger and clearer. It now matches the spacing of the New thread screen for a more consistent feel.
+
+### Syncing
+
+- Opening the app after time away now shows your updated threads much faster
+- Scrolling to the bottom of the Everything view now loads older threads on demand
+
+### Notes
+
+- The note editor now grows taller on phones, giving you more room to write and read a longer note while the keyboard is open.
+
+### Fixes
+
+- A stray contact shown as "Unknown" with no email address no longer appears. This could show up after connecting an account (such as Slack or LinkedIn) that didn't share an email address, and any existing ones are cleaned up automatically.
+- Tapping a file attachment on Android (and iOS) now opens it in the right app instead of showing a "Failed to download file" error. Attachments already opened correctly on desktop.
+- Automatic channel filing, focus suggestions, and focus filters work again.
+- Clicking an event in the agenda (three-panel view) now reliably opens it in the detail panel, instead of sometimes leaving the panel empty.
+- Creating a twist from a written description works again.
+- Event threads that showed up twice (pinned at the top under "Event Agenda" and again in your list) no longer make the RSVP tally on the second copy flicker or vanish when you move the mouse over it.
+- Event threads no longer show a duplicate "Join" meeting icon when the same meeting link is attached more than once.
+- Fixed a bug where a rescheduled calendar event could get permanently stuck showing its old time, if the app happened to have an unsaved local change to that event at the same moment. 
+- Fixed the same silent-send-failure bug for LinkedIn connection-request threads and post-comment threads, and closed off the underlying cause so it can't recur across LinkedIn, WhatsApp, or Instagram.
+- Replies you send from LinkedIn itself now reliably appear in Plot, including when your reply is the most recent message in the conversation. Previously the latest reply could be missing until the other person wrote back.
+- Newsletter and digest emails now come through cleaner — duplicate story links, "Share" buttons, hidden preview text, and tracking pixels are stripped so you see just the headlines and summaries.
+- Messages you sent in a LinkedIn, WhatsApp, or Instagram conversation now show as authored by you, instead of by the connection.
+- Fixed a bug where replying from Plot to a LinkedIn, WhatsApp, or Instagram conversation could silently fail to send, with no error shown. 
+- Replies to email conversations connected through Gmail & Calendar now send reliably. Previously a reply could be saved in Plot but never actually emailed.
+- When you edit the recipients on a reply, the picker now starts with just the people your reply is going to — matching the count shown on the Reply button — instead of everyone who has ever been on the thread.
+- When you reply to an email and add someone who wasn't on the original message, your reply is now actually sent to them. Previously those added recipients could be dropped, and if none of your chosen recipients were on the original email the reply was silently not sent at all.
+- Fixed a bug where replying on an email thread could send to more people than the "Reply all" count showed — re-adding participants who had dropped off the recent exchange. Your reply now goes to exactly the people shown.
+- Fixed a bug where forwarding an email required typing your own note before you could send — you can now forward with just the quoted original.
+- The "Forwarding" preview now shows the original email's subject instead of a snippet of its raw content.
+- Starting a forward now fills in "Fwd: <original subject>" as the title, so if you navigate away before sending, it shows up correctly in your Drafts instead of as "Untitled draft", and it stays attached to the original message if you come back to finish it later.
+
 ## 1.5.4+379 — 2026-07-07
 
 ### Connections
