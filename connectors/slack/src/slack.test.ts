@@ -460,3 +460,64 @@ describe("startIncrementalSync — coalesced scheduling", () => {
     expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
   });
 });
+
+describe("onSlackWebhook — deauthorization events", () => {
+  function makeDeauthSlack(opts: {
+    integrationsGet?: ReturnType<typeof vi.fn>;
+    markNeedsReauth: ReturnType<typeof vi.fn>;
+  }): Slack {
+    const tools = {
+      store: makeStore(),
+      integrations: {
+        get: opts.integrationsGet ?? vi.fn().mockResolvedValue(null),
+        markNeedsReauth: opts.markNeedsReauth,
+      },
+      network: {},
+      files: {},
+    };
+    return new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+  }
+
+  // onSlackWebhook reads request.body.event.
+  const req = (event: unknown) => ({ body: { event } }) as never;
+
+  it("flags re-auth when the app is uninstalled from the workspace", async () => {
+    const markNeedsReauth = vi.fn().mockResolvedValue(undefined);
+    const slack = makeDeauthSlack({ markNeedsReauth });
+    await slack.onSlackWebhook(req({ type: "app_uninstalled" }), "C123");
+    expect(markNeedsReauth).toHaveBeenCalledWith("C123");
+  });
+
+  it("flags re-auth when this connection's own token is revoked", async () => {
+    const markNeedsReauth = vi.fn().mockResolvedValue(undefined);
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      provider: { authed_user_id: "U_SELF" },
+    });
+    const slack = makeDeauthSlack({ integrationsGet, markNeedsReauth });
+    await slack.onSlackWebhook(
+      req({ type: "tokens_revoked", tokens: { oauth: ["U_SELF"] } }),
+      "C123"
+    );
+    expect(markNeedsReauth).toHaveBeenCalledWith("C123");
+  });
+
+  it("ignores tokens_revoked for a different user on the same team", async () => {
+    // The event fans out to every callback registered for the team, so a
+    // teammate revoking their token must NOT tear down this user's connection.
+    const markNeedsReauth = vi.fn().mockResolvedValue(undefined);
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      provider: { authed_user_id: "U_SELF" },
+    });
+    const slack = makeDeauthSlack({ integrationsGet, markNeedsReauth });
+    await slack.onSlackWebhook(
+      req({ type: "tokens_revoked", tokens: { oauth: ["U_OTHER"] } }),
+      "C123"
+    );
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+  });
+});
