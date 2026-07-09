@@ -955,6 +955,24 @@ export async function convertNoteToMarkdown(
  * @returns A plain text preview (max 100 characters) or null if input is empty
  */
 
+/**
+ * Truncates a string to at most `maxLength` UTF-16 code units, dropping a
+ * trailing lone high surrogate left behind when the cut lands inside an
+ * astral character (e.g. an emoji). `JSON.stringify` happily escapes an
+ * unpaired surrogate (`\ud83d`) since JS doesn't validate UTF-16, but
+ * Postgres's jsonb parser rejects it with "invalid input syntax for type
+ * json" — this string ends up in thread.title/preview, which are JSON-
+ * encoded as RPC args in rpcWithSchema (PostHog 019f449b).
+ */
+function truncateSafely(text: string, maxLength: number): string {
+  let truncated = text.substring(0, maxLength);
+  const lastCode = truncated.charCodeAt(truncated.length - 1);
+  if (lastCode >= 0xd800 && lastCode <= 0xdbff) {
+    truncated = truncated.substring(0, truncated.length - 1);
+  }
+  return truncated;
+}
+
 /** Strips markdown formatting from text, keeping plain text content. */
 export function stripMarkdown(text: string): string {
   let result = text;
@@ -1044,9 +1062,9 @@ export function titleFromContent(content: string | null | undefined): string | n
   if (firstLine.length <= 60) return firstLine;
   const lastSpace = firstLine.lastIndexOf(" ", 60);
   if (lastSpace > 0) {
-    return firstLine.substring(0, lastSpace) + "\u2026";
+    return truncateSafely(firstLine, lastSpace) + "\u2026";
   }
-  return firstLine.substring(0, 59) + "\u2026";
+  return truncateSafely(firstLine, 59) + "\u2026";
 }
 
 export function createPreviewFromMarkdown(
@@ -1074,7 +1092,7 @@ export function createPreviewFromMarkdown(
 
   // Truncate to 100 characters
   if (preview.length > 100) {
-    preview = preview.substring(0, 100).trim() + "…";
+    preview = truncateSafely(preview, 100).trim() + "…";
   }
 
   return preview || null;

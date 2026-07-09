@@ -6,7 +6,17 @@ import {
   plainTextToMarkdown,
   selectThreadAuthorSpec,
   stripMarkdown,
+  titleFromContent,
 } from "./thread-helpers";
+
+// A lone (unpaired) UTF-16 surrogate: valid per JS string semantics, but
+// rejected by Postgres's jsonb parser with "invalid input syntax for type
+// json" wherever it appears in the string, not just at the very end.
+function hasLoneSurrogate(str: string): boolean {
+  return /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+    str
+  );
+}
 
 describe("selectThreadAuthorSpec", () => {
   it("returns the explicit link author when present", () => {
@@ -278,6 +288,32 @@ describe("createPreviewFromMarkdown", () => {
     const input =
       "Hello​‌‍⁠﻿­͏ world";
     expect(createPreviewFromMarkdown(input)).toBe("Hello world");
+  });
+
+  it("does not split a surrogate pair when truncating at 100 chars", () => {
+    // "a" x99 + an astral emoji (2 UTF-16 code units) straddles the 100-char
+    // cutoff: a naive .substring(0, 100) keeps only the emoji's high
+    // surrogate. JSON.stringify escapes that unpaired surrogate as \uD83D
+    // without complaint (JS doesn't validate UTF-16), but Postgres's jsonb
+    // parser rejects it with "invalid input syntax for type json" (PostHog
+    // 019f449b) once this value is sent as an RPC arg.
+    const input = "a".repeat(99) + "😀" + "b".repeat(20);
+    const preview = createPreviewFromMarkdown(input)!;
+
+    expect(hasLoneSurrogate(preview)).toBe(false);
+  });
+});
+
+describe("titleFromContent", () => {
+  it("does not split a surrogate pair when truncating at the fallback cutoff", () => {
+    // No spaces at all, so titleFromContent falls through to the
+    // substring(0, 59) branch — same surrogate-splitting hazard as the
+    // preview truncation above. The emoji straddles code units 58-59 so a
+    // naive substring(0, 59) keeps only its high surrogate.
+    const input = "a".repeat(58) + "😀" + "b".repeat(20);
+    const title = titleFromContent(input)!;
+
+    expect(hasLoneSurrogate(title)).toBe(false);
   });
 });
 
