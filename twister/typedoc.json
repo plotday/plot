@@ -18,11 +18,12 @@
     "src/utils/hash.ts"
   ],
   "out": "dist/docs",
-  "tsconfig": "./tsconfig.json",
+  "tsconfig": "./tsconfig.build.json",
   "exclude": [
     "**/*+(.spec|.test).ts",
     "**/llm-docs/**",
     "**/cli/**",
+    "**/exemplars/**",
     "src/twist-guide.ts",
     "src/creator-docs.ts",
     "prebuild.ts",

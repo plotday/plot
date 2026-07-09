@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -188,6 +195,50 @@ export default ${JSON.stringify(twistsTemplateContent)};
     `Warning: AGENTS.template.md not found at ${twistsTemplatePath}`
   );
 }
+
+// Generate twist-exemplars.ts from src/exemplars/*.ts — complete example
+// twists embedded for LLM generation prompts. Each file must start with a
+// /* SPEC: ... */ block comment (the user-style specification it implements).
+const exemplarsDir = join(srcDir, "exemplars");
+if (!existsSync(exemplarsDir)) {
+  throw new Error("prebuild: src/exemplars/ is missing");
+}
+const exemplarFiles = readdirSync(exemplarsDir)
+  .filter((f) => f.endsWith(".ts"))
+  .sort();
+if (exemplarFiles.length === 0) {
+  throw new Error("prebuild: src/exemplars/ contains no exemplars");
+}
+const exemplarSections = exemplarFiles.map((file) => {
+  const raw = readFileSync(join(exemplarsDir, file), "utf-8");
+  const specMatch = raw.match(/^\/\*\s*SPEC:\s*\n([\s\S]*?)\*\/\s*\n/);
+  if (!specMatch) {
+    throw new Error(`prebuild: ${file} is missing its leading /* SPEC: */ comment`);
+  }
+  const spec = specMatch[1].trim();
+  const implementation = raw.slice(specMatch[0].length).trim();
+  const title = file
+    .replace(/\.ts$/, "")
+    .split("-")
+    // Word-capitalize each hyphen segment, except known acronyms (e.g. "ai"
+    // -> "AI" for ai-responder.ts) which are upper-cased outright.
+    .map((w) =>
+      w.toLowerCase() === "ai" ? "AI" : w[0].toUpperCase() + w.slice(1)
+    )
+    .join(" ");
+  return `## Example: ${title}\n\n### Specification\n\n${spec}\n\n### Implementation\n\n\`\`\`typescript\n${implementation}\n\`\`\``;
+});
+const exemplarsContent = `/**
+ * Generated example twists for LLM generation prompts.
+ *
+ * This file is auto-generated during build. Do not edit manually.
+ * Generated from: src/exemplars/*.ts
+ */
+
+export default ${JSON.stringify(exemplarSections.join("\n\n"))};
+`;
+writeFileSync(join(llmDocsDir, "twist-exemplars.ts"), exemplarsContent, "utf-8");
+console.log(`✓ Generated twist-exemplars.ts from ${exemplarFiles.length} exemplars`);
 
 console.log(
   `✓ Generated ${typeFiles.length} LLM documentation files in src/llm-docs/`
