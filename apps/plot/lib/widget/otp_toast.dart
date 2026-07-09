@@ -163,12 +163,7 @@ class _ConfirmButton extends StatelessWidget {
           log.warning('Failed to launch confirm URL', e, t);
         }
       },
-      child: Text(
-        'Confirm',
-        style: context.theme.typography.sm.copyWith(
-          color: context.theme.colors.primaryForeground,
-        ),
-      ),
+      child: Text('Confirm', style: context.theme.typography.sm),
     );
   }
 }
