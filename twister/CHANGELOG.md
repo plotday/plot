@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.74.0
+
+### Added
+
+- getTwistDocumentation() (twist-scoped LLM documentation that omits connector-only modules) and TWIST_EXEMPLARS (complete example twists, compiled and type-checked on every build) for generation prompts. ([#277](https://github.com/plotday/plot/pull/277) [`ba80931`](https://github.com/plotday/plot/commit/ba8093118d12d314ae91c329dedc6a0b2498df41))
+
 ## 0.73.0
 
 ### Added
