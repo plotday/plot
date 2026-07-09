@@ -108,6 +108,16 @@ class PrioritiesShell extends StatefulWidget {
     String rootPriorityIdString,
   ) => _PrioritiesShellState._openFeedbackThread(context, rootPriorityIdString);
 
+  /// Opens the new-thread compose flow in private-note mode for
+  /// [priorityIdString], driving the Activity-tab inner stack so it works
+  /// in single- AND multi-panel. The public entry point for the
+  /// [NewPrivateNote] command; delegates to the state's navigation logic
+  /// (which doesn't depend on `this`).
+  static void openPrivateNote(
+    BuildContext context,
+    String priorityIdString,
+  ) => _PrioritiesShellState._openPrivateNote(context, priorityIdString);
+
   /// Opens a fresh new-thread compose under [priorityIdString], driving the
   /// Activity-tab inner stack directly so it works in single- AND multi-panel.
   /// Used by screenshot scene S5 (which can't reach the private instance flow).
@@ -434,12 +444,15 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     BuildContext context, {
     required int attempt,
     bool? feedback,
+    String? notePriorityId,
   }) {
     if (!context.mounted) return;
     final innerRouter = _findPriorityInnerRouter(context.router.root);
     if (innerRouter != null) {
       if (innerRouter.current.name != NewThreadRoute.name) {
-        innerRouter.push(NewThreadRoute(feedback: feedback));
+        innerRouter.push(
+          NewThreadRoute(feedback: feedback, notePriorityId: notePriorityId),
+        );
       }
       return;
     }
@@ -449,6 +462,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         context,
         attempt: attempt + 1,
         feedback: feedback,
+        notePriorityId: notePriorityId,
       );
     });
   }
@@ -510,6 +524,52 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     });
     ctx.router.navigate(PriorityRoute(priorityIdString: rootPriorityIdString));
     _pushNewThreadWhenInnerReady(ctx, attempt: 0, feedback: true);
+  }
+
+  /// Opens the new-thread compose flow in **private-note** mode for
+  /// [priorityIdString] — the sidebar's per-focus "Add private note"
+  /// shortcut. Mirrors [_openFeedbackThread]: reconfigure an already-live
+  /// page via [NewThreadPageState.requestNote], otherwise push a fresh
+  /// private-note compose onto the inner stack (polling for the inner
+  /// router on cold start). Unlike feedback (always anchored to Inbox), the
+  /// cold-start seed priority is the clicked focus itself.
+  static void _openPrivateNote(
+    BuildContext context,
+    String priorityIdString,
+  ) {
+    final ctx = navigatorKey?.currentContext ?? context;
+    if (!ctx.mounted) return;
+
+    // Reconfigure an already-live (AutoRoute-reused) new-thread page for a
+    // private note; a fresh mount instead reacts to the `notePriorityId`
+    // route param.
+    NewThreadPageState.requestNote(priorityIdString);
+
+    final tabsRouter = _findTabsRouter(ctx.router.root);
+    final innerRouter = _findPriorityInnerRouter(ctx.router.root);
+    if (tabsRouter != null && innerRouter != null) {
+      if (tabsRouter.activeIndex != _kTabActivity) {
+        tabsRouter.setActiveIndex(_kTabActivity);
+      }
+      if (innerRouter.current.name != NewThreadRoute.name) {
+        innerRouter.push(NewThreadRoute(notePriorityId: priorityIdString));
+      }
+      return;
+    }
+
+    // Cold-start path: the Activity-tab PriorityRoute isn't mounted yet.
+    // Mount it seeded with the clicked focus, then push the private-note
+    // compose once the inner router materializes.
+    ThreadHeaderNotifier.pendingNewThreadIntent.value = true;
+    Future.delayed(const Duration(seconds: 3), () {
+      ThreadHeaderNotifier.pendingNewThreadIntent.value = false;
+    });
+    ctx.router.navigate(PriorityRoute(priorityIdString: priorityIdString));
+    _pushNewThreadWhenInnerReady(
+      ctx,
+      attempt: 0,
+      notePriorityId: priorityIdString,
+    );
   }
 
   /// Static new-thread navigation for screenshot scene S5. Mirrors

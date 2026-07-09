@@ -1680,6 +1680,48 @@ class ShowPriorityCommands extends ShowCommands {
       );
 }
 
+/// Sidebar shortcut on a focus row's hover state: opens the New Thread
+/// compose flow with that focus pre-selected as a private-note target (no
+/// roster). Labeled "Add thread" (not "Add private note") since the user
+/// can change the target/type once compose opens. See
+/// [PrioritiesShell.openPrivateNote].
+class NewPrivateNote extends Command {
+  NewPrivateNote(this.priority)
+    : super(
+        title: 'Add thread',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.opened,
+        icon: PlotIcon.add,
+      );
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return OpenPrivateNoteThread(priority.id.toShortString());
+  }
+}
+
+/// Navigates to the new-thread compose flow in private-note mode. Overrides
+/// [go] to drive the Activity-tab inner stack via
+/// [PrioritiesShell.openPrivateNote] instead of a plain `navigate` — see
+/// [OpenFeedbackThread] (command/settings.dart) for why a plain
+/// `navigate(PriorityRoute(children: [NewThreadRoute(...)]))` is unsafe once
+/// PriorityRoute is already mounted. The [PriorityRoute] passed to `super`
+/// is only a placeholder so `route` stays non-null; [go] never uses it.
+class OpenPrivateNoteThread extends CommandRoute {
+  OpenPrivateNoteThread(this.priorityIdString)
+    : super(PriorityRoute(priorityIdString: priorityIdString));
+
+  final String priorityIdString;
+
+  @override
+  Future<void> go(BuildContext context) async {
+    if (!context.mounted) return;
+    PrioritiesShell.openPrivateNote(context, priorityIdString);
+  }
+}
+
 List<Command> prioritySecondaryCommands(Priority priority) => [
   // Every role's Inbox ([isInbox], including the Personal role's, which is the
   // top-level focus) is auto-managed and not editable/removable: its name is

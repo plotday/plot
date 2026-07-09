@@ -165,6 +165,7 @@ class NewThreadPage extends StatefulWidget {
     @QueryParam('priorityId') this.priorityId,
     @QueryParam('sharedUrl') this.sharedUrl,
     @QueryParam('feedback') this.feedback,
+    @QueryParam('notePriorityId') this.notePriorityId,
   });
 
   final String? startTime;
@@ -181,6 +182,13 @@ class NewThreadPage extends StatefulWidget {
   /// every normal new-thread URL (auto_route drops null/empty query values,
   /// not `false`).
   final bool? feedback;
+
+  /// Set by the [NewPrivateNote] sidebar shortcut (a focus row's hover
+  /// button): the id (short string) of the focus to file a private note
+  /// into. A fresh mount applies it via
+  /// [NewThreadPageState._applyPrivateNoteMode]; a reused live page is
+  /// instead handled via [NewThreadPageState.noteRequest].
+  final String? notePriorityId;
 
   @override
   State<NewThreadPage> createState() => NewThreadPageState();
@@ -248,6 +256,24 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Requests every live [NewThreadPage] enter Help & Feedback mode.
   static void requestFeedback() => feedbackRequest.value++;
+
+  /// Monotonic "enter private-note mode" signal, mirroring [feedbackRequest].
+  /// The [NewPrivateNote] sidebar shortcut bumps this — carrying the target
+  /// focus id in [_pendingNotePriorityId] — so a live (AutoRoute-reused) page
+  /// reconfigures itself for that focus (see [_applyPrivateNoteMode]); a
+  /// fresh mount instead reacts to the `notePriorityId` route param.
+  static final ValueNotifier<int> noteRequest = ValueNotifier<int>(0);
+
+  /// The focus id (short string) stashed alongside the most recent
+  /// [noteRequest] bump, consumed by the live page reacting to it.
+  static String? _pendingNotePriorityId;
+
+  /// Requests every live [NewThreadPage] open a private note for
+  /// [priorityIdString].
+  static void requestNote(String priorityIdString) {
+    _pendingNotePriorityId = priorityIdString;
+    noteRequest.value++;
+  }
 
   /// The currently-mounted [NewThreadPage] state, or null when no new-thread
   /// page is live. Set in [didChangeDependencies] / cleared in [dispose] so
@@ -630,6 +656,15 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// first [_onFeedbackRequested] and swallow that invocation.
   late int _lastFeedbackSeen;
 
+  /// The [noteRequest] value seen on the last private-note entry, mirroring
+  /// [_lastFeedbackSeen]. A fresh mount ignores the bump the [NewPrivateNote]
+  /// command fired to navigate here (it reacts to the `notePriorityId` route
+  /// param instead); only a later bump against this live page re-enters
+  /// private-note mode.
+  ///
+  /// Assigned eagerly in [initState] for the same reason as [_lastResetSeen].
+  late int _lastNoteSeen;
+
   @override
   void initState() {
     super.initState();
@@ -640,8 +675,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     // the first invocation on a long-lived page.)
     _lastResetSeen = NewThreadPageState.resetRequest.value;
     _lastFeedbackSeen = NewThreadPageState.feedbackRequest.value;
+    _lastNoteSeen = NewThreadPageState.noteRequest.value;
     NewThreadPageState.resetRequest.addListener(_onResetRequested);
     NewThreadPageState.feedbackRequest.addListener(_onFeedbackRequested);
+    NewThreadPageState.noteRequest.addListener(_onNoteRequested);
     _pickerSearchController.addListener(_onFilterChanged);
     HardwareKeyboard.instance.addHandler(_onHardwareKey);
     // Start active only when an explicit New-thread command opened this fresh
@@ -670,6 +707,17 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (NewThreadPageState.feedbackRequest.value == _lastFeedbackSeen) return;
     _lastFeedbackSeen = NewThreadPageState.feedbackRequest.value;
     unawaited(_applyFeedbackMode());
+  }
+
+  /// Reacts to a [NewPrivateNote] re-invocation against this already-mounted
+  /// page: reconfigures it for a private note (see [_applyPrivateNoteMode]).
+  void _onNoteRequested() {
+    if (!mounted) return;
+    if (NewThreadPageState.noteRequest.value == _lastNoteSeen) return;
+    _lastNoteSeen = NewThreadPageState.noteRequest.value;
+    final priorityIdString = NewThreadPageState._pendingNotePriorityId;
+    if (priorityIdString == null) return;
+    unawaited(_applyPrivateNoteMode(priorityIdString));
   }
 
   /// Reacts to a [NewThread] re-invocation against this already-mounted page:
@@ -1006,6 +1054,15 @@ class NewThreadPageState extends State<NewThreadPage> {
       await _applyFeedbackMode();
     }
 
+    // Private note (fresh mount): [NewPrivateNote] (the sidebar shortcut on
+    // a focus row) links here via the `notePriorityId` route param. A reused
+    // live page is instead handled via [noteRequest] — see
+    // [_onNoteRequested].
+    if (!mounted) return;
+    if (widget.notePriorityId != null) {
+      await _applyPrivateNoteMode(widget.notePriorityId!);
+    }
+
     // Forward (fresh mount): [ForwardNote] stashed a pending seed alongside the
     // resetRequest bump, but a fresh mount's [_lastResetSeen] already swallowed
     // that bump in [initState], so [_onResetRequested] never fires for it.
@@ -1071,6 +1128,33 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (root != null && root.id != bloc.state.draft.priority.id) {
       await bloc.updateDraft(bloc.state.draft.copyWith(priority: root));
     }
+  }
+
+  /// Configures the page for a private note filed into the focus identified
+  /// by [priorityIdString] — the [NewPrivateNote] sidebar shortcut on a
+  /// focus row. Mirrors picking that focus manually under the New Thread
+  /// page's "Private note" section (see [_applyDirectTarget]). Uses
+  /// `teamId: null` (Personal) — the same fallback the app's own
+  /// MRU-derived focus-note templates use when a focus isn't yet
+  /// represented in usage history; the user can change the
+  /// connection/scope from the compose step like any other target.
+  Future<void> _applyPrivateNoteMode(String priorityIdString) async {
+    Priority priority;
+    try {
+      final priorityId = Uuid.fromShortString(priorityIdString);
+      priority = await Priority.getOne(priorityId);
+    } catch (e) {
+      log.warning('[NewThreadPage] Failed to parse notePriorityId', e);
+      return;
+    }
+    if (!mounted) return;
+    await _applyDirectTarget(
+      ComposeTarget.focusNote(
+        priorityId: priority.id,
+        teamId: null,
+        title: priority.displayTitle,
+      ),
+    );
   }
 
   Future<void> _loadConnections() async {
@@ -1217,6 +1301,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     _prefsSub?.cancel();
     NewThreadPageState.resetRequest.removeListener(_onResetRequested);
     NewThreadPageState.feedbackRequest.removeListener(_onFeedbackRequested);
+    NewThreadPageState.noteRequest.removeListener(_onNoteRequested);
     // Unregister from the focus coordination provider using saved reference
     _provider?.unregisterActivityPanel();
     // Unregister from thread header notifier

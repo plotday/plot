@@ -253,6 +253,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
                 // kept below so it's easy to re-add here later.) Hover still
                 // surfaces the menu; focuses are flat, so there's no
                 // "pin to top" affordance.
+                if (hovered) Button.icon(NewPrivateNote(priority)),
                 if (hovered) Button.icon(ShowPriorityCommands(priority)),
               ],
             ),
