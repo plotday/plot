@@ -16,6 +16,7 @@ import {
   getBrowserBinding,
   renderHtmlWithBrowser,
 } from "../extract/browser";
+import { fulfillArticleInjection } from "../extract/inject";
 
 /** Cap on the raw HTML response we'll buffer in memory before parsing. */
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
@@ -270,6 +271,17 @@ async function runOne(
       })
       .where("id", "=", String(id))
       .execute();
+
+    // Deliver the article note to any threads waiting on this URL.
+    try {
+      await fulfillArticleInjection(env, db, urlHash);
+    } catch (fulfillError) {
+      logger.error(
+        "extract: fulfillArticleInjection failed (completed)",
+        fulfillError as Error,
+        { url_hash: urlHash }
+      );
+    }
   } catch (error) {
     const code: FailCode =
       error instanceof ExtractionFailure ? error.code : "parse_error";
@@ -297,6 +309,16 @@ async function runOne(
         url_hash: urlHash,
         code,
       });
+    }
+    // Mark any waiting threads skipped now that this URL is terminally failed.
+    try {
+      await fulfillArticleInjection(env, db, urlHash);
+    } catch (fulfillError) {
+      logger.error(
+        "extract: fulfillArticleInjection failed (terminal)",
+        fulfillError as Error,
+        { url_hash: urlHash }
+      );
     }
     // Re-throw so the batch handler can decide whether to capture to PostHog
     // (only unexpected errors — soft extraction failures are expected).

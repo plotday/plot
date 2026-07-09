@@ -23,6 +23,7 @@ import topicRoutes from "./app/topic";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import favicon from "./app/favicon";
 import linkMetadata from "./app/link-metadata";
+import extract from "./app/extract";
 import files from "./app/files";
 import upgrade from "./app/upgrade";
 import aiKeyRoutes from "./app/ai-keys";
@@ -62,6 +63,7 @@ import { clearStaleSuspensions } from "./scheduled/clear-stale-suspensions";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
 import { publishScheduledNotes } from "./scheduled/publish-scheduled-notes";
 import { reconcileMissingEmbeddings } from "./scheduled/reconcile-embeddings";
+import { drainPendingArticleInjections } from "./extract/inject";
 import { purgeDeletedAccounts } from "./scheduled/purge-deleted-accounts";
 import { runSweep as runClassifySweep } from "./state/classify-thread";
 import { createStripeClient } from "./stripe/utils";
@@ -202,6 +204,7 @@ appSection.route("/", summary);
 appSection.route("/", updates);
 appSection.route("/", favicon);
 appSection.route("/", linkMetadata);
+appSection.route("/", extract);
 appSection.route("/", files);
 appSection.route("/", upgrade);
 appSection.route("/", connections);
@@ -422,6 +425,14 @@ async function scheduled(
     await reconcileMissingEmbeddings(env, _ctx);
   } catch (error) {
     logger.error("Error in embedding reconciliation sweep", error as Error);
+  }
+
+  // Every tick (~5 min): safety-net delivery of article notes for threads
+  // waiting on a URL whose extraction has since reached a terminal status.
+  try {
+    await withDb(env, (db) => drainPendingArticleInjections(env, db));
+  } catch (error) {
+    logger.error("Error in article-injection drain sweep", error as Error);
   }
 
   // Hourly: re-enqueue every thread_priority row where classify_at is

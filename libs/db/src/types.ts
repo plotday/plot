@@ -615,6 +615,39 @@ export type Database = {
         }
         Relationships: []
       }
+      extracted_url_injection: {
+        Row: {
+          created_at: string
+          id: number
+          priority_id: string
+          requested_by: string
+          status: string
+          thread_id: string
+          updated_at: string
+          url_hash: string
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          priority_id: string
+          requested_by: string
+          status?: string
+          thread_id: string
+          updated_at?: string
+          url_hash: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          priority_id?: string
+          requested_by?: string
+          status?: string
+          thread_id?: string
+          updated_at?: string
+          url_hash?: string
+        }
+        Relationships: []
+      }
       group: {
         Row: {
           archived_at: string | null

@@ -17,6 +17,7 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/send_window.dart' show maybeAutoSchedule;
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/api/api.dart' show warmArticleExtraction;
 import 'package:plot/util/url_title.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
@@ -546,6 +547,7 @@ class NoteEditorState extends State<NoteEditor> {
   Future<void> _handleUrlPasteWhenEmpty(String url) async {
     final placeholder = ExternalUserAction(title: url, url: url);
     _setCurrentActions([..._currentActions, placeholder]);
+    unawaited(warmArticleExtraction(url));
 
     final metadata = await fetchUrlMetadata(url);
     if (!mounted) return;

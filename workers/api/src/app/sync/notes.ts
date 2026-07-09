@@ -5,6 +5,7 @@ import { createLogger, exceptionFingerprintBeforeSend } from "@plotday/worker-ut
 
 import { type DB, type Kysely, createFrontendDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
+import { handleArticleLinksForNewNote } from "../../extract/inject";
 import { analyzeNote } from "../../queue/note-analysis";
 import { rpcUser } from "../../rpc";
 import { fallbackImportanceFromFacets } from "../../state/importance/band";
@@ -629,6 +630,44 @@ notes.post("/sync/notes", async (c) => {
               c.var.tracker.captureException(error as Error);
             }
           }
+        } finally {
+          await db.destroy();
+        }
+      })()
+    );
+  }
+
+  // Auto-attach article content: when the FIRST note of a thread carries a
+  // public article link, fetch it and add the readable Markdown as a
+  // Plot-authored note (delivered durably once extraction completes).
+  const isUserAuthored = !body.created_by || body.created_by === c.var.user.id;
+  if (
+    noteId &&
+    !body.draft &&
+    !body.archived_at &&
+    !isUpdate &&
+    !isHeld &&
+    isUserAuthored
+  ) {
+    const articleActions = body.actions;
+    const articleThreadId = body.thread_id as string;
+    const articlePriorityId = priorityId;
+    const articleUserId = c.var.user.id;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const db = createFrontendDb(c.env);
+        try {
+          await handleArticleLinksForNewNote(c.env, db, {
+            noteId,
+            threadId: articleThreadId,
+            priorityId: articlePriorityId,
+            userId: articleUserId,
+            actions: articleActions,
+          });
+        } catch (error) {
+          // Unexpected — the happy path never throws (per-thread failures are
+          // swallowed inside fulfillArticleInjection).
+          c.var.tracker.captureException(error as Error);
         } finally {
           await db.destroy();
         }

@@ -354,6 +354,17 @@ export interface ExtractedUrl {
   url_hash: string;
 }
 
+export interface ExtractedUrlInjection {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  priority_id: string;
+  requested_by: string;
+  status: Generated<string>;
+  thread_id: string;
+  updated_at: Generated<Timestamp>;
+  url_hash: string;
+}
+
 export interface Group {
   archived_at: Timestamp | null;
   /**
@@ -516,7 +527,9 @@ export interface Note {
    * SHA-256 hash of the content the connector last saw in the external system, computed over (contentType + "\n" + content). Used by connector sync-in to distinguish "external unchanged" (preserve Plot's content, which may be formatted markdown) from "external edited" (overwrite with incoming). NULL means no baseline yet. Only set by the twist runtime — clients must not write to this column.
    */
   external_content_hash: string | null;
+  fwd_note: string | null;
   id: Generated<string>;
+  item_position: string | null;
   /**
    * External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).
    */
@@ -531,6 +544,10 @@ export interface Note {
   mentions: string[] | null;
   merged_from_thread_id: string | null;
   re_note_id: string | null;
+  section_key: string | null;
+  section_label: string | null;
+  section_position: string | null;
+  send_at: Timestamp | null;
   seq: Generated<string>;
   /**
    * When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot's database.
@@ -610,6 +627,7 @@ export interface Priority {
   path: string;
   role_id: string | null;
   see_within: Json | null;
+  send_window: Json | null;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string;
@@ -678,6 +696,7 @@ export interface Role {
   notify_window: Json | null;
   order: number | null;
   see_within: Json | null;
+  send_window: Json | null;
   seq: Generated<string>;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -853,6 +872,7 @@ export interface Thread {
   pending_contacts: Generated<string[]>;
   pending_create_link: Json | null;
   preview: string | null;
+  send_at: Timestamp | null;
   seq: Generated<string>;
   sync_depth: number | null;
   team_id: Int8 | null;
@@ -960,8 +980,12 @@ export interface ThreadState {
   on: string | null;
   order: number | null;
   read_at: Timestamp | null;
+  read_seq: string | null;
+  read_source: string | null;
   seq: Generated<string>;
   thread_id: string;
+  todo_seq: string | null;
+  todo_source: string | null;
   updated_at: Generated<Timestamp>;
   urgent: Generated<boolean>;
   user_id: string;
@@ -1017,6 +1041,7 @@ export interface ThreadX {
   pending_contacts: string[] | null;
   pending_create_link: Json | null;
   preview: string | null;
+  send_at: Timestamp | null;
   seq: string | null;
   sync_depth: number | null;
   team_id: Int8 | null;
@@ -1214,6 +1239,7 @@ export interface TwistInstanceChannelNoteCreate {
   created_by: string | null;
   draft: boolean | null;
   id: string | null;
+  item_position: string | null;
   key: string | null;
   link_channel_id: string | null;
   link_id: string | null;
@@ -1225,6 +1251,9 @@ export interface TwistInstanceChannelNoteCreate {
   mentions: string[] | null;
   priority_id: string | null;
   re_note_id: string | null;
+  section_key: string | null;
+  section_label: string | null;
+  section_position: string | null;
   seq: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
@@ -1314,10 +1343,14 @@ export interface TwistInstanceNoteCreate {
   created_by: string | null;
   draft: boolean | null;
   id: string | null;
+  item_position: string | null;
   key: string | null;
   mentions: string[] | null;
   priority_id: string | null;
   re_note_id: string | null;
+  section_key: string | null;
+  section_label: string | null;
+  section_position: string | null;
   seq: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
@@ -1356,10 +1389,14 @@ export interface TwistInstanceNoteUpdate {
   created_by: string | null;
   draft: boolean | null;
   id: string | null;
+  item_position: string | null;
   key: string | null;
   mentions: string[] | null;
   priority_id: string | null;
   re_note_id: string | null;
+  section_key: string | null;
+  section_label: string | null;
+  section_position: string | null;
   seq: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
@@ -1620,10 +1657,16 @@ export interface UserNote {
   cta: Json | null;
   delivery_error: Json | null;
   draft: boolean | null;
+  fwd_note: string | null;
   id: string | null;
+  item_position: string | null;
   mentions: string[] | null;
   merged_from_thread_id: string | null;
   re_note_id: string | null;
+  section_key: string | null;
+  section_label: string | null;
+  section_position: string | null;
+  send_at: Timestamp | null;
   seq: string | null;
   source_created_at: Timestamp | null;
   thread_id: string | null;
@@ -1655,10 +1698,16 @@ export interface UserNoteRedacted {
   cta: Json | null;
   delivery_error: Json | null;
   draft: boolean | null;
+  fwd_note: string | null;
   id: string | null;
+  item_position: string | null;
   mentions: string[] | null;
   merged_from_thread_id: string | null;
   re_note_id: string | null;
+  section_key: string | null;
+  section_label: string | null;
+  section_position: string | null;
+  send_at: Timestamp | null;
   seq: string | null;
   source_created_at: Timestamp | null;
   thread_id: string | null;
@@ -1710,6 +1759,8 @@ export interface UserPriority {
   root: boolean | null;
   see_within: Json | null;
   see_within_set: boolean | null;
+  send_window: Json | null;
+  send_window_set: boolean | null;
   seq: string | null;
   title: string | null;
   top_order: number | null;
@@ -1761,6 +1812,7 @@ export interface UserRole {
   notify_window: Json | null;
   order: number | null;
   see_within: Json | null;
+  send_window: Json | null;
   seq: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1872,6 +1924,7 @@ export interface UserThread {
   priority_id: string | null;
   priority_path: string | null;
   revoked: boolean | null;
+  send_at: Timestamp | null;
   seq: string | null;
   state_at: string | null;
   state_on: string | null;
@@ -1936,6 +1989,7 @@ export interface UserThreadRedacted {
   priority_id: string | null;
   priority_path: string | null;
   revoked: boolean | null;
+  send_at: Timestamp | null;
   seq: string | null;
   state_at: string | null;
   state_on: string | null;
@@ -2051,6 +2105,7 @@ export interface DB {
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
   "extensions.tap_funky": ExtensionsTapFunky;
   extracted_url: ExtractedUrl;
+  extracted_url_injection: ExtractedUrlInjection;
   group: Group;
   group_admin: GroupAdmin;
   group_member: GroupMember;

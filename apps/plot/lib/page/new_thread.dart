@@ -28,6 +28,7 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/api/api.dart' show warmArticleExtraction;
 import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
 import 'package:plot/share_intent.dart' show extractHttpUrl;
 import 'package:plot/analytics/tracker.dart';
@@ -485,6 +486,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _enterLinkMode(String url) {
     setState(() => _pendingLink = LinkChipData(url: url));
     unawaited(_resolvePendingLinkMetadata(url));
+    unawaited(warmArticleExtraction(url));
   }
 
   /// Clears the pending link (chip ✕) and returns to the text filter input.

@@ -279,6 +279,29 @@ Future<Map<String, String>> getHeaders() async {
   };
 }
 
+/// Fire-and-forget: ask the API to begin (or reuse) extraction of [url]'s
+/// article content into the global cache, warming it before the thread is
+/// committed so the article note appears with minimal delay. Safe to call
+/// repeatedly; all errors are swallowed (the server also triggers extraction
+/// on thread creation, so a failure here only costs latency, not correctness).
+Future<void> warmArticleExtraction(String url) async {
+  try {
+    final headers = await getHeaders();
+    await sendWithReconnect(
+      (client) => client
+          .post(
+            Uri.parse('${Env.apiRoot}/extract'),
+            headers: headers,
+            body: jsonEncode({'url': url}),
+          )
+          .timeout(const Duration(seconds: 10)),
+      idempotent: true,
+    );
+  } catch (_) {
+    // Best-effort warm-up.
+  }
+}
+
 Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
   try {
     final response = await _retryOn401(

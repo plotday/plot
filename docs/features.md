@@ -104,6 +104,8 @@ Plot gives you the context and clarity to make your next move.
 - Skip writing a title and one will be generated for you.
 - All your contacts are available in Plot, and you can easily add more.
 - Create groups to use with any connection.
+- Share or paste a link to a public article and Plot pulls the readable article text into the thread
+  automatically, so you can read it without leaving Plot.
 
 ### Find anything
 

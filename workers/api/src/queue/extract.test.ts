@@ -27,6 +27,12 @@ vi.mock("../extract/browser", () => ({
   },
 }));
 
+const fulfillArticleInjectionMock = vi.fn();
+vi.mock("../extract/inject", () => ({
+  fulfillArticleInjection: (...args: unknown[]) =>
+    fulfillArticleInjectionMock(...args),
+}));
+
 type DbCall = { kind: string; args: unknown };
 let dbCalls: DbCall[];
 let claimableIds: Set<string>;
@@ -147,6 +153,7 @@ beforeEach(() => {
   claimableIds = new Set(["1"]);
   extractMarkdownMock.mockReset();
   renderHtmlWithBrowserMock.mockReset();
+  fulfillArticleInjectionMock.mockReset();
   fakePostHog.captureException.mockReset();
   vi.unstubAllGlobals();
 });
@@ -194,6 +201,34 @@ describe("processExtractions", () => {
     expect((completed!.args as any).set.title).toBe("Hello");
     expect((completed!.args as any).set.r2_key).toBe("abc.md");
     expect((completed!.args as any).set.byte_size).toBeGreaterThan(0);
+  });
+
+  it("fulfills waiting article injections after a completed extraction", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<html>hi</html>", { status: 200 }))
+    );
+    extractMarkdownMock.mockReturnValue({
+      title: "Hello",
+      author: "",
+      description: "",
+      md: `# Hello\n\n${longBody}`,
+    });
+    const r2 = makeR2();
+    const msg = makeMessage({ id: 1, urlHash: "abc" });
+
+    await processExtractions(
+      { queue: "extract-development", messages: [msg] } as any,
+      makeEnv(r2),
+      fakeCtx,
+      fakePostHog
+    );
+
+    expect(fulfillArticleInjectionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "abc"
+    );
   });
 
   it("marks row failed when fetch is non-2xx, no R2 write", async () => {
