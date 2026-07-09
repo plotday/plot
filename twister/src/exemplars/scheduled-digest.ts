@@ -27,6 +27,14 @@ export default class WeatherDigest extends Twist<WeatherDigest> {
   }
 
   async postDigest(): Promise<void> {
+    // Scheduled callbacks can fire more than once (at-least-once delivery),
+    // so guard "one thread per day" with a stored marker keyed on the date.
+    const today = new Date().toISOString().slice(0, 10);
+    const postedKey = `posted:${today}`;
+    if (await this.get<boolean>(postedKey)) {
+      return;
+    }
+
     const response = await fetch(
       "https://api.open-meteo.com/v1/forecast?latitude=43.65&longitude=-79.38&daily=temperature_2m_max,precipitation_probability_mean&timezone=auto&forecast_days=1"
     );
@@ -40,7 +48,6 @@ export default class WeatherDigest extends Twist<WeatherDigest> {
       };
     };
 
-    const today = new Date().toISOString().slice(0, 10);
     await this.tools.plot.createThread({
       title: `Weather for ${today}`,
       notes: [
@@ -49,5 +56,6 @@ export default class WeatherDigest extends Twist<WeatherDigest> {
         },
       ],
     });
+    await this.set(postedKey, true);
   }
 }
