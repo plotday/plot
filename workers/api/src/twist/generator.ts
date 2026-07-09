@@ -3,7 +3,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { streamText, Output, type LanguageModel, type ModelMessage } from "ai";
 import { z } from "zod";
 
-import { getBuilderDocumentation } from "@plotday/twister/creator-docs";
+import { getTwistDocumentation, TWIST_EXEMPLARS } from "@plotday/twister/creator-docs";
 import { TWIST_GUIDE } from "@plotday/twister/twist-guide";
 
 import type { Bindings } from "../env";
@@ -442,20 +442,25 @@ Requirements:
     },
   ];
 
-  // Get complete SDK type definitions with import paths
-  const sdkDocs = getBuilderDocumentation();
+  // Get twist-scoped SDK type definitions with import paths (excludes the
+  // Connector base class and mail-protocol tools, which twists never use)
+  const sdkDocs = getTwistDocumentation();
 
   // System prompt structured for optimal prompt caching:
   // 1. SDK type definitions (largest, most static) - FIRST for best caching
   // 2. TWIST_GUIDE (large, static) - SECOND for caching
-  // 3. Instructions (small, static) - THIRD
+  // 3. Complete examples (large, static) - THIRD for caching
   // Variable content (spec, errors) goes in the conversation to preserve cache.
   // Loop-invariant: computed once, reused by every attempt.
   const systemPrompt = `You are an expert at generating Plot twists.
 
 ${sdkDocs}
 
-${TWIST_GUIDE}`;
+${TWIST_GUIDE}
+
+# Complete examples
+
+${TWIST_EXEMPLARS}`;
 
   while (attempt < MAX_ATTEMPTS) {
     attempt++;

@@ -12,7 +12,9 @@ function namedError(name: string, message: string, extra: Record<string, unknown
 // Stub the twister docs exports — they're huge static strings and we don't
 // need their real content for unit tests.
 vi.mock("@plotday/twister/creator-docs", () => ({
-  getBuilderDocumentation: () => "<SDK_DOCS>",
+  getBuilderDocumentation: () => "<BUILDER_DOCS>",
+  getTwistDocumentation: () => "<TWIST_DOCS>",
+  TWIST_EXEMPLARS: "<EXEMPLARS>",
 }));
 vi.mock("@plotday/twister/twist-guide", () => ({
   TWIST_GUIDE: "<TWIST_GUIDE>",
@@ -186,8 +188,10 @@ describe("generateTwist", () => {
     // Gemini 2.5+/3 caches large repeated prefixes implicitly — no provider
     // options needed, so instructions is a plain string.
     expect(typeof call.instructions).toBe("string");
-    expect(call.instructions).toContain("<SDK_DOCS>");
+    expect(call.instructions).toContain("<TWIST_DOCS>");
     expect(call.instructions).toContain("<TWIST_GUIDE>");
+    expect(call.instructions).toContain("<EXEMPLARS>");
+    expect(call.instructions).not.toContain("<BUILDER_DOCS>");
     // messages must contain ONLY the user message — a system entry here
     // would make ai@7's streamText throw before any network call.
     expect(call.messages).toHaveLength(1);
@@ -218,8 +222,10 @@ describe("generateTwist", () => {
         },
       })
     );
-    expect(call.instructions.content).toContain("<SDK_DOCS>");
+    expect(call.instructions.content).toContain("<TWIST_DOCS>");
     expect(call.instructions.content).toContain("<TWIST_GUIDE>");
+    expect(call.instructions.content).toContain("<EXEMPLARS>");
+    expect(call.instructions.content).not.toContain("<BUILDER_DOCS>");
     expect(call.messages).toHaveLength(1);
     expect(call.messages[0].role).toBe("user");
   });
