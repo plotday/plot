@@ -8,7 +8,18 @@
     "declarationMap": true,
     "sourceMap": true,
     "noEmit": false,
-    "composite": false
+    "composite": false,
+    // src/exemplars/*.ts import "@plotday/twister" by package name (so the
+    // embedded LLM-facing examples show real import paths, not relative
+    // ones). Resolving that self-reference requires the same
+    // moduleResolution + custom condition tsconfig.base.json already grants
+    // downstream twist/connector projects for the reverse case (resolving
+    // @plotday/twister straight to this package's src/*). Scoped to this
+    // build-only config (not tsconfig.json / tsconfig.cli.json) since
+    // "bundler" resolution is incompatible with tsconfig.cli.json's
+    // CommonJS output (TS5095).
+    "moduleResolution": "bundler",
+    "customConditions": ["@plotday/connector"]
   },
   "include": ["src/**/*.ts"],
   "exclude": [
