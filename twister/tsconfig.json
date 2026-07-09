@@ -5,7 +5,14 @@
     "target": "ESNext",
     "lib": ["ES2021", "ES2022.error", "WebWorker"],
     "module": "ESNext",
-    "moduleResolution": "node",
+    // src/exemplars/*.ts import "@plotday/twister" by package name (so the
+    // embedded LLM-facing examples show real import paths). Resolving that
+    // self-reference needs bundler resolution + the custom condition that
+    // downstream twist/connector projects already use for the reverse case.
+    // tsconfig.cli.json overrides moduleResolution back to "node" for its
+    // CommonJS output ("bundler" is incompatible with CommonJS, TS5095).
+    "moduleResolution": "bundler",
+    "customConditions": ["@plotday/connector"],
     "resolveJsonModule": true,
     "allowJs": true,
     "checkJs": false,
