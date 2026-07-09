@@ -61,17 +61,28 @@ import { slackFacets } from "./slack-facets";
  * - Batch processing for large channels
  * - Star-based to-do sync against the user's saved items
  *
- * **Required OAuth User Scopes:**
- * - `channels:history` - Read public channel messages
- * - `channels:read` - View basic channel info
- * - `groups:history` - Read private channel messages
- * - `groups:read` - View basic private channel info
- * - `users:read` - View users in workspace
- * - `users:read.email` - View user email addresses
- * - `chat:write` - Post messages as the user (for Plot → Slack replies)
- * - `im:history` - Read direct messages
- * - `mpim:history` - Read group direct messages
- * - `stars:read` / `stars:write` - Read and manage the user's saved items
+ * **Required OAuth User Scopes** (each backs a shipped, user-visible feature —
+ * kept in sync with the authoritative {@link Slack.SCOPES} array below):
+ * - `channels:history` — read messages in public channels the user syncs
+ * - `channels:read` — list/enumerate public channels the user is in
+ * - `groups:history` — read messages in private channels the user syncs
+ * - `groups:read` — list/enumerate private channels the user is in
+ * - `im:history` — read direct messages
+ * - `im:write` — open a DM to compose a new direct message from Plot
+ * - `mpim:history` — read group direct messages
+ * - `mpim:write` — open a group DM to compose from Plot
+ * - `users:read` — resolve message authors/reactors to names + avatars
+ * - `users:read.email` — match Slack users to Plot contacts by email
+ * - `chat:write` — post the replies and messages the user writes in Plot
+ * - `files:write` — upload the file attachments the user adds to a message
+ *   (both link types advertise `supportsFileAttachments`)
+ * - `stars:read` / `stars:write` — read and manage the user's saved (starred)
+ *   items, surfaced as Plot to-dos
+ * - `reactions:read` / `reactions:write` — read reactions during sync and
+ *   round-trip the emoji reactions the user adds/removes in Plot
+ *
+ * **Optional** (connect-time toggle):
+ * - `emoji:read` — render the workspace's custom emoji in reactions
  */
 
 /**
@@ -93,6 +104,13 @@ export class Slack extends Connector<Slack> {
       "users:read",
       "users:read.email",
       "chat:write",
+      // File attachments: both link types advertise `supportsFileAttachments`,
+      // and onNoteCreated uploads them via files.getUploadURLExternal /
+      // files.completeUploadExternal. Without this scope those calls fail with
+      // `missing_scope` and the attachment is silently dropped (the text still
+      // sends). Existing connections must reconnect to grant it; the upload
+      // path already degrades gracefully (logs + continues) when it's absent.
+      "files:write",
       "im:history",
       "im:write",
       "mpim:history",
@@ -635,6 +653,31 @@ export class Slack extends Connector<Slack> {
 
     const event = bodyObj.event;
     if (!event) return;
+
+    // Deauthorization events. `app_uninstalled` fires when a workspace admin
+    // removes Plot (team-wide); `tokens_revoked` fires when a user revokes their
+    // own token and lists the affected user ids in `event.tokens.oauth`. Both
+    // are fanned out to every callback registered for the team, so gate
+    // `tokens_revoked` on THIS connection's own Slack user id to avoid tearing
+    // down other users who are still connected. The action mirrors what the
+    // connector already does lazily when a later API call returns an auth error
+    // (integrations.markNeedsReauth) — doing it here just makes the reconnect
+    // prompt appear immediately instead of on the next sync attempt. Delivery
+    // requires `app_uninstalled` / `tokens_revoked` to be enabled in the Slack
+    // app's Event Subscriptions.
+    if (event.type === "app_uninstalled") {
+      await this.tools.integrations.markNeedsReauth(channelId);
+      return;
+    }
+    if (event.type === "tokens_revoked") {
+      const revokedUserIds: string[] = event.tokens?.oauth ?? [];
+      const token = await this.tools.integrations.get(channelId);
+      const ownUserId = token?.provider?.authed_user_id;
+      if (ownUserId && revokedUserIds.includes(ownUserId)) {
+        await this.tools.integrations.markNeedsReauth(channelId);
+      }
+      return;
+    }
 
     if (event.type === "star_added" || event.type === "star_removed") {
       await this.handleStarEvent(event, event.type === "star_added");
