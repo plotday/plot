@@ -128,7 +128,43 @@ export default function Privacy() {
         <p>
           When you disconnect a third-party account that was used by a
           Connection, the Connection will stop functioning and no new data will
-          be synced. OAuth tokens for the disconnected account will be deleted.
+          be synced. OAuth tokens for the disconnected account are deleted from
+          Plot and, where the provider supports it, revoked with that provider so
+          they can no longer be used.
+        </p>
+        <h3 id="slack-and-connected-services">
+          Slack and other connected services
+        </h3>
+        <p>
+          When you connect Slack, Plot accesses only what your own Slack account
+          can see, acting on your behalf. Depending on the channels and direct
+          messages you choose to sync, this can include message content and
+          threads, the list of channels you belong to, the profile details of
+          people in your workspace (name, avatar, and email, used to match them
+          to your Plot contacts), emoji reactions, saved (starred) items, and
+          metadata about shared files. Plot never installs a bot into your
+          workspace and takes no action in Slack that you did not initiate.
+        </p>
+        <p>
+          Synced Slack data is stored in your Plot account so it is available
+          across your devices and offline. It is retained until you delete the
+          items or disconnect Slack and request deletion; disconnecting stops all
+          syncing and revokes Plot&apos;s Slack access token. If your workspace
+          admin removes Plot, or you revoke Plot&apos;s access from Slack, Plot
+          stops treating the connection as active and prompts you to reconnect.
+        </p>
+        <p>
+          <strong>
+            Plot does not use your Slack data — or any data from the services you
+            connect — to train generalized or non-personalized AI or machine
+            learning models.
+          </strong>{" "}
+          Where Plot uses AI on connected data to provide user-facing features
+          (such as grouping related messages or surfacing what needs your
+          attention), that processing is performed on your behalf by third-party
+          AI providers who are contractually prohibited from retaining your data
+          beyond what is necessary to return a response and from using it to
+          train their models.
         </p>
         <h3 id="local-first-architecture">Local-first data storage</h3>
         <p>

@@ -72,6 +72,14 @@ const SLACK_EVENT_SCOPES: Record<string, string[]> = {
   app_mention: ["app_mentions:read"],
   app_home_opened: [],
 
+  // Deauthorization events. These require no OAuth scope — Slack delivers them
+  // to any app the workspace has installed. Listed here (with no required
+  // scopes) so `checkSlackEventScopes` returns them to every team callback,
+  // letting connectors tear down / flag re-auth when a user revokes their token
+  // (`tokens_revoked`) or an admin removes the app (`app_uninstalled`).
+  tokens_revoked: [],
+  app_uninstalled: [],
+
   // File events
   file_created: ["files:read"],
   file_deleted: ["files:read"],

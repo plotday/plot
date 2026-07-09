@@ -75,6 +75,11 @@ Historical context is essentially absent. New connections show almost nothing un
 fix (apply to the Slack Marketplace) and partly a _scheduling_ fix (drip-backfill via `runTask` with
 persisted cursors per channel). The scheduling work is mechanical but real.
 
+> ⚠️ Before betting on "apply to the Marketplace" as the rate-limit fix, read
+> `docs/slack-marketplace-eligibility.md`. The current mirror/client shape hits several of Slack's
+> "unsuitable for Marketplace" rules, so a listing may not be attainable (or the right lever) without
+> a re-architecture toward in-Slack functionality.
+
 ### 8. No file uploads from Plot → Slack
 
 Compose is text-only.

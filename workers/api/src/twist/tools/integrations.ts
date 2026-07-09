@@ -4510,6 +4510,16 @@ export class Integrations extends Tool implements IAuth {
       hostedAccountId = existing?.access_token ?? null;
     }
 
+    // For OAuth providers that expose an upstream revoke endpoint (e.g. Slack),
+    // capture the access token now so we can revoke it after the local copy is
+    // cleared below — Slack Marketplace requires revoking tokens on disconnect.
+    const revokeTokenFn = PROVIDER_CONFIGS[provider]?.revokeToken;
+    let accessTokenToRevoke: string | null = null;
+    if (revokeTokenFn) {
+      const existing = await this.store.get<StoredTokenData>(tokenKey);
+      accessTokenToRevoke = existing?.access_token ?? null;
+    }
+
     // Handle channels this actor enabled (flatten tree to check all levels)
     const actorChannelsTree = await this.getChannelAccess(provider, actorId);
     const actorChannels = this.flattenChannels(actorChannelsTree);
@@ -4575,6 +4585,22 @@ export class Integrations extends Tool implements IAuth {
     // Delete auth token and channel access
     await this.store.clear(tokenKey);
     await this.store.clear(`channel_access:${provider}:${actorId}`);
+
+    // Best-effort upstream revoke so the third party stops honoring the token
+    // once the user disconnects. A failure here (network blip, already-expired
+    // token) must not block the disconnect, so warn rather than throw or page —
+    // parallels the best-effort hosted-account deletion below.
+    if (revokeTokenFn && accessTokenToRevoke) {
+      try {
+        await revokeTokenFn(accessTokenToRevoke);
+      } catch (error) {
+        const logger = createLogger({
+          twist_instance_id: this.twistInstanceId,
+          provider,
+        });
+        logger.warn("Upstream token revoke failed on disconnect", error as Error);
+      }
+    }
 
     // Remove user connection record
     try {

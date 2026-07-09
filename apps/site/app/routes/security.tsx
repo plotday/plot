@@ -86,8 +86,17 @@ export default function Security() {
           where something belongs. We send only what a feature needs to our
           AI providers (Anthropic, Google, and OpenAI), under agreements that
           prohibit them from training on your data or keeping it beyond the
-          response. We never use your data to train models either. You can
-          turn off AI processing entirely in your account settings.
+          response. We never use your data to train models either. Any
+          personalization is specific to your own account and applied when a
+          feature runs, not used to train a shared model. You can turn off AI
+          processing entirely in your account settings.
+        </p>
+        <p>
+          AI is assistive: it suggests, and you decide. Plot doesn&apos;t let AI
+          take consequential actions on its own — you stay in control of what
+          gets sent, filed, or changed. As with any AI, its output can be
+          incomplete or wrong, so review anything important before you act on
+          it.
         </p>
 
         <h2 id="who-can-see-your-work">Who can see your work</h2>

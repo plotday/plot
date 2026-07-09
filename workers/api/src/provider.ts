@@ -472,6 +472,13 @@ type ProviderConfig = {
   // Return null when the provider exposes no natural label — the client will
   // then require the user to enter one.
   extractAccountLabel?: (providerData: ProviderData) => string | null;
+  // Revoke the access token upstream when a user disconnects the connection.
+  // Called best-effort by Integrations.removeAuth before the local token is
+  // cleared, so the third party stops honoring it (required for Slack
+  // Marketplace: "Revoke tokens when the app is discontinued"). Only providers
+  // that expose a revoke endpoint define this; a rejected/expired token that
+  // the provider treats as already-revoked should resolve, not throw.
+  revokeToken?: (accessToken: string) => Promise<void>;
 };
 
 /**
@@ -617,6 +624,19 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     extractAccountLabel: (d) => {
       const s = d as SlackProviderData;
       return s.team?.name ?? s.enterprise?.name ?? null;
+    },
+    // Revoke the user token upstream on disconnect so Slack stops honoring it.
+    // `auth.revoke` returns HTTP 200 with `{ok:false,error:"invalid_auth"}` for
+    // an already-dead token — that's success (nothing left to revoke), so we
+    // only throw on a transport/HTTP failure, which removeAuth logs best-effort.
+    revokeToken: async (accessToken: string) => {
+      const res = await fetch("https://slack.com/api/auth.revoke", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        throw new Error(`Slack auth.revoke HTTP ${res.status}`);
+      }
     },
   },
   atlassian: {
