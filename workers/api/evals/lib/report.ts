@@ -106,16 +106,16 @@ export function renderScorecard(r: RunResults): string {
   lines.push(`model: ${r.model} · started: ${r.startedAt} · specs: ${r.specs.length}`);
   lines.push("");
   lines.push(
-    "| spec | run | status | fail class | attempts | total s | llm s | build s | out tok | cost $ |"
+    "| spec | run | status | fail class | attempts | retries | total s | llm s | build s | out tok | cost $ |"
   );
-  lines.push("|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of r.specs) {
     lines.push(
-      `| ${s.id} | ${s.run} | ${s.status} | ${s.failureClass ?? ""} | ${s.attemptsUsed} | ${secs(
-        s.durations.totalMs
-      )} | ${secsList(s.durations.llmMs)} | ${secsList(s.durations.buildMs)} | ${
-        s.tokens.output
-      } | ${s.estimatedCostUsd.toFixed(2)} |`
+      `| ${s.id} | ${s.run} | ${s.status} | ${s.failureClass ?? ""} | ${s.attemptsUsed} | ${
+        s.llmRetries
+      } | ${secs(s.durations.totalMs)} | ${secsList(s.durations.llmMs)} | ${secsList(
+        s.durations.buildMs
+      )} | ${s.tokens.output} | ${s.estimatedCostUsd.toFixed(2)} |`
     );
   }
   const a = r.aggregates;

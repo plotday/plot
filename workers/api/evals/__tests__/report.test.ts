@@ -23,6 +23,7 @@ function spec(overrides: Partial<SpecResult>): SpecResult {
     failureDetail: null,
     assertionFailures: [],
     attemptsUsed: 1,
+    llmRetries: 0,
     durations: { totalMs: 60_000, llmMs: [50_000], buildMs: [10_000] },
     tokens: { input: 1000, cacheRead: 0, cacheWrite: 0, output: 500 },
     estimatedCostUsd: 0.01,
@@ -128,6 +129,20 @@ describe("rendering", () => {
     expect(out).toContain("| b | 1 | typecheck_failed |");
     expect(out).toContain("pipeline pass rate: 100%");
     expect(out).toContain("full pass rate: 50%");
+  });
+
+  it("scorecard shows the retries column", () => {
+    const out = renderScorecard(
+      buildRunResults({
+        label: "t",
+        model: "m",
+        startedAt: "2026-07-09T00:00:00Z",
+        flags: { concurrency: 1, runs: 1, only: null },
+        specs: [spec({ id: "r", llmRetries: 2 })],
+      })
+    );
+    expect(out).toContain("| retries |");
+    expect(out).toContain("| r | 1 | pass |  | 1 | 2 |");
   });
 
   it("compare flags regressions and corpus drift", () => {

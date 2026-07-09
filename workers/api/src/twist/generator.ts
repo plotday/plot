@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateObject, type LanguageModel } from "ai";
+import { streamText, Output, type LanguageModel, type ModelMessage } from "ai";
 import { z } from "zod";
 
 import { getBuilderDocumentation } from "@plotday/twister/creator-docs";
@@ -75,6 +75,12 @@ export type GenerateAttemptEvent =
       durationMs: number;
       success: boolean;
       errors?: string[];
+    }
+  | {
+      type: "llm_retry";
+      attempt: number;
+      reason: "transient" | "output";
+      retry: number;
     };
 
 function safeEmit(
@@ -87,6 +93,30 @@ function safeEmit(
   } catch {
     // Telemetry listeners must never affect generation.
   }
+}
+
+/**
+ * HTTP/network-shaped failures worth retrying with backoff: rate limits,
+ * server errors, the AI SDK's own retry-exhaustion error, and common
+ * transport-level failures surfaced as plain messages.
+ */
+export function isTransientLlmError(error: unknown): boolean {
+  const status = (error as { statusCode?: number })?.statusCode;
+  if (typeof status === "number") return status === 429 || status >= 500;
+  const name = (error as Error)?.name ?? "";
+  if (name === "AI_RetryError") return true;
+  const message = (error as Error)?.message ?? "";
+  return /ECONNRESET|ETIMEDOUT|fetch failed|network/i.test(message);
+}
+
+/**
+ * The model produced no usable structured output (truncated response or
+ * schema-validation failure) rather than a transport failure. Worth one
+ * retry with a corrective nudge rather than aborting the whole attempt.
+ */
+export function isOutputProblemError(error: unknown): boolean {
+  const name = (error as Error)?.name ?? "";
+  return name === "AI_NoObjectGeneratedError" || name === "AI_NoOutputGeneratedError";
 }
 
 function extractUsage(result: {
@@ -111,6 +141,140 @@ function extractUsage(result: {
         ? anthropic.cacheCreationInputTokens
         : undefined,
   };
+}
+
+const TRANSIENT_MAX_RETRIES = 2;
+const OUTPUT_MAX_RETRIES = 1;
+const TRANSIENT_BACKOFF_MS = [1_000, 4_000];
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Issue a single streamText call for the current conversation, retrying
+ * within budget on LLM-level failures:
+ * - Transient (rate limit/5xx/network): up to 2 retries with jittered
+ *   backoff, conversation unchanged (the failure carries no useful signal
+ *   for the model).
+ * - Output problem (truncated/invalid structured output): up to 1 retry
+ *   with a corrective user turn appended so the model knows to try again.
+ * Budgets are per call (i.e. reset every build attempt); exhausting a
+ * budget rethrows the final error unchanged so the caller's own
+ * build-attempt loop and error message are unaffected.
+ *
+ * Streaming (a) lifts the output cap safely to 60K — the old 16K cap
+ * existed only to stay under non-streaming HTTP timeouts and truncated half
+ * of all flash generations — and (b) lets us surface per-file progress
+ * while the model writes.
+ */
+async function callModelWithRetries(params: {
+  model: LanguageModel;
+  modelId: string;
+  systemPrompt: string;
+  conversation: ModelMessage[];
+  attempt: number;
+  onProgress?: (message: string) => void;
+  onEvent?: (event: GenerateAttemptEvent) => void;
+}): Promise<{
+  generated: z.infer<typeof generatedTwistSchema>;
+  usage: Extract<GenerateAttemptEvent, { type: "llm_complete" }>["usage"];
+}> {
+  const { model, modelId, systemPrompt, conversation, attempt, onProgress, onEvent } = params;
+  let transientRetries = 0;
+  let outputRetries = 0;
+  // Declared outside the try so the catch block can read the stream's
+  // finishReason to enrich NoOutputGeneratedError (which carries none of
+  // its own) — see the enrichment below.
+  let stream: ReturnType<typeof streamText> | undefined;
+  for (;;) {
+    try {
+      // streamText returns synchronously; results arrive via streams/promises.
+      stream = streamText({
+        model,
+        maxOutputTokens: 60_000,
+        output: Output.object({
+          schema: generatedTwistSchema,
+          name: "TwistSource",
+          description:
+            'Twist source code: a files array (each entry has a path like "index.ts" and the full file content) plus an npm dependencies array (name + version).',
+        }),
+        instructions: modelId.startsWith("claude")
+          ? {
+              role: "system",
+              content: systemPrompt,
+              providerOptions: {
+                anthropic: { cacheControl: { type: "ephemeral" } },
+              },
+            }
+          : systemPrompt,
+        // Snapshot, not the live reference: `conversation` is mutated in
+        // place (assistant/error/corrective turns pushed) after this call
+        // returns, both by later build attempts and by the retry loop
+        // below within this same call. Passing the reference would let
+        // those later pushes retroactively "rewrite" what earlier calls
+        // appear to have sent.
+        messages: [...conversation],
+      });
+
+      // Announce each file path once as it appears in the partial output.
+      // Per-attempt (not deduped across attempts): each retry regenerates
+      // everything, so announcing files again is honest progress.
+      const announced = new Set<string>();
+      for await (const partial of stream.partialOutputStream) {
+        const files = (partial as { files?: Array<{ path?: string }> })?.files ?? [];
+        for (const file of files) {
+          if (file?.path && !announced.has(file.path)) {
+            announced.add(file.path);
+            onProgress?.(`Writing ${file.path}`);
+          }
+        }
+      }
+
+      const generated = await stream.output;
+      const usage = extractUsage({
+        usage: await stream.usage,
+        providerMetadata: (await stream.finalStep).providerMetadata as
+          | Record<string, Record<string, unknown>>
+          | undefined,
+      });
+      return { generated, usage };
+    } catch (error) {
+      // ai@7's NoOutputGeneratedError carries only {message, cause} — no
+      // finishReason — under streamText+Output, unlike the non-streaming
+      // NoObjectGeneratedError. Without this, the eval classifier can't
+      // distinguish output_truncated from schema_mismatch. The stream's own
+      // finishReason promise can itself reject; guard it.
+      if (
+        stream &&
+        isOutputProblemError(error) &&
+        (error as { finishReason?: string }).finishReason === undefined
+      ) {
+        const finishReason = await Promise.resolve(stream.finishReason).catch(
+          () => undefined
+        );
+        if (finishReason !== undefined) {
+          (error as { finishReason?: string }).finishReason = finishReason;
+        }
+      }
+      if (isTransientLlmError(error) && transientRetries < TRANSIENT_MAX_RETRIES) {
+        const backoff = TRANSIENT_BACKOFF_MS[transientRetries];
+        transientRetries++;
+        safeEmit(onEvent, { type: "llm_retry", attempt, reason: "transient", retry: transientRetries });
+        await sleep(backoff * (0.5 + Math.random() * 0.5)); // full jitter
+        continue;
+      }
+      if (isOutputProblemError(error) && outputRetries < OUTPUT_MAX_RETRIES) {
+        outputRetries++;
+        safeEmit(onEvent, { type: "llm_retry", attempt, reason: "output", retry: outputRetries });
+        conversation.push({
+          role: "user",
+          content:
+            "The last generation attempt did not produce a valid twist object (it was truncated or failed schema validation). Generate the complete twist again, matching the schema exactly.",
+        });
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 /**
@@ -257,8 +421,41 @@ async function generateTwistInner({
 
   const MAX_ATTEMPTS = 3;
   let attempt = 0;
-  let previousSource: TwistSource | null = null;
-  let previousErrors: string[] | null = null;
+
+  // The conversation grows across build-repair attempts: the spec stays in
+  // the first user turn, each attempt's output becomes an assistant turn,
+  // and build errors arrive as user feedback turns. Retries therefore never
+  // lose the original intent (they previously saw only the prior JSON).
+  const conversation: ModelMessage[] = [
+    {
+      role: "user",
+      content: `Generate a Plot twist based on this specification:
+
+${spec}
+
+Requirements:
+- "displayName" must be a concise, human-readable title for the twist (e.g., "Google Calendar Sync", "Task Manager")
+- Extract the displayName from the specification based on the twist's purpose
+- "files" must include an entry whose path is "index.ts" — the entry point
+- The index.ts file must export a default class extending Twist
+`,
+    },
+  ];
+
+  // Get complete SDK type definitions with import paths
+  const sdkDocs = getBuilderDocumentation();
+
+  // System prompt structured for optimal prompt caching:
+  // 1. SDK type definitions (largest, most static) - FIRST for best caching
+  // 2. TWIST_GUIDE (large, static) - SECOND for caching
+  // 3. Instructions (small, static) - THIRD
+  // Variable content (spec, errors) goes in the conversation to preserve cache.
+  // Loop-invariant: computed once, reused by every attempt.
+  const systemPrompt = `You are an expert at generating Plot twists.
+
+${sdkDocs}
+
+${TWIST_GUIDE}`;
 
   while (attempt < MAX_ATTEMPTS) {
     attempt++;
@@ -270,89 +467,31 @@ async function generateTwistInner({
       attempt === 1 ? "Generating twist code" : "Adjusting twist code"
     );
 
-    // Build the prompt based on whether this is a retry
-    let userPrompt: string;
-
-    if (attempt === 1) {
-      // First attempt - just spec and guidance
-      userPrompt = `Generate a Plot twist based on this specification:
-
-${spec}
-
-Requirements:
-- "displayName" must be a concise, human-readable title for the twist (e.g., "Google Calendar Sync", "Task Manager")
-- Extract the displayName from the specification based on the twist's purpose
-- "files" must include an entry whose path is "index.ts" — the entry point
-- The index.ts file must export a default class extending Twist
-`;
-    } else {
-      // Retry attempt - include previous attempt and errors
-      userPrompt = `Your previous attempt to generate the twist had build errors.
-
-Previous source you generated:
-\`\`\`json
-${JSON.stringify(previousSource, null, 2)}
-\`\`\`
-
-Build errors:
-${previousErrors?.join("\n\n")}
-
-Please fix these errors and generate a corrected version.`;
-    }
-
-    // Get complete SDK type definitions with import paths
-    const sdkDocs = getBuilderDocumentation();
-
-    // System prompt structured for optimal prompt caching:
-    // 1. SDK type definitions (largest, most static) - FIRST for best caching
-    // 2. TWIST_GUIDE (large, static) - SECOND for caching
-    // 3. Instructions (small, static) - THIRD
-    // Variable content (spec, errors) goes in user prompt to preserve cache
-    const systemPrompt = `You are an expert at generating Plot twists.
-
-${sdkDocs}
-
-${TWIST_GUIDE}`;
-
     // Call the model (Gemini by default, Claude via override) through the
-    // Cloudflare AI Gateway.
-    // Output limit: non-streaming generateObject keeps responses under SDK HTTP
-    // timeouts with max ~16K tokens. Current models support far larger outputs, but
-    // we don't stream here and a non-trivial twist typically fits well under 16K.
-    //
-    // Prompt caching: the system prompt is large and identical across retries and
-    // callers. Anthropic needs the explicit cache_control ephemeral marker
-    // (attached only for claude-* models); Gemini 2.5+/3 applies implicit
-    // context caching to large repeated prefixes, so a plain string suffices.
+    // Cloudflare AI Gateway, retrying transient/output-problem failures
+    // within budget before surfacing them to this attempt loop.
     const llmStart = Date.now();
-    const result = await generateObject({
+    const { generated, usage } = await callModelWithRetries({
       model,
-      schema: generatedTwistSchema,
-      schemaName: "TwistSource",
-      schemaDescription:
-        'Twist source code: a files array (each entry has a path like "index.ts" and the full file content) plus an npm dependencies array (name + version).',
-      maxOutputTokens: 16_000,
-      instructions: modelId.startsWith("claude")
-        ? {
-            role: "system",
-            content: systemPrompt,
-            providerOptions: {
-              anthropic: { cacheControl: { type: "ephemeral" } },
-            },
-          }
-        : systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
+      modelId,
+      systemPrompt,
+      conversation,
+      attempt,
+      onProgress,
+      onEvent,
     });
     safeEmit(onEvent, {
       type: "llm_complete",
       attempt,
       durationMs: Date.now() - llmStart,
-      usage: extractUsage(result),
+      usage,
     });
+
+    conversation.push({ role: "assistant", content: JSON.stringify(generated) });
 
     // Map the model's array-shaped response back into the Record-shaped
     // TwistSource. Zod already validated the array shape above.
-    const source: TwistSource = toTwistSource(result.object);
+    const source: TwistSource = toTwistSource(generated);
     source.dependencies = {
       ...source.dependencies,
       "@plotday/twister": "latest",
@@ -379,14 +518,16 @@ ${TWIST_GUIDE}`;
       return source;
     }
 
-    // Build failed - store for retry
-    previousSource = source;
-    previousErrors = buildResult.errors;
+    // Build failed - feed the errors back as the next turn.
+    conversation.push({
+      role: "user",
+      content: `The twist failed to build. Errors:\n\n${buildResult.errors.join("\n\n")}\n\nFix these and return the complete corrected twist.`,
+    });
 
     const logger = createLogger();
     logger.warn("Twist build errors on attempt", {
       attempt,
-      errors: previousErrors?.join("\n\n"),
+      errors: buildResult.errors.join("\n\n"),
     });
 
     if (attempt === MAX_ATTEMPTS) {

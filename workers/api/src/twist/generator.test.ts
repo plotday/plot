@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { generateTwist, type GenerateAttemptEvent } from "./generator";
 
+function namedError(name: string, message: string, extra: Record<string, unknown> = {}) {
+  const err = new Error(message);
+  err.name = name;
+  Object.assign(err, extra);
+  return err;
+}
+
 // Stub the twister docs exports — they're huge static strings and we don't
 // need their real content for unit tests.
 vi.mock("@plotday/twister/creator-docs", () => ({
@@ -17,12 +24,43 @@ vi.mock("./builder", () => ({
   buildTwist: (...args: unknown[]) => buildTwistMock(...args),
 }));
 
-// Capture the generateObject params so we can assert on the prompt shape,
-// caching hints, and model id.
-const generateObjectMock = vi.fn();
+// Capture streamText params and control its result. streamText returns its
+// result object SYNCHRONOUSLY (promises/streams inside), so the mock does too.
+const streamTextMock = vi.fn();
 vi.mock("ai", () => ({
-  generateObject: (...args: unknown[]) => generateObjectMock(...args),
+  streamText: (...args: unknown[]) => streamTextMock(...args),
+  Output: {
+    object: (opts: unknown) => ({ __outputSpec: opts }),
+  },
 }));
+
+// Build a fake streamText result. `partials` drives partialOutputStream;
+// `error` makes the stream throw mid-iteration and the output promise reject.
+function fakeStream(
+  object: unknown,
+  opts: {
+    usage?: unknown;
+    providerMetadata?: unknown;
+    partials?: unknown[];
+    error?: Error;
+    finishReason?: string;
+  } = {}
+) {
+  const output = opts.error
+    ? Promise.reject(opts.error)
+    : Promise.resolve(object);
+  output.catch(() => {}); // avoid unhandled rejection when the stream throws first
+  return {
+    partialOutputStream: (async function* () {
+      for (const p of opts.partials ?? [object]) yield p;
+      if (opts.error) throw opts.error;
+    })(),
+    output,
+    usage: Promise.resolve(opts.usage ?? {}),
+    finalStep: Promise.resolve({ providerMetadata: opts.providerMetadata }),
+    finishReason: Promise.resolve(opts.finishReason ?? (opts.error ? "error" : "stop")),
+  };
+}
 
 // Anthropic provider factory — the real one hits the network on construction,
 // so we swap it for a callable sentinel. modelIdMock records which model id
@@ -84,13 +122,15 @@ function makeEnv(overrides: Record<string, string | undefined> = {}) {
 // depending on declaration order.
 beforeEach(() => {
   buildTwistMock.mockReset();
-  generateObjectMock.mockReset();
+  streamTextMock.mockReset();
   createAnthropicMock.mockClear();
   modelIdMock.mockClear();
   createGoogleMock.mockClear();
   googleModelIdMock.mockClear();
-  // Default: model returns a valid source.
-  generateObjectMock.mockResolvedValue({ object: { ...validGenerated } });
+  // Default: model returns a valid source. Per-call factory so each attempt
+  // gets a fresh single-use partial stream (a shared generator would be
+  // exhausted after the first attempt's iteration).
+  streamTextMock.mockImplementation(() => fakeStream({ ...validGenerated }));
 });
 
 describe("generateTwist", () => {
@@ -118,7 +158,7 @@ describe("generateTwist", () => {
 
     expect(result.files["index.ts"]).toBeDefined();
     expect(result.dependencies["@plotday/twister"]).toBe("latest");
-    expect(generateObjectMock).toHaveBeenCalledTimes(1);
+    expect(streamTextMock).toHaveBeenCalledTimes(1);
     expect(buildTwistMock).toHaveBeenCalledTimes(1);
     expect(onProgress).toHaveBeenCalledWith("Generating twist code");
   });
@@ -134,15 +174,22 @@ describe("generateTwist", () => {
     const providerOpts = createGoogleMock.mock.calls[0][0] as { baseURL: string };
     expect(providerOpts.baseURL).toContain("/google-ai-studio/v1beta");
 
-    const call = generateObjectMock.mock.calls[0][0];
-    expect(call.maxOutputTokens).toBeGreaterThanOrEqual(16_000);
+    const call = streamTextMock.mock.calls[0][0];
+    expect(call.maxOutputTokens).toBe(60_000);
+    expect(call.output).toEqual({
+      __outputSpec: expect.objectContaining({
+        name: "TwistSource",
+        description: expect.stringContaining("files array"),
+        schema: expect.anything(),
+      }),
+    });
     // Gemini 2.5+/3 caches large repeated prefixes implicitly — no provider
     // options needed, so instructions is a plain string.
     expect(typeof call.instructions).toBe("string");
     expect(call.instructions).toContain("<SDK_DOCS>");
     expect(call.instructions).toContain("<TWIST_GUIDE>");
     // messages must contain ONLY the user message — a system entry here
-    // would make ai@7's generateObject throw before any network call.
+    // would make ai@7's streamText throw before any network call.
     expect(call.messages).toHaveLength(1);
     expect(call.messages[0].role).toBe("user");
   });
@@ -159,7 +206,7 @@ describe("generateTwist", () => {
     expect(createAnthropicMock).toHaveBeenCalledTimes(1);
     expect(createGoogleMock).not.toHaveBeenCalled();
 
-    const call = generateObjectMock.mock.calls[0][0];
+    const call = streamTextMock.mock.calls[0][0];
     // ai@7 forbids system-role entries in `messages` — the system prompt goes
     // through the `instructions` option as a SystemModelMessage, which is the
     // only shape that still carries the anthropic cacheControl marker.
@@ -184,17 +231,19 @@ describe("generateTwist", () => {
 
     await generateTwist({ spec: "SPEC_MARKER_123", env: makeEnv() });
 
-    expect(generateObjectMock).toHaveBeenCalledTimes(2);
+    expect(streamTextMock).toHaveBeenCalledTimes(2);
 
-    const firstUser = generateObjectMock.mock.calls[0][0].messages.find(
+    const firstUser = streamTextMock.mock.calls[0][0].messages.find(
       (m: any) => m.role === "user"
     );
     expect(firstUser.content).toContain("SPEC_MARKER_123");
 
-    const retryUser = generateObjectMock.mock.calls[1][0].messages.find(
-      (m: any) => m.role === "user"
-    );
-    expect(retryUser.content).toContain("previous attempt");
+    // Retry conversation appends the build-error feedback as the LAST turn
+    // (not the first user message, which stays the original spec).
+    const retryMessages = streamTextMock.mock.calls[1][0].messages;
+    const retryUser = retryMessages[retryMessages.length - 1];
+    expect(retryUser.role).toBe("user");
+    expect(retryUser.content).toContain("failed to build");
     expect(retryUser.content).toContain("boom");
   });
 
@@ -205,8 +254,18 @@ describe("generateTwist", () => {
       generateTwist({ spec: "x", env: makeEnv() })
     ).rejects.toThrow(/Failed to generate valid twist after 3 attempts/);
 
-    expect(generateObjectMock).toHaveBeenCalledTimes(3);
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
     expect(buildTwistMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("propagates a stream error to the caller exactly once", async () => {
+    streamTextMock.mockReturnValueOnce(
+      fakeStream(null, { error: new Error("stream boom") })
+    );
+    await expect(generateTwist({ spec: "hello", env: makeEnv() })).rejects.toThrow(
+      "stream boom"
+    );
+    expect(buildTwistMock).not.toHaveBeenCalled();
   });
 });
 
@@ -249,13 +308,17 @@ describe("generateTwist telemetry hooks", () => {
   });
 
   it("passes token usage through to llm_complete", async () => {
-    generateObjectMock.mockResolvedValue({
-      object: { ...validGenerated },
-      usage: { inputTokens: 100, outputTokens: 42 },
-      providerMetadata: {
-        anthropic: { cacheReadInputTokens: 70, cacheCreationInputTokens: 30 },
-      },
-    });
+    streamTextMock.mockReturnValueOnce(
+      fakeStream(
+        { ...validGenerated },
+        {
+          usage: { inputTokens: 100, outputTokens: 42 },
+          providerMetadata: {
+            anthropic: { cacheReadInputTokens: 70, cacheCreationInputTokens: 30 },
+          },
+        }
+      )
+    );
     buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
     const events: GenerateAttemptEvent[] = [];
     await generateTwist({ spec: "hello", env: makeEnv(), onEvent: (e) => events.push(e) });
@@ -279,6 +342,33 @@ describe("generateTwist telemetry hooks", () => {
       },
     });
     expect(source.files["index.ts"]).toBeTruthy();
+  });
+
+  it("announces each generated file once via onProgress while streaming", async () => {
+    streamTextMock.mockReturnValueOnce(
+      fakeStream(
+        {
+          displayName: "P",
+          files: [
+            { path: "index.ts", content: "a" },
+            { path: "lib/util.ts", content: "b" },
+          ],
+          dependencies: [],
+        },
+        {
+          partials: [
+            { files: [{ path: "index.ts" }] },
+            { files: [{ path: "index.ts" }, { path: "lib/util.ts" }] },
+            { files: [{ path: "index.ts", content: "a" }, { path: "lib/util.ts", content: "b" }] },
+          ],
+        }
+      )
+    );
+    buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+    const onProgress = vi.fn();
+    await generateTwist({ spec: "hello", env: makeEnv(), onProgress });
+    const writes = onProgress.mock.calls.map((c) => c[0]).filter((m: string) => m.startsWith("Writing "));
+    expect(writes).toEqual(["Writing index.ts", "Writing lib/util.ts"]);
   });
 });
 
@@ -309,11 +399,15 @@ describe("generateTwist provider routing", () => {
   });
 
   it("maps google cached-content metadata into llm_complete usage", async () => {
-    generateObjectMock.mockResolvedValue({
-      object: { ...validGenerated },
-      usage: { inputTokens: 100, outputTokens: 42 },
-      providerMetadata: { google: { cachedContentTokenCount: 55 } },
-    });
+    streamTextMock.mockReturnValueOnce(
+      fakeStream(
+        { ...validGenerated },
+        {
+          usage: { inputTokens: 100, outputTokens: 42 },
+          providerMetadata: { google: { cachedContentTokenCount: 55 } },
+        }
+      )
+    );
     buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
     const events: GenerateAttemptEvent[] = [];
     await generateTwist({ spec: "hello", env: makeEnv(), onEvent: (e) => events.push(e) });
@@ -330,16 +424,16 @@ describe("generateTwist provider routing", () => {
 
 describe("generated-shape mapping", () => {
   it("maps files and dependencies arrays into TwistSource records", async () => {
-    generateObjectMock.mockResolvedValue({
-      object: {
+    streamTextMock.mockReturnValueOnce(
+      fakeStream({
         displayName: "Mapper",
         files: [
           { path: "index.ts", content: "export default class M {}" },
           { path: "lib/util.ts", content: "export const x = 1;" },
         ],
         dependencies: [{ name: "zod", version: "^4.0.0" }],
-      },
-    });
+      })
+    );
     buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
     const source = await generateTwist({ spec: "hello", env: makeEnv() });
     expect(source.files["index.ts"]).toContain("class M");
@@ -351,13 +445,13 @@ describe("generated-shape mapping", () => {
   });
 
   it("still rejects when no files entry has path index.ts", async () => {
-    generateObjectMock.mockResolvedValue({
-      object: {
+    streamTextMock.mockReturnValueOnce(
+      fakeStream({
         displayName: "NoEntry",
         files: [{ path: "main.ts", content: "export {}" }],
         dependencies: [],
-      },
-    });
+      })
+    );
     await expect(
       generateTwist({ spec: "hello", env: makeEnv() })
     ).rejects.toThrow(/missing required 'index.ts'/);
@@ -381,5 +475,103 @@ describe("gateway cache bypass", () => {
       headers: Record<string, string>;
     };
     expect(opts.headers["cf-aig-skip-cache"]).toBeUndefined();
+  });
+});
+
+describe("multi-turn build-repair conversation", () => {
+  it("keeps the spec in every attempt and appends assistant/error turns", async () => {
+    buildTwistMock
+      .mockResolvedValueOnce({ success: false, errors: ["Type check failed:\nTS2304"] })
+      .mockResolvedValueOnce({ success: true, module: "ok" });
+
+    await generateTwist({ spec: "my spec text", env: makeEnv() });
+
+    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    const first = streamTextMock.mock.calls[0][0].messages;
+    const second = streamTextMock.mock.calls[1][0].messages;
+    // Attempt 1: single user message containing the spec.
+    expect(first).toHaveLength(1);
+    expect(first[0].role).toBe("user");
+    expect(first[0].content).toContain("my spec text");
+    // Attempt 2: spec turn + assistant's prior output + error feedback.
+    expect(second).toHaveLength(3);
+    expect(second[0]).toEqual(first[0]);
+    expect(second[1].role).toBe("assistant");
+    expect(second[1].content).toContain('"index.ts"'); // array-shaped prior output
+    expect(second[2].role).toBe("user");
+    expect(second[2].content).toContain("Type check failed:");
+    expect(second[2].content).toContain("Fix these and return the complete corrected twist.");
+  });
+});
+
+describe("LLM retry policy", () => {
+  it("retries transient errors with backoff and emits llm_retry", async () => {
+    vi.useFakeTimers();
+    try {
+      streamTextMock
+        .mockReturnValueOnce(fakeStream(null, { error: namedError("AI_APICallError", "overloaded", { statusCode: 529 }) }))
+        .mockReturnValueOnce(fakeStream({ ...validGenerated }));
+      buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+      const events: GenerateAttemptEvent[] = [];
+      const done = generateTwist({ spec: "hello", env: makeEnv(), onEvent: (e) => events.push(e) });
+      await vi.runAllTimersAsync();
+      await done;
+      expect(streamTextMock).toHaveBeenCalledTimes(2);
+      expect(events).toContainEqual({ type: "llm_retry", attempt: 1, reason: "transient", retry: 1 });
+      // Only ONE llm_complete (the successful call).
+      expect(events.filter((e) => e.type === "llm_complete")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up after two transient retries", async () => {
+    vi.useFakeTimers();
+    try {
+      const boom = namedError("AI_APICallError", "overloaded", { statusCode: 529 });
+      streamTextMock.mockReturnValue(fakeStream(null, { error: boom }));
+      const done = generateTwist({ spec: "hello", env: makeEnv() });
+      const assertion = expect(done).rejects.toThrow(/overloaded/);
+      await vi.runAllTimersAsync();
+      await assertion;
+      expect(streamTextMock).toHaveBeenCalledTimes(3); // initial + 2 retries
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries an output problem once with a corrective turn", async () => {
+    streamTextMock
+      .mockReturnValueOnce(
+        fakeStream(null, {
+          error: namedError("AI_NoOutputGeneratedError", "no output generated"),
+          finishReason: "length",
+        })
+      )
+      .mockReturnValueOnce(fakeStream({ ...validGenerated }));
+    buildTwistMock.mockResolvedValueOnce({ success: true, module: "ok" });
+    const events: GenerateAttemptEvent[] = [];
+    await generateTwist({ spec: "hello", env: makeEnv(), onEvent: (e) => events.push(e) });
+    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    const secondMessages = streamTextMock.mock.calls[1][0].messages;
+    expect(secondMessages[secondMessages.length - 1].role).toBe("user");
+    expect(secondMessages[secondMessages.length - 1].content).toMatch(/did not produce a valid twist object/);
+    expect(events).toContainEqual({ type: "llm_retry", attempt: 1, reason: "output", retry: 1 });
+  });
+
+  it("gives up after one output-problem retry", async () => {
+    const bad = namedError("AI_NoOutputGeneratedError", "no output generated");
+    streamTextMock.mockReturnValue(fakeStream(null, { error: bad }));
+    await expect(generateTwist({ spec: "hello", env: makeEnv() })).rejects.toThrow(/no output generated/);
+    expect(streamTextMock).toHaveBeenCalledTimes(2); // initial + 1 retry
+  });
+
+  it("enriches output-problem errors with the stream finish reason", async () => {
+    const bad = namedError("AI_NoOutputGeneratedError", "no output generated");
+    streamTextMock.mockReturnValue(fakeStream(null, { error: bad, finishReason: "length" }));
+    await expect(generateTwist({ spec: "hello", env: makeEnv() })).rejects.toMatchObject({
+      name: "AI_NoOutputGeneratedError",
+      finishReason: "length",
+    });
   });
 });

@@ -35,8 +35,10 @@ export function classifyGenerationError(
   const message = err.message ?? "";
   const detail = message.slice(0, 500);
 
-  if (name === "AI_NoObjectGeneratedError") {
-    const finishReason = (err as { finishReason?: string }).finishReason;
+  if (name === "AI_NoObjectGeneratedError" || name === "AI_NoOutputGeneratedError") {
+    const finishReason =
+      (err as { finishReason?: string }).finishReason ??
+      (err as { cause?: { finishReason?: string } }).cause?.finishReason;
     return {
       failureClass: finishReason === "length" ? "output_truncated" : "schema_mismatch",
       detail,

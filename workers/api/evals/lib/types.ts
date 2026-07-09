@@ -75,6 +75,7 @@ export interface SpecResult {
   failureDetail: string | null;
   assertionFailures: string[];
   attemptsUsed: number;
+  llmRetries: number;
   durations: { totalMs: number; llmMs: number[]; buildMs: number[] };
   tokens: TokenTotals;
   estimatedCostUsd: number;

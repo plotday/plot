@@ -127,4 +127,30 @@ describe("classifyGenerationError", () => {
     expect(c.failureClass).toBe("api_error");
     expect(c.detail.length).toBe(500);
   });
+
+  it("classifies the streaming API's truncation error name", () => {
+    const c = classifyGenerationError(
+      namedError("AI_NoOutputGeneratedError", "no output generated", { finishReason: "length" }),
+      []
+    );
+    expect(c.failureClass).toBe("output_truncated");
+  });
+
+  it("classifies the streaming API's schema error name", () => {
+    const c = classifyGenerationError(
+      namedError("AI_NoOutputGeneratedError", "response did not match schema", { finishReason: "stop" }),
+      []
+    );
+    expect(c.failureClass).toBe("schema_mismatch");
+  });
+
+  it("falls back to cause.finishReason when the error has none of its own", () => {
+    const c = classifyGenerationError(
+      namedError("AI_NoOutputGeneratedError", "no output generated", {
+        cause: { finishReason: "length" },
+      }),
+      []
+    );
+    expect(c.failureClass).toBe("output_truncated");
+  });
 });

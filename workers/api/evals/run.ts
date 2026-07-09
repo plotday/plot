@@ -125,6 +125,7 @@ async function runSpec(
       failureDetail,
       assertionFailures,
       attemptsUsed: events.filter((e) => e.type === "attempt_start").length,
+      llmRetries: events.filter((e) => e.type === "llm_retry").length,
       durations: {
         totalMs: Date.now() - startedAt,
         llmMs: events.filter((e) => e.type === "llm_complete").map((e) => e.durationMs),
