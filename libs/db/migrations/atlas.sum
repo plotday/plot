@@ -1,4 +1,4 @@
-h1:S1fWP70ghtbko1PXaj8OqehUvlvRrCa8qsOu388PM6I=
+h1:NWiyputpUnX4fxe9b2WtjqG8YfS2Sr/musxP/SqaTng=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -582,3 +582,4 @@ h1:S1fWP70ghtbko1PXaj8OqehUvlvRrCa8qsOu388PM6I=
 20260706113314_onboarding_update_notes.sql h1:rOXbqmlA+qFLvFUFRXoomuZliSS4lpkIGQefr8RGALk=
 20260708014634_archive_phantom_noemail_self_contacts.sql h1:ImipkOaO0HxJULk2eMhtEq2fVD8lD70pqtDvMHIEYVU=
 20260709003400_add_extracted_url_injection.sql h1:79osaPoH/Y2y/XrEfOFqrW7xd7kbT4jerRSeEXK4T/o=
+20260709222001_activate_invited_user_return_welcome_thread_id.sql h1:Jjy3CXqvD8b1A9iDQjrBFg4G6xRAqIsy/ySmBu4V2n8=

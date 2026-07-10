@@ -18,6 +18,8 @@ import { revokeAppleTokenForAnyClient } from "../utils/apple-auth";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { classifyInviteable } from "../state/contact-classifier";
+import { dispatchWelcomeThreadForUser } from "../state/classify-thread";
+import { createDb } from "../db";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
 
@@ -358,6 +360,12 @@ account.post("/activate", async (c) => {
   }
 
   let priority: { id: string } | null = null;
+  // Welcome-thread id from the recovery-branch activate_invited_user() call, if
+  // that branch runs. In the common path the signup INSERT's trigger already
+  // created the welcome thread, so this stays null and the post-handler dispatch
+  // looks it up by user instead. Either way its internal-team fanout rows get a
+  // classify job enqueued below (see dispatchWelcomeThreadForUser).
+  let welcomeThreadId: string | null = null;
 
   if (existingRoot) {
     // Root priority already exists (e.g., from signup trigger or seed data)
@@ -378,12 +386,17 @@ account.post("/activate", async (c) => {
     let newPriority: { id: string };
     try {
       const activated = await sql<{
-        activate_invited_user: { root_priority_id: string };
+        activate_invited_user: {
+          root_priority_id: string;
+          welcome_thread_id: string | null;
+        };
       }>`SELECT public.activate_invited_user(${user.id}::uuid)`.execute(c.var.db);
       const rootId = activated.rows[0]?.activate_invited_user?.root_priority_id;
       if (!rootId) {
         throw new Error("activate_invited_user returned no root_priority_id");
       }
+      welcomeThreadId =
+        activated.rows[0]?.activate_invited_user?.welcome_thread_id ?? null;
       newPriority = { id: rootId };
     } catch (err) {
       return captureServerError(c, err as Error, `Failed to create root priority: ${(err as Error).message}`, {
@@ -810,6 +823,38 @@ account.post("/activate", async (c) => {
       user_id: user.id,
     });
   }
+
+  // The signup INSERT's accept_invitations_after_user_created trigger (or the
+  // recovery-branch activate_invited_user() call above) seeds the "Welcome to
+  // Plot!" thread, whose Plot-Team groups/contacts fan out pending
+  // thread_priority rows (priority_id NULL, classify_at now()) for internal team
+  // members. Postgres can't enqueue a Cloudflare Queue job, so dispatch the
+  // classify jobs here — after the request's writes have committed — instead of
+  // leaving those rows for the hourly sweep (up to an hour of mis-filing at the
+  // team members' Inbox). Uses a fresh connection: the request-scoped one is
+  // destroyed by the time waitUntil runs.
+  const dispatchUserId = user.id;
+  const dispatchWelcomeThreadId = welcomeThreadId;
+  c.executionCtx.waitUntil(
+    (async () => {
+      const db = createDb(c.env);
+      try {
+        await dispatchWelcomeThreadForUser(
+          db,
+          c.env,
+          dispatchUserId,
+          dispatchWelcomeThreadId
+        );
+      } catch (err) {
+        c.var.tracker.captureException(
+          err instanceof Error ? err : new Error(String(err)),
+          { user_id: dispatchUserId }
+        );
+      } finally {
+        await db.destroy();
+      }
+    })()
+  );
 
   return c.json({
     userId: user.id,

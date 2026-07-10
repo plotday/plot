@@ -11,6 +11,7 @@ import {
 
 import {
   classifyThreadForUser,
+  dispatchWelcomeThreadForUser,
   logClassificationDecision,
 } from "./classify-thread";
 import type { DB } from "../db-types";
@@ -218,6 +219,83 @@ describe("classifyThreadForUser built-in AI opt-out", () => {
       expect.objectContaining({ aiDisabled: false }),
       expect.anything()
     );
+  });
+});
+
+describe("dispatchWelcomeThreadForUser", () => {
+  function queueEnv(sendBatch: ReturnType<typeof vi.fn>) {
+    return { ...(ENV as object), QUEUE_CLASSIFY: { sendBatch } } as never;
+  }
+
+  const isWelcomeLookup = (sql: string) => sql.includes("'welcome-user'");
+  const isPendingRows = (sql: string) =>
+    sql.includes("FROM public.thread_priority") &&
+    sql.includes("classify_at IS NOT NULL");
+
+  it("dispatches a known thread id without looking up the welcome thread", async () => {
+    const sendBatch = vi.fn(async () => {});
+    const executed: Executed[] = [];
+    const db = testDb(executed, async (sql) => {
+      if (isWelcomeLookup(sql)) throw new Error("should not look up thread");
+      if (isPendingRows(sql))
+        return { rows: [{ user_id: "team-a" }, { user_id: "team-b" }] };
+      return { rows: [] };
+    });
+
+    await dispatchWelcomeThreadForUser(db, queueEnv(sendBatch), "u-1", "wt-1");
+
+    expect(executed.some((e) => isWelcomeLookup(e.sql))).toBe(false);
+    expect(sendBatch).toHaveBeenCalledTimes(1);
+    expect(sendBatch).toHaveBeenCalledWith([
+      { body: { userId: "team-a", threadId: "wt-1" } },
+      { body: { userId: "team-b", threadId: "wt-1" } },
+    ]);
+  });
+
+  it("looks up the welcome thread for the user when no id is passed", async () => {
+    const sendBatch = vi.fn(async () => {});
+    const executed: Executed[] = [];
+    const db = testDb(executed, async (sql) => {
+      if (isWelcomeLookup(sql)) return { rows: [{ id: "wt-9" }] };
+      if (isPendingRows(sql)) return { rows: [{ user_id: "team-c" }] };
+      return { rows: [] };
+    });
+
+    await dispatchWelcomeThreadForUser(db, queueEnv(sendBatch), "u-1");
+
+    const lookup = executed.find((e) => isWelcomeLookup(e.sql));
+    expect(lookup).toBeDefined();
+    expect(lookup!.parameters).toEqual(expect.arrayContaining(["u-1"]));
+    expect(sendBatch).toHaveBeenCalledWith([
+      { body: { userId: "team-c", threadId: "wt-9" } },
+    ]);
+  });
+
+  it("is a no-op when the user has no welcome thread", async () => {
+    const sendBatch = vi.fn(async () => {});
+    const executed: Executed[] = [];
+    const db = testDb(executed, async (sql) => {
+      if (isWelcomeLookup(sql)) return { rows: [] };
+      if (isPendingRows(sql)) throw new Error("should not query pending rows");
+      return { rows: [] };
+    });
+
+    await dispatchWelcomeThreadForUser(db, queueEnv(sendBatch), "u-1");
+
+    expect(sendBatch).not.toHaveBeenCalled();
+  });
+
+  it("does not enqueue when the welcome thread has no pending rows", async () => {
+    const sendBatch = vi.fn(async () => {});
+    const executed: Executed[] = [];
+    const db = testDb(executed, async (sql) => {
+      if (isPendingRows(sql)) return { rows: [] };
+      return { rows: [] };
+    });
+
+    await dispatchWelcomeThreadForUser(db, queueEnv(sendBatch), "u-1", "wt-1");
+
+    expect(sendBatch).not.toHaveBeenCalled();
   });
 });
 

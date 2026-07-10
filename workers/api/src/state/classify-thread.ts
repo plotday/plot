@@ -245,6 +245,60 @@ export async function dispatchPendingForThread(
 }
 
 /**
+ * The shared system Plot twist_instance that authors every user's per-user
+ * "Welcome to Plot!" onboarding thread. Kept in sync with
+ * `c_system_instance_id` in `activate_invited_user.sql`.
+ */
+const SYSTEM_PLOT_INSTANCE_ID = "0199b6f4-ae64-7718-0000-000000000001";
+
+/**
+ * Dispatch classify jobs for a new user's "Welcome to Plot!" onboarding thread.
+ *
+ * `activate_invited_user` seeds that thread with `contacts`/`groups` that include
+ * the internal Plot Team group, so the `AFTER INSERT ON thread` peer/group
+ * triggers fan out `thread_priority` rows (`priority_id = NULL, classify_at =
+ * now()`) for every internal team member. Nothing in-database can enqueue a
+ * Cloudflare Queue job, so — unlike connector/twist-created threads, which go
+ * through `dispatchPendingForThread` after their request commits — those fanout
+ * rows would otherwise sit unclassified until the hourly sweep. This closes that
+ * gap by dispatching them promptly from the signup request.
+ *
+ * Pass `knownThreadId` when the caller already has the welcome thread id (the
+ * direct `activate_invited_user` return value). Otherwise the welcome thread is
+ * looked up for the user (the trigger-implicit signup path). A no-op when no
+ * welcome thread exists (e.g. the Plot Team group isn't seeded) or when its
+ * rows are already classified (`classify_at IS NULL`), so it is safe to call on
+ * every `/activate`. Must run in `waitUntil` on a fresh DB connection — see
+ * `dispatchPendingForThread`.
+ */
+export async function dispatchWelcomeThreadForUser(
+  db: Kysely<DB>,
+  env: ClassifyEnvBindings,
+  userId: string,
+  knownThreadId?: string | null
+): Promise<void> {
+  let threadId = knownThreadId ?? null;
+  if (!threadId) {
+    // The welcome thread is per-user (twist_id NULL, no cross-user dedup),
+    // authored by the shared system Plot instance, keyed 'welcome-user', and
+    // filed to this user via its own thread_priority row. That join scopes the
+    // lookup to exactly this user's welcome thread.
+    const found = await sql<{ id: string }>`
+      SELECT t.id
+        FROM public.thread t
+        JOIN public.thread_priority tp
+          ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
+       WHERE t.key = 'welcome-user'
+         AND t.created_by = ${SYSTEM_PLOT_INSTANCE_ID}::uuid
+       ORDER BY t.created_at DESC
+       LIMIT 1`.execute(db);
+    threadId = found.rows[0]?.id ?? null;
+  }
+  if (!threadId) return;
+  await dispatchPendingForThread(db, env, threadId);
+}
+
+/**
  * Sweep entry point — re-enqueue every pending row older than 1 hour.
  * Bounded at 1000 rows per call so a backlog drains over multiple
  * sweep ticks without one call timing out.
