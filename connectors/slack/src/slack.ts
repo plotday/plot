@@ -1441,19 +1441,38 @@ export class Slack extends Connector<Slack> {
     }
 
     const refFor = (name: string) => `slack:${teamId}/${name}`;
-    const toSave = Object.entries(raw).map(([name, value]) => {
+    // Workspaces can alias a custom name to a *standard* Slack emoji
+    // shortcode (e.g. "party-parrot-2": "alias:thumbsup"). Standard emoji
+    // never get their own custom_emoji row, so aliasOf must only point at
+    // names that are themselves custom emoji in this workspace — otherwise
+    // it dangles and violates the self-referencing alias_of foreign key.
+    const customNames = new Set(Object.keys(raw));
+    const buildRow = (name: string, value: string) => {
       const isAlias = value.startsWith("alias:");
+      const aliasTarget = isAlias ? value.slice("alias:".length) : null;
       return {
         id: refFor(name),
         provider: "slack",
         workspace: teamId,
         name,
         imageUrl: isAlias ? null : value,
-        aliasOf: isAlias ? refFor(value.slice("alias:".length)) : null,
+        aliasOf: aliasTarget && customNames.has(aliasTarget) ? refFor(aliasTarget) : null,
         archived: false,
       };
-    });
-    await this.tools.integrations.saveCustomEmoji(toSave);
+    };
+    const entries = Object.entries(raw);
+    // Save non-alias rows before alias rows: alias_of is not deferrable, so
+    // a single batched insert checks each row's FK immediately — an alias
+    // row would fail if its target hasn't been inserted yet in the same
+    // batch.
+    const targetRows = entries
+      .filter(([, value]) => !value.startsWith("alias:"))
+      .map(([name, value]) => buildRow(name, value));
+    const aliasRows = entries
+      .filter(([, value]) => value.startsWith("alias:"))
+      .map(([name, value]) => buildRow(name, value));
+    await this.tools.integrations.saveCustomEmoji(targetRows);
+    await this.tools.integrations.saveCustomEmoji(aliasRows);
 
     // Cache the name set so the inbound transform can recognise custom
     // reactions (Slack reaction events carry the bare name, not the ref).
