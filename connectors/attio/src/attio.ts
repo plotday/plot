@@ -68,6 +68,17 @@ export class Attio extends Connector<Attio> {
   /** Record types synced under the single channel. */
   private static readonly ENTITY_TYPES = ["deals", "people", "companies"] as const;
 
+  /**
+   * All five independent batch chains started by onChannelEnabled — the
+   * three record entity types plus tasks and notes. Used to track which of
+   * them have finished their initial sync (see markSyncTypeComplete).
+   */
+  private static readonly ALL_SYNC_TYPES = [
+    ...Attio.ENTITY_TYPES,
+    "tasks",
+    "notes",
+  ] as const;
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
@@ -203,6 +214,14 @@ export class Attio extends Connector<Attio> {
     const webhookCallback = await this.callback(this.setupAttioWebhook);
     await this.runTask(webhookCallback);
 
+    // Track completion of all five independent batch chains kicked off
+    // below. They all sync under this connector's single channel ("attio"),
+    // so the platform's initial-sync-done signal must wait for every chain
+    // to finish, not just the first. Reset unconditionally: this method can
+    // be re-dispatched (auto-enable, recovery), and startBatchSync always
+    // starts each chain as a fresh initial sync when it runs.
+    await this.set("initial_sync_pending", [...Attio.ALL_SYNC_TYPES]);
+
     for (const entityType of Attio.ENTITY_TYPES) {
       await this.startBatchSync(entityType);
     }
@@ -231,6 +250,7 @@ export class Attio extends Connector<Attio> {
     await this.clear("sync_state_tasks");
     await this.clear("sync_state_notes");
     await this.clear("sync_enabled");
+    await this.clear("initial_sync_pending");
   }
 
   // ---- Batch Sync ----
@@ -245,6 +265,55 @@ export class Attio extends Connector<Attio> {
 
     const batchCallback = await this.callback(this.syncBatch, entityType);
     await this.tools.tasks.runTask(batchCallback);
+  }
+
+  /**
+   * Mark one of the five independent initial-sync chains (deals, people,
+   * companies, tasks, notes) as finished, and signal
+   * `integrations.channelSyncCompleted` for the shared "attio" channel once
+   * all five have finished.
+   *
+   * All five chains are started together from onChannelEnabled under this
+   * connector's single channel (`singleChannel = true`) and then run
+   * concurrently as independent runTask chains, each with its own
+   * pagination. Completion of any *one* chain is not sufficient signal that
+   * the connection's initial sync is done — without waiting for all five,
+   * the platform's "Syncing…" indicator would clear (and the stuck-sync
+   * watchdog would stop tracking the connection) while the other chains are
+   * still backfilling. The pending-set read-modify-write is guarded by a
+   * short-lived lock because two chains can legitimately finish around the
+   * same time, and a naive get+filter+set would race and could drop an
+   * update — see "Locks" in TOOLS_GUIDE.md.
+   */
+  private async markSyncTypeComplete(entityType: string): Promise<void> {
+    const lockKey = "initial_sync_pending_lock";
+    const maxAttempts = 10;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (await this.tools.store.acquireLock(lockKey, 10_000)) {
+        try {
+          const pending = (await this.get<string[]>("initial_sync_pending")) ?? [];
+          const remaining = pending.filter((type) => type !== entityType);
+          if (remaining.length > 0) {
+            await this.set("initial_sync_pending", remaining);
+          } else {
+            await this.clear("initial_sync_pending");
+            await this.tools.integrations.channelSyncCompleted("attio");
+          }
+        } finally {
+          await this.tools.store.releaseLock(lockKey);
+        }
+        return;
+      }
+      // Another chain is updating the pending set right now — brief
+      // backoff and retry rather than silently dropping this chain's
+      // completion (which could leave the connection stuck "Syncing"
+      // forever if it happened to be the last chain to finish).
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    console.error(
+      `Attio: failed to acquire initial_sync_pending_lock after ${maxAttempts} attempts ` +
+        `while completing "${entityType}" — initial sync completion signal may be delayed`
+    );
   }
 
   private async syncBatch(entityType: string): Promise<void> {
@@ -295,6 +364,16 @@ export class Attio extends Connector<Attio> {
       const nextBatch = await this.callback(this.syncBatch, entityType);
       await this.tools.tasks.runTask(nextBatch);
     } else {
+      // No more pages left to schedule for this record type — this one of
+      // the five initial-sync chains is done. Signal completion (once all
+      // five have reported in) so the platform stamps
+      // initial_sync_completed_at; otherwise the stuck-sync watchdog
+      // eventually force-flags a healthy connection as needing
+      // reconnection. Gating on initialSync avoids a pointless call for
+      // incremental/webhook-driven re-syncs.
+      if (state.initialSync) {
+        await this.markSyncTypeComplete(entityType);
+      }
       await this.clear(`sync_state_${entityType}`);
     }
   }
@@ -324,6 +403,12 @@ export class Attio extends Connector<Attio> {
       const nextBatch = await this.callback(this.syncBatch, entityType);
       await this.tools.tasks.runTask(nextBatch);
     } else {
+      // Tasks chain done — see syncRecordBatch's terminal branch above for
+      // why this must go through markSyncTypeComplete rather than calling
+      // channelSyncCompleted directly.
+      if (state.initialSync) {
+        await this.markSyncTypeComplete(entityType);
+      }
       await this.clear(`sync_state_${entityType}`);
     }
   }
@@ -353,6 +438,12 @@ export class Attio extends Connector<Attio> {
       const nextBatch = await this.callback(this.syncBatch, entityType);
       await this.tools.tasks.runTask(nextBatch);
     } else {
+      // Notes chain done — see syncRecordBatch's terminal branch above for
+      // why this must go through markSyncTypeComplete rather than calling
+      // channelSyncCompleted directly.
+      if (state.initialSync) {
+        await this.markSyncTypeComplete(entityType);
+      }
       await this.clear(`sync_state_${entityType}`);
     }
   }
