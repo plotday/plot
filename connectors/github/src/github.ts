@@ -1,4 +1,5 @@
 import {
+  type Actor,
   type Link,
   type NewLinkWithNotes,
   type Note,
@@ -38,6 +39,8 @@ import {
   addIssueComment,
   updateIssueComment,
 } from "./issue-sync";
+import { reactToComment, unreactToComment } from "./reactions";
+import { ALLOWED_REACTION_EMOJI } from "./github-emoji";
 
 // ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
 
@@ -156,6 +159,10 @@ export class GitHub extends Connector<GitHub> {
       supportsAssignee: true,
     },
   ];
+  readonly reactionCapabilities = {
+    mode: "fixed" as const,
+    allowed: ALLOWED_REACTION_EMOJI,
+  };
 
   build(build: ToolBuilder) {
     return {
@@ -626,6 +633,38 @@ export class GitHub extends Connector<GitHub> {
     return {
       externalContent: result.body,
     };
+  }
+
+  /**
+   * Push a single emoji add/remove to GitHub. Dispatched on the reacting
+   * user's own GitHub connector instance, so `getToken` resolves to their
+   * token and the reaction is attributed to their GitHub account.
+   */
+  async onNoteReactionChanged(
+    note: Note,
+    thread: Thread,
+    _actor: Actor,
+    emoji: string,
+    added: boolean
+  ): Promise<void> {
+    const meta = thread.meta ?? {};
+    const owner = meta.owner as string | undefined;
+    const repo = meta.repo as string | undefined;
+    if (!owner || !repo || !note.key) return;
+
+    const syncableId = `${owner}/${repo}`;
+    let token: string;
+    try {
+      token = await this.getToken(syncableId);
+    } catch {
+      return; // no connection for this user — stays Plot-only, per SDK contract
+    }
+
+    if (added) {
+      await reactToComment(this, token, owner, repo, note.key, emoji);
+    } else {
+      await unreactToComment(this, token, owner, repo, note.key, emoji);
+    }
   }
 
   // ---------- Webhook ----------
