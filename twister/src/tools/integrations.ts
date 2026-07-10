@@ -4,6 +4,7 @@ import {
   type NewContact,
   type NewLinkWithNotes,
   type NewNote,
+  type NewReactions,
   type ReactionCapabilities,
   ITool,
 } from "..";
@@ -605,6 +606,34 @@ export abstract class Integrations extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract saveCustomEmoji(emoji: NewCustomEmoji[]): Promise<void>;
 
+  /**
+   * Set the COMPLETE current reaction state for an existing note, addressed
+   * by its parent thread + key. Unlike {@link saveNotes}/{@link saveNote}
+   * (additive/per-emoji-merge — an omitted emoji is left untouched, and
+   * actors already reacted are never removed), this CLEARS AND REPLACES:
+   * the `reactions` passed here becomes the note's entire reaction state.
+   * An emoji that was previously present but is omitted here is removed;
+   * an actor previously present for an emoji but absent from its new actor
+   * list is removed.
+   *
+   * Use this when reconciling a note's reactions against an external
+   * system's live snapshot — e.g. a connector polling reactions because the
+   * external system has no reaction webhook (GitHub) and the poll response
+   * is already a full current state, including removals.
+   *
+   * Never creates a note — throws if no note with `key` exists on the
+   * resolved thread among this connector's own links.
+   *
+   * @param thread - `{ id }` or `{ source }` identifying the note's thread
+   * @param key - the existing note's `key`
+   * @param reactions - the note's complete reaction state to converge to
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract setNoteReactions(
+    thread: { id: Uuid } | { source: string },
+    key: string,
+    reactions: NewReactions
+  ): Promise<void>;
 }
 
 /**

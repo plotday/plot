@@ -3,7 +3,14 @@ import {
   ActionType,
   type NewLinkWithNotes,
 } from "@plotday/twister";
-import type { GitHub, GitHubPullRequest, GitHubReview, GitHubIssueComment } from "./github";
+import type { NewContact } from "@plotday/twister/plot";
+import type {
+  GitHub,
+  GitHubPullRequest,
+  GitHubReview,
+  GitHubIssueComment,
+  GitHubReviewComment,
+} from "./github";
 
 /** Days of recently closed/merged PRs to include in sync */
 const RECENT_DAYS = 30;
@@ -130,6 +137,146 @@ export async function syncPRBatch(
 }
 
 /**
+ * Fields common to a PR thread's "identity" — the source URL, the "Open in
+ * GitHub" action, and the description note — shared by both the batch-sync
+ * path (`convertPRToThread`) and the incremental webhook handlers so a PR
+ * whose first sync happens via webhook gets full parity immediately instead
+ * of waiting on a later batch resync to backfill it.
+ */
+export function buildPRThreadFields(
+  source: GitHub,
+  pr: GitHubPullRequest,
+): {
+  actions: Action[];
+  sourceUrl: string;
+  descriptionNote: { key: string; content: string | null; created: Date; author: NewContact };
+} {
+  const hasDescription = Boolean(pr.body && pr.body.trim().length > 0);
+  return {
+    actions: [
+      {
+        type: ActionType.external,
+        title: `Open in GitHub`,
+        url: pr.html_url,
+      },
+    ],
+    sourceUrl: pr.html_url,
+    descriptionNote: {
+      key: "description",
+      content: hasDescription ? pr.body : null,
+      created: new Date(pr.created_at),
+      author: source.userToContact(pr.user),
+    },
+  };
+}
+
+/**
+ * Build a Plot note for an inline (code-line) PR review comment. File/line
+ * context renders as a short header — not the full diff hunk, to avoid
+ * clutter — followed by the comment body. Replies (GitHub's
+ * `in_reply_to_id`) map to Plot's native `reNote` threading so they nest
+ * under their parent instead of appearing as flat siblings.
+ */
+export function buildReviewCommentNote(
+  source: GitHub,
+  comment: GitHubReviewComment
+): {
+  key: string;
+  content: string;
+  created: Date;
+  author: NewContact;
+  reNote?: { key: string };
+} {
+  const location = comment.line ? `${comment.path}:${comment.line}` : comment.path;
+  const note: {
+    key: string;
+    content: string;
+    created: Date;
+    author: NewContact;
+    reNote?: { key: string };
+  } = {
+    key: `review-comment-${comment.id}`,
+    content: `📄 ${location}\n\n${comment.body}`,
+    created: new Date(comment.created_at),
+    author: source.userToContact(comment.user),
+  };
+  if (comment.in_reply_to_id) {
+    note.reNote = { key: `review-comment-${comment.in_reply_to_id}` };
+  }
+  return note;
+}
+
+/**
+ * Fetch every inline review comment on a PR (paginated).
+ */
+export async function fetchReviewComments(
+  source: GitHub,
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<GitHubReviewComment[]> {
+  const response = await source.githubFetch(
+    token,
+    `/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`
+  );
+  if (!response.ok) return [];
+  return response.json();
+}
+
+function openPRCommentKeysStorageKey(repositoryId: string, prNumber: number): string {
+  return `open_pr_comment_keys_${repositoryId}_${prNumber}`;
+}
+
+/**
+ * Overwrite the full set of comment/review-comment note keys tracked for an
+ * open PR. Called by batch sync (converges on every resync) and by the
+ * `opened`/`reopened` webhook actions (full re-fetch, since a reopened PR's
+ * prior key list was cleared on close).
+ */
+export async function recordOpenPRCommentKeys(
+  source: GitHub,
+  repositoryId: string,
+  prNumber: number,
+  keys: string[]
+): Promise<void> {
+  await source.set(openPRCommentKeysStorageKey(repositoryId, prNumber), keys);
+}
+
+/**
+ * Append a single new comment/review-comment key to an open PR's tracked
+ * set. Called by the incremental comment-created webhook handlers, which
+ * know about exactly one new comment and shouldn't pay for a full re-fetch.
+ * No-ops if the PR isn't currently tracked as open (e.g. a comment webhook
+ * arriving for a PR this instance hasn't batch-synced yet — the next batch
+ * pass or an `opened` webhook will pick it up via `recordOpenPRCommentKeys`).
+ */
+export async function appendOpenPRCommentKey(
+  source: GitHub,
+  repositoryId: string,
+  prNumber: number,
+  key: string
+): Promise<void> {
+  const storageKey = openPRCommentKeysStorageKey(repositoryId, prNumber);
+  const existing = await source.get<string[]>(storageKey);
+  if (!existing) return;
+  if (existing.includes(key)) return;
+  await source.set(storageKey, [...existing, key]);
+}
+
+/**
+ * Stop tracking a PR's comment keys — called when a PR closes/merges, so
+ * the reaction poller (Task 9) naturally excludes it on its next pass.
+ */
+export async function clearOpenPRCommentKeys(
+  source: GitHub,
+  repositoryId: string,
+  prNumber: number
+): Promise<void> {
+  await source.clear(openPRCommentKeysStorageKey(repositoryId, prNumber));
+}
+
+/**
  * Convert a GitHub PR to a NewLinkWithNotes
  */
 async function convertPRToThread(
@@ -146,23 +293,10 @@ async function convertPRToThread(
     ? source.userToContact(pr.assignee)
     : null;
 
-  const threadActions: Action[] = [
-    {
-      type: ActionType.external,
-      title: `Open in GitHub`,
-      url: pr.html_url,
-    },
-  ];
+  const { actions: threadActions, sourceUrl, descriptionNote } = buildPRThreadFields(source, pr);
+  const notes: any[] = [descriptionNote];
 
-  const notes: any[] = [];
-
-  const hasDescription = pr.body && pr.body.trim().length > 0;
-  notes.push({
-    key: "description",
-    content: hasDescription ? pr.body : null,
-    created: new Date(pr.created_at),
-    author: authorContact,
-  });
+  const hasDescription = Boolean(pr.body && pr.body.trim().length > 0);
 
   // Fetch general comments
   try {
@@ -217,6 +351,25 @@ async function convertPRToThread(
     console.error("Error fetching PR reviews:", error);
   }
 
+  // Fetch inline (code-line) review comments
+  try {
+    const reviewComments = await fetchReviewComments(source, token, owner, repo, pr.number);
+    for (const comment of reviewComments) {
+      notes.push(buildReviewCommentNote(source, comment));
+    }
+  } catch (error) {
+    console.error("Error fetching PR review comments:", error);
+  }
+
+  const commentKeys = notes
+    .map((n) => n.key as string)
+    .filter((k) => k.startsWith("comment-") || k.startsWith("review-comment-"));
+  if (pr.state === "open") {
+    await recordOpenPRCommentKeys(source, repositoryId, pr.number, commentKeys);
+  } else {
+    await clearOpenPRCommentKeys(source, repositoryId, pr.number);
+  }
+
   const thread: NewLinkWithNotes = {
     channelId: repositoryId,
     source: `github:pr:${owner}/${repo}/${pr.number}`,
@@ -238,7 +391,7 @@ async function convertPRToThread(
       prNodeId: pr.id,
     },
     actions: threadActions,
-    sourceUrl: pr.html_url,
+    sourceUrl,
     notes,
     preview: hasDescription ? pr.body : null,
     ...(initialSync ? { unread: false } : {}),
@@ -269,6 +422,10 @@ export async function handlePRWebhook(
     ? source.userToContact(pr.assignee)
     : null;
 
+  const { actions, sourceUrl, descriptionNote } = buildPRThreadFields(source, pr);
+  const action = payload.action as string | undefined;
+  const notes = action === "opened" || action === "edited" ? [descriptionNote] : [];
+
   const thread: NewLinkWithNotes = {
     source: `github:pr:${owner}/${repo}/${pr.number}`,
     type: "pull_request",
@@ -292,11 +449,34 @@ export async function handlePRWebhook(
       syncProvider: "github",
       syncableId: repositoryId,
     },
+    actions,
+    sourceUrl,
     preview: pr.body || null,
-    notes: [],
+    notes,
   };
 
   await source.saveLink(thread);
+
+  if (action === "opened" || action === "reopened") {
+    try {
+      const token = await source.getToken(repositoryId);
+      const [issueComments, reviewComments] = await Promise.all([
+        source
+          .githubFetch(token, `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100`)
+          .then((r) => (r.ok ? r.json() : [])),
+        fetchReviewComments(source, token, owner, repo, pr.number),
+      ]);
+      const keys = [
+        ...issueComments.map((c: { id: number }) => `comment-${c.id}`),
+        ...reviewComments.map((c: GitHubReviewComment) => `review-comment-${c.id}`),
+      ];
+      await recordOpenPRCommentKeys(source, repositoryId, pr.number, keys);
+    } catch (error) {
+      console.error("Error re-fetching PR comment keys on open/reopen:", error);
+    }
+  } else if (pr.state === "closed") {
+    await clearOpenPRCommentKeys(source, repositoryId, pr.number);
+  }
 }
 
 /**
@@ -321,6 +501,8 @@ export async function handleReviewWebhook(
     ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
     : review.body || null;
 
+  const { actions, sourceUrl } = buildPRThreadFields(source, pr);
+
   const thread: NewLinkWithNotes = {
     source: `github:pr:${owner}/${repo}/${pr.number}`,
     type: "pull_request",
@@ -343,6 +525,8 @@ export async function handleReviewWebhook(
       syncProvider: "github",
       syncableId: repositoryId,
     },
+    actions,
+    sourceUrl,
   };
 
   await source.saveLink(thread);
@@ -385,9 +569,69 @@ export async function handlePRCommentWebhook(
       syncProvider: "github",
       syncableId: repositoryId,
     },
+    sourceUrl: issue.html_url,
   };
 
   await source.saveLink(thread);
+
+  if (payload.action === "created") {
+    await appendOpenPRCommentKey(source, repositoryId, prNumber, `comment-${comment.id}`);
+  }
+}
+
+/**
+ * Handle pull_request_review_comment webhook event (inline code-line
+ * comments — created/edited/deleted). Applies `buildPRThreadFields` so a
+ * PR whose first sync happens via this webhook still gets `sourceUrl`/the
+ * "Open in GitHub" action, matching `handlePRWebhook`/`handleReviewWebhook`.
+ */
+export async function handlePRReviewCommentWebhook(
+  source: GitHub,
+  payload: any,
+  repositoryId: string,
+): Promise<void> {
+  const comment: GitHubReviewComment = payload.comment;
+  const pr: GitHubPullRequest = payload.pull_request;
+  const action: string = payload.action;
+  if (!comment || !pr) return;
+
+  const [owner, repo] = repositoryId.split("/");
+
+  if (action === "deleted") {
+    // No archive-note API on this connector today for any comment type
+    // (top-level comments have the same gap) — out of scope here; the
+    // note stays in Plot as historical record, matching existing behavior
+    // for deleted top-level PR comments.
+    return;
+  }
+
+  const note = buildReviewCommentNote(source, comment);
+  const { actions, sourceUrl } = buildPRThreadFields(source, pr);
+
+  const thread: NewLinkWithNotes = {
+    source: `github:pr:${owner}/${repo}/${pr.number}`,
+    type: "pull_request",
+    title: pr.title,
+    notes: [note as any],
+    channelId: repositoryId,
+    meta: {
+      provider: "github",
+      owner,
+      repo,
+      prNumber: pr.number,
+      prNodeId: pr.id,
+      syncProvider: "github",
+      syncableId: repositoryId,
+    },
+    actions,
+    sourceUrl,
+  };
+
+  await source.saveLink(thread);
+
+  if (action === "created") {
+    await appendOpenPRCommentKey(source, repositoryId, pr.number, note.key);
+  }
 }
 
 /**
@@ -434,6 +678,97 @@ export async function addPRComment(
   if (comment?.id) {
     return { id: comment.id, body: comment.body ?? body };
   }
+}
+
+/**
+ * Reply within an existing inline review-comment thread. GitHub's reply
+ * endpoint doesn't need a file/line/commit position — it inherits the
+ * parent comment's — which is why only replies (not fresh inline comments)
+ * are supported outbound from Plot.
+ */
+export async function addReviewCommentReply(
+  source: GitHub,
+  meta: import("@plotday/twister").ThreadMeta,
+  inReplyToId: number,
+  body: string
+): Promise<{ id: number; body: string } | void> {
+  const owner = meta.owner as string;
+  const repo = meta.repo as string;
+  const prNumber = meta.prNumber as number;
+  const syncableId = `${owner}/${repo}`;
+
+  if (!owner || !repo || !prNumber) {
+    throw new Error("Owner, repo, and prNumber required in thread meta");
+  }
+
+  const token = await source.getToken(syncableId);
+
+  const response = await source.githubFetch(
+    token,
+    `/repos/${owner}/${repo}/pulls/${prNumber}/comments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body, in_reply_to: inReplyToId }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to add review comment reply: ${response.status} ${await response.text()}`
+    );
+  }
+
+  const comment = await response.json();
+  if (comment?.id) {
+    return { id: comment.id, body: comment.body ?? body };
+  }
+}
+
+/**
+ * Update an existing inline (code-line) review comment. Unlike top-level
+ * issue/PR conversation comments (`updateIssueComment`, which PATCHes
+ * `/issues/comments/{id}`), review comments live under the `pulls`
+ * namespace — `PATCH /repos/{owner}/{repo}/pulls/comments/{id}` — with no
+ * PR number in the path (the comment id alone identifies it).
+ *
+ * Returns the updated comment's body (GitHub markdown) so callers can
+ * refresh the external sync baseline.
+ */
+export async function updateReviewComment(
+  source: GitHub,
+  meta: import("@plotday/twister").ThreadMeta,
+  commentId: number,
+  body: string
+): Promise<{ body: string } | void> {
+  const owner = meta.owner as string;
+  const repo = meta.repo as string;
+  const syncableId = `${owner}/${repo}`;
+
+  if (!owner || !repo) {
+    throw new Error("Owner and repo required in thread meta");
+  }
+
+  const token = await source.getToken(syncableId);
+
+  const response = await source.githubFetch(
+    token,
+    `/repos/${owner}/${repo}/pulls/comments/${commentId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to update review comment: ${response.status} ${await response.text()}`
+    );
+  }
+
+  const comment = await response.json();
+  return { body: comment?.body ?? body };
 }
 
 /**

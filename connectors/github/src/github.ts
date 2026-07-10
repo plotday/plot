@@ -1,4 +1,5 @@
 import {
+  type Actor,
   type Link,
   type NewLinkWithNotes,
   type Note,
@@ -26,8 +27,11 @@ import {
   handlePRWebhook,
   handleReviewWebhook,
   handlePRCommentWebhook,
+  handlePRReviewCommentWebhook,
   addPRComment,
+  addReviewCommentReply,
   updatePRStatus,
+  updateReviewComment,
 } from "./pr-sync";
 import {
   startIssueBatchSync,
@@ -38,6 +42,13 @@ import {
   addIssueComment,
   updateIssueComment,
 } from "./issue-sync";
+import {
+  commentEndpointForKey,
+  reactToComment,
+  unreactToComment,
+  pollOpenPRReactions,
+} from "./reactions";
+import { ALLOWED_REACTION_EMOJI } from "./github-emoji";
 
 // ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
 
@@ -82,6 +93,22 @@ export type GitHubReview = {
   submitted_at: string;
   user: GitHubUser;
   html_url: string;
+};
+
+export type GitHubReviewComment = {
+  id: number;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  user: GitHubUser;
+  html_url: string;
+  /** File path the comment is anchored to. */
+  path: string;
+  /** Line number in the file (the comment's current position after any diff updates). */
+  line: number | null;
+  /** Present when this comment is a reply within an existing review-comment thread. */
+  in_reply_to_id?: number;
+  pull_request_review_id: number;
 };
 
 /**
@@ -156,6 +183,10 @@ export class GitHub extends Connector<GitHub> {
       supportsAssignee: true,
     },
   ];
+  readonly reactionCapabilities = {
+    mode: "fixed" as const,
+    allowed: ALLOWED_REACTION_EMOJI,
+  };
 
   build(build: ToolBuilder) {
     return {
@@ -245,6 +276,26 @@ export class GitHub extends Connector<GitHub> {
   }
 
   /**
+   * Set the full reaction state for a note (public wrapper for the
+   * protected `this.tools.integrations`, used by reactions.ts's poll job).
+   */
+  async setNoteReactions(
+    thread: { id: string } | { source: string },
+    key: string,
+    reactions: import("@plotday/twister").NewReactions
+  ): Promise<void> {
+    await this.tools.integrations.setNoteReactions(thread as any, key, reactions);
+  }
+
+  /**
+   * List stored keys by prefix (public wrapper for the protected
+   * `this.tools.store.list`, used by reactions.ts's poll job).
+   */
+  async listStoreKeys(prefix: string): Promise<string[]> {
+    return this.tools.store.list(prefix);
+  }
+
+  /**
    * Create a persistent callback (public wrapper for this.callback)
    */
   // @ts-ignore - simplified signature for public access
@@ -280,6 +331,15 @@ export class GitHub extends Connector<GitHub> {
    */
   async syncIssueBatch(repositoryId: string): Promise<void> {
     await syncIssueBatch(this, repositoryId);
+  }
+
+  /**
+   * Callback entry point for the reaction poll (scheduleRecurring target).
+   * Scoped to the single repo this task was registered for — each enabled
+   * repo has its own recurring task, so this must not sweep other repos.
+   */
+  async pollReactions(repositoryId: string): Promise<void> {
+    await pollOpenPRReactions(this, repositoryId);
   }
 
   // ---------- Channel lifecycle ----------
@@ -404,6 +464,11 @@ export class GitHub extends Connector<GitHub> {
     const webhookCallback = await this.callback(this.setupWebhook, repositoryId);
     await this.runTask(webhookCallback);
 
+    const reactionPollCallback = await this.callback(this.pollReactions, repositoryId);
+    await this.scheduleRecurring(`reaction-poll-${repositoryId}`, reactionPollCallback, {
+      intervalMs: 15 * 60 * 1000,
+    });
+
     const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
     const pendingTypes =
       (options.syncPullRequests ? 1 : 0) + (options.syncIssues ? 1 : 0);
@@ -486,6 +551,7 @@ export class GitHub extends Connector<GitHub> {
    */
   private async teardownRepo(repositoryId: string): Promise<void> {
     await this.stopSync(repositoryId);
+    await this.cancelScheduledTask(`reaction-poll-${repositoryId}`);
     await this.clear(`sync_enabled_${repositoryId}`);
     await this.clear(`org_for_repo_${repositoryId}`);
   }
@@ -577,15 +643,34 @@ export class GitHub extends Connector<GitHub> {
   /**
    * Called when a note is created on a thread owned by this source.
    *
+   * Replies within an existing inline (code-line) review-comment thread —
+   * identified via `thread.meta.reNoteKey`, the key of the note being
+   * replied to — route to GitHub's review-comment reply endpoint instead of
+   * the top-level conversation-comment endpoint, since GitHub only accepts
+   * inline comments through `pulls/comments` with an `in_reply_to` id.
+   *
    * Returns a {@link NoteWriteBackResult} so the runtime sets the note's
-   * key to `comment-<githubCommentId>` (matching what sync-in uses) and
-   * records the external sync baseline. GitHub stores comment bodies as
-   * markdown and returns the stored body verbatim, so the hashed baseline
-   * matches what the next incremental sync will surface.
+   * key to `comment-<githubCommentId>` / `review-comment-<githubCommentId>`
+   * (matching what sync-in uses) and records the external sync baseline.
+   * GitHub stores comment bodies as markdown and returns the stored body
+   * verbatim, so the hashed baseline matches what the next incremental sync
+   * will surface.
    */
   async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const body = note.content ?? "";
+
+    const reNoteKey = meta.reNoteKey as string | undefined;
+    const reviewParent = commentEndpointForKey(reNoteKey ?? null);
+    if (reviewParent?.kind === "review") {
+      const result = await addReviewCommentReply(this, meta, Number(reviewParent.commentId), body);
+      if (!result) return;
+      return {
+        key: `review-comment-${result.id}`,
+        externalContent: result.body,
+      };
+    }
+
     if (meta.prNumber) {
       const result = await addPRComment(this, meta, body);
       if (!result) return;
@@ -606,14 +691,28 @@ export class GitHub extends Connector<GitHub> {
   /**
    * Called when a Plot user edits an existing note on a GitHub-owned thread.
    *
-   * Pushes the new content to the corresponding GitHub comment (PR and
-   * issue conversation comments live under the same endpoint) and refreshes
-   * the sync baseline from GitHub's stored markdown body.
+   * `review-comment-*` keys route to `updateReviewComment` (GitHub's inline
+   * review-comment edit endpoint, `pulls/comments/{id}`) since it differs
+   * from the top-level conversation-comment endpoint
+   * (`issues/comments/{id}`) that `comment-*` keys use via
+   * `updateIssueComment`. Refreshes the sync baseline from GitHub's stored
+   * markdown body in either case.
    */
   async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     if (!note.key) return;
     if (!meta.prNumber && !meta.issueNumber) return;
+
+    const reviewMatch = note.key.match(/^review-comment-(\d+)$/);
+    if (reviewMatch) {
+      const commentId = Number(reviewMatch[1]);
+      if (!Number.isFinite(commentId)) return;
+      const result = await updateReviewComment(this, meta, commentId, note.content ?? "");
+      if (!result) return;
+      return {
+        externalContent: result.body,
+      };
+    }
 
     const match = note.key.match(/^comment-(\d+)$/);
     if (!match) return;
@@ -626,6 +725,38 @@ export class GitHub extends Connector<GitHub> {
     return {
       externalContent: result.body,
     };
+  }
+
+  /**
+   * Push a single emoji add/remove to GitHub. Dispatched on the reacting
+   * user's own GitHub connector instance, so `getToken` resolves to their
+   * token and the reaction is attributed to their GitHub account.
+   */
+  async onNoteReactionChanged(
+    note: Note,
+    thread: Thread,
+    _actor: Actor,
+    emoji: string,
+    added: boolean
+  ): Promise<void> {
+    const meta = thread.meta ?? {};
+    const owner = meta.owner as string | undefined;
+    const repo = meta.repo as string | undefined;
+    if (!owner || !repo || !note.key) return;
+
+    const syncableId = `${owner}/${repo}`;
+    let token: string;
+    try {
+      token = await this.getToken(syncableId);
+    } catch {
+      return; // no connection for this user — stays Plot-only, per SDK contract
+    }
+
+    if (added) {
+      await reactToComment(this, token, owner, repo, note.key, emoji);
+    } else {
+      await unreactToComment(this, token, owner, repo, note.key, emoji);
+    }
   }
 
   // ---------- Webhook ----------
@@ -669,6 +800,7 @@ export class GitHub extends Connector<GitHub> {
             events: [
               "pull_request",
               "pull_request_review",
+              "pull_request_review_comment",
               "issues",
               "issue_comment",
             ],
@@ -804,6 +936,10 @@ export class GitHub extends Connector<GitHub> {
         if (options.syncIssues) {
           await handleIssueCommentWebhook(this, payload, repositoryId);
         }
+      }
+    } else if (event === "pull_request_review_comment") {
+      if (options.syncPullRequests) {
+        await handlePRReviewCommentWebhook(this, payload, repositoryId);
       }
     }
   }
