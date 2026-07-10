@@ -163,7 +163,7 @@ export async function reconcileCommentReactions(
     await source.setNoteReactions(
       { source: `github:pr:${owner}/${repo}/${prNumber}` },
       key,
-      reactions as any
+      reactions
     );
   } catch (error) {
     console.warn(`[github] Failed to reconcile reactions for ${key}:`, error);
@@ -171,33 +171,36 @@ export async function reconcileCommentReactions(
 }
 
 /**
- * Recurring poll entry point (scheduleRecurring callback). Enumerates every
- * repo this connector instance is syncing, then every PR this connector has
- * tracked as open (Task 7's `open_pr_comment_keys_*` state — there is no
- * platform read-back for a connector's own synced links/notes, so this
- * state is the only source of truth for "which PRs are currently open").
- * For each tracked comment key, reconciles its reactions.
+ * Recurring poll entry point (scheduleRecurring callback) — scoped to a
+ * single repo, since each enabled repo registers its own recurring task.
+ * Enumerates every PR this connector has tracked as open for THIS repo
+ * (Task 7's `open_pr_comment_keys_*` state — there is no platform
+ * read-back for a connector's own synced links/notes, so this state is the
+ * only source of truth for "which PRs are currently open"). For each
+ * tracked comment key, reconciles its reactions.
  */
-export async function pollOpenPRReactions(source: GitHub): Promise<void> {
-  const stateKeys = await source.listStoreKeys("open_pr_comment_keys_");
+export async function pollOpenPRReactions(source: GitHub, repositoryId: string): Promise<void> {
+  const [owner, repo] = repositoryId.split("/");
+  if (!owner || !repo) return;
+
+  let token: string;
+  try {
+    token = await source.getToken(repositoryId);
+  } catch {
+    return; // token unavailable (needs reauth) — skip this repo this pass
+  }
+
+  const keyPrefix = `open_pr_comment_keys_${repositoryId}_`;
+  const stateKeys = await source.listStoreKeys(keyPrefix);
   for (const stateKey of stateKeys) {
-    // Format: open_pr_comment_keys_<owner>/<repo>_<prNumber>
-    const match = stateKey.match(/^open_pr_comment_keys_(.+)_(\d+)$/);
+    // Format: open_pr_comment_keys_<repositoryId>_<prNumber> — repositoryId
+    // is fixed/known here, so just parse the trailing PR number.
+    const match = stateKey.slice(keyPrefix.length).match(/^(\d+)$/);
     if (!match) continue;
-    const repositoryId = match[1];
-    const prNumber = Number(match[2]);
-    const [owner, repo] = repositoryId.split("/");
-    if (!owner || !repo) continue;
+    const prNumber = Number(match[1]);
 
     const keys = (await source.get<string[]>(stateKey)) ?? [];
     if (keys.length === 0) continue;
-
-    let token: string;
-    try {
-      token = await source.getToken(repositoryId);
-    } catch {
-      continue; // token unavailable (needs reauth) — skip this repo this pass
-    }
 
     for (const key of keys) {
       await reconcileCommentReactions(source, token, owner, repo, prNumber, key);

@@ -335,9 +335,11 @@ export class GitHub extends Connector<GitHub> {
 
   /**
    * Callback entry point for the reaction poll (scheduleRecurring target).
+   * Scoped to the single repo this task was registered for — each enabled
+   * repo has its own recurring task, so this must not sweep other repos.
    */
-  async pollReactions(): Promise<void> {
-    await pollOpenPRReactions(this);
+  async pollReactions(repositoryId: string): Promise<void> {
+    await pollOpenPRReactions(this, repositoryId);
   }
 
   // ---------- Channel lifecycle ----------
@@ -462,7 +464,7 @@ export class GitHub extends Connector<GitHub> {
     const webhookCallback = await this.callback(this.setupWebhook, repositoryId);
     await this.runTask(webhookCallback);
 
-    const reactionPollCallback = await this.callback(this.pollReactions);
+    const reactionPollCallback = await this.callback(this.pollReactions, repositoryId);
     await this.scheduleRecurring(`reaction-poll-${repositoryId}`, reactionPollCallback, {
       intervalMs: 15 * 60 * 1000,
     });

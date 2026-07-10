@@ -83,17 +83,24 @@ describe("reconcileCommentReactions", () => {
 });
 
 describe("pollOpenPRReactions", () => {
-  it("reconciles reactions for every tracked comment across every open PR", async () => {
+  it("reconciles reactions for every tracked comment across every open PR in the given repo, ignoring other repos' state", async () => {
     const reconciled: string[] = [];
+    const tokenRequests: string[] = [];
     const stored: Record<string, string[]> = {
       "open_pr_comment_keys_acme/repo_42": ["comment-1", "review-comment-2"],
       "open_pr_comment_keys_acme/repo_43": ["comment-3"],
+      // Belongs to a different repo — must NOT be swept when polling
+      // "acme/repo" (this is the bug the repo-scoping fix guards against).
+      "open_pr_comment_keys_other/repo_1": ["comment-99"],
     };
     const fakeSource = {
       listStoreKeys: async (prefix: string) =>
         Object.keys(stored).filter((k) => k.startsWith(prefix)),
       get: async (key: string) => stored[key] ?? null,
-      getToken: async () => "fake-token",
+      getToken: async (repositoryId: string) => {
+        tokenRequests.push(repositoryId);
+        return "fake-token";
+      },
       githubFetch: async () => ({ ok: true, json: async () => [] }),
       userToContact: (u: any) => u,
       setNoteReactions: async (_thread: any, key: string) => {
@@ -101,9 +108,12 @@ describe("pollOpenPRReactions", () => {
       },
     } as any;
 
-    await pollOpenPRReactions(fakeSource);
+    await pollOpenPRReactions(fakeSource, "acme/repo");
 
     expect(reconciled.sort()).toEqual(["comment-1", "comment-3", "review-comment-2"]);
+    // getToken is scoped to the single repo, and fetched once for the
+    // whole pass rather than once per tracked PR.
+    expect(tokenRequests).toEqual(["acme/repo"]);
   });
 
   it("skips a repo whose token is unavailable without throwing", async () => {
@@ -124,6 +134,6 @@ describe("pollOpenPRReactions", () => {
       },
     } as any;
 
-    await expect(pollOpenPRReactions(fakeSource)).resolves.toBeUndefined();
+    await expect(pollOpenPRReactions(fakeSource, "acme/repo")).resolves.toBeUndefined();
   });
 });
