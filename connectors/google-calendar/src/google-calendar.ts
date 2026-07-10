@@ -3,6 +3,7 @@ import {
   type Actor,
   type ActorId,
   Connector,
+  type Link,
   type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -27,6 +28,7 @@ import {
 } from "./channels";
 import {
   SYNC_LOCK_TTL_MS,
+  cancelEventWithApiFn,
   clearBuffersFn,
   extractRSVPParamsFn,
   getApiFn,
@@ -637,6 +639,38 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       await updateEventRSVPWithApiFn(api, calendarId, eventId, googleStatus);
     } catch (error) {
       console.error("[RSVP Sync] Failed to sync RSVP", {
+        event_id: eventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Called when a user changes an event link's status in Plot. Only
+   * "Cancelled" write-backs here: "Confirmed"/"Tentative" just mirror
+   * Google's own `event.status` and aren't meaningfully user-settable for
+   * events you organize. Deleting the event (rather than PATCHing
+   * status=cancelled, which Google only documents as reliable for
+   * recurring instance exceptions) mirrors how a real cancellation arrives
+   * from Google, so the next incremental sync's already-tested
+   * cancellation path archives the schedule and removes it from the
+   * agenda. Best-effort: a failed write-back is reconciled by the user
+   * retrying the status change.
+   */
+  async onLinkUpdated(link: Link): Promise<void> {
+    if (link.status !== "Cancelled") return;
+
+    const calendarId = link.channelId;
+    const eventId = (link.meta as Record<string, unknown> | null)?.id as
+      | string
+      | undefined;
+    if (!calendarId || !eventId) return;
+
+    try {
+      const api = await this.getApi(calendarId);
+      await cancelEventWithApiFn(api, calendarId, eventId);
+    } catch (error) {
+      console.error("[GoogleCalendar] onLinkUpdated write-back failed:", {
         event_id: eventId,
         error: error instanceof Error ? error.message : String(error),
       });

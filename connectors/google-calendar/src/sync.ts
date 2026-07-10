@@ -1604,6 +1604,24 @@ export async function updateEventRSVPWithApiFn(
 }
 
 /**
+ * Cancels a Google Calendar event by deleting it. Works uniformly for a
+ * standalone/master event and a single occurrence of a recurring series —
+ * both are addressed by their own `eventId`, and Google reports a deleted
+ * occurrence as a cancelled exception on the next sync rather than removing
+ * the series. `GoogleApi.call` treats 410 (already gone) as a no-op.
+ */
+export async function cancelEventWithApiFn(
+  api: GoogleApi,
+  calendarId: string,
+  eventId: string
+): Promise<void> {
+  await api.call(
+    "DELETE",
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`
+  );
+}
+
+/**
  * Parameters extracted from a thread for an RSVP write-back.
  *
  * `null` when the thread lacks the required calendar metadata.

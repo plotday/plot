@@ -10,6 +10,7 @@ import type { NewLinkWithNotes } from "@plotday/twister";
 import type { Thread } from "@plotday/twister";
 import type { CalendarSyncHost } from "./sync";
 import {
+  cancelEventWithApiFn,
   cancellationWasSelfInitiatedFn,
   extractRSVPParamsFn,
   getWatchRenewalScheduleFn,
@@ -777,6 +778,45 @@ describe("updateEventRSVPWithApiFn", () => {
       ([, init]) => init?.method === "PATCH"
     );
     expect(patchCall).toBeUndefined();
+  });
+});
+
+describe("cancelEventWithApiFn", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("issues a DELETE against the event's own calendar/eventId", async () => {
+    const calendarId = "user@example.com";
+    const eventId = "event-abc";
+
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (
+        url ===
+          `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}` &&
+        init?.method === "DELETE"
+      ) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const api = new GoogleApi("fake-token");
+    await cancelEventWithApiFn(api, calendarId, eventId);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op (doesn't throw) when the event is already gone", async () => {
+    const calendarId = "user@example.com";
+    const eventId = "event-already-deleted";
+
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 410 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const api = new GoogleApi("fake-token");
+    await expect(
+      cancelEventWithApiFn(api, calendarId, eventId)
+    ).resolves.toBeUndefined();
   });
 });
 
