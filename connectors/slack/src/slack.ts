@@ -67,10 +67,6 @@ import { slackFacets } from "./slack-facets";
  * - `channels:read` — list/enumerate public channels the user is in
  * - `groups:history` — read messages in private channels the user syncs
  * - `groups:read` — list/enumerate private channels the user is in
- * - `im:history` — read direct messages
- * - `im:write` — open a DM to compose a new direct message from Plot
- * - `mpim:history` — read group direct messages
- * - `mpim:write` — open a group DM to compose from Plot
  * - `users:read` — resolve message authors/reactors to names + avatars
  * - `users:read.email` — match Slack users to Plot contacts by email
  * - `chat:write` — post the replies and messages the user writes in Plot
@@ -83,6 +79,8 @@ import { slackFacets } from "./slack-facets";
  *
  * **Optional** (connect-time toggle):
  * - `emoji:read` — render the workspace's custom emoji in reactions
+ * - `im:history`, `im:write`, `mpim:history`, `mpim:write` — read and compose
+ *   direct messages and group DMs
  */
 
 /**
@@ -111,10 +109,6 @@ export class Slack extends Connector<Slack> {
       // sends). Existing connections must reconnect to grant it; the upload
       // path already degrades gracefully (logs + continues) when it's absent.
       "files:write",
-      "im:history",
-      "im:write",
-      "mpim:history",
-      "mpim:write",
       "stars:read",
       "stars:write",
       // Emoji reaction round-trip: reactions:write to add/remove reactions on
@@ -131,6 +125,14 @@ export class Slack extends Connector<Slack> {
         description:
           "Show your workspace's custom emoji (like :party_parrot:) in Plot's reaction picker and round-trip them as reactions.",
         scopes: ["emoji:read"],
+        default: true,
+      },
+      {
+        id: "dms",
+        label: "Sync direct messages",
+        description:
+          "Bring your Slack DMs and group DMs into Plot, and let you send new ones from Plot.",
+        scopes: ["im:history", "im:write", "mpim:history", "mpim:write"],
         default: true,
       },
     ],

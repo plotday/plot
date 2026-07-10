@@ -611,6 +611,24 @@ describe("onSlackWebhook — deauthorization events", () => {
   });
 });
 
+describe("Slack.SCOPES — DM sync is optional and opt-in", () => {
+  it("does not require im/mpim scopes", () => {
+    expect(Slack.SCOPES.required).not.toContain("im:history");
+    expect(Slack.SCOPES.required).not.toContain("im:write");
+    expect(Slack.SCOPES.required).not.toContain("mpim:history");
+    expect(Slack.SCOPES.required).not.toContain("mpim:write");
+  });
+
+  it("declares a dms optional group covering im/mpim scopes, default on", () => {
+    const dmsGroup = Slack.SCOPES.optional?.find((g) => g.id === "dms");
+    expect(dmsGroup).toBeDefined();
+    expect(dmsGroup?.scopes).toEqual(
+      expect.arrayContaining(["im:history", "im:write", "mpim:history", "mpim:write"])
+    );
+    expect(dmsGroup?.default).toBe(true);
+  });
+});
+
 describe("onChannelEnabled — workspace daily task dedup", () => {
   function makeMultiChannelSlack(storeInitial: Record<string, unknown> = {}) {
     const store = makeStore(storeInitial);
