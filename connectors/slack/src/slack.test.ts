@@ -901,3 +901,39 @@ describe("onSlackWebhook — DM/MPIM message routing", () => {
     consoleError.mockRestore();
   });
 });
+
+describe("createDirectMessage — proactively registers the DM channel", () => {
+  it("adds the opened conversation id to the known dm_channels set", async () => {
+    const store = makeStore({ sync_enabled_C1: true, dm_channels: ["D-existing"] });
+    const integrationsGet = vi.fn().mockResolvedValue({ token: "xoxp-test" });
+    const tools = {
+      store,
+      integrations: { get: integrationsGet },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+
+    const api = {
+      openConversation: vi.fn().mockResolvedValue("D-new"),
+      postMessage: vi.fn().mockResolvedValue({ ts: "111.000", text: "hi" }),
+    };
+    vi.spyOn(
+      slack as unknown as { getWorkspaceApi: (c: string) => Promise<unknown> },
+      "getWorkspaceApi"
+    ).mockResolvedValue(api);
+
+    const draft = {
+      type: "dm",
+      channelId: "C1",
+      title: "hi",
+      noteContent: "hi",
+      recipients: [{ externalAccountId: "U2" }],
+    };
+    await slack.onCreateLink(draft as never);
+
+    expect(store.map.get("dm_channels")).toEqual(
+      expect.arrayContaining(["D-existing", "D-new"])
+    );
+  });
+});

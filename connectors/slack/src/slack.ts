@@ -1251,6 +1251,14 @@ export class Slack extends Connector<Slack> {
     // Open (or retrieve existing) DM/MPIM conversation.
     const dmChannelId = await api.openConversation(userIds);
 
+    // Register immediately so a reply from the other side is recognized by
+    // the DM webhook handler (see isKnownDMChannel) without waiting for the
+    // next daily listDMChannels run.
+    const knownDMChannels = (await this.get<string[]>("dm_channels")) ?? [];
+    if (!knownDMChannels.includes(dmChannelId)) {
+      await this.set("dm_channels", [...knownDMChannels, dmChannelId]);
+    }
+
     const body = (draft.noteContent ?? draft.title ?? "").trim();
     if (!body) {
       console.error("[slack] Cannot create direct message: body is empty");
