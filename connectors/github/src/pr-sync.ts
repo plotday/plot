@@ -458,18 +458,22 @@ export async function handlePRWebhook(
   await source.saveLink(thread);
 
   if (action === "opened" || action === "reopened") {
-    const token = await source.getToken(repositoryId);
-    const [issueComments, reviewComments] = await Promise.all([
-      source
-        .githubFetch(token, `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100`)
-        .then((r) => (r.ok ? r.json() : [])),
-      fetchReviewComments(source, token, owner, repo, pr.number),
-    ]);
-    const keys = [
-      ...issueComments.map((c: { id: number }) => `comment-${c.id}`),
-      ...reviewComments.map((c: GitHubReviewComment) => `review-comment-${c.id}`),
-    ];
-    await recordOpenPRCommentKeys(source, repositoryId, pr.number, keys);
+    try {
+      const token = await source.getToken(repositoryId);
+      const [issueComments, reviewComments] = await Promise.all([
+        source
+          .githubFetch(token, `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100`)
+          .then((r) => (r.ok ? r.json() : [])),
+        fetchReviewComments(source, token, owner, repo, pr.number),
+      ]);
+      const keys = [
+        ...issueComments.map((c: { id: number }) => `comment-${c.id}`),
+        ...reviewComments.map((c: GitHubReviewComment) => `review-comment-${c.id}`),
+      ];
+      await recordOpenPRCommentKeys(source, repositoryId, pr.number, keys);
+    } catch (error) {
+      console.error("Error re-fetching PR comment keys on open/reopen:", error);
+    }
   } else if (pr.state === "closed") {
     await clearOpenPRCommentKeys(source, repositoryId, pr.number);
   }
