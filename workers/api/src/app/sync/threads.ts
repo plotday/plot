@@ -77,6 +77,43 @@ export type CreateLinkSpec = {
  *   dropped every status-less compose — no link, no message, no error (the
  *   thread stayed a plain Plot thread with no email sent).
  */
+/**
+ * The synthetic icon URL used for Plot-authored threads (welcome, billing,
+ * onboarding, …). It is its own "Plot" filter bucket and must never be folded
+ * into the generic pasted-link bucket. Kept in sync with `Thread.plotIconUrl`
+ * in apps/plot/lib/store/thread.dart.
+ */
+export const PLOT_ICON_URL = "https://plot.day/assets/plot-icon.svg";
+
+/**
+ * Classify an icon/type filter chip set into the three predicate buckets used
+ * by `GET /sync/threads/search`. Mirrors the client's Drift feed filter
+ * (apps/plot/lib/store/thread.dart `_getQuery`) exactly so that server-surfaced
+ * search "extras" are typed identically to the local feed:
+ *
+ * - `includesPlot`: the synthetic "plot" bucket (or the raw Plot icon URL as
+ *   legacy state) — matches `icon = PLOT_ICON_URL`.
+ * - `includesLink`: the "link" bucket — matches the literal 'link' icon or any
+ *   favicon http URL, EXCEPT the Plot icon URL (which is its own bucket).
+ * - `others`: exact icon values (built-in subtypes, `connector:<id>:<type>`,
+ *   `twist:<id>`) — matched with `icon = ANY(others)`.
+ */
+export function classifyIconFilter(iconFilter: readonly string[]): {
+  includesPlot: boolean;
+  includesLink: boolean;
+  others: string[];
+} {
+  const includesPlot =
+    iconFilter.includes("plot") || iconFilter.includes(PLOT_ICON_URL);
+  const includesLink = iconFilter.some(
+    (v) => v === "link" || (v.startsWith("http") && v !== PLOT_ICON_URL),
+  );
+  const others = iconFilter.filter(
+    (v) => v !== "link" && v !== "plot" && !v.startsWith("http"),
+  );
+  return { includesPlot, includesLink, others };
+}
+
 export function isDispatchableCreateLink(
   spec: CreateLinkSpec | undefined,
 ): spec is CreateLinkSpec & { twist_instance_id: string; type: string } {
@@ -506,29 +543,62 @@ threads.get("/sync/threads/search", async (c) => {
     ? Math.min(Math.max(1, parseInt(limitRaw, 10) || 50), 200)
     : 50;
 
-  // Require at least 2 characters before running the search. A 1-char query
-  // becomes `%a%` and forces sequential ILIKE scans across the user's entire
+  // Optional filter params — JSON-encoded arrays / boolean flag that mirror
+  // the app's header filter chips (thread type / tag / reaction / assignee /
+  // muted). Forwarding them lets a filter-only browse (no text query) return
+  // the COMPLETE server-side match set instead of only what happens to be
+  // synced locally, and narrows text-search results to the active chips so
+  // extras are already correctly typed. All are applied against "user".thread,
+  // so the existing per-user visibility (contacts/groups) and archived scoping
+  // are preserved untouched.
+  const parseJsonArray = <T>(
+    raw: string | undefined,
+    guard: (v: unknown) => v is T,
+  ): T[] => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter(guard) : [];
+    } catch {
+      return [];
+    }
+  };
+  const searchUuidRe =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const iconFilter = parseJsonArray(
+    c.req.query("icon_filter"),
+    (v): v is string => typeof v === "string",
+  );
+  const tagFilter = parseJsonArray(
+    c.req.query("tag_filter"),
+    (v): v is number => typeof v === "number" && Number.isInteger(v),
+  );
+  const reactionFilter = parseJsonArray(
+    c.req.query("reaction_filter"),
+    (v): v is string => typeof v === "string" && v.length > 0,
+  );
+  const assigneeFilter = parseJsonArray(
+    c.req.query("assignee_filter"),
+    (v): v is string => typeof v === "string",
+  ).filter((id) => searchUuidRe.test(id));
+  const muteOnly = c.req.query("mute_only") === "true";
+
+  const hasFilter =
+    iconFilter.length > 0 ||
+    tagFilter.length > 0 ||
+    reactionFilter.length > 0 ||
+    assigneeFilter.length > 0 ||
+    muteOnly;
+  // A text search needs >= 2 characters (a 1-char query becomes `%a%` and
+  // forces sequential ILIKE scans across the user's entire
   // thread/note/link/contact set, which reliably trips the Postgres statement
-  // timeout for users with substantial data. (Proper long-term fix is
-  // pg_trgm GIN indexes on the searched columns.)
-  if (q.length < 2) {
+  // timeout for users with substantial data — proper long-term fix is pg_trgm
+  // GIN indexes on the searched columns). A filter-only browse (active chip,
+  // no text) is allowed and skips the text predicate entirely.
+  const hasText = q.length >= 2;
+  if (!hasText && !hasFilter) {
     return countOnly ? c.json({ count: 0 }) : c.json([]);
   }
-
-  // Escape ILIKE wildcards and build a contains-pattern.
-  const escapeIlike = (s: string) =>
-    s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-  const escaped = escapeIlike(q);
-  const pattern = `%${escaped}%`;
-
-  // Word-split for contact-name matching: each word must match at least one
-  // contact on the thread (different contacts may match different words,
-  // mirroring the client-side semantics).
-  const contactWords = q
-    .split(/\s+/)
-    .filter((w) => w.length > 0)
-    .map((w) => w.toLowerCase())
-    .filter((w) => w.length >= 2);
 
   const archivedExpr =
     archived === true
@@ -541,60 +611,145 @@ threads.get("/sync/threads/search", async (c) => {
     ? sql<boolean>`ut.priority_id = ${priorityId}::uuid`
     : sql<boolean>`true`;
 
-  // Candidate-id subquery: union of trgm-indexed table scans. Each branch
-  // uses an existing GIN trgm index on the base table so the planner can
-  // resolve it with an index scan, instead of trapping the ILIKE inside an
-  // OR-EXISTS over the expensive user.thread view (which forces per-row
-  // recomputation of activity_at / agenda_at and reliably trips the
-  // statement timeout for users with substantial data).
-  const titleBranch = sql`
-    SELECT id FROM public.thread WHERE title ILIKE ${pattern}
-  `;
-  const noteBranch = sql`
-    SELECT thread_id AS id FROM public.note
-    WHERE archived_at IS NULL AND draft = false AND content ILIKE ${pattern}
-      -- Scheduled-send hold: a held note's content must not surface its
-      -- thread in anyone else's search results.
-      AND (send_at IS NULL OR send_at <= now() OR created_by = ${userId}::uuid)
-  `;
-  const linkBranch = sql`
-    SELECT thread_id AS id FROM public.link
-    WHERE title ILIKE ${pattern} OR source_url ILIKE ${pattern} OR preview ILIKE ${pattern}
-  `;
+  // Filter predicates. AND across dimensions, OR within a dimension — the same
+  // semantics the client's Drift feed filter uses (see thread.dart
+  // `_getQuery` / `_buildActivityFeedWhere`). Each defaults to `true` when its
+  // chip is inactive.
 
-  // Contact-name branch: each word must match at least one (possibly
-  // different) contact on the thread. Per-word, we find threads whose
-  // contacts array intersects the set of matching contacts (uses
-  // contact.name / contact.email trgm indexes + thread.contacts gin
-  // index), then INTERSECT across words.
-  let contactBranchCandidates: ReturnType<typeof sql> | null = null;
-  if (contactWords.length > 0) {
-    const perWord = contactWords.map((word) => {
-      const e = escapeIlike(word);
-      const startPattern = `${e}%`;
-      const innerPattern = `% ${e}%`;
-      return sql`
-        SELECT t.id FROM public.thread t
-        WHERE t.contacts && (
-          SELECT COALESCE(array_agg(c.id), ARRAY[]::uuid[])
-          FROM public.contact c
-          WHERE c.archived_at IS NULL
-            AND (
-              c.name ILIKE ${startPattern}
-              OR c.name ILIKE ${innerPattern}
-              OR c.email ILIKE ${startPattern}
-            )
-        )
-      `;
-    });
-    contactBranchCandidates = perWord.reduce(
-      (acc, q) => sql`${acc} INTERSECT ${q}`,
-    );
+  // Icon/type filter. The bucket classification (Plot vs generic-link vs
+  // exact-icon) mirrors thread.dart exactly and is unit-tested — see
+  // classifyIconFilter below.
+  let iconExpr = sql<boolean>`true`;
+  if (iconFilter.length > 0) {
+    const { includesPlot, includesLink, others } =
+      classifyIconFilter(iconFilter);
+    const parts: Array<ReturnType<typeof sql>> = [];
+    if (includesLink) {
+      parts.push(
+        sql`(ut.icon = 'link' OR (ut.icon LIKE 'http%' AND ut.icon <> ${PLOT_ICON_URL}))`,
+      );
+    }
+    if (includesPlot) parts.push(sql`ut.icon = ${PLOT_ICON_URL}`);
+    if (others.length > 0) parts.push(sql`ut.icon = ANY(${others}::text[])`);
+    if (parts.length > 0) {
+      const combined = parts.reduce((acc, p) => sql`${acc} OR ${p}`);
+      iconExpr = sql<boolean>`(${combined})`;
+    }
   }
 
-  const candidateIds = contactBranchCandidates
-    ? sql`(${titleBranch}) UNION (${noteBranch}) UNION (${linkBranch}) UNION (${contactBranchCandidates})`
-    : sql`(${titleBranch}) UNION (${noteBranch}) UNION (${linkBranch})`;
+  // Tag filter: thread carries at least one of the selected count/custom tags
+  // (any actor). Tag ids are integers shared between client and server.
+  const tagExpr =
+    tagFilter.length > 0
+      ? sql<boolean>`EXISTS (
+          SELECT 1 FROM public.thread_tag tt
+          WHERE tt.thread_id = ut.id
+            AND tt.archived_at IS NULL
+            AND tt.tag_id = ANY(${tagFilter}::int[])
+        )`
+      : sql<boolean>`true`;
+
+  // Reaction filter: thread carries at least one of the selected emoji.
+  const reactionExpr =
+    reactionFilter.length > 0
+      ? sql<boolean>`EXISTS (
+          SELECT 1 FROM public.thread_reaction tr
+          WHERE tr.thread_id = ut.id
+            AND tr.archived_at IS NULL
+            AND tr.emoji = ANY(${reactionFilter}::text[])
+        )`
+      : sql<boolean>`true`;
+
+  // Assignee filter: thread-level assignee is one of the selected contacts.
+  const assigneeExpr =
+    assigneeFilter.length > 0
+      ? sql<boolean>`ut.assignee_id = ANY(${assigneeFilter}::uuid[])`
+      : sql<boolean>`true`;
+
+  // Muted filter: only threads swept by a mute rule (mute_by_thread_id set).
+  const muteExpr = muteOnly
+    ? sql<boolean>`ut.mute_by_thread_id IS NOT NULL`
+    : sql<boolean>`true`;
+
+  const filterExpr = sql<boolean>`${iconExpr} AND ${tagExpr} AND ${reactionExpr} AND ${assigneeExpr} AND ${muteExpr}`;
+
+  // Text-candidate predicate — built only when there is a >= 2-char query.
+  // For a filter-only browse it stays `true` so the filter predicates alone
+  // select the rows.
+  let textExpr = sql<boolean>`true`;
+  if (hasText) {
+    // Escape ILIKE wildcards and build a contains-pattern.
+    const escapeIlike = (s: string) =>
+      s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+    const escaped = escapeIlike(q);
+    const pattern = `%${escaped}%`;
+
+    // Word-split for contact-name matching: each word must match at least one
+    // contact on the thread (different contacts may match different words,
+    // mirroring the client-side semantics).
+    const contactWords = q
+      .split(/\s+/)
+      .filter((w) => w.length > 0)
+      .map((w) => w.toLowerCase())
+      .filter((w) => w.length >= 2);
+
+    // Candidate-id subquery: union of trgm-indexed table scans. Each branch
+    // uses an existing GIN trgm index on the base table so the planner can
+    // resolve it with an index scan, instead of trapping the ILIKE inside an
+    // OR-EXISTS over the expensive user.thread view (which forces per-row
+    // recomputation of activity_at / agenda_at and reliably trips the
+    // statement timeout for users with substantial data).
+    const titleBranch = sql`
+      SELECT id FROM public.thread WHERE title ILIKE ${pattern}
+    `;
+    const noteBranch = sql`
+      SELECT thread_id AS id FROM public.note
+      WHERE archived_at IS NULL AND draft = false AND content ILIKE ${pattern}
+        -- Scheduled-send hold: a held note's content must not surface its
+        -- thread in anyone else's search results.
+        AND (send_at IS NULL OR send_at <= now() OR created_by = ${userId}::uuid)
+    `;
+    const linkBranch = sql`
+      SELECT thread_id AS id FROM public.link
+      WHERE title ILIKE ${pattern} OR source_url ILIKE ${pattern} OR preview ILIKE ${pattern}
+    `;
+
+    // Contact-name branch: each word must match at least one (possibly
+    // different) contact on the thread. Per-word, we find threads whose
+    // contacts array intersects the set of matching contacts (uses
+    // contact.name / contact.email trgm indexes + thread.contacts gin
+    // index), then INTERSECT across words.
+    let contactBranchCandidates: ReturnType<typeof sql> | null = null;
+    if (contactWords.length > 0) {
+      const perWord = contactWords.map((word) => {
+        const e = escapeIlike(word);
+        const startPattern = `${e}%`;
+        const innerPattern = `% ${e}%`;
+        return sql`
+          SELECT t.id FROM public.thread t
+          WHERE t.contacts && (
+            SELECT COALESCE(array_agg(c.id), ARRAY[]::uuid[])
+            FROM public.contact c
+            WHERE c.archived_at IS NULL
+              AND (
+                c.name ILIKE ${startPattern}
+                OR c.name ILIKE ${innerPattern}
+                OR c.email ILIKE ${startPattern}
+              )
+          )
+        `;
+      });
+      contactBranchCandidates = perWord.reduce(
+        (acc, q) => sql`${acc} INTERSECT ${q}`,
+      );
+    }
+
+    const candidateIds = contactBranchCandidates
+      ? sql`(${titleBranch}) UNION (${noteBranch}) UNION (${linkBranch}) UNION (${contactBranchCandidates})`
+      : sql`(${titleBranch}) UNION (${noteBranch}) UNION (${linkBranch})`;
+
+    textExpr = sql<boolean>`ut.id IN (${candidateIds})`;
+  }
 
   if (countOnly) {
     const count = await withUserDb(c.var.db, userId, async (trx) => {
@@ -602,7 +757,8 @@ threads.get("/sync/threads/search", async (c) => {
         SELECT count(*)::text AS count
         FROM "user".thread ut
         WHERE ut.user_id = ${userId}::uuid
-          AND ut.id IN (${candidateIds})
+          AND ${textExpr}
+          AND ${filterExpr}
           AND ${archivedExpr}
           AND ${priorityExpr}
       `.execute(trx);
@@ -616,7 +772,8 @@ threads.get("/sync/threads/search", async (c) => {
       SELECT ut.*
       FROM "user".thread ut
       WHERE ut.user_id = ${userId}::uuid
-        AND ut.id IN (${candidateIds})
+        AND ${textExpr}
+        AND ${filterExpr}
         AND ${archivedExpr}
         AND ${priorityExpr}
       ORDER BY ut.activity_at DESC

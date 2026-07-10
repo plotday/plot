@@ -471,6 +471,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     ));
     _loadPriority();
     _restartActiveTabSubscription();
+    _runRemoteSearch(state.search);
   }
 
   void updateUnreadFilter(bool active) {
@@ -503,6 +504,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // feed needs to refresh.
     _loadPriority(reloadAgenda: false);
     _restartActiveTabSubscription();
+    // Augment the local feed with server matches not yet synced (and clear
+    // them when the last filter is removed and no search is active).
+    _runRemoteSearch(state.search);
   }
 
   void updateReactionFilter(List<Reaction> reactionFilter) {
@@ -524,6 +528,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _loadPriority(reloadAgenda: false);
     _restartActiveTabSubscription();
+    _runRemoteSearch(state.search);
   }
 
   void updateIconFilter(String iconValue) {
@@ -547,6 +552,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // feed needs to refresh.
     _loadPriority(reloadAgenda: false);
     _restartActiveTabSubscription();
+    _runRemoteSearch(state.search);
   }
 
   void updateAssigneeFilter(List<ActorId> assigneeFilter) {
@@ -573,6 +579,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // feed needs to refresh.
     _loadPriority(reloadAgenda: false);
     _restartActiveTabSubscription();
+    _runRemoteSearch(state.search);
   }
 
   /// Called immediately on every keystroke to update search text in state
@@ -630,7 +637,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     _searchGeneration++;
     final gen = _searchGeneration;
 
-    if (search.trim().isEmpty) {
+    // A filter-only browse (active chip, empty text) must still hit the server:
+    // the local Drift store only holds threads synced so far, so old/rarely-
+    // touched matches (e.g. system "Plot" threads) are missing until the server
+    // returns them. Only bail when there is neither text nor any active filter.
+    if (search.trim().isEmpty && !_hasActiveFilter) {
       emit(
         state.copyWith(
           remoteSearchExtras: const [],
@@ -652,6 +663,21 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
 
     final showArchived = state.showArchived;
+    // Snapshot the active filters so the server applies the same narrowing the
+    // local feed does — otherwise a filter-only browse would return the wrong
+    // (or unfiltered) set, and a text+filter search would surface extras of the
+    // wrong type.
+    final iconFilter =
+        state.iconFilter.isNotEmpty ? List<String>.from(state.iconFilter) : null;
+    final tagFilter =
+        state.filter.isNotEmpty ? List<Tag>.from(state.filter) : null;
+    final reactionFilter = state.reactionFilter.isNotEmpty
+        ? List<Reaction>.from(state.reactionFilter)
+        : null;
+    final assigneeFilter = state.assigneeFilter.isNotEmpty
+        ? List<ActorId>.from(state.assigneeFilter)
+        : null;
+    final muteOnly = state.muteOnly;
 
     // Header search is global for now — no priority scoping. We may
     // reintroduce a priority-specific search affordance later.
@@ -663,6 +689,11 @@ class PriorityBloc extends Cubit<PriorityState> {
         final threads = await Thread.searchRemote(
           search,
           archived: showArchived,
+          iconFilter: iconFilter,
+          tagFilter: tagFilter,
+          reactionFilter: reactionFilter,
+          assigneeFilter: assigneeFilter,
+          muteOnly: muteOnly,
         );
         if (gen != _searchGeneration || isClosed) return;
 
@@ -698,7 +729,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (!showArchived) {
       unawaited(() async {
         try {
-          final count = await Thread.searchRemoteCount(search, archived: true);
+          final count = await Thread.searchRemoteCount(
+            search,
+            archived: true,
+            iconFilter: iconFilter,
+            tagFilter: tagFilter,
+            reactionFilter: reactionFilter,
+            assigneeFilter: assigneeFilter,
+            muteOnly: muteOnly,
+          );
           if (gen != _searchGeneration || isClosed) return;
           emit(state.copyWith(hasArchivedMatches: count > 0));
         } on NetworkException {

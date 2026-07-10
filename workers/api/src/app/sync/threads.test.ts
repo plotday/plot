@@ -1,6 +1,64 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { isDispatchableCreateLink, computeThreadEmbedding } from "./threads";
+import {
+  isDispatchableCreateLink,
+  computeThreadEmbedding,
+  classifyIconFilter,
+  PLOT_ICON_URL,
+} from "./threads";
+
+describe("classifyIconFilter", () => {
+  it("classifies the Plot bucket without sweeping it into the link bucket", () => {
+    // The reported bug: browsing thread type = "Plot". The Plot icon URL is
+    // itself an http URL, so a naive link classifier would swallow it.
+    const r = classifyIconFilter(["plot"]);
+    expect(r.includesPlot).toBe(true);
+    expect(r.includesLink).toBe(false);
+    expect(r.others).toEqual([]);
+  });
+
+  it("treats the raw Plot icon URL (legacy state) as the Plot bucket, not a link", () => {
+    const r = classifyIconFilter([PLOT_ICON_URL]);
+    expect(r.includesPlot).toBe(true);
+    expect(r.includesLink).toBe(false);
+    expect(r.others).toEqual([]);
+  });
+
+  it("classifies the generic link bucket (literal 'link' and favicon URLs)", () => {
+    const r = classifyIconFilter(["link", "https://github.com/favicon.ico"]);
+    expect(r.includesLink).toBe(true);
+    expect(r.includesPlot).toBe(false);
+    expect(r.others).toEqual([]);
+  });
+
+  it("keeps the Plot URL out of the link bucket even when both are present", () => {
+    const r = classifyIconFilter([
+      PLOT_ICON_URL,
+      "https://example.com/favicon.png",
+    ]);
+    expect(r.includesPlot).toBe(true);
+    expect(r.includesLink).toBe(true);
+    expect(r.others).toEqual([]);
+  });
+
+  it("routes built-in subtypes, connector and twist icons to the exact-match bucket", () => {
+    const r = classifyIconFilter([
+      "action",
+      "connector:123:issue",
+      "twist:456",
+    ]);
+    expect(r.includesPlot).toBe(false);
+    expect(r.includesLink).toBe(false);
+    expect(r.others).toEqual(["action", "connector:123:issue", "twist:456"]);
+  });
+
+  it("handles a mixed chip set across all three buckets", () => {
+    const r = classifyIconFilter(["plot", "link", "action"]);
+    expect(r.includesPlot).toBe(true);
+    expect(r.includesLink).toBe(true);
+    expect(r.others).toEqual(["action"]);
+  });
+});
 
 describe("isDispatchableCreateLink", () => {
   it("dispatches channel-mode compose (all fields present)", () => {

@@ -1480,9 +1480,12 @@ class _PriorityPageState extends State<PriorityPage>
         context.read<LayoutBloc>().state.multiPanel &&
         items.whereType<AgendaThreadItem>().isNotEmpty;
     final List<AgendaItem> displayItems;
-    if (isSearching && state.remoteSearchExtras.isNotEmpty) {
+    if ((isSearching || state.hasActiveFilter) &&
+        state.remoteSearchExtras.isNotEmpty) {
       // Remote extras (threads the server surfaced that aren't visible
-      // locally) append directly to the same list — no section header.
+      // locally) append directly to the same list — no section header. These
+      // are surfaced for a filter-only browse (e.g. thread type = "Plot")
+      // too, not just text search, so old unsynced matches aren't dropped.
       // [remoteSearchExtrasDeduped] drops any thread that has since entered the
       // local feed (via sync or searchRemote's hydration) so it can't render
       // both as a local row and an extra. When the view is narrowed to a focus,

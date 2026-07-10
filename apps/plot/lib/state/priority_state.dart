@@ -265,6 +265,16 @@ class PriorityState extends Equatable {
 
   final List<String> iconFilter;
 
+  /// True when any header filter chip (tag, reaction, thread type, assignee,
+  /// or muted) is armed. Filters query globally like search, and (like search)
+  /// trigger a remote augmentation so matches not yet synced locally surface.
+  bool get hasActiveFilter =>
+      filter.isNotEmpty ||
+      reactionFilter.isNotEmpty ||
+      iconFilter.isNotEmpty ||
+      assigneeFilter.isNotEmpty ||
+      muteOnly;
+
   /// Active assignee filter — narrows the thread feed to threads whose
   /// `thread.assignee_id` is one of these actors. Parallel to [iconFilter];
   /// like the other filter dimensions it forces the feed global + flat.

@@ -7680,6 +7680,38 @@ SELECT
     return '$result)';
   }
 
+  /// Encode the active header filter chips as `/sync/threads/search` query
+  /// params. Icon/type, tag, reaction and assignee filters are JSON-encoded
+  /// arrays; muted is a boolean flag. Returns an empty map when no filter is
+  /// active, so callers can cheaply detect a text-only (or no-op) query.
+  static Map<String, String> _searchFilterParams({
+    List<String>? iconFilter,
+    List<Tag>? tagFilter,
+    List<Reaction>? reactionFilter,
+    List<ActorId>? assigneeFilter,
+    bool muteOnly = false,
+  }) {
+    final params = <String, String>{};
+    if (iconFilter != null && iconFilter.isNotEmpty) {
+      params['icon_filter'] = jsonEncode(iconFilter);
+    }
+    if (tagFilter != null && tagFilter.isNotEmpty) {
+      // Tag ids are integers, shared 1:1 with the server's thread_tag.tag_id.
+      params['tag_filter'] = jsonEncode(tagFilter.map((t) => t.id).toList());
+    }
+    if (reactionFilter != null && reactionFilter.isNotEmpty) {
+      params['reaction_filter'] = jsonEncode(reactionFilter);
+    }
+    if (assigneeFilter != null && assigneeFilter.isNotEmpty) {
+      params['assignee_filter'] =
+          jsonEncode(assigneeFilter.map((a) => a.toString()).toList());
+    }
+    if (muteOnly) {
+      params['mute_only'] = 'true';
+    }
+    return params;
+  }
+
   /// Query the server for threads matching [query] and hydrate them into the
   /// local store so they render in search results and are openable offline.
   /// Returns the hydrated threads.
@@ -7688,14 +7720,30 @@ SELECT
     required bool archived,
     PriorityId? priorityId,
     int limit = 50,
+    List<String>? iconFilter,
+    List<Tag>? tagFilter,
+    List<Reaction>? reactionFilter,
+    List<ActorId>? assigneeFilter,
+    bool muteOnly = false,
   }) async {
-    if (query.trim().isEmpty) return [];
+    final filterParams = _searchFilterParams(
+      iconFilter: iconFilter,
+      tagFilter: tagFilter,
+      reactionFilter: reactionFilter,
+      assigneeFilter: assigneeFilter,
+      muteOnly: muteOnly,
+    );
+    // A filter-only browse (active chip, no text) is a valid remote query —
+    // it returns matching threads that may not be synced locally yet. Only
+    // bail when there is neither text nor any filter to constrain the search.
+    if (query.trim().isEmpty && filterParams.isEmpty) return [];
 
     final params = <String, String>{
-      'q': query,
+      if (query.trim().isNotEmpty) 'q': query,
       'archived': archived.toString(),
       'limit': limit.toString(),
       if (priorityId != null) 'priority_id': priorityId.toString(),
+      ...filterParams,
     };
     final queryString = params.entries
         .map(
@@ -7769,14 +7817,27 @@ SELECT
     String query, {
     required bool archived,
     PriorityId? priorityId,
+    List<String>? iconFilter,
+    List<Tag>? tagFilter,
+    List<Reaction>? reactionFilter,
+    List<ActorId>? assigneeFilter,
+    bool muteOnly = false,
   }) async {
-    if (query.trim().isEmpty) return 0;
+    final filterParams = _searchFilterParams(
+      iconFilter: iconFilter,
+      tagFilter: tagFilter,
+      reactionFilter: reactionFilter,
+      assigneeFilter: assigneeFilter,
+      muteOnly: muteOnly,
+    );
+    if (query.trim().isEmpty && filterParams.isEmpty) return 0;
 
     final params = <String, String>{
-      'q': query,
+      if (query.trim().isNotEmpty) 'q': query,
       'archived': archived.toString(),
       'count_only': 'true',
       if (priorityId != null) 'priority_id': priorityId.toString(),
+      ...filterParams,
     };
     final queryString = params.entries
         .map(
