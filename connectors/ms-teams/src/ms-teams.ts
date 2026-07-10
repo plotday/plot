@@ -263,6 +263,7 @@ export class MsTeams extends Connector<MsTeams> {
   async onChannelDisabled(channel: Channel): Promise<void> {
     if (channel.id === DM_CHANNEL_ID) {
       await this.clear(`sync_enabled_${channel.id}`);
+      await this.clear("dm_initial_sync_pending");
       return;
     }
 
@@ -380,6 +381,18 @@ export class MsTeams extends Connector<MsTeams> {
         await this.runTask(syncCallback);
       } else if (mode === "full") {
         await this.clear(`sync_state_${channelId}`);
+
+        // Initial backfill complete for this channel — clear the
+        // "syncing…" indicator. Gated on isInitial so a full re-sync
+        // triggered outside the normal initial-enable path (there is none
+        // today, but mode "full" is otherwise always initial) can't
+        // re-signal completion. Without this, initial_sync_completed_at
+        // never gets set for a channel and the stuck-sync watchdog
+        // eventually force-flags a healthy connection as needing
+        // reconnection.
+        if (isInitial) {
+          await this.tools.integrations.channelSyncCompleted(channelId);
+        }
       }
     } catch (error) {
       console.error(
@@ -562,6 +575,24 @@ export class MsTeams extends Connector<MsTeams> {
       const api = await this.getApi(DM_CHANNEL_ID);
       const chats = await api.getChats();
 
+      // Track which DM chats still need to finish their initial backfill,
+      // so syncDmBatch can signal completion for the shared DM_CHANNEL_ID
+      // only once every chat's chain has reported in (see
+      // markDmSyncComplete). Reset unconditionally: this can be
+      // re-dispatched (auto-enable, recovery), and each dispatch starts
+      // every chat's chain fresh.
+      if (isInitial) {
+        if (chats.length > 0) {
+          await this.set(
+            "dm_initial_sync_pending",
+            chats.map((chat) => chat.id)
+          );
+        } else {
+          // No DM chats to sync — nothing to wait for.
+          await this.tools.integrations.channelSyncCompleted(DM_CHANNEL_ID);
+        }
+      }
+
       for (const chat of chats) {
         const dmState: SyncState = {
           channelId: chat.id,
@@ -581,6 +612,75 @@ export class MsTeams extends Connector<MsTeams> {
       console.error("Failed to sync DM spaces:", error);
       throw error;
     }
+  }
+
+  /**
+   * Mark one DM chat's initial-sync chain as finished, and signal
+   * `integrations.channelSyncCompleted` for the shared DM_CHANNEL_ID once
+   * every chat started by syncDmSpaces has reported in.
+   *
+   * syncDmSpaces kicks off one independent syncDmBatch chain per chat, all
+   * under the single synthetic DM_CHANNEL_ID channel. Completion of any one
+   * chain is not sufficient signal that the DM channel's initial sync is
+   * done — the platform's "Syncing…" indicator must wait for every chat's
+   * chain to finish. The pending-set read-modify-write is guarded by a
+   * short-lived lock because multiple chats can legitimately finish around
+   * the same time, and a naive get+filter+set would race and could drop an
+   * update.
+   *
+   * Throws if the lock can never be acquired (rather than silently giving
+   * up) so the caller's terminal branch does NOT clear `sync_state_dm_*`
+   * for this chat — leaving it in place lets a future retry of this batch
+   * actually record the completion. Silently swallowing this would strand
+   * the chat in `dm_initial_sync_pending` forever, and
+   * channelSyncCompleted would never fire even though every chat genuinely
+   * finished.
+   */
+  private async markDmSyncComplete(chatId: string): Promise<void> {
+    const lockKey = "dm_initial_sync_pending_lock";
+    const maxAttempts = 10;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (await this.tools.store.acquireLock(lockKey, 10_000)) {
+        let allComplete = false;
+        try {
+          const pending = await this.get<string[]>("dm_initial_sync_pending");
+          if (pending === null) {
+            // Never initialized (or a concurrent completion already
+            // cleared it) — most likely a connection whose chats were
+            // started under pre-fix code that didn't write this key at
+            // all. We can't safely tell how many other chats are still
+            // outstanding, so skip signaling rather than risk firing
+            // channelSyncCompleted while they're still backfilling.
+            return;
+          }
+          const remaining = pending.filter((id) => id !== chatId);
+          if (remaining.length > 0) {
+            await this.set("dm_initial_sync_pending", remaining);
+          } else {
+            await this.clear("dm_initial_sync_pending");
+            allComplete = true;
+          }
+        } finally {
+          await this.tools.store.releaseLock(lockKey);
+        }
+        // Call outside the lock — channelSyncCompleted is a network call,
+        // and holding the lock across it would needlessly widen the window
+        // for contention with the other chats' chains.
+        if (allComplete) {
+          await this.tools.integrations.channelSyncCompleted(DM_CHANNEL_ID);
+        }
+        return;
+      }
+      // Another chat's chain is updating the pending set right now — brief
+      // backoff and retry rather than silently dropping this chat's
+      // completion (which could leave the DM channel stuck "Syncing"
+      // forever if it happened to be the last one to finish).
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(
+      `ms-teams: failed to acquire dm_initial_sync_pending_lock after ${maxAttempts} attempts ` +
+        `while completing DM chat "${chatId}" sync`
+    );
   }
 
   async syncDmBatch(
@@ -647,6 +747,14 @@ export class MsTeams extends Connector<MsTeams> {
         );
         await this.runTask(syncCallback);
       } else {
+        // Report this chat's completion BEFORE clearing sync_state: if
+        // markDmSyncComplete throws (lock exhaustion), sync_state must stay
+        // in place so a future retry of this batch can still record the
+        // completion — clearing it first would strand the chat in
+        // dm_initial_sync_pending forever.
+        if (isInitial) {
+          await this.markDmSyncComplete(chatId);
+        }
         await this.clear(`sync_state_dm_${chatId}`);
       }
     } catch (error) {

@@ -23,6 +23,13 @@ export type SlackChannel = {
   };
 };
 
+export type SlackDMConversation = {
+  id: string;
+  is_im: boolean;
+  is_mpim: boolean;
+  user?: string; // present on is_im conversations — the other party's Slack user id
+};
+
 export type SlackMessage = {
   type: string;
   subtype?: string;
@@ -243,6 +250,30 @@ export class SlackApi {
       limit: 200,
     });
     return response.channels || [];
+  }
+
+  /**
+   * Lists the authorizing user's direct-message and group-direct-message
+   * conversations. Unlike `getChannels`, these are never offered to the user
+   * to individually enable — see `Slack.listDMChannels` for how the result is
+   * used (a cached membership set the DM webhook handler checks incoming
+   * events against).
+   */
+  public async getDMConversations(cursor?: string): Promise<{
+    conversations: SlackDMConversation[];
+    nextCursor?: string;
+  }> {
+    const params: Record<string, string> = {
+      types: "im,mpim",
+      exclude_archived: "true",
+      limit: "200",
+    };
+    if (cursor) params.cursor = cursor;
+    const response = await this.call("conversations.list", params);
+    return {
+      conversations: (response.channels ?? []) as SlackDMConversation[],
+      nextCursor: response.response_metadata?.next_cursor || undefined,
+    };
   }
 
   public async getUser(userId: string): Promise<SlackUser | null> {

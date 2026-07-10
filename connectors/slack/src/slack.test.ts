@@ -3,6 +3,7 @@ import { AuthProvider, type Authorization } from "@plotday/twister/tools/integra
 import { Slack } from "./slack";
 import {
   extractSlackMessageReactions,
+  SlackApi,
   type SlackMessage,
 } from "./slack-api";
 
@@ -163,6 +164,49 @@ describe("setupChannelWebhook", () => {
   });
 });
 
+describe("onChannelEnabled — initial sync completion signal", () => {
+  const channel = { id: "C123", title: "general" };
+
+  function makeOnChannelEnabledSlack() {
+    const store = makeStore({});
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const runTask = vi.fn(async () => "task-token");
+    const channelSyncCompleted = vi.fn().mockResolvedValue(undefined);
+    const tools = {
+      store,
+      integrations: {
+        get: vi.fn(),
+        channelSyncCompleted,
+      },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    return { slack, channelSyncCompleted, store };
+  }
+
+  it("calls channelSyncCompleted for the enabled channel, not gated on backfill", async () => {
+    const { slack, channelSyncCompleted } = makeOnChannelEnabledSlack();
+
+    await slack.onChannelEnabled(channel as never, undefined);
+
+    expect(channelSyncCompleted).toHaveBeenCalledWith("C123");
+  });
+
+  it("still calls channelSyncCompleted when observeOnly is true", async () => {
+    const { slack, channelSyncCompleted } = makeOnChannelEnabledSlack();
+
+    await slack.onChannelEnabled(channel as never, { observeOnly: true } as never);
+
+    expect(channelSyncCompleted).toHaveBeenCalledWith("C123");
+  });
+});
+
 describe("syncCustomEmoji", () => {
   /** Build a Slack with the tool set needed by syncCustomEmoji. */
   function makeEmojiSlack(opts: {
@@ -318,6 +362,137 @@ describe("syncCustomEmoji", () => {
     expect(saveCustomEmoji).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(store.map.has("custom_emoji_T0")).toBe(false);
+  });
+});
+
+describe("SlackApi.getDMConversations", () => {
+  it("calls conversations.list with types=im,mpim and returns conversations", async () => {
+    const fetchMock = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          ok: true,
+          channels: [
+            { id: "D1", is_im: true, is_mpim: false, user: "U1" },
+            { id: "G1", is_im: false, is_mpim: true },
+          ],
+        }),
+      }) as never
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const api = new SlackApi("xoxp-test");
+      const result = await api.getDMConversations();
+      expect(result.conversations).toEqual([
+        { id: "D1", is_im: true, is_mpim: false, user: "U1" },
+        { id: "G1", is_im: false, is_mpim: true },
+      ]);
+      const [, requestInit] = fetchMock.mock.calls[0] as unknown as [
+        string,
+        RequestInit,
+      ];
+      const body = (requestInit.body as string) ?? "";
+      expect(body).toContain("types=im%2Cmpim");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("listDMChannels", () => {
+  function makeDMListSlack(opts: {
+    store: ReturnType<typeof makeStore>;
+    integrationsGet: ReturnType<typeof vi.fn>;
+  }) {
+    const runTask = vi.fn(async () => "task-token");
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const tools = {
+      store: opts.store,
+      integrations: { get: opts.integrationsGet },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    return new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+  }
+
+  it("caches discovered im/mpim channel ids and gates re-runs to once per 24h", async () => {
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["im:read", "mpim:read"],
+    });
+    const slack = makeDMListSlack({ store, integrationsGet });
+
+    const fetchMock = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          ok: true,
+          channels: [{ id: "D1", is_im: true, is_mpim: false, user: "U1" }],
+        }),
+      }) as never
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        listDMChannels: (c: string) => Promise<void>;
+      }).listDMChannels("C1");
+      expect(store.map.get("dm_channels")).toEqual(["D1"]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Second call within 24h should not re-fetch.
+      await (slack as unknown as {
+        listDMChannels: (c: string) => Promise<void>;
+      }).listDMChannels("C1");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("no-ops when im:read is not granted, without calling the API or flagging re-auth", async () => {
+    // Guards against the false-positive-reconnect bug class this branch
+    // otherwise fixes: without this guard, a token missing im:read hits
+    // conversations.list, gets `missing_scope` back (a SlackPermanentError
+    // in SLACK_AUTH_ERRORS), and markNeedsReauth force-flags the whole
+    // connection as needing reconnection even though nothing is broken.
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["channels:history"], // no im:read
+    });
+    const markNeedsReauth = vi.fn().mockResolvedValue(undefined);
+    const runTask = vi.fn(async () => "task-token");
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const tools = {
+      store,
+      integrations: { get: integrationsGet, markNeedsReauth },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        listDMChannels: (c: string) => Promise<void>;
+      }).listDMChannels("C1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+    expect(store.map.has("dm_channels")).toBe(false);
   });
 });
 
@@ -565,5 +740,253 @@ describe("onSlackWebhook — deauthorization events", () => {
       "C123"
     );
     expect(markNeedsReauth).not.toHaveBeenCalled();
+  });
+});
+
+describe("Slack.SCOPES — DM sync is optional and opt-in", () => {
+  it("does not require im/mpim scopes", () => {
+    expect(Slack.SCOPES.required).not.toContain("im:history");
+    expect(Slack.SCOPES.required).not.toContain("im:write");
+    expect(Slack.SCOPES.required).not.toContain("mpim:history");
+    expect(Slack.SCOPES.required).not.toContain("mpim:write");
+  });
+
+  it("declares a dms optional group covering im/mpim scopes, default on", () => {
+    const dmsGroup = Slack.SCOPES.optional?.find((g) => g.id === "dms");
+    expect(dmsGroup).toBeDefined();
+    expect(dmsGroup?.scopes).toEqual(
+      expect.arrayContaining(["im:history", "im:write", "mpim:history", "mpim:write"])
+    );
+    expect(dmsGroup?.default).toBe(true);
+  });
+
+  it("declares im:read and mpim:read in the dms group, required to enumerate/list DM conversations", () => {
+    // conversations.list with types=im,mpim (used by listDMChannels to
+    // discover DM/MPIM conversation ids) requires im:read/mpim:read per
+    // Slack's API docs — distinct from im:history/mpim:history, which only
+    // grant reading message content within an already-known conversation.
+    // Without these, listDMChannels gets `missing_scope` on every call.
+    const dmsGroup = Slack.SCOPES.optional?.find((g) => g.id === "dms");
+    expect(dmsGroup).toBeDefined();
+    expect(dmsGroup?.scopes).toEqual(expect.arrayContaining(["im:read", "mpim:read"]));
+  });
+});
+
+describe("onChannelEnabled — workspace daily task dedup", () => {
+  function makeMultiChannelSlack(storeInitial: Record<string, unknown> = {}) {
+    const store = makeStore(storeInitial);
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const runTask = vi.fn(async () => "task-token");
+    const tools = {
+      store,
+      integrations: {
+        get: vi.fn(),
+        channelSyncCompleted: vi.fn().mockResolvedValue(undefined),
+      },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    return { slack, store, create, runTask };
+  }
+
+  /** Count `create` calls whose callback target is the given method name. */
+  function countCallbackCreates(
+    create: ReturnType<typeof vi.fn>,
+    methodName: string
+  ): number {
+    return create.mock.calls.filter(
+      (call) => (call[0] as { name?: string })?.name === methodName
+    ).length;
+  }
+
+  it("only the first channel of a fan-out queues syncMembers/syncCustomEmoji", async () => {
+    const { slack, create } = makeMultiChannelSlack();
+    const channels = [
+      { id: "C1", title: "general" },
+      { id: "C2", title: "random" },
+      { id: "C3", title: "announcements" },
+    ];
+
+    for (const channel of channels) {
+      await slack.onChannelEnabled(channel as never, undefined);
+    }
+
+    expect(countCallbackCreates(create, "syncMembers")).toBe(1);
+    expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(1);
+  });
+
+  it("does not re-queue on a channel enabled after the daily gate is already set", async () => {
+    const { slack, create } = makeMultiChannelSlack({
+      membersSyncedAt: Date.now(),
+      customEmojiSyncedAt: Date.now(),
+    });
+
+    await slack.onChannelEnabled({ id: "C4", title: "new-channel" } as never, undefined);
+
+    expect(countCallbackCreates(create, "syncMembers")).toBe(0);
+    expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(0);
+  });
+
+  it("re-queues once the claim window has expired and the real gate was never set (e.g. a prior queued task failed permanently)", async () => {
+    // Simulates: an earlier onChannelEnabled fan-out claimed and queued
+    // syncMembers/syncCustomEmoji, but those queued tasks failed permanently
+    // (e.g. SlackPermanentError) and returned before ever reaching their own
+    // `this.set("membersSyncedAt", ...)` / `this.set("customEmojiSyncedAt", ...)`.
+    // The real 24h gate is therefore still unset, and the claim from that
+    // earlier attempt is now stale (older than CLAIM_TTL_MS). A later
+    // onChannelEnabled (e.g. the user reconnects after fixing auth) must be
+    // allowed to re-queue rather than silently stay stalled for up to 24h.
+    const staleClaim = Date.now() - 6 * 60 * 1000; // 6 min ago > 5 min TTL
+    const { slack, create } = makeMultiChannelSlack({
+      membersSyncClaimedAt: staleClaim,
+      customEmojiSyncClaimedAt: staleClaim,
+      // membersSyncedAt / customEmojiSyncedAt intentionally absent — the
+      // queued tasks from the earlier claim never succeeded.
+    });
+
+    await slack.onChannelEnabled({ id: "C5", title: "retry-channel" } as never, undefined);
+
+    expect(countCallbackCreates(create, "syncMembers")).toBe(1);
+    expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(1);
+  });
+});
+
+describe("onSlackWebhook — DM/MPIM message routing", () => {
+  function makeDMWebhookSlack(opts: {
+    store: ReturnType<typeof makeStore>;
+  }) {
+    const scheduleDrain = vi.fn(async () => {});
+    const tools = {
+      store: opts.store,
+      integrations: { get: vi.fn() },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create: vi.fn(async () => ({ token: "cb" }) as never) },
+      tasks: { runTask: vi.fn(async () => "task-token"), scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+    vi.spyOn(
+      slack as unknown as { scheduleDrain: (...a: unknown[]) => Promise<void> },
+      "scheduleDrain"
+    ).mockImplementation(scheduleDrain);
+    return { slack, scheduleDrain };
+  }
+
+  it("starts incremental sync for a message on a known DM channel", async () => {
+    const store = makeStore({ dm_channels: ["D1"] });
+    const { slack, scheduleDrain } = makeDMWebhookSlack({ store });
+
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "D1" } } } as never,
+      Slack.DM_WEBHOOK_SENTINEL
+    );
+
+    expect(scheduleDrain).toHaveBeenCalledWith(
+      "incremental-sync:D1",
+      expect.anything(),
+      expect.objectContaining({ handlerArgs: ["D1"] })
+    );
+  });
+
+  it("ignores a message on a channel not in the known DM set", async () => {
+    const store = makeStore({ dm_channels: ["D1"] });
+    const { slack, scheduleDrain } = makeDMWebhookSlack({ store });
+
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "G-not-a-known-dm" } } } as never,
+      Slack.DM_WEBHOOK_SENTINEL
+    );
+
+    expect(scheduleDrain).not.toHaveBeenCalled();
+  });
+
+  it("does not double-process a message already routed via a real enabled channelId", async () => {
+    const store = makeStore({ dm_channels: ["C123"], sync_enabled_C123: true });
+    const { slack, scheduleDrain } = makeDMWebhookSlack({ store });
+
+    // This is the existing per-channel callback path, not the DM sentinel —
+    // must still only fire once via the normal channelId match.
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "C123" } } } as never,
+      "C123"
+    );
+
+    expect(scheduleDrain).toHaveBeenCalledTimes(1);
+  });
+
+  it("seeds a channel_webhook marker for a newly discovered DM so drainChannelSync doesn't bail out on it", async () => {
+    // drainChannelSync guards on `channel_webhook_<channelId>` being present.
+    // Regular channels get that marker from setupChannelWebhook's per-channel
+    // registration; DM channels never get a per-channel webhook registration
+    // (they share ONE sentinel-keyed webhook — see registerDMWebhook). Without
+    // this synthetic marker, drainChannelSync would log "No channel webhook
+    // data found" and silently no-op for every incoming DM, so this proves
+    // the precondition drainChannelSync actually needs is satisfied.
+    const store = makeStore({ dm_channels: ["D1"] });
+    const { slack } = makeDMWebhookSlack({ store });
+
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "D1" } } } as never,
+      Slack.DM_WEBHOOK_SENTINEL
+    );
+
+    expect(store.map.get("channel_webhook_D1")).toBeTruthy();
+
+    const syncBatch = vi
+      .spyOn(
+        slack as unknown as { syncBatch: (...a: unknown[]) => Promise<void> },
+        "syncBatch"
+      )
+      .mockImplementation(async () => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await slack.drainChannelSync([], "D1");
+
+    expect(consoleError).not.toHaveBeenCalledWith("No channel webhook data found");
+    expect(syncBatch).toHaveBeenCalledWith(1, "incremental", "D1", false);
+
+    consoleError.mockRestore();
+  });
+});
+
+describe("createDirectMessage — proactively registers the DM channel", () => {
+  it("adds the opened conversation id to the known dm_channels set", async () => {
+    const store = makeStore({ sync_enabled_C1: true, dm_channels: ["D-existing"] });
+    const integrationsGet = vi.fn().mockResolvedValue({ token: "xoxp-test" });
+    const tools = {
+      store,
+      integrations: { get: integrationsGet },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+
+    const api = {
+      openConversation: vi.fn().mockResolvedValue("D-new"),
+      postMessage: vi.fn().mockResolvedValue({ ts: "111.000", text: "hi" }),
+    };
+    vi.spyOn(
+      slack as unknown as { getWorkspaceApi: (c: string) => Promise<unknown> },
+      "getWorkspaceApi"
+    ).mockResolvedValue(api);
+
+    const draft = {
+      type: "dm",
+      channelId: "C1",
+      title: "hi",
+      noteContent: "hi",
+      recipients: [{ externalAccountId: "U2" }],
+    };
+    await slack.onCreateLink(draft as never);
+
+    expect(store.map.get("dm_channels")).toEqual(
+      expect.arrayContaining(["D-existing", "D-new"])
+    );
   });
 });

@@ -3,6 +3,7 @@ packages:
   - connectors/*
   - twists/*
   - libs/*
+  - scripts
 
 onlyBuiltDependencies:
   - esbuild

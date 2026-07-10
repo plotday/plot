@@ -33,6 +33,7 @@ import {
   SlackRateLimitedError,
   formatSlackText,
   type SlackChannel,
+  type SlackDMConversation,
   type SlackMessage,
   type SlackUserInfo,
   type SlackUserInfoMap,
@@ -67,10 +68,6 @@ import { slackFacets } from "./slack-facets";
  * - `channels:read` — list/enumerate public channels the user is in
  * - `groups:history` — read messages in private channels the user syncs
  * - `groups:read` — list/enumerate private channels the user is in
- * - `im:history` — read direct messages
- * - `im:write` — open a DM to compose a new direct message from Plot
- * - `mpim:history` — read group direct messages
- * - `mpim:write` — open a group DM to compose from Plot
  * - `users:read` — resolve message authors/reactors to names + avatars
  * - `users:read.email` — match Slack users to Plot contacts by email
  * - `chat:write` — post the replies and messages the user writes in Plot
@@ -83,6 +80,14 @@ import { slackFacets } from "./slack-facets";
  *
  * **Optional** (connect-time toggle):
  * - `emoji:read` — render the workspace's custom emoji in reactions
+ * - `im:history`, `im:write`, `mpim:history`, `mpim:write` — read and compose
+ *   direct messages and group DMs
+ * - `im:read`, `mpim:read` — enumerate/list the user's DM and group-DM
+ *   conversations (`conversations.list` with `types=im,mpim`), which is how
+ *   {@link listDMChannels} discovers DM/MPIM conversation ids. Distinct from
+ *   `im:history`/`mpim:history`, which only grant reading message content
+ *   within a conversation whose id is already known — they do not grant
+ *   enumeration, so `listDMChannels` needs both.
  */
 
 /**
@@ -92,8 +97,22 @@ import { slackFacets } from "./slack-facets";
  */
 const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
 
+/**
+ * Extra-arg value used to register ONE webhook callback per Slack
+ * connection that covers ALL of the user's DM/MPIM conversations, instead of
+ * one callback per conversation (which would require enumerating and
+ * tracking hundreds of `channel` rows with no corresponding Settings UI to
+ * manage them). `GetSlackCallbacks` (workers/api/src/twist/tools/network.ts)
+ * broadcasts every incoming Slack event to every callback registered for the
+ * team whose granted scopes cover the event type — this sentinel is just
+ * another registered callback's extraArg, distinguished from a real
+ * channelId by never matching a Slack conversation id format.
+ */
+const DM_WEBHOOK_SENTINEL = "__dm_workspace__";
+
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
+  static readonly DM_WEBHOOK_SENTINEL = DM_WEBHOOK_SENTINEL;
   static readonly handleReplies = true;
   static readonly SCOPES: ScopeConfig = {
     required: [
@@ -111,10 +130,6 @@ export class Slack extends Connector<Slack> {
       // sends). Existing connections must reconnect to grant it; the upload
       // path already degrades gracefully (logs + continues) when it's absent.
       "files:write",
-      "im:history",
-      "im:write",
-      "mpim:history",
-      "mpim:write",
       "stars:read",
       "stars:write",
       // Emoji reaction round-trip: reactions:write to add/remove reactions on
@@ -131,6 +146,24 @@ export class Slack extends Connector<Slack> {
         description:
           "Show your workspace's custom emoji (like :party_parrot:) in Plot's reaction picker and round-trip them as reactions.",
         scopes: ["emoji:read"],
+        default: true,
+      },
+      {
+        id: "dms",
+        label: "Sync direct messages",
+        description:
+          "Bring your Slack DMs and group DMs into Plot, and let you send new ones from Plot.",
+        scopes: [
+          "im:history",
+          "im:write",
+          "mpim:history",
+          "mpim:write",
+          // Enumeration scopes: conversations.list with types=im,mpim (used by
+          // listDMChannels to discover conversation ids) requires these, not
+          // the *:history scopes above — see the class doc comment.
+          "im:read",
+          "mpim:read",
+        ],
         default: true,
       },
     ],
@@ -242,6 +275,19 @@ export class Slack extends Connector<Slack> {
       (Date.now() / 1000).toString()
     );
 
+    // Slack does no historical backfill (see below), so there is no "still
+    // syncing" period — the channel is fully live as soon as the state above
+    // is stamped and webhook registration is queued. Signal completion here,
+    // unconditionally and before queuing anything else, so it fires even if
+    // this call is a stuck-sync watchdog retry re-running an already-complete
+    // channel, and even if a later step in this method throws. Without this
+    // call, `twist_instance_connection.initial_sync_completed_at` never gets
+    // set for ANY Slack connection — the stuck-sync watchdog
+    // (recover-stuck-syncs.ts) treats every connection as permanently
+    // orphaned, retries up to MAX_INITIAL_SYNC_ATTEMPTS times, then forces
+    // needs_reauth_at and shows "Reconnect Slack" on a healthy connection.
+    await this.tools.integrations.channelSyncCompleted(channel.id);
+
     // No historical message backfill. Slack reduced `conversations.history`
     // and `conversations.replies` rate limits for non-Marketplace apps to
     // 1 rpm / 15 objects per call (2025-05-29 changelog), which makes
@@ -270,18 +316,9 @@ export class Slack extends Connector<Slack> {
       await this.runTask(backfillCallback);
     }
 
-    // Sync workspace members so the DM recipient picker can filter to
-    // reachable Slack contacts. Gated inside syncMembers to once per day,
-    // so repeated onChannelEnabled calls (e.g. multiple channels enabled)
-    // only hit users.list once.
-    const membersCallback = await this.callback(this.syncMembers, channel.id);
-    await this.runTask(membersCallback);
-
-    // Sync the workspace's custom emoji into the shared cache so they render
-    // and round-trip. Gated inside syncCustomEmoji to once per day, and
-    // harmless when the optional `emoji:read` scope wasn't granted (no-op).
-    const emojiCallback = await this.callback(this.syncCustomEmoji, channel.id);
-    await this.runTask(emojiCallback);
+    // Queue workspace-scoped daily tasks (member sync, custom emoji sync)
+    // at most once per fan-out instead of once per channel.
+    await this.queueWorkspaceDailyTasks(channel.id);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -689,12 +726,37 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
-    if (
-      event.type === "message" &&
-      event.channel === channelId &&
-      !event.subtype
-    ) {
-      await this.startIncrementalSync(channelId);
+    if (event.type === "message" && !event.subtype) {
+      if (event.channel === channelId) {
+        await this.startIncrementalSync(channelId);
+      } else if (
+        channelId === DM_WEBHOOK_SENTINEL &&
+        typeof event.channel === "string" &&
+        (await this.isKnownDMChannel(event.channel))
+      ) {
+        // Seed the incremental-sync floor for clarity/parity with the
+        // regular-channel path, even though drainChannelSync already
+        // defaults to a sane 15-minute window when this is unset.
+        if (!(await this.get<string>(`enabled_at_${event.channel}`))) {
+          await this.set(`enabled_at_${event.channel}`, (Date.now() / 1000).toString());
+        }
+        // drainChannelSync guards on `channel_webhook_<channelId>` being
+        // present (a marker that this channel's sync path is live) — regular
+        // channels get this from setupChannelWebhook's per-channel
+        // registration, but DM channels share ONE workspace-wide webhook
+        // (see registerDMWebhook) with no per-DM registration entry. Seed a
+        // synthetic marker so the guard passes; drainChannelSync never reads
+        // this value past the presence check.
+        if (!(await this.get<any>(`channel_webhook_${event.channel}`))) {
+          await this.set(`channel_webhook_${event.channel}`, {
+            url: null,
+            channelId: event.channel,
+            created: new Date().toISOString(),
+            dm: true,
+          });
+        }
+        await this.startIncrementalSync(event.channel);
+      }
     }
   }
 
@@ -1205,6 +1267,14 @@ export class Slack extends Connector<Slack> {
     // Open (or retrieve existing) DM/MPIM conversation.
     const dmChannelId = await api.openConversation(userIds);
 
+    // Register immediately so a reply from the other side is recognized by
+    // the DM webhook handler (see isKnownDMChannel) without waiting for the
+    // next daily listDMChannels run.
+    const knownDMChannels = (await this.get<string[]>("dm_channels")) ?? [];
+    if (!knownDMChannels.includes(dmChannelId)) {
+      await this.set("dm_channels", [...knownDMChannels, dmChannelId]);
+    }
+
     const body = (draft.noteContent ?? draft.title ?? "").trim();
     if (!body) {
       console.error("[slack] Cannot create direct message: body is empty");
@@ -1256,6 +1326,113 @@ export class Slack extends Connector<Slack> {
   }
 
   // ---- Workspace member sync ----
+
+  /**
+   * Queue the once-per-24h workspace-scoped tasks (member sync, custom
+   * emoji sync) at most once per fan-out, instead of once per channel.
+   *
+   * `syncMembers`/`syncCustomEmoji` already no-op internally if run within
+   * the last 24h, but that no-op still costs a full queue dispatch + worker
+   * invocation + store read — which counts against the platform's
+   * burst-rate/execution-quota limits. A connection with N enabled channels
+   * previously queued 2N of these on every `onChannelEnabled` fan-out
+   * (initial connect, "refresh channels", or a stuck-sync watchdog retry),
+   * of which at most 2 ever did real work. Checking the same gate here,
+   * before queuing, cuts that down to at most 2 total.
+   *
+   * `channelId` is just which channel's token to use if a task does need to
+   * run — any enabled channel's token works (Slack tokens are workspace-wide).
+   */
+  private async queueWorkspaceDailyTasks(channelId: string): Promise<void> {
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    // Short claim window: only long enough to dedupe a fan-out of near-simultaneous
+    // onChannelEnabled calls (e.g. a multi-channel reconnect). NOT a substitute for
+    // the real 24h gate — that's still owned by syncMembers/syncCustomEmoji
+    // themselves, set only on their own success. A claim expiring after a few
+    // minutes means a permanently-failed queued task doesn't silently suppress a
+    // legitimate retry for up to 24h; it just means a fan-out inside the claim
+    // window won't double-queue.
+    const CLAIM_TTL_MS = 5 * 60 * 1000;
+    const now = Date.now();
+
+    const lastMembersSync = await this.get<number>("membersSyncedAt");
+    const membersClaimedAt = await this.get<number>("membersSyncClaimedAt");
+    const membersClaimed =
+      membersClaimedAt !== null &&
+      membersClaimedAt !== undefined &&
+      now - membersClaimedAt < CLAIM_TTL_MS;
+    if ((!lastMembersSync || now - lastMembersSync >= ONE_DAY_MS) && !membersClaimed) {
+      await this.set("membersSyncClaimedAt", now);
+      const membersCallback = await this.callback(this.syncMembers, channelId);
+      await this.runTask(membersCallback);
+    }
+
+    const lastEmojiSync = await this.get<number>("customEmojiSyncedAt");
+    const emojiClaimedAt = await this.get<number>("customEmojiSyncClaimedAt");
+    const emojiClaimed =
+      emojiClaimedAt !== null &&
+      emojiClaimedAt !== undefined &&
+      now - emojiClaimedAt < CLAIM_TTL_MS;
+    if ((!lastEmojiSync || now - lastEmojiSync >= ONE_DAY_MS) && !emojiClaimed) {
+      await this.set("customEmojiSyncClaimedAt", now);
+      const emojiCallback = await this.callback(this.syncCustomEmoji, channelId);
+      await this.runTask(emojiCallback);
+    }
+
+    // registerDMWebhook is a one-time (not daily) registration, gated by the
+    // permanent `dm_webhook_registered` flag rather than a 24h window — but
+    // still needs the same short claim to dedupe a fan-out before that flag
+    // is set (it's only written inside registerDMWebhook itself, on success).
+    const dmWebhookRegistered = await this.get<boolean>("dm_webhook_registered");
+    const dmWebhookClaimedAt = await this.get<number>("dmWebhookClaimedAt");
+    const dmWebhookClaimed =
+      dmWebhookClaimedAt !== null &&
+      dmWebhookClaimedAt !== undefined &&
+      now - dmWebhookClaimedAt < CLAIM_TTL_MS;
+    if (!dmWebhookRegistered && !dmWebhookClaimed) {
+      await this.set("dmWebhookClaimedAt", now);
+      const dmWebhookCallback = await this.callback(this.registerDMWebhook, channelId);
+      await this.runTask(dmWebhookCallback);
+    }
+
+    const lastDMListSync = await this.get<number>("dmChannelsSyncedAt");
+    const dmListClaimedAt = await this.get<number>("dmChannelsSyncClaimedAt");
+    const dmListClaimed =
+      dmListClaimedAt !== null &&
+      dmListClaimedAt !== undefined &&
+      now - dmListClaimedAt < CLAIM_TTL_MS;
+    if ((!lastDMListSync || now - lastDMListSync >= ONE_DAY_MS) && !dmListClaimed) {
+      await this.set("dmChannelsSyncClaimedAt", now);
+      const dmListCallback = await this.callback(this.listDMChannels, channelId);
+      await this.runTask(dmListCallback);
+    }
+  }
+
+  /**
+   * Registers ONE webhook callback covering all of this connection's DM/MPIM
+   * traffic (see {@link DM_WEBHOOK_SENTINEL}). Gated by a stored flag so it's
+   * only actually registered once per connection, regardless of how many
+   * channels' `onChannelEnabled` runs. Requires the `im:history`/`mpim:history`
+   * optional scope group to have been granted — no-ops otherwise (the user
+   * declined DM sync at connect time).
+   */
+  private async registerDMWebhook(channelId: string): Promise<void> {
+    if (await this.get<boolean>("dm_webhook_registered")) return;
+
+    const authorization = await this.get<Authorization>("auth");
+    if (!authorization) return;
+
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) return;
+    if (!token.scopes?.includes("im:history")) return; // optional scope declined
+
+    await this.tools.network.createWebhook(
+      { provider: AuthProvider.Slack, authorization },
+      this.onSlackWebhook,
+      DM_WEBHOOK_SENTINEL
+    );
+    await this.set("dm_webhook_registered", true);
+  }
 
   /**
    * Syncs all active human workspace members as Plot contacts so the
@@ -1488,6 +1665,91 @@ export class Slack extends Connector<Slack> {
       intervalMs: 24 * 60 * 60 * 1000,
       firstRunAt: new Date(now + ONE_DAY_MS),
     });
+  }
+
+  // ---- DM/MPIM conversation discovery ----
+
+  /**
+   * Discovers the user's current DM and group-DM conversation ids and caches
+   * them under `dm_channels`, so the DM webhook handler (see
+   * {@link isKnownDMChannel}) can distinguish "a DM/MPIM this user is in" from
+   * "a private channel this user has access to but chose not to enable" —
+   * both can share the legacy `G…` id prefix, so prefix-matching alone isn't
+   * reliable.
+   *
+   * Gated to run at most once per 24 hours per workspace (connection),
+   * mirroring {@link syncMembers} / {@link syncCustomEmoji}. A brand-new
+   * incoming DM conversation is picked up on the next daily run, or
+   * immediately if proactively registered (see `createDirectMessage`).
+   *
+   * Requires the `im:read` optional scope (part of the `dms` group) to have
+   * been granted — no-ops otherwise (the user declined DM sync at connect
+   * time). Without this guard, a token missing `im:read` would hit
+   * `conversations.list`, get back `missing_scope` (a permanent error in
+   * `SLACK_AUTH_ERRORS`), and force-flag the entire connection as needing
+   * reconnection even though nothing is actually broken.
+   */
+  async listDMChannels(channelId: string): Promise<void> {
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const last = await this.get<number>("dmChannelsSyncedAt");
+    if (last && now - last < ONE_DAY_MS) return;
+
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) {
+      console.warn("listDMChannels: Slack token unavailable");
+      return;
+    }
+    if (!token.scopes?.includes("im:read")) return; // optional scope declined
+
+    const api = new SlackApi(token.token);
+
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    try {
+      do {
+        const { conversations, nextCursor } = await api.getDMConversations(cursor);
+        for (const c of conversations as SlackDMConversation[]) {
+          if (c.is_im || c.is_mpim) ids.push(c.id);
+        }
+        cursor = nextCursor;
+      } while (cursor);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        const retry = await this.callback(this.listDMChannels, channelId);
+        const runAt = new Date(now + error.retryAfterMs);
+        console.log(`Slack: rescheduling listDMChannels at ${runAt.toISOString()}`);
+        await this.scheduleRecurring(`dm-channels-sync:${channelId}`, retry, {
+          intervalMs: ONE_DAY_MS,
+          firstRunAt: runAt,
+        });
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        console.warn(`listDMChannels stopped: ${error.method} → ${error.slackError}`);
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
+        return;
+      }
+      console.warn("[slack] listDMChannels failed", error);
+      return;
+    }
+
+    await this.set("dm_channels", ids);
+    await this.set("dmChannelsSyncedAt", now);
+
+    const next = await this.callback(this.listDMChannels, channelId);
+    await this.scheduleRecurring(`dm-channels-sync:${channelId}`, next, {
+      intervalMs: ONE_DAY_MS,
+      firstRunAt: new Date(now + ONE_DAY_MS),
+    });
+  }
+
+  /** Returns true if `channelId` is a currently-known DM/MPIM conversation. */
+  private async isKnownDMChannel(channelId: string): Promise<boolean> {
+    const ids = await this.get<string[]>("dm_channels");
+    return ids?.includes(channelId) ?? false;
   }
 
   // ---- Write-back: reply from Plot ----
