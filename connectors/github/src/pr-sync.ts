@@ -3,6 +3,7 @@ import {
   ActionType,
   type NewLinkWithNotes,
 } from "@plotday/twister";
+import type { NewContact } from "@plotday/twister/plot";
 import type { GitHub, GitHubPullRequest, GitHubReview, GitHubIssueComment } from "./github";
 
 /** Days of recently closed/merged PRs to include in sync */
@@ -130,6 +131,40 @@ export async function syncPRBatch(
 }
 
 /**
+ * Fields common to a PR thread's "identity" — the source URL, the "Open in
+ * GitHub" action, and the description note — shared by both the batch-sync
+ * path (`convertPRToThread`) and the incremental webhook handlers so a PR
+ * whose first sync happens via webhook gets full parity immediately instead
+ * of waiting on a later batch resync to backfill it.
+ */
+export function buildPRThreadFields(
+  source: GitHub,
+  pr: GitHubPullRequest,
+): {
+  actions: Action[];
+  sourceUrl: string;
+  descriptionNote: { key: string; content: string | null; created: Date; author: NewContact };
+} {
+  const hasDescription = Boolean(pr.body && pr.body.trim().length > 0);
+  return {
+    actions: [
+      {
+        type: ActionType.external,
+        title: `Open in GitHub`,
+        url: pr.html_url,
+      },
+    ],
+    sourceUrl: pr.html_url,
+    descriptionNote: {
+      key: "description",
+      content: hasDescription ? pr.body : null,
+      created: new Date(pr.created_at),
+      author: source.userToContact(pr.user),
+    },
+  };
+}
+
+/**
  * Convert a GitHub PR to a NewLinkWithNotes
  */
 async function convertPRToThread(
@@ -146,23 +181,10 @@ async function convertPRToThread(
     ? source.userToContact(pr.assignee)
     : null;
 
-  const threadActions: Action[] = [
-    {
-      type: ActionType.external,
-      title: `Open in GitHub`,
-      url: pr.html_url,
-    },
-  ];
+  const { actions: threadActions, sourceUrl, descriptionNote } = buildPRThreadFields(source, pr);
+  const notes: any[] = [descriptionNote];
 
-  const notes: any[] = [];
-
-  const hasDescription = pr.body && pr.body.trim().length > 0;
-  notes.push({
-    key: "description",
-    content: hasDescription ? pr.body : null,
-    created: new Date(pr.created_at),
-    author: authorContact,
-  });
+  const hasDescription = Boolean(pr.body && pr.body.trim().length > 0);
 
   // Fetch general comments
   try {
@@ -238,7 +260,7 @@ async function convertPRToThread(
       prNodeId: pr.id,
     },
     actions: threadActions,
-    sourceUrl: pr.html_url,
+    sourceUrl,
     notes,
     preview: hasDescription ? pr.body : null,
     ...(initialSync ? { unread: false } : {}),
@@ -269,6 +291,10 @@ export async function handlePRWebhook(
     ? source.userToContact(pr.assignee)
     : null;
 
+  const { actions, sourceUrl, descriptionNote } = buildPRThreadFields(source, pr);
+  const action = payload.action as string | undefined;
+  const notes = action === "opened" || action === "edited" ? [descriptionNote] : [];
+
   const thread: NewLinkWithNotes = {
     source: `github:pr:${owner}/${repo}/${pr.number}`,
     type: "pull_request",
@@ -292,8 +318,10 @@ export async function handlePRWebhook(
       syncProvider: "github",
       syncableId: repositoryId,
     },
+    actions,
+    sourceUrl,
     preview: pr.body || null,
-    notes: [],
+    notes,
   };
 
   await source.saveLink(thread);
@@ -321,6 +349,8 @@ export async function handleReviewWebhook(
     ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
     : review.body || null;
 
+  const { actions, sourceUrl } = buildPRThreadFields(source, pr);
+
   const thread: NewLinkWithNotes = {
     source: `github:pr:${owner}/${repo}/${pr.number}`,
     type: "pull_request",
@@ -343,6 +373,8 @@ export async function handleReviewWebhook(
       syncProvider: "github",
       syncableId: repositoryId,
     },
+    actions,
+    sourceUrl,
   };
 
   await source.saveLink(thread);
@@ -385,6 +417,7 @@ export async function handlePRCommentWebhook(
       syncProvider: "github",
       syncableId: repositoryId,
     },
+    sourceUrl: issue.html_url,
   };
 
   await source.saveLink(thread);
