@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildPRThreadFields, handlePRWebhook } from "./pr-sync";
-import type { GitHubPullRequest } from "./github";
+import {
+  buildPRThreadFields,
+  buildReviewCommentNote,
+  handlePRWebhook,
+  handlePRReviewCommentWebhook,
+} from "./pr-sync";
+import type { GitHubPullRequest, GitHubReviewComment } from "./github";
 
 function makePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
   return {
@@ -63,6 +68,7 @@ describe("buildPRThreadFields", () => {
 describe("handlePRWebhook field parity", () => {
   it("sets sourceUrl and actions on an opened PR from a webhook-only sync", async () => {
     const savedLinks: any[] = [];
+    const stored: Record<string, any> = {};
     const fakeSource = {
       userToContact: (user: { id: number; login: string }) => ({
         email: `${user.id}+${user.login}@users.noreply.github.com`,
@@ -71,6 +77,12 @@ describe("handlePRWebhook field parity", () => {
       }),
       saveLink: async (link: any) => {
         savedLinks.push(link);
+      },
+      getToken: async () => "fake-token",
+      githubFetch: async () => ({ ok: true, json: async () => [] }),
+      get: async (key: string) => stored[key] ?? null,
+      set: async (key: string, value: any) => {
+        stored[key] = value;
       },
     } as any;
 
@@ -111,5 +123,117 @@ describe("handlePRWebhook field parity", () => {
 
     expect(savedLinks[0].notes).toEqual([]);
     expect(savedLinks[0].sourceUrl).toBe("https://github.com/acme/repo/pull/42");
+  });
+});
+
+function makeReviewComment(
+  overrides: Partial<GitHubReviewComment> = {}
+): GitHubReviewComment {
+  return {
+    id: 555,
+    body: "Should this be async?",
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    user: { id: 2, login: "reviewer" },
+    html_url: "https://github.com/acme/repo/pull/42#discussion_r555",
+    path: "src/foo.ts",
+    line: 42,
+    pull_request_review_id: 1,
+    ...overrides,
+  };
+}
+
+describe("buildReviewCommentNote", () => {
+  it("keys the note with the review-comment- prefix", () => {
+    const note = buildReviewCommentNote(fakeSource, makeReviewComment());
+    expect(note.key).toBe("review-comment-555");
+  });
+
+  it("prefixes content with a file/line header", () => {
+    const note = buildReviewCommentNote(fakeSource, makeReviewComment());
+    expect(note.content).toBe("📄 src/foo.ts:42\n\nShould this be async?");
+  });
+
+  it("omits the line number from the header when line is null", () => {
+    const note = buildReviewCommentNote(fakeSource, makeReviewComment({ line: null }));
+    expect(note.content).toBe("📄 src/foo.ts\n\nShould this be async?");
+  });
+
+  it("sets reNote by key when the comment is a reply", () => {
+    const note = buildReviewCommentNote(
+      fakeSource,
+      makeReviewComment({ in_reply_to_id: 111 })
+    );
+    expect(note.reNote).toEqual({ key: "review-comment-111" });
+  });
+
+  it("omits reNote when the comment is not a reply", () => {
+    const note = buildReviewCommentNote(fakeSource, makeReviewComment());
+    expect(note.reNote).toBeUndefined();
+  });
+});
+
+describe("handlePRReviewCommentWebhook", () => {
+  it("saves a note with the review-comment- key and file/line header", async () => {
+    const savedLinks: any[] = [];
+    const stored: Record<string, any> = {};
+    const fakeSource = {
+      userToContact: (user: { id: number; login: string }) => ({
+        email: `${user.id}+${user.login}@users.noreply.github.com`,
+        name: user.login,
+        source: { accountId: String(user.id) },
+      }),
+      saveLink: async (link: any) => {
+        savedLinks.push(link);
+      },
+      get: async (key: string) => stored[key] ?? null,
+      set: async (key: string, value: any) => {
+        stored[key] = value;
+      },
+    } as any;
+
+    await handlePRReviewCommentWebhook(
+      fakeSource,
+      { action: "created", comment: makeReviewComment(), pull_request: makePR() },
+      "acme/repo"
+    );
+
+    expect(savedLinks).toHaveLength(1);
+    expect(savedLinks[0].notes[0].key).toBe("review-comment-555");
+    expect(savedLinks[0].notes[0].content).toContain("📄 src/foo.ts:42");
+  });
+
+  it("appends the new key to open-PR comment-key state", async () => {
+    // Storage key format is `open_pr_comment_keys_<repositoryId>_<prNumber>`,
+    // and repositoryId ("acme/repo") already contains a slash — so the real
+    // key interpolates to "open_pr_comment_keys_acme/repo_42", not
+    // "open_pr_comment_keys_acme_repo_42". Seed the fake store with that
+    // exact key so appendOpenPRCommentKey's existing-state lookup hits.
+    const stored: Record<string, any> = {
+      "open_pr_comment_keys_acme/repo_42": ["comment-1"],
+    };
+    const fakeSource = {
+      userToContact: (user: { id: number; login: string }) => ({
+        email: `${user.id}+${user.login}@users.noreply.github.com`,
+        name: user.login,
+        source: { accountId: String(user.id) },
+      }),
+      saveLink: async () => {},
+      get: async (key: string) => stored[key] ?? null,
+      set: async (key: string, value: any) => {
+        stored[key] = value;
+      },
+    } as any;
+
+    await handlePRReviewCommentWebhook(
+      fakeSource,
+      { action: "created", comment: makeReviewComment(), pull_request: makePR() },
+      "acme/repo"
+    );
+
+    expect(stored["open_pr_comment_keys_acme/repo_42"]).toEqual([
+      "comment-1",
+      "review-comment-555",
+    ]);
   });
 });

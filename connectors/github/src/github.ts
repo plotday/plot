@@ -27,6 +27,7 @@ import {
   handlePRWebhook,
   handleReviewWebhook,
   handlePRCommentWebhook,
+  handlePRReviewCommentWebhook,
   addPRComment,
   updatePRStatus,
 } from "./pr-sync";
@@ -85,6 +86,22 @@ export type GitHubReview = {
   submitted_at: string;
   user: GitHubUser;
   html_url: string;
+};
+
+export type GitHubReviewComment = {
+  id: number;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  user: GitHubUser;
+  html_url: string;
+  /** File path the comment is anchored to. */
+  path: string;
+  /** Line number in the file (the comment's current position after any diff updates). */
+  line: number | null;
+  /** Present when this comment is a reply within an existing review-comment thread. */
+  in_reply_to_id?: number;
+  pull_request_review_id: number;
 };
 
 /**
@@ -708,6 +725,7 @@ export class GitHub extends Connector<GitHub> {
             events: [
               "pull_request",
               "pull_request_review",
+              "pull_request_review_comment",
               "issues",
               "issue_comment",
             ],
@@ -843,6 +861,10 @@ export class GitHub extends Connector<GitHub> {
         if (options.syncIssues) {
           await handleIssueCommentWebhook(this, payload, repositoryId);
         }
+      }
+    } else if (event === "pull_request_review_comment") {
+      if (options.syncPullRequests) {
+        await handlePRReviewCommentWebhook(this, payload, repositoryId);
       }
     }
   }
