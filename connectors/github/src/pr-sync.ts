@@ -676,6 +676,97 @@ export async function addPRComment(
 }
 
 /**
+ * Reply within an existing inline review-comment thread. GitHub's reply
+ * endpoint doesn't need a file/line/commit position — it inherits the
+ * parent comment's — which is why only replies (not fresh inline comments)
+ * are supported outbound from Plot.
+ */
+export async function addReviewCommentReply(
+  source: GitHub,
+  meta: import("@plotday/twister").ThreadMeta,
+  inReplyToId: number,
+  body: string
+): Promise<{ id: number; body: string } | void> {
+  const owner = meta.owner as string;
+  const repo = meta.repo as string;
+  const prNumber = meta.prNumber as number;
+  const syncableId = `${owner}/${repo}`;
+
+  if (!owner || !repo || !prNumber) {
+    throw new Error("Owner, repo, and prNumber required in thread meta");
+  }
+
+  const token = await source.getToken(syncableId);
+
+  const response = await source.githubFetch(
+    token,
+    `/repos/${owner}/${repo}/pulls/${prNumber}/comments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body, in_reply_to: inReplyToId }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to add review comment reply: ${response.status} ${await response.text()}`
+    );
+  }
+
+  const comment = await response.json();
+  if (comment?.id) {
+    return { id: comment.id, body: comment.body ?? body };
+  }
+}
+
+/**
+ * Update an existing inline (code-line) review comment. Unlike top-level
+ * issue/PR conversation comments (`updateIssueComment`, which PATCHes
+ * `/issues/comments/{id}`), review comments live under the `pulls`
+ * namespace — `PATCH /repos/{owner}/{repo}/pulls/comments/{id}` — with no
+ * PR number in the path (the comment id alone identifies it).
+ *
+ * Returns the updated comment's body (GitHub markdown) so callers can
+ * refresh the external sync baseline.
+ */
+export async function updateReviewComment(
+  source: GitHub,
+  meta: import("@plotday/twister").ThreadMeta,
+  commentId: number,
+  body: string
+): Promise<{ body: string } | void> {
+  const owner = meta.owner as string;
+  const repo = meta.repo as string;
+  const syncableId = `${owner}/${repo}`;
+
+  if (!owner || !repo) {
+    throw new Error("Owner and repo required in thread meta");
+  }
+
+  const token = await source.getToken(syncableId);
+
+  const response = await source.githubFetch(
+    token,
+    `/repos/${owner}/${repo}/pulls/comments/${commentId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to update review comment: ${response.status} ${await response.text()}`
+    );
+  }
+
+  const comment = await response.json();
+  return { body: comment?.body ?? body };
+}
+
+/**
  * Update a PR's review status (approve or request changes)
  */
 export async function updatePRStatus(

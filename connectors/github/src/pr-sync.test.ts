@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addReviewCommentReply,
   buildPRThreadFields,
   buildReviewCommentNote,
   handlePRWebhook,
@@ -235,5 +236,34 @@ describe("handlePRReviewCommentWebhook", () => {
       "comment-1",
       "review-comment-555",
     ]);
+  });
+});
+
+describe("addReviewCommentReply", () => {
+  it("POSTs to the pulls/comments endpoint with in_reply_to", async () => {
+    let capturedPath = "";
+    let capturedBody = "";
+    const fakeSource = {
+      githubFetch: async (_token: string, path: string, options: any) => {
+        capturedPath = path;
+        capturedBody = options.body;
+        return {
+          ok: true,
+          json: async () => ({ id: 999, body: "Good point" }),
+        };
+      },
+      getToken: async () => "fake-token",
+    } as any;
+
+    const result = await addReviewCommentReply(
+      fakeSource,
+      { owner: "acme", repo: "repo", prNumber: 42 },
+      555,
+      "Good point"
+    );
+
+    expect(capturedPath).toBe("/repos/acme/repo/pulls/42/comments");
+    expect(JSON.parse(capturedBody)).toEqual({ body: "Good point", in_reply_to: 555 });
+    expect(result).toEqual({ id: 999, body: "Good point" });
   });
 });

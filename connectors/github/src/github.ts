@@ -29,7 +29,9 @@ import {
   handlePRCommentWebhook,
   handlePRReviewCommentWebhook,
   addPRComment,
+  addReviewCommentReply,
   updatePRStatus,
+  updateReviewComment,
 } from "./pr-sync";
 import {
   startIssueBatchSync,
@@ -40,7 +42,7 @@ import {
   addIssueComment,
   updateIssueComment,
 } from "./issue-sync";
-import { reactToComment, unreactToComment } from "./reactions";
+import { commentEndpointForKey, reactToComment, unreactToComment } from "./reactions";
 import { ALLOWED_REACTION_EMOJI } from "./github-emoji";
 
 // ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
@@ -601,15 +603,34 @@ export class GitHub extends Connector<GitHub> {
   /**
    * Called when a note is created on a thread owned by this source.
    *
+   * Replies within an existing inline (code-line) review-comment thread —
+   * identified via `thread.meta.reNoteKey`, the key of the note being
+   * replied to — route to GitHub's review-comment reply endpoint instead of
+   * the top-level conversation-comment endpoint, since GitHub only accepts
+   * inline comments through `pulls/comments` with an `in_reply_to` id.
+   *
    * Returns a {@link NoteWriteBackResult} so the runtime sets the note's
-   * key to `comment-<githubCommentId>` (matching what sync-in uses) and
-   * records the external sync baseline. GitHub stores comment bodies as
-   * markdown and returns the stored body verbatim, so the hashed baseline
-   * matches what the next incremental sync will surface.
+   * key to `comment-<githubCommentId>` / `review-comment-<githubCommentId>`
+   * (matching what sync-in uses) and records the external sync baseline.
+   * GitHub stores comment bodies as markdown and returns the stored body
+   * verbatim, so the hashed baseline matches what the next incremental sync
+   * will surface.
    */
   async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const body = note.content ?? "";
+
+    const reNoteKey = meta.reNoteKey as string | undefined;
+    const reviewParent = commentEndpointForKey(reNoteKey ?? null);
+    if (reviewParent?.kind === "review") {
+      const result = await addReviewCommentReply(this, meta, Number(reviewParent.commentId), body);
+      if (!result) return;
+      return {
+        key: `review-comment-${result.id}`,
+        externalContent: result.body,
+      };
+    }
+
     if (meta.prNumber) {
       const result = await addPRComment(this, meta, body);
       if (!result) return;
@@ -630,14 +651,28 @@ export class GitHub extends Connector<GitHub> {
   /**
    * Called when a Plot user edits an existing note on a GitHub-owned thread.
    *
-   * Pushes the new content to the corresponding GitHub comment (PR and
-   * issue conversation comments live under the same endpoint) and refreshes
-   * the sync baseline from GitHub's stored markdown body.
+   * `review-comment-*` keys route to `updateReviewComment` (GitHub's inline
+   * review-comment edit endpoint, `pulls/comments/{id}`) since it differs
+   * from the top-level conversation-comment endpoint
+   * (`issues/comments/{id}`) that `comment-*` keys use via
+   * `updateIssueComment`. Refreshes the sync baseline from GitHub's stored
+   * markdown body in either case.
    */
   async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     if (!note.key) return;
     if (!meta.prNumber && !meta.issueNumber) return;
+
+    const reviewMatch = note.key.match(/^review-comment-(\d+)$/);
+    if (reviewMatch) {
+      const commentId = Number(reviewMatch[1]);
+      if (!Number.isFinite(commentId)) return;
+      const result = await updateReviewComment(this, meta, commentId, note.content ?? "");
+      if (!result) return;
+      return {
+        externalContent: result.body,
+      };
+    }
 
     const match = note.key.match(/^comment-(\d+)$/);
     if (!match) return;
