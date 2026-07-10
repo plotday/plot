@@ -3,6 +3,7 @@ import { AuthProvider, type Authorization } from "@plotday/twister/tools/integra
 import { Slack } from "./slack";
 import {
   extractSlackMessageReactions,
+  SlackApi,
   type SlackMessage,
 } from "./slack-api";
 
@@ -361,6 +362,95 @@ describe("syncCustomEmoji", () => {
     expect(saveCustomEmoji).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(store.map.has("custom_emoji_T0")).toBe(false);
+  });
+});
+
+describe("SlackApi.getDMConversations", () => {
+  it("calls conversations.list with types=im,mpim and returns conversations", async () => {
+    const fetchMock = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          ok: true,
+          channels: [
+            { id: "D1", is_im: true, is_mpim: false, user: "U1" },
+            { id: "G1", is_im: false, is_mpim: true },
+          ],
+        }),
+      }) as never
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const api = new SlackApi("xoxp-test");
+      const result = await api.getDMConversations();
+      expect(result.conversations).toEqual([
+        { id: "D1", is_im: true, is_mpim: false, user: "U1" },
+        { id: "G1", is_im: false, is_mpim: true },
+      ]);
+      const [, requestInit] = fetchMock.mock.calls[0] as unknown as [
+        string,
+        RequestInit,
+      ];
+      const body = (requestInit.body as string) ?? "";
+      expect(body).toContain("types=im%2Cmpim");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("listDMChannels", () => {
+  function makeDMListSlack(opts: {
+    store: ReturnType<typeof makeStore>;
+    integrationsGet: ReturnType<typeof vi.fn>;
+  }) {
+    const runTask = vi.fn(async () => "task-token");
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const tools = {
+      store: opts.store,
+      integrations: { get: opts.integrationsGet },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    return new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+  }
+
+  it("caches discovered im/mpim channel ids and gates re-runs to once per 24h", async () => {
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({ token: "xoxp-test" });
+    const slack = makeDMListSlack({ store, integrationsGet });
+
+    const fetchMock = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          ok: true,
+          channels: [{ id: "D1", is_im: true, is_mpim: false, user: "U1" }],
+        }),
+      }) as never
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        listDMChannels: (c: string) => Promise<void>;
+      }).listDMChannels("C1");
+      expect(store.map.get("dm_channels")).toEqual(["D1"]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Second call within 24h should not re-fetch.
+      await (slack as unknown as {
+        listDMChannels: (c: string) => Promise<void>;
+      }).listDMChannels("C1");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

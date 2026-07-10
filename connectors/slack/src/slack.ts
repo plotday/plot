@@ -33,6 +33,7 @@ import {
   SlackRateLimitedError,
   formatSlackText,
   type SlackChannel,
+  type SlackDMConversation,
   type SlackMessage,
   type SlackUserInfo,
   type SlackUserInfoMap,
@@ -1547,6 +1548,83 @@ export class Slack extends Connector<Slack> {
       intervalMs: 24 * 60 * 60 * 1000,
       firstRunAt: new Date(now + ONE_DAY_MS),
     });
+  }
+
+  // ---- DM/MPIM conversation discovery ----
+
+  /**
+   * Discovers the user's current DM and group-DM conversation ids and caches
+   * them under `dm_channels`, so the DM webhook handler (see
+   * {@link isKnownDMChannel}) can distinguish "a DM/MPIM this user is in" from
+   * "a private channel this user has access to but chose not to enable" —
+   * both can share the legacy `G…` id prefix, so prefix-matching alone isn't
+   * reliable.
+   *
+   * Gated to run at most once per 24 hours per workspace (connection),
+   * mirroring {@link syncMembers} / {@link syncCustomEmoji}. A brand-new
+   * incoming DM conversation is picked up on the next daily run, or
+   * immediately if proactively registered (see `createDirectMessage`).
+   */
+  async listDMChannels(channelId: string): Promise<void> {
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const last = await this.get<number>("dmChannelsSyncedAt");
+    if (last && now - last < ONE_DAY_MS) return;
+
+    let api: SlackApi;
+    try {
+      api = await this.getApi(channelId);
+    } catch (error) {
+      console.warn("listDMChannels: Slack token unavailable", error);
+      return;
+    }
+
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    try {
+      do {
+        const { conversations, nextCursor } = await api.getDMConversations(cursor);
+        for (const c of conversations as SlackDMConversation[]) {
+          if (c.is_im || c.is_mpim) ids.push(c.id);
+        }
+        cursor = nextCursor;
+      } while (cursor);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        const retry = await this.callback(this.listDMChannels, channelId);
+        const runAt = new Date(now + error.retryAfterMs);
+        console.log(`Slack: rescheduling listDMChannels at ${runAt.toISOString()}`);
+        await this.scheduleRecurring(`dm-channels-sync:${channelId}`, retry, {
+          intervalMs: ONE_DAY_MS,
+          firstRunAt: runAt,
+        });
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        console.warn(`listDMChannels stopped: ${error.method} → ${error.slackError}`);
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
+        return;
+      }
+      console.warn("[slack] listDMChannels failed", error);
+      return;
+    }
+
+    await this.set("dm_channels", ids);
+    await this.set("dmChannelsSyncedAt", now);
+
+    const next = await this.callback(this.listDMChannels, channelId);
+    await this.scheduleRecurring(`dm-channels-sync:${channelId}`, next, {
+      intervalMs: ONE_DAY_MS,
+      firstRunAt: new Date(now + ONE_DAY_MS),
+    });
+  }
+
+  /** Returns true if `channelId` is a currently-known DM/MPIM conversation. */
+  private async isKnownDMChannel(channelId: string): Promise<boolean> {
+    const ids = await this.get<string[]>("dm_channels");
+    return ids?.includes(channelId) ?? false;
   }
 
   // ---- Write-back: reply from Plot ----
