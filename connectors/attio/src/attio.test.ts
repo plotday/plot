@@ -219,6 +219,33 @@ describe("initial-sync completion across the three/five batch chains", () => {
     expect(channelSyncCompleted).not.toHaveBeenCalled();
     expect(store.map.get("initial_sync_pending")).toEqual(["deals"]);
   });
+
+  it("skips signaling when the pending set was never initialized (pre-fix connection)", async () => {
+    const store = makeStore({
+      // No `initial_sync_pending` key at all — simulates a connection whose
+      // five chains were started under pre-fix code that never wrote this
+      // key. `get()` returns null (not []) for a missing key, and that must
+      // be treated differently from "all five reported in": we can't tell
+      // how many of the other four chains are still outstanding, so
+      // signaling here would risk clearing the "Syncing…" indicator early.
+      workspace_slug: "acme",
+      sync_state_deals: seedState(),
+    });
+    const channelSyncCompleted = vi.fn();
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { channelSyncCompleted, saveLink } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryRecords: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
+    });
+
+    await callSyncBatch(attio, "deals");
+
+    expect(channelSyncCompleted).not.toHaveBeenCalled();
+    // This chain's own pagination state still clears normally — only the
+    // (skipped, unsafe) completion signal is affected.
+    expect(store.map.has("sync_state_deals")).toBe(false);
+    expect(store.map.has("initial_sync_pending")).toBe(false);
+  });
 });
 
 describe("markSyncTypeComplete lock contention", () => {
@@ -251,5 +278,44 @@ describe("markSyncTypeComplete lock contention", () => {
 
     expect(store.acquireLock).toHaveBeenCalledTimes(2);
     expect(channelSyncCompleted).toHaveBeenCalledWith("attio");
+  });
+
+  it("throws when the lock can never be acquired, and leaves sync_state intact for a future retry", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      initial_sync_pending: [...ALL_TYPES],
+      sync_state_deals: seedState(),
+    });
+    // Lock is always held by someone else — every acquire attempt fails.
+    store.acquireLock = vi.fn().mockResolvedValue(false);
+    const channelSyncCompleted = vi.fn();
+    const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryRecords: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
+    });
+
+    vi.stubGlobal(
+      "setTimeout",
+      ((fn: () => void) => {
+        fn();
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout
+    );
+
+    try {
+      await expect(callSyncBatch(attio, "deals")).rejects.toThrow(
+        /failed to acquire initial_sync_pending_lock/
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(channelSyncCompleted).not.toHaveBeenCalled();
+    // The throw must propagate BEFORE the caller's terminal-branch clear()
+    // runs — otherwise this chain's sync_state is gone and it can never
+    // re-enter this branch to actually record the completion, permanently
+    // stranding "deals" in initial_sync_pending.
+    expect(store.map.has("sync_state_deals")).toBe(true);
+    expect(store.map.get("initial_sync_pending")).toEqual([...ALL_TYPES]);
   });
 });

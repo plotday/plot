@@ -284,23 +284,47 @@ export class Attio extends Connector<Attio> {
    * short-lived lock because two chains can legitimately finish around the
    * same time, and a naive get+filter+set would race and could drop an
    * update — see "Locks" in TOOLS_GUIDE.md.
+   *
+   * Throws if the lock can never be acquired (rather than silently giving
+   * up) so the caller's terminal branch does NOT clear `sync_state_*` for
+   * this chain — leaving it in place lets a future retry of this batch
+   * actually record the completion. Silently swallowing this would strand
+   * `entityType` in `initial_sync_pending` forever, and channelSyncCompleted
+   * would never fire even though every chain genuinely finished — the exact
+   * bug class this fix exists to eliminate, reintroduced one level down.
    */
   private async markSyncTypeComplete(entityType: string): Promise<void> {
     const lockKey = "initial_sync_pending_lock";
     const maxAttempts = 10;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (await this.tools.store.acquireLock(lockKey, 10_000)) {
+        let allComplete = false;
         try {
-          const pending = (await this.get<string[]>("initial_sync_pending")) ?? [];
+          const pending = await this.get<string[]>("initial_sync_pending");
+          if (pending === null) {
+            // Never initialized (or a concurrent completion already
+            // cleared it) — most likely a connection whose chains were
+            // started under pre-fix code that didn't write this key at
+            // all. We can't safely tell how many of the other four chains
+            // are still outstanding, so skip signaling rather than risk
+            // firing channelSyncCompleted while they're still backfilling.
+            return;
+          }
           const remaining = pending.filter((type) => type !== entityType);
           if (remaining.length > 0) {
             await this.set("initial_sync_pending", remaining);
           } else {
             await this.clear("initial_sync_pending");
-            await this.tools.integrations.channelSyncCompleted("attio");
+            allComplete = true;
           }
         } finally {
           await this.tools.store.releaseLock(lockKey);
+        }
+        // Call outside the lock — channelSyncCompleted is a network call,
+        // and holding the lock across it would needlessly widen the window
+        // for contention with the other four chains.
+        if (allComplete) {
+          await this.tools.integrations.channelSyncCompleted("attio");
         }
         return;
       }
@@ -310,9 +334,9 @@ export class Attio extends Connector<Attio> {
       // forever if it happened to be the last chain to finish).
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    console.error(
+    throw new Error(
       `Attio: failed to acquire initial_sync_pending_lock after ${maxAttempts} attempts ` +
-        `while completing "${entityType}" — initial sync completion signal may be delayed`
+        `while completing "${entityType}" sync`
     );
   }
 
