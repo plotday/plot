@@ -242,6 +242,19 @@ export class Slack extends Connector<Slack> {
       (Date.now() / 1000).toString()
     );
 
+    // Slack does no historical backfill (see below), so there is no "still
+    // syncing" period — the channel is fully live as soon as the state above
+    // is stamped and webhook registration is queued. Signal completion here,
+    // unconditionally and before queuing anything else, so it fires even if
+    // this call is a stuck-sync watchdog retry re-running an already-complete
+    // channel, and even if a later step in this method throws. Without this
+    // call, `twist_instance_connection.initial_sync_completed_at` never gets
+    // set for ANY Slack connection — the stuck-sync watchdog
+    // (recover-stuck-syncs.ts) treats every connection as permanently
+    // orphaned, retries up to MAX_INITIAL_SYNC_ATTEMPTS times, then forces
+    // needs_reauth_at and shows "Reconnect Slack" on a healthy connection.
+    await this.tools.integrations.channelSyncCompleted(channel.id);
+
     // No historical message backfill. Slack reduced `conversations.history`
     // and `conversations.replies` rate limits for non-Marketplace apps to
     // 1 rpm / 15 objects per call (2025-05-29 changelog), which makes

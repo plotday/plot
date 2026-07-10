@@ -163,6 +163,49 @@ describe("setupChannelWebhook", () => {
   });
 });
 
+describe("onChannelEnabled — initial sync completion signal", () => {
+  const channel = { id: "C123", title: "general" };
+
+  function makeOnChannelEnabledSlack() {
+    const store = makeStore({});
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const runTask = vi.fn(async () => "task-token");
+    const channelSyncCompleted = vi.fn().mockResolvedValue(undefined);
+    const tools = {
+      store,
+      integrations: {
+        get: vi.fn(),
+        channelSyncCompleted,
+      },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    return { slack, channelSyncCompleted, store };
+  }
+
+  it("calls channelSyncCompleted for the enabled channel, not gated on backfill", async () => {
+    const { slack, channelSyncCompleted } = makeOnChannelEnabledSlack();
+
+    await slack.onChannelEnabled(channel as never, undefined);
+
+    expect(channelSyncCompleted).toHaveBeenCalledWith("C123");
+  });
+
+  it("still calls channelSyncCompleted when observeOnly is true", async () => {
+    const { slack, channelSyncCompleted } = makeOnChannelEnabledSlack();
+
+    await slack.onChannelEnabled(channel as never, { observeOnly: true } as never);
+
+    expect(channelSyncCompleted).toHaveBeenCalledWith("C123");
+  });
+});
+
 describe("syncCustomEmoji", () => {
   /** Build a Slack with the tool set needed by syncCustomEmoji. */
   function makeEmojiSlack(opts: {
