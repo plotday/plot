@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.75.0
+
+### Added
+
+- `Integrations.setNoteReactions()` for connectors to reconcile a note's complete reaction state against an external system, replacing (not merging with) any existing reactions. ([#282](https://github.com/plotday/plot/pull/282) [`c4adfc0`](https://github.com/plotday/plot/commit/c4adfc08604a6e0f8dfdca91a7f6fb5abe8c709a))
+
 ## 0.74.1
 
 ### Fixed
