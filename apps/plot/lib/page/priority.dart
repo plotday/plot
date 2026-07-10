@@ -1773,7 +1773,13 @@ class _PriorityPageState extends State<PriorityPage>
                       state.context ??
                       state.draft.priority,
                   isAssociated: agendaActivity.isAssociated,
-                  isSearch: isSearching,
+                  // Every global, cross-priority view — the Everything feed and
+                  // any active search OR filter, not just a text search — is a
+                  // flat list spanning all focuses, so each row must carry its
+                  // own focus label. Passing only `isSearching` here dropped the
+                  // label on filtered / Everything results filed under the
+                  // ambient [priorityContext].
+                  isGlobalView: state.isGlobalView,
                   multiSelected:
                       !entry.ghost && state.selected.contains(baseThread.id),
                   multiSelectMode: state.multiSelecting,

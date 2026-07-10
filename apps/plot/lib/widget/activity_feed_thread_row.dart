@@ -27,7 +27,7 @@ class ActivityFeedThreadRow extends StatefulWidget {
     required this.focusNode,
     required this.priorityContext,
     this.isAssociated = false,
-    this.isSearch = false,
+    this.isGlobalView = false,
     this.onActivate,
     this.multiSelected = false,
     this.multiSelectMode = false,
@@ -39,7 +39,12 @@ class ActivityFeedThreadRow extends StatefulWidget {
   final FocusNode focusNode;
   final Priority priorityContext;
   final bool isAssociated;
-  final bool isSearch;
+
+  /// Whether this row belongs to a global, cross-priority view (the Everything
+  /// feed or an active search/filter) rather than a single ambient focus.
+  /// Forwarded to [ThreadWidget.isGlobalView] so every row in such a view
+  /// carries its own focus label. See `PriorityState.isGlobalView`.
+  final bool isGlobalView;
 
   /// Whether this row is part of the current multi-selection.
   final bool multiSelected;
@@ -106,7 +111,7 @@ class _ActivityFeedThreadRowState extends State<ActivityFeedThreadRow> {
           focusNode: widget.focusNode,
           context: widget.priorityContext,
           showSubPriority: true,
-          isSearch: widget.isSearch,
+          isGlobalView: widget.isGlobalView,
           showEventTiming: rep != null,
           isAssociated: widget.isAssociated,
           onActivate: widget.onActivate,

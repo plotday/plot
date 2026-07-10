@@ -438,6 +438,63 @@ void main() {
     });
   });
 
+  // A global, cross-priority view (the Everything feed, an active text search,
+  // or any active filter) renders one flat list spanning every focus, so each
+  // row must carry its own focus label — the `isGlobalView` flag the page
+  // forwards to ActivityFeedThreadRow/ThreadWidget. Regression: this used to be
+  // wired to text search only (`isSearching`), so filter-only and Everything
+  // results dropped the focus label on rows filed under the ambient context.
+  group('PriorityState.isGlobalView', () {
+    test('false for a plain single-focus feed', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const []);
+      expect(state.everything, isFalse);
+      expect(state.isGlobalView, isFalse);
+    });
+
+    test('true for the Everything feed', () {
+      final priority = _testPriority();
+      final state = _stateWith(
+        priority: priority,
+        agendaItems: const [],
+        everything: true,
+      );
+      expect(state.isGlobalView, isTrue);
+    });
+
+    test('true during an active text search', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const [])
+          .copyWith(search: 'competitor');
+      expect(state.isGlobalView, isTrue);
+    });
+
+    test('true for a tag filter with no text search (the regression case)', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const [])
+          .copyWith(filter: [Tag.noted]);
+      // No text query, but a filter makes this a global cross-priority view.
+      expect(state.search, isEmpty);
+      expect(state.isGlobalView, isTrue);
+    });
+
+    test('true for an icon filter with no text search', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const [])
+          .copyWith(iconFilter: ['star']);
+      expect(state.search, isEmpty);
+      expect(state.isGlobalView, isTrue);
+    });
+
+    test('true for an assignee filter with no text search', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const [])
+          .copyWith(assigneeFilter: [ActorId(Uuid.generate())]);
+      expect(state.search, isEmpty);
+      expect(state.isGlobalView, isTrue);
+    });
+  });
+
   group('PriorityState.hasUnread', () {
     test('hasUnread reflects unread rows in the activity feed', () {
       final priority = _testPriority();

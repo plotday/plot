@@ -338,6 +338,24 @@ class PriorityState extends Equatable {
   /// True when a multi-select is in progress (any thread is [selected]).
   bool get multiSelecting => selected.isNotEmpty;
 
+  /// True when the feed is a global, cross-priority "flat" view rather than a
+  /// single ambient focus: the synthetic Everything feed ([everything]), an
+  /// active text [search], or any active filter (tag / reaction / icon /
+  /// assignee). These views span every focus and are rendered as one
+  /// unsectioned list (the same `flatMode` the bloc uses to pick its feed
+  /// query), so — exactly like the dedicated Search tab — every row must carry
+  /// its own focus label; there is no ambient context to imply where a result
+  /// lives. Mirrors the row-level `isGlobalView` flag forwarded to
+  /// [ActivityFeedThreadRow]. A single-focus feed is false, so in-focus rows
+  /// stay unlabelled.
+  bool get isGlobalView =>
+      everything ||
+      search.isNotEmpty ||
+      filter.isNotEmpty ||
+      reactionFilter.isNotEmpty ||
+      iconFilter.isNotEmpty ||
+      assigneeFilter.isNotEmpty;
+
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
 

@@ -312,7 +312,7 @@ class _SearchViewState extends State<_SearchView> {
           now: false,
           focusNode: _focusNodeFor(thread.id),
           priorityContext: thread.priority,
-          isSearch: true,
+          isGlobalView: true,
           onActivate: () => _openThread(thread),
         );
       },

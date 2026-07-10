@@ -134,7 +134,7 @@ class ThreadWidget extends StatefulWidget {
     this.isAssociated = false,
     this.isOutsidePriority = false,
     this.showSubPriority = false,
-    this.isSearch = false,
+    this.isGlobalView = false,
     this.showEventTiming = false,
     this.bump = true,
     this.focusNode,
@@ -162,11 +162,13 @@ class ThreadWidget extends StatefulWidget {
   final bool isOutsidePriority;
   final bool showSubPriority;
 
-  /// Whether this row is part of a global search result list. Search spans
-  /// every focus, so each result must carry its focus label — including
-  /// threads filed in the current focus and in the Inbox (root) — instead of
-  /// suppressing the label when the thread's focus matches [context].
-  final bool isSearch;
+  /// Whether this row belongs to a global, cross-priority view — the dedicated
+  /// Search tab, the Everything feed, or any active search/filter list. Such a
+  /// view spans every focus with no single ambient context, so each row must
+  /// carry its own focus label — including threads filed in the current focus
+  /// and in the Inbox (root) — instead of suppressing the label when the
+  /// thread's focus matches [context] (the single-focus-feed behaviour).
+  final bool isGlobalView;
   final bool showEventTiming;
   final bool bump;
   final FocusNode? focusNode;
@@ -440,7 +442,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   bool get now => widget.now;
   bool get isNext => widget.isNext;
   bool get showSubPriority => widget.showSubPriority;
-  bool get isSearch => widget.isSearch;
+  bool get isGlobalView => widget.isGlobalView;
   bool get showEventTiming => widget.showEventTiming;
   bool get bump => widget.bump;
   bool get multiSelected => widget.multiSelected;
@@ -495,13 +497,17 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   );
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
-    // In a focus feed the label is shown only for threads filed elsewhere
-    // (it would be redundant on threads already in the current focus). Search
-    // is global, so every result carries its focus label — including threads
-    // in the current focus and the Inbox (FocusLabel renders root as "Inbox").
+    // In a single-focus feed the label is shown only for threads filed
+    // elsewhere (it would be redundant on threads already in the current
+    // focus). A global view (Search tab, Everything feed, or any active
+    // search/filter) spans every focus, so every result carries its focus
+    // label — including threads in the current focus and the Inbox (FocusLabel
+    // renders root as "Inbox"). This is the fix for global filter / Everything
+    // views, which used to pass this flag only for an active text search and so
+    // dropped the label on results filed under the ambient [context].
     final hasSubPriorityLabel =
         showSubPriority &&
-        (isSearch ||
+        (isGlobalView ||
             (priorityContext != null &&
                 activity.priority.id != priorityContext!.id));
 
