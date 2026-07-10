@@ -25,13 +25,16 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "deploy": "plot deploy",
-    "lint": "plot lint"
+    "lint": "plot lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
   },
   "repository": {
     "type": "git",
