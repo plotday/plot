@@ -330,7 +330,15 @@ export class Airtable extends Connector<Airtable> {
 
     const detected = await this.refreshTaskTables(baseId, api);
 
-    if (detected.length === 0) return;
+    if (detected.length === 0) {
+      // No task-shaped tables in this base — the batch chain below never
+      // starts, so this IS the completion of the initial sync (trivially,
+      // with nothing to sync). Without this, initial_sync_completed_at
+      // would never be set for such bases and the stuck-sync watchdog would
+      // eventually force-flag a healthy connection as needing reconnection.
+      if (initialSync) await this.tools.integrations.channelSyncCompleted(baseId);
+      return;
+    }
 
     await this.set<SyncState>(`sync_state_${baseId}`, {
       tableIndex: 0,
@@ -493,6 +501,15 @@ export class Airtable extends Connector<Airtable> {
         initialSync: state.initialSync,
       });
     } else {
+      // No more tables or pages left to schedule — the initial-sync chain
+      // (started in detectAndSync) is done. Signal completion so the
+      // platform stamps initial_sync_completed_at; otherwise the
+      // stuck-sync watchdog eventually force-flags a healthy connection as
+      // needing reconnection. Idempotent/channel-scoped, so gating on
+      // initialSync just avoids a pointless call on incremental re-syncs.
+      if (state.initialSync) {
+        await this.tools.integrations.channelSyncCompleted(baseId);
+      }
       await this.clear(`sync_state_${baseId}`);
       return;
     }
