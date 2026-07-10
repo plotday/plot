@@ -671,4 +671,27 @@ describe("onChannelEnabled — workspace daily task dedup", () => {
     expect(countCallbackCreates(create, "syncMembers")).toBe(0);
     expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(0);
   });
+
+  it("re-queues once the claim window has expired and the real gate was never set (e.g. a prior queued task failed permanently)", async () => {
+    // Simulates: an earlier onChannelEnabled fan-out claimed and queued
+    // syncMembers/syncCustomEmoji, but those queued tasks failed permanently
+    // (e.g. SlackPermanentError) and returned before ever reaching their own
+    // `this.set("membersSyncedAt", ...)` / `this.set("customEmojiSyncedAt", ...)`.
+    // The real 24h gate is therefore still unset, and the claim from that
+    // earlier attempt is now stale (older than CLAIM_TTL_MS). A later
+    // onChannelEnabled (e.g. the user reconnects after fixing auth) must be
+    // allowed to re-queue rather than silently stay stalled for up to 24h.
+    const staleClaim = Date.now() - 6 * 60 * 1000; // 6 min ago > 5 min TTL
+    const { slack, create } = makeMultiChannelSlack({
+      membersSyncClaimedAt: staleClaim,
+      customEmojiSyncClaimedAt: staleClaim,
+      // membersSyncedAt / customEmojiSyncedAt intentionally absent — the
+      // queued tasks from the earlier claim never succeeded.
+    });
+
+    await slack.onChannelEnabled({ id: "C5", title: "retry-channel" } as never, undefined);
+
+    expect(countCallbackCreates(create, "syncMembers")).toBe(1);
+    expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(1);
+  });
 });

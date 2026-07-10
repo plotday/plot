@@ -1279,24 +1279,38 @@ export class Slack extends Connector<Slack> {
    */
   private async queueWorkspaceDailyTasks(channelId: string): Promise<void> {
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    // Short claim window: only long enough to dedupe a fan-out of near-simultaneous
+    // onChannelEnabled calls (e.g. a multi-channel reconnect). NOT a substitute for
+    // the real 24h gate — that's still owned by syncMembers/syncCustomEmoji
+    // themselves, set only on their own success. A claim expiring after a few
+    // minutes means a permanently-failed queued task doesn't silently suppress a
+    // legitimate retry for up to 24h; it just means a fan-out inside the claim
+    // window won't double-queue.
+    const CLAIM_TTL_MS = 5 * 60 * 1000;
     const now = Date.now();
 
     const lastMembersSync = await this.get<number>("membersSyncedAt");
-    if (!lastMembersSync || now - lastMembersSync >= ONE_DAY_MS) {
+    const membersClaimedAt = await this.get<number>("membersSyncClaimedAt");
+    const membersClaimed =
+      membersClaimedAt !== null &&
+      membersClaimedAt !== undefined &&
+      now - membersClaimedAt < CLAIM_TTL_MS;
+    if ((!lastMembersSync || now - lastMembersSync >= ONE_DAY_MS) && !membersClaimed) {
+      await this.set("membersSyncClaimedAt", now);
       const membersCallback = await this.callback(this.syncMembers, channelId);
       await this.runTask(membersCallback);
-      // Set the gate immediately so subsequent channels in this fan-out don't
-      // re-queue. The actual method will update this when it runs.
-      await this.set("membersSyncedAt", now);
     }
 
     const lastEmojiSync = await this.get<number>("customEmojiSyncedAt");
-    if (!lastEmojiSync || now - lastEmojiSync >= ONE_DAY_MS) {
+    const emojiClaimedAt = await this.get<number>("customEmojiSyncClaimedAt");
+    const emojiClaimed =
+      emojiClaimedAt !== null &&
+      emojiClaimedAt !== undefined &&
+      now - emojiClaimedAt < CLAIM_TTL_MS;
+    if ((!lastEmojiSync || now - lastEmojiSync >= ONE_DAY_MS) && !emojiClaimed) {
+      await this.set("customEmojiSyncClaimedAt", now);
       const emojiCallback = await this.callback(this.syncCustomEmoji, channelId);
       await this.runTask(emojiCallback);
-      // Set the gate immediately so subsequent channels in this fan-out don't
-      // re-queue. The actual method will update this when it runs.
-      await this.set("customEmojiSyncedAt", now);
     }
   }
 
