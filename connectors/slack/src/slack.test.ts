@@ -225,15 +225,27 @@ describe("syncCustomEmoji", () => {
       vi.unstubAllGlobals();
     }
 
-    expect(saveCustomEmoji).toHaveBeenCalledTimes(1);
-    const saved = saveCustomEmoji.mock.calls[0][0] as Array<{
-      id: string;
-      imageUrl: string | null;
-      aliasOf: string | null;
-      name: string;
-      workspace: string;
-      provider: string;
-    }>;
+    // Non-alias rows are saved before alias rows so alias_of always
+    // references an already-inserted row (see next test for why).
+    expect(saveCustomEmoji).toHaveBeenCalledTimes(2);
+    const saved = [
+      ...(saveCustomEmoji.mock.calls[0][0] as Array<{
+        id: string;
+        imageUrl: string | null;
+        aliasOf: string | null;
+        name: string;
+        workspace: string;
+        provider: string;
+      }>),
+      ...(saveCustomEmoji.mock.calls[1][0] as Array<{
+        id: string;
+        imageUrl: string | null;
+        aliasOf: string | null;
+        name: string;
+        workspace: string;
+        provider: string;
+      }>),
+    ];
     const parrot = saved.find((e) => e.id === "slack:T0/party_parrot")!;
     expect(parrot).toBeDefined();
     expect(parrot.imageUrl).toBe("https://e/pp.gif");
@@ -247,6 +259,40 @@ describe("syncCustomEmoji", () => {
 
     // Name set cached for the inbound transform.
     expect(store.map.get("custom_emoji_T0")).toEqual(["party_parrot", "pp2"]);
+  });
+
+  it("nulls out aliasOf when the alias target is a standard (non-custom) emoji", async () => {
+    // Slack lets a workspace alias a custom name to a built-in emoji
+    // shortcode (e.g. "yes": "alias:thumbsup"). "thumbsup" never gets its
+    // own custom_emoji row, so aliasOf pointing at it would violate the
+    // self-referencing alias_of foreign key.
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["emoji:read"],
+      provider: { team_id: "T0" },
+    });
+    const saveCustomEmoji = vi.fn().mockResolvedValue(undefined);
+    const { slack } = makeEmojiSlack({ store, integrationsGet, saveCustomEmoji });
+
+    const fetchMock = mockEmojiListFetch({ yes: "alias:thumbsup" });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        syncCustomEmoji: (c: string) => Promise<void>;
+      }).syncCustomEmoji("C1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    // No non-alias rows exist, so only the alias-pass call carries rows.
+    const calls = saveCustomEmoji.mock.calls as Array<
+      Array<Array<{ id: string; aliasOf: string | null }>>
+    >;
+    const allRows = calls.flatMap((args) => args[0]);
+    const yes = allRows.find((e) => e.id === "slack:T0/yes")!;
+    expect(yes).toBeDefined();
+    expect(yes.aliasOf).toBeNull();
   });
 
   it("no-ops when emoji:read is not granted", async () => {
