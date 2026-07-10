@@ -204,6 +204,37 @@ describe("handlePRReviewCommentWebhook", () => {
     expect(savedLinks[0].notes[0].content).toContain("📄 src/foo.ts:42");
   });
 
+  it("sets sourceUrl and actions from the PR, matching handlePRWebhook/handleReviewWebhook parity", async () => {
+    const savedLinks: any[] = [];
+    const stored: Record<string, any> = {};
+    const fakeSource = {
+      userToContact: (user: { id: number; login: string }) => ({
+        email: `${user.id}+${user.login}@users.noreply.github.com`,
+        name: user.login,
+        source: { accountId: String(user.id) },
+      }),
+      saveLink: async (link: any) => {
+        savedLinks.push(link);
+      },
+      get: async (key: string) => stored[key] ?? null,
+      set: async (key: string, value: any) => {
+        stored[key] = value;
+      },
+    } as any;
+
+    await handlePRReviewCommentWebhook(
+      fakeSource,
+      { action: "created", comment: makeReviewComment(), pull_request: makePR() },
+      "acme/repo"
+    );
+
+    expect(savedLinks).toHaveLength(1);
+    expect(savedLinks[0].sourceUrl).toBe("https://github.com/acme/repo/pull/42");
+    expect(savedLinks[0].actions).toEqual([
+      { type: "external", title: "Open in GitHub", url: "https://github.com/acme/repo/pull/42" },
+    ]);
+  });
+
   it("appends the new key to open-PR comment-key state", async () => {
     // Storage key format is `open_pr_comment_keys_<repositoryId>_<prNumber>`,
     // and repositoryId ("acme/repo") already contains a slash — so the real

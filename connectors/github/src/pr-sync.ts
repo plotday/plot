@@ -581,7 +581,9 @@ export async function handlePRCommentWebhook(
 
 /**
  * Handle pull_request_review_comment webhook event (inline code-line
- * comments — created/edited/deleted).
+ * comments — created/edited/deleted). Applies `buildPRThreadFields` so a
+ * PR whose first sync happens via this webhook still gets `sourceUrl`/the
+ * "Open in GitHub" action, matching `handlePRWebhook`/`handleReviewWebhook`.
  */
 export async function handlePRReviewCommentWebhook(
   source: GitHub,
@@ -604,6 +606,7 @@ export async function handlePRReviewCommentWebhook(
   }
 
   const note = buildReviewCommentNote(source, comment);
+  const { actions, sourceUrl } = buildPRThreadFields(source, pr);
 
   const thread: NewLinkWithNotes = {
     source: `github:pr:${owner}/${repo}/${pr.number}`,
@@ -620,6 +623,8 @@ export async function handlePRReviewCommentWebhook(
       syncProvider: "github",
       syncableId: repositoryId,
     },
+    actions,
+    sourceUrl,
   };
 
   await source.saveLink(thread);

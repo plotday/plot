@@ -142,7 +142,7 @@ export async function reconcileCommentReactions(
   try {
     const response = await source.githubFetch(
       token,
-      reactionsPath(owner, repo, endpoint.commentId, endpoint.kind)
+      `${reactionsPath(owner, repo, endpoint.commentId, endpoint.kind)}?per_page=100`
     );
     if (!response.ok) return;
     entries = await response.json();

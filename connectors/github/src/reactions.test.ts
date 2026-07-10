@@ -68,6 +68,31 @@ describe("reconcileCommentReactions", () => {
     expect(reactions["❤️"]).toHaveLength(1);
   });
 
+  it("requests per_page=100 so comments with >30 reactions aren't silently truncated", async () => {
+    let capturedPath = "";
+    const fakeSource = {
+      githubFetch: async (_token: string, path: string) => {
+        capturedPath = path;
+        return { ok: true, json: async () => [] };
+      },
+      userToContact: (u: any) => u,
+      setNoteReactions: async () => {},
+    } as any;
+
+    await reconcileCommentReactions(
+      fakeSource,
+      "fake-token",
+      "acme",
+      "repo",
+      42,
+      "comment-123"
+    );
+
+    expect(capturedPath).toBe(
+      "/repos/acme/repo/issues/comments/123/reactions?per_page=100"
+    );
+  });
+
   it("no-ops for a key with no known GitHub endpoint", async () => {
     const setNoteReactionsCalls: any[] = [];
     const fakeSource = {
