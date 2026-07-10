@@ -803,3 +803,67 @@ describe("onChannelEnabled — workspace daily task dedup", () => {
     expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(1);
   });
 });
+
+describe("onSlackWebhook — DM/MPIM message routing", () => {
+  function makeDMWebhookSlack(opts: {
+    store: ReturnType<typeof makeStore>;
+  }) {
+    const scheduleDrain = vi.fn(async () => {});
+    const tools = {
+      store: opts.store,
+      integrations: { get: vi.fn() },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create: vi.fn(async () => ({ token: "cb" }) as never) },
+      tasks: { runTask: vi.fn(async () => "task-token"), scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+    vi.spyOn(
+      slack as unknown as { scheduleDrain: (...a: unknown[]) => Promise<void> },
+      "scheduleDrain"
+    ).mockImplementation(scheduleDrain);
+    return { slack, scheduleDrain };
+  }
+
+  it("starts incremental sync for a message on a known DM channel", async () => {
+    const store = makeStore({ dm_channels: ["D1"] });
+    const { slack, scheduleDrain } = makeDMWebhookSlack({ store });
+
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "D1" } } } as never,
+      Slack.DM_WEBHOOK_SENTINEL
+    );
+
+    expect(scheduleDrain).toHaveBeenCalledWith(
+      "incremental-sync:D1",
+      expect.anything(),
+      expect.objectContaining({ handlerArgs: ["D1"] })
+    );
+  });
+
+  it("ignores a message on a channel not in the known DM set", async () => {
+    const store = makeStore({ dm_channels: ["D1"] });
+    const { slack, scheduleDrain } = makeDMWebhookSlack({ store });
+
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "G-not-a-known-dm" } } } as never,
+      Slack.DM_WEBHOOK_SENTINEL
+    );
+
+    expect(scheduleDrain).not.toHaveBeenCalled();
+  });
+
+  it("does not double-process a message already routed via a real enabled channelId", async () => {
+    const store = makeStore({ dm_channels: ["C123"], sync_enabled_C123: true });
+    const { slack, scheduleDrain } = makeDMWebhookSlack({ store });
+
+    // This is the existing per-channel callback path, not the DM sentinel —
+    // must still only fire once via the normal channelId match.
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "C123" } } } as never,
+      "C123"
+    );
+
+    expect(scheduleDrain).toHaveBeenCalledTimes(1);
+  });
+});

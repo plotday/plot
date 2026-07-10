@@ -91,8 +91,22 @@ import { slackFacets } from "./slack-facets";
  */
 const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
 
+/**
+ * Extra-arg value used to register ONE webhook callback per Slack
+ * connection that covers ALL of the user's DM/MPIM conversations, instead of
+ * one callback per conversation (which would require enumerating and
+ * tracking hundreds of `channel` rows with no corresponding Settings UI to
+ * manage them). `GetSlackCallbacks` (workers/api/src/twist/tools/network.ts)
+ * broadcasts every incoming Slack event to every callback registered for the
+ * team whose granted scopes cover the event type — this sentinel is just
+ * another registered callback's extraArg, distinguished from a real
+ * channelId by never matching a Slack conversation id format.
+ */
+const DM_WEBHOOK_SENTINEL = "__dm_workspace__";
+
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
+  static readonly DM_WEBHOOK_SENTINEL = DM_WEBHOOK_SENTINEL;
   static readonly handleReplies = true;
   static readonly SCOPES: ScopeConfig = {
     required: [
@@ -696,12 +710,22 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
-    if (
-      event.type === "message" &&
-      event.channel === channelId &&
-      !event.subtype
-    ) {
-      await this.startIncrementalSync(channelId);
+    if (event.type === "message" && !event.subtype) {
+      if (event.channel === channelId) {
+        await this.startIncrementalSync(channelId);
+      } else if (
+        channelId === DM_WEBHOOK_SENTINEL &&
+        typeof event.channel === "string" &&
+        (await this.isKnownDMChannel(event.channel))
+      ) {
+        // Seed the incremental-sync floor for clarity/parity with the
+        // regular-channel path, even though drainChannelSync already
+        // defaults to a sane 15-minute window when this is unset.
+        if (!(await this.get<string>(`enabled_at_${event.channel}`))) {
+          await this.set(`enabled_at_${event.channel}`, (Date.now() / 1000).toString());
+        }
+        await this.startIncrementalSync(event.channel);
+      }
     }
   }
 
@@ -1315,6 +1339,60 @@ export class Slack extends Connector<Slack> {
       const emojiCallback = await this.callback(this.syncCustomEmoji, channelId);
       await this.runTask(emojiCallback);
     }
+
+    // registerDMWebhook is a one-time (not daily) registration, gated by the
+    // permanent `dm_webhook_registered` flag rather than a 24h window — but
+    // still needs the same short claim to dedupe a fan-out before that flag
+    // is set (it's only written inside registerDMWebhook itself, on success).
+    const dmWebhookRegistered = await this.get<boolean>("dm_webhook_registered");
+    const dmWebhookClaimedAt = await this.get<number>("dmWebhookClaimedAt");
+    const dmWebhookClaimed =
+      dmWebhookClaimedAt !== null &&
+      dmWebhookClaimedAt !== undefined &&
+      now - dmWebhookClaimedAt < CLAIM_TTL_MS;
+    if (!dmWebhookRegistered && !dmWebhookClaimed) {
+      await this.set("dmWebhookClaimedAt", now);
+      const dmWebhookCallback = await this.callback(this.registerDMWebhook, channelId);
+      await this.runTask(dmWebhookCallback);
+    }
+
+    const lastDMListSync = await this.get<number>("dmChannelsSyncedAt");
+    const dmListClaimedAt = await this.get<number>("dmChannelsSyncClaimedAt");
+    const dmListClaimed =
+      dmListClaimedAt !== null &&
+      dmListClaimedAt !== undefined &&
+      now - dmListClaimedAt < CLAIM_TTL_MS;
+    if ((!lastDMListSync || now - lastDMListSync >= ONE_DAY_MS) && !dmListClaimed) {
+      await this.set("dmChannelsSyncClaimedAt", now);
+      const dmListCallback = await this.callback(this.listDMChannels, channelId);
+      await this.runTask(dmListCallback);
+    }
+  }
+
+  /**
+   * Registers ONE webhook callback covering all of this connection's DM/MPIM
+   * traffic (see {@link DM_WEBHOOK_SENTINEL}). Gated by a stored flag so it's
+   * only actually registered once per connection, regardless of how many
+   * channels' `onChannelEnabled` runs. Requires the `im:history`/`mpim:history`
+   * optional scope group to have been granted — no-ops otherwise (the user
+   * declined DM sync at connect time).
+   */
+  private async registerDMWebhook(channelId: string): Promise<void> {
+    if (await this.get<boolean>("dm_webhook_registered")) return;
+
+    const authorization = await this.get<Authorization>("auth");
+    if (!authorization) return;
+
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) return;
+    if (!token.scopes?.includes("im:history")) return; // optional scope declined
+
+    await this.tools.network.createWebhook(
+      { provider: AuthProvider.Slack, authorization },
+      this.onSlackWebhook,
+      DM_WEBHOOK_SENTINEL
+    );
+    await this.set("dm_webhook_registered", true);
   }
 
   /**
