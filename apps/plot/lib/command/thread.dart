@@ -280,24 +280,34 @@ class ChangeCurrentThread extends ThreadCommand {
   /// Returns the inner [StackRouter] hosted by the active [PriorityRoute],
   /// or null when no PriorityRoute is currently mounted (e.g. when called
   /// from the Agenda or Priorities tabs).
-  ///
-  /// auto_route's [innerRouterOf] only checks immediate child controllers,
-  /// so a deeply-nested route like PriorityRoute (root → AppShell → tabs →
-  /// ActivityShell → PriorityRoute) is never found in one shot. This
-  /// walks the controller tree manually.
-  StackRouter? _innerRouter(BuildContext context) {
-    return _findInnerRouter(context.router.root, PriorityRoute.name);
-  }
+  StackRouter? _innerRouter(BuildContext context) =>
+      _priorityInnerRouter(context);
+}
 
-  StackRouter? _findInnerRouter(RoutingController root, String routeName) {
-    final direct = root.innerRouterOf<StackRouter>(routeName);
-    if (direct != null) return direct;
-    for (final child in root.childControllers) {
-      final hit = _findInnerRouter(child, routeName);
-      if (hit != null) return hit;
-    }
-    return null;
+/// Returns the inner [StackRouter] hosted by the active [PriorityRoute], or
+/// null when none is mounted. Shared by [ChangeCurrentThread] and
+/// [_applyPriorityMove]'s modal-context fallback: both push/replace a
+/// [ThreadRoute] on the right panel's router directly.
+///
+/// auto_route's [innerRouterOf] only checks immediate child controllers, so
+/// a deeply-nested route like PriorityRoute (root → AppShell → tabs →
+/// ActivityShell → PriorityRoute) is never found in one shot. This walks the
+/// controller tree manually. `context.router.root` resolves regardless of
+/// page-scoped Provider availability — the [AutoRouter] is mounted above
+/// [PriorityBloc]/[NowBloc]/[LayoutBloc], so this works even from a nested
+/// modal context that can't `context.read` those.
+StackRouter? _priorityInnerRouter(BuildContext context) {
+  return _findInnerRouter(context.router.root, PriorityRoute.name);
+}
+
+StackRouter? _findInnerRouter(RoutingController root, String routeName) {
+  final direct = root.innerRouterOf<StackRouter>(routeName);
+  if (direct != null) return direct;
+  for (final child in root.childControllers) {
+    final hit = _findInnerRouter(child, routeName);
+    if (hit != null) return hit;
   }
+  return null;
 }
 
 class NewThread extends Command {
@@ -2326,9 +2336,30 @@ Future<void> _applyPriorityMove(
     if (context.read<PriorityBloc?>() != null) {
       await ChangeCurrentThread(nav!.open!).run(context);
     } else {
-      // Nested-modal context (no page providers): fall back to the
-      // captured bloc for the minimal navigation.
+      // Nested-modal context (no page providers): NowBloc/LayoutBloc aren't
+      // reachable here, so skip ChangeCurrentThread's panel-preference side
+      // effects. But the right panel is a routed page, not a widget that
+      // rebuilds off PriorityBloc.state.thread — without pushing the route
+      // too, setThread alone updates the list's selection highlight while
+      // the right panel keeps rendering the thread that just left this
+      // focus. The AutoRouter itself IS reachable via _priorityInnerRouter,
+      // unlike the page-scoped blocs.
       priorityBloc?.setThread(nav!.open);
+      final innerRouter = _priorityInnerRouter(context);
+      if (innerRouter != null) {
+        final threadRoute = ThreadRoute(
+          threadIdString: nav!.open!.id.toShortString(),
+        );
+        // Fire and forget: auto_route's push/replace return Futures that
+        // resolve on POP, not on push. Awaiting blocks indefinitely.
+        if (innerRouter.current.name == ThreadRoute.name) {
+          // ignore: unawaited_futures
+          innerRouter.replace(threadRoute);
+        } else {
+          // ignore: unawaited_futures
+          innerRouter.push(threadRoute);
+        }
+      }
     }
   }
 }
