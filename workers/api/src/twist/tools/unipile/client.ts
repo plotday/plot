@@ -403,12 +403,14 @@ export class UnipileClient {
     chatId: string;
     read: boolean;
   }): Promise<void> {
+    // Unipile has a single "setReadStatus" action toggled by a boolean
+    // "value" — there is no separate "setUnreadStatus" action.
     await this.request(
       `/v2/${encodeURIComponent(input.accountId)}/chats/${encodeURIComponent(input.chatId)}`,
       {
         method: "PATCH",
         body: JSON.stringify({
-          action: input.read ? "setReadStatus" : "setUnreadStatus",
+          action: "setReadStatus",
           value: input.read,
         }),
         headers: { "content-type": "application/json" },

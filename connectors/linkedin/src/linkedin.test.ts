@@ -526,3 +526,63 @@ describe("onWebhookEvent relation.new reconciliation", () => {
     expect(tools.integrations.saveNote).not.toHaveBeenCalled();
   });
 });
+
+describe("onThreadRead", () => {
+  type ThreadReadFn = (
+    thread: { meta: Record<string, unknown> },
+    actor: unknown,
+    unread: boolean
+  ) => Promise<void>;
+
+  it("writes the read state back to LinkedIn via setChatRead", async () => {
+    const setChatRead = vi.fn().mockResolvedValue(undefined);
+    const { conn } = makeLinkedIn({ linkedin: { setChatRead } });
+    const thread = { meta: { chatId: "chat-1", channelId: "chan-1" } };
+
+    await (conn as unknown as { onThreadRead: ThreadReadFn }).onThreadRead(
+      thread,
+      { id: "actor-1", type: "user", name: null },
+      false // unread=false -> mark read
+    );
+
+    expect(setChatRead).toHaveBeenCalledWith({
+      channelId: "chan-1",
+      chatId: "chat-1",
+      read: true,
+    });
+  });
+
+  // A failed write-back must propagate so the twist runtime's automatic
+  // handleTwistOperation/callCallback wrapper captures it to PostHog Error
+  // Tracking — connector code runs in an isolated Worker with no direct
+  // PostHog binding, so silently swallowing here (console.warn) is the ONLY
+  // way this failure mode could ever go unnoticed. See onNoteCreated's
+  // sendMessage/createComment calls for the same let-it-throw convention.
+  it("propagates setChatRead failures instead of swallowing them", async () => {
+    const setChatRead = vi.fn().mockRejectedValue(new Error("Unipile 502"));
+    const { conn } = makeLinkedIn({ linkedin: { setChatRead } });
+    const thread = { meta: { chatId: "chat-1", channelId: "chan-1" } };
+
+    await expect(
+      (conn as unknown as { onThreadRead: ThreadReadFn }).onThreadRead(
+        thread,
+        { id: "actor-1", type: "user", name: null },
+        false
+      )
+    ).rejects.toThrow("Unipile 502");
+  });
+
+  it("no-ops when chatId/channelId are missing from thread meta", async () => {
+    const setChatRead = vi.fn().mockResolvedValue(undefined);
+    const { conn } = makeLinkedIn({ linkedin: { setChatRead } });
+    const thread = { meta: {} };
+
+    await (conn as unknown as { onThreadRead: ThreadReadFn }).onThreadRead(
+      thread,
+      { id: "actor-1", type: "user", name: null },
+      false
+    );
+
+    expect(setChatRead).not.toHaveBeenCalled();
+  });
+});

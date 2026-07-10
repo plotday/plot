@@ -317,18 +317,15 @@ export class WhatsApp extends Connector<WhatsApp> {
     const chatId = meta.chatId as string | undefined;
     const channelId = meta.channelId as string | undefined;
     if (!chatId || !channelId) return;
-    try {
-      await this.tools.whatsapp.setChatRead({
-        channelId,
-        chatId,
-        read: !unread,
-      });
-    } catch (error) {
-      console.warn(
-        `WhatsApp setChatRead failed for chat ${chatId} (read=${!unread})`,
-        error
-      );
-    }
+    // Let failures propagate: connector code runs in an isolated Worker with
+    // no direct PostHog binding, so an uncaught throw here is the only way a
+    // broken write-back gets surfaced by the runtime's automatic error
+    // capture (see the LinkedIn connector's onThreadRead for the same fix).
+    await this.tools.whatsapp.setChatRead({
+      channelId,
+      chatId,
+      read: !unread,
+    });
   }
 
   override async downloadAttachment(ref: string): Promise<

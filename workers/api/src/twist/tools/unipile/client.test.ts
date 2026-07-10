@@ -265,4 +265,30 @@ describe("UnipileClient (v2)", () => {
       vi.useRealTimers();
     }
   });
+
+  describe("setChatRead", () => {
+    // Unipile's PATCH .../chats/:id endpoint has a single action,
+    // "setReadStatus", toggled by a boolean "value" — there is no separate
+    // "setUnreadStatus" action (per developer.unipile.com/reference/chatscontroller_patchchat).
+    it("sends action=setReadStatus with value=true when marking read", async () => {
+      const { client, calls } = recordingClient(() => new Response(null, { status: 204 }));
+      await client.setChatRead({ accountId: "acc1", chatId: "c1", read: true });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toBe(`${BASE}/v2/acc1/chats/c1`);
+      expect(calls[0]!.init.method).toBe("PATCH");
+      expect(JSON.parse(calls[0]!.init.body as string)).toEqual({
+        action: "setReadStatus",
+        value: true,
+      });
+    });
+
+    it("sends action=setReadStatus with value=false when marking unread", async () => {
+      const { client, calls } = recordingClient(() => new Response(null, { status: 204 }));
+      await client.setChatRead({ accountId: "acc1", chatId: "c1", read: false });
+      expect(JSON.parse(calls[0]!.init.body as string)).toEqual({
+        action: "setReadStatus",
+        value: false,
+      });
+    });
+  });
 });

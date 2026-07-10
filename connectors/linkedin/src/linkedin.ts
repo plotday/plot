@@ -1226,18 +1226,15 @@ export class LinkedIn extends Connector<LinkedIn> {
     const chatId = meta.chatId as string | undefined;
     const channelId = meta.channelId as string | undefined;
     if (!chatId || !channelId) return;
-    try {
-      await this.tools.linkedin.setChatRead({
-        channelId,
-        chatId,
-        read: !unread,
-      });
-    } catch (error) {
-      console.warn(
-        `LinkedIn setChatRead failed for chat ${chatId} (read=${!unread})`,
-        error
-      );
-    }
+    // Let failures propagate (see onNoteCreated's sendMessage/createComment):
+    // connector code runs in an isolated Worker with no direct PostHog
+    // binding, so an uncaught throw here is the only way a broken write-back
+    // gets surfaced by the runtime's automatic error capture.
+    await this.tools.linkedin.setChatRead({
+      channelId,
+      chatId,
+      read: !unread,
+    });
   }
 
   override async downloadAttachment(ref: string): Promise<
