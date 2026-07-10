@@ -866,4 +866,38 @@ describe("onSlackWebhook — DM/MPIM message routing", () => {
 
     expect(scheduleDrain).toHaveBeenCalledTimes(1);
   });
+
+  it("seeds a channel_webhook marker for a newly discovered DM so drainChannelSync doesn't bail out on it", async () => {
+    // drainChannelSync guards on `channel_webhook_<channelId>` being present.
+    // Regular channels get that marker from setupChannelWebhook's per-channel
+    // registration; DM channels never get a per-channel webhook registration
+    // (they share ONE sentinel-keyed webhook — see registerDMWebhook). Without
+    // this synthetic marker, drainChannelSync would log "No channel webhook
+    // data found" and silently no-op for every incoming DM, so this proves
+    // the precondition drainChannelSync actually needs is satisfied.
+    const store = makeStore({ dm_channels: ["D1"] });
+    const { slack } = makeDMWebhookSlack({ store });
+
+    await slack.onSlackWebhook(
+      { body: { event: { type: "message", channel: "D1" } } } as never,
+      Slack.DM_WEBHOOK_SENTINEL
+    );
+
+    expect(store.map.get("channel_webhook_D1")).toBeTruthy();
+
+    const syncBatch = vi
+      .spyOn(
+        slack as unknown as { syncBatch: (...a: unknown[]) => Promise<void> },
+        "syncBatch"
+      )
+      .mockImplementation(async () => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await slack.drainChannelSync([], "D1");
+
+    expect(consoleError).not.toHaveBeenCalledWith("No channel webhook data found");
+    expect(syncBatch).toHaveBeenCalledWith(1, "incremental", "D1", false);
+
+    consoleError.mockRestore();
+  });
 });

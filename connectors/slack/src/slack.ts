@@ -724,6 +724,21 @@ export class Slack extends Connector<Slack> {
         if (!(await this.get<string>(`enabled_at_${event.channel}`))) {
           await this.set(`enabled_at_${event.channel}`, (Date.now() / 1000).toString());
         }
+        // drainChannelSync guards on `channel_webhook_<channelId>` being
+        // present (a marker that this channel's sync path is live) — regular
+        // channels get this from setupChannelWebhook's per-channel
+        // registration, but DM channels share ONE workspace-wide webhook
+        // (see registerDMWebhook) with no per-DM registration entry. Seed a
+        // synthetic marker so the guard passes; drainChannelSync never reads
+        // this value past the presence check.
+        if (!(await this.get<any>(`channel_webhook_${event.channel}`))) {
+          await this.set(`channel_webhook_${event.channel}`, {
+            url: null,
+            channelId: event.channel,
+            created: new Date().toISOString(),
+            dm: true,
+          });
+        }
         await this.startIncrementalSync(event.channel);
       }
     }
