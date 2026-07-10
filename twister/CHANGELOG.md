@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.74.1
+
+### Fixed
+
+- package lint and editor type resolution for the exemplar sources' package self-imports (bundler moduleResolution now applies package-wide; the CommonJS CLI build uses its own standalone config). ([#279](https://github.com/plotday/plot/pull/279) [`ffe212d`](https://github.com/plotday/plot/commit/ffe212d2f463cc0e77a790d7b4ccb8aaf4639682))
+
 ## 0.74.0
 
 ### Added
