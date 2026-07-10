@@ -5,9 +5,12 @@
   "type": "module",
   "description": "Repo-level static checks (not published) that guard cross-connector conventions.",
   "scripts": {
+    "lint": "tsc --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@plotday/twister": "workspace:^",
+    "@types/node": "^25.0.3",
     "typescript": "^5.9.3",
     "vitest": "^2.1.8"
   }
