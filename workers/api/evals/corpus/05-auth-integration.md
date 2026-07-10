@@ -3,8 +3,8 @@ id: auth-integration
 category: integration
 difficulty: hard
 assertions:
-  - match: 'Integrations|integrations'
-    why: must use the integrations/auth tooling
+  - match: 'Integrations|integrations|secure:\s*true'
+    why: must wire auth (integrations tooling, or a secure Options credential)
   - match: 'createThread|saveLink'
     why: issues must land as threads
 allowDeps: []

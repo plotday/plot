@@ -3,10 +3,10 @@ id: store-lifecycle
 category: state
 difficulty: medium
 assertions:
-  - match: 'this\.set\(|store\.set\(|setMany'
+  - match: 'this\.set\b|store\.set\b|setMany'
     why: the count must be persisted, not kept in memory
-  - match: 'this\.get\(|store\.get\('
-    why: the count must be read back across executions
+  - match: 'this\.get\b|store\.get\b'
+    why: the count must be read back across executions (generic call forms like this.get<number>(...) count)
   - match: 'scheduleRecurring|scheduleTask|runTask'
     why: the weekly report must be scheduled
 allowDeps: []

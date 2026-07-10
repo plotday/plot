@@ -5,8 +5,8 @@ difficulty: hard
 assertions:
   - match: 'runTask'
     why: long imports must be batched into fresh executions
-  - match: 'store|this\.set\(|this\.get\('
-    why: progress must persist between batches
+  - match: 'store|this\.set\b|this\.get\b'
+    why: progress must persist between batches (generic call forms like this.set<number>(...) count)
 allowDeps: []
 ---
 # Open Library reading list import

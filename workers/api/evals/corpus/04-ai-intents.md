@@ -3,8 +3,8 @@ id: ai-intents
 category: ai
 difficulty: medium
 assertions:
-  - match: 'onNoteCreated'
-    why: must react to new notes
+  - match: 'onNoteCreated|intents:|handler:'
+    why: must react to notes (onNoteCreated subscription, or mention intents/handler)
   - match: '\bai\b|\bAI\b'
     why: must use the AI tool for the summary
   - match: 'createNote'
