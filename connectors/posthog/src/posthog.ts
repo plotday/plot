@@ -233,7 +233,13 @@ export class PostHog extends Connector<PostHog> {
       );
       await this.tools.tasks.runTask(nextBatch);
     } else {
-      // Sync complete
+      // Sync complete — signal so the platform clears the "Syncing…"
+      // indicator and the stuck-sync watchdog stops tracking this channel.
+      // Gated on isInitial so incremental (webhook-driven) re-syncs, which
+      // also flow through this same branch, don't fire it redundantly.
+      if (isInitial) {
+        await this.tools.integrations.channelSyncCompleted(eventName);
+      }
       await this.clear(`sync_state_${eventName}`);
     }
   }
