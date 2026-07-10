@@ -610,3 +610,65 @@ describe("onSlackWebhook — deauthorization events", () => {
     expect(markNeedsReauth).not.toHaveBeenCalled();
   });
 });
+
+describe("onChannelEnabled — workspace daily task dedup", () => {
+  function makeMultiChannelSlack(storeInitial: Record<string, unknown> = {}) {
+    const store = makeStore(storeInitial);
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const runTask = vi.fn(async () => "task-token");
+    const tools = {
+      store,
+      integrations: {
+        get: vi.fn(),
+        channelSyncCompleted: vi.fn().mockResolvedValue(undefined),
+      },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    return { slack, store, create, runTask };
+  }
+
+  /** Count `create` calls whose callback target is the given method name. */
+  function countCallbackCreates(
+    create: ReturnType<typeof vi.fn>,
+    methodName: string
+  ): number {
+    return create.mock.calls.filter(
+      (call) => (call[0] as { name?: string })?.name === methodName
+    ).length;
+  }
+
+  it("only the first channel of a fan-out queues syncMembers/syncCustomEmoji", async () => {
+    const { slack, create } = makeMultiChannelSlack();
+    const channels = [
+      { id: "C1", title: "general" },
+      { id: "C2", title: "random" },
+      { id: "C3", title: "announcements" },
+    ];
+
+    for (const channel of channels) {
+      await slack.onChannelEnabled(channel as never, undefined);
+    }
+
+    expect(countCallbackCreates(create, "syncMembers")).toBe(1);
+    expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(1);
+  });
+
+  it("does not re-queue on a channel enabled after the daily gate is already set", async () => {
+    const { slack, create } = makeMultiChannelSlack({
+      membersSyncedAt: Date.now(),
+      customEmojiSyncedAt: Date.now(),
+    });
+
+    await slack.onChannelEnabled({ id: "C4", title: "new-channel" } as never, undefined);
+
+    expect(countCallbackCreates(create, "syncMembers")).toBe(0);
+    expect(countCallbackCreates(create, "syncCustomEmoji")).toBe(0);
+  });
+});

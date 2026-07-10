@@ -283,18 +283,9 @@ export class Slack extends Connector<Slack> {
       await this.runTask(backfillCallback);
     }
 
-    // Sync workspace members so the DM recipient picker can filter to
-    // reachable Slack contacts. Gated inside syncMembers to once per day,
-    // so repeated onChannelEnabled calls (e.g. multiple channels enabled)
-    // only hit users.list once.
-    const membersCallback = await this.callback(this.syncMembers, channel.id);
-    await this.runTask(membersCallback);
-
-    // Sync the workspace's custom emoji into the shared cache so they render
-    // and round-trip. Gated inside syncCustomEmoji to once per day, and
-    // harmless when the optional `emoji:read` scope wasn't granted (no-op).
-    const emojiCallback = await this.callback(this.syncCustomEmoji, channel.id);
-    await this.runTask(emojiCallback);
+    // Queue workspace-scoped daily tasks (member sync, custom emoji sync)
+    // at most once per fan-out instead of once per channel.
+    await this.queueWorkspaceDailyTasks(channel.id);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -1269,6 +1260,45 @@ export class Slack extends Connector<Slack> {
   }
 
   // ---- Workspace member sync ----
+
+  /**
+   * Queue the once-per-24h workspace-scoped tasks (member sync, custom
+   * emoji sync) at most once per fan-out, instead of once per channel.
+   *
+   * `syncMembers`/`syncCustomEmoji` already no-op internally if run within
+   * the last 24h, but that no-op still costs a full queue dispatch + worker
+   * invocation + store read — which counts against the platform's
+   * burst-rate/execution-quota limits. A connection with N enabled channels
+   * previously queued 2N of these on every `onChannelEnabled` fan-out
+   * (initial connect, "refresh channels", or a stuck-sync watchdog retry),
+   * of which at most 2 ever did real work. Checking the same gate here,
+   * before queuing, cuts that down to at most 2 total.
+   *
+   * `channelId` is just which channel's token to use if a task does need to
+   * run — any enabled channel's token works (Slack tokens are workspace-wide).
+   */
+  private async queueWorkspaceDailyTasks(channelId: string): Promise<void> {
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const lastMembersSync = await this.get<number>("membersSyncedAt");
+    if (!lastMembersSync || now - lastMembersSync >= ONE_DAY_MS) {
+      const membersCallback = await this.callback(this.syncMembers, channelId);
+      await this.runTask(membersCallback);
+      // Set the gate immediately so subsequent channels in this fan-out don't
+      // re-queue. The actual method will update this when it runs.
+      await this.set("membersSyncedAt", now);
+    }
+
+    const lastEmojiSync = await this.get<number>("customEmojiSyncedAt");
+    if (!lastEmojiSync || now - lastEmojiSync >= ONE_DAY_MS) {
+      const emojiCallback = await this.callback(this.syncCustomEmoji, channelId);
+      await this.runTask(emojiCallback);
+      // Set the gate immediately so subsequent channels in this fan-out don't
+      // re-queue. The actual method will update this when it runs.
+      await this.set("customEmojiSyncedAt", now);
+    }
+  }
 
   /**
    * Syncs all active human workspace members as Plot contacts so the
