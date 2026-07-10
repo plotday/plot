@@ -66,6 +66,36 @@ describe("normalize (v2)", () => {
     expect(chat.folder).toBeNull();
   });
 
+  it("strips the CLASSIC_ inbox prefix from a linkedin chat url but keeps it in the id", () => {
+    const chat = normalizeChat(
+      {
+        object: "Chat",
+        id: "CLASSIC_2-MWU3NDQ3MDItYTM4Yi01ODUwLWI1YWEtMDI2NjI0OGQ1MmY1XzAwMA==",
+        provider: "linkedin",
+        name: null,
+        type: "1to1",
+        is_group: false,
+        is_archived: false,
+        unread_count: 0,
+        last_message_timestamp: "2026-05-22T10:00:00.000Z",
+        folders: [],
+        user: {
+          object: "User",
+          id: "ACoAA12345",
+          display_name: "Jane Doe",
+          public_identifier: "jdoe",
+        },
+      },
+      "linkedin"
+    );
+    expect(chat.id).toBe(
+      "CLASSIC_2-MWU3NDQ3MDItYTM4Yi01ODUwLWI1YWEtMDI2NjI0OGQ1MmY1XzAwMA=="
+    );
+    expect(chat.url).toBe(
+      "https://www.linkedin.com/messaging/thread/2-MWU3NDQ3MDItYTM4Yi01ODUwLWI1YWEtMDI2NjI0OGQ1MmY1XzAwMA==/"
+    );
+  });
+
   it("normalizes a 1:1 whatsapp chat from the embedded user; null url and profileUrl", () => {
     const chat = normalizeChat(
       {

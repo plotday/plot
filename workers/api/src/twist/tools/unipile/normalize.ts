@@ -73,9 +73,13 @@ export function normalizeChat(chat: UnipileChat, provider: string): ChatThread {
     unreadCount: chat.unread_count,
     archived: chat.is_archived === true,
     folder: chat.folders?.[0] ?? null,
+    // Unipile's LinkedIn inbox-scoped chat ids (fetched via CLASSIC_PRIMARY /
+    // CLASSIC_INMAIL, see linkedin.ts) carry a "CLASSIC_" family prefix that
+    // must round-trip back into other Unipile chat-scoped API calls, but that
+    // LinkedIn's own web UI doesn't recognize in messaging thread URLs.
     url:
       provider === "linkedin"
-        ? `https://www.linkedin.com/messaging/thread/${chat.id}/`
+        ? `https://www.linkedin.com/messaging/thread/${chat.id.replace(/^CLASSIC_/, "")}/`
         : null,
   };
 }
