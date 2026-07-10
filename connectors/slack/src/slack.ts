@@ -82,6 +82,12 @@ import { slackFacets } from "./slack-facets";
  * - `emoji:read` — render the workspace's custom emoji in reactions
  * - `im:history`, `im:write`, `mpim:history`, `mpim:write` — read and compose
  *   direct messages and group DMs
+ * - `im:read`, `mpim:read` — enumerate/list the user's DM and group-DM
+ *   conversations (`conversations.list` with `types=im,mpim`), which is how
+ *   {@link listDMChannels} discovers DM/MPIM conversation ids. Distinct from
+ *   `im:history`/`mpim:history`, which only grant reading message content
+ *   within a conversation whose id is already known — they do not grant
+ *   enumeration, so `listDMChannels` needs both.
  */
 
 /**
@@ -147,7 +153,17 @@ export class Slack extends Connector<Slack> {
         label: "Sync direct messages",
         description:
           "Bring your Slack DMs and group DMs into Plot, and let you send new ones from Plot.",
-        scopes: ["im:history", "im:write", "mpim:history", "mpim:write"],
+        scopes: [
+          "im:history",
+          "im:write",
+          "mpim:history",
+          "mpim:write",
+          // Enumeration scopes: conversations.list with types=im,mpim (used by
+          // listDMChannels to discover conversation ids) requires these, not
+          // the *:history scopes above — see the class doc comment.
+          "im:read",
+          "mpim:read",
+        ],
         default: true,
       },
     ],
@@ -1665,6 +1681,13 @@ export class Slack extends Connector<Slack> {
    * mirroring {@link syncMembers} / {@link syncCustomEmoji}. A brand-new
    * incoming DM conversation is picked up on the next daily run, or
    * immediately if proactively registered (see `createDirectMessage`).
+   *
+   * Requires the `im:read` optional scope (part of the `dms` group) to have
+   * been granted — no-ops otherwise (the user declined DM sync at connect
+   * time). Without this guard, a token missing `im:read` would hit
+   * `conversations.list`, get back `missing_scope` (a permanent error in
+   * `SLACK_AUTH_ERRORS`), and force-flag the entire connection as needing
+   * reconnection even though nothing is actually broken.
    */
   async listDMChannels(channelId: string): Promise<void> {
     const now = Date.now();
@@ -1672,13 +1695,14 @@ export class Slack extends Connector<Slack> {
     const last = await this.get<number>("dmChannelsSyncedAt");
     if (last && now - last < ONE_DAY_MS) return;
 
-    let api: SlackApi;
-    try {
-      api = await this.getApi(channelId);
-    } catch (error) {
-      console.warn("listDMChannels: Slack token unavailable", error);
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) {
+      console.warn("listDMChannels: Slack token unavailable");
       return;
     }
+    if (!token.scopes?.includes("im:read")) return; // optional scope declined
+
+    const api = new SlackApi(token.token);
 
     const ids: string[] = [];
     let cursor: string | undefined;

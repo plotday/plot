@@ -421,7 +421,10 @@ describe("listDMChannels", () => {
 
   it("caches discovered im/mpim channel ids and gates re-runs to once per 24h", async () => {
     const store = makeStore({});
-    const integrationsGet = vi.fn().mockResolvedValue({ token: "xoxp-test" });
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["im:read", "mpim:read"],
+    });
     const slack = makeDMListSlack({ store, integrationsGet });
 
     const fetchMock = vi.fn(async () =>
@@ -451,6 +454,45 @@ describe("listDMChannels", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("no-ops when im:read is not granted, without calling the API or flagging re-auth", async () => {
+    // Guards against the false-positive-reconnect bug class this branch
+    // otherwise fixes: without this guard, a token missing im:read hits
+    // conversations.list, gets `missing_scope` back (a SlackPermanentError
+    // in SLACK_AUTH_ERRORS), and markNeedsReauth force-flags the whole
+    // connection as needing reconnection even though nothing is broken.
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["channels:history"], // no im:read
+    });
+    const markNeedsReauth = vi.fn().mockResolvedValue(undefined);
+    const runTask = vi.fn(async () => "task-token");
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const tools = {
+      store,
+      integrations: { get: integrationsGet, markNeedsReauth },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask, scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        listDMChannels: (c: string) => Promise<void>;
+      }).listDMChannels("C1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+    expect(store.map.has("dm_channels")).toBe(false);
   });
 });
 
@@ -716,6 +758,17 @@ describe("Slack.SCOPES — DM sync is optional and opt-in", () => {
       expect.arrayContaining(["im:history", "im:write", "mpim:history", "mpim:write"])
     );
     expect(dmsGroup?.default).toBe(true);
+  });
+
+  it("declares im:read and mpim:read in the dms group, required to enumerate/list DM conversations", () => {
+    // conversations.list with types=im,mpim (used by listDMChannels to
+    // discover DM/MPIM conversation ids) requires im:read/mpim:read per
+    // Slack's API docs — distinct from im:history/mpim:history, which only
+    // grant reading message content within an already-known conversation.
+    // Without these, listDMChannels gets `missing_scope` on every call.
+    const dmsGroup = Slack.SCOPES.optional?.find((g) => g.id === "dms");
+    expect(dmsGroup).toBeDefined();
+    expect(dmsGroup?.scopes).toEqual(expect.arrayContaining(["im:read", "mpim:read"]));
   });
 });
 
