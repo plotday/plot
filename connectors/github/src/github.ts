@@ -42,7 +42,12 @@ import {
   addIssueComment,
   updateIssueComment,
 } from "./issue-sync";
-import { commentEndpointForKey, reactToComment, unreactToComment } from "./reactions";
+import {
+  commentEndpointForKey,
+  reactToComment,
+  unreactToComment,
+  pollOpenPRReactions,
+} from "./reactions";
 import { ALLOWED_REACTION_EMOJI } from "./github-emoji";
 
 // ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
@@ -271,6 +276,26 @@ export class GitHub extends Connector<GitHub> {
   }
 
   /**
+   * Set the full reaction state for a note (public wrapper for the
+   * protected `this.tools.integrations`, used by reactions.ts's poll job).
+   */
+  async setNoteReactions(
+    thread: { id: string } | { source: string },
+    key: string,
+    reactions: import("@plotday/twister").NewReactions
+  ): Promise<void> {
+    await this.tools.integrations.setNoteReactions(thread as any, key, reactions);
+  }
+
+  /**
+   * List stored keys by prefix (public wrapper for the protected
+   * `this.tools.store.list`, used by reactions.ts's poll job).
+   */
+  async listStoreKeys(prefix: string): Promise<string[]> {
+    return this.tools.store.list(prefix);
+  }
+
+  /**
    * Create a persistent callback (public wrapper for this.callback)
    */
   // @ts-ignore - simplified signature for public access
@@ -306,6 +331,13 @@ export class GitHub extends Connector<GitHub> {
    */
   async syncIssueBatch(repositoryId: string): Promise<void> {
     await syncIssueBatch(this, repositoryId);
+  }
+
+  /**
+   * Callback entry point for the reaction poll (scheduleRecurring target).
+   */
+  async pollReactions(): Promise<void> {
+    await pollOpenPRReactions(this);
   }
 
   // ---------- Channel lifecycle ----------
@@ -430,6 +462,11 @@ export class GitHub extends Connector<GitHub> {
     const webhookCallback = await this.callback(this.setupWebhook, repositoryId);
     await this.runTask(webhookCallback);
 
+    const reactionPollCallback = await this.callback(this.pollReactions);
+    await this.scheduleRecurring(`reaction-poll-${repositoryId}`, reactionPollCallback, {
+      intervalMs: 15 * 60 * 1000,
+    });
+
     const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
     const pendingTypes =
       (options.syncPullRequests ? 1 : 0) + (options.syncIssues ? 1 : 0);
@@ -512,6 +549,7 @@ export class GitHub extends Connector<GitHub> {
    */
   private async teardownRepo(repositoryId: string): Promise<void> {
     await this.stopSync(repositoryId);
+    await this.cancelScheduledTask(`reaction-poll-${repositoryId}`);
     await this.clear(`sync_enabled_${repositoryId}`);
     await this.clear(`org_for_repo_${repositoryId}`);
   }
