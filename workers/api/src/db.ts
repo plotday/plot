@@ -223,6 +223,15 @@ export function isTransientDbError(error: unknown): boolean {
   return (
     msg.includes("shutting down") ||
     msg.includes("connection terminated") ||
+    // Hyperdrive's origin-timeout error: distinct from pool exhaustion (no
+    // free slot) — here a connection WAS obtained but the origin Postgres
+    // didn't answer in time. Surfaced as a burst of 3 identical captures from
+    // one Promise.allSettled batch in Tasks.processQueue (PostHog issue
+    // 019f4aac), all within the same millisecond and never recurring —
+    // self-resolving origin-side blip, not a query-shape problem. Bucketed
+    // with the connection-recycle errors (not pool exhaustion) since a retry
+    // needs a fresh attempt, not specifically a backoff for a busy slot.
+    msg.includes("waiting for a message from the origin database") ||
     isPoolExhaustedError(error)
   );
 }

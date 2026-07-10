@@ -103,7 +103,8 @@ export function transientErrorReason(error: unknown): string {
   if (
     lower.includes("connection terminated") ||
     lower.includes("shutting down") ||
-    lower.includes("open slot in the pool")
+    lower.includes("open slot in the pool") ||
+    lower.includes("waiting for a message from the origin database")
   ) {
     return "db_drop";
   }

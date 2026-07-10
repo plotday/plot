@@ -133,6 +133,18 @@ describe("isTransientDbError", () => {
     ).toBe(true);
   });
 
+  it("matches Hyperdrive's origin-timeout 'waiting for a message from the origin database' error", () => {
+    // Distinct from pool exhaustion: a connection WAS obtained, but the
+    // origin Postgres didn't respond in time. Before this was recognized, a
+    // burst of these (PostHog issue 019f4aac) fell through to failure_retry
+    // in tasks.ts and paged Error Tracking for a self-resolving blip.
+    expect(
+      isTransientDbError(
+        new Error("Timed out while waiting for a message from the origin database.")
+      )
+    ).toBe(true);
+  });
+
   it("does not match an unrelated error", () => {
     expect(isTransientDbError(new Error("duplicate key value"))).toBe(false);
   });

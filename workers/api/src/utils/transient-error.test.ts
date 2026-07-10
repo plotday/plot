@@ -139,6 +139,13 @@ describe("transientErrorReason", () => {
         new Error("Timed out while waiting for an open slot in the pool.")
       )
     ).toBe("db_drop");
+    expect(
+      transientErrorReason(
+        new Error(
+          "Timed out while waiting for a message from the origin database."
+        )
+      )
+    ).toBe("db_drop");
   });
 
   it("maps unrecognized errors and non-Errors to 'other'", () => {
