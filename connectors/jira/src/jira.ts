@@ -605,6 +605,13 @@ export class Jira extends Connector<Jira> {
       );
       await this.tools.tasks.runTask(nextBatch);
     } else {
+      // Sync complete — signal so the platform clears the "Syncing…"
+      // indicator and the stuck-sync watchdog stops tracking this channel.
+      // Gated on state.initialSync so an incremental re-sync through this
+      // same branch doesn't fire it redundantly.
+      if (state.initialSync) {
+        await this.tools.integrations.channelSyncCompleted(projectId);
+      }
       // Initial sync is complete - cleanup sync state
       await this.clear(`sync_state_${projectId}`);
     }
