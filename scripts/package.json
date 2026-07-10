@@ -1,0 +1,14 @@
+{
+  "name": "@plotday/repo-scripts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Repo-level static checks (not published) that guard cross-connector conventions.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  }
+}
