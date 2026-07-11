@@ -1473,3 +1473,49 @@ export type PlanOperation =
       focusTitle: string;
       changes: Partial<Pick<Focus, "title" | "archived">>;
     };
+
+/**
+ * Section of the user's Today snapshot an item belongs to.
+ * - "priorities": the day's top items (to-dos, events, urgent threads, goals)
+ * - "updates": important information pulled from unread threads
+ */
+export type TodayItemSection = "priorities" | "updates";
+
+/**
+ * The kind of a Today snapshot item. Determines check-off affordances and
+ * how the item links back to threads/goals.
+ */
+export type TodayItemKind = "todo" | "event" | "urgent" | "goal" | "update";
+
+/**
+ * One item in the user's Today snapshot — the pre-generated, per-day list
+ * of priorities and updates. Items are server-composed; twists read them
+ * via {@link Plot.getTodayItems} and adjust them (rank / checked /
+ * dismissed) via {@link Plot.updateTodayItem}. All other fields are
+ * server-authored and read-only from the SDK.
+ */
+export type TodayItem = {
+  id: string;
+  /** The user-local day this item belongs to, as an ISO date ("YYYY-MM-DD"). */
+  day: string;
+  section: TodayItemSection;
+  kind: TodayItemKind;
+  /** Order within the section, ascending (lower rank renders higher). */
+  rank: number;
+  /** The item line, consolidated where appropriate. */
+  title: string;
+  /** 1–2 sentence support text, mainly for "updates" items. */
+  detail: string | null;
+  /** Linked threads; the first is the primary open target. May be empty (e.g. goal items). */
+  threadIds: string[];
+  /** The focus this item is labeled with, if any. */
+  focusId: string | null;
+  /** The goal this item derives from, if any. */
+  goalId: string | null;
+  /** Event start (events only). */
+  startsAt: Date | string | null;
+  /** Event end (events only). */
+  endsAt: Date | string | null;
+  /** When the user checked this item off, or null if unchecked. */
+  checkedAt: Date | string | null;
+};

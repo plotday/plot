@@ -16,6 +16,7 @@ import {
   type PlanOperation,
   type Focus,
   type FocusUpdate,
+  type TodayItem,
   Uuid,
 } from "..";
 import {
@@ -83,6 +84,16 @@ export enum GoalAccess {
   /**
    * Read, create, update, and archive the owner's goals.
    * All Read permissions.
+   */
+  Manage,
+}
+
+export enum TodayAccess {
+  /** Read the user's Today snapshot items and Today-thread id. */
+  Read,
+  /**
+   * Read + adjust Today items: re-rank within a section, check items off,
+   * and dismiss items from the snapshot. Includes all Read permissions.
    */
   Manage,
 }
@@ -305,6 +316,13 @@ export abstract class Plot extends ITool {
      */
     goals?: {
       access: GoalAccess;
+    };
+    /**
+     * Access to the user's Today snapshot (per-day priorities/updates items
+     * and the persistent Today chat thread id).
+     */
+    today?: {
+      access: TodayAccess;
     };
     /** Enable semantic search across notes and links owned by the twist's user. */
     search?: true;
@@ -673,6 +691,44 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract archiveGoal(id: string): Promise<void>;
+
+  /**
+   * Lists the user's current Today snapshot: all non-archived items for the
+   * latest generated day, ordered by section ("priorities" first) then rank.
+   *
+   * Requires `today` access ({@link TodayAccess.Read} or higher).
+   *
+   * @returns Promise resolving to the current Today items (may be empty)
+   */
+  abstract getTodayItems(): Promise<TodayItem[]>;
+
+  /**
+   * Adjusts one Today item. Only the provided fields change:
+   * - `rank` reorders the item within its section (ascending; lower is higher)
+   * - `checked: true` stamps the item's checked state; `false` clears it
+   * - `dismissed: true` removes the item from the snapshot (archives it)
+   *
+   * Requires {@link TodayAccess.Manage}.
+   *
+   * @param update - The item id plus the fields to change
+   * @returns Promise that resolves when the update is complete
+   * @throws Error if the item does not exist or belongs to another user
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updateTodayItem(update: {
+    id: string;
+    rank?: number;
+    checked?: boolean;
+    dismissed?: boolean;
+  }): Promise<void>;
+
+  /**
+   * Returns the id of the user's persistent Today chat thread, or null if
+   * it has not been created yet (first snapshot generation pending).
+   *
+   * Requires `today` access ({@link TodayAccess.Read} or higher).
+   */
+  abstract getTodayThreadId(): Promise<string | null>;
 
   /**
    * Retrieves links from connected source channels.
