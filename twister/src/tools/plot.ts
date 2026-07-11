@@ -16,12 +16,19 @@ import {
   type PlanOperation,
   type Focus,
   type FocusUpdate,
+  type TodayItem,
   Uuid,
 } from "..";
 import {
   type Schedule,
   type NewSchedule,
 } from "../schedule";
+import {
+  type Goal,
+  type GoalStatus,
+  type GoalUpdate,
+  type NewGoal,
+} from "../goal";
 import type { Callback } from "./callbacks";
 
 export enum ThreadAccess {
@@ -69,6 +76,26 @@ export enum LinkAccess {
   Read,
   /** Read + update links, including moving links between threads owned by the twist's user. */
   Full,
+}
+
+export enum GoalAccess {
+  /** Read the owner's goals. */
+  Read,
+  /**
+   * Read, create, update, and archive the owner's goals.
+   * All Read permissions.
+   */
+  Manage,
+}
+
+export enum TodayAccess {
+  /** Read the user's Today snapshot items and Today-thread id. */
+  Read,
+  /**
+   * Read + adjust Today items: re-rank within a section, check items off,
+   * and dismiss items from the snapshot. Includes all Read permissions.
+   */
+  Manage,
 }
 
 /**
@@ -282,6 +309,20 @@ export abstract class Plot extends ITool {
     };
     contact?: {
       access?: ContactAccess;
+    };
+    /**
+     * Enable goal operations. Goals are per-user intentions ("ship X by
+     * Friday", "3 hours a week on leads") that shape Plot's day planning.
+     */
+    goals?: {
+      access: GoalAccess;
+    };
+    /**
+     * Access to the user's Today snapshot (per-day priorities/updates items
+     * and the persistent Today chat thread id).
+     */
+    today?: {
+      access: TodayAccess;
     };
     /** Enable semantic search across notes and links owned by the twist's user. */
     search?: true;
@@ -600,6 +641,94 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract getSchedules(threadId: Uuid): Promise<Schedule[]>;
+
+  /**
+   * Creates a new goal for the twist owner.
+   *
+   * Requires `goals: { access: GoalAccess.Manage }`.
+   *
+   * @param goal - The goal data to create (`title` required)
+   * @returns Promise resolving to the created goal
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createGoal(goal: NewGoal): Promise<Goal>;
+
+  /**
+   * Lists the twist owner's goals (archived goals are excluded).
+   *
+   * Requires `goals: { access: GoalAccess.Read }` (or Manage).
+   *
+   * @param filter - Optional status filter
+   * @returns Promise resolving to the matching goals
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getGoals(filter?: { status?: GoalStatus }): Promise<Goal[]>;
+
+  /**
+   * Partially updates an existing goal. Omitted fields are left unchanged;
+   * `null` clears a nullable field. Setting `status: "completed"` records
+   * the completion time server-side; moving away from `completed` clears it.
+   *
+   * Requires `goals: { access: GoalAccess.Manage }`.
+   *
+   * @param update - The goal update containing the ID and fields to change
+   * @returns Promise resolving to the updated goal
+   * @throws Error if the goal does not exist
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updateGoal(update: GoalUpdate): Promise<Goal>;
+
+  /**
+   * Archives a goal (soft delete — the row is kept server-side as agent
+   * memory; goals are never hard-deleted). Prefer
+   * `updateGoal({ id, status: "dropped" })` for "cancel my goal", which
+   * keeps it visible in goal listings.
+   *
+   * Requires `goals: { access: GoalAccess.Manage }`.
+   *
+   * @param id - The goal id to archive
+   * @throws Error if the goal does not exist
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract archiveGoal(id: Uuid): Promise<void>;
+
+  /**
+   * Lists the user's current Today snapshot: all non-archived items for the
+   * latest generated day, ordered by section ("priorities" first) then rank.
+   *
+   * Requires `today` access ({@link TodayAccess.Read} or higher).
+   *
+   * @returns Promise resolving to the current Today items (may be empty)
+   */
+  abstract getTodayItems(): Promise<TodayItem[]>;
+
+  /**
+   * Adjusts one Today item. Only the provided fields change:
+   * - `rank` reorders the item within its section (ascending; lower is higher)
+   * - `checked: true` stamps the item's checked state; `false` clears it
+   * - `dismissed: true` removes the item from the snapshot (archives it)
+   *
+   * Requires {@link TodayAccess.Manage}.
+   *
+   * @param update - The item id plus the fields to change
+   * @returns Promise that resolves when the update is complete
+   * @throws Error if the item does not exist or belongs to another user
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updateTodayItem(update: {
+    id: Uuid;
+    rank?: number;
+    checked?: boolean;
+    dismissed?: boolean;
+  }): Promise<void>;
+
+  /**
+   * Returns the id of the user's persistent Today chat thread, or null if
+   * it has not been created yet (first snapshot generation pending).
+   *
+   * Requires `today` access ({@link TodayAccess.Read} or higher).
+   */
+  abstract getTodayThreadId(): Promise<Uuid | null>;
 
   /**
    * Retrieves links from connected source channels.

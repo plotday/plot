@@ -40,6 +40,11 @@
       "types": "./dist/schedule.d.ts",
       "default": "./dist/schedule.js"
     },
+    "./goal": {
+      "@plotday/connector": "./src/goal.ts",
+      "types": "./dist/goal.d.ts",
+      "default": "./dist/goal.js"
+    },
     "./tag": {
       "@plotday/connector": "./src/tag.ts",
       "types": "./dist/tag.d.ts",
