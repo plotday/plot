@@ -15,6 +15,8 @@
  * cleared (`null`) ones.
  */
 
+import { type Uuid } from "./utils/uuid";
+
 /**
  * Lifecycle status of a goal.
  * - `active`: live; shapes day planning.
@@ -40,7 +42,7 @@ export type GoalCadence = {
  */
 export type Goal = {
   /** Unique identifier for the goal */
-  id: string;
+  id: Uuid;
   /** Short imperative, e.g. "Ship the Today feature" */
   title: string;
   /** Freeform elaboration / agent notes */
@@ -54,7 +56,7 @@ export type Goal = {
   /** Recurring effort budget */
   cadence: GoalCadence | null;
   /** Linked focus id, or null when the goal isn't tied to a focus */
-  focusId: string | null;
+  focusId: Uuid | null;
 };
 
 /** Type for creating a new goal: `title` is required, all else optional. */

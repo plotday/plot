@@ -690,7 +690,7 @@ export abstract class Plot extends ITool {
    * @throws Error if the goal does not exist
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract archiveGoal(id: string): Promise<void>;
+  abstract archiveGoal(id: Uuid): Promise<void>;
 
   /**
    * Lists the user's current Today snapshot: all non-archived items for the
@@ -716,7 +716,7 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract updateTodayItem(update: {
-    id: string;
+    id: Uuid;
     rank?: number;
     checked?: boolean;
     dismissed?: boolean;
@@ -728,7 +728,7 @@ export abstract class Plot extends ITool {
    *
    * Requires `today` access ({@link TodayAccess.Read} or higher).
    */
-  abstract getTodayThreadId(): Promise<string | null>;
+  abstract getTodayThreadId(): Promise<Uuid | null>;
 
   /**
    * Retrieves links from connected source channels.

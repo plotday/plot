@@ -1495,7 +1495,7 @@ export type TodayItemKind = "todo" | "event" | "urgent" | "goal" | "update";
  * server-authored and read-only from the SDK.
  */
 export type TodayItem = {
-  id: string;
+  id: Uuid;
   /** The user-local day this item belongs to, as an ISO date ("YYYY-MM-DD"). */
   day: string;
   section: TodayItemSection;
@@ -1507,11 +1507,11 @@ export type TodayItem = {
   /** 1–2 sentence support text, mainly for "updates" items. */
   detail: string | null;
   /** Linked threads; the first is the primary open target. May be empty (e.g. goal items). */
-  threadIds: string[];
+  threadIds: Uuid[];
   /** The focus this item is labeled with, if any. */
-  focusId: string | null;
+  focusId: Uuid | null;
   /** The goal this item derives from, if any. */
-  goalId: string | null;
+  goalId: Uuid | null;
   /** Event start (events only). */
   startsAt: Date | string | null;
   /** Event end (events only). */
