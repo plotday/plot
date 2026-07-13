@@ -291,6 +291,9 @@ describe("pollFollowed overlap guard", () => {
       set: async (k: string, v: unknown) => {
         store[k] = v;
       },
+      clear: async (k: string) => {
+        delete store[k];
+      },
       // syncFollowedItems calls this first; returning null makes it a no-op
       // pass, so a single call is our proxy for "the drain actually ran".
       getAccountToken: async () => {
@@ -311,6 +314,26 @@ describe("pollFollowed overlap guard", () => {
     });
     await GitHub.prototype.pollFollowed.call(fake);
     expect(calls()).toBe(0); // guarded: the drain (→ getAccountToken) never ran
+  });
+
+  it("skips a recurring tick during a rate-limit backoff window (no cursor needed)", async () => {
+    const { fake, calls } = guardFake({
+      followed_retry_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
+    await GitHub.prototype.pollFollowed.call(fake);
+    expect(calls()).toBe(0); // backoff marker suppresses the tick even with no cursor
+  });
+
+  it("clears the backoff marker after a non-rate-limited pass", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fake } = guardFake({
+      // A leftover marker from an earlier backoff; the pass no longer rate-limits.
+      followed_retry_at: new Date(Date.now() - 60 * 1000).toISOString(),
+    });
+    // Continuation bypasses the guard; syncFollowedItems returns done (no retryAt).
+    await GitHub.prototype.pollFollowed.call(fake, true);
+    warn.mockRestore();
+    expect(await fake.get("followed_retry_at")).toBeNull(); // marker cleared
   });
 
   it("does not skip a continuation call even with a cursor + fresh heartbeat", async () => {

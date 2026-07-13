@@ -446,12 +446,20 @@ export class GitHub extends Connector<GitHub> {
    * yet) — the recurring schedule re-drives the next incremental pass.
    */
   async pollFollowed(isContinuation = false): Promise<void> {
-    // A recurring tick must not start a second drain while a runTask
-    // continuation chain of the same pass is still in flight — both would race
-    // the shared `followed_sync_state` cursor. The chain refreshes a heartbeat;
-    // if it's fresh AND a cursor exists, a drain is active, so skip. Staleness
-    // (a crashed chain) lets a later recurring tick resume the pass.
+    // A recurring tick must not start a redundant pass while one is already in
+    // progress — a continuation chain (via runTask) is scheduled to carry it
+    // forward. Two independent signals mark "in progress":
     if (!isContinuation) {
+      // 1. A rate-limit backoff: a continuation is scheduled for `retryAt`, so
+      //    skip until then. This covers a page-1 rate limit, which leaves no
+      //    cursor behind, and outlives the heartbeat window on long (hourly)
+      //    primary limits.
+      const retryAtStr = await this.get<string>("followed_retry_at");
+      if (retryAtStr && Date.now() < new Date(retryAtStr).getTime()) return;
+
+      // 2. A multi-page drain: the chain refreshes a heartbeat, so a fresh
+      //    heartbeat with a live cursor means a drain is active. Staleness (a
+      //    crashed chain) lets a later recurring tick resume the pass.
       const heartbeat = await this.get<string>("followed_poll_heartbeat");
       const cursor = await this.get<{ page: number }>("followed_sync_state");
       if (
@@ -471,12 +479,18 @@ export class GitHub extends Connector<GitHub> {
       this as unknown as import("./followed-sync").FollowedSource,
     );
     if (retryAt) {
-      // Rate-limited mid-pass: resume the same cursor after the limit resets.
+      // Rate-limited: record the backoff (the guard above honours it) and
+      // resume the same cursor after the limit resets.
+      await this.set("followed_retry_at", retryAt.toISOString());
       const followedCallback = await this.createCallback(this.pollFollowed, true);
       await this.runTask(followedCallback, { runAt: retryAt });
-    } else if (!done) {
-      const followedCallback = await this.createCallback(this.pollFollowed, true);
-      await this.runTask(followedCallback);
+    } else {
+      // Not rate-limited — clear any prior backoff marker.
+      await this.clear("followed_retry_at");
+      if (!done) {
+        const followedCallback = await this.createCallback(this.pollFollowed, true);
+        await this.runTask(followedCallback);
+      }
     }
   }
 
