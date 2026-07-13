@@ -1535,3 +1535,116 @@ describe("processCalendarEventsFn — message-model note audiences", () => {
     expect(emails).toEqual(["bob@x.com", "org@x.com"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Event link priority — the calendar event link must always outrank a
+// bundled email link (which defaults to priority 0), so the thread keeps
+// rendering as an event even after email replies bundle onto it.
+// ---------------------------------------------------------------------------
+
+describe("processCalendarEventsFn — event link priority", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "user@example.com";
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("floors priority at 1 for an event where the user is neither organizer nor attendee", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e1",
+      iCalUID: "uid-1",
+      status: "confirmed" as const,
+      summary: "X",
+      organizer: { email: "o@x" },
+      attendees: [],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-1");
+    expect(link?.priority).toBe(1);
+  });
+
+  it("gives organizer events priority 100", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e2",
+      iCalUID: "uid-organizer",
+      status: "confirmed" as const,
+      summary: "Organized by me",
+      organizer: { email: "me@x.com", self: true },
+      attendees: [{ email: "me@x.com", self: true, organizer: true }],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-organizer");
+    expect(link?.priority).toBe(100);
+  });
+
+  it("gives attendee (non-organizer) events priority 50", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e3",
+      iCalUID: "uid-attendee",
+      status: "confirmed" as const,
+      summary: "Invited",
+      organizer: { email: "boss@x.com", self: false },
+      attendees: [
+        { email: "boss@x.com", organizer: true },
+        { email: "me@x.com", self: true },
+      ],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-attendee");
+    expect(link?.priority).toBe(50);
+  });
+
+  it("floors priority at 1 on the cancellation-path link too", async () => {
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e4",
+      iCalUID: "uid-cancelled",
+      status: "cancelled" as const,
+      summary: "Cancelled, not mine",
+      organizer: { email: "o@x" },
+      attendees: [],
+      updated: isoDaysFromNow(0),
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-cancelled");
+    expect(link?.priority).toBe(1);
+  });
+});

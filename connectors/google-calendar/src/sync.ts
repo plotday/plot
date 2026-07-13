@@ -777,7 +777,7 @@ export async function processCalendarEventsFn(
               ? 100
               : event.attendees?.some((a) => a.self)
               ? 50
-              : 0,
+              : 1,
             access: "private",
             accessContacts: cancelMentions,
             author: authorContact,
@@ -968,7 +968,7 @@ export async function processCalendarEventsFn(
             ? 100
             : event.attendees?.some((a) => a.self)
             ? 50
-            : 0,
+            : 1,
           access: "private",
           accessContacts: attendeeMentions,
           author: authorContact,

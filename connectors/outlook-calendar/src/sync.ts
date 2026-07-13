@@ -784,6 +784,11 @@ export async function processOutlookEventsFn(
             iCalUId: outlookEvent.iCalUId,
           }),
           channelId: calendarId,
+          // Floor above a bundled email link's default priority (0) so the
+          // event link stays primary. Graph's event payload has no reliable
+          // self/organizer signal (no `isOrganizer`, no per-attendee `self`),
+          // so this is a constant rather than a 100/50 split like Google.
+          priority: 1,
           meta: { syncProvider: "microsoft", syncableId: calendarId },
           notes: [cancelNote],
           ...(cancelMentions.length > 0
@@ -960,6 +965,11 @@ export async function processOutlookEventsFn(
         }),
         type: "event",
         title: threadData.title || "",
+        // Floor above a bundled email link's default priority (0) so the
+        // event link stays primary. Graph's event payload has no reliable
+        // self/organizer signal (no `isOrganizer`, no per-attendee `self`),
+        // so this is a constant rather than a 100/50 split like Google.
+        priority: 1,
         access: "private",
         accessContacts: attendeeMentions,
         created: threadData.created,

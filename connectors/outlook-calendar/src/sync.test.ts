@@ -264,3 +264,71 @@ describe("processOutlookEventsFn — message-model note/link audiences", () => {
     ).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Event link priority — the calendar event link must always outrank a
+// bundled email link (which defaults to priority 0), so the thread keeps
+// rendering as an event even after email replies bundle onto it. Outlook's
+// Graph event payload carries no reliable self/organizer signal (no
+// `isOrganizer` boolean, no per-attendee `self` flag), so both the main
+// event link and the cancellation-path link use a constant floor.
+// ---------------------------------------------------------------------------
+
+describe("processOutlookEventsFn — event link priority", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "cal-1";
+
+  it("gives the main event link priority >= 1", async () => {
+    const host = makeFakeHost();
+
+    await processOutlookEventsFn(
+      host,
+      [
+        outlookEventFixture({
+          id: "e1",
+          iCalUId: "uid-1",
+          subject: "Sync",
+          organizer: { emailAddress: { address: "org@x.com", name: "Org" } },
+          attendees: [
+            { emailAddress: { address: "bob@x.com" }, type: "required" },
+          ],
+        }),
+      ],
+      calendarId,
+      false
+    );
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === `outlook-calendar:${calendarId}:e1`);
+    expect(link?.priority).toBeGreaterThanOrEqual(1);
+  });
+
+  it("gives the cancellation-path link priority >= 1", async () => {
+    const host = makeFakeHost();
+
+    await processOutlookEventsFn(
+      host,
+      [
+        outlookEventFixture({
+          id: "e2",
+          "@removed": { reason: "deleted" },
+          organizer: { emailAddress: { address: "org@x.com", name: "Org" } },
+          attendees: [
+            { emailAddress: { address: "bob@x.com" }, type: "required" },
+          ],
+        }),
+      ],
+      calendarId,
+      false
+    );
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === `outlook-calendar:${calendarId}:e2`);
+    expect(link?.priority).toBeGreaterThanOrEqual(1);
+  });
+});
