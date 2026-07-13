@@ -1202,6 +1202,77 @@ describe("processCalendarEventsFn — past cancellations", () => {
   });
 });
 
+describe("processCalendarEventsFn — prefers the cancellation email over the generic note", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("skips the generic cancellation note when a cancel email is present", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    host.readMailState = async <T>(key: string) =>
+      (key === "cancel-email:uid-1" ? ({ at: "now" } as T) : null);
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const cancelledEvent = {
+      id: "e1",
+      iCalUID: "uid-1",
+      status: "cancelled" as const,
+      updated: isoDaysFromNow(-1),
+      start: { dateTime: isoDaysFromNow(2) },
+      end: { dateTime: isoDaysFromNow(2) },
+      summary: "Team sync",
+    };
+
+    await processCalendarEventsFn(host, [cancelledEvent], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-1");
+    expect(link).toBeDefined();
+    expect(
+      link?.notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(false);
+    // Structural cancellation still applies regardless of the email marker.
+    expect(link?.status).toBe("Cancelled");
+    expect(link?.schedules?.[0]?.archived).toBe(true);
+  });
+
+  it("keeps the generic cancellation note when no cancel email marker exists", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    // No readMailState set on this host at all (mirrors hosts/tests that
+    // predate the mail/calendar wiring) — must behave exactly as before.
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const cancelledEvent = {
+      id: "e2",
+      iCalUID: "uid-2",
+      status: "cancelled" as const,
+      updated: isoDaysFromNow(-1),
+      start: { dateTime: isoDaysFromNow(2) },
+      end: { dateTime: isoDaysFromNow(2) },
+      summary: "Team sync",
+    };
+
+    await processCalendarEventsFn(host, [cancelledEvent], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-2");
+    expect(link).toBeDefined();
+    expect(
+      link?.notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(true);
+    expect(link?.schedules?.[0]?.archived).toBe(true);
+  });
+});
+
 describe("processCalendarEventsFn — re-confirmation after cancellation", () => {
   const iso = (n: number) =>
     new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();

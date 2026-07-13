@@ -53,6 +53,14 @@ export interface CalendarSyncHost {
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
   clear(key: string): Promise<void>;
+  /**
+   * Optional read into the MAIL namespace's state, used to check for a
+   * `cancel-email:<uid>` marker recorded when the mail sync processed a
+   * cancellation email for the same event. Absent on hosts that don't wire
+   * mail/calendar together (e.g. the standalone GoogleCalendar connector, or
+   * fake hosts in tests) — treated as "no cancel email seen".
+   */
+  readMailState?<T>(key: string): Promise<T | null>;
 
   tools: {
     integrations: {
@@ -758,6 +766,16 @@ export async function processCalendarEventsFn(
           }
           const cancelMentions = dedupeContactsByEmail(rawCancelMentions);
 
+          // Prefer the cancellation email's own message over our generic note
+          // when the mail sync already recorded one for this event (Plan B
+          // mail/calendar bundling) — avoids a redundant, lower-fidelity note
+          // on the same thread. The structural cancellation (status/schedule/
+          // unread below) always applies regardless of this signal.
+          const cancelEmailSeen =
+            (await host.readMailState?.(
+              `cancel-email:${event.iCalUID ?? event.id}`
+            )) != null;
+
           const cancelNote = {
             key: "cancellation" as const,
             content: "This event was cancelled.",
@@ -787,7 +805,7 @@ export async function processCalendarEventsFn(
             accessContacts: cancelMentions,
             author: authorContact,
             meta: activityData.meta ?? null,
-            notes: [cancelNote],
+            notes: cancelEmailSeen ? [] : [cancelNote],
             schedules: [
               {
                 start: event.start?.dateTime

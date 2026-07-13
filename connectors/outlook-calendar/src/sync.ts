@@ -85,6 +85,14 @@ export interface OutlookCalendarSyncHost {
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
   clear(key: string): Promise<void>;
+  /**
+   * Optional read into the MAIL namespace's state, used to check for a
+   * `cancel-email:<uid>` marker recorded when the mail sync processed a
+   * cancellation email for the same event. Absent on hosts that don't wire
+   * mail/calendar together (e.g. the standalone OutlookCalendar connector, or
+   * fake hosts in tests) — treated as "no cancel email seen".
+   */
+  readMailState?<T>(key: string): Promise<T | null>;
 
   tools: {
     integrations: {
@@ -759,6 +767,16 @@ export async function processOutlookEventsFn(
         }
         const cancelMentions = dedupeContactsByEmail(rawCancelMentions);
 
+        // Prefer the cancellation email's own message over our generic note
+        // when the mail sync already recorded one for this event (Plan B
+        // mail/calendar bundling) — avoids a redundant, lower-fidelity note
+        // on the same thread. The structural cancellation (title/preview/
+        // unread below) always applies regardless of this signal.
+        const cancelEmailSeen =
+          (await host.readMailState?.(
+            `cancel-email:${outlookEvent.iCalUId ?? outlookEvent.id}`
+          )) != null;
+
         // Create cancellation note. We don't apply firstSeenAt here
         // because cancelled events aren't typically edited further,
         // so lastModifiedDateTime is stable.
@@ -795,7 +813,7 @@ export async function processOutlookEventsFn(
           // so this is a constant rather than a 100/50 split like Google.
           priority: 1,
           meta: { syncProvider: "microsoft", syncableId: calendarId },
-          notes: [cancelNote],
+          notes: cancelEmailSeen ? [] : [cancelNote],
           ...(cancelMentions.length > 0
             ? { access: "private" as const, accessContacts: cancelMentions }
             : {}),

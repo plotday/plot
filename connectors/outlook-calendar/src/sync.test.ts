@@ -265,6 +265,76 @@ describe("processOutlookEventsFn — message-model note/link audiences", () => {
   });
 });
 
+describe("processOutlookEventsFn — prefers the cancellation email over the generic note", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "cal-1";
+
+  it("skips the generic cancellation note when a cancel email is present", async () => {
+    const host = makeFakeHost();
+    host.readMailState = async <T>(key: string) =>
+      (key === "cancel-email:uid-1" ? ({ at: "now" } as T) : null);
+
+    await processOutlookEventsFn(
+      host,
+      [
+        outlookEventFixture({
+          id: "e1",
+          iCalUId: "uid-1",
+          "@removed": { reason: "deleted" },
+          organizer: { emailAddress: { address: "org@x.com", name: "Org" } },
+          attendees: [
+            { emailAddress: { address: "org@x.com" }, type: "required" },
+          ],
+        }),
+      ],
+      calendarId,
+      false
+    );
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === `outlook-calendar:${calendarId}:e1`);
+    expect(link).toBeDefined();
+    expect(
+      link?.notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(false);
+    // Structural cancellation (title/preview) still applies regardless of
+    // the email marker.
+    expect(link?.title).toBe("Cancelled Event");
+    expect(link?.preview).toBe("Cancelled");
+  });
+
+  it("keeps the generic cancellation note when no cancel email marker exists", async () => {
+    const host = makeFakeHost();
+    // No readMailState set on this host at all (mirrors hosts/tests that
+    // predate the mail/calendar wiring) — must behave exactly as before.
+
+    await processOutlookEventsFn(
+      host,
+      [
+        outlookEventFixture({
+          id: "e2",
+          iCalUId: "uid-2",
+          "@removed": { reason: "deleted" },
+        }),
+      ],
+      calendarId,
+      false
+    );
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === `outlook-calendar:${calendarId}:e2`);
+    expect(link).toBeDefined();
+    expect(
+      link?.notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Event link priority — the calendar event link must always outrank a
 // bundled email link (which defaults to priority 0), so the thread keeps
