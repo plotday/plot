@@ -46,6 +46,7 @@ import {
   buildForwardMessage,
   buildNewEmailMessage,
   buildReplyMessage,
+  classifyCalendarThread,
   collectAttachments,
   extractBody,
   formatFromHeader,
@@ -1438,6 +1439,21 @@ async function saveTransformedThread(
       syncProvider: "google",
       syncableId: channelId,
     };
+
+    // Bundle onto the calendar event's thread when this conversation relates
+    // to one (a Plot-sent reply chain, or an ICS update/cancellation).
+    const calBundle = classifyCalendarThread(thread.messages ?? []);
+    if (calBundle) {
+      plotThread.sources = [
+        ...(plotThread.sources ?? []),
+        `icaluid:${calBundle.uid}`,
+      ];
+      if (calBundle.kind === "cancel") {
+        await host.set(`cancel-email:${calBundle.uid}`, {
+          at: new Date().toISOString(),
+        });
+      }
+    }
 
     // Compute classifier facets from the parent message's headers + body.
     const facetParent = thread.messages.find(

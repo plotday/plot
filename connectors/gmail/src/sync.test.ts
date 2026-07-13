@@ -1,9 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { CreateLinkDraft, Uuid } from "@plotday/twister";
+import type { CreateLinkDraft, NewLinkWithNotes, Uuid } from "@plotday/twister";
 
-import { GmailApi, GmailApiError, type GmailHeader, type GmailMessage } from "./gmail-api";
-import { type GmailSyncHost, onCreateLinkFn, onNoteCreatedFn } from "./sync";
+import {
+  GmailApi,
+  GmailApiError,
+  type GmailHeader,
+  type GmailMessage,
+  type GmailMessagePart,
+  type GmailThread,
+} from "./gmail-api";
+import {
+  type GmailSyncHost,
+  onCreateLinkFn,
+  onNoteCreatedFn,
+  processEmailThreadsFn,
+} from "./sync";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
 function decodeRawMessage(b64url: string): string {
@@ -377,5 +389,95 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     );
     expect(send).not.toHaveBeenCalled();
     expect(res).toBeUndefined();
+  });
+});
+
+/** Build a GmailMessagePart, encoding `data` as base64url like the real API. */
+function part(
+  mimeType: string,
+  opts: {
+    data?: string;
+    parts?: GmailMessagePart[];
+    headers?: Array<[string, string]>;
+  } = {}
+): GmailMessagePart {
+  return {
+    mimeType,
+    headers: (opts.headers ?? []).map(([name, value]) => ({ name, value })),
+    body:
+      opts.data !== undefined
+        ? { size: opts.data.length, data: b64url(opts.data) }
+        : undefined,
+    parts: opts.parts,
+  };
+}
+
+/** A single-message GmailThread carrying a `text/calendar` ICS part. */
+function calendarUpdateThread(threadId: string, ics: string): GmailThread {
+  const message: GmailMessage = {
+    id: `${threadId}-msg-1`,
+    threadId,
+    labelIds: ["INBOX"],
+    snippet: "Event updated",
+    historyId: "1",
+    internalDate: "1700000000000",
+    sizeEstimate: 500,
+    payload: part("multipart/mixed", {
+      headers: [
+        ["From", "calendar-notification@google.com"],
+        ["To", "me@example.com"],
+        ["Subject", "Updated: Weekly sync"],
+      ],
+      parts: [
+        part("text/plain", { data: "The event has been updated." }),
+        part("text/calendar", { data: ics }),
+      ],
+    }),
+  };
+  return { id: threadId, historyId: "1", messages: [message] };
+}
+
+function gmailThreadWithIcsUpdate(uid: string): GmailThread {
+  const ics = `BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nSEQUENCE:2\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+  return calendarUpdateThread("cal-update-thread", ics);
+}
+
+function gmailThreadWithIcsCancel(uid: string): GmailThread {
+  const ics = `BEGIN:VCALENDAR\r\nMETHOD:CANCEL\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+  return calendarUpdateThread("cal-cancel-thread", ics);
+}
+
+describe("processEmailThreadsFn — calendar-thread bundling", () => {
+  it("adds icaluid:<uid> to sources when the conversation is a calendar update", async () => {
+    const { host } = makeHost();
+    const saved: NewLinkWithNotes[] = [];
+    (host.tools.integrations.saveLink as ReturnType<typeof vi.fn>).mockImplementation(
+      async (l: NewLinkWithNotes) => {
+        saved.push(l);
+        return "T";
+      }
+    );
+
+    await processEmailThreadsFn(
+      host,
+      [gmailThreadWithIcsUpdate("uid-1")],
+      false,
+      "INBOX"
+    );
+
+    expect(saved[0].sources).toContain("icaluid:uid-1");
+  });
+
+  it("records a cancel-email marker for a cancellation email", async () => {
+    const { host, store } = makeHost();
+
+    await processEmailThreadsFn(
+      host,
+      [gmailThreadWithIcsCancel("uid-1")],
+      false,
+      "INBOX"
+    );
+
+    expect(store.get("cancel-email:uid-1")).toBeTruthy();
   });
 });
