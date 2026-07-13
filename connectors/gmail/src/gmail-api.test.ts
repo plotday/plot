@@ -515,3 +515,38 @@ describe("buildForwardMessage", () => {
     expect(raw).not.toContain("Bcc:");
   });
 });
+
+describe("transformGmailThread sender classification", () => {
+  it("marks a no-reply From sender contact as automated", () => {
+    const t = thread({
+      from: "Susan Braun <notify@payments.interac.ca>",
+      to: "me@x.com",
+      subject: "INTERAC e-Transfer",
+      payload: part("text/plain", { data: "hi" }),
+    });
+    const link = transformGmailThread(t);
+    const sender = (
+      link.accessContacts as Array<{ email: string; automated?: boolean }>
+    ).find((c) => c.email === "notify@payments.interac.ca");
+    expect(sender?.automated).toBe(true);
+    const author = link.notes![0].author as {
+      email?: string;
+      automated?: boolean;
+    };
+    expect(author.automated).toBe(true);
+  });
+
+  it("does not mark an ordinary From sender as automated", () => {
+    const t = thread({
+      from: "Bob Smith <bob@company.com>",
+      to: "me@x.com",
+      subject: "hi",
+      payload: part("text/plain", { data: "hi" }),
+    });
+    const link = transformGmailThread(t);
+    const sender = (
+      link.accessContacts as Array<{ email: string; automated?: boolean }>
+    ).find((c) => c.email === "bob@company.com");
+    expect(sender?.automated).toBeFalsy();
+  });
+});

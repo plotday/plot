@@ -7,6 +7,7 @@ import type {
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
+import { isNoReplySender } from "@plotday/email-classifier";
 
 
 export type GmailLabel = {
@@ -917,6 +918,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
               name: fromName,
               // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
               source: { accountId: fromContact.email.toLowerCase() },
+              automated: isNoReplySender(fromContact.email),
             } as NewContact,
           ]
         : []),
@@ -967,6 +969,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const senderName = isFromAddressRewritten(message, sender.email)
       ? undefined
       : sender.name || undefined;
+    const senderIsNoReply = isNoReplySender(sender.email);
 
     const { content: rawBody, contentType } = extractBody(message.payload);
     const body = stripQuotedReply(rawBody, contentType);
@@ -988,6 +991,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const senderActor: NewActor = {
       email: sender.email,
       name: senderName,
+      automated: senderIsNoReply,
     };
     const messageContacts: NewContact[] = [
       {
@@ -995,6 +999,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
         name: senderName,
         // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
         source: { accountId: sender.email.toLowerCase() },
+        automated: senderIsNoReply,
       },
       ...parseEmailAddressesToContacts(to),
       ...parseEmailAddressesToContacts(cc),

@@ -5,6 +5,7 @@ import type {
   NewContact,
   NewLinkWithNotes,
 } from "@plotday/twister/plot";
+import { isNoReplySender } from "@plotday/email-classifier";
 import { stripQuotedReply } from "./email-parsing";
 
 export type GraphRecipient = {
@@ -542,7 +543,8 @@ export function isViaRewrittenName(name: string | undefined): boolean {
 
 function recipientToContact(
   r: GraphRecipient,
-  suppressName = false
+  suppressName = false,
+  automated = false
 ): NewContact | null {
   const address = r.emailAddress?.address?.trim();
   if (!address) return null;
@@ -554,6 +556,7 @@ function recipientToContact(
     // contact_external_account on the lowercased address (same tradeoff and
     // rationale as gmail's parseEmailAddressesToContacts).
     source: { accountId: address.toLowerCase() },
+    ...(automated ? { automated: true } : {}),
   };
 }
 
@@ -627,7 +630,8 @@ export function transformOutlookConversation(opts: {
       addParticipant(
         recipientToContact(
           message.from,
-          isViaRewrittenName(message.from.emailAddress?.name)
+          isViaRewrittenName(message.from.emailAddress?.name),
+          isNoReplySender(message.from.emailAddress?.address ?? null)
         )
       );
     }
@@ -657,6 +661,9 @@ export function transformOutlookConversation(opts: {
     const senderName = suppressName
       ? undefined
       : message.from?.emailAddress?.name || undefined;
+    const senderIsNoReply = isNoReplySender(
+      message.from?.emailAddress?.address ?? null
+    );
 
     const contentType: "text" | "html" =
       message.body?.contentType === "html" ? "html" : "text";
@@ -681,10 +688,11 @@ export function transformOutlookConversation(opts: {
     const senderActor: NewActor = {
       email: fromAddress,
       name: senderName,
+      automated: senderIsNoReply,
     };
     const messageContacts: NewContact[] = [
       ...(message.from
-        ? [recipientToContact(message.from, suppressName)]
+        ? [recipientToContact(message.from, suppressName, senderIsNoReply)]
         : []),
       ...(message.toRecipients ?? []).map((r) => recipientToContact(r)),
       ...(message.ccRecipients ?? []).map((r) => recipientToContact(r)),
