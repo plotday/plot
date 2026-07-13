@@ -1647,4 +1647,54 @@ describe("processCalendarEventsFn — event link priority", () => {
       .find((l) => l.source === "google-calendar:uid-cancelled");
     expect(link?.priority).toBe(1);
   });
+
+  it("floors the coalesced priority when a recurring instance is merged before its master in the same batch", async () => {
+    // Regression test: addLink() coalesces same-source links within one
+    // sync batch but previously didn't propagate `priority`. Recurring
+    // instance/exception links never set `priority` at all, so when an
+    // instance is processed (and becomes the batch's `existing` entry)
+    // before its master arrives, the merge left `existing.priority`
+    // `undefined` (-> server default 0) even though the master carries a
+    // floor of >= 1 — letting a bundled email tie/win primacy depending on
+    // event-vs-instance ordering within the page.
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    // Instance/exception link — no `iCalUID`, so it falls back to
+    // `recurringEventId` for its canonical (master) source, and it carries
+    // no `priority` field at all.
+    const instance = {
+      id: "instance-1",
+      recurringEventId: "master-1",
+      originalStartTime: { dateTime: isoDaysFromNow(2) },
+      status: "confirmed" as const,
+      start: { dateTime: isoDaysFromNow(2) },
+      end: { dateTime: isoDaysFromNow(2) },
+    };
+
+    // Master — no `iCalUID` either, so its canonical source is
+    // `google-calendar:master-1`, matching the instance's fallback above.
+    // Organizer is someone else and there are no attendees, so this floors
+    // to priority 1 (the lowest non-zero floor).
+    const master = {
+      id: "master-1",
+      status: "confirmed" as const,
+      summary: "Recurring sync",
+      organizer: { email: "boss@x.com", self: false },
+      attendees: [],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    // Instance BEFORE master, in one batch — the exact ordering that
+    // previously dropped the priority floor.
+    await processCalendarEventsFn(host, [instance, master], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    // Coalesced onto a single link, not two.
+    expect(saved.filter((l) => l.source === "google-calendar:master-1")).toHaveLength(1);
+
+    const link = saved.find((l) => l.source === "google-calendar:master-1");
+    expect(link?.priority).toBeGreaterThanOrEqual(1);
+  });
 });

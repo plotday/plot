@@ -644,6 +644,11 @@ export async function processCalendarEventsFn(
       existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
       if (link.unread !== undefined) existing.unread = link.unread;
       if (link.archived !== undefined) existing.archived = link.archived;
+      // Never let the merge LOWER an already-set priority. Recurring-event
+      // instance links carry no priority; when an instance is coalesced
+      // before its master in the same batch, this floor ensures the
+      // master's priority (>= 1) survives regardless of ordering.
+      existing.priority = Math.max(existing.priority ?? 0, link.priority ?? 0);
     }
   };
 

@@ -331,4 +331,49 @@ describe("processOutlookEventsFn — event link priority", () => {
       .find((l) => l.source === `outlook-calendar:${calendarId}:e2`);
     expect(link?.priority).toBeGreaterThanOrEqual(1);
   });
+
+  it("floors the coalesced priority when a recurring instance is merged before its master in the same batch", async () => {
+    // Regression test: addLink() coalesces same-source links within one
+    // sync batch but previously didn't propagate `priority`. Recurring
+    // instance/exception links never set `priority` at all, so when an
+    // instance is processed (and becomes the batch's `existing` entry)
+    // before its master arrives, the merge left `existing.priority`
+    // `undefined` (-> server default 0) even though the master carries a
+    // constant floor of 1 — letting a bundled email tie/win primacy
+    // depending on event-vs-instance ordering within the page.
+    const host = makeFakeHost();
+
+    const instance = outlookEventFixture({
+      id: "instance-1",
+      type: "occurrence",
+      seriesMasterId: "master-1",
+      originalStart: isoDaysFromNow(2),
+    });
+
+    const master = outlookEventFixture({
+      id: "master-1",
+      subject: "Recurring sync",
+      organizer: { emailAddress: { address: "org@x.com", name: "Org" } },
+      attendees: [
+        { emailAddress: { address: "bob@x.com" }, type: "required" },
+      ],
+    });
+
+    // Instance BEFORE master, in one batch — the exact ordering that
+    // previously dropped the priority floor.
+    await processOutlookEventsFn(
+      host,
+      [instance, master],
+      calendarId,
+      false
+    );
+
+    const saved = host.savedLinks.flat();
+    const masterSource = `outlook-calendar:${calendarId}:master-1`;
+    // Coalesced onto a single link, not two.
+    expect(saved.filter((l) => l.source === masterSource)).toHaveLength(1);
+
+    const link = saved.find((l) => l.source === masterSource);
+    expect(link?.priority).toBeGreaterThanOrEqual(1);
+  });
 });
