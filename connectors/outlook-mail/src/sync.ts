@@ -1620,6 +1620,14 @@ export async function onNoteCreatedFn(
   thread: Thread
 ): Promise<NoteWriteBackResult | void> {
   const meta = thread.meta ?? {};
+
+  // Calendar event threads carry a calendarId + iCalUId but no Outlook
+  // conversationId. Route them to a fresh-email fan-out to the event's
+  // invitees.
+  if (meta.calendarId && !meta.conversationId) {
+    return sendCalendarEventReplyFn(host, note, thread);
+  }
+
   const channelId = (meta.channelId ?? meta.syncableId) as string;
   if (!channelId) {
     console.error("No channelId in meta for Outlook reply");
@@ -1792,6 +1800,111 @@ export async function onNoteCreatedFn(
   // and the sent message is echo-suppressed above; the first sync-in
   // establishes the baseline naturally (same tradeoff as Gmail).
   return { key };
+}
+
+/**
+ * Reply on a calendar event thread → email the event's invitees. Unlike a
+ * mail reply there is no upstream Outlook conversation to reply into, so the
+ * first reply starts a fresh conversation (state stored under
+ * `cal-reply:<iCalUID>`) and later replies thread into it via
+ * `createReplyDraft`. Only the seed message carries the `X-Plot-Event-UID`
+ * header — Graph won't PATCH headers onto a reply draft, and one tagged
+ * message per conversation is enough for the mail sync to bundle the
+ * conversation back onto this event thread (Plan B).
+ */
+export async function sendCalendarEventReplyFn(
+  host: OutlookMailSyncHost,
+  note: Note,
+  thread: Thread
+): Promise<NoteWriteBackResult | void> {
+  const meta = thread.meta ?? {};
+  const channelId = (meta.channelId ?? meta.syncableId) as string;
+  const iCalUID = (meta.iCalUId ?? meta.eventId) as string;
+  if (!channelId || !iCalUID) {
+    console.error("[outlook-mail] calendar reply: missing channelId/iCalUId in meta");
+    return;
+  }
+  const api = await getApiFn(host, channelId);
+  const senderEmail = (await ensureUserEmailFn(host, api)).toLowerCase();
+  const selfEmails = new Set<string>([senderEmail]);
+  const authorEmail = (thread.accessContacts ?? []).find((c) => c.id === note.author.id)?.email;
+  if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
+
+  // Fallback access constraint when the runtime didn't resolve note.recipients.
+  let accessContactEmails: Set<string> | null = null;
+  if (note.accessContacts != null) {
+    const allowed = new Set<ActorId>(note.accessContacts);
+    accessContactEmails = new Set<string>();
+    for (const c of thread.accessContacts ?? []) {
+      if (allowed.has(c.id) && c.email) accessContactEmails.add(c.email.toLowerCase());
+    }
+  }
+
+  const { to, cc, bcc } = resolveOutboundReplyRecipients({
+    recipients: note.recipients ?? null,
+    accessContactEmails,
+    headerTo: [],
+    headerCc: [],
+    selfEmails,
+  });
+  if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+    const choseOthers = (note.accessContacts ?? []).some((id) => id !== note.author.id);
+    if (choseOthers) {
+      return {
+        deliveryError: {
+          code: "no_recipients",
+          message: "This reply had no deliverable recipients.",
+        },
+      };
+    }
+    return; // private note or empty roster
+  }
+
+  const addr = (address: string) => ({ emailAddress: { address } });
+  const bodyHtml = { contentType: "html", content: markdownToHtml(note.content ?? "") };
+  const stateKey = `cal-reply:${iCalUID}`;
+  const prior = await host.get<{ conversationId: string; lastMessageId: string }>(stateKey);
+
+  let draftId: string;
+  if (!prior) {
+    const created = await api.createDraft({
+      subject: (thread.title as string) || "Event",
+      body: bodyHtml,
+      toRecipients: to.map(addr),
+      ccRecipients: cc.map(addr),
+      bccRecipients: bcc.map(addr),
+      internetMessageHeaders: [{ name: "x-plot-event-uid", value: iCalUID }],
+    });
+    draftId = created.id;
+    let imid = created.internetMessageId;
+    let conversationId = created.conversationId;
+    if (!imid || !conversationId) {
+      const r = await api.getMessage(draftId, "id,internetMessageId,conversationId");
+      imid = imid ?? r?.internetMessageId;
+      conversationId = conversationId ?? r?.conversationId;
+    }
+    await api.send(draftId);
+    if (!conversationId) return;
+    const key = imid ?? draftId;
+    await host.set(stateKey, { conversationId, lastMessageId: key });
+    await host.set(`sent:${key}`, true);
+    return { key };
+  } else {
+    const draft = await api.createReplyDraft(prior.lastMessageId);
+    draftId = draft.id;
+    await api.updateMessage(draftId, {
+      body: bodyHtml,
+      toRecipients: to.map(addr),
+      ccRecipients: cc.map(addr),
+      ...(bcc.length > 0 ? { bccRecipients: bcc.map(addr) } : {}),
+    });
+    const refreshed = await api.getMessage(draftId, "id,internetMessageId,conversationId");
+    const key = refreshed?.internetMessageId ?? draft.internetMessageId ?? draftId;
+    await api.send(draftId);
+    await host.set(stateKey, { conversationId: prior.conversationId, lastMessageId: key });
+    await host.set(`sent:${key}`, true);
+    return { key };
+  }
 }
 
 /**
