@@ -294,6 +294,27 @@ async function hashContent(content: string): Promise<string> {
 }
 
 /**
+ * De-duplicate a note/link contact roster by email (case-insensitive),
+ * keeping the first occurrence. The organizer is both surfaced via
+ * `event.organizer` (used to seed the roster first, so its `name` wins) and,
+ * commonly, listed again in `event.attendees` — without this, the
+ * message-model roster would carry the same person twice.
+ */
+function dedupeContactsByEmail(contacts: NewContact[]): NewContact[] {
+  const seen = new Set<string>();
+  const result: NewContact[] = [];
+  for (const contact of contacts) {
+    const key = contact.email?.toLowerCase();
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    result.push(contact);
+  }
+  return result;
+}
+
+/**
  * Extracts the calendar id, event id, and mapped Outlook RSVP status from a
  * Plot thread's metadata. Returns `null` when the required fields are absent
  * (no-op case).
@@ -705,6 +726,34 @@ export async function processOutlookEventsFn(
         // to keep source globally unique across users.
         const source = `outlook-calendar:${calendarId}:${outlookEvent.id}`;
 
+        // Roster for the message-model thread: organizer + attendees
+        // (mirrors the live-event path's attendeeMentions below). Graph
+        // delta returns `@removed` items with only an id in the common
+        // case, so organizer/attendees are usually absent here — guard
+        // below so we never overwrite the roster the main event sync
+        // already established on this link with an empty one.
+        const cancelAuthorContact: NewContact | undefined =
+          outlookEvent.organizer?.emailAddress?.address
+            ? {
+                email: outlookEvent.organizer.emailAddress.address,
+                name: outlookEvent.organizer.emailAddress.name,
+              }
+            : undefined;
+        const cancelValidAttendees = (outlookEvent.attendees ?? []).filter(
+          (att) => att.emailAddress?.address && att.type !== "resource"
+        );
+        const rawCancelMentions: NewContact[] = [];
+        if (cancelAuthorContact) rawCancelMentions.push(cancelAuthorContact);
+        for (const att of cancelValidAttendees) {
+          if (att.emailAddress?.address) {
+            rawCancelMentions.push({
+              email: att.emailAddress.address,
+              name: att.emailAddress.name,
+            });
+          }
+        }
+        const cancelMentions = dedupeContactsByEmail(rawCancelMentions);
+
         // Create cancellation note. We don't apply firstSeenAt here
         // because cancelled events aren't typically edited further,
         // so lastModifiedDateTime is stable.
@@ -715,6 +764,9 @@ export async function processOutlookEventsFn(
           created: outlookEvent.lastModifiedDateTime
             ? new Date(outlookEvent.lastModifiedDateTime)
             : new Date(),
+          ...(cancelMentions.length > 0
+            ? { accessContacts: cancelMentions }
+            : {}),
         };
 
         // Convert to link with cancellation note
@@ -734,6 +786,9 @@ export async function processOutlookEventsFn(
           channelId: calendarId,
           meta: { syncProvider: "microsoft", syncableId: calendarId },
           notes: [cancelNote],
+          ...(cancelMentions.length > 0
+            ? { access: "private" as const, accessContacts: cancelMentions }
+            : {}),
           ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
           ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
         };
@@ -865,6 +920,21 @@ export async function processOutlookEventsFn(
       const descFirstSeen = descHash
         ? await firstSeenAtFn(host, `desc_seen:${canonicalUrl}:${descHash}`)
         : undefined;
+      // Build attendee contacts for link-level access control (message-model
+      // roster: organizer + attendees, deduped by email so the organizer
+      // isn't counted twice when Graph also lists them in attendees).
+      const rawAttendeeMentions: NewContact[] = [];
+      if (authorContact) rawAttendeeMentions.push(authorContact);
+      for (const att of validAttendees) {
+        if (att.emailAddress?.address) {
+          rawAttendeeMentions.push({
+            email: att.emailAddress.address,
+            name: att.emailAddress.name,
+          });
+        }
+      }
+      const attendeeMentions = dedupeContactsByEmail(rawAttendeeMentions);
+
       const descriptionNote =
         hasDescription && descHash
           ? {
@@ -874,20 +944,9 @@ export async function processOutlookEventsFn(
                 ? "html"
                 : "text") as ContentType,
               created: descFirstSeen,
+              accessContacts: attendeeMentions,
             }
           : null;
-
-      // Build attendee contacts for link-level access control
-      const attendeeMentions: NewContact[] = [];
-      if (authorContact) attendeeMentions.push(authorContact);
-      for (const att of validAttendees) {
-        if (att.emailAddress?.address) {
-          attendeeMentions.push({
-            email: att.emailAddress.address,
-            name: att.emailAddress.name,
-          });
-        }
-      }
 
       const notes = descriptionNote ? [descriptionNote] : [];
 
