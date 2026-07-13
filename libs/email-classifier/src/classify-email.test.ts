@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyEmail, type EmailSignals } from "./classify-email";
+import { classifyEmail, isNoReplySender, type EmailSignals } from "./classify-email";
 
 function signals(overrides: Partial<EmailSignals> = {}): EmailSignals {
   return {
@@ -179,5 +179,25 @@ describe("classifyEmail — calendar invitation responses", () => {
         })
       ).format
     ).toBe("message");
+  });
+});
+
+describe("isNoReplySender", () => {
+  it("flags notify@ / no-reply@ / notifications@ localparts", () => {
+    expect(isNoReplySender("notify@payments.interac.ca")).toBe(true);
+    expect(isNoReplySender("no-reply@github.com")).toBe(true);
+    expect(isNoReplySender("noreply@github.com")).toBe(true);
+    expect(isNoReplySender("notifications@github.com")).toBe(true);
+    expect(isNoReplySender("alerts@bank.com")).toBe(true);
+  });
+
+  it("does not flag ordinary personal addresses", () => {
+    expect(isNoReplySender("susan.braun@gmail.com")).toBe(false);
+    expect(isNoReplySender("shane@company.com")).toBe(false);
+  });
+
+  it("is null-safe", () => {
+    expect(isNoReplySender(null)).toBe(false);
+    expect(isNoReplySender("")).toBe(false);
   });
 });
