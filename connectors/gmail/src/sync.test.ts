@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CreateLinkDraft, Uuid } from "@plotday/twister";
 
 import { GmailApi, GmailApiError, type GmailHeader, type GmailMessage } from "./gmail-api";
-import { type GmailSyncHost, onCreateLinkFn } from "./sync";
+import { type GmailSyncHost, onCreateLinkFn, onNoteCreatedFn } from "./sync";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
 function decodeRawMessage(b64url: string): string {
@@ -292,5 +292,90 @@ describe("onCreateLinkFn — draft.forward", () => {
     const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
     expect(raw).toContain("From: me@example.com");
     expect(raw).not.toContain('From: "');
+  });
+});
+
+function calThread(over: Record<string, unknown> = {}) {
+  return {
+    id: "T",
+    title: "Weekly sync",
+    meta: { calendarId: "primary", iCalUID: "uid-123", syncableId: "primary" },
+    accessContacts: [
+      { id: "c-org", email: "org@x.com" },
+      { id: "c-me", email: "me@example.com" },
+      { id: "c-bob", email: "bob@x.com" },
+    ],
+    ...over,
+  } as unknown as import("@plotday/twister").Thread;
+}
+function replyNote(recipients: Array<{ externalAccountId: string; role: string | null }>, over: Record<string, unknown> = {}) {
+  return {
+    id: "n1",
+    author: { id: "c-me" },
+    content: "See you there",
+    recipients: recipients.map((r) => ({ id: r.externalAccountId, name: null, externalAccountId: r.externalAccountId, role: r.role })),
+    accessContacts: null,
+    actions: [],
+    ...over,
+  } as unknown as import("@plotday/twister").Note;
+}
+
+describe("onNoteCreatedFn — calendar event thread", () => {
+  it("sends a fresh email to all attendees on the first reply and stores threading state", async () => {
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-1", threadId: "gt-1" });
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({ emailAddress: "me@example.com" });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({ email: "me@example.com", name: "Me" });
+    const { host, store } = makeHost();
+
+    const res = await onNoteCreatedFn(
+      host,
+      replyNote([
+        { externalAccountId: "org@x.com", role: null },
+        { externalAccountId: "bob@x.com", role: null },
+      ]),
+      calThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain("To: org@x.com, bob@x.com");
+    expect(raw).toContain("Subject: Weekly sync");
+    expect(raw).toContain("X-Plot-Event-UID: uid-123");
+    expect(store.get("cal-reply:uid-123")).toMatchObject({ gmailThreadId: "gt-1" });
+    expect(res).toEqual({ key: "sent-1", deliveryError: null });
+  });
+
+  it("threads the second reply into the stored conversation", async () => {
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({ emailAddress: "me@example.com" });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({ email: "me@example.com", name: "Me" });
+    const sendReply = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "sent-2", threadId: "gt-1" });
+    const { host } = makeHost();
+    await host.set("cal-reply:uid-123", { gmailThreadId: "gt-1", seedMessageId: "<seed@plot.day>" });
+
+    await onNoteCreatedFn(host, replyNote([{ externalAccountId: "bob@x.com", role: null }]), calThread());
+
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    expect(sendReply.mock.calls[0][1]).toBe("gt-1");
+    const raw = decodeRawMessage(sendReply.mock.calls[0][0]);
+    expect(raw).toContain("In-Reply-To: <seed@plot.day>");
+    expect(raw).toContain("X-Plot-Event-UID: uid-123");
+  });
+
+  it("private note (no deliverable recipients) sends nothing", async () => {
+    const send = vi.spyOn(GmailApi.prototype, "sendNewMessage").mockResolvedValue({ id: "x", threadId: "y" });
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({ emailAddress: "me@example.com" });
+    const { host } = makeHost();
+
+    const res = await onNoteCreatedFn(
+      host,
+      replyNote([], { recipients: [], accessContacts: ["c-me"] }),
+      calThread()
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(res).toBeUndefined();
   });
 });

@@ -613,7 +613,7 @@ export async function findChannelForMessageFn(
  */
 export async function sendWithRetry(
   send: () => Promise<{ id: string; threadId: string }>,
-  label: "reply" | "compose" | "forward"
+  label: "reply" | "compose" | "forward" | "cal-reply"
 ): Promise<
   | { ok: true; result: { id: string; threadId: string } }
   | { ok: false; error: ClassifiedSendError }
@@ -1521,6 +1521,13 @@ export async function onNoteCreatedFn(
   thread: Thread
 ): Promise<NoteWriteBackResult | void> {
   const meta = thread.meta ?? {};
+
+  // Calendar event threads carry a calendarId + iCalUID but no Gmail threadId.
+  // Route them to a fresh-email fan-out to the event's invitees.
+  if (meta.calendarId && !meta.threadId) {
+    return sendCalendarEventReplyFn(host, note, thread);
+  }
+
   const channelId = (meta.channelId ?? meta.syncableId) as string;
   if (!channelId) {
     console.error("No channelId in meta for Gmail reply");
@@ -1704,6 +1711,95 @@ export async function onNoteCreatedFn(
   // `deliveryError: null` clears any prior "Failed to send" marker from a
   // previous attempt that has now succeeded on retry.
   return { key: result.id, deliveryError: null };
+}
+
+/**
+ * Reply on a calendar event thread → email the event's invitees. Unlike a Gmail
+ * reply there is no upstream Gmail thread to reply into, so the first reply
+ * starts a fresh conversation and later replies thread into it (state stored
+ * under `cal-reply:<iCalUID>`). Every send carries `X-Plot-Event-UID` so the
+ * mail sync can bundle the conversation back onto this event thread (Plan B).
+ */
+export async function sendCalendarEventReplyFn(
+  host: GmailSyncHost,
+  note: Note,
+  thread: Thread
+): Promise<NoteWriteBackResult | void> {
+  const meta = thread.meta ?? {};
+  const channelId = (meta.channelId ?? meta.syncableId) as string;
+  const iCalUID = (meta.iCalUID ?? meta.id) as string;
+  if (!channelId || !iCalUID) {
+    console.error("[gmail] calendar reply: missing channelId/iCalUID in meta");
+    return;
+  }
+
+  const api = await getApiFn(host, channelId);
+  const profile = await api.getProfile();
+  const senderEmail = profile.emailAddress.toLowerCase();
+  const selfEmails = new Set<string>([senderEmail]);
+  const authorEmail = (thread.accessContacts ?? []).find(
+    (c) => c.id === note.author.id
+  )?.email;
+  if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
+
+  // Fallback access constraint when the runtime didn't resolve note.recipients.
+  let accessContactEmails: Set<string> | null = null;
+  if (note.accessContacts != null) {
+    const allowed = new Set<ActorId>(note.accessContacts);
+    accessContactEmails = new Set<string>();
+    for (const c of thread.accessContacts ?? []) {
+      if (allowed.has(c.id) && c.email) accessContactEmails.add(c.email.toLowerCase());
+    }
+  }
+
+  const { to, cc, bcc } = resolveOutboundReplyRecipients({
+    recipients: note.recipients ?? null,
+    accessContactEmails,
+    headerTo: [],
+    headerCc: [],
+    selfEmails,
+  });
+
+  if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+    const choseOthers = (note.accessContacts ?? []).some((id) => id !== note.author.id);
+    if (choseOthers) {
+      return { deliveryError: { code: "no_recipients", message: "This reply had no deliverable recipients." } };
+    }
+    return; // private note or empty roster
+  }
+
+  const subject = (thread.title as string) || "Event";
+  const from = await getFromHeaderFn(api, profile.emailAddress);
+  const uidHeader = `X-Plot-Event-UID: ${iCalUID}`;
+
+  const stateKey = `cal-reply:${iCalUID}`;
+  const prior = await host.get<{ gmailThreadId: string; seedMessageId: string }>(stateKey);
+
+  let sentId: string;
+  if (!prior) {
+    const seedMessageId = `<plot-cal-${iCalUID}-${note.id}@plot.day>`;
+    const raw = buildNewEmailMessage({
+      to, cc, bcc, from, subject, body: note.content ?? "",
+      extraHeaders: [`Message-ID: ${seedMessageId}`, uidHeader],
+    });
+    const sent = await sendWithRetry(() => api.sendNewMessage(raw), "cal-reply");
+    if (!sent.ok) return { deliveryError: { code: sent.error.code, message: sent.error.message } };
+    sentId = sent.result.id;
+    await host.set(stateKey, { gmailThreadId: sent.result.threadId, seedMessageId });
+    await host.set(`sent:${sentId}`, true);
+  } else {
+    const raw = buildReplyMessage({
+      to, cc, bcc, from, subject, body: note.content ?? "",
+      messageId: prior.seedMessageId, references: prior.seedMessageId,
+      extraHeaders: [uidHeader],
+    });
+    const sent = await sendWithRetry(() => api.sendMessage(raw, prior.gmailThreadId), "cal-reply");
+    if (!sent.ok) return { deliveryError: { code: sent.error.code, message: sent.error.message } };
+    sentId = sent.result.id;
+    await host.set(`sent:${sentId}`, true);
+  }
+
+  return { key: sentId, deliveryError: null };
 }
 
 export async function onThreadReadFn(
