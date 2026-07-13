@@ -113,7 +113,7 @@ export function parseFollowedNotifications(
  */
 export async function syncFollowedItems(
   source: FollowedSource,
-): Promise<{ done: boolean }> {
+): Promise<{ done: boolean; retryAt?: Date }> {
   const token = await source.getAccountToken();
   if (!token) {
     // No enabled channel to borrow the account token from yet. The recurring
@@ -152,10 +152,16 @@ export async function syncFollowedItems(
     `/notifications?all=true&since=${encodeURIComponent(state.sinceIso)}&per_page=${PAGE_SIZE}&page=${state.page}`,
   );
   if (!response.ok) {
-    if (parseRateLimit(response).limited) {
-      // Back off — the recurring poll (or a fresh pass) resumes from the
-      // unchanged cursor after the limit resets. Not an error.
-      return { done: true };
+    const rl = parseRateLimit(response);
+    if (rl.limited) {
+      // Back off until the limit resets, then resume from the unchanged cursor.
+      // The caller reschedules at `retryAt` rather than waiting for the next
+      // recurring tick. Not an error.
+      const retryAt =
+        rl.resetAt && rl.resetAt.getTime() > Date.now()
+          ? rl.resetAt
+          : new Date(Date.now() + 60 * 1000);
+      return { done: true, retryAt };
     }
     throw new Error(
       `Failed to fetch notifications: ${response.status} ${await response.text()}`,
