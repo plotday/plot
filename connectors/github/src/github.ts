@@ -269,7 +269,7 @@ export class GitHub extends Connector<GitHub> {
    * first so the right actor's token is selected, falling back to a direct
    * lookup for repos that were enabled on their own.
    */
-  async getToken(channelId: string): Promise<string> {
+  async getToken(channelId: string, allowAccountFallback = true): Promise<string> {
     if (isRepoChannelId(channelId)) {
       const orgId = await this.get<string>(`org_for_repo_${channelId}`);
       if (orgId) {
@@ -278,10 +278,16 @@ export class GitHub extends Connector<GitHub> {
       }
     }
     const authToken = await this.tools.integrations.get(channelId);
-    if (!authToken) {
-      throw new Error("No GitHub authentication token available");
+    if (authToken) return authToken.token;
+    // Followed items live in repos with no enabled channel of their own; borrow
+    // the account token from any enabled channel so their write-backs (comments,
+    // reactions) still authenticate. GitHub uses one account OAuth token per
+    // connection, so any enabled channel's token is the right one.
+    if (allowAccountFallback) {
+      const accountToken = await this.getAccountToken();
+      if (accountToken) return accountToken;
     }
-    return authToken.token;
+    throw new Error("No GitHub authentication token available");
   }
 
   /**
@@ -295,7 +301,7 @@ export class GitHub extends Connector<GitHub> {
     for (const key of enabledKeys) {
       const channelId = key.replace("sync_enabled_", "");
       try {
-        const token = await this.getToken(channelId);
+        const token = await this.getToken(channelId, false);
         if (token) return token;
       } catch {
         // Channel unknown / token missing — try the next one.
@@ -431,9 +437,24 @@ export class GitHub extends Connector<GitHub> {
    * Fires on connection setup, independent of channels. Registers the recurring
    * followed-items poll (and kicks an immediate first run) when the option is on.
    */
-  override async activate(context: { auth: Authorization; actor: Actor }): Promise<void> {
-    if (context.actor?.id) await this.set("auth_actor_id", context.actor.id);
+  override async activate(): Promise<void> {
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
+    if (options.syncFollowed) {
+      await this.startFollowedPoll();
+    }
+  }
 
+  /**
+   * Runs once per active instance when a new version deploys. Starts the
+   * followed-items poll for connections that predate the feature (their option
+   * defaults on but nothing scheduled the poll yet). Idempotent: scheduleRecurring
+   * under the same key replaces any pending occurrence.
+   */
+  override async upgrade(): Promise<void> {
     const options = this.tools.options as {
       syncPullRequests: boolean;
       syncIssues: boolean;

@@ -134,6 +134,29 @@ describe("getAccountToken", () => {
   });
 });
 
+describe("getToken account-token fallback", () => {
+  it("borrows the account token for a repo with no enabled channel (e.g. a followed item)", async () => {
+    const fakeSource: any = {
+      get: async () => null, // no org_for_repo mapping
+      tools: {
+        integrations: {
+          get: async (id: string) =>
+            id === "acme/web" ? { token: "chan-tok" } : null,
+        },
+      },
+      listStoreKeys: async (prefix: string) => [`${prefix}acme/web`],
+    };
+    // Wire the two interdependent prototype methods onto the fake so their
+    // internal this.getToken / this.getAccountToken calls resolve.
+    fakeSource.getToken = (GitHub.prototype as any).getToken;
+    fakeSource.getAccountToken = (GitHub.prototype as any).getAccountToken;
+
+    // octo/oss is NOT an enabled channel; getToken must borrow acme/web's token.
+    const token = await fakeSource.getToken("octo/oss");
+    expect(token).toBe("chan-tok");
+  });
+});
+
 describe("onOptionsChanged followed toggle", () => {
   it("schedules the followed poll and runs an initial sync when turned on", async () => {
     const calls: string[] = [];
