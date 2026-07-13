@@ -86,6 +86,21 @@ export type GitHubIssueComment = {
   html_url: string;
 };
 
+export interface GitHubNotificationSubject {
+  title: string;
+  url: string | null;
+  latest_comment_url: string | null;
+  type: string; // "Issue" | "PullRequest" | "Commit" | "Release" | ...
+}
+
+export interface GitHubNotification {
+  id: string;
+  reason: string;
+  updated_at: string;
+  subject: GitHubNotificationSubject;
+  repository: { full_name: string; owner: { login: string }; name: string };
+}
+
 export type GitHubReview = {
   id: number;
   body: string;

@@ -279,7 +279,7 @@ export async function clearOpenPRCommentKeys(
 /**
  * Convert a GitHub PR to a NewLinkWithNotes
  */
-async function convertPRToThread(
+export async function convertPRToThread(
   source: GitHub,
   token: string,
   owner: string,

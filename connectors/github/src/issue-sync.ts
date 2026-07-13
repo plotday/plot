@@ -141,7 +141,7 @@ export async function syncIssueBatch(
 /**
  * Convert a GitHub issue to a NewLinkWithNotes
  */
-async function convertIssueToLink(
+export async function convertIssueToLink(
   source: GitHub,
   token: string,
   owner: string,
