@@ -49,6 +49,7 @@ import {
   pollOpenPRReactions,
 } from "./reactions";
 import { ALLOWED_REACTION_EMOJI } from "./github-emoji";
+import { syncFollowedItems } from "./followed-sync";
 
 // ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
 
@@ -86,6 +87,21 @@ export type GitHubIssueComment = {
   html_url: string;
 };
 
+export interface GitHubNotificationSubject {
+  title: string;
+  url: string | null;
+  latest_comment_url: string | null;
+  type: string; // "Issue" | "PullRequest" | "Commit" | "Release" | ...
+}
+
+export interface GitHubNotification {
+  id: string;
+  reason: string;
+  updated_at: string;
+  subject: GitHubNotificationSubject;
+  repository: { full_name: string; owner: { login: string }; name: string };
+}
+
 export type GitHubReview = {
   id: number;
   body: string;
@@ -111,6 +127,43 @@ export type GitHubReviewComment = {
   pull_request_review_id: number;
 };
 
+/** GitHub rate-limit signal parsed from a response's status + headers. */
+export interface RateLimitInfo {
+  limited: boolean;
+  /** Best-effort reset time; null if the response didn't say. */
+  resetAt: Date | null;
+}
+
+/**
+ * Detect GitHub primary/secondary rate limiting. Primary limits return 403/429
+ * with `x-ratelimit-remaining: 0` and an `x-ratelimit-reset` (unix seconds).
+ * Secondary limits return `retry-after` (seconds). Anything else is not a
+ * rate-limit signal (e.g. a 403 for lacking permission).
+ */
+export function parseRateLimit(response: Response): RateLimitInfo {
+  if (response.status !== 403 && response.status !== 429) {
+    return { limited: false, resetAt: null };
+  }
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs)) {
+      return { limited: true, resetAt: new Date(Date.now() + secs * 1000) };
+    }
+  }
+  if (response.headers.get("x-ratelimit-remaining") === "0") {
+    // Guard the header presence explicitly: Number(null) === 0 would otherwise
+    // report a bogus epoch-0 resetAt when the reset header is absent.
+    const resetHeader = response.headers.get("x-ratelimit-reset");
+    const reset = resetHeader != null ? Number(resetHeader) : NaN;
+    return {
+      limited: true,
+      resetAt: Number.isFinite(reset) ? new Date(reset * 1000) : null,
+    };
+  }
+  return { limited: false, resetAt: null };
+}
+
 /**
  * Channel ids in this connector are either an owner login (e.g. `microsoft`)
  * for an org/user-level toggle, or `owner/repo` for a single repository.
@@ -130,6 +183,7 @@ type GitHubRepo = {
   owner: { login: string };
   default_branch: string;
   private: boolean;
+  permissions?: { admin?: boolean; push?: boolean; pull?: boolean };
 };
 
 /**
@@ -138,6 +192,7 @@ type GitHubRepo = {
  * Options:
  * - syncPullRequests: boolean (default: true) — sync PRs, reviews, and PR comments
  * - syncIssues: boolean (default: true) — sync issues and issue comments
+ * - syncFollowed: boolean (default: true) — sync issues and PRs you follow in GitHub
  */
 export class GitHub extends Connector<GitHub> {
   static readonly PROVIDER = AuthProvider.GitHub;
@@ -147,6 +202,10 @@ export class GitHub extends Connector<GitHub> {
   readonly provider = AuthProvider.GitHub;
   readonly channelNoun = { singular: "repository", plural: "repositories" };
   readonly scopes = GitHub.SCOPES;
+  // New connections sync every repository by default; volume is bounded by the
+  // plan's sync window (older issues/PRs are dropped server-side on save).
+  // Newly discovered repositories should therefore auto-sync too.
+  readonly autoEnableNewChannelsByDefault = true;
   readonly access = [
     "Reads your repositories' issues and pull requests",
     "Posts comments and updates you make in Plot",
@@ -203,6 +262,13 @@ export class GitHub extends Connector<GitHub> {
           description: "Sync issues and issue comments",
           default: true,
         },
+        syncFollowed: {
+          type: "boolean" as const,
+          label: "Sync followed items",
+          description:
+            "Sync issues and pull requests you follow in GitHub, even in repositories you don't sync",
+          default: true,
+        },
       }),
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.github.com/*"] }),
@@ -241,7 +307,7 @@ export class GitHub extends Connector<GitHub> {
    * first so the right actor's token is selected, falling back to a direct
    * lookup for repos that were enabled on their own.
    */
-  async getToken(channelId: string): Promise<string> {
+  async getToken(channelId: string, allowAccountFallback = true): Promise<string> {
     if (isRepoChannelId(channelId)) {
       const orgId = await this.get<string>(`org_for_repo_${channelId}`);
       if (orgId) {
@@ -250,10 +316,36 @@ export class GitHub extends Connector<GitHub> {
       }
     }
     const authToken = await this.tools.integrations.get(channelId);
-    if (!authToken) {
-      throw new Error("No GitHub authentication token available");
+    if (authToken) return authToken.token;
+    // Followed items live in repos with no enabled channel of their own; borrow
+    // the account token from any enabled channel so their write-backs (comments,
+    // reactions) still authenticate. GitHub uses one account OAuth token per
+    // connection, so any enabled channel's token is the right one.
+    if (allowAccountFallback) {
+      const accountToken = await this.getAccountToken();
+      if (accountToken) return accountToken;
     }
-    return authToken.token;
+    throw new Error("No GitHub authentication token available");
+  }
+
+  /**
+   * Resolve the account-level GitHub OAuth token by borrowing it from any
+   * enabled channel — per-channel auth is just the user's account token, so any
+   * enabled channel's token works (mirrors Gmail's findAnyAuthApi). Returns null
+   * when no channel is enabled yet.
+   */
+  async getAccountToken(): Promise<string | null> {
+    const enabledKeys = await this.listStoreKeys("sync_enabled_");
+    for (const key of enabledKeys) {
+      const channelId = key.replace("sync_enabled_", "");
+      try {
+        const token = await this.getToken(channelId, false);
+        if (token) return token;
+      } catch {
+        // Channel unknown / token missing — try the next one.
+      }
+    }
+    return null;
   }
 
   /**
@@ -342,7 +434,74 @@ export class GitHub extends Connector<GitHub> {
     await pollOpenPRReactions(this, repositoryId);
   }
 
+  /**
+   * Callback entry point for the followed-items poll (scheduleRecurring target
+   * AND the runTask continuation target). Account-wide, not per-channel.
+   *
+   * `syncFollowedItems` processes one notifications page per execution and
+   * returns `{ done }`. While a pass has more pages (`done === false`), re-queue
+   * ourselves via `runTask` so the backlog drains across executions without
+   * exceeding the per-execution request budget. `done === true` only means
+   * "stop chaining for now" (it is also returned when there is no account token
+   * yet) — the recurring schedule re-drives the next incremental pass.
+   */
+  async pollFollowed(): Promise<void> {
+    // `get<T>`/`set<T>`'s generic constraints don't structurally match
+    // FollowedSource's narrower signature; GitHub satisfies the contract
+    // at runtime (see followed-sync.ts's FollowedSource doc comment).
+    const { done } = await syncFollowedItems(
+      this as unknown as import("./followed-sync").FollowedSource,
+    );
+    if (!done) {
+      const followedCallback = await this.createCallback(this.pollFollowed);
+      await this.runTask(followedCallback);
+    }
+  }
+
+  /**
+   * Register the recurring followed poll and kick an immediate first run.
+   */
+  private async startFollowedPoll(): Promise<void> {
+    const followedCallback = await this.createCallback(this.pollFollowed);
+    await this.scheduleRecurring("followed-poll", followedCallback, {
+      intervalMs: 15 * 60 * 1000,
+    });
+    await this.runTask(followedCallback);
+  }
+
   // ---------- Channel lifecycle ----------
+
+  /**
+   * Fires on connection setup, independent of channels. Registers the recurring
+   * followed-items poll (and kicks an immediate first run) when the option is on.
+   */
+  override async activate(): Promise<void> {
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
+    if (options.syncFollowed) {
+      await this.startFollowedPoll();
+    }
+  }
+
+  /**
+   * Runs once per active instance when a new version deploys. Starts the
+   * followed-items poll for connections that predate the feature (their option
+   * defaults on but nothing scheduled the poll yet). Idempotent: scheduleRecurring
+   * under the same key replaces any pending occurrence.
+   */
+  override async upgrade(): Promise<void> {
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
+    if (options.syncFollowed) {
+      await this.startFollowedPoll();
+    }
+  }
 
   /**
    * Fetch every repository the authenticated user has access to.
@@ -404,10 +563,10 @@ export class GitHub extends Connector<GitHub> {
       channels.push({
         id: owner,
         title: owner,
-        // Enabling an owner cascades to EVERY repo under it (orgs can have
-        // hundreds), so don't pre-select it. The user opts in to the specific
-        // owner or repos they want to sync.
-        enabledByDefault: false,
+        // Enable every owner by default. Enabling an owner cascades to all its
+        // repos, but per-item volume is bounded by the plan's sync window, so a
+        // large org doesn't mean a large sync.
+        enabledByDefault: true,
         children: ownerRepos.map((repo) => ({
           id: repo.full_name,
           title: repo.full_name,
@@ -469,7 +628,11 @@ export class GitHub extends Connector<GitHub> {
       intervalMs: 15 * 60 * 1000,
     });
 
-    const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
     const pendingTypes =
       (options.syncPullRequests ? 1 : 0) + (options.syncIssues ? 1 : 0);
 
@@ -527,6 +690,12 @@ export class GitHub extends Connector<GitHub> {
     const repoIds = orgRepos.map((r) => r.full_name);
     await this.set(`org_repos_${orgId}`, repoIds);
 
+    for (const repo of orgRepos) {
+      if (repo.permissions?.admin !== true) {
+        await this.set(`repo_no_admin_${repo.full_name}`, true);
+      }
+    }
+
     if (repoIds.length === 0) {
       await this.tools.integrations.channelSyncCompleted(orgId);
       return;
@@ -554,6 +723,7 @@ export class GitHub extends Connector<GitHub> {
     await this.cancelScheduledTask(`reaction-poll-${repositoryId}`);
     await this.clear(`sync_enabled_${repositoryId}`);
     await this.clear(`org_for_repo_${repositoryId}`);
+    await this.clear(`repo_no_admin_${repositoryId}`);
   }
 
   private async onRepoDisabled(repositoryId: string): Promise<void> {
@@ -609,6 +779,14 @@ export class GitHub extends Connector<GitHub> {
     oldOptions: Record<string, any>,
     newOptions: Record<string, any>,
   ): Promise<void> {
+    // Followed items: independent account-wide sync, toggled on/off here.
+    if (!oldOptions.syncFollowed && newOptions.syncFollowed) {
+      await this.startFollowedPoll();
+    } else if (oldOptions.syncFollowed && !newOptions.syncFollowed) {
+      await this.cancelScheduledTask("followed-poll");
+      // Already-synced followed threads are left in place, not deleted.
+    }
+
     // Find all enabled channels
     const channelKeys = await this.tools.store.list("sync_enabled_");
 
@@ -767,6 +945,12 @@ export class GitHub extends Connector<GitHub> {
    * so toggling on later works without re-creating the webhook.
    */
   async setupWebhook(repositoryId: string): Promise<void> {
+    if (await this.get<boolean>(`repo_no_admin_${repositoryId}`)) {
+      // No admin rights on this repo — creating a webhook would 403. Skip the
+      // wasted request; the repo still gets initial sync and reaction polling.
+      return;
+    }
+
     try {
       const secret = crypto.randomUUID();
 
@@ -912,7 +1096,11 @@ export class GitHub extends Connector<GitHub> {
         ? JSON.parse(request.body)
         : request.body;
 
-    const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
 
     if (event === "pull_request") {
       if (options.syncPullRequests) {

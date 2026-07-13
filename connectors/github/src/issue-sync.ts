@@ -4,6 +4,7 @@ import {
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type { GitHub, GitHubIssueComment } from "./github";
+import { parseRateLimit } from "./github";
 
 /** Issues per page for batch sync */
 const PAGE_SIZE = 50;
@@ -71,6 +72,16 @@ export async function syncIssueBatch(
   const response = await source.githubFetch(token, url);
 
   if (!response.ok) {
+    const rl = parseRateLimit(response);
+    if (rl.limited) {
+      const runAt =
+        rl.resetAt && rl.resetAt.getTime() > Date.now()
+          ? rl.resetAt
+          : new Date(Date.now() + 60 * 1000);
+      const retry = await source.createCallback(source.syncIssueBatch, repositoryId);
+      await source.runTask(retry, { runAt });
+      return; // resume this same page after the limit resets
+    }
     throw new Error(
       `Failed to fetch issues: ${response.status} ${await response.text()}`,
     );
@@ -141,7 +152,7 @@ export async function syncIssueBatch(
 /**
  * Convert a GitHub issue to a NewLinkWithNotes
  */
-async function convertIssueToLink(
+export async function convertIssueToLink(
   source: GitHub,
   token: string,
   owner: string,
