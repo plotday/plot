@@ -181,6 +181,51 @@ describe("small helpers", () => {
   });
 });
 
+describe("transformOutlookConversation sender classification", () => {
+  const base = {
+    attachmentsByMessageId: new Map<string, GraphAttachmentMeta[]>(),
+    accountEmail: "me@work.com",
+  };
+
+  it("marks a no-reply From sender contact as automated", () => {
+    const link = transformOutlookConversation({
+      ...base,
+      messages: [
+        msg({
+          from: {
+            emailAddress: {
+              name: "Susan Braun",
+              address: "notify@payments.interac.ca",
+            },
+          },
+        }),
+      ],
+    });
+    const sender = (
+      link.accessContacts as Array<{ email: string; automated?: boolean }>
+    ).find((c) => c.email === "notify@payments.interac.ca");
+    expect(sender?.automated).toBe(true);
+    const author = link.notes![0].author as {
+      email?: string;
+      automated?: boolean;
+    };
+    expect(author.automated).toBe(true);
+  });
+
+  it("does not mark an ordinary From sender as automated", () => {
+    const link = transformOutlookConversation({
+      ...base,
+      messages: [
+        msg({ from: { emailAddress: { name: "Bob", address: "bob@company.com" } } }),
+      ],
+    });
+    const sender = (
+      link.accessContacts as Array<{ email: string; automated?: boolean }>
+    ).find((c) => c.email === "bob@company.com");
+    expect(sender?.automated).toBeFalsy();
+  });
+});
+
 describe("GraphMailApi queries", () => {
   it("getConversationMessages requests meeting fields + expands event", async () => {
     const calls: Array<Record<string, string> | undefined> = [];

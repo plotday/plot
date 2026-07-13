@@ -84,6 +84,17 @@ function localPart(address: string | null): string {
   return (at === -1 ? address : address.slice(0, at)).toLowerCase();
 }
 
+/**
+ * True when an address's local part marks it as an automated / no-reply /
+ * notification sender (no-reply@, notify@, notifications@, alerts@, …). This is
+ * the identity-trust signal used to enable name-conflict detection for shared
+ * sender addresses; it deliberately ignores list/precedence headers (those are
+ * per-message automation signals, not shared-identity signals).
+ */
+export function isNoReplySender(address: string | null): boolean {
+  return NOREPLY_LOCALPART.test(localPart(address));
+}
+
 function computeAutomation(s: EmailSignals): Automation {
   const prec = (s.precedence ?? "").toLowerCase();
   if (prec === "bulk" || prec === "list" || prec === "junk" || prec === "auto_reply") return "automated";
