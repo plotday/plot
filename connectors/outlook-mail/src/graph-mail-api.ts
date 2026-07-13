@@ -599,6 +599,37 @@ export function sortConversation(messages: GraphMessage[]): GraphMessage[] {
 }
 
 /**
+ * Classify an Outlook conversation's relationship to a calendar event for
+ * bundling onto the event's Plot thread. Two signals: our own
+ * `X-Plot-Event-UID` header on the parent's raw headers (a Plot-sent reply
+ * chain — checked first, regardless of any message-derived signal), or a
+ * message's Graph meeting-message metadata (update/cancellation). Bare new
+ * invites and RSVP responses (accept/decline/tentative) are skipped.
+ */
+export function classifyOutlookCalendar(
+  messages: GraphMessage[],
+  parentHeaders: GraphHeader[] | null
+): { uid: string; kind: "reply" | "update" | "cancel" } | null {
+  const hdr = (parentHeaders ?? []).find(
+    (h) => h.name.toLowerCase() === "x-plot-event-uid"
+  );
+  if (hdr?.value) return { uid: hdr.value, kind: "reply" };
+  for (const m of messages) {
+    const uid = m.event?.iCalUId;
+    if (!uid) continue;
+    if (m.meetingMessageType === "meetingCancelled") return { uid, kind: "cancel" };
+    if (
+      m.meetingMessageType === "meetingRequest" &&
+      (m.meetingRequestType === "fullUpdate" ||
+        m.meetingRequestType === "informationalUpdate")
+    ) {
+      return { uid, kind: "update" };
+    }
+  }
+  return null;
+}
+
+/**
  * Transforms an Outlook conversation into a NewLinkWithNotes. The subject
  * becomes the link title, and each non-draft message becomes a note keyed
  * on its internetMessageId (stable across folder moves, and identical for

@@ -41,6 +41,7 @@ import {
   EXCLUDED_WELL_KNOWN,
   GraphMailApi,
   GraphMailApiError,
+  classifyOutlookCalendar,
   conversationSource,
   isConversationFlagged,
   isConversationUnread,
@@ -1478,6 +1479,24 @@ export async function processConversationsFn(
         syncableId: channelId,
         channelId,
       };
+
+      // Bundle onto the calendar event's thread when this conversation relates
+      // to one (a Plot-sent reply chain, or a meeting update/cancellation).
+      const calBundle = classifyOutlookCalendar(
+        item.messages,
+        item.parentHeaders
+      );
+      if (calBundle) {
+        plotThread.sources = [
+          ...(plotThread.sources ?? []),
+          `icaluid:${calBundle.uid}`,
+        ];
+        if (calBundle.kind === "cancel") {
+          await host.set(`cancel-email:${calBundle.uid}`, {
+            at: new Date().toISOString(),
+          });
+        }
+      }
 
       // Compute classifier facets from the parent message's headers + body.
       const facetParent = sortConversation(item.messages).find(
