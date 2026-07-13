@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseFollowedNotifications, syncFollowedItems, type FollowedSource } from "./followed-sync";
 import type { GitHubNotification } from "./github";
 
@@ -143,6 +143,9 @@ function makeFakeSource(opts: {
     set: async <T>(key: string, value: T) => {
       store[key] = value;
     },
+    clear: async (key: string) => {
+      delete store[key];
+    },
     userToContact: (user: { id: number; login: string }) => ({
       email: `${user.id}@users.noreply.github.com`,
       name: user.login,
@@ -153,56 +156,52 @@ function makeFakeSource(opts: {
 }
 
 describe("syncFollowedItems", () => {
-  it("no-ops without saving or marking initial done when no token", async () => {
+  it("no-ops (done) without saving or marking initial done when no token", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { source, saved, store } = makeFakeSource({ token: null });
-    await syncFollowedItems(source);
+    const result = await syncFollowedItems(source);
+    warn.mockRestore();
+    expect(result).toEqual({ done: true });
     expect(saved).toEqual([]);
     expect(store.followed_initial_done).toBeUndefined();
   });
 
-  it("syncs a followed issue and tags it syncableId=followed", async () => {
+  it("syncs a followed issue, tags it syncableId=followed, and completes the pass", async () => {
     const { source, saved, store } = makeFakeSource({
-      notifications: [
-        {
-          id: "1",
-          reason: "subscribed",
-          updated_at: "2026-07-10T00:00:00Z",
-          repository: { full_name: "acme/web", owner: { login: "acme" }, name: "web" },
-          subject: {
-            title: "A bug",
-            url: "https://api.github.com/repos/acme/web/issues/42",
-            latest_comment_url: null,
-            type: "Issue",
-          },
-        },
-      ],
+      notifications: [makeNotification()],
     });
-    await syncFollowedItems(source);
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: true });
     expect(saved).toHaveLength(1);
     expect(saved[0].meta.syncableId).toBe("followed");
     expect(saved[0].unread).toBe(false); // initial sync => window-filterable
     expect(store.followed_initial_done).toBe(true);
+    expect(store.followed_sync_state).toBeUndefined(); // cursor cleared on completion
   });
 
   it("skips a followed item whose repo is already an enabled channel", async () => {
     const { source, saved } = makeFakeSource({
       enabled: ["acme/web"],
-      notifications: [
-        {
-          id: "1",
-          reason: "subscribed",
-          updated_at: "2026-07-10T00:00:00Z",
-          repository: { full_name: "acme/web", owner: { login: "acme" }, name: "web" },
-          subject: {
-            title: "A bug",
-            url: "https://api.github.com/repos/acme/web/issues/42",
-            latest_comment_url: null,
-            type: "Issue",
-          },
-        },
-      ],
+      notifications: [makeNotification()],
     });
-    await syncFollowedItems(source);
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: true });
     expect(saved).toEqual([]);
+  });
+
+  it("returns done:false and advances the cursor when a full page is returned", async () => {
+    // A full page (PAGE_SIZE=50) signals more may remain: the pass should
+    // checkpoint page 2 and NOT mark itself complete yet.
+    const fullPage = Array.from({ length: 50 }, (_, i) =>
+      makeNotification({
+        id: String(i),
+        subject: { url: `https://api.github.com/repos/acme/web/issues/${i + 1}` },
+      }),
+    );
+    const { source, store } = makeFakeSource({ notifications: fullPage });
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: false });
+    expect((store.followed_sync_state as { page: number }).page).toBe(2);
+    expect(store.followed_initial_done).toBeUndefined(); // not done => not marked
   });
 });
