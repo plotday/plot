@@ -49,6 +49,7 @@ import {
   pollOpenPRReactions,
 } from "./reactions";
 import { ALLOWED_REACTION_EMOJI } from "./github-emoji";
+import { syncFollowedItems } from "./followed-sync";
 
 // ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
 
@@ -222,6 +223,13 @@ export class GitHub extends Connector<GitHub> {
           description: "Sync issues and issue comments",
           default: true,
         },
+        syncFollowed: {
+          type: "boolean" as const,
+          label: "Sync followed items",
+          description:
+            "Sync issues and pull requests you follow in GitHub, even in repositories you don't sync",
+          default: true,
+        },
       }),
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.github.com/*"] }),
@@ -273,6 +281,26 @@ export class GitHub extends Connector<GitHub> {
       throw new Error("No GitHub authentication token available");
     }
     return authToken.token;
+  }
+
+  /**
+   * Resolve the account-level GitHub OAuth token by borrowing it from any
+   * enabled channel — per-channel auth is just the user's account token, so any
+   * enabled channel's token works (mirrors Gmail's findAnyAuthApi). Returns null
+   * when no channel is enabled yet.
+   */
+  async getAccountToken(): Promise<string | null> {
+    const enabledKeys = await this.listStoreKeys("sync_enabled_");
+    for (const key of enabledKeys) {
+      const channelId = key.replace("sync_enabled_", "");
+      try {
+        const token = await this.getToken(channelId);
+        if (token) return token;
+      } catch {
+        // Channel unknown / token missing — try the next one.
+      }
+    }
+    return null;
   }
 
   /**
@@ -361,7 +389,59 @@ export class GitHub extends Connector<GitHub> {
     await pollOpenPRReactions(this, repositoryId);
   }
 
+  /**
+   * Callback entry point for the followed-items poll (scheduleRecurring target
+   * AND the runTask continuation target). Account-wide, not per-channel.
+   *
+   * `syncFollowedItems` processes one notifications page per execution and
+   * returns `{ done }`. While a pass has more pages (`done === false`), re-queue
+   * ourselves via `runTask` so the backlog drains across executions without
+   * exceeding the per-execution request budget. `done === true` only means
+   * "stop chaining for now" (it is also returned when there is no account token
+   * yet) — the recurring schedule re-drives the next incremental pass.
+   */
+  async pollFollowed(): Promise<void> {
+    // `get<T>`/`set<T>`'s generic constraints don't structurally match
+    // FollowedSource's narrower signature; GitHub satisfies the contract
+    // at runtime (see followed-sync.ts's FollowedSource doc comment).
+    const { done } = await syncFollowedItems(
+      this as unknown as import("./followed-sync").FollowedSource,
+    );
+    if (!done) {
+      const followedCallback = await this.createCallback(this.pollFollowed);
+      await this.runTask(followedCallback);
+    }
+  }
+
+  /**
+   * Register the recurring followed poll and kick an immediate first run.
+   */
+  private async startFollowedPoll(): Promise<void> {
+    const followedCallback = await this.createCallback(this.pollFollowed);
+    await this.scheduleRecurring("followed-poll", followedCallback, {
+      intervalMs: 15 * 60 * 1000,
+    });
+    await this.runTask(followedCallback);
+  }
+
   // ---------- Channel lifecycle ----------
+
+  /**
+   * Fires on connection setup, independent of channels. Registers the recurring
+   * followed-items poll (and kicks an immediate first run) when the option is on.
+   */
+  override async activate(context: { auth: Authorization; actor: Actor }): Promise<void> {
+    if (context.actor?.id) await this.set("auth_actor_id", context.actor.id);
+
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
+    if (options.syncFollowed) {
+      await this.startFollowedPoll();
+    }
+  }
 
   /**
    * Fetch every repository the authenticated user has access to.
@@ -488,7 +568,11 @@ export class GitHub extends Connector<GitHub> {
       intervalMs: 15 * 60 * 1000,
     });
 
-    const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
     const pendingTypes =
       (options.syncPullRequests ? 1 : 0) + (options.syncIssues ? 1 : 0);
 
@@ -628,6 +712,22 @@ export class GitHub extends Connector<GitHub> {
     oldOptions: Record<string, any>,
     newOptions: Record<string, any>,
   ): Promise<void> {
+    // Followed items: independent account-wide sync, toggled on/off here.
+    // Inlines startFollowedPoll's body (rather than calling the private
+    // helper) so this stays unit-testable against a plain fake `this` — a
+    // fake only needs to stub createCallback/scheduleRecurring/runTask, not
+    // every other private method on the real class.
+    if (!oldOptions.syncFollowed && newOptions.syncFollowed) {
+      const followedCallback = await this.createCallback(this.pollFollowed);
+      await this.scheduleRecurring("followed-poll", followedCallback, {
+        intervalMs: 15 * 60 * 1000,
+      });
+      await this.runTask(followedCallback);
+    } else if (oldOptions.syncFollowed && !newOptions.syncFollowed) {
+      await this.cancelScheduledTask("followed-poll");
+      // Already-synced followed threads are left in place, not deleted.
+    }
+
     // Find all enabled channels
     const channelKeys = await this.tools.store.list("sync_enabled_");
 
@@ -931,7 +1031,11 @@ export class GitHub extends Connector<GitHub> {
         ? JSON.parse(request.body)
         : request.body;
 
-    const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
 
     if (event === "pull_request") {
       if (options.syncPullRequests) {

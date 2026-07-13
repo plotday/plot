@@ -115,3 +115,66 @@ describe("default-enable everything", () => {
     expect(channels.every((c: any) => c.enabledByDefault === true)).toBe(true);
   });
 });
+
+describe("getAccountToken", () => {
+  it("returns the token from the first enabled channel", async () => {
+    const fakeSource = {
+      listStoreKeys: async (prefix: string) => [`${prefix}acme/web`, `${prefix}octo/dotfiles`],
+      getToken: async (channelId: string) =>
+        channelId === "acme/web" ? "tok-acme" : "tok-octo",
+    } as any;
+    const token = await GitHub.prototype.getAccountToken.call(fakeSource);
+    expect(token).toBe("tok-acme");
+  });
+
+  it("returns null when no channel is enabled", async () => {
+    const fakeSource = { listStoreKeys: async () => [] } as any;
+    const token = await GitHub.prototype.getAccountToken.call(fakeSource);
+    expect(token).toBeNull();
+  });
+});
+
+describe("onOptionsChanged followed toggle", () => {
+  it("schedules the followed poll and runs an initial sync when turned on", async () => {
+    const calls: string[] = [];
+    const fakeSource = {
+      tools: { store: { list: async () => [] } },
+      listStoreKeys: async () => [],
+      createCallback: async (_fn: any) => ({ cb: "followed" }),
+      scheduleRecurring: async (key: string) => calls.push(`schedule:${key}`),
+      cancelScheduledTask: async (key: string) => calls.push(`cancel:${key}`),
+      runTask: async (_cb: any) => calls.push("runTask"),
+      pollFollowed: async () => {},
+    } as any;
+
+    await GitHub.prototype.onOptionsChanged.call(
+      fakeSource,
+      { syncFollowed: false, syncPullRequests: true, syncIssues: true },
+      { syncFollowed: true, syncPullRequests: true, syncIssues: true },
+    );
+
+    expect(calls).toContain("schedule:followed-poll");
+    expect(calls).toContain("runTask");
+  });
+
+  it("cancels the followed poll when turned off", async () => {
+    const calls: string[] = [];
+    const fakeSource = {
+      tools: { store: { list: async () => [] } },
+      listStoreKeys: async () => [],
+      createCallback: async (_fn: any) => ({ cb: "followed" }),
+      scheduleRecurring: async (key: string) => calls.push(`schedule:${key}`),
+      cancelScheduledTask: async (key: string) => calls.push(`cancel:${key}`),
+      runTask: async (_cb: any) => calls.push("runTask"),
+      pollFollowed: async () => {},
+    } as any;
+
+    await GitHub.prototype.onOptionsChanged.call(
+      fakeSource,
+      { syncFollowed: true, syncPullRequests: true, syncIssues: true },
+      { syncFollowed: false, syncPullRequests: true, syncIssues: true },
+    );
+
+    expect(calls).toContain("cancel:followed-poll");
+  });
+});
