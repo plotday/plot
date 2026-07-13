@@ -1,5 +1,7 @@
 # Outlook Calendar Connector for Plot
 
+> **Library note:** This package is consumed by [`@plotday/connector-outlook`](../outlook), the deployed "Outlook" connection — it is not deployed as a standalone connector. See `../AGENTS.md` for details.
+
 Sync Microsoft Outlook (Microsoft 365) calendar events into Plot.
 
 ## What it does

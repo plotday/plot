@@ -650,14 +650,24 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 
 ## Examples
 
+`gmail/`, `google-calendar/`, `outlook-mail/`, and `outlook-calendar/` are **not deployed as
+standalone connectors** — they're library packages consumed by the composite `google/` (deployed as
+"Gmail & Calendar") and `outlook/` (deployed as "Outlook") connectors, which import their exported
+sync functions (e.g. `initialSyncBatchFn`, `onNoteCreatedFn`) through a per-product "host" adapter.
+They're still the right place to look for the patterns below and to make product-specific fixes —
+just don't scaffold a new deployable connector from them or assume they ship independently.
+
 | Connector | Category | Key patterns |
 |---|---|---|
 | `linear/` | ProjectConnector | Canonical reference; webhooks; bidirectional |
-| `google-calendar/` | CalendarConnector | Recurring events; RSVP write-back; watch renewal; shared Google auth |
+| `google/` | CompositeConnector | Deployed "Gmail & Calendar"; single OAuth wiring multiple product libraries via a host-adapter pattern |
+| `outlook/` | CompositeConnector | Deployed "Outlook"; single OAuth wiring multiple product libraries via a host-adapter pattern |
+| `google-calendar/` | CalendarConnector (library) | Recurring events; RSVP write-back; watch renewal; shared Google auth. Consumed by `google/` |
 | `slack/` | MessagingConnector | Team-sharded webhooks; thread model |
-| `gmail/` | MessagingConnector | PubSub webhooks; HTML contentType; callback-arg `initialSync` |
+| `gmail/` | MessagingConnector (library) | PubSub webhooks; HTML contentType; callback-arg `initialSync`. Consumed by `google/` |
 | `google-drive/` | DocumentConnector | Document comments; reply threading; file watching; canonical `NoteWriteBackResult` + `onNoteUpdated` example |
 | `jira/` | ProjectConnector | Immutable vs mutable ids; comment metadata dedup |
 | `asana/` | ProjectConnector | HMAC webhook verification; section-based projects |
-| `outlook-calendar/` | CalendarConnector | Microsoft Graph; subscription management |
+| `outlook-mail/` | MessagingConnector (library) | Microsoft Graph; folder-based channels; delta-query self-heal. Consumed by `outlook/` |
+| `outlook-calendar/` | CalendarConnector (library) | Microsoft Graph; subscription management. Consumed by `outlook/` |
 | `google-contacts/` | Supporting | Contact sync; shared Google auth consumed by other connectors via `MergeScopes` |
