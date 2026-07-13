@@ -145,6 +145,7 @@ describe("onOptionsChanged followed toggle", () => {
       cancelScheduledTask: async (key: string) => calls.push(`cancel:${key}`),
       runTask: async (_cb: any) => calls.push("runTask"),
       pollFollowed: async () => {},
+      startFollowedPoll: (GitHub.prototype as any).startFollowedPoll,
     } as any;
 
     await GitHub.prototype.onOptionsChanged.call(
@@ -167,6 +168,7 @@ describe("onOptionsChanged followed toggle", () => {
       cancelScheduledTask: async (key: string) => calls.push(`cancel:${key}`),
       runTask: async (_cb: any) => calls.push("runTask"),
       pollFollowed: async () => {},
+      startFollowedPoll: (GitHub.prototype as any).startFollowedPoll,
     } as any;
 
     await GitHub.prototype.onOptionsChanged.call(

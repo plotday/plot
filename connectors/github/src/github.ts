@@ -154,6 +154,7 @@ type GitHubRepo = {
  * Options:
  * - syncPullRequests: boolean (default: true) — sync PRs, reviews, and PR comments
  * - syncIssues: boolean (default: true) — sync issues and issue comments
+ * - syncFollowed: boolean (default: true) — sync issues and PRs you follow in GitHub
  */
 export class GitHub extends Connector<GitHub> {
   static readonly PROVIDER = AuthProvider.GitHub;
@@ -713,16 +714,8 @@ export class GitHub extends Connector<GitHub> {
     newOptions: Record<string, any>,
   ): Promise<void> {
     // Followed items: independent account-wide sync, toggled on/off here.
-    // Inlines startFollowedPoll's body (rather than calling the private
-    // helper) so this stays unit-testable against a plain fake `this` — a
-    // fake only needs to stub createCallback/scheduleRecurring/runTask, not
-    // every other private method on the real class.
     if (!oldOptions.syncFollowed && newOptions.syncFollowed) {
-      const followedCallback = await this.createCallback(this.pollFollowed);
-      await this.scheduleRecurring("followed-poll", followedCallback, {
-        intervalMs: 15 * 60 * 1000,
-      });
-      await this.runTask(followedCallback);
+      await this.startFollowedPoll();
     } else if (oldOptions.syncFollowed && !newOptions.syncFollowed) {
       await this.cancelScheduledTask("followed-poll");
       // Already-synced followed threads are left in place, not deleted.
