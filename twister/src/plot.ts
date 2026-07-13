@@ -1103,6 +1103,16 @@ type NewContactBase = {
    * `thread.contact_meta[contact_id].role`.
    */
   role?: string;
+  /**
+   * True when this address is an automated / no-reply sender whose From
+   * display name must not be trusted as a stable identity — e.g.
+   * notify@payments.interac.ca, which puts a different person's name on every
+   * message. When two different names are seen for such an address, the
+   * runtime suppresses its name and it displays as the email address instead.
+   * Connectors set this from the email classifier (isNoReplySender). Omitted ⇒
+   * treated as false (normal identity trust).
+   */
+  automated?: boolean;
 };
 
 /**
