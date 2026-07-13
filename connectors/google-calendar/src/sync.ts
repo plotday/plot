@@ -145,6 +145,28 @@ export function buildEventSources(opts: {
   return sources;
 }
 
+/**
+ * De-duplicate a note/link contact roster by email (case-insensitive),
+ * keeping the first occurrence. The organizer is both surfaced via
+ * `event.organizer` (used to seed the roster first, so its `displayName`
+ * wins) and, commonly, listed again in `event.attendees` with
+ * `organizer: true` — without this, the message-model roster would carry
+ * the same person twice.
+ */
+export function dedupeContactsByEmail(contacts: NewContact[]): NewContact[] {
+  const seen = new Set<string>();
+  const result: NewContact[] = [];
+  for (const contact of contacts) {
+    const key = contact.email?.toLowerCase();
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    result.push(contact);
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Extracted helper functions (mechanical this.X → host.X)
 // ---------------------------------------------------------------------------
@@ -717,11 +739,26 @@ export async function processCalendarEventsFn(
             `cancel_seen:${canonicalUrl}`,
             event.updated ? new Date(event.updated) : undefined
           );
+
+          // Roster for the message-model thread: organizer + attendees (mirrors
+          // the live-event path's attendeeMentions below), so a cancellation
+          // that arrives without ever seeing the event confirmed still has a
+          // "Reply all" audience.
+          const rawCancelMentions: NewContact[] = [];
+          if (authorContact) rawCancelMentions.push(authorContact);
+          for (const att of validAttendees) {
+            if (att.email) {
+              rawCancelMentions.push({ email: att.email, name: att.displayName });
+            }
+          }
+          const cancelMentions = dedupeContactsByEmail(rawCancelMentions);
+
           const cancelNote = {
             key: "cancellation" as const,
             content: "This event was cancelled.",
             contentType: "text" as const,
             created: cancelFirstSeen,
+            accessContacts: cancelMentions,
           };
 
           const link: NewLinkWithNotes = {
@@ -741,6 +778,9 @@ export async function processCalendarEventsFn(
               : event.attendees?.some((a) => a.self)
               ? 50
               : 0,
+            access: "private",
+            accessContacts: cancelMentions,
+            author: authorContact,
             meta: activityData.meta ?? null,
             notes: [cancelNote],
             schedules: [
@@ -765,6 +805,7 @@ export async function processCalendarEventsFn(
             ...link.meta,
             syncProvider: "google",
             syncableId: calendarId,
+            iCalUID: event.iCalUID ?? null,
           };
 
           addLink(link as LinkWithSource);
@@ -862,6 +903,18 @@ export async function processCalendarEventsFn(
               event.created ? new Date(event.created) : undefined
             )
           : undefined;
+        const rawAttendeeMentions: NewContact[] = [];
+        if (authorContact) rawAttendeeMentions.push(authorContact);
+        for (const att of validAttendees) {
+          if (att.email) {
+            rawAttendeeMentions.push({
+              email: att.email,
+              name: att.displayName,
+            });
+          }
+        }
+        const attendeeMentions = dedupeContactsByEmail(rawAttendeeMentions);
+
         const descriptionNote =
           hasDescription && descHash
             ? {
@@ -872,20 +925,10 @@ export async function processCalendarEventsFn(
                     ? ("html" as const)
                     : ("text" as const),
                 created: descFirstSeen,
+                accessContacts: attendeeMentions,
                 ...(authorContact ? { author: authorContact } : {}),
               }
             : null;
-
-        const attendeeMentions: NewContact[] = [];
-        if (authorContact) attendeeMentions.push(authorContact);
-        for (const att of validAttendees) {
-          if (att.email) {
-            attendeeMentions.push({
-              email: att.email,
-              name: att.displayName,
-            });
-          }
-        }
 
         const notes = [
           ...(descriptionNote ? [descriptionNote] : []),
@@ -899,6 +942,7 @@ export async function processCalendarEventsFn(
                   content: "This event was cancelled.",
                   contentType: "text" as const,
                   archived: true,
+                  accessContacts: attendeeMentions,
                 },
               ]
             : []),
@@ -948,6 +992,7 @@ export async function processCalendarEventsFn(
           ...link.meta,
           syncProvider: "google",
           syncableId: calendarId,
+          iCalUID: event.iCalUID ?? null,
         };
 
         addLink(link as LinkWithSource);

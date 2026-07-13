@@ -45,7 +45,8 @@ export const CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
     // display name is "Gmail & Calendar"); standalone Google Calendar falls
     // back to its own display name anyway.
     sourceName: "Google Calendar",
-    sharingModel: "thread" as const,
+    sharingModel: "message" as const,
+    compose: { targets: "addresses" as const },
     includesSchedules: true,
     logo: "https://api.iconify.design/logos/google-calendar.svg",
     logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg",

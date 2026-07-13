@@ -1446,3 +1446,92 @@ describe("processCalendarEventsFn — self-initiated cancellations", () => {
     expect(saved[0].unread).toBe(false);
   });
 });
+
+describe("processCalendarEventsFn — message-model note audiences", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "user@example.com";
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("event notes carry accessContacts = attendees (message-model roster)", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e1",
+      iCalUID: "uid-1",
+      status: "confirmed" as const,
+      summary: "Sync",
+      description: "Agenda here",
+      organizer: { email: "org@x.com", displayName: "Org" },
+      attendees: [
+        {
+          email: "org@x.com",
+          organizer: true,
+          responseStatus: "accepted" as const,
+        },
+        { email: "bob@x.com", responseStatus: "needsAction" as const },
+      ],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-1");
+    expect(link?.meta?.iCalUID).toBe("uid-1");
+
+    const desc = link?.notes?.find((n) =>
+      (n as { key?: string }).key?.startsWith("description-")
+    );
+    const emails = (
+      (desc as { accessContacts?: Array<{ email?: string }> })
+        .accessContacts ?? []
+    )
+      .map((c) => c.email)
+      .sort();
+    expect(emails).toEqual(["bob@x.com", "org@x.com"]);
+  });
+
+  it("cancellation-path link carries accessContacts, private access, author, and iCalUID meta", async () => {
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e2",
+      iCalUID: "uid-2",
+      status: "cancelled" as const,
+      summary: "Standup",
+      organizer: { email: "org@x.com", displayName: "Org" },
+      attendees: [
+        { email: "org@x.com", organizer: true },
+        { email: "bob@x.com" },
+      ],
+      updated: isoDaysFromNow(0),
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-2");
+    expect(link?.meta?.iCalUID).toBe("uid-2");
+    expect(link?.access).toBe("private");
+    expect(link?.author).toEqual({ email: "org@x.com", name: "Org" });
+
+    const emails = (
+      (link?.accessContacts ?? []) as Array<{ email?: string }>
+    )
+      .map((c) => c.email)
+      .sort();
+    expect(emails).toEqual(["bob@x.com", "org@x.com"]);
+  });
+});
