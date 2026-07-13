@@ -248,6 +248,15 @@ describe("parseRateLimit", () => {
     } as any;
     expect(parseRateLimit(response)).toEqual({ limited: false, resetAt: null });
   });
+
+  it("reports limited with a null resetAt when remaining=0 but no reset header", () => {
+    const response = {
+      status: 403,
+      headers: makeHeaders({ "x-ratelimit-remaining": "0" }),
+    } as any;
+    // A missing reset header must yield null (not epoch-0 from Number(null)).
+    expect(parseRateLimit(response)).toEqual({ limited: true, resetAt: null });
+  });
 });
 
 describe("setupWebhook no-admin skip", () => {

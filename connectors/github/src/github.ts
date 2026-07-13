@@ -152,7 +152,10 @@ export function parseRateLimit(response: Response): RateLimitInfo {
     }
   }
   if (response.headers.get("x-ratelimit-remaining") === "0") {
-    const reset = Number(response.headers.get("x-ratelimit-reset"));
+    // Guard the header presence explicitly: Number(null) === 0 would otherwise
+    // report a bogus epoch-0 resetAt when the reset header is absent.
+    const resetHeader = response.headers.get("x-ratelimit-reset");
+    const reset = resetHeader != null ? Number(resetHeader) : NaN;
     return {
       limited: true,
       resetAt: Number.isFinite(reset) ? new Date(reset * 1000) : null,
