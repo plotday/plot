@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.77.0
+
+### Added
+
+- `Note.todayItem` — when a message is sent while a Today item is
+
 ## 0.76.0
 
 ### Added
