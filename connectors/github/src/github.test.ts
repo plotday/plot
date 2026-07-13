@@ -95,3 +95,27 @@ describe("onNoteUpdated review-comment edit routing", () => {
     expect(result).toEqual({ externalContent: "Edited" });
   });
 });
+
+describe("default-enable everything", () => {
+  it("marks every owner channel enabledByDefault: true", async () => {
+    const fakeSource = {
+      fetchAllRepos: async () => [
+        { full_name: "acme/web", owner: { login: "acme" }, name: "web" },
+        { full_name: "octo/dotfiles", owner: { login: "octo" }, name: "dotfiles" },
+      ],
+    } as any;
+
+    const channels = await GitHub.prototype.getChannels.call(
+      fakeSource,
+      {} as any,
+      { token: "fake-token" } as any,
+    );
+
+    expect(channels).toHaveLength(2);
+    expect(channels.every((c: any) => c.enabledByDefault === true)).toBe(true);
+  });
+
+  it("sets autoEnableNewChannelsByDefault on the class", () => {
+    expect(GitHub.prototype.autoEnableNewChannelsByDefault).toBe(true);
+  });
+});

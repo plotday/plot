@@ -147,6 +147,13 @@ export class GitHub extends Connector<GitHub> {
   readonly provider = AuthProvider.GitHub;
   readonly channelNoun = { singular: "repository", plural: "repositories" };
   readonly scopes = GitHub.SCOPES;
+
+  // New connections sync every repository by default; volume is bounded by the
+  // plan's sync window (older issues/PRs are dropped server-side on save).
+  // Newly discovered repositories should therefore auto-sync too.
+  get autoEnableNewChannelsByDefault(): boolean {
+    return true;
+  }
   readonly access = [
     "Reads your repositories' issues and pull requests",
     "Posts comments and updates you make in Plot",
@@ -404,10 +411,10 @@ export class GitHub extends Connector<GitHub> {
       channels.push({
         id: owner,
         title: owner,
-        // Enabling an owner cascades to EVERY repo under it (orgs can have
-        // hundreds), so don't pre-select it. The user opts in to the specific
-        // owner or repos they want to sync.
-        enabledByDefault: false,
+        // Enable every owner by default. Enabling an owner cascades to all its
+        // repos, but per-item volume is bounded by the plan's sync window, so a
+        // large org doesn't mean a large sync.
+        enabledByDefault: true,
         children: ownerRepos.map((repo) => ({
           id: repo.full_name,
           title: repo.full_name,
