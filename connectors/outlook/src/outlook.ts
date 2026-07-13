@@ -617,6 +617,9 @@ export class Outlook extends Connector<Outlook> {
       set: (key, value) => self._calendarHostSet(key, value),
       get: <T>(key: string) => self._calendarHostGet<T>(key),
       clear: (key) => self._calendarHostClear(key),
+      // Read into the MAIL namespace so the calendar sync can check for a
+      // `cancel-email:<uid>` marker recorded by the mail sync (Plan B).
+      readMailState: (key) => self._mailHostGet(key),
       tools: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         integrations: self.tools.integrations as any,
