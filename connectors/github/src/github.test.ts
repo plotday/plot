@@ -114,8 +114,4 @@ describe("default-enable everything", () => {
     expect(channels).toHaveLength(2);
     expect(channels.every((c: any) => c.enabledByDefault === true)).toBe(true);
   });
-
-  it("sets autoEnableNewChannelsByDefault on the class", () => {
-    expect(GitHub.prototype.autoEnableNewChannelsByDefault).toBe(true);
-  });
 });

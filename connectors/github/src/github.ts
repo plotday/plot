@@ -147,13 +147,10 @@ export class GitHub extends Connector<GitHub> {
   readonly provider = AuthProvider.GitHub;
   readonly channelNoun = { singular: "repository", plural: "repositories" };
   readonly scopes = GitHub.SCOPES;
-
   // New connections sync every repository by default; volume is bounded by the
   // plan's sync window (older issues/PRs are dropped server-side on save).
   // Newly discovered repositories should therefore auto-sync too.
-  get autoEnableNewChannelsByDefault(): boolean {
-    return true;
-  }
+  readonly autoEnableNewChannelsByDefault = true;
   readonly access = [
     "Reads your repositories' issues and pull requests",
     "Posts comments and updates you make in Plot",
