@@ -733,6 +733,15 @@ export type Note = ThreadCommon & {
   /** The note this is a reply to, or null if not a reply */
   reNote: { id: Uuid } | null;
   /**
+   * The Today-item context this note was composed against, via the Today
+   * thread's pin affordance (pin an item to discuss it), or null. Mutually
+   * exclusive with `reNote` and a forward snapshot — a note is at most one
+   * of a reply, a forward, or a Today-item reference. Read-only from a
+   * twist's perspective: only the Plot app sets it, when the user pins a
+   * Today item and sends a message in the Today thread.
+   */
+  todayItem: { id: Uuid } | null;
+  /**
    * Contacts who can see this note, or null if the note inherits thread visibility.
    * When set (even to []), the note is private to the listed contacts plus the creator.
    */
@@ -795,7 +804,7 @@ export type Note = ThreadCommon & {
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "recipients" | "id" | "key" | "reNote" | "tagActors"
+    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "recipients" | "id" | "key" | "reNote" | "todayItem" | "tagActors"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {

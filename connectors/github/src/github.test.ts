@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GitHub } from "./github";
+import { GitHub, parseRateLimit } from "./github";
 
 /**
  * `onNoteCreated`/`onNoteUpdated` are real methods on the `GitHub` class,
@@ -93,5 +93,192 @@ describe("onNoteUpdated review-comment edit routing", () => {
 
     expect(capturedPath).toBe("/repos/acme/repo/issues/comments/777");
     expect(result).toEqual({ externalContent: "Edited" });
+  });
+});
+
+describe("default-enable everything", () => {
+  it("marks every owner channel enabledByDefault: true", async () => {
+    const fakeSource = {
+      fetchAllRepos: async () => [
+        { full_name: "acme/web", owner: { login: "acme" }, name: "web" },
+        { full_name: "octo/dotfiles", owner: { login: "octo" }, name: "dotfiles" },
+      ],
+    } as any;
+
+    const channels = await GitHub.prototype.getChannels.call(
+      fakeSource,
+      {} as any,
+      { token: "fake-token" } as any,
+    );
+
+    expect(channels).toHaveLength(2);
+    expect(channels.every((c: any) => c.enabledByDefault === true)).toBe(true);
+  });
+});
+
+describe("getAccountToken", () => {
+  it("returns the token from the first enabled channel", async () => {
+    const fakeSource = {
+      listStoreKeys: async (prefix: string) => [`${prefix}acme/web`, `${prefix}octo/dotfiles`],
+      getToken: async (channelId: string) =>
+        channelId === "acme/web" ? "tok-acme" : "tok-octo",
+    } as any;
+    const token = await GitHub.prototype.getAccountToken.call(fakeSource);
+    expect(token).toBe("tok-acme");
+  });
+
+  it("returns null when no channel is enabled", async () => {
+    const fakeSource = { listStoreKeys: async () => [] } as any;
+    const token = await GitHub.prototype.getAccountToken.call(fakeSource);
+    expect(token).toBeNull();
+  });
+});
+
+describe("getToken account-token fallback", () => {
+  it("borrows the account token for a repo with no enabled channel (e.g. a followed item)", async () => {
+    const fakeSource: any = {
+      get: async () => null, // no org_for_repo mapping
+      tools: {
+        integrations: {
+          get: async (id: string) =>
+            id === "acme/web" ? { token: "chan-tok" } : null,
+        },
+      },
+      listStoreKeys: async (prefix: string) => [`${prefix}acme/web`],
+    };
+    // Wire the two interdependent prototype methods onto the fake so their
+    // internal this.getToken / this.getAccountToken calls resolve.
+    fakeSource.getToken = (GitHub.prototype as any).getToken;
+    fakeSource.getAccountToken = (GitHub.prototype as any).getAccountToken;
+
+    // octo/oss is NOT an enabled channel; getToken must borrow acme/web's token.
+    const token = await fakeSource.getToken("octo/oss");
+    expect(token).toBe("chan-tok");
+  });
+});
+
+describe("onOptionsChanged followed toggle", () => {
+  it("schedules the followed poll and runs an initial sync when turned on", async () => {
+    const calls: string[] = [];
+    const fakeSource = {
+      tools: { store: { list: async () => [] } },
+      listStoreKeys: async () => [],
+      createCallback: async (_fn: any) => ({ cb: "followed" }),
+      scheduleRecurring: async (key: string) => calls.push(`schedule:${key}`),
+      cancelScheduledTask: async (key: string) => calls.push(`cancel:${key}`),
+      runTask: async (_cb: any) => calls.push("runTask"),
+      pollFollowed: async () => {},
+      startFollowedPoll: (GitHub.prototype as any).startFollowedPoll,
+    } as any;
+
+    await GitHub.prototype.onOptionsChanged.call(
+      fakeSource,
+      { syncFollowed: false, syncPullRequests: true, syncIssues: true },
+      { syncFollowed: true, syncPullRequests: true, syncIssues: true },
+    );
+
+    expect(calls).toContain("schedule:followed-poll");
+    expect(calls).toContain("runTask");
+  });
+
+  it("cancels the followed poll when turned off", async () => {
+    const calls: string[] = [];
+    const fakeSource = {
+      tools: { store: { list: async () => [] } },
+      listStoreKeys: async () => [],
+      createCallback: async (_fn: any) => ({ cb: "followed" }),
+      scheduleRecurring: async (key: string) => calls.push(`schedule:${key}`),
+      cancelScheduledTask: async (key: string) => calls.push(`cancel:${key}`),
+      runTask: async (_cb: any) => calls.push("runTask"),
+      pollFollowed: async () => {},
+      startFollowedPoll: (GitHub.prototype as any).startFollowedPoll,
+    } as any;
+
+    await GitHub.prototype.onOptionsChanged.call(
+      fakeSource,
+      { syncFollowed: true, syncPullRequests: true, syncIssues: true },
+      { syncFollowed: false, syncPullRequests: true, syncIssues: true },
+    );
+
+    expect(calls).toContain("cancel:followed-poll");
+  });
+});
+
+function makeHeaders(entries: Record<string, string>) {
+  return {
+    get: (name: string) => entries[name.toLowerCase()] ?? null,
+  } as any;
+}
+
+describe("parseRateLimit", () => {
+  it("returns not-limited for a 200 response", () => {
+    const response = { status: 200, headers: makeHeaders({}) } as any;
+    expect(parseRateLimit(response)).toEqual({ limited: false, resetAt: null });
+  });
+
+  it("detects a primary rate limit from a 403 with remaining=0 and a reset time", () => {
+    const unixSecs = Math.floor(Date.now() / 1000) + 3600;
+    const response = {
+      status: 403,
+      headers: makeHeaders({
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(unixSecs),
+      }),
+    } as any;
+    const result = parseRateLimit(response);
+    expect(result.limited).toBe(true);
+    expect(result.resetAt).toEqual(new Date(unixSecs * 1000));
+  });
+
+  it("detects a secondary rate limit from a 429 with retry-after", () => {
+    const response = {
+      status: 429,
+      headers: makeHeaders({ "retry-after": "30" }),
+    } as any;
+    const result = parseRateLimit(response);
+    expect(result.limited).toBe(true);
+    expect(result.resetAt).toBeInstanceOf(Date);
+    expect(result.resetAt!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("does not treat a permission 403 (remaining > 0) as rate-limited", () => {
+    const response = {
+      status: 403,
+      headers: makeHeaders({ "x-ratelimit-remaining": "17" }),
+    } as any;
+    expect(parseRateLimit(response)).toEqual({ limited: false, resetAt: null });
+  });
+
+  it("reports limited with a null resetAt when remaining=0 but no reset header", () => {
+    const response = {
+      status: 403,
+      headers: makeHeaders({ "x-ratelimit-remaining": "0" }),
+    } as any;
+    // A missing reset header must yield null (not epoch-0 from Number(null)).
+    expect(parseRateLimit(response)).toEqual({ limited: true, resetAt: null });
+  });
+});
+
+describe("setupWebhook no-admin skip", () => {
+  it("returns early without POSTing a webhook when repo_no_admin_<id> is set", async () => {
+    let postCalled = false;
+    const fakeSource = {
+      get: async (key: string) => (key === "repo_no_admin_acme/web" ? true : null),
+      set: async () => {},
+      getToken: async () => "fake-token",
+      tools: {
+        network: {
+          createWebhook: async () => "https://example.com/hook",
+        },
+      },
+      githubFetch: async () => {
+        postCalled = true;
+        return { ok: true, json: async () => ({ id: 1 }) };
+      },
+    } as any;
+
+    await GitHub.prototype.setupWebhook.call(fakeSource, "acme/web");
+
+    expect(postCalled).toBe(false);
   });
 });

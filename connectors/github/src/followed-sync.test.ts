@@ -1,0 +1,255 @@
+import { describe, expect, it, vi } from "vitest";
+import { parseFollowedNotifications, syncFollowedItems, type FollowedSource } from "./followed-sync";
+import type { GitHubNotification } from "./github";
+
+function makeNotification(
+  overrides: Omit<Partial<GitHubNotification>, "subject"> & {
+    subject?: Partial<GitHubNotification["subject"]>;
+  } = {},
+): GitHubNotification {
+  const { subject, ...rest } = overrides;
+  return {
+    id: "1",
+    reason: "subscribed",
+    updated_at: "2026-07-10T00:00:00Z",
+    repository: { full_name: "acme/web", owner: { login: "acme" }, name: "web" },
+    subject: {
+      title: "A bug",
+      url: "https://api.github.com/repos/acme/web/issues/42",
+      latest_comment_url: null,
+      type: "Issue",
+      ...subject,
+    },
+    ...rest,
+  };
+}
+
+describe("parseFollowedNotifications", () => {
+  const noneEnabled = () => false;
+
+  it("maps an Issue notification to an issue ref", () => {
+    const refs = parseFollowedNotifications([makeNotification()], noneEnabled);
+    expect(refs).toEqual([
+      { owner: "acme", repo: "web", repositoryId: "acme/web", number: 42, type: "issue" },
+    ]);
+  });
+
+  it("maps a PullRequest notification to a pull_request ref", () => {
+    const refs = parseFollowedNotifications(
+      [
+        makeNotification({
+          subject: {
+            type: "PullRequest",
+            url: "https://api.github.com/repos/acme/web/pulls/7",
+          },
+        }),
+      ],
+      noneEnabled,
+    );
+    expect(refs).toEqual([
+      { owner: "acme", repo: "web", repositoryId: "acme/web", number: 7, type: "pull_request" },
+    ]);
+  });
+
+  it("skips non-issue/PR subject types", () => {
+    const refs = parseFollowedNotifications(
+      [makeNotification({ subject: { type: "Release" } })],
+      noneEnabled,
+    );
+    expect(refs).toEqual([]);
+  });
+
+  it("skips notifications whose repo is already an enabled channel", () => {
+    const refs = parseFollowedNotifications(
+      [makeNotification()],
+      (id) => id === "acme/web",
+    );
+    expect(refs).toEqual([]);
+  });
+
+  it("dedupes the same item appearing twice", () => {
+    const refs = parseFollowedNotifications(
+      [makeNotification({ id: "1" }), makeNotification({ id: "2" })],
+      noneEnabled,
+    );
+    expect(refs).toHaveLength(1);
+  });
+
+  it("skips notifications with an unparseable subject url", () => {
+    const refs = parseFollowedNotifications(
+      [makeNotification({ subject: { url: null } })],
+      noneEnabled,
+    );
+    expect(refs).toEqual([]);
+  });
+});
+
+function makeFakeSource(opts: {
+  token?: string | null;
+  notifications?: GitHubNotification[];
+  enabled?: string[];
+  store?: Record<string, unknown>;
+  rateLimited?: boolean;
+}): {
+  source: FollowedSource;
+  saved: any[];
+  store: Record<string, unknown>;
+  paths: string[];
+} {
+  const store: Record<string, unknown> = { ...(opts.store ?? {}) };
+  const saved: any[] = [];
+  const paths: string[] = [];
+  const source = {
+    getAccountToken: async () => (opts.token === undefined ? "fake-token" : opts.token),
+    githubFetch: async (_token: string, path: string) => {
+      paths.push(path);
+      if (path.startsWith("/notifications")) {
+        if (opts.rateLimited) {
+          return {
+            ok: false,
+            status: 403,
+            headers: {
+              get: (h: string) =>
+                h === "x-ratelimit-remaining" ? "0" : h === "x-ratelimit-reset" ? "9999999999" : null,
+            },
+            text: async () => "rate limited",
+          } as any;
+        }
+        // single page
+        return { ok: true, json: async () => (path.includes("page=1") ? opts.notifications ?? [] : []) } as any;
+      }
+      if (path.includes("/comments")) {
+        // converters fetch comments (with a `?per_page=...` query string) and
+        // iterate the result as an array — return empty. `.includes` (not
+        // `.endsWith`) is required because the query string follows.
+        return { ok: true, json: async () => [] } as any;
+      }
+      // issue/PR fetch: return a minimal item the converters accept
+      return {
+        ok: true,
+        json: async () => ({
+          id: 1,
+          number: Number(path.split("/").pop()),
+          title: "Item",
+          body: "",
+          state: "open",
+          html_url: "https://github.com/acme/web/issues/42",
+          created_at: "2026-07-01T00:00:00Z",
+          updated_at: "2026-07-01T00:00:00Z",
+          closed_at: null,
+          merged_at: null,
+          user: { id: 1, login: "octocat" },
+          assignee: null,
+          assignees: [],
+          draft: false,
+          base: { repo: { full_name: "acme/web", owner: { login: "acme" }, name: "web" } },
+        }),
+      } as any;
+    },
+    saveLink: async (link: any) => {
+      saved.push(link);
+    },
+    listStoreKeys: async (prefix: string) =>
+      (opts.enabled ?? []).map((r) => `${prefix}${r}`),
+    get: async <T>(key: string) => (store[key] as T) ?? null,
+    set: async <T>(key: string, value: T) => {
+      store[key] = value;
+    },
+    clear: async (key: string) => {
+      delete store[key];
+    },
+    userToContact: (user: { id: number; login: string }) => ({
+      email: `${user.id}@users.noreply.github.com`,
+      name: user.login,
+      source: { accountId: String(user.id) },
+    }),
+  } as FollowedSource;
+  return { source, saved, store, paths };
+}
+
+describe("syncFollowedItems", () => {
+  it("no-ops (done) without saving or marking initial done when no token", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { source, saved, store } = makeFakeSource({ token: null });
+    const result = await syncFollowedItems(source);
+    warn.mockRestore();
+    expect(result).toEqual({ done: true });
+    expect(saved).toEqual([]);
+    expect(store.followed_initial_done).toBeUndefined();
+  });
+
+  it("syncs a followed issue, tags it syncableId=followed, and completes the pass", async () => {
+    const { source, saved, store } = makeFakeSource({
+      notifications: [makeNotification()],
+    });
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: true });
+    expect(saved).toHaveLength(1);
+    expect(saved[0].meta.syncableId).toBe("followed");
+    expect(saved[0].unread).toBe(false); // initial sync => window-filterable
+    expect(store.followed_initial_done).toBe(true);
+    expect(store.followed_sync_state).toBeUndefined(); // cursor cleared on completion
+  });
+
+  it("skips a followed item whose repo is already an enabled channel", async () => {
+    const { source, saved } = makeFakeSource({
+      enabled: ["acme/web"],
+      notifications: [makeNotification()],
+    });
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: true });
+    expect(saved).toEqual([]);
+  });
+
+  it("returns done:false and advances the cursor when a full page is returned", async () => {
+    // A full page (PAGE_SIZE=50) signals more may remain: the pass should
+    // checkpoint page 2 and NOT mark itself complete yet.
+    const fullPage = Array.from({ length: 50 }, (_, i) =>
+      makeNotification({
+        id: String(i),
+        subject: { url: `https://api.github.com/repos/acme/web/issues/${i + 1}` },
+      }),
+    );
+    const { source, store } = makeFakeSource({ notifications: fullPage });
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: false });
+    expect((store.followed_sync_state as { page: number }).page).toBe(2);
+    expect(store.followed_initial_done).toBeUndefined(); // not done => not marked
+  });
+
+  it("resumes at page 2 with a frozen since window and completes on a short page", async () => {
+    const fullPage = Array.from({ length: 50 }, (_, i) =>
+      makeNotification({
+        id: String(i),
+        subject: { url: `https://api.github.com/repos/acme/web/issues/${i + 1}` },
+      }),
+    );
+    // The fake returns the full page only for page=1 and an empty page otherwise.
+    const { source, store, paths } = makeFakeSource({ notifications: fullPage });
+
+    expect(await syncFollowedItems(source)).toEqual({ done: false });
+    // Second call resumes from the persisted cursor and hits the short page 2.
+    expect(await syncFollowedItems(source)).toEqual({ done: true });
+
+    const notifPaths = paths.filter((p) => p.startsWith("/notifications"));
+    const page1 = notifPaths.find((p) => p.includes("page=1"));
+    const page2 = notifPaths.find((p) => p.includes("page=2"));
+    expect(page2).toBeDefined();
+    const since = (p: string) =>
+      new URLSearchParams(p.split("?")[1]).get("since");
+    // The `since` window is frozen across pages, not recomputed per page.
+    expect(since(page2!)).toBe(since(page1!));
+
+    // Completion clears the cursor and marks the initial pass done.
+    expect(store.followed_sync_state).toBeUndefined();
+    expect(store.followed_initial_done).toBe(true);
+  });
+
+  it("ends the pass cleanly (done, no throw) when the notifications fetch is rate-limited", async () => {
+    const { source, saved, store } = makeFakeSource({ rateLimited: true });
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: true });
+    expect(saved).toEqual([]);
+    expect(store.followed_initial_done).toBeUndefined();
+  });
+});

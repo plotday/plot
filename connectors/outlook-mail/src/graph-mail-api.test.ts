@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyOutlookCalendar,
   conversationSource,
+  GraphMailApi,
   isConversationFlagged,
   isConversationUnread,
   isViaRewrittenName,
@@ -9,6 +11,7 @@ import {
   sortConversation,
   transformOutlookConversation,
   type GraphAttachmentMeta,
+  type GraphHeader,
   type GraphMessage,
 } from "./graph-mail-api";
 
@@ -220,5 +223,166 @@ describe("transformOutlookConversation sender classification", () => {
       link.accessContacts as Array<{ email: string; automated?: boolean }>
     ).find((c) => c.email === "bob@company.com");
     expect(sender?.automated).toBeFalsy();
+  });
+});
+
+describe("GraphMailApi queries", () => {
+  it("getConversationMessages requests meeting fields + expands event", async () => {
+    const calls: Array<Record<string, string> | undefined> = [];
+    const api = new GraphMailApi("tok");
+    api.call = async (
+      _method: string,
+      _url: string,
+      params?: Record<string, string>
+    ) => {
+      calls.push(params);
+      return { value: [] };
+    };
+    await api.getConversationMessages("conv-1");
+    expect(calls[0]?.$select).toContain("meetingMessageType");
+    expect(calls[0]?.$select).toContain("meetingRequestType");
+    expect(calls[0]?.$expand).toBe("event($select=iCalUId)");
+  });
+
+  it("getMessagesPage requests meeting fields + expands event on the non-nextLink branch", async () => {
+    const calls: Array<Record<string, string> | undefined> = [];
+    const api = new GraphMailApi("tok");
+    api.call = async (
+      _method: string,
+      _url: string,
+      params?: Record<string, string>
+    ) => {
+      calls.push(params);
+      return { value: [] };
+    };
+    await api.getMessagesPage({ folderId: "f-inbox" });
+    expect(calls[0]?.$select).toContain("meetingMessageType");
+    expect(calls[0]?.$expand).toBe("event($select=iCalUId)");
+  });
+});
+
+describe("classifyOutlookCalendar", () => {
+  const header = (name: string, value: string): GraphHeader => ({ name, value });
+
+  it("reply chain via X-Plot-Event-UID header (checked before any message signal)", () => {
+    expect(
+      classifyOutlookCalendar([], [header("x-plot-event-uid", "uid-1")])
+    ).toEqual({ uid: "uid-1", kind: "reply" });
+  });
+
+  it("header match is case-insensitive", () => {
+    expect(
+      classifyOutlookCalendar([], [header("X-PLOT-EVENT-UID", "uid-3")])
+    ).toEqual({ uid: "uid-3", kind: "reply" });
+  });
+
+  it("header takes priority over a message-derived cancel/update signal", () => {
+    expect(
+      classifyOutlookCalendar(
+        [
+          msg({
+            meetingMessageType: "meetingCancelled",
+            event: { iCalUId: "uid-msg" },
+          }),
+        ],
+        [header("X-Plot-Event-UID", "uid-header")]
+      )
+    ).toEqual({ uid: "uid-header", kind: "reply" });
+  });
+
+  it("update: meetingRequest fullUpdate", () => {
+    expect(
+      classifyOutlookCalendar(
+        [
+          msg({
+            meetingMessageType: "meetingRequest",
+            meetingRequestType: "fullUpdate",
+            event: { iCalUId: "uid-1" },
+          }),
+        ],
+        null
+      )
+    ).toEqual({ uid: "uid-1", kind: "update" });
+  });
+
+  it("update: meetingRequest informationalUpdate", () => {
+    expect(
+      classifyOutlookCalendar(
+        [
+          msg({
+            meetingMessageType: "meetingRequest",
+            meetingRequestType: "informationalUpdate",
+            event: { iCalUId: "uid-2" },
+          }),
+        ],
+        null
+      )
+    ).toEqual({ uid: "uid-2", kind: "update" });
+  });
+
+  it("cancel: meetingCancelled", () => {
+    expect(
+      classifyOutlookCalendar(
+        [
+          msg({
+            meetingMessageType: "meetingCancelled",
+            event: { iCalUId: "uid-1" },
+          }),
+        ],
+        null
+      )
+    ).toEqual({ uid: "uid-1", kind: "cancel" });
+  });
+
+  it("skips new invite + RSVP", () => {
+    expect(
+      classifyOutlookCalendar(
+        [
+          msg({
+            meetingMessageType: "meetingRequest",
+            meetingRequestType: "newMeetingRequest",
+            event: { iCalUId: "u" },
+          }),
+        ],
+        null
+      )
+    ).toBeNull();
+    expect(
+      classifyOutlookCalendar(
+        [msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u" } })],
+        null
+      )
+    ).toBeNull();
+  });
+
+  it("skips a qualifying meetingMessageType without an event.iCalUId", () => {
+    expect(
+      classifyOutlookCalendar(
+        [msg({ meetingMessageType: "meetingCancelled", event: undefined })],
+        null
+      )
+    ).toBeNull();
+  });
+
+  it("returns null for plain messages with no calendar signal at all", () => {
+    expect(classifyOutlookCalendar([msg({})], null)).toBeNull();
+    expect(classifyOutlookCalendar([], null)).toBeNull();
+    expect(classifyOutlookCalendar([], [])).toBeNull();
+  });
+
+  it("scans past a non-qualifying message to find a later qualifying one", () => {
+    expect(
+      classifyOutlookCalendar(
+        [
+          msg({ id: "id-1", meetingMessageType: undefined }),
+          msg({
+            id: "id-2",
+            meetingMessageType: "meetingCancelled",
+            event: { iCalUId: "uid-later" },
+          }),
+        ],
+        null
+      )
+    ).toEqual({ uid: "uid-later", kind: "cancel" });
   });
 });

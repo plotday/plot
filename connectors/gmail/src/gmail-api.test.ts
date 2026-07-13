@@ -4,6 +4,7 @@ import {
   buildForwardMessage,
   buildNewEmailMessage,
   buildReplyMessage,
+  classifyCalendarThread,
   formatFromHeader,
   stripQuotedReply,
   transformGmailThread,
@@ -439,6 +440,41 @@ describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
     );
     expect(decodeMimePart(raw, "text/plain")).not.toContain("**");
   });
+
+  it("buildNewEmailMessage emits extraHeaders (Message-ID + X-Plot-Event-UID)", () => {
+    const raw = decodeRawMessage(
+      buildNewEmailMessage({
+        to: ["a@example.com"],
+        from: "me@plot.day",
+        subject: "Standup",
+        body: "hi",
+        extraHeaders: [
+          "Message-ID: <plot-evt-1@plot.day>",
+          "X-Plot-Event-UID: uid-123",
+        ],
+      })
+    );
+    expect(raw).toContain("Message-ID: <plot-evt-1@plot.day>");
+    expect(raw).toContain("X-Plot-Event-UID: uid-123");
+  });
+
+  it("buildReplyMessage emits extraHeaders and strips CRLF injection", () => {
+    const raw = decodeRawMessage(
+      buildReplyMessage({
+        to: ["a@example.com"],
+        cc: [],
+        from: "me@plot.day",
+        subject: "Standup",
+        body: "hi",
+        messageId: "<orig@x>",
+        references: "",
+        extraHeaders: ["X-Plot-Event-UID: uid-123\r\nBcc: evil@x"],
+      })
+    );
+    expect(raw).toContain("X-Plot-Event-UID: uid-123 Bcc: evil@x");
+    // the injected CRLF was collapsed to a space (single header line)
+    expect(raw).not.toMatch(/X-Plot-Event-UID:.*\r\nBcc: evil@x/);
+  });
 });
 
 describe("buildForwardMessage", () => {
@@ -548,5 +584,74 @@ describe("transformGmailThread sender classification", () => {
       link.accessContacts as Array<{ email: string; automated?: boolean }>
     ).find((c) => c.email === "bob@company.com");
     expect(sender?.automated).toBeFalsy();
+  });
+});
+
+describe("classifyCalendarThread", () => {
+  const icsUpdate =
+    "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:uid-1\r\nSEQUENCE:2\r\nEND:VEVENT\r\nEND:VCALENDAR";
+  const icsInvite =
+    "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:uid-1\r\nSEQUENCE:0\r\nEND:VEVENT\r\nEND:VCALENDAR";
+  const icsCancel =
+    "BEGIN:VCALENDAR\r\nMETHOD:CANCEL\r\nBEGIN:VEVENT\r\nUID:uid-1\r\nEND:VEVENT\r\nEND:VCALENDAR";
+  const icsReply =
+    "BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nBEGIN:VEVENT\r\nUID:uid-1\r\nEND:VEVENT\r\nEND:VCALENDAR";
+
+  /** Minimal well-typed GmailMessage wrapping the given top-level payload. */
+  function baseMessage(payload: GmailMessagePart): GmailMessage {
+    return {
+      id: "m1",
+      threadId: "t1",
+      labelIds: ["INBOX"],
+      snippet: "snippet",
+      historyId: "1",
+      internalDate: "1700000000000",
+      sizeEstimate: 500,
+      payload,
+    };
+  }
+
+  const msgWithIcs = (ics: string): GmailMessage =>
+    baseMessage(
+      part("multipart/mixed", {
+        parts: [part("text/calendar", { data: ics })],
+      })
+    );
+
+  const msgWithHeader = (uid: string): GmailMessage =>
+    baseMessage(
+      part("text/plain", {
+        data: "reply body",
+        headers: [["X-Plot-Event-UID", uid]],
+      })
+    );
+
+  it("bundles an update (METHOD:REQUEST SEQUENCE>0)", () => {
+    expect(classifyCalendarThread([msgWithIcs(icsUpdate)])).toEqual({
+      uid: "uid-1",
+      kind: "update",
+    });
+  });
+
+  it("bundles a cancellation (METHOD:CANCEL)", () => {
+    expect(classifyCalendarThread([msgWithIcs(icsCancel)])).toEqual({
+      uid: "uid-1",
+      kind: "cancel",
+    });
+  });
+
+  it("bundles a reply chain (X-Plot-Event-UID header)", () => {
+    expect(classifyCalendarThread([msgWithHeader("uid-9")])).toEqual({
+      uid: "uid-9",
+      kind: "reply",
+    });
+  });
+
+  it("skips a bare invite (SEQUENCE 0)", () => {
+    expect(classifyCalendarThread([msgWithIcs(icsInvite)])).toBeNull();
+  });
+
+  it("skips an RSVP (METHOD:REPLY)", () => {
+    expect(classifyCalendarThread([msgWithIcs(icsReply)])).toBeNull();
   });
 });

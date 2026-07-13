@@ -53,6 +53,14 @@ export interface CalendarSyncHost {
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
   clear(key: string): Promise<void>;
+  /**
+   * Optional read into the MAIL namespace's state, used to check for a
+   * `cancel-email:<uid>` marker recorded when the mail sync processed a
+   * cancellation email for the same event. Absent on hosts that don't wire
+   * mail/calendar together (e.g. the standalone GoogleCalendar connector, or
+   * fake hosts in tests) — treated as "no cancel email seen".
+   */
+  readMailState?<T>(key: string): Promise<T | null>;
 
   tools: {
     integrations: {
@@ -143,6 +151,28 @@ export function buildEventSources(opts: {
   if (iCalUID) sources.push(`icaluid:${iCalUID}`);
   if (eventId) sources.push(`google-event:${eventId}`);
   return sources;
+}
+
+/**
+ * De-duplicate a note/link contact roster by email (case-insensitive),
+ * keeping the first occurrence. The organizer is both surfaced via
+ * `event.organizer` (used to seed the roster first, so its `displayName`
+ * wins) and, commonly, listed again in `event.attendees` with
+ * `organizer: true` — without this, the message-model roster would carry
+ * the same person twice.
+ */
+export function dedupeContactsByEmail(contacts: NewContact[]): NewContact[] {
+  const seen = new Set<string>();
+  const result: NewContact[] = [];
+  for (const contact of contacts) {
+    const key = contact.email?.toLowerCase();
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    result.push(contact);
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +652,11 @@ export async function processCalendarEventsFn(
       existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
       if (link.unread !== undefined) existing.unread = link.unread;
       if (link.archived !== undefined) existing.archived = link.archived;
+      // Never let the merge LOWER an already-set priority. Recurring-event
+      // instance links carry no priority; when an instance is coalesced
+      // before its master in the same batch, this floor ensures the
+      // master's priority (>= 1) survives regardless of ordering.
+      existing.priority = Math.max(existing.priority ?? 0, link.priority ?? 0);
     }
   };
 
@@ -717,11 +752,36 @@ export async function processCalendarEventsFn(
             `cancel_seen:${canonicalUrl}`,
             event.updated ? new Date(event.updated) : undefined
           );
+
+          // Roster for the message-model thread: organizer + attendees (mirrors
+          // the live-event path's attendeeMentions below), so a cancellation
+          // that arrives without ever seeing the event confirmed still has a
+          // "Reply all" audience.
+          const rawCancelMentions: NewContact[] = [];
+          if (authorContact) rawCancelMentions.push(authorContact);
+          for (const att of validAttendees) {
+            if (att.email) {
+              rawCancelMentions.push({ email: att.email, name: att.displayName });
+            }
+          }
+          const cancelMentions = dedupeContactsByEmail(rawCancelMentions);
+
+          // Prefer the cancellation email's own message over our generic note
+          // when the mail sync already recorded one for this event (Plan B
+          // mail/calendar bundling) — avoids a redundant, lower-fidelity note
+          // on the same thread. The structural cancellation (status/schedule/
+          // unread below) always applies regardless of this signal.
+          const cancelEmailSeen =
+            (await host.readMailState?.(
+              `cancel-email:${event.iCalUID ?? event.id}`
+            )) != null;
+
           const cancelNote = {
             key: "cancellation" as const,
             content: "This event was cancelled.",
             contentType: "text" as const,
             created: cancelFirstSeen,
+            accessContacts: cancelMentions,
           };
 
           const link: NewLinkWithNotes = {
@@ -740,9 +800,12 @@ export async function processCalendarEventsFn(
               ? 100
               : event.attendees?.some((a) => a.self)
               ? 50
-              : 0,
+              : 1,
+            access: "private",
+            accessContacts: cancelMentions,
+            author: authorContact,
             meta: activityData.meta ?? null,
-            notes: [cancelNote],
+            notes: cancelEmailSeen ? [] : [cancelNote],
             schedules: [
               {
                 start: event.start?.dateTime
@@ -765,6 +828,7 @@ export async function processCalendarEventsFn(
             ...link.meta,
             syncProvider: "google",
             syncableId: calendarId,
+            iCalUID: event.iCalUID ?? null,
           };
 
           addLink(link as LinkWithSource);
@@ -862,6 +926,18 @@ export async function processCalendarEventsFn(
               event.created ? new Date(event.created) : undefined
             )
           : undefined;
+        const rawAttendeeMentions: NewContact[] = [];
+        if (authorContact) rawAttendeeMentions.push(authorContact);
+        for (const att of validAttendees) {
+          if (att.email) {
+            rawAttendeeMentions.push({
+              email: att.email,
+              name: att.displayName,
+            });
+          }
+        }
+        const attendeeMentions = dedupeContactsByEmail(rawAttendeeMentions);
+
         const descriptionNote =
           hasDescription && descHash
             ? {
@@ -872,20 +948,10 @@ export async function processCalendarEventsFn(
                     ? ("html" as const)
                     : ("text" as const),
                 created: descFirstSeen,
+                accessContacts: attendeeMentions,
                 ...(authorContact ? { author: authorContact } : {}),
               }
             : null;
-
-        const attendeeMentions: NewContact[] = [];
-        if (authorContact) attendeeMentions.push(authorContact);
-        for (const att of validAttendees) {
-          if (att.email) {
-            attendeeMentions.push({
-              email: att.email,
-              name: att.displayName,
-            });
-          }
-        }
 
         const notes = [
           ...(descriptionNote ? [descriptionNote] : []),
@@ -899,6 +965,7 @@ export async function processCalendarEventsFn(
                   content: "This event was cancelled.",
                   contentType: "text" as const,
                   archived: true,
+                  accessContacts: attendeeMentions,
                 },
               ]
             : []),
@@ -924,7 +991,7 @@ export async function processCalendarEventsFn(
             ? 100
             : event.attendees?.some((a) => a.self)
             ? 50
-            : 0,
+            : 1,
           access: "private",
           accessContacts: attendeeMentions,
           author: authorContact,
@@ -948,6 +1015,7 @@ export async function processCalendarEventsFn(
           ...link.meta,
           syncProvider: "google",
           syncableId: calendarId,
+          iCalUID: event.iCalUID ?? null,
         };
 
         addLink(link as LinkWithSource);

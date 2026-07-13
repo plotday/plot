@@ -11,6 +11,7 @@ import type {
   GitHubIssueComment,
   GitHubReviewComment,
 } from "./github";
+import { parseRateLimit } from "./github";
 
 /** Days of recently closed/merged PRs to include in sync */
 const RECENT_DAYS = 30;
@@ -70,6 +71,16 @@ export async function syncPRBatch(
   );
 
   if (!response.ok) {
+    const rl = parseRateLimit(response);
+    if (rl.limited) {
+      const runAt =
+        rl.resetAt && rl.resetAt.getTime() > Date.now()
+          ? rl.resetAt
+          : new Date(Date.now() + 60 * 1000);
+      const retry = await source.createCallback(source.syncPRBatch, repositoryId);
+      await source.runTask(retry, { runAt });
+      return; // resume this same page after the limit resets
+    }
     throw new Error(
       `Failed to fetch PRs: ${response.status} ${await response.text()}`,
     );
@@ -279,7 +290,7 @@ export async function clearOpenPRCommentKeys(
 /**
  * Convert a GitHub PR to a NewLinkWithNotes
  */
-async function convertPRToThread(
+export async function convertPRToThread(
   source: GitHub,
   token: string,
   owner: string,

@@ -85,6 +85,14 @@ export interface OutlookCalendarSyncHost {
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
   clear(key: string): Promise<void>;
+  /**
+   * Optional read into the MAIL namespace's state, used to check for a
+   * `cancel-email:<uid>` marker recorded when the mail sync processed a
+   * cancellation email for the same event. Absent on hosts that don't wire
+   * mail/calendar together (e.g. the standalone OutlookCalendar connector, or
+   * fake hosts in tests) — treated as "no cancel email seen".
+   */
+  readMailState?<T>(key: string): Promise<T | null>;
 
   tools: {
     integrations: {
@@ -291,6 +299,27 @@ async function hashContent(content: string): Promise<string> {
     hex += bytes[i].toString(16).padStart(2, "0");
   }
   return hex;
+}
+
+/**
+ * De-duplicate a note/link contact roster by email (case-insensitive),
+ * keeping the first occurrence. The organizer is both surfaced via
+ * `event.organizer` (used to seed the roster first, so its `name` wins) and,
+ * commonly, listed again in `event.attendees` — without this, the
+ * message-model roster would carry the same person twice.
+ */
+function dedupeContactsByEmail(contacts: NewContact[]): NewContact[] {
+  const seen = new Set<string>();
+  const result: NewContact[] = [];
+  for (const contact of contacts) {
+    const key = contact.email?.toLowerCase();
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    result.push(contact);
+  }
+  return result;
 }
 
 /**
@@ -680,6 +709,11 @@ export async function processOutlookEventsFn(
       existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
       if (link.unread !== undefined) existing.unread = link.unread;
       if (link.archived !== undefined) existing.archived = link.archived;
+      // Never let the merge LOWER an already-set priority. Recurring-event
+      // instance links carry no priority; when an instance is coalesced
+      // before its master in the same batch, this floor ensures the
+      // master's priority (>= 1) survives regardless of ordering.
+      existing.priority = Math.max(existing.priority ?? 0, link.priority ?? 0);
     }
   };
 
@@ -705,6 +739,44 @@ export async function processOutlookEventsFn(
         // to keep source globally unique across users.
         const source = `outlook-calendar:${calendarId}:${outlookEvent.id}`;
 
+        // Roster for the message-model thread: organizer + attendees
+        // (mirrors the live-event path's attendeeMentions below). Graph
+        // delta returns `@removed` items with only an id in the common
+        // case, so organizer/attendees are usually absent here — guard
+        // below so we never overwrite the roster the main event sync
+        // already established on this link with an empty one.
+        const cancelAuthorContact: NewContact | undefined =
+          outlookEvent.organizer?.emailAddress?.address
+            ? {
+                email: outlookEvent.organizer.emailAddress.address,
+                name: outlookEvent.organizer.emailAddress.name,
+              }
+            : undefined;
+        const cancelValidAttendees = (outlookEvent.attendees ?? []).filter(
+          (att) => att.emailAddress?.address && att.type !== "resource"
+        );
+        const rawCancelMentions: NewContact[] = [];
+        if (cancelAuthorContact) rawCancelMentions.push(cancelAuthorContact);
+        for (const att of cancelValidAttendees) {
+          if (att.emailAddress?.address) {
+            rawCancelMentions.push({
+              email: att.emailAddress.address,
+              name: att.emailAddress.name,
+            });
+          }
+        }
+        const cancelMentions = dedupeContactsByEmail(rawCancelMentions);
+
+        // Prefer the cancellation email's own message over our generic note
+        // when the mail sync already recorded one for this event (Plan B
+        // mail/calendar bundling) — avoids a redundant, lower-fidelity note
+        // on the same thread. The structural cancellation (title/preview/
+        // unread below) always applies regardless of this signal.
+        const cancelEmailSeen =
+          (await host.readMailState?.(
+            `cancel-email:${outlookEvent.iCalUId ?? outlookEvent.id}`
+          )) != null;
+
         // Create cancellation note. We don't apply firstSeenAt here
         // because cancelled events aren't typically edited further,
         // so lastModifiedDateTime is stable.
@@ -715,6 +787,9 @@ export async function processOutlookEventsFn(
           created: outlookEvent.lastModifiedDateTime
             ? new Date(outlookEvent.lastModifiedDateTime)
             : new Date(),
+          ...(cancelMentions.length > 0
+            ? { accessContacts: cancelMentions }
+            : {}),
         };
 
         // Convert to link with cancellation note
@@ -732,8 +807,16 @@ export async function processOutlookEventsFn(
             iCalUId: outlookEvent.iCalUId,
           }),
           channelId: calendarId,
+          // Floor above a bundled email link's default priority (0) so the
+          // event link stays primary. Graph's event payload has no reliable
+          // self/organizer signal (no `isOrganizer`, no per-attendee `self`),
+          // so this is a constant rather than a 100/50 split like Google.
+          priority: 1,
           meta: { syncProvider: "microsoft", syncableId: calendarId },
-          notes: [cancelNote],
+          notes: cancelEmailSeen ? [] : [cancelNote],
+          ...(cancelMentions.length > 0
+            ? { access: "private" as const, accessContacts: cancelMentions }
+            : {}),
           ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
           ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
         };
@@ -865,6 +948,21 @@ export async function processOutlookEventsFn(
       const descFirstSeen = descHash
         ? await firstSeenAtFn(host, `desc_seen:${canonicalUrl}:${descHash}`)
         : undefined;
+      // Build attendee contacts for link-level access control (message-model
+      // roster: organizer + attendees, deduped by email so the organizer
+      // isn't counted twice when Graph also lists them in attendees).
+      const rawAttendeeMentions: NewContact[] = [];
+      if (authorContact) rawAttendeeMentions.push(authorContact);
+      for (const att of validAttendees) {
+        if (att.emailAddress?.address) {
+          rawAttendeeMentions.push({
+            email: att.emailAddress.address,
+            name: att.emailAddress.name,
+          });
+        }
+      }
+      const attendeeMentions = dedupeContactsByEmail(rawAttendeeMentions);
+
       const descriptionNote =
         hasDescription && descHash
           ? {
@@ -874,20 +972,9 @@ export async function processOutlookEventsFn(
                 ? "html"
                 : "text") as ContentType,
               created: descFirstSeen,
+              accessContacts: attendeeMentions,
             }
           : null;
-
-      // Build attendee contacts for link-level access control
-      const attendeeMentions: NewContact[] = [];
-      if (authorContact) attendeeMentions.push(authorContact);
-      for (const att of validAttendees) {
-        if (att.emailAddress?.address) {
-          attendeeMentions.push({
-            email: att.emailAddress.address,
-            name: att.emailAddress.name,
-          });
-        }
-      }
 
       const notes = descriptionNote ? [descriptionNote] : [];
 
@@ -901,6 +988,11 @@ export async function processOutlookEventsFn(
         }),
         type: "event",
         title: threadData.title || "",
+        // Floor above a bundled email link's default priority (0) so the
+        // event link stays primary. Graph's event payload has no reliable
+        // self/organizer signal (no `isOrganizer`, no per-attendee `self`),
+        // so this is a constant rather than a 100/50 split like Google.
+        priority: 1,
         access: "private",
         accessContacts: attendeeMentions,
         created: threadData.created,

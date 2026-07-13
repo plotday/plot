@@ -1,5 +1,18 @@
 # @plotday/twister
 
+## 0.77.0
+
+### Added
+
+- `Note.todayItem` — when a message is sent while a Today item is
+
+## 0.76.0
+
+### Added
+
+- Goal entity types (`Goal`, `NewGoal`, `GoalUpdate`, `GoalStatus`, `GoalCadence` — importable from the package root or `@plotday/twister/goal`) and a Plot-tool goal surface: `Plot.Options.goals` with a `GoalAccess.Read`/`GoalAccess.Manage` permission level and `createGoal`/`getGoals`/`updateGoal`/`archiveGoal` methods, letting twists record and manage per-user goals. ([#286](https://github.com/plotday/plot/pull/286) [`e772834`](https://github.com/plotday/plot/commit/e7728345096df130ef306ba82615b810d39be1dd))
+- Today snapshot surface on the Plot tool — the `TodayItem` entity type, a `TodayAccess` (`Read`/`Manage`) permission requested via `Plot.Options.today`, and `getTodayItems()`, `updateTodayItem()`, and `getTodayThreadId()` so twists can help users adjust their day (reorder, check off, or dismiss items) from conversation. ([#286](https://github.com/plotday/plot/pull/286) [`3a36390`](https://github.com/plotday/plot/commit/3a363904448082304f45ae00358dd0631fdd5346))
+
 ## 0.75.0
 
 ### Added

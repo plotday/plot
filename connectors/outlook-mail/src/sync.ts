@@ -41,6 +41,7 @@ import {
   EXCLUDED_WELL_KNOWN,
   GraphMailApi,
   GraphMailApiError,
+  classifyOutlookCalendar,
   conversationSource,
   isConversationFlagged,
   isConversationUnread,
@@ -1479,6 +1480,24 @@ export async function processConversationsFn(
         channelId,
       };
 
+      // Bundle onto the calendar event's thread when this conversation relates
+      // to one (a Plot-sent reply chain, or a meeting update/cancellation).
+      const calBundle = classifyOutlookCalendar(
+        item.messages,
+        item.parentHeaders
+      );
+      if (calBundle) {
+        plotThread.sources = [
+          ...(plotThread.sources ?? []),
+          `icaluid:${calBundle.uid}`,
+        ];
+        if (calBundle.kind === "cancel") {
+          await host.set(`cancel-email:${calBundle.uid}`, {
+            at: new Date().toISOString(),
+          });
+        }
+      }
+
       // Compute classifier facets from the parent message's headers + body.
       const facetParent = sortConversation(item.messages).find(
         (m) => !m.isDraft
@@ -1620,6 +1639,14 @@ export async function onNoteCreatedFn(
   thread: Thread
 ): Promise<NoteWriteBackResult | void> {
   const meta = thread.meta ?? {};
+
+  // Calendar event threads carry a calendarId + iCalUId but no Outlook
+  // conversationId. Route them to a fresh-email fan-out to the event's
+  // invitees.
+  if (meta.calendarId && !meta.conversationId) {
+    return sendCalendarEventReplyFn(host, note, thread);
+  }
+
   const channelId = (meta.channelId ?? meta.syncableId) as string;
   if (!channelId) {
     console.error("No channelId in meta for Outlook reply");
@@ -1791,6 +1818,134 @@ export async function onNoteCreatedFn(
   // No `externalContent`: Graph's send returns 202 with no stored body,
   // and the sent message is echo-suppressed above; the first sync-in
   // establishes the baseline naturally (same tradeoff as Gmail).
+  return { key };
+}
+
+/**
+ * Reply on a calendar event thread → email the event's invitees. Unlike a
+ * mail reply there is no upstream Outlook conversation to reply into, so the
+ * first reply starts a fresh conversation (state stored under
+ * `cal-reply:<iCalUID>`) and later replies thread into it via
+ * `createReplyDraft`. Only the seed message carries the `X-Plot-Event-UID`
+ * header — Graph won't PATCH headers onto a reply draft, and one tagged
+ * message per conversation is enough for the mail sync to bundle the
+ * conversation back onto this event thread (Plan B).
+ */
+export async function sendCalendarEventReplyFn(
+  host: OutlookMailSyncHost,
+  note: Note,
+  thread: Thread
+): Promise<NoteWriteBackResult | void> {
+  const meta = thread.meta ?? {};
+  const channelId = (meta.channelId ?? meta.syncableId) as string;
+  const iCalUID = (meta.iCalUId ?? meta.eventId) as string;
+  if (!channelId || !iCalUID) {
+    console.error("[outlook-mail] calendar reply: missing channelId/iCalUId in meta");
+    return;
+  }
+  const api = await getApiFn(host, channelId);
+  const senderEmail = (await ensureUserEmailFn(host, api)).toLowerCase();
+  const selfEmails = new Set<string>([senderEmail]);
+  const authorEmail = (thread.accessContacts ?? []).find((c) => c.id === note.author.id)?.email;
+  if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
+
+  // Fallback access constraint when the runtime didn't resolve note.recipients.
+  let accessContactEmails: Set<string> | null = null;
+  if (note.accessContacts != null) {
+    const allowed = new Set<ActorId>(note.accessContacts);
+    accessContactEmails = new Set<string>();
+    for (const c of thread.accessContacts ?? []) {
+      if (allowed.has(c.id) && c.email) accessContactEmails.add(c.email.toLowerCase());
+    }
+  }
+
+  const { to, cc, bcc } = resolveOutboundReplyRecipients({
+    recipients: note.recipients ?? null,
+    accessContactEmails,
+    headerTo: [],
+    headerCc: [],
+    selfEmails,
+  });
+  if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
+    const choseOthers = (note.accessContacts ?? []).some((id) => id !== note.author.id);
+    if (choseOthers) {
+      return {
+        deliveryError: {
+          code: "no_recipients",
+          message: "This reply had no deliverable recipients.",
+        },
+      };
+    }
+    return; // private note or empty roster
+  }
+
+  const addr = (address: string) => ({ emailAddress: { address } });
+  const bodyHtml = { contentType: "html", content: markdownToHtml(note.content ?? "") };
+  const stateKey = `cal-reply:${iCalUID}`;
+  const prior = await host.get<{ conversationId: string; lastMessageId: string }>(stateKey);
+
+  const sendFreshConversation = async (): Promise<NoteWriteBackResult | void> => {
+    const created = await api.createDraft({
+      subject: (thread.title as string) || "Event",
+      body: bodyHtml,
+      toRecipients: to.map(addr),
+      ccRecipients: cc.map(addr),
+      bccRecipients: bcc.map(addr),
+      internetMessageHeaders: [{ name: "x-plot-event-uid", value: iCalUID }],
+    });
+    const draftId = created.id;
+    let imid = created.internetMessageId;
+    let conversationId = created.conversationId;
+    if (!imid || !conversationId) {
+      const r = await api.getMessage(draftId, "id,internetMessageId,conversationId");
+      imid = imid ?? r?.internetMessageId;
+      conversationId = conversationId ?? r?.conversationId;
+    }
+    await api.send(draftId);
+    if (!conversationId) return;
+    const key = imid ?? draftId;
+    await host.set(stateKey, { conversationId, lastMessageId: key });
+    await host.set(`sent:${key}`, true);
+    return { key };
+  };
+
+  if (!prior) {
+    return sendFreshConversation();
+  }
+
+  // Subsequent reply: thread into the stored conversation via a REAL Graph
+  // item id (`createReplyDraft` → POST /me/messages/{id}/createReply
+  // requires the item id, not an internetMessageId — the prior code passed
+  // `prior.lastMessageId`, an RFC-822 Message-ID, which Graph rejects with a
+  // 404 ErrorInvalidIdMalformed on every reply after the first).
+  const conversationMessages = (
+    await api.getConversationMessages(prior.conversationId)
+  ).filter((m) => !m.isDraft);
+  if (conversationMessages.length === 0) {
+    // Defensive: the stored conversation has no live messages to thread
+    // into (shouldn't normally happen — we sent a message there
+    // previously). Fall back to starting a fresh conversation rather than
+    // calling createReplyDraft with nothing to anchor to.
+    console.warn(
+      `[outlook-mail] calendar reply: conversation ${prior.conversationId} has no messages, starting a fresh one`
+    );
+    return sendFreshConversation();
+  }
+  const target = conversationMessages[conversationMessages.length - 1];
+
+  const draft = await api.createReplyDraft(target.id);
+  const draftId = draft.id;
+  await api.updateMessage(draftId, {
+    body: bodyHtml,
+    toRecipients: to.map(addr),
+    ccRecipients: cc.map(addr),
+    ...(bcc.length > 0 ? { bccRecipients: bcc.map(addr) } : {}),
+  });
+  const refreshed = await api.getMessage(draftId, "id,internetMessageId,conversationId");
+  const key = refreshed?.internetMessageId ?? draft.internetMessageId ?? draftId;
+  await api.send(draftId);
+  await host.set(stateKey, { conversationId: prior.conversationId, lastMessageId: key });
+  await host.set(`sent:${key}`, true);
   return { key };
 }
 

@@ -32,7 +32,8 @@ export const OUTLOOK_CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
     // Per-product brand for the aggregate Outlook connector (display name
     // "Outlook"); standalone Outlook Calendar falls back to its own display name.
     sourceName: "Outlook Calendar",
-    sharingModel: "thread" as const,
+    sharingModel: "message" as const,
+    compose: { targets: "addresses" as const },
     includesSchedules: true,
     logo: "https://api.iconify.design/logos/microsoft-icon.svg",
     logoDark:

@@ -673,6 +673,45 @@ function decodeBase64Url(data: string): string {
   return new TextDecoder("utf-8").decode(bytes);
 }
 
+/** Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and read a property. */
+function icsProp(ics: string, name: string): string | null {
+  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
+  const re = new RegExp(`^${name}(?:;[^:\\r\\n]*)?:(.*)$`, "im");
+  const m = unfolded.match(re);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Classify a Gmail conversation's relationship to a calendar event for bundling.
+ * Two signals: our own `X-Plot-Event-UID` header (a Plot-sent reply chain), or a
+ * `text/calendar` part (invitation/update/cancellation/RSVP). Only updates,
+ * cancellations, and reply chains bundle; bare invites and RSVPs are skipped.
+ */
+export function classifyCalendarThread(
+  messages: GmailMessage[]
+): { uid: string; kind: "reply" | "update" | "cancel" } | null {
+  // 1. Reply chain — our header on any message.
+  for (const m of messages) {
+    const uid = getHeader(m, "X-Plot-Event-UID");
+    if (uid) return { uid, kind: "reply" };
+  }
+  // 2. Calendar-system ICS.
+  for (const m of messages) {
+    const ics = findPartContent(m.payload, "text/calendar");
+    if (!ics) continue;
+    const uid = icsProp(ics, "UID");
+    if (!uid) continue;
+    const method = (icsProp(ics, "METHOD") ?? "").toUpperCase();
+    if (method === "CANCEL") return { uid, kind: "cancel" };
+    if (method === "REQUEST") {
+      const seq = parseInt(icsProp(ics, "SEQUENCE") ?? "0", 10);
+      if (seq > 0) return { uid, kind: "update" };
+    }
+    // METHOD:REPLY, or REQUEST/SEQUENCE 0 → skip.
+  }
+  return null;
+}
+
 /**
  * Locates the start of an Outlook-style "From: / Sent: / To: / Subject:"
  * reply header even when the field labels are not wrapped in `<b>` or
@@ -1426,6 +1465,7 @@ export function buildNewEmailMessage(options: {
   from: string;
   subject: string;
   body: string;
+  extraHeaders?: string[];
 }): string {
   const { to, cc = [], bcc = [], from, subject, body } = options;
 
@@ -1454,6 +1494,9 @@ export function buildNewEmailMessage(options: {
   }
 
   lines.push(`Subject: ${sanitizeHeaderValue(subject)}`);
+  for (const h of options.extraHeaders ?? []) {
+    lines.push(sanitizeHeaderValue(h));
+  }
   lines.push(`MIME-Version: 1.0`);
 
   // Body is a multipart/alternative (plain text + rendered HTML) so recipients
@@ -1574,6 +1617,7 @@ export function buildReplyMessage(options: {
   messageId: string;
   references: string;
   attachments?: AttachmentData[];
+  extraHeaders?: string[];
 }): string {
   const { to, cc, bcc = [], from, subject, body, messageId, references, attachments } = options;
 
@@ -1603,6 +1647,9 @@ export function buildReplyMessage(options: {
     ? `${safeReferences} ${safeMessageId}`
     : safeMessageId;
   headerLines.push(`References: ${refChain}`);
+  for (const h of options.extraHeaders ?? []) {
+    headerLines.push(sanitizeHeaderValue(h));
+  }
   headerLines.push(`MIME-Version: 1.0`);
 
   // The body is always a multipart/alternative (plain text + rendered HTML) so

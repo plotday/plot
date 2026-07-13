@@ -1202,6 +1202,77 @@ describe("processCalendarEventsFn — past cancellations", () => {
   });
 });
 
+describe("processCalendarEventsFn — prefers the cancellation email over the generic note", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("skips the generic cancellation note when a cancel email is present", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    host.readMailState = async <T>(key: string) =>
+      (key === "cancel-email:uid-1" ? ({ at: "now" } as T) : null);
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const cancelledEvent = {
+      id: "e1",
+      iCalUID: "uid-1",
+      status: "cancelled" as const,
+      updated: isoDaysFromNow(-1),
+      start: { dateTime: isoDaysFromNow(2) },
+      end: { dateTime: isoDaysFromNow(2) },
+      summary: "Team sync",
+    };
+
+    await processCalendarEventsFn(host, [cancelledEvent], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-1");
+    expect(link).toBeDefined();
+    expect(
+      link?.notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(false);
+    // Structural cancellation still applies regardless of the email marker.
+    expect(link?.status).toBe("Cancelled");
+    expect(link?.schedules?.[0]?.archived).toBe(true);
+  });
+
+  it("keeps the generic cancellation note when no cancel email marker exists", async () => {
+    const calendarId = "user@example.com";
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    // No readMailState set on this host at all (mirrors hosts/tests that
+    // predate the mail/calendar wiring) — must behave exactly as before.
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const cancelledEvent = {
+      id: "e2",
+      iCalUID: "uid-2",
+      status: "cancelled" as const,
+      updated: isoDaysFromNow(-1),
+      start: { dateTime: isoDaysFromNow(2) },
+      end: { dateTime: isoDaysFromNow(2) },
+      summary: "Team sync",
+    };
+
+    await processCalendarEventsFn(host, [cancelledEvent], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-2");
+    expect(link).toBeDefined();
+    expect(
+      link?.notes?.some((n) => (n as { key?: string }).key === "cancellation")
+    ).toBe(true);
+    expect(link?.schedules?.[0]?.archived).toBe(true);
+  });
+});
+
 describe("processCalendarEventsFn — re-confirmation after cancellation", () => {
   const iso = (n: number) =>
     new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
@@ -1444,5 +1515,257 @@ describe("processCalendarEventsFn — self-initiated cancellations", () => {
     const saved = host.savedLinks.flat();
     expect(saved).toHaveLength(1);
     expect(saved[0].unread).toBe(false);
+  });
+});
+
+describe("processCalendarEventsFn — message-model note audiences", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "user@example.com";
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("event notes carry accessContacts = attendees (message-model roster)", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e1",
+      iCalUID: "uid-1",
+      status: "confirmed" as const,
+      summary: "Sync",
+      description: "Agenda here",
+      organizer: { email: "org@x.com", displayName: "Org" },
+      attendees: [
+        {
+          email: "org@x.com",
+          organizer: true,
+          responseStatus: "accepted" as const,
+        },
+        { email: "bob@x.com", responseStatus: "needsAction" as const },
+      ],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-1");
+    expect(link?.meta?.iCalUID).toBe("uid-1");
+
+    const desc = link?.notes?.find((n) =>
+      (n as { key?: string }).key?.startsWith("description-")
+    );
+    const emails = (
+      (desc as { accessContacts?: Array<{ email?: string }> })
+        .accessContacts ?? []
+    )
+      .map((c) => c.email)
+      .sort();
+    expect(emails).toEqual(["bob@x.com", "org@x.com"]);
+  });
+
+  it("cancellation-path link carries accessContacts, private access, author, and iCalUID meta", async () => {
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e2",
+      iCalUID: "uid-2",
+      status: "cancelled" as const,
+      summary: "Standup",
+      organizer: { email: "org@x.com", displayName: "Org" },
+      attendees: [
+        { email: "org@x.com", organizer: true },
+        { email: "bob@x.com" },
+      ],
+      updated: isoDaysFromNow(0),
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-2");
+    expect(link?.meta?.iCalUID).toBe("uid-2");
+    expect(link?.access).toBe("private");
+    expect(link?.author).toEqual({ email: "org@x.com", name: "Org" });
+
+    const emails = (
+      (link?.accessContacts ?? []) as Array<{ email?: string }>
+    )
+      .map((c) => c.email)
+      .sort();
+    expect(emails).toEqual(["bob@x.com", "org@x.com"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Event link priority — the calendar event link must always outrank a
+// bundled email link (which defaults to priority 0), so the thread keeps
+// rendering as an event even after email replies bundle onto it.
+// ---------------------------------------------------------------------------
+
+describe("processCalendarEventsFn — event link priority", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "user@example.com";
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("floors priority at 1 for an event where the user is neither organizer nor attendee", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e1",
+      iCalUID: "uid-1",
+      status: "confirmed" as const,
+      summary: "X",
+      organizer: { email: "o@x" },
+      attendees: [],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-1");
+    expect(link?.priority).toBe(1);
+  });
+
+  it("gives organizer events priority 100", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e2",
+      iCalUID: "uid-organizer",
+      status: "confirmed" as const,
+      summary: "Organized by me",
+      organizer: { email: "me@x.com", self: true },
+      attendees: [{ email: "me@x.com", self: true, organizer: true }],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-organizer");
+    expect(link?.priority).toBe(100);
+  });
+
+  it("gives attendee (non-organizer) events priority 50", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e3",
+      iCalUID: "uid-attendee",
+      status: "confirmed" as const,
+      summary: "Invited",
+      organizer: { email: "boss@x.com", self: false },
+      attendees: [
+        { email: "boss@x.com", organizer: true },
+        { email: "me@x.com", self: true },
+      ],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-attendee");
+    expect(link?.priority).toBe(50);
+  });
+
+  it("floors priority at 1 on the cancellation-path link too", async () => {
+    const host = makeFakeHost({ calendarId });
+    host.store.set(`first_sync_at_${calendarId}`, isoDaysFromNow(-30));
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const event = {
+      id: "e4",
+      iCalUID: "uid-cancelled",
+      status: "cancelled" as const,
+      summary: "Cancelled, not mine",
+      organizer: { email: "o@x" },
+      attendees: [],
+      updated: isoDaysFromNow(0),
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const link = host.savedLinks
+      .flat()
+      .find((l) => l.source === "google-calendar:uid-cancelled");
+    expect(link?.priority).toBe(1);
+  });
+
+  it("floors the coalesced priority when a recurring instance is merged before its master in the same batch", async () => {
+    // Regression test: addLink() coalesces same-source links within one
+    // sync batch but previously didn't propagate `priority`. Recurring
+    // instance/exception links never set `priority` at all, so when an
+    // instance is processed (and becomes the batch's `existing` entry)
+    // before its master arrives, the merge left `existing.priority`
+    // `undefined` (-> server default 0) even though the master carries a
+    // floor of >= 1 — letting a bundled email tie/win primacy depending on
+    // event-vs-instance ordering within the page.
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    // Instance/exception link — no `iCalUID`, so it falls back to
+    // `recurringEventId` for its canonical (master) source, and it carries
+    // no `priority` field at all.
+    const instance = {
+      id: "instance-1",
+      recurringEventId: "master-1",
+      originalStartTime: { dateTime: isoDaysFromNow(2) },
+      status: "confirmed" as const,
+      start: { dateTime: isoDaysFromNow(2) },
+      end: { dateTime: isoDaysFromNow(2) },
+    };
+
+    // Master — no `iCalUID` either, so its canonical source is
+    // `google-calendar:master-1`, matching the instance's fallback above.
+    // Organizer is someone else and there are no attendees, so this floors
+    // to priority 1 (the lowest non-zero floor).
+    const master = {
+      id: "master-1",
+      status: "confirmed" as const,
+      summary: "Recurring sync",
+      organizer: { email: "boss@x.com", self: false },
+      attendees: [],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+
+    // Instance BEFORE master, in one batch — the exact ordering that
+    // previously dropped the priority floor.
+    await processCalendarEventsFn(host, [instance, master], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    // Coalesced onto a single link, not two.
+    expect(saved.filter((l) => l.source === "google-calendar:master-1")).toHaveLength(1);
+
+    const link = saved.find((l) => l.source === "google-calendar:master-1");
+    expect(link?.priority).toBeGreaterThanOrEqual(1);
   });
 });

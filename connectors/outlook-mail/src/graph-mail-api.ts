@@ -40,6 +40,10 @@ export type GraphMessage = {
   hasAttachments?: boolean;
   webLink?: string;
   internetMessageHeaders?: GraphHeader[];
+  "@odata.type"?: string;
+  meetingMessageType?: string;
+  meetingRequestType?: string;
+  event?: { iCalUId?: string };
 };
 
 export type GraphMailFolder = {
@@ -140,6 +144,8 @@ export const MESSAGE_SELECT = [
   "parentFolderId",
   "hasAttachments",
   "webLink",
+  "meetingMessageType",
+  "meetingRequestType",
 ].join(",");
 
 /** Upload-session chunk size: 10 × 320 KiB (Graph requires 320 KiB multiples). */
@@ -252,6 +258,7 @@ export class GraphMailApi {
         $top: String(args.top ?? 20),
         $orderby: "receivedDateTime desc",
         $select: MESSAGE_SELECT,
+        $expand: "event($select=iCalUId)",
       };
       if (args.since) {
         params.$filter = `receivedDateTime ge ${args.since.toISOString()}`;
@@ -293,6 +300,7 @@ export class GraphMailApi {
       $filter: `conversationId eq ${odataQuote(conversationId)}`,
       $top: "100",
       $select: MESSAGE_SELECT,
+      $expand: "event($select=iCalUId)",
     });
     for (let page = 0; page < 5; page++) {
       messages.push(...((data?.value as GraphMessage[] | undefined) ?? []));
@@ -591,6 +599,37 @@ export function sortConversation(messages: GraphMessage[]): GraphMessage[] {
   return [...messages].sort(
     (a, b) => messageDate(a).getTime() - messageDate(b).getTime()
   );
+}
+
+/**
+ * Classify an Outlook conversation's relationship to a calendar event for
+ * bundling onto the event's Plot thread. Two signals: our own
+ * `X-Plot-Event-UID` header on the parent's raw headers (a Plot-sent reply
+ * chain — checked first, regardless of any message-derived signal), or a
+ * message's Graph meeting-message metadata (update/cancellation). Bare new
+ * invites and RSVP responses (accept/decline/tentative) are skipped.
+ */
+export function classifyOutlookCalendar(
+  messages: GraphMessage[],
+  parentHeaders: GraphHeader[] | null
+): { uid: string; kind: "reply" | "update" | "cancel" } | null {
+  const hdr = (parentHeaders ?? []).find(
+    (h) => h.name.toLowerCase() === "x-plot-event-uid"
+  );
+  if (hdr?.value) return { uid: hdr.value, kind: "reply" };
+  for (const m of messages) {
+    const uid = m.event?.iCalUId;
+    if (!uid) continue;
+    if (m.meetingMessageType === "meetingCancelled") return { uid, kind: "cancel" };
+    if (
+      m.meetingMessageType === "meetingRequest" &&
+      (m.meetingRequestType === "fullUpdate" ||
+        m.meetingRequestType === "informationalUpdate")
+    ) {
+      return { uid, kind: "update" };
+    }
+  }
+  return null;
 }
 
 /**
