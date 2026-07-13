@@ -204,4 +204,32 @@ describe("syncFollowedItems", () => {
     expect((store.followed_sync_state as { page: number }).page).toBe(2);
     expect(store.followed_initial_done).toBeUndefined(); // not done => not marked
   });
+
+  it("resumes at page 2 with a frozen since window and completes on a short page", async () => {
+    const fullPage = Array.from({ length: 50 }, (_, i) =>
+      makeNotification({
+        id: String(i),
+        subject: { url: `https://api.github.com/repos/acme/web/issues/${i + 1}` },
+      }),
+    );
+    // The fake returns the full page only for page=1 and an empty page otherwise.
+    const { source, store, paths } = makeFakeSource({ notifications: fullPage });
+
+    expect(await syncFollowedItems(source)).toEqual({ done: false });
+    // Second call resumes from the persisted cursor and hits the short page 2.
+    expect(await syncFollowedItems(source)).toEqual({ done: true });
+
+    const notifPaths = paths.filter((p) => p.startsWith("/notifications"));
+    const page1 = notifPaths.find((p) => p.includes("page=1"));
+    const page2 = notifPaths.find((p) => p.includes("page=2"));
+    expect(page2).toBeDefined();
+    const since = (p: string) =>
+      new URLSearchParams(p.split("?")[1]).get("since");
+    // The `since` window is frozen across pages, not recomputed per page.
+    expect(since(page2!)).toBe(since(page1!));
+
+    // Completion clears the cursor and marks the initial pass done.
+    expect(store.followed_sync_state).toBeUndefined();
+    expect(store.followed_initial_done).toBe(true);
+  });
 });
