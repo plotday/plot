@@ -89,6 +89,7 @@ function makeFakeSource(opts: {
   notifications?: GitHubNotification[];
   enabled?: string[];
   store?: Record<string, unknown>;
+  rateLimited?: boolean;
 }): {
   source: FollowedSource;
   saved: any[];
@@ -103,6 +104,17 @@ function makeFakeSource(opts: {
     githubFetch: async (_token: string, path: string) => {
       paths.push(path);
       if (path.startsWith("/notifications")) {
+        if (opts.rateLimited) {
+          return {
+            ok: false,
+            status: 403,
+            headers: {
+              get: (h: string) =>
+                h === "x-ratelimit-remaining" ? "0" : h === "x-ratelimit-reset" ? "9999999999" : null,
+            },
+            text: async () => "rate limited",
+          } as any;
+        }
         // single page
         return { ok: true, json: async () => (path.includes("page=1") ? opts.notifications ?? [] : []) } as any;
       }
@@ -231,5 +243,13 @@ describe("syncFollowedItems", () => {
     // Completion clears the cursor and marks the initial pass done.
     expect(store.followed_sync_state).toBeUndefined();
     expect(store.followed_initial_done).toBe(true);
+  });
+
+  it("ends the pass cleanly (done, no throw) when the notifications fetch is rate-limited", async () => {
+    const { source, saved, store } = makeFakeSource({ rateLimited: true });
+    const result = await syncFollowedItems(source);
+    expect(result).toEqual({ done: true });
+    expect(saved).toEqual([]);
+    expect(store.followed_initial_done).toBeUndefined();
   });
 });

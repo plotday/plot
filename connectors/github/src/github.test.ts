@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GitHub } from "./github";
+import { GitHub, parseRateLimit } from "./github";
 
 /**
  * `onNoteCreated`/`onNoteUpdated` are real methods on the `GitHub` class,
@@ -201,5 +201,75 @@ describe("onOptionsChanged followed toggle", () => {
     );
 
     expect(calls).toContain("cancel:followed-poll");
+  });
+});
+
+function makeHeaders(entries: Record<string, string>) {
+  return {
+    get: (name: string) => entries[name.toLowerCase()] ?? null,
+  } as any;
+}
+
+describe("parseRateLimit", () => {
+  it("returns not-limited for a 200 response", () => {
+    const response = { status: 200, headers: makeHeaders({}) } as any;
+    expect(parseRateLimit(response)).toEqual({ limited: false, resetAt: null });
+  });
+
+  it("detects a primary rate limit from a 403 with remaining=0 and a reset time", () => {
+    const unixSecs = Math.floor(Date.now() / 1000) + 3600;
+    const response = {
+      status: 403,
+      headers: makeHeaders({
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(unixSecs),
+      }),
+    } as any;
+    const result = parseRateLimit(response);
+    expect(result.limited).toBe(true);
+    expect(result.resetAt).toEqual(new Date(unixSecs * 1000));
+  });
+
+  it("detects a secondary rate limit from a 429 with retry-after", () => {
+    const response = {
+      status: 429,
+      headers: makeHeaders({ "retry-after": "30" }),
+    } as any;
+    const result = parseRateLimit(response);
+    expect(result.limited).toBe(true);
+    expect(result.resetAt).toBeInstanceOf(Date);
+    expect(result.resetAt!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("does not treat a permission 403 (remaining > 0) as rate-limited", () => {
+    const response = {
+      status: 403,
+      headers: makeHeaders({ "x-ratelimit-remaining": "17" }),
+    } as any;
+    expect(parseRateLimit(response)).toEqual({ limited: false, resetAt: null });
+  });
+});
+
+describe("setupWebhook no-admin skip", () => {
+  it("returns early without POSTing a webhook when repo_no_admin_<id> is set", async () => {
+    let postCalled = false;
+    const fakeSource = {
+      get: async (key: string) => (key === "repo_no_admin_acme/web" ? true : null),
+      set: async () => {},
+      getToken: async () => "fake-token",
+      tools: {
+        network: {
+          createWebhook: async () => "https://example.com/hook",
+        },
+      },
+      githubFetch: async () => {
+        postCalled = true;
+        return { ok: true, json: async () => ({ id: 1 }) };
+      },
+    } as any;
+
+    await GitHub.prototype.setupWebhook.call(fakeSource, "acme/web");
+
+    expect(postCalled).toBe(false);
   });
 });

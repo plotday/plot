@@ -1,5 +1,6 @@
 import type { NewLinkWithNotes } from "@plotday/twister";
 import type { GitHubNotification } from "./github";
+import { parseRateLimit } from "./github";
 import { convertIssueToLink } from "./issue-sync";
 import { convertPRToThread } from "./pr-sync";
 
@@ -151,6 +152,11 @@ export async function syncFollowedItems(
     `/notifications?all=true&since=${encodeURIComponent(state.sinceIso)}&per_page=${PAGE_SIZE}&page=${state.page}`,
   );
   if (!response.ok) {
+    if (parseRateLimit(response).limited) {
+      // Back off — the recurring poll (or a fresh pass) resumes from the
+      // unchanged cursor after the limit resets. Not an error.
+      return { done: true };
+    }
     throw new Error(
       `Failed to fetch notifications: ${response.status} ${await response.text()}`,
     );

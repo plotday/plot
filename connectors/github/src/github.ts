@@ -127,6 +127,40 @@ export type GitHubReviewComment = {
   pull_request_review_id: number;
 };
 
+/** GitHub rate-limit signal parsed from a response's status + headers. */
+export interface RateLimitInfo {
+  limited: boolean;
+  /** Best-effort reset time; null if the response didn't say. */
+  resetAt: Date | null;
+}
+
+/**
+ * Detect GitHub primary/secondary rate limiting. Primary limits return 403/429
+ * with `x-ratelimit-remaining: 0` and an `x-ratelimit-reset` (unix seconds).
+ * Secondary limits return `retry-after` (seconds). Anything else is not a
+ * rate-limit signal (e.g. a 403 for lacking permission).
+ */
+export function parseRateLimit(response: Response): RateLimitInfo {
+  if (response.status !== 403 && response.status !== 429) {
+    return { limited: false, resetAt: null };
+  }
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs)) {
+      return { limited: true, resetAt: new Date(Date.now() + secs * 1000) };
+    }
+  }
+  if (response.headers.get("x-ratelimit-remaining") === "0") {
+    const reset = Number(response.headers.get("x-ratelimit-reset"));
+    return {
+      limited: true,
+      resetAt: Number.isFinite(reset) ? new Date(reset * 1000) : null,
+    };
+  }
+  return { limited: false, resetAt: null };
+}
+
 /**
  * Channel ids in this connector are either an owner login (e.g. `microsoft`)
  * for an org/user-level toggle, or `owner/repo` for a single repository.
@@ -146,6 +180,7 @@ type GitHubRepo = {
   owner: { login: string };
   default_branch: string;
   private: boolean;
+  permissions?: { admin?: boolean; push?: boolean; pull?: boolean };
 };
 
 /**
@@ -652,6 +687,12 @@ export class GitHub extends Connector<GitHub> {
     const repoIds = orgRepos.map((r) => r.full_name);
     await this.set(`org_repos_${orgId}`, repoIds);
 
+    for (const repo of orgRepos) {
+      if (repo.permissions?.admin !== true) {
+        await this.set(`repo_no_admin_${repo.full_name}`, true);
+      }
+    }
+
     if (repoIds.length === 0) {
       await this.tools.integrations.channelSyncCompleted(orgId);
       return;
@@ -679,6 +720,7 @@ export class GitHub extends Connector<GitHub> {
     await this.cancelScheduledTask(`reaction-poll-${repositoryId}`);
     await this.clear(`sync_enabled_${repositoryId}`);
     await this.clear(`org_for_repo_${repositoryId}`);
+    await this.clear(`repo_no_admin_${repositoryId}`);
   }
 
   private async onRepoDisabled(repositoryId: string): Promise<void> {
@@ -900,6 +942,12 @@ export class GitHub extends Connector<GitHub> {
    * so toggling on later works without re-creating the webhook.
    */
   async setupWebhook(repositoryId: string): Promise<void> {
+    if (await this.get<boolean>(`repo_no_admin_${repositoryId}`)) {
+      // No admin rights on this repo — creating a webhook would 403. Skip the
+      // wasted request; the repo still gets initial sync and reaction polling.
+      return;
+    }
+
     try {
       const secret = crypto.randomUUID();
 
