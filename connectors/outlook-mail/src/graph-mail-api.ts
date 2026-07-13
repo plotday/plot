@@ -39,6 +39,10 @@ export type GraphMessage = {
   hasAttachments?: boolean;
   webLink?: string;
   internetMessageHeaders?: GraphHeader[];
+  "@odata.type"?: string;
+  meetingMessageType?: string;
+  meetingRequestType?: string;
+  event?: { iCalUId?: string };
 };
 
 export type GraphMailFolder = {
@@ -139,6 +143,8 @@ export const MESSAGE_SELECT = [
   "parentFolderId",
   "hasAttachments",
   "webLink",
+  "meetingMessageType",
+  "meetingRequestType",
 ].join(",");
 
 /** Upload-session chunk size: 10 × 320 KiB (Graph requires 320 KiB multiples). */
@@ -251,6 +257,7 @@ export class GraphMailApi {
         $top: String(args.top ?? 20),
         $orderby: "receivedDateTime desc",
         $select: MESSAGE_SELECT,
+        $expand: "event($select=iCalUId)",
       };
       if (args.since) {
         params.$filter = `receivedDateTime ge ${args.since.toISOString()}`;
@@ -292,6 +299,7 @@ export class GraphMailApi {
       $filter: `conversationId eq ${odataQuote(conversationId)}`,
       $top: "100",
       $select: MESSAGE_SELECT,
+      $expand: "event($select=iCalUId)",
     });
     for (let page = 0; page < 5; page++) {
       messages.push(...((data?.value as GraphMessage[] | undefined) ?? []));

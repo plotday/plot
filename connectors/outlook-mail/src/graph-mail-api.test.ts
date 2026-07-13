@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   conversationSource,
+  GraphMailApi,
   isConversationFlagged,
   isConversationUnread,
   isViaRewrittenName,
@@ -175,5 +176,40 @@ describe("small helpers", () => {
   });
   it("conversationSource lowercases the mailbox", () => {
     expect(conversationSource("A@B.com", "c1")).toBe("outlook-mail:a@b.com:c1");
+  });
+});
+
+describe("GraphMailApi queries", () => {
+  it("getConversationMessages requests meeting fields + expands event", async () => {
+    const calls: Array<Record<string, string> | undefined> = [];
+    const api = new GraphMailApi("tok");
+    api.call = async (
+      _method: string,
+      _url: string,
+      params?: Record<string, string>
+    ) => {
+      calls.push(params);
+      return { value: [] };
+    };
+    await api.getConversationMessages("conv-1");
+    expect(calls[0]?.$select).toContain("meetingMessageType");
+    expect(calls[0]?.$select).toContain("meetingRequestType");
+    expect(calls[0]?.$expand).toBe("event($select=iCalUId)");
+  });
+
+  it("getMessagesPage requests meeting fields + expands event on the non-nextLink branch", async () => {
+    const calls: Array<Record<string, string> | undefined> = [];
+    const api = new GraphMailApi("tok");
+    api.call = async (
+      _method: string,
+      _url: string,
+      params?: Record<string, string>
+    ) => {
+      calls.push(params);
+      return { value: [] };
+    };
+    await api.getMessagesPage({ folderId: "f-inbox" });
+    expect(calls[0]?.$select).toContain("meetingMessageType");
+    expect(calls[0]?.$expand).toBe("event($select=iCalUId)");
   });
 });
