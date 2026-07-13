@@ -1777,7 +1777,12 @@ export async function sendCalendarEventReplyFn(
 
   let sentId: string;
   if (!prior) {
-    const seedMessageId = `<plot-cal-${iCalUID}-${note.id}@plot.day>`;
+    // Sanitize only the Message-ID LOCAL PART: real iCalUIDs are often
+    // already an email-shaped string (e.g. "abc@google.com"), and splicing
+    // one in verbatim produces a double-`@` malformed Message-ID. The
+    // X-Plot-Event-UID header below still carries the raw iCalUID unchanged
+    // — only this synthetic Message-ID needs to be token-safe.
+    const seedMessageId = `<plot-cal-${iCalUID.replace(/[^A-Za-z0-9._-]/g, "-")}-${note.id}@plot.day>`;
     const raw = buildNewEmailMessage({
       to, cc, bcc, from, subject, body: note.content ?? "",
       extraHeaders: [`Message-ID: ${seedMessageId}`, uidHeader],

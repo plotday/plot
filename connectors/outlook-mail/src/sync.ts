@@ -1865,8 +1865,7 @@ export async function sendCalendarEventReplyFn(
   const stateKey = `cal-reply:${iCalUID}`;
   const prior = await host.get<{ conversationId: string; lastMessageId: string }>(stateKey);
 
-  let draftId: string;
-  if (!prior) {
+  const sendFreshConversation = async (): Promise<NoteWriteBackResult | void> => {
     const created = await api.createDraft({
       subject: (thread.title as string) || "Event",
       body: bodyHtml,
@@ -1875,7 +1874,7 @@ export async function sendCalendarEventReplyFn(
       bccRecipients: bcc.map(addr),
       internetMessageHeaders: [{ name: "x-plot-event-uid", value: iCalUID }],
     });
-    draftId = created.id;
+    const draftId = created.id;
     let imid = created.internetMessageId;
     let conversationId = created.conversationId;
     if (!imid || !conversationId) {
@@ -1889,22 +1888,46 @@ export async function sendCalendarEventReplyFn(
     await host.set(stateKey, { conversationId, lastMessageId: key });
     await host.set(`sent:${key}`, true);
     return { key };
-  } else {
-    const draft = await api.createReplyDraft(prior.lastMessageId);
-    draftId = draft.id;
-    await api.updateMessage(draftId, {
-      body: bodyHtml,
-      toRecipients: to.map(addr),
-      ccRecipients: cc.map(addr),
-      ...(bcc.length > 0 ? { bccRecipients: bcc.map(addr) } : {}),
-    });
-    const refreshed = await api.getMessage(draftId, "id,internetMessageId,conversationId");
-    const key = refreshed?.internetMessageId ?? draft.internetMessageId ?? draftId;
-    await api.send(draftId);
-    await host.set(stateKey, { conversationId: prior.conversationId, lastMessageId: key });
-    await host.set(`sent:${key}`, true);
-    return { key };
+  };
+
+  if (!prior) {
+    return sendFreshConversation();
   }
+
+  // Subsequent reply: thread into the stored conversation via a REAL Graph
+  // item id (`createReplyDraft` → POST /me/messages/{id}/createReply
+  // requires the item id, not an internetMessageId — the prior code passed
+  // `prior.lastMessageId`, an RFC-822 Message-ID, which Graph rejects with a
+  // 404 ErrorInvalidIdMalformed on every reply after the first).
+  const conversationMessages = (
+    await api.getConversationMessages(prior.conversationId)
+  ).filter((m) => !m.isDraft);
+  if (conversationMessages.length === 0) {
+    // Defensive: the stored conversation has no live messages to thread
+    // into (shouldn't normally happen — we sent a message there
+    // previously). Fall back to starting a fresh conversation rather than
+    // calling createReplyDraft with nothing to anchor to.
+    console.warn(
+      `[outlook-mail] calendar reply: conversation ${prior.conversationId} has no messages, starting a fresh one`
+    );
+    return sendFreshConversation();
+  }
+  const target = conversationMessages[conversationMessages.length - 1];
+
+  const draft = await api.createReplyDraft(target.id);
+  const draftId = draft.id;
+  await api.updateMessage(draftId, {
+    body: bodyHtml,
+    toRecipients: to.map(addr),
+    ccRecipients: cc.map(addr),
+    ...(bcc.length > 0 ? { bccRecipients: bcc.map(addr) } : {}),
+  });
+  const refreshed = await api.getMessage(draftId, "id,internetMessageId,conversationId");
+  const key = refreshed?.internetMessageId ?? draft.internetMessageId ?? draftId;
+  await api.send(draftId);
+  await host.set(stateKey, { conversationId: prior.conversationId, lastMessageId: key });
+  await host.set(`sent:${key}`, true);
+  return { key };
 }
 
 /**

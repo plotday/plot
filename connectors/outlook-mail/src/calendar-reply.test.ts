@@ -6,6 +6,7 @@ const { graphApi } = vi.hoisted(() => ({
     createReplyDraft: vi.fn(),
     updateMessage: vi.fn(),
     getMessage: vi.fn(),
+    getConversationMessages: vi.fn(),
     send: vi.fn(),
   },
 }));
@@ -103,7 +104,15 @@ describe("outlook onNoteCreatedFn — calendar event thread", () => {
     expect(res).toEqual({ key: "<imid-1>" });
   });
 
-  it("second reply: threads via createReplyDraft into stored conversation", async () => {
+  it("second reply: threads via createReplyDraft using the REAL Graph item id from the conversation, not the stored internetMessageId", async () => {
+    // The prior code passed `prior.lastMessageId` (an RFC-822 Message-ID like
+    // "<imid-1>") straight to createReplyDraft, which Graph rejects with a
+    // 404 ErrorInvalidIdMalformed — createReplyDraft requires a real Graph
+    // item id (e.g. "AAMk..."). The fix resolves the target message from the
+    // conversation instead.
+    graphApi.getConversationMessages.mockResolvedValue([
+      { id: "AAMk-real-id", isDraft: false, internetMessageId: "<imid-1>" },
+    ]);
     graphApi.createReplyDraft.mockResolvedValue({ id: "d2", internetMessageId: "<imid-2>" });
     graphApi.updateMessage.mockResolvedValue(undefined);
     graphApi.getMessage.mockResolvedValue({
@@ -113,12 +122,14 @@ describe("outlook onNoteCreatedFn — calendar event thread", () => {
     });
     graphApi.send.mockResolvedValue(undefined);
     const { host } = makeHost({
-      "cal-reply:uid-123": { conversationId: "conv-1", lastMessageId: "seed-msg" },
+      "cal-reply:uid-123": { conversationId: "conv-1", lastMessageId: "<imid-1>" },
     });
 
     await onNoteCreatedFn(host, replyNote(["bob@x.com"]), calThread());
 
-    expect(graphApi.createReplyDraft).toHaveBeenCalledWith("seed-msg");
+    expect(graphApi.getConversationMessages).toHaveBeenCalledWith("conv-1");
+    expect(graphApi.createReplyDraft).toHaveBeenCalledWith("AAMk-real-id");
+    expect(graphApi.createReplyDraft).not.toHaveBeenCalledWith("<imid-1>");
     expect(graphApi.send).toHaveBeenCalledWith("d2");
   });
 });
