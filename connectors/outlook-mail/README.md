@@ -1,5 +1,7 @@
 # Outlook Mail Connector
 
+> **Library note:** This package is consumed by [`@plotday/connector-outlook`](../outlook), the deployed "Outlook" connection — it is not deployed as a standalone connector. See `../AGENTS.md` for details.
+
 Syncs Microsoft Outlook mail (personal outlook.com and work/school Microsoft 365
 accounts) into Plot via Microsoft Graph. Each Outlook conversation becomes a
 Plot thread; each message becomes a note on that thread.

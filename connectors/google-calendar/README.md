@@ -1,5 +1,7 @@
 # Google Calendar Connector for Plot
 
+> **Library note:** This package is consumed by [`@plotday/connector-google`](../google), the deployed "Gmail & Calendar" connection — it is not deployed as a standalone connector. See `../AGENTS.md` for details.
+
 Sync Google Calendar events into Plot.
 
 ## What it does
