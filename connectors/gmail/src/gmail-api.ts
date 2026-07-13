@@ -1421,6 +1421,7 @@ export function buildNewEmailMessage(options: {
   from: string;
   subject: string;
   body: string;
+  extraHeaders?: string[];
 }): string {
   const { to, cc = [], bcc = [], from, subject, body } = options;
 
@@ -1449,6 +1450,9 @@ export function buildNewEmailMessage(options: {
   }
 
   lines.push(`Subject: ${sanitizeHeaderValue(subject)}`);
+  for (const h of options.extraHeaders ?? []) {
+    lines.push(sanitizeHeaderValue(h));
+  }
   lines.push(`MIME-Version: 1.0`);
 
   // Body is a multipart/alternative (plain text + rendered HTML) so recipients
@@ -1569,6 +1573,7 @@ export function buildReplyMessage(options: {
   messageId: string;
   references: string;
   attachments?: AttachmentData[];
+  extraHeaders?: string[];
 }): string {
   const { to, cc, bcc = [], from, subject, body, messageId, references, attachments } = options;
 
@@ -1598,6 +1603,9 @@ export function buildReplyMessage(options: {
     ? `${safeReferences} ${safeMessageId}`
     : safeMessageId;
   headerLines.push(`References: ${refChain}`);
+  for (const h of options.extraHeaders ?? []) {
+    headerLines.push(sanitizeHeaderValue(h));
+  }
   headerLines.push(`MIME-Version: 1.0`);
 
   // The body is always a multipart/alternative (plain text + rendered HTML) so

@@ -439,6 +439,41 @@ describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
     );
     expect(decodeMimePart(raw, "text/plain")).not.toContain("**");
   });
+
+  it("buildNewEmailMessage emits extraHeaders (Message-ID + X-Plot-Event-UID)", () => {
+    const raw = decodeRawMessage(
+      buildNewEmailMessage({
+        to: ["a@example.com"],
+        from: "me@plot.day",
+        subject: "Standup",
+        body: "hi",
+        extraHeaders: [
+          "Message-ID: <plot-evt-1@plot.day>",
+          "X-Plot-Event-UID: uid-123",
+        ],
+      })
+    );
+    expect(raw).toContain("Message-ID: <plot-evt-1@plot.day>");
+    expect(raw).toContain("X-Plot-Event-UID: uid-123");
+  });
+
+  it("buildReplyMessage emits extraHeaders and strips CRLF injection", () => {
+    const raw = decodeRawMessage(
+      buildReplyMessage({
+        to: ["a@example.com"],
+        cc: [],
+        from: "me@plot.day",
+        subject: "Standup",
+        body: "hi",
+        messageId: "<orig@x>",
+        references: "",
+        extraHeaders: ["X-Plot-Event-UID: uid-123\r\nBcc: evil@x"],
+      })
+    );
+    expect(raw).toContain("X-Plot-Event-UID: uid-123 Bcc: evil@x");
+    // the injected CRLF was collapsed to a space (single header line)
+    expect(raw).not.toMatch(/X-Plot-Event-UID:.*\r\nBcc: evil@x/);
+  });
 });
 
 describe("buildForwardMessage", () => {
