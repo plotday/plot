@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GitHub, parseRateLimit } from "./github";
 
 /**
@@ -280,5 +280,81 @@ describe("setupWebhook no-admin skip", () => {
     await GitHub.prototype.setupWebhook.call(fakeSource, "acme/web");
 
     expect(postCalled).toBe(false);
+  });
+});
+
+describe("pollFollowed overlap guard", () => {
+  function guardFake(store: Record<string, unknown>) {
+    let accountTokenCalls = 0;
+    const fake: any = {
+      get: async (k: string) => store[k] ?? null,
+      set: async (k: string, v: unknown) => {
+        store[k] = v;
+      },
+      clear: async (k: string) => {
+        delete store[k];
+      },
+      // syncFollowedItems calls this first; returning null makes it a no-op
+      // pass, so a single call is our proxy for "the drain actually ran".
+      getAccountToken: async () => {
+        accountTokenCalls++;
+        return null;
+      },
+      listStoreKeys: async () => [],
+      createCallback: async () => ({}),
+      runTask: async () => {},
+    };
+    return { fake, calls: () => accountTokenCalls };
+  }
+
+  it("skips a recurring tick while a drain is in flight (cursor + fresh heartbeat)", async () => {
+    const { fake, calls } = guardFake({
+      followed_sync_state: { page: 2 },
+      followed_poll_heartbeat: new Date().toISOString(),
+    });
+    await GitHub.prototype.pollFollowed.call(fake);
+    expect(calls()).toBe(0); // guarded: the drain (→ getAccountToken) never ran
+  });
+
+  it("skips a recurring tick during a rate-limit backoff window (no cursor needed)", async () => {
+    const { fake, calls } = guardFake({
+      followed_retry_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
+    await GitHub.prototype.pollFollowed.call(fake);
+    expect(calls()).toBe(0); // backoff marker suppresses the tick even with no cursor
+  });
+
+  it("clears the backoff marker after a non-rate-limited pass", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fake } = guardFake({
+      // A leftover marker from an earlier backoff; the pass no longer rate-limits.
+      followed_retry_at: new Date(Date.now() - 60 * 1000).toISOString(),
+    });
+    // Continuation bypasses the guard; syncFollowedItems returns done (no retryAt).
+    await GitHub.prototype.pollFollowed.call(fake, true);
+    warn.mockRestore();
+    expect(await fake.get("followed_retry_at")).toBeNull(); // marker cleared
+  });
+
+  it("does not skip a continuation call even with a cursor + fresh heartbeat", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fake, calls } = guardFake({
+      followed_sync_state: { page: 2 },
+      followed_poll_heartbeat: new Date().toISOString(),
+    });
+    await GitHub.prototype.pollFollowed.call(fake, true);
+    warn.mockRestore();
+    expect(calls()).toBe(1); // continuation bypasses the guard and proceeds
+  });
+
+  it("does not skip when the heartbeat is stale (a crashed chain)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fake, calls } = guardFake({
+      followed_sync_state: { page: 2 },
+      followed_poll_heartbeat: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
+    });
+    await GitHub.prototype.pollFollowed.call(fake);
+    warn.mockRestore();
+    expect(calls()).toBe(1); // stale heartbeat → resume the pass
   });
 });

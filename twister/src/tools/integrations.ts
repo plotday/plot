@@ -27,9 +27,8 @@ export type Channel = {
    * - `false` — exclude it from the default selection (low-value or
    *   irrelevant resources that would crowd the user's view, or containers
    *   whose contents are too broad to sync wholesale — e.g. a holiday or
-   *   someone-else's shared calendar, a GitHub org that cascades to every
-   *   repo, a Microsoft Teams team container). The user can still enable it
-   *   manually.
+   *   someone-else's shared calendar, or a Microsoft Teams team container).
+   *   The user can still enable it manually.
    * - `undefined` — no opinion; the client decides. The client defaults to
    *   enabling the channel unless its title looks low-value (holidays,
    *   birthdays, spam/sent/draft, …).

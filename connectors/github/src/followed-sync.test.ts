@@ -245,10 +245,12 @@ describe("syncFollowedItems", () => {
     expect(store.followed_initial_done).toBe(true);
   });
 
-  it("ends the pass cleanly (done, no throw) when the notifications fetch is rate-limited", async () => {
+  it("ends the pass cleanly with a retryAt (no throw) when the notifications fetch is rate-limited", async () => {
     const { source, saved, store } = makeFakeSource({ rateLimited: true });
     const result = await syncFollowedItems(source);
-    expect(result).toEqual({ done: true });
+    expect(result.done).toBe(true);
+    // The fake returns x-ratelimit-reset: 9999999999 (unix seconds) → resume then.
+    expect(result.retryAt).toEqual(new Date(9999999999 * 1000));
     expect(saved).toEqual([]);
     expect(store.followed_initial_done).toBeUndefined();
   });

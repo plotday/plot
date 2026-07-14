@@ -445,28 +445,67 @@ export class GitHub extends Connector<GitHub> {
    * "stop chaining for now" (it is also returned when there is no account token
    * yet) — the recurring schedule re-drives the next incremental pass.
    */
-  async pollFollowed(): Promise<void> {
+  async pollFollowed(isContinuation = false): Promise<void> {
+    // A recurring tick must not start a redundant pass while one is already in
+    // progress — a continuation chain (via runTask) is scheduled to carry it
+    // forward. Two independent signals mark "in progress":
+    if (!isContinuation) {
+      // 1. A rate-limit backoff: a continuation is scheduled for `retryAt`, so
+      //    skip until then. This covers a page-1 rate limit, which leaves no
+      //    cursor behind, and outlives the heartbeat window on long (hourly)
+      //    primary limits.
+      const retryAtStr = await this.get<string>("followed_retry_at");
+      if (retryAtStr && Date.now() < new Date(retryAtStr).getTime()) return;
+
+      // 2. A multi-page drain: the chain refreshes a heartbeat, so a fresh
+      //    heartbeat with a live cursor means a drain is active. Staleness (a
+      //    crashed chain) lets a later recurring tick resume the pass.
+      const heartbeat = await this.get<string>("followed_poll_heartbeat");
+      const cursor = await this.get<{ page: number }>("followed_sync_state");
+      if (
+        cursor &&
+        heartbeat &&
+        Date.now() - new Date(heartbeat).getTime() < 30 * 60 * 1000
+      ) {
+        return;
+      }
+    }
+    await this.set("followed_poll_heartbeat", new Date().toISOString());
+
     // `get<T>`/`set<T>`'s generic constraints don't structurally match
     // FollowedSource's narrower signature; GitHub satisfies the contract
     // at runtime (see followed-sync.ts's FollowedSource doc comment).
-    const { done } = await syncFollowedItems(
+    const { done, retryAt } = await syncFollowedItems(
       this as unknown as import("./followed-sync").FollowedSource,
     );
-    if (!done) {
-      const followedCallback = await this.createCallback(this.pollFollowed);
-      await this.runTask(followedCallback);
+    if (retryAt) {
+      // Rate-limited: record the backoff (the guard above honours it) and
+      // resume the same cursor after the limit resets.
+      await this.set("followed_retry_at", retryAt.toISOString());
+      const followedCallback = await this.createCallback(this.pollFollowed, true);
+      await this.runTask(followedCallback, { runAt: retryAt });
+    } else {
+      // Not rate-limited — clear any prior backoff marker.
+      await this.clear("followed_retry_at");
+      if (!done) {
+        const followedCallback = await this.createCallback(this.pollFollowed, true);
+        await this.runTask(followedCallback);
+      }
     }
   }
 
   /**
-   * Register the recurring followed poll and kick an immediate first run.
+   * Register the recurring followed poll. When `immediate` (the default, used by
+   * `activate`/`onChannelEnabled`/`onOptionsChanged`), also kick a first run now.
+   * `upgrade` passes `false` — a redeploy only needs to re-arm the schedule, not
+   * fire an extra poll for every existing connection on every deploy.
    */
-  private async startFollowedPoll(): Promise<void> {
+  private async startFollowedPoll(immediate = true): Promise<void> {
     const followedCallback = await this.createCallback(this.pollFollowed);
     await this.scheduleRecurring("followed-poll", followedCallback, {
       intervalMs: 15 * 60 * 1000,
     });
-    await this.runTask(followedCallback);
+    if (immediate) await this.runTask(followedCallback);
   }
 
   // ---------- Channel lifecycle ----------
@@ -499,7 +538,8 @@ export class GitHub extends Connector<GitHub> {
       syncFollowed: boolean;
     };
     if (options.syncFollowed) {
-      await this.startFollowedPoll();
+      // Re-arm the recurring schedule only — no immediate kick on every deploy.
+      await this.startFollowedPoll(false);
     }
   }
 
@@ -585,6 +625,20 @@ export class GitHub extends Connector<GitHub> {
       await this.onRepoEnabled(channel.id, context);
     } else {
       await this.onOrgEnabled(channel.id, context);
+    }
+
+    // A channel is now enabled, so an account token exists — ensure the followed
+    // poll is running so the first followed sync doesn't wait for the next
+    // recurring tick (on a fresh connection `activate` ran before any channel
+    // was enabled, so its kick found no token). Idempotent; the poll's own
+    // guard drops the kick if a drain is already in flight.
+    const options = this.tools.options as {
+      syncPullRequests: boolean;
+      syncIssues: boolean;
+      syncFollowed: boolean;
+    };
+    if (options.syncFollowed) {
+      await this.startFollowedPoll();
     }
   }
 
