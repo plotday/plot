@@ -3,10 +3,16 @@ import {
   addReviewCommentReply,
   buildPRThreadFields,
   buildReviewCommentNote,
+  convertPRToThread,
   handlePRWebhook,
   handlePRReviewCommentWebhook,
 } from "./pr-sync";
-import type { GitHubPullRequest, GitHubReviewComment } from "./github";
+import type {
+  GitHubIssueComment,
+  GitHubPullRequest,
+  GitHubReview,
+  GitHubReviewComment,
+} from "./github";
 
 function makePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
   return {
@@ -267,6 +273,215 @@ describe("handlePRReviewCommentWebhook", () => {
       "comment-1",
       "review-comment-555",
     ]);
+  });
+});
+
+const convComment = (id: number): GitHubIssueComment => ({
+  id,
+  body: `conversation ${id}`,
+  created_at: "2026-07-02T00:00:00Z",
+  updated_at: "2026-07-02T00:00:00Z",
+  user: { id: 9, login: "commenter" },
+  html_url: "",
+});
+
+const reviewItem = (id: number): GitHubReview => ({
+  id,
+  body: `review ${id}`,
+  state: "COMMENTED",
+  submitted_at: "2026-07-02T00:00:00Z",
+  user: { id: 8, login: "reviewer" },
+  html_url: "",
+});
+
+const reviewComment = (id: number): GitHubReviewComment => ({
+  id,
+  body: `inline ${id}`,
+  created_at: "2026-07-02T00:00:00Z",
+  updated_at: "2026-07-02T00:00:00Z",
+  user: { id: 7, login: "inline-reviewer" },
+  html_url: "",
+  path: "src/a.ts",
+  line: 1,
+  pull_request_review_id: 1,
+});
+
+/** A page of `n` items produced by `build`, with ids starting at `base`. */
+const pageOf = <T>(build: (id: number) => T, n: number, base: number): T[] =>
+  Array.from({ length: n }, (_, i) => build(base + i));
+
+/**
+ * Fake source serving preconfigured pages for the three PR list endpoints,
+ * keyed by the `page=` query param and disambiguated by path. Records every
+ * requested path so tests can assert per-endpoint request counts and ordering.
+ */
+function makePRSource(opts: {
+  conversation?: GitHubIssueComment[][];
+  reviews?: GitHubReview[][];
+  reviewComments?: GitHubReviewComment[][];
+}): { source: any; paths: string[] } {
+  const paths: string[] = [];
+  const stored: Record<string, any> = {};
+  const source = {
+    userToContact: (user: { id: number; login: string }) => ({
+      email: `${user.id}+${user.login}@users.noreply.github.com`,
+      name: user.login,
+      source: { accountId: String(user.id) },
+    }),
+    githubFetch: async (_token: string, path: string) => {
+      paths.push(path);
+      const pageNum = Number(new URLSearchParams(path.split("?")[1]).get("page")) || 1;
+      let items: unknown[] = [];
+      if (path.includes("/reviews")) {
+        items = opts.reviews?.[pageNum - 1] ?? [];
+      } else if (path.includes("/pulls/") && path.includes("/comments")) {
+        items = opts.reviewComments?.[pageNum - 1] ?? [];
+      } else if (path.includes("/issues/") && path.includes("/comments")) {
+        items = opts.conversation?.[pageNum - 1] ?? [];
+      }
+      return { ok: true, json: async () => items } as unknown as Response;
+    },
+    get: async (key: string) => stored[key] ?? null,
+    set: async (key: string, value: any) => {
+      stored[key] = value;
+    },
+    clear: async (key: string) => {
+      delete stored[key];
+    },
+  };
+  return { source, paths };
+}
+
+const notesWithPrefix = (thread: any, prefix: string) =>
+  thread.notes.filter((n: any) => typeof n.key === "string" && n.key.startsWith(prefix));
+const conversationNotes = (thread: any) =>
+  notesWithPrefix(thread, "comment-");
+const reviewNotes = (thread: any) =>
+  thread.notes.filter(
+    (n: any) =>
+      typeof n.key === "string" &&
+      n.key.startsWith("review-") &&
+      !n.key.startsWith("review-comment-"),
+  );
+const reviewCommentNotes = (thread: any) => notesWithPrefix(thread, "review-comment-");
+
+const convPaths = (paths: string[]) =>
+  paths.filter((p) => p.includes("/issues/") && p.includes("/comments"));
+const reviewPaths = (paths: string[]) => paths.filter((p) => p.includes("/reviews"));
+const reviewCommentPaths = (paths: string[]) =>
+  paths.filter((p) => p.includes("/pulls/") && p.includes("/comments"));
+
+describe("convertPRToThread comment fetching", () => {
+  it("fetches each list once for a small PR and keeps all content", async () => {
+    const { source, paths } = makePRSource({
+      conversation: [pageOf(convComment, 3, 0)],
+      reviews: [pageOf(reviewItem, 2, 0)],
+      reviewComments: [pageOf(reviewComment, 4, 0)],
+    });
+    const thread = await convertPRToThread(source, "tok", "acme", "repo", makePR(), "acme/repo", false);
+    expect(conversationNotes(thread)).toHaveLength(3);
+    expect(reviewNotes(thread)).toHaveLength(2);
+    expect(reviewCommentNotes(thread)).toHaveLength(4);
+    expect(convPaths(paths)).toHaveLength(1);
+    expect(reviewPaths(paths)).toHaveLength(1);
+    expect(reviewCommentPaths(paths)).toHaveLength(1);
+  });
+
+  it("paginates conversation comments newest-first, capped at MAX_COMMENT_PAGES", async () => {
+    const { source, paths } = makePRSource({
+      conversation: [
+        pageOf(convComment, 100, 0),
+        pageOf(convComment, 100, 100),
+        pageOf(convComment, 100, 200),
+        pageOf(convComment, 100, 300),
+      ],
+    });
+    const thread = await convertPRToThread(source, "tok", "acme", "repo", makePR(), "acme/repo", false);
+    // No longer silently truncated at 100; capped at 3 pages (300).
+    expect(conversationNotes(thread)).toHaveLength(300);
+    expect(convPaths(paths)).toHaveLength(3);
+    expect(convPaths(paths)[0]).toContain("sort=created");
+    expect(convPaths(paths)[0]).toContain("direction=desc");
+  });
+
+  it("paginates inline review comments newest-first, capped at MAX_COMMENT_PAGES", async () => {
+    const { source, paths } = makePRSource({
+      reviewComments: [
+        pageOf(reviewComment, 100, 0),
+        pageOf(reviewComment, 100, 100),
+        pageOf(reviewComment, 100, 200),
+        pageOf(reviewComment, 100, 300),
+      ],
+    });
+    const thread = await convertPRToThread(source, "tok", "acme", "repo", makePR(), "acme/repo", false);
+    expect(reviewCommentNotes(thread)).toHaveLength(300);
+    expect(reviewCommentPaths(paths)).toHaveLength(3);
+    expect(reviewCommentPaths(paths)[0]).toContain("sort=created");
+    expect(reviewCommentPaths(paths)[0]).toContain("direction=desc");
+  });
+
+  it("paginates reviews capped at MAX_COMMENT_PAGES, without a sort direction (endpoint has none)", async () => {
+    const { source, paths } = makePRSource({
+      reviews: [
+        pageOf(reviewItem, 100, 0),
+        pageOf(reviewItem, 100, 100),
+        pageOf(reviewItem, 100, 200),
+        pageOf(reviewItem, 100, 300),
+      ],
+    });
+    const thread = await convertPRToThread(source, "tok", "acme", "repo", makePR(), "acme/repo", false);
+    expect(reviewNotes(thread)).toHaveLength(300);
+    expect(reviewPaths(paths)).toHaveLength(3);
+    // The /pulls/{n}/reviews endpoint takes no sort/direction — fetched in
+    // GitHub's default order, not reversed.
+    expect(reviewPaths(paths)[0]).not.toContain("direction=desc");
+  });
+});
+
+describe("handlePRWebhook reopened key refresh", () => {
+  it("records conversation-comment keys paginated newest-first (not truncated at 100)", async () => {
+    const stored: Record<string, any> = {};
+    const paths: string[] = [];
+    const source = {
+      userToContact: (user: { id: number; login: string }) => ({
+        email: `${user.id}+${user.login}@users.noreply.github.com`,
+        name: user.login,
+        source: { accountId: String(user.id) },
+      }),
+      saveLink: async () => {},
+      getToken: async () => "tok",
+      githubFetch: async (_token: string, path: string) => {
+        paths.push(path);
+        const pageNum = Number(new URLSearchParams(path.split("?")[1]).get("page")) || 1;
+        if (path.includes("/issues/") && path.includes("/comments")) {
+          // 150 conversation comments across two pages, then a short page.
+          const items =
+            pageNum === 1
+              ? pageOf(convComment, 100, 0)
+              : pageNum === 2
+                ? pageOf(convComment, 50, 100)
+                : [];
+          return { ok: true, json: async () => items } as unknown as Response;
+        }
+        // Review comments: empty.
+        return { ok: true, json: async () => [] } as unknown as Response;
+      },
+      get: async (key: string) => stored[key] ?? null,
+      set: async (key: string, value: any) => {
+        stored[key] = value;
+      },
+      clear: async (key: string) => {
+        delete stored[key];
+      },
+    } as any;
+
+    await handlePRWebhook(source, { action: "reopened", pull_request: makePR() }, "acme/repo");
+
+    const keys = stored["open_pr_comment_keys_acme/repo_42"] as string[];
+    expect(keys.filter((k) => k.startsWith("comment-"))).toHaveLength(150);
+    const convFetches = paths.filter((p) => p.includes("/issues/") && p.includes("/comments"));
+    expect(convFetches).toHaveLength(2); // stopped on the short second page
+    expect(convFetches[0]).toContain("direction=desc");
   });
 });
 

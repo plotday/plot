@@ -12,6 +12,7 @@ import type {
   GitHubReviewComment,
 } from "./github";
 import { parseRateLimit } from "./github";
+import { fetchPagedList } from "./pagination";
 
 /** Days of recently closed/merged PRs to include in sync */
 const RECENT_DAYS = 30;
@@ -218,7 +219,11 @@ export function buildReviewCommentNote(
 }
 
 /**
- * Fetch every inline review comment on a PR (paginated).
+ * Fetch inline review comments on a PR, newest-first and bounded to
+ * MAX_COMMENT_PAGES (see pagination.ts). A PR under the cap gets all of its
+ * inline comments; one over it keeps the most recent 300. Replies whose parent
+ * comment falls outside the retained window simply render un-nested (their
+ * `reNote` target isn't present), which is graceful — the comment still shows.
  */
 export async function fetchReviewComments(
   source: GitHub,
@@ -227,12 +232,12 @@ export async function fetchReviewComments(
   repo: string,
   prNumber: number
 ): Promise<GitHubReviewComment[]> {
-  const response = await source.githubFetch(
+  return fetchPagedList<GitHubReviewComment>(
+    source,
     token,
-    `/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`
+    (page) =>
+      `/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100&sort=created&direction=desc&page=${page}`
   );
-  if (!response.ok) return [];
-  return response.json();
 }
 
 function openPRCommentKeysStorageKey(repositoryId: string, prNumber: number): string {
@@ -309,53 +314,56 @@ export async function convertPRToThread(
 
   const hasDescription = Boolean(pr.body && pr.body.trim().length > 0);
 
-  // Fetch general comments
+  // Fetch general (conversation-level) comments, newest-first and bounded to
+  // MAX_COMMENT_PAGES (see pagination.ts). Previously only the first 100 were
+  // fetched and the rest silently dropped; now a PR over the cap keeps its most
+  // recent 300 while staying within the per-execution request budget.
   try {
-    const commentsResponse = await source.githubFetch(
+    const comments = await fetchPagedList<GitHubIssueComment>(
+      source,
       token,
-      `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100`,
+      (page) =>
+        `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100&sort=created&direction=desc&page=${page}`,
     );
-    if (commentsResponse.ok) {
-      const comments: GitHubIssueComment[] = await commentsResponse.json();
-      for (const comment of comments) {
-        const commentAuthor = source.userToContact(comment.user);
-        notes.push({
-          key: `comment-${comment.id}`,
-          content: comment.body,
-          created: new Date(comment.created_at),
-          author: commentAuthor,
-        });
-      }
+    for (const comment of comments) {
+      const commentAuthor = source.userToContact(comment.user);
+      notes.push({
+        key: `comment-${comment.id}`,
+        content: comment.body,
+        created: new Date(comment.created_at),
+        author: commentAuthor,
+      });
     }
   } catch (error) {
     console.error("Error fetching PR comments:", error);
   }
 
-  // Fetch review summaries
+  // Fetch review summaries, bounded to MAX_COMMENT_PAGES. The reviews endpoint
+  // accepts no sort/direction, so these come back in GitHub's default order
+  // (reviews are low-volume; the cap essentially never bites).
   try {
-    const reviewsResponse = await source.githubFetch(
+    const reviews = await fetchPagedList<GitHubReview>(
+      source,
       token,
-      `/repos/${owner}/${repo}/pulls/${pr.number}/reviews?per_page=100`,
+      (page) =>
+        `/repos/${owner}/${repo}/pulls/${pr.number}/reviews?per_page=100&page=${page}`,
     );
-    if (reviewsResponse.ok) {
-      const reviews: GitHubReview[] = await reviewsResponse.json();
-      for (const review of reviews) {
-        if (review.state === "COMMENTED" && !review.body) continue;
+    for (const review of reviews) {
+      if (review.state === "COMMENTED" && !review.body) continue;
 
-        const reviewAuthor = source.userToContact(review.user);
-        const prefix = reviewStatePrefix(review.state);
-        const content = prefix
-          ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
-          : review.body || null;
+      const reviewAuthor = source.userToContact(review.user);
+      const prefix = reviewStatePrefix(review.state);
+      const content = prefix
+        ? `${prefix}${review.body ? `\n\n${review.body}` : ""}`
+        : review.body || null;
 
-        if (content) {
-          notes.push({
-            key: `review-${review.id}`,
-            content,
-            created: new Date(review.submitted_at),
-            author: reviewAuthor,
-          });
-        }
+      if (content) {
+        notes.push({
+          key: `review-${review.id}`,
+          content,
+          created: new Date(review.submitted_at),
+          author: reviewAuthor,
+        });
       }
     }
   } catch (error) {
@@ -472,14 +480,20 @@ export async function handlePRWebhook(
     try {
       const token = await source.getToken(repositoryId);
       const [issueComments, reviewComments] = await Promise.all([
-        source
-          .githubFetch(token, `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100`)
-          .then((r) => (r.ok ? r.json() : [])),
+        // Newest-first and bounded to MAX_COMMENT_PAGES, matching the review-
+        // comment fetch beside it and the batch-sync converter, so the tracked
+        // open-PR key set is consistent regardless of which path recorded it.
+        fetchPagedList<GitHubIssueComment>(
+          source,
+          token,
+          (page) =>
+            `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100&sort=created&direction=desc&page=${page}`,
+        ),
         fetchReviewComments(source, token, owner, repo, pr.number),
       ]);
       const keys = [
-        ...issueComments.map((c: { id: number }) => `comment-${c.id}`),
-        ...reviewComments.map((c: GitHubReviewComment) => `review-comment-${c.id}`),
+        ...issueComments.map((c) => `comment-${c.id}`),
+        ...reviewComments.map((c) => `review-comment-${c.id}`),
       ];
       await recordOpenPRCommentKeys(source, repositoryId, pr.number, keys);
     } catch (error) {

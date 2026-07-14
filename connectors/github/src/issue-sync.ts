@@ -5,6 +5,7 @@ import {
 } from "@plotday/twister";
 import type { GitHub, GitHubIssueComment } from "./github";
 import { parseRateLimit } from "./github";
+import { fetchPagedList } from "./pagination";
 
 /** Issues per page for batch sync */
 const PAGE_SIZE = 50;
@@ -187,32 +188,25 @@ export async function convertIssueToLink(
     author: authorContact,
   });
 
-  // Fetch comments
+  // Fetch comments, newest-first and bounded to MAX_COMMENT_PAGES so an issue
+  // with thousands of comments can't exhaust the per-execution request budget
+  // (see pagination.ts). Items under the cap fetch everything; items over it
+  // keep their most recent 300 comments (the description note is always kept).
   try {
-    let commentPage = 1;
-    let hasMoreComments = true;
-
-    while (hasMoreComments) {
-      const commentsResponse = await source.githubFetch(
-        token,
-        `/repos/${owner}/${repo}/issues/${issue.number}/comments?per_page=100&page=${commentPage}`,
-      );
-
-      if (!commentsResponse.ok) break;
-
-      const comments: GitHubIssueComment[] = await commentsResponse.json();
-      for (const comment of comments) {
-        const commentAuthor = source.userToContact(comment.user);
-        notes.push({
-          key: `comment-${comment.id}`,
-          content: comment.body ?? null,
-          created: new Date(comment.created_at),
-          author: commentAuthor,
-        });
-      }
-
-      hasMoreComments = comments.length === 100;
-      commentPage++;
+    const comments = await fetchPagedList<GitHubIssueComment>(
+      source,
+      token,
+      (page) =>
+        `/repos/${owner}/${repo}/issues/${issue.number}/comments?per_page=100&sort=created&direction=desc&page=${page}`,
+    );
+    for (const comment of comments) {
+      const commentAuthor = source.userToContact(comment.user);
+      notes.push({
+        key: `comment-${comment.id}`,
+        content: comment.body ?? null,
+        created: new Date(comment.created_at),
+        author: commentAuthor,
+      });
     }
   } catch (error) {
     console.error("Error fetching issue comments:", error);
