@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.78.0
+
+### Added
+
+- NewContact.automated flag marking a sender address as automated/no-reply, so the runtime can suppress an untrustworthy display name that varies per message on a shared address. ([#293](https://github.com/plotday/plot/pull/293) [`d248fe4`](https://github.com/plotday/plot/commit/d248fe4b318a717c582eb69ce4ee2c71160f75d1))
+
+### Changed
+
+- correct the `Channel.enabledByDefault` doc example — GitHub organizations no longer serve as an "excluded by default" example, since the GitHub connector now enables repositories by default. ([#295](https://github.com/plotday/plot/pull/295) [`bdb834b`](https://github.com/plotday/plot/commit/bdb834b84ecff086f87cca280bbe4498055d152c))
+
 ## 0.77.0
 
 ### Added

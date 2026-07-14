@@ -1,5 +1,16 @@
 # @plotday/email-classifier
 
+## 0.2.0
+
+### Added
+
+- isNoReplySender(address) helper that reports whether an address's local part marks it as an automated/no-reply/notification sender. ([#293](https://github.com/plotday/plot/pull/293) [`8b8b972`](https://github.com/plotday/plot/commit/8b8b972690cced88b3226c39874f4030c981bed1))
+
+### Changed
+
+- Updated dependencies:
+- @plotday/twister@0.78.0
+
 ## 0.1.21
 
 ### Changed
