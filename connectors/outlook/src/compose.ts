@@ -1,6 +1,6 @@
 import type { AuthToken, Channel } from "@plotday/twister/tools/integrations";
-import type { Product } from "./products/product";
-import { namespace, productKeyOf } from "./product-channel";
+import type { Product } from "./products";
+import { namespace } from "./product-channel";
 
 /**
  * Prefixes a channel's id (and recursively its children's ids) with the
@@ -47,35 +47,4 @@ export async function composeChannels(
   }
 
   return result;
-}
-
-/**
- * Resolves the owning product for a namespaced channel id.
- * Returns null if the id has no prefix or the prefix doesn't match any product.
- *
- * This is a pure function — injectable with fake products for testing.
- */
-export function resolveProductForChannelId(
-  products: Product[],
-  nsId: string
-): Product | null {
-  const key = productKeyOf(nsId);
-  if (!key) return null;
-  return products.find((p) => p.key === key) ?? null;
-}
-
-/**
- * Resolves the owning product for a link type string.
- * Link types are disjoint per product (each type belongs to exactly one product).
- * Returns null if no product declares this link type.
- *
- * This is a pure function — injectable with fake products for testing.
- */
-export function resolveProductForLinkType(
-  products: Product[],
-  linkType: string
-): Product | null {
-  return (
-    products.find((p) => p.linkTypes.some((lt) => lt.type === linkType)) ?? null
-  );
 }

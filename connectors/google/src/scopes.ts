@@ -1,17 +1,19 @@
 import type { ScopeConfig, OptionalScopeGroup } from "@plotday/twister";
+import { CONTACTS_SCOPES } from "@plotday/google-contacts";
+
+import {
+  CALENDAR_EVENTS_SCOPE,
+  CALENDAR_LIST_SCOPE,
+} from "./calendar/channels";
+import { GMAIL_MODIFY_SCOPE } from "./mail/channels";
+import { TASKS_SCOPE } from "./tasks/channels";
 
 /**
  * Per-product optional scope groups.
  *
- * Scope strings are hardcoded here rather than imported from the individual
- * connector packages to keep this package self-contained without pulling in
- * those heavy dependencies at Phase 2 scaffolding time.
- *
- * Source references:
- *   mail:      Gmail.SCOPES in @plotday/connector-gmail
- *   calendar:  GoogleCalendar.EVENTS_SCOPE + CALENDAR_LIST_SCOPE in @plotday/connector-google-calendar
- *   tasks:     GoogleTasks.SCOPES in @plotday/connector-google-tasks
- *   contacts:  GOOGLE_PEOPLE_SCOPES in @plotday/google-contacts
+ * Each group's scopes are imported from the product that needs them, so the
+ * consent screen can't drift from what the product's API calls actually
+ * require.
  *
  * Each group id MUST equal the product key (mail|calendar|tasks|contacts)
  * so that the channel-id prefix, scope group id, and product key are the
@@ -24,32 +26,26 @@ export const OPTIONAL_SCOPE_GROUPS: OptionalScopeGroup[] = [
   {
     id: "mail",
     label: "Mail",
-    scopes: ["https://www.googleapis.com/auth/gmail.modify"],
+    scopes: [GMAIL_MODIFY_SCOPE],
     default: true,
   },
   {
     id: "calendar",
     label: "Calendar",
-    scopes: [
-      "https://www.googleapis.com/auth/calendar.events",
-      "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-    ],
+    scopes: [CALENDAR_EVENTS_SCOPE, CALENDAR_LIST_SCOPE],
     default: true,
   },
   {
     id: "tasks",
     label: "Tasks",
-    scopes: ["https://www.googleapis.com/auth/tasks"],
+    scopes: [TASKS_SCOPE],
     default: true,
   },
   {
     id: "contacts",
     label: "Contacts",
     // TODO Phase 3: People scopes are shared with mail/calendar enrichment — reconcile sharing.
-    scopes: [
-      "https://www.googleapis.com/auth/contacts.readonly",
-      "https://www.googleapis.com/auth/contacts.other.readonly",
-    ],
+    scopes: [...CONTACTS_SCOPES],
     default: true,
   },
 ];

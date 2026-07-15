@@ -12,10 +12,10 @@
  */
 import { describe, it, expect } from "vitest";
 import type { AuthToken } from "@plotday/twister/tools/integrations";
-import { composeChannels, resolveProductForChannelId, resolveProductForLinkType } from "../src/compose";
+import { composeChannels } from "../src/compose";
 import { computeProductStatus } from "../src/product-status";
-import { PRODUCTS_BY_KEY } from "../src/products/product";
-import { CONTACTS_SCOPES } from "../src/products/contacts";
+import { PRODUCTS_BY_KEY } from "../src/products";
+import { CONTACTS_SCOPES } from "../src/products";
 import { OUTLOOK_MAIL_SCOPES } from "../src/mail/channels";
 import { OUTLOOK_CALENDAR_SCOPE } from "../src/calendar/channels";
 
@@ -28,55 +28,6 @@ function makeToken(scopes: string[]): AuthToken {
 }
 
 const REAL_PRODUCTS = Object.values(PRODUCTS_BY_KEY);
-
-// ---------------------------------------------------------------------------
-// resolveProductForLinkType — real PRODUCTS_BY_KEY + real link types
-// ---------------------------------------------------------------------------
-
-describe("resolveProductForLinkType (real products)", () => {
-  it('"event" resolves to the calendar product', () => {
-    const p = resolveProductForLinkType(REAL_PRODUCTS, "event");
-    expect(p?.key).toBe("calendar");
-  });
-
-  it('"email" resolves to the mail product', () => {
-    const p = resolveProductForLinkType(REAL_PRODUCTS, "email");
-    expect(p?.key).toBe("mail");
-  });
-
-  it("an unknown link type returns null", () => {
-    expect(resolveProductForLinkType(REAL_PRODUCTS, "task")).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveProductForChannelId — real PRODUCTS_BY_KEY
-// ---------------------------------------------------------------------------
-
-describe("resolveProductForChannelId (real products)", () => {
-  it('"calendar:AAMk..." resolves to the calendar product', () => {
-    const p = resolveProductForChannelId(REAL_PRODUCTS, "calendar:AAMkABcDeFgHiJkLm");
-    expect(p?.key).toBe("calendar");
-  });
-
-  it('"mail:INBOX" resolves to the mail product', () => {
-    const p = resolveProductForChannelId(REAL_PRODUCTS, "mail:INBOX");
-    expect(p?.key).toBe("mail");
-  });
-
-  it('"contacts:contacts" resolves to the contacts product', () => {
-    const p = resolveProductForChannelId(REAL_PRODUCTS, "contacts:contacts");
-    expect(p?.key).toBe("contacts");
-  });
-
-  it("un-prefixed id returns null", () => {
-    expect(resolveProductForChannelId(REAL_PRODUCTS, "INBOX")).toBeNull();
-  });
-
-  it("unknown prefix returns null", () => {
-    expect(resolveProductForChannelId(REAL_PRODUCTS, "tasks:default")).toBeNull();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // composeChannels — real PRODUCTS_BY_KEY, network-free

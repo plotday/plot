@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { AuthToken, Channel, LinkTypeConfig } from "@plotday/twister/tools/integrations";
-import type { Product } from "../src/products/product";
-import { composeChannels, resolveProductForChannelId, resolveProductForLinkType } from "../src/compose";
+import type { Product } from "../src/products";
+import { composeChannels } from "../src/compose";
 
 // ---------------------------------------------------------------------------
 // Fake product helpers
@@ -193,42 +193,3 @@ describe("composeChannels", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveProductForChannelId
-// ---------------------------------------------------------------------------
-
-describe("resolveProductForChannelId", () => {
-  const products = [calendarFake, mailFake, taskFake];
-
-  it("resolves by channel-id prefix", () => {
-    expect(resolveProductForChannelId(products, "calendar:primary")).toBe(calendarFake);
-    expect(resolveProductForChannelId(products, "mail:INBOX")).toBe(mailFake);
-    expect(resolveProductForChannelId(products, "tasks:default-list")).toBe(taskFake);
-  });
-
-  it("returns null for unknown prefix", () => {
-    expect(resolveProductForChannelId(products, "contacts:contacts")).toBeNull();
-  });
-
-  it("returns null for un-namespaced id", () => {
-    expect(resolveProductForChannelId(products, "noprefix")).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveProductForLinkType
-// ---------------------------------------------------------------------------
-
-describe("resolveProductForLinkType", () => {
-  const products = [calendarFake, mailFake, taskFake];
-
-  it("resolves by link type string", () => {
-    expect(resolveProductForLinkType(products, "event")).toBe(calendarFake);
-    expect(resolveProductForLinkType(products, "email")).toBe(mailFake);
-    expect(resolveProductForLinkType(products, "task")).toBe(taskFake);
-  });
-
-  it("returns null for unknown link type", () => {
-    expect(resolveProductForLinkType(products, "unknown-type")).toBeNull();
-  });
-});

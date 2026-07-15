@@ -81,9 +81,9 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Files } from "@plotday/twister/tools/files";
 
 import { GOOGLE_SCOPES, PRODUCTS } from "./scopes";
-import { composeChannels, resolveProductForChannelId } from "./compose";
+import { composeChannels } from "./compose";
 import { parse } from "./product-channel";
-import { PRODUCTS_BY_KEY } from "./products/product";
+import { PRODUCTS_BY_KEY } from "./products";
 
 /**
  * Combined Google connector: Mail, Calendar, Tasks, and Contacts under a
@@ -183,13 +183,6 @@ export class Google extends Connector<Google> {
       await this.onContactsChannelEnabled(rawId);
       return;
     }
-
-    const product = resolveProductForChannelId(
-      Object.values(PRODUCTS_BY_KEY),
-      channel.id
-    );
-    if (!product) return;
-    await product.onEnable(rawId, context);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -214,13 +207,6 @@ export class Google extends Connector<Google> {
       await contactsOnChannelDisabledFn(this.makeContactsHost(), rawId);
       return;
     }
-
-    const product = resolveProductForChannelId(
-      Object.values(PRODUCTS_BY_KEY),
-      channel.id
-    );
-    if (!product) return;
-    await product.onDisable(rawId);
   }
 
   // ---------------------------------------------------------------------------

@@ -71,7 +71,7 @@ import {
 import { OUTLOOK_SCOPES, PRODUCTS } from "./scopes";
 import { composeChannels } from "./compose";
 import { parse } from "./product-channel";
-import { PRODUCTS_BY_KEY } from "./products/product";
+import { PRODUCTS_BY_KEY } from "./products";
 
 /**
  * Combined Outlook (Microsoft Graph) connector: Mail, Calendar, and Contacts
