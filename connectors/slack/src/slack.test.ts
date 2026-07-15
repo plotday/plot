@@ -494,6 +494,50 @@ describe("listDMChannels", () => {
     expect(markNeedsReauth).not.toHaveBeenCalled();
     expect(store.map.has("dm_channels")).toBe(false);
   });
+
+  it("flags re-auth when the token has im:history but not im:read (opted into DMs on a pre-im:read grant)", async () => {
+    // A token granted before im:read/mpim:read joined the `dms` scope group
+    // carries im:history but not im:read. That user OPTED IN to DM sync, so
+    // silently no-oping strands them: the DM webhook registers (it only needs
+    // im:history), but listDMChannels never populates `dm_channels`, so
+    // isKnownDMChannel rejects every incoming DM event forever — while the
+    // connection still reports itself healthy. Both scopes come from the same
+    // group, so im:history-without-im:read can only mean a stale grant, never
+    // a decline; prompt a reconnect to re-consent.
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["channels:history", "im:history", "im:write", "mpim:history"], // pre-fix grant
+    });
+    const markNeedsReauth = vi.fn().mockResolvedValue(undefined);
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const tools = {
+      store,
+      integrations: { get: integrationsGet, markNeedsReauth },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask: vi.fn(async () => "task-token"), scheduleRecurring: vi.fn(async () => {}) },
+    };
+    const slack = new Slack("twist-instance-1" as never, { getTools: () => tools } as never);
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        listDMChannels: (c: string) => Promise<void>;
+      }).listDMChannels("C1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    // Still no API call: the grant genuinely lacks the enumeration scope, so
+    // conversations.list would only return missing_scope.
+    expect(fetchMock).not.toHaveBeenCalled();
+    // ...but unlike a decline, surface it so the user can reconnect.
+    expect(markNeedsReauth).toHaveBeenCalledWith("C1");
+    expect(store.map.has("dm_channels")).toBe(false);
+  });
 });
 
 describe("extractSlackMessageReactions (custom emoji)", () => {
