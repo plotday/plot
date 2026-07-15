@@ -1683,11 +1683,16 @@ export class Slack extends Connector<Slack> {
    * immediately if proactively registered (see `createDirectMessage`).
    *
    * Requires the `im:read` optional scope (part of the `dms` group) to have
-   * been granted — no-ops otherwise (the user declined DM sync at connect
-   * time). Without this guard, a token missing `im:read` would hit
+   * been granted. Without that guard, a token missing `im:read` would hit
    * `conversations.list`, get back `missing_scope` (a permanent error in
    * `SLACK_AUTH_ERRORS`), and force-flag the entire connection as needing
    * reconnection even though nothing is actually broken.
+   *
+   * When `im:read` is absent, `im:history` disambiguates why: both come from
+   * the `dms` group, so having `im:history` alone means the user opted into DM
+   * sync on a grant made before `im:read` joined that group. That grant can
+   * never enumerate DMs, so re-auth is flagged to prompt a reconnect. A user
+   * who declined DM sync has neither scope and is left alone.
    */
   async listDMChannels(channelId: string): Promise<void> {
     const now = Date.now();
@@ -1700,7 +1705,20 @@ export class Slack extends Connector<Slack> {
       console.warn("listDMChannels: Slack token unavailable");
       return;
     }
-    if (!token.scopes?.includes("im:read")) return; // optional scope declined
+    if (!token.scopes?.includes("im:read")) {
+      // im:read and im:history are granted together by the `dms` group, so a
+      // token carrying im:history WITHOUT im:read predates im:read joining
+      // that group — the user opted into DM sync but their grant can't
+      // enumerate DMs. Returning quietly would strand them permanently: the
+      // DM webhook registers (im:history is enough), but `dm_channels` stays
+      // empty, so isKnownDMChannel drops every incoming DM while the
+      // connection still reports healthy. Prompt a reconnect to re-consent.
+      // A user who declined DMs has neither scope and is left alone.
+      if (token.scopes?.includes("im:history")) {
+        await this.tools.integrations.markNeedsReauth(channelId);
+      }
+      return;
+    }
 
     const api = new SlackApi(token.token);
 
