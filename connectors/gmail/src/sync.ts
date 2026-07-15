@@ -39,6 +39,7 @@ import { enrichLinkContactsFromGoogle } from "@plotday/connector-google-contacts
 import {
   GmailApi,
   GmailApiError,
+  UserInfoError,
   type GmailMessage,
   type GmailThread,
   type AttachmentData,
@@ -1521,8 +1522,35 @@ async function saveTransformedThread(
 async function getFromHeaderFn(api: GmailApi, email: string): Promise<string> {
   try {
     const userInfo = await api.getUserInfo();
+    if (!userInfo.name) {
+      // A grant without the `profile` scope still answers 200 here — just
+      // with no `name` claim. Nothing throws, so without this the send
+      // degrades to a bare address with no trace of why.
+      console.error(
+        "[gmail] userinfo returned no display name; this connection's grant " +
+          "is likely missing the 'profile' scope. Sending with a bare From " +
+          "address until the connection is re-authorized."
+      );
+      return email;
+    }
     return formatFromHeader(email, userInfo.name);
   } catch (error) {
+    if (error instanceof UserInfoError && error.status === 403) {
+      // A 403 is a misconfiguration, not a blip, and it degrades *every*
+      // send for the connection until fixed. Either the outbound proxy
+      // rejected the URL (missing from this connector's Network allowlist —
+      // note composite connectors declare their own) or Google refused the
+      // grant. Both are silent from the recipient's side, so log loudly.
+      console.error(
+        "[gmail] userinfo lookup refused (403): the endpoint may be missing " +
+          "from this connector's Network allowlist, or the grant may lack " +
+          "the 'profile' scope. Sending with a bare From address.",
+        error
+      );
+      return email;
+    }
+    // Anything else (transient network failure, 5xx, expired token) is
+    // genuinely best-effort: the send should still go out.
     console.warn(
       "[gmail] failed to fetch display name for From header:",
       error
