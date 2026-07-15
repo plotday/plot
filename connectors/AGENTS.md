@@ -53,7 +53,7 @@ connectors/<name>/
 - `"@plotday/connector"` export condition resolves to TS source during workspace dev.
 - `plotTwistId` is the connector's stable twist UUID — `plot create --connector` generates one; `plot deploy` reads it along with `displayName`, `description`, `logoUrl`/`logoUrlDark`, and `publisher`.
 - Add third-party SDKs to `dependencies` (e.g. `"@linear/sdk": "^72.0.0"`).
-- Add `@plotday/connector-google-contacts` as `"workspace:^"` if you sync contacts (Google connectors only).
+- Add `@plotday/google-contacts` as `"workspace:^"` if you sync contacts (Google connectors only).
 
 ### tsconfig.json
 
@@ -138,7 +138,7 @@ Auth is handled in the Flutter edit modal — you declare `provider` and `scopes
 
 `AuthProvider` values: `Google`, `Microsoft`, `Notion`, `Slack`, `Atlassian`, `Linear`, `Monday`, `GitHub`, `Asana`, `HubSpot`, `Todoist`, `Airtable`.
 
-`scopes` may be a flat array (all required) or a `ScopeConfig` (`{ required, optional }`) whose optional scope groups render as connect-time toggles; detect declined groups via the granted `token.scopes` and degrade gracefully (see `slack/` and `google-calendar/`). Connectors without OAuth (API keys, CalDAV credentials) omit `provider` and collect credentials via the `Options` tool with `secure: true` fields (see `attio/`, `fellow/`, `apple-calendar/`).
+`scopes` may be a flat array (all required) or a `ScopeConfig` (`{ required, optional }`) whose optional scope groups render as connect-time toggles; detect declined groups via the granted `token.scopes` and degrade gracefully (see `slack/` and `google/`). Connectors without OAuth (API keys, CalDAV credentials) omit `provider` and collect credentials via the `Options` tool with `secure: true` fields (see `attio/`, `fellow/`, `apple-calendar/`).
 
 ### Per-user auth for write-backs
 
@@ -153,7 +153,7 @@ Plot but is not dispatched — there is no instance to deliver to.
 
 ### Cross-connector auth sharing (Google)
 
-Set `readonly scopes = Integrations.MergeScopes(MyGoogleConnector.SCOPES, GoogleContacts.SCOPES)` and add `googleContacts: build(GoogleContacts)` to your `build()` return (see `gmail/`, `google-drive/`). Alternatively declare the contacts scopes as an optional `ScopeConfig` group so the user can decline them (see `google-calendar/`).
+Set `readonly scopes = Integrations.MergeScopes(MyGoogleConnector.SCOPES, GoogleContacts.SCOPES)` and add `googleContacts: build(GoogleContacts)` to your `build()` return (see `google-chat/`, `google-drive/`). Alternatively declare the contacts scopes as an optional `ScopeConfig` group so the user can decline them (see `google/`).
 
 ### Connect / enable-path performance contract
 
@@ -226,7 +226,7 @@ async syncBatch(batchNumber: number, resourceId: string, initialSync?: boolean) 
 }
 ```
 
-For breaking changes, do migration in `upgrade()` (called once per active instance when a new version deploys — e.g. clear stale locks, see `gmail/`, `google-calendar/`).
+For breaking changes, do migration in `upgrade()` (called once per active instance when a new version deploys — e.g. clear stale locks, see `outlook/`).
 
 ## Storage key conventions
 
@@ -314,7 +314,7 @@ link.meta = { ...link.meta, syncProvider: "myprovider" };
 
 ## Classifier facets (optional)
 
-Messaging-style connectors may set `link.facets` (`format` / `automation` / `reach` from `@plotday/twister/facets`) as internal classifier signal. Set a dimension only when a heuristic is confident; leave it `null`/omitted otherwise. See `gmail/src/gmail-facets.ts` and `slack/src/slack-facets.ts`.
+Messaging-style connectors may set `link.facets` (`format` / `automation` / `reach` from `@plotday/twister/facets`) as internal classifier signal. Set a dimension only when a heuristic is confident; leave it `null`/omitted otherwise. See `google/src/mail/gmail-facets.ts` and `slack/src/slack-facets.ts`.
 
 ## Initial vs incremental sync (REQUIRED)
 
@@ -476,7 +476,7 @@ async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | v
 
 - **Return, don't throw, for expected user-visible failures** (rejected recipient, message too large, quota): a thrown error pages error tracking, a returned `deliveryError` does not. Reserve throwing for genuinely unexpected errors.
 - A connector that just throws on a failed write-back still gets a generic "Failed to send" surfaced by the runtime — adopting `deliveryError` only adds a specific reason and avoids the page.
-- Retry transient errors **in-process** (short, bounded backoff): neither send path rides a retrying queue. See `gmail/src/gmail-send-errors.ts` + `sendWithRetry` in `gmail/src/gmail.ts` for the reference classifier + retry.
+- Retry transient errors **in-process** (short, bounded backoff): neither send path rides a retrying queue. See `google/src/mail/gmail-send-errors.ts` + `sendWithRetry` in `google/src/mail/sync.ts` for the reference classifier + retry.
 - Leave the idempotency guard **unset** on failure so an explicit Retry re-sends.
 
 ### Sync baseline preservation (required for any note round-trip)
@@ -650,24 +650,28 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 
 ## Examples
 
-`gmail/`, `google-calendar/`, `outlook-mail/`, and `outlook-calendar/` are **not deployed as
-standalone connectors** — they're library packages consumed by the composite `google/` (deployed as
-"Gmail & Calendar") and `outlook/` (deployed as "Outlook") connectors, which import their exported
-sync functions (e.g. `initialSyncBatchFn`, `onNoteCreatedFn`) through a per-product "host" adapter.
-They're still the right place to look for the patterns below and to make product-specific fixes —
-just don't scaffold a new deployable connector from them or assume they ship independently.
+Every directory under `connectors/` is a deployable connector. Shared code that isn't a connection
+in its own right lives in `../libs/` — currently `@plotday/google-contacts` (contact enrichment
+under a shared Google auth) and `@plotday/email-classifier`.
+
+**Composite connectors** (`google/`, `outlook/`) offer several products under one OAuth grant. Each
+product's sync lives in its own subdirectory of the connector's `src/` — `google/src/{mail,calendar,tasks}`,
+`outlook/src/{mail,calendar}` — and is wired in through a per-product "host" adapter that namespaces
+the product's storage keys and scheduling. Those subdirectories are the right place to look for the
+per-product patterns below and to make product-specific fixes; they are modules of their connector,
+not connectors themselves, so don't scaffold a new one from them.
 
 | Connector | Category | Key patterns |
 |---|---|---|
 | `linear/` | ProjectConnector | Canonical reference; webhooks; bidirectional |
-| `google/` | CompositeConnector | Deployed "Gmail & Calendar"; single OAuth wiring multiple product libraries via a host-adapter pattern |
-| `outlook/` | CompositeConnector | Deployed "Outlook"; single OAuth wiring multiple product libraries via a host-adapter pattern |
-| `google-calendar/` | CalendarConnector (library) | Recurring events; RSVP write-back; watch renewal; shared Google auth. Consumed by `google/` |
+| `google/` | CompositeConnector | Deployed "Gmail & Calendar"; single OAuth wiring mail, calendar, tasks and contacts via a host-adapter pattern |
+| `google/src/mail/` | Messaging product | PubSub webhooks; HTML contentType; callback-arg `initialSync` |
+| `google/src/calendar/` | Calendar product | Recurring events; RSVP write-back; watch renewal |
+| `outlook/` | CompositeConnector | Deployed "Outlook"; single OAuth wiring mail and calendar via a host-adapter pattern |
+| `outlook/src/mail/` | Messaging product | Microsoft Graph; folder-based channels; delta-query self-heal |
+| `outlook/src/calendar/` | Calendar product | Microsoft Graph; subscription management |
 | `slack/` | MessagingConnector | Team-sharded webhooks; thread model |
-| `gmail/` | MessagingConnector (library) | PubSub webhooks; HTML contentType; callback-arg `initialSync`. Consumed by `google/` |
 | `google-drive/` | DocumentConnector | Document comments; reply threading; file watching; canonical `NoteWriteBackResult` + `onNoteUpdated` example |
 | `jira/` | ProjectConnector | Immutable vs mutable ids; comment metadata dedup |
 | `asana/` | ProjectConnector | HMAC webhook verification; section-based projects |
-| `outlook-mail/` | MessagingConnector (library) | Microsoft Graph; folder-based channels; delta-query self-heal. Consumed by `outlook/` |
-| `outlook-calendar/` | CalendarConnector (library) | Microsoft Graph; subscription management. Consumed by `outlook/` |
-| `google-contacts/` | Supporting | Contact sync; shared Google auth consumed by other connectors via `MergeScopes` |
+| `../libs/google-contacts/` | Supporting library | Contact sync; shared Google auth consumed by connectors via `MergeScopes` |
