@@ -2,7 +2,7 @@ import {
   getGmailChannels,
   GMAIL_MODIFY_SCOPE,
   GMAIL_LINK_TYPES,
-} from "@plotday/connector-gmail";
+} from "../mail/channels";
 import type { Product } from "./product";
 
 export const mailProduct: Product = {

@@ -2,7 +2,7 @@ import {
   getTasksChannels,
   TASKS_SCOPE,
   TASKS_LINK_TYPES,
-} from "@plotday/connector-google-tasks";
+} from "../tasks/channels";
 import type { Product } from "./product";
 
 export const tasksProduct: Product = {

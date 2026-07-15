@@ -3,11 +3,11 @@ import type { AuthToken } from "@plotday/twister/tools/integrations";
 import {
   GMAIL_MODIFY_SCOPE,
   GMAIL_LINK_TYPES,
-} from "@plotday/connector-gmail";
+} from "../src/mail/channels";
 import {
   TASKS_SCOPE,
   TASKS_LINK_TYPES,
-} from "@plotday/connector-google-tasks";
+} from "../src/tasks/channels";
 import { CONTACTS_SCOPES } from "@plotday/google-contacts";
 import { mailProduct } from "../src/products/mail";
 import { tasksProduct } from "../src/products/tasks";

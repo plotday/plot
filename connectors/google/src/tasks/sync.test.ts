@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock the Google Tasks REST client so listTasks / updateTask can be driven to
 // throw a deleted-list 404 without any network I/O. The real GoogleTasksApiError
 // class is kept (partial mock) so the production not-found check matches.
-vi.mock("../src/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/api")>();
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
   return {
     ...actual,
     listTasks: vi.fn(),
@@ -13,8 +13,8 @@ vi.mock("../src/api", async (importOriginal) => {
   };
 });
 
-import { GoogleTasksApiError } from "../src/api";
-import * as api from "../src/api";
+import { GoogleTasksApiError } from "./api";
+import * as api from "./api";
 import {
   syncBatchFn,
   periodicSyncBatchFn,
@@ -22,7 +22,7 @@ import {
   type SyncState,
   type PeriodicSyncState,
   type TasksSyncHost,
-} from "../src/sync";
+} from "./sync";
 
 const LIST_ID = "deleted-list-123";
 

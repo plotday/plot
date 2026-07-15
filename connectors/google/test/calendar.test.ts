@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { AuthToken } from "@plotday/twister/tools/integrations";
-import { CALENDAR_EVENTS_SCOPE } from "@plotday/connector-google-calendar";
+import { CALENDAR_EVENTS_SCOPE } from "../src/calendar/channels";
 import { calendarProduct } from "../src/products/calendar";
 import { PRODUCTS_BY_KEY } from "../src/products/product";
 import { composeChannels } from "../src/compose";

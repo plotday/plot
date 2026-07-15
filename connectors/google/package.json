@@ -30,10 +30,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@plotday/connector-gmail": "workspace:^",
-    "@plotday/connector-google-calendar": "workspace:^",
+    "@plotday/email-classifier": "workspace:^",
     "@plotday/google-contacts": "workspace:^",
-    "@plotday/connector-google-tasks": "workspace:^",
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {

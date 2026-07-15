@@ -2,7 +2,7 @@ import {
   getCalendarChannels,
   CALENDAR_EVENTS_SCOPE,
   CALENDAR_LINK_TYPES,
-} from "@plotday/connector-google-calendar";
+} from "../calendar/channels";
 import type { Product } from "./product";
 
 export const calendarProduct: Product = {
