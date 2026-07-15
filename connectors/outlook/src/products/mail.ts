@@ -1,4 +1,4 @@
-import { getOutlookMailChannels, OUTLOOK_MAIL_SCOPES, OUTLOOK_MAIL_LINK_TYPES } from "@plotday/connector-outlook-mail";
+import { getOutlookMailChannels, OUTLOOK_MAIL_SCOPES, OUTLOOK_MAIL_LINK_TYPES } from "../mail/channels";
 import type { Product } from "./product";
 
 export const mailProduct: Product = {

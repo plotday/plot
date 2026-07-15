@@ -1,4 +1,4 @@
-import { getOutlookCalendarChannels, OUTLOOK_CALENDAR_SCOPE, OUTLOOK_CALENDAR_LINK_TYPES } from "@plotday/connector-outlook-calendar";
+import { getOutlookCalendarChannels, OUTLOOK_CALENDAR_SCOPE, OUTLOOK_CALENDAR_LINK_TYPES } from "../calendar/channels";
 import type { Product } from "./product";
 
 export const calendarProduct: Product = {

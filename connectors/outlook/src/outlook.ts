@@ -49,7 +49,7 @@ import {
   downloadAttachmentFn,
   getMailboxRenewalSchedule,
   type InitialSyncState,
-} from "@plotday/connector-outlook-mail";
+} from "./mail/sync";
 import {
   type OutlookCalendarSyncHost,
   type WatchState,
@@ -66,7 +66,7 @@ import {
   tryGetApiFn,
   updateEventRSVPWithApiFn,
   watchNeedsReactiveRenewalFn,
-} from "@plotday/connector-outlook-calendar";
+} from "./calendar/sync";
 
 import { OUTLOOK_SCOPES, PRODUCTS } from "./scopes";
 import { composeChannels } from "./compose";
@@ -83,8 +83,7 @@ import { PRODUCTS_BY_KEY } from "./products/product";
  * directly by this class — Mail via a `mail:`-namespaced
  * {@link OutlookMailSyncHost} and Calendar via a `calendar:`-namespaced
  * {@link OutlookCalendarSyncHost} — each wrapping `this` and driving the
- * extracted `@plotday/connector-outlook-mail` /
- * `@plotday/connector-outlook-calendar` sync functions. Contacts is wired in a
+ * extracted `./mail` / `./calendar` sync functions. Contacts is wired in a
  * later phase (F1).
  *
  * **Required OAuth Scopes** (declared as optional scope groups in
@@ -293,7 +292,7 @@ export class Outlook extends Connector<Outlook> {
   }
 
   // ===========================================================================
-  // Mail (Microsoft Graph) — mirrors @plotday/connector-outlook-mail. All
+  // Mail (Microsoft Graph) — delegates to ./mail. All
   // storage keys + locks are namespaced under "mail:"; scheduling (callback /
   // runTask / scheduleRecurring / cancelScheduledTask) is owned here and routed
   // back through the host's scheduler boundary.
@@ -575,7 +574,7 @@ export class Outlook extends Connector<Outlook> {
   }
 
   // ===========================================================================
-  // Calendar (Microsoft Graph) — mirrors @plotday/connector-outlook-calendar.
+  // Calendar (Microsoft Graph) — delegates to ./calendar.
   // All storage keys + locks are namespaced under "calendar:"; the calendar
   // sync functions are descriptor-style (no host scheduler block) so scheduling
   // (callback / runTask / scheduleRecurring / cancelScheduledTask) is owned here

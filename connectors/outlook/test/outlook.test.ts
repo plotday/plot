@@ -16,8 +16,8 @@ import { composeChannels, resolveProductForChannelId, resolveProductForLinkType 
 import { computeProductStatus } from "../src/product-status";
 import { PRODUCTS_BY_KEY } from "../src/products/product";
 import { CONTACTS_SCOPES } from "../src/products/contacts";
-import { OUTLOOK_MAIL_SCOPES } from "@plotday/connector-outlook-mail";
-import { OUTLOOK_CALENDAR_SCOPE } from "@plotday/connector-outlook-calendar";
+import { OUTLOOK_MAIL_SCOPES } from "../src/mail/channels";
+import { OUTLOOK_CALENDAR_SCOPE } from "../src/calendar/channels";
 
 // ---------------------------------------------------------------------------
 // Helpers
