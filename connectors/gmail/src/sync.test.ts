@@ -5,6 +5,7 @@ import type { CreateLinkDraft, NewLinkWithNotes, Uuid } from "@plotday/twister";
 import {
   GmailApi,
   GmailApiError,
+  UserInfoError,
   type GmailHeader,
   type GmailMessage,
   type GmailMessagePart,
@@ -304,6 +305,59 @@ describe("onCreateLinkFn — draft.forward", () => {
     const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
     expect(raw).toContain("From: me@example.com");
     expect(raw).not.toContain('From: "');
+  });
+
+  it("logs an error naming the allowlist when the userinfo lookup is blocked (403)", async () => {
+    vi.spyOn(GmailApi.prototype, "getMessage").mockResolvedValue(sourceMessage());
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockRejectedValue(
+      new UserInfoError(403, "Forbidden")
+    );
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-5", threadId: "sent-thread-5" });
+    const onError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host } = makeHost();
+
+    await onCreateLinkFn(host, forwardDraft());
+
+    // The send still goes out — the display name is best-effort.
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    expect(raw).toContain("From: me@example.com");
+    expect(raw).not.toContain('From: "');
+    // A 403 is a misconfiguration, not a transient blip: say so loudly, and
+    // name the two things that actually cause it.
+    const logged = onError.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).toMatch(/allowlist/i);
+    expect(logged).toMatch(/profile/i);
+  });
+
+  it("logs an error and sends bare when userinfo returns no display name", async () => {
+    vi.spyOn(GmailApi.prototype, "getMessage").mockResolvedValue(sourceMessage());
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    // A grant without the `profile` scope still returns 200 here — just with
+    // no `name` claim. This degrades silently unless it's called out.
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+    });
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-6", threadId: "sent-thread-6" });
+    const onError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host } = makeHost();
+
+    await onCreateLinkFn(host, forwardDraft());
+
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    expect(raw).toContain("From: me@example.com");
+    expect(raw).not.toContain('From: "');
+    const logged = onError.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logged).toMatch(/profile/i);
+    expect(logged).toMatch(/re-auth/i);
   });
 });
 

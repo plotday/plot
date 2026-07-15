@@ -125,6 +125,11 @@ export class Google extends Connector<Google> {
           "https://gmail.googleapis.com/gmail/v1/*",
           "https://people.googleapis.com/v1/*",
           "https://tasks.googleapis.com/*",
+          // The mail send path resolves the account's display name here to
+          // build a `"Name" <email>` From header. Without this entry the
+          // outbound proxy 403s the lookup and sends fall back to a bare
+          // address.
+          "https://www.googleapis.com/oauth2/v3/userinfo",
         ],
       }),
       googleContacts: build(GoogleContacts),

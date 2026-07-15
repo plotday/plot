@@ -78,6 +78,23 @@ export type SyncState = {
   historyFloor?: Date;
 };
 
+/**
+ * A non-OK response from Google's userinfo endpoint (used only to resolve the
+ * account's display name for outbound `From` headers). Carries `status` so
+ * callers can separate a misconfiguration — a 403 from the outbound proxy when
+ * the endpoint is absent from the connector's Network allowlist, or from
+ * Google when the grant lacks `profile` — from a transient failure.
+ */
+export class UserInfoError extends Error {
+  constructor(
+    public status: number,
+    public statusText: string,
+  ) {
+    super(`UserInfo error: ${status} ${statusText}`);
+    this.name = "UserInfoError";
+  }
+}
+
 export class GmailApiError extends Error {
   constructor(
     public status: number,
@@ -394,9 +411,7 @@ export class GmailApi {
       { headers: { Authorization: `Bearer ${this.accessToken}` } }
     );
     if (!response.ok) {
-      throw new Error(
-        `UserInfo error: ${response.status} ${response.statusText}`
-      );
+      throw new UserInfoError(response.status, response.statusText);
     }
     return response.json() as Promise<{ email: string; name?: string }>;
   }
