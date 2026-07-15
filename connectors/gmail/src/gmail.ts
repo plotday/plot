@@ -16,7 +16,7 @@ import {
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Files } from "@plotday/twister/tools/files";
 
-import { GOOGLE_PEOPLE_SCOPES } from "@plotday/connector-google-contacts";
+import { GOOGLE_PEOPLE_SCOPES } from "@plotday/google-contacts";
 
 import { GmailApi, type GmailThread, type SyncState } from "./gmail-api";
 import { GMAIL_LINK_TYPES, getGmailChannels } from "./channels";

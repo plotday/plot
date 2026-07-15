@@ -29,7 +29,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@plotday/connector-google-contacts": "workspace:^",
+    "@plotday/google-contacts": "workspace:^",
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {

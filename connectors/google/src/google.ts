@@ -3,7 +3,7 @@ import GoogleContacts, {
   onChannelEnabledFn as contactsOnChannelEnabledFn,
   onChannelDisabledFn as contactsOnChannelDisabledFn,
   syncBatchFn as contactsSyncBatchFn,
-} from "@plotday/connector-google-contacts";
+} from "@plotday/google-contacts";
 import {
   type CalendarSyncHost,
   clearBuffersFn,
@@ -1006,7 +1006,7 @@ export class Google extends Connector<Google> {
   }
 
   // ===========================================================================
-  // Contacts (Google Contacts) — mirrors @plotday/connector-google-contacts.
+  // Contacts (Google Contacts) — mirrors @plotday/google-contacts.
   // A channelless single-channel, read-only contact IMPORT (no webhooks, no
   // recurring poll, no write-backs). Storage keys namespaced under "contacts:".
   // ===========================================================================

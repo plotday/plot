@@ -8,7 +8,7 @@ import {
   TASKS_SCOPE,
   TASKS_LINK_TYPES,
 } from "@plotday/connector-google-tasks";
-import { CONTACTS_SCOPES } from "@plotday/connector-google-contacts";
+import { CONTACTS_SCOPES } from "@plotday/google-contacts";
 import { mailProduct } from "../src/products/mail";
 import { tasksProduct } from "../src/products/tasks";
 import { contactsProduct } from "../src/products/contacts";

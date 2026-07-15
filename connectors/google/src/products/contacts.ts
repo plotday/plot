@@ -1,7 +1,7 @@
 import {
   getContactsChannels,
   CONTACTS_SCOPES,
-} from "@plotday/connector-google-contacts";
+} from "@plotday/google-contacts";
 import type { Product } from "./product";
 
 export const contactsProduct: Product = {

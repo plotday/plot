@@ -11,7 +11,7 @@ import type { ScopeConfig, OptionalScopeGroup } from "@plotday/twister";
  *   mail:      Gmail.SCOPES in @plotday/connector-gmail
  *   calendar:  GoogleCalendar.EVENTS_SCOPE + CALENDAR_LIST_SCOPE in @plotday/connector-google-calendar
  *   tasks:     GoogleTasks.SCOPES in @plotday/connector-google-tasks
- *   contacts:  GOOGLE_PEOPLE_SCOPES in @plotday/connector-google-contacts
+ *   contacts:  GOOGLE_PEOPLE_SCOPES in @plotday/google-contacts
  *
  * Each group id MUST equal the product key (mail|calendar|tasks|contacts)
  * so that the channel-id prefix, scope group id, and product key are the

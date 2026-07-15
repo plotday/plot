@@ -1,11 +1,5 @@
 {
-  "name": "@plotday/connector-google-contacts",
-  "plotTwistId": "748bb590-5da3-4782-aa6f-6a98fc2d3555",
-  "displayName": "Google Contacts",
-  "description": "Recognize the people you know by syncing your Google contacts.",
-  "logoUrl": "https://api.iconify.design/logos/google-contacts.svg",
-  "publisher": "Plot",
-  "publisherUrl": "https://plot.day",
+  "name": "@plotday/google-contacts",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.6.1",
@@ -23,7 +17,6 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "deploy": "plot deploy",
     "lint": "plot lint"
   },
   "dependencies": {
@@ -35,7 +28,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/plotday/plot.git",
-    "directory": "tools/google-contacts"
+    "directory": "libs/google-contacts"
   },
   "homepage": "https://plot.day",
   "bugs": {

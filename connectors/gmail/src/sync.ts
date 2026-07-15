@@ -34,7 +34,7 @@ import type {
 import type { WebhookRequest } from "@plotday/twister/tools/network";
 import type { Cta } from "@plotday/twister/facets";
 
-import { enrichLinkContactsFromGoogle } from "@plotday/connector-google-contacts";
+import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 
 import {
   GmailApi,

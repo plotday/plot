@@ -1,6 +1,6 @@
 import GoogleContacts, {
   enrichLinkContactsFromGoogle,
-} from "@plotday/connector-google-contacts";
+} from "@plotday/google-contacts";
 import {
   type Action,
   ActionType,
