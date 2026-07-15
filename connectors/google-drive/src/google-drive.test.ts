@@ -10,7 +10,11 @@ import { GoogleDrive } from "./google-drive";
  */
 function makeDrive() {
   const store = new Map<string, unknown>();
-  const scheduled: Array<{ key: string; runAt: Date }> = [];
+  const scheduledRecurring: Array<{
+    key: string;
+    intervalMs: number;
+    firstRunAt?: Date;
+  }> = [];
   const cancelled: string[] = [];
   const ranUnkeyed: Array<{ runAt?: Date }> = [];
 
@@ -23,11 +27,13 @@ function makeDrive() {
     },
     callbacks: { create: async () => "callback-token" },
     tasks: {
-      // The keyed primitive the connector should now use.
-      scheduleTask: async (key: string, _cb: unknown, opts: { runAt: Date }) => {
-        scheduled.push({ key, runAt: opts.runAt });
-        return `task-${scheduled.length}`;
-      },
+      // The durable keyed-singleton primitive the connector should now use
+      // for the renewal (see scheduleWatchRenewal).
+      scheduleRecurring: async (
+        key: string,
+        _cb: unknown,
+        opts: { intervalMs: number; firstRunAt?: Date }
+      ) => void scheduledRecurring.push({ key, ...opts }),
       cancelScheduledTask: async (key: string) => void cancelled.push(key),
       // The un-keyed primitive the connector should NOT use for renewals.
       runTask: async (_cb: unknown, opts?: { runAt?: Date }) => {
@@ -44,7 +50,7 @@ function makeDrive() {
 
   return {
     store,
-    scheduled,
+    scheduledRecurring,
     cancelled,
     ranUnkeyed,
     scheduleRenewal: (folderId: string): Promise<void> =>
@@ -67,8 +73,8 @@ describe("google-drive watch renewal", () => {
   it("schedules the renewal as a keyed singleton task (not a bare runTask)", async () => {
     await drive.scheduleRenewal("folder1");
 
-    expect(drive.scheduled).toHaveLength(1);
-    expect(drive.scheduled[0].key).toBe("watch-renewal:folder1");
+    expect(drive.scheduledRecurring).toHaveLength(1);
+    expect(drive.scheduledRecurring[0].key).toBe("watch-renewal:folder1");
     // Must NOT use the un-keyed runTask, which is what leaked parallel chains.
     expect(drive.ranUnkeyed).toHaveLength(0);
   });
@@ -77,7 +83,7 @@ describe("google-drive watch renewal", () => {
     await drive.scheduleRenewal("folder1");
     await drive.scheduleRenewal("folder1");
 
-    expect(drive.scheduled.map((s) => s.key)).toEqual([
+    expect(drive.scheduledRecurring.map((s) => s.key)).toEqual([
       "watch-renewal:folder1",
       "watch-renewal:folder1",
     ]);

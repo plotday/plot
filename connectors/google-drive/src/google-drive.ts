@@ -692,7 +692,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     // re-dispatch, re-init) orphans the previous Google watch, which keeps
     // delivering change webhooks until it expires on Google's side. No-op when
     // nothing is stored (first-time setup). The pending renewal task is
-    // replaced by scheduleWatchRenewal's keyed scheduleTask below.
+    // replaced by scheduleWatchRenewal's keyed scheduleRecurring below.
     await this.stopDriveWatch(folderId);
 
     const webhookUrl = await this.tools.network.createWebhook(
