@@ -105,55 +105,14 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.0.3)
 
-  connectors/gmail:
+  connectors/google:
     dependencies:
-      '@plotday/connector-google-contacts':
-        specifier: workspace:^
-        version: link:../google-contacts
       '@plotday/email-classifier':
         specifier: workspace:^
         version: link:../../libs/email-classifier
-      '@plotday/twister':
+      '@plotday/google-contacts':
         specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@25.0.3)
-
-  connectors/google:
-    dependencies:
-      '@plotday/connector-gmail':
-        specifier: workspace:^
-        version: link:../gmail
-      '@plotday/connector-google-calendar':
-        specifier: workspace:^
-        version: link:../google-calendar
-      '@plotday/connector-google-contacts':
-        specifier: workspace:^
-        version: link:../google-contacts
-      '@plotday/connector-google-tasks':
-        specifier: workspace:^
-        version: link:../google-tasks
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@25.0.3)
-
-  connectors/google-calendar:
-    dependencies:
-      '@plotday/connector-google-contacts':
-        specifier: workspace:^
-        version: link:../google-contacts
+        version: link:../../libs/google-contacts
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -167,19 +126,9 @@ importers:
 
   connectors/google-chat:
     dependencies:
-      '@plotday/connector-google-contacts':
+      '@plotday/google-contacts':
         specifier: workspace:^
-        version: link:../google-contacts
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  connectors/google-contacts:
-    dependencies:
+        version: link:../../libs/google-contacts
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -190,22 +139,9 @@ importers:
 
   connectors/google-drive:
     dependencies:
-      '@plotday/connector-google-contacts':
+      '@plotday/google-contacts':
         specifier: workspace:^
-        version: link:../google-contacts
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@25.0.3)
-
-  connectors/google-tasks:
-    dependencies:
+        version: link:../../libs/google-contacts
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -279,38 +215,6 @@ importers:
         version: 2.1.9(@types/node@25.0.3)
 
   connectors/outlook:
-    dependencies:
-      '@plotday/connector-outlook-calendar':
-        specifier: workspace:^
-        version: link:../outlook-calendar
-      '@plotday/connector-outlook-mail':
-        specifier: workspace:^
-        version: link:../outlook-mail
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@25.0.3)
-
-  connectors/outlook-calendar:
-    dependencies:
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@25.0.3)
-
-  connectors/outlook-mail:
     dependencies:
       '@plotday/email-classifier':
         specifier: workspace:^
@@ -393,6 +297,16 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.0.3)
+
+  libs/google-contacts:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   scripts:
     devDependencies:
