@@ -17,8 +17,10 @@
  * emphasis markers, code fences, and image syntax are dropped.
  *
  * Mentions `[Name](#@UUID)` render as `@Name`. Links `[text](url)`
- * collapse to their label, falling back to the URL when the label is
- * empty or identical to the URL.
+ * render as `text (url)` so the destination survives in plain text
+ * (recipients of e.g. a LinkedIn DM can't click a bare label),
+ * collapsing to just the URL when the label is empty or identical to
+ * the URL.
  *
  * Use this when writing a Plot note to an external API that stores
  * content verbatim as plain text. Pair the result with a matching
@@ -37,7 +39,7 @@ export function markdownToPlainText(markdown: string): string {
   text = text.replace(/\[([^\]]*)\]\(<?([^>)]+)>?\)/g, (_, label, url) => {
     if (!label) return url;
     if (label === url) return url;
-    return label;
+    return `${label} (${url})`;
   });
 
   text = text.replace(/^\s{0,3}#{1,6}\s+/gm, "");
