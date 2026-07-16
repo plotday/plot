@@ -15,13 +15,25 @@ import { Network } from "@plotday/twister/tools/network";
 import { Store } from "@plotday/twister/tools/store";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
-import { GranolaAPI, type GranolaNote } from "./granola-api";
+import { GranolaAPI, GranolaApiError, type GranolaNote } from "./granola-api";
 
 type SyncState = {
   cursor: string | null;
   initialSync: boolean;
   syncHistoryMin?: string;
 };
+
+/**
+ * Permanent credential failure: the API key was revoked/invalid (401) or the
+ * workspace subscription is inactive (403, e.g. code SUBSCRIPTION_INACTIVE).
+ * Retrying loops the same error until the user fixes their account, so sync
+ * flags the connection for re-auth instead.
+ */
+function isGranolaAuthError(err: unknown): boolean {
+  return (
+    err instanceof GranolaApiError && (err.status === 401 || err.status === 403)
+  );
+}
 
 /**
  * Granola connector — syncs AI meeting notes from Granola and attaches them
@@ -172,6 +184,28 @@ export class Granola extends Connector<Granola> {
    * Granola's 300 req/min rate limit and the worker's ~1000 req/exec budget.
    */
   async syncBatch(channelId: string, initialSync?: boolean): Promise<void> {
+    try {
+      await this.syncBatchInner(channelId, initialSync);
+    } catch (err) {
+      if (isGranolaAuthError(err)) {
+        // Expected, user-actionable failure — surface the app's Reconnect
+        // prompt and stop the batch chain. recovery_pending on the flagged
+        // connection re-dispatches the sync after the user reconnects.
+        console.warn(
+          `[Granola] auth error during sync for ${channelId}; flagging needs-reauth:`,
+          err
+        );
+        await this.tools.integrations.markNeedsReauth(channelId);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async syncBatchInner(
+    channelId: string,
+    initialSync?: boolean
+  ): Promise<void> {
     const state = await this.get<SyncState>(`sync_state_${channelId}`);
     if (!state) return;
     const isInitial = initialSync ?? state.initialSync;
@@ -189,12 +223,10 @@ export class Granola extends Connector<Granola> {
         const note = await api.getNote(summary.id);
         notes.push(this.transformNote(note, channelId, isInitial));
       } catch (err) {
+        if (isGranolaAuthError(err)) throw err;
         // Granola's get-note can fail if the note's AI summary is still
         // pending. Skip and pick it up on the next sync.
-        console.error(
-          `[Granola] failed to ingest note ${summary.id}:`,
-          err
-        );
+        console.error(`[Granola] failed to ingest note ${summary.id}:`, err);
       }
     }
     if (notes.length > 0) {

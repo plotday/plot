@@ -46,6 +46,17 @@ export type ListNotesParams = {
   createdBefore?: string;
 };
 
+/** Error from the Granola API carrying the HTTP status for classification. */
+export class GranolaApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number
+  ) {
+    super(message);
+    this.name = "GranolaApiError";
+  }
+}
+
 export class GranolaAPI {
   private baseUrl = "https://public-api.granola.ai/v1";
 
@@ -63,8 +74,9 @@ export class GranolaAPI {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(
-        `Granola API ${response.status} ${response.statusText} on ${path}${body ? ` — ${body}` : ""}`
+      throw new GranolaApiError(
+        `Granola API ${response.status} ${response.statusText} on ${path}${body ? ` — ${body}` : ""}`,
+        response.status
       );
     }
 
