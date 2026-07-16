@@ -535,3 +535,150 @@ describe("processEmailThreadsFn — calendar-thread bundling", () => {
     expect(store.get("cancel-email:uid-1")).toBeTruthy();
   });
 });
+
+/** A single-message GmailThread carrying `labels`, with a plain-text body. */
+function labelledThread(threadId: string, labels: string[]): GmailThread {
+  const message: GmailMessage = {
+    id: `${threadId}-msg-1`,
+    threadId,
+    labelIds: labels,
+    snippet: "Probably easier to show this with a real example.",
+    historyId: "1",
+    internalDate: "1700000000000",
+    sizeEstimate: 100,
+    payload: part("text/plain", {
+      data: "Probably easier to show this with a real example.",
+      headers: [
+        ["From", "Alice <alice@example.com>"],
+        ["To", "me@example.com"],
+        ["Subject", "New role?"],
+        ["Date", "Wed, 1 Jul 2026 10:00:00 -0700"],
+      ],
+    }),
+  };
+  return { id: threadId, historyId: "1", messages: [message] };
+}
+
+describe("processEmailThreadsFn — archived/trashed in Gmail", () => {
+  const setThreadToDoOf = (host: GmailSyncHost) =>
+    host.tools.integrations.setThreadToDo as ReturnType<typeof vi.fn>;
+  const saveLinkOf = (host: GmailSyncHost) =>
+    host.tools.integrations.saveLink as ReturnType<typeof vi.fn>;
+
+  it("marks a previously-synced thread read once it leaves every enabled channel", async () => {
+    const { host, store } = makeHost();
+    store.set("auth_actor_id", "actor-1");
+    // We synced this thread while it was still in the inbox.
+    store.set("unread:archived-thread", true);
+
+    // Archived in Gmail: INBOX is gone. IMPORTANT survives but isn't enabled.
+    await processEmailThreadsFn(
+      host,
+      [labelledThread("archived-thread", ["IMPORTANT", "UNREAD"])],
+      false
+    );
+
+    expect(setThreadToDoOf(host)).toHaveBeenCalledWith(
+      "https://mail.google.com/mail/u/0/#inbox/archived-thread",
+      "actor-1",
+      false
+    );
+  });
+
+  it("does not archive the thread in Plot when it is archived in Gmail", async () => {
+    const { host, store } = makeHost();
+    store.set("auth_actor_id", "actor-1");
+    store.set("unread:archived-thread", true);
+
+    await processEmailThreadsFn(
+      host,
+      [labelledThread("archived-thread", ["IMPORTANT"])],
+      false
+    );
+
+    // Archiving in Gmail must never archive in Plot — the thread stays, it
+    // just stops being unread.
+    expect(saveLinkOf(host)).not.toHaveBeenCalled();
+  });
+
+  it("marks a trashed thread read too", async () => {
+    const { host, store } = makeHost();
+    store.set("auth_actor_id", "actor-1");
+    store.set("unread:trashed-thread", true);
+
+    await processEmailThreadsFn(
+      host,
+      [labelledThread("trashed-thread", ["TRASH", "UNREAD"])],
+      false
+    );
+
+    expect(setThreadToDoOf(host)).toHaveBeenCalledWith(
+      "https://mail.google.com/mail/u/0/#inbox/trashed-thread",
+      "actor-1",
+      false
+    );
+  });
+
+  it("caches the thread as read so a later re-unread in Gmail still syncs", async () => {
+    const { host, store } = makeHost();
+    store.set("auth_actor_id", "actor-1");
+    store.set("unread:archived-thread", true);
+
+    await processEmailThreadsFn(
+      host,
+      [labelledThread("archived-thread", ["IMPORTANT", "UNREAD"])],
+      false
+    );
+
+    expect(store.get("unread:archived-thread")).toBe(false);
+  });
+
+  it("ignores a thread it has never synced", async () => {
+    const { host, store } = makeHost();
+    store.set("auth_actor_id", "actor-1");
+    // No `unread:*` key: mailbox-wide history surfaces threads from labels the
+    // user never chose to sync. Those were never ours to mark read.
+
+    await processEmailThreadsFn(
+      host,
+      [labelledThread("foreign-thread", ["IMPORTANT"])],
+      false
+    );
+
+    expect(setThreadToDoOf(host)).not.toHaveBeenCalled();
+    expect(store.get("unread:foreign-thread")).toBeUndefined();
+  });
+
+  it("leaves a thread still in an enabled channel alone", async () => {
+    const { host, store } = makeHost();
+    store.set("auth_actor_id", "actor-1");
+    store.set("unread:inbox-thread", true);
+
+    await processEmailThreadsFn(
+      host,
+      [labelledThread("inbox-thread", ["INBOX", "UNREAD"])],
+      false
+    );
+
+    // Still in the inbox — normal sync path, no read stamp.
+    expect(setThreadToDoOf(host)).not.toHaveBeenCalled();
+    expect(saveLinkOf(host)).toHaveBeenCalled();
+  });
+
+  it("does not mark threads read during an initial backfill", async () => {
+    const { host, store } = makeHost();
+    store.set("auth_actor_id", "actor-1");
+    store.set("unread:archived-thread", true);
+
+    // forceChannelId is set during per-channel backfill; a thread that no
+    // longer carries the label must not be read-stamped by a backfill pass.
+    await processEmailThreadsFn(
+      host,
+      [labelledThread("archived-thread", ["IMPORTANT"])],
+      true,
+      "INBOX"
+    );
+
+    expect(setThreadToDoOf(host)).not.toHaveBeenCalled();
+  });
+});
