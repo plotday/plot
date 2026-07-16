@@ -523,13 +523,17 @@ export function transformTask(
     status: task.status === "completed" ? "done" : "open",
     notes,
     preview: task.notes?.slice(0, 200) || null,
-    ...(task.due
+    // Google Tasks are the user's personal to-dos, never calendar events:
+    // surface an open task as the connection owner's to-do (per-user
+    // thread_state), with the due date as its to-do date when present. A
+    // link `schedules` entry is wrong here — it creates a *shared* schedule
+    // with calendar-event semantics, which renders the task in the agenda.
+    // Completed tasks need nothing: the "done" status already clears the
+    // assignee's to-do state via the platform's done-status handling.
+    ...(task.status !== "completed"
       ? {
-          schedules: [
-            {
-              start: task.due.split("T")[0],
-            },
-          ],
+          todo: true,
+          ...(task.due ? { todoDate: task.due.split("T")[0] } : {}),
         }
       : {}),
     ...(initialSync ? { unread: false } : {}),
