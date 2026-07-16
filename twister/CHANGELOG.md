@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.79.0
+
+### Added
+
+- `Connector.downloadAttachment` now receives an optional second parameter, `linkMeta` — the `meta` of the link owning the fileRef's note (the same connector-authored metadata surfaced as `thread.meta` in write-back callbacks). Connectors whose fileRef values don't encode everything needed to fetch the bytes (e.g. chat connectors whose provider requires the chat id as well as the message id) can read it from `linkMeta` instead of re-deriving it. Existing connectors that only use `ref` are unaffected. ([#305](https://github.com/plotday/plot/pull/305) [`fd9a125`](https://github.com/plotday/plot/commit/fd9a12511ac8500ee66adcda4c016de9f35b07d5))
+
+### Changed
+
+- `markdownToPlainText` now renders labeled links as `label (url)` instead of collapsing them to the label alone, so the destination URL survives when a note is written back to a plain-text target (chat messages, comments, cells). Links whose label is empty or identical to the URL still collapse to the bare URL. ([#302](https://github.com/plotday/plot/pull/302) [`5dd047e`](https://github.com/plotday/plot/commit/5dd047e2056ca6bc2b0efe2a8391c5dec88e878e))
+
 ## 0.78.0
 
 ### Added
