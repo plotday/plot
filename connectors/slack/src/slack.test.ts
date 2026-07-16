@@ -4,6 +4,8 @@ import { Slack } from "./slack";
 import {
   extractSlackMessageReactions,
   SlackApi,
+  SlackPermanentError,
+  SlackRateLimitedError,
   type SlackMessage,
 } from "./slack-api";
 
@@ -996,6 +998,224 @@ describe("onSlackWebhook — DM/MPIM message routing", () => {
     expect(syncBatch).toHaveBeenCalledWith(1, "incremental", "D1", false);
 
     consoleError.mockRestore();
+  });
+});
+
+describe("onSlackWebhook — reaction events", () => {
+  const req = (event: unknown) => ({ body: { event } }) as never;
+
+  function makeReactionSlack(initial: Record<string, unknown>) {
+    const store = makeStore(initial);
+    const tools = {
+      store,
+      integrations: { get: vi.fn() },
+      network: {},
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    const scheduleDrain = vi.fn(async () => {});
+    vi.spyOn(
+      slack as unknown as { scheduleDrain: (...a: unknown[]) => Promise<void> },
+      "scheduleDrain"
+    ).mockImplementation(scheduleDrain);
+    return { slack, scheduleDrain };
+  }
+
+  it("routes reaction_added through a coalesced per-channel drain", async () => {
+    // conversations.history/replies are 1 rpm for non-Marketplace apps, so
+    // refreshing inline in the webhook handler meant reaction bursts were
+    // rate limited and silently dropped (Slack got a 200 and never
+    // redelivers). The event must instead be recorded in a durable drain.
+    const { slack, scheduleDrain } = makeReactionSlack({
+      sync_enabled_C123: true,
+    });
+
+    await slack.onSlackWebhook(
+      req({
+        type: "reaction_added",
+        item: { type: "message", channel: "C123", ts: "1784217892.588139" },
+      }),
+      "C123"
+    );
+
+    expect(scheduleDrain).toHaveBeenCalledWith(
+      "reaction-refresh:C123",
+      expect.anything(),
+      expect.objectContaining({
+        ids: ["1784217892.588139"],
+        handlerArgs: ["C123"],
+      })
+    );
+  });
+
+  it("ignores reactions in channels not enabled for sync", async () => {
+    const { slack, scheduleDrain } = makeReactionSlack({});
+
+    await slack.onSlackWebhook(
+      req({
+        type: "reaction_added",
+        item: { type: "message", channel: "C123", ts: "1.000" },
+      }),
+      "C123"
+    );
+
+    expect(scheduleDrain).not.toHaveBeenCalled();
+  });
+});
+
+describe("drainReactionRefresh", () => {
+  function makeDrainSlack(initial: Record<string, unknown> = { sync_enabled_C123: true }) {
+    const store = makeStore(initial);
+    const markNeedsReauth = vi.fn(async () => {});
+    const tools = {
+      store,
+      integrations: { get: vi.fn(), markNeedsReauth },
+      network: {},
+      files: {},
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as any;
+    const api = {
+      getConversationHistory: vi.fn(async (_c: string, _cur?: string, oldest?: string) => ({
+        messages: [{ ts: oldest }] as SlackMessage[],
+        hasMore: false,
+      })),
+    };
+    vi.spyOn(slack, "getApi").mockResolvedValue(api);
+    const refresh = vi
+      .spyOn(slack, "refreshSlackThread")
+      .mockResolvedValue(undefined);
+    return { slack, api, refresh, markNeedsReauth };
+  }
+
+  it("resolves each reacted message's parent and refreshes it once per parent", async () => {
+    const { slack, api, refresh } = makeDrainSlack();
+    api.getConversationHistory.mockImplementation(async (_c, _cur, oldest) => ({
+      messages: [{ ts: oldest, thread_ts: "100.000" }] as SlackMessage[],
+      hasMore: false,
+    }));
+
+    const result = await slack.drainReactionRefresh(
+      ["101.000", "102.000"],
+      "C123"
+    );
+
+    expect(result).toBeUndefined();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledWith(expect.anything(), "C123", "100.000");
+  });
+
+  it("returns rate-limited ids for retry instead of dropping them", async () => {
+    const { slack, api, refresh } = makeDrainSlack();
+    api.getConversationHistory.mockRejectedValue(
+      new SlackRateLimitedError("conversations.history", 60_000)
+    );
+
+    const result = await slack.drainReactionRefresh(
+      ["101.000", "102.000"],
+      "C123"
+    );
+
+    expect(result).toEqual({ retry: ["101.000", "102.000"] });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("retries only the remaining ids when rate limited mid-pass", async () => {
+    const { slack, refresh } = makeDrainSlack();
+    refresh
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(
+        new SlackRateLimitedError("conversations.replies", 60_000)
+      );
+
+    const result = await slack.drainReactionRefresh(
+      ["101.000", "102.000"],
+      "C123"
+    );
+
+    expect(result).toEqual({ retry: ["102.000"] });
+  });
+
+  it("skips permanently failed ids and continues the pass", async () => {
+    const { slack, refresh } = makeDrainSlack();
+    refresh
+      .mockRejectedValueOnce(
+        new SlackPermanentError("conversations.replies", "thread_not_found")
+      )
+      .mockResolvedValueOnce(undefined);
+
+    const result = await slack.drainReactionRefresh(
+      ["101.000", "102.000"],
+      "C123"
+    );
+
+    expect(result).toBeUndefined();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("no-ops when the channel is no longer enabled", async () => {
+    const { slack, refresh } = makeDrainSlack({});
+
+    const result = await slack.drainReactionRefresh(["101.000"], "C123");
+
+    expect(result).toBeUndefined();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleStarEvent — rate limited", () => {
+  it("schedules a keyed retry instead of dropping the star", async () => {
+    const store = makeStore({ sync_enabled_C123: true, auth_actor_id: "actor-1" });
+    const scheduleTask = vi.fn(async () => "cancel-token");
+    const tools = {
+      store,
+      callbacks: { create: vi.fn(async () => ({ token: "cb" }) as never) },
+      tasks: { scheduleTask, runTask: vi.fn(async () => {}) },
+      integrations: { get: vi.fn() },
+      network: {},
+      files: {},
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as any;
+    vi.spyOn(slack, "getApi").mockResolvedValue({});
+    vi.spyOn(slack, "saveStarredThread").mockRejectedValue(
+      new SlackRateLimitedError("conversations.replies", 60_000)
+    );
+
+    await slack.onSlackWebhook(
+      {
+        body: {
+          event: {
+            type: "star_added",
+            item: { type: "message", channel: "C123", message: { ts: "111.000" } },
+          },
+        },
+      } as never,
+      "C123"
+    );
+
+    expect(scheduleTask).toHaveBeenCalledTimes(1);
+    const [key, , options] = scheduleTask.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      { runAt: Date },
+    ];
+    expect(key).toBe("star-apply:C123:111.000");
+    expect(options.runAt.getTime()).toBeGreaterThan(Date.now());
+    // Starred state must stay unrecorded until the retry lands, so the
+    // rescheduled apply isn't skipped as an echo.
+    expect(store.map.has("starred:C123:111.000")).toBe(false);
   });
 });
 

@@ -98,6 +98,23 @@ import { slackFacets } from "./slack-facets";
 const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
 
 /**
+ * Coalescing delay for reaction-triggered thread refreshes. A burst of
+ * reaction events (several people reacting to the same thread) collapses
+ * into one drain pass.
+ */
+const REACTION_REFRESH_COALESCE_MS = 10_000;
+
+/**
+ * Per-id retry cap for the reaction-refresh drain. Slack limits
+ * `conversations.history`/`conversations.replies` to 1 rpm for
+ * non-Marketplace apps with Retry-After typically ~60s, while retry passes
+ * are spaced only {@link REACTION_REFRESH_COALESCE_MS} apart — so an id must
+ * survive many rate-limited passes before the limiter clears. 20 attempts
+ * ≈ 3+ minutes of sustained rate limiting before an id is dropped.
+ */
+const REACTION_REFRESH_MAX_ATTEMPTS = 20;
+
+/**
  * Extra-arg value used to register ONE webhook callback per Slack
  * connection that covers ALL of the user's DM/MPIM conversations, instead of
  * one callback per conversation (which would require enumerating and
@@ -429,6 +446,10 @@ export class Slack extends Connector<Slack> {
     // pending or it already ran.
     await this.cancelScheduledTask(`members-sync:${channelId}`);
     await this.cancelScheduledTask(`custom-emoji-sync:${channelId}`);
+
+    // Drop pending event-driven drains (and their backlogs) for this channel.
+    await this.cancelDrain(`incremental-sync:${channelId}`);
+    await this.cancelDrain(`reaction-refresh:${channelId}`);
 
     // Sweep per-thread state for this channel so a re-enable starts clean.
     const starredKeys = await this.tools.store.list(`starred:${channelId}:`);
@@ -763,10 +784,13 @@ export class Slack extends Connector<Slack> {
   /**
    * Re-sync a single Slack thread on reaction_added / reaction_removed.
    *
-   * The reaction event payload only carries the reacted message's ts.
-   * Resolve its parent thread_ts via `conversations.history` so
-   * `getThread` walks the right tree; fall back to the message ts as
-   * thread_ts if the lookup fails (covers top-level messages).
+   * The refresh needs `conversations.history` + `conversations.replies`,
+   * both limited to 1 rpm for non-Marketplace apps — far too slow to run
+   * inline in the webhook handler (Slack gets a 200 either way, so a
+   * rate-limited event would be lost forever, never redelivered). Record
+   * the reacted message ts in a per-channel drain instead: a burst of
+   * reactions on the same message coalesces into one id, and rate-limited
+   * ids are retried on later passes ({@link drainReactionRefresh}).
    */
   private async handleReactionEvent(event: any): Promise<void> {
     const item = event.item;
@@ -781,40 +805,94 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
+    await this.scheduleDrain(
+      `reaction-refresh:${channelId}`,
+      this.drainReactionRefresh,
+      {
+        ids: [messageTs],
+        handlerArgs: [channelId],
+        delayMs: REACTION_REFRESH_COALESCE_MS,
+        maxAttempts: REACTION_REFRESH_MAX_ATTEMPTS,
+      }
+    );
+  }
+
+  /**
+   * Drain handler: refresh the thread of each reacted message.
+   *
+   * The reaction event payload only carries the reacted message's ts.
+   * Resolve its parent thread_ts via `conversations.history` so
+   * `getThread` walks the right tree; fall back to the message ts as
+   * thread_ts if the lookup fails (covers top-level messages).
+   *
+   * Returns rate-limited ids via `{ retry }` so the platform re-runs them
+   * on a later pass instead of dropping the sync event.
+   */
+  async drainReactionRefresh(
+    ids: string[],
+    channelId: string
+  ): Promise<{ retry?: string[] } | void> {
+    if (ids.length === 0) return;
+    // The channel may have been disabled while ids sat in the backlog.
+    if (!(await this.get<boolean>(`sync_enabled_${channelId}`))) return;
+
     let api: SlackApi;
     try {
       api = await this.getApi(channelId);
-    } catch {
+    } catch (error) {
+      console.warn("drainReactionRefresh: Slack token unavailable", error);
       return;
     }
 
-    let parentTs = messageTs;
-    try {
-      const { messages } = await api.getConversationHistory(
-        channelId,
-        undefined,
-        messageTs,
-        messageTs
-      );
-      const m = messages.find((x) => x.ts === messageTs);
-      if (m?.thread_ts) parentTs = m.thread_ts;
-    } catch {
-      // Continue with messageTs — top-level messages match this anyway.
-    }
-
-    try {
-      await this.refreshSlackThread(api, channelId, parentTs);
-    } catch (error) {
-      if (error instanceof SlackRateLimitedError) {
+    // Several reacted messages often share one parent thread — refresh each
+    // parent at most once per pass.
+    const refreshedParents = new Set<string>();
+    for (let i = 0; i < ids.length; i++) {
+      const messageTs = ids[i]!;
+      try {
+        let parentTs = messageTs;
+        try {
+          const { messages } = await api.getConversationHistory(
+            channelId,
+            undefined,
+            messageTs,
+            messageTs
+          );
+          const m = messages.find((x) => x.ts === messageTs);
+          if (m?.thread_ts) parentTs = m.thread_ts;
+        } catch (error) {
+          if (error instanceof SlackRateLimitedError) throw error;
+          // Continue with messageTs — top-level messages match this anyway.
+        }
+        if (refreshedParents.has(parentTs)) continue;
+        await this.refreshSlackThread(api, channelId, parentTs);
+        refreshedParents.add(parentTs);
+      } catch (error) {
+        if (error instanceof SlackRateLimitedError) {
+          // Every remaining id needs the same rate-limited methods, so stop
+          // the pass and retry them all once the limiter clears.
+          console.log(
+            `drainReactionRefresh: rate limited on ${error.method}; retrying ${
+              ids.length - i
+            } id(s) for ${channelId} later`
+          );
+          return { retry: ids.slice(i) };
+        }
+        if (error instanceof SlackPermanentError) {
+          if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+            await this.tools.integrations.markNeedsReauth(channelId);
+            return { retry: ids.slice(i) };
+          }
+          console.warn(
+            `drainReactionRefresh: skipping ${channelId}/${messageTs}: ${error.method} → ${error.slackError}`
+          );
+          continue;
+        }
         console.warn(
-          `handleReactionEvent: rate limited on ${error.method}; dropping ${channelId}/${parentTs}`
+          `drainReactionRefresh failed for ${channelId}/${messageTs}`,
+          error
         );
-        return;
       }
-      console.warn(
-        `handleReactionEvent failed for ${channelId}/${parentTs}`,
-        error
-      );
     }
   }
 
@@ -916,14 +994,22 @@ export class Slack extends Connector<Slack> {
     ));
     if (wasStarred === isStarred) return; // our own echo
 
-    const actorId = await this.get<ActorId>("auth_actor_id");
-    if (!actorId) {
-      console.error("No auth_actor_id; cannot apply star event");
-      return;
-    }
+    await this.applyStarEvent(channelId, parentTs, isStarred);
+  }
 
-    const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${parentTs}`;
-
+  /**
+   * Apply a star/unstar change to Plot. On rate limit (Slack's
+   * `conversations.*` methods are 1 rpm for non-Marketplace apps), the apply
+   * is rescheduled under a per-thread task key at Slack's Retry-After —
+   * Slack never redelivers an acked webhook, so dropping the event here
+   * would lose the star. The keyed task means duplicate events coalesce and
+   * the latest desired state wins.
+   */
+  async applyStarEvent(
+    channelId: string,
+    parentTs: string,
+    isStarred: boolean
+  ): Promise<void> {
     try {
       if (isStarred) {
         // Since we no longer backfill history, the starred thread may not
@@ -933,6 +1019,12 @@ export class Slack extends Connector<Slack> {
         const api = await this.getApi(channelId);
         await this.saveStarredThread(api, channelId, parentTs);
       } else {
+        const actorId = await this.get<ActorId>("auth_actor_id");
+        if (!actorId) {
+          console.error("No auth_actor_id; cannot apply star event");
+          return;
+        }
+        const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${parentTs}`;
         await this.tools.integrations.setThreadToDo(
           canonicalUrl,
           actorId,
@@ -941,15 +1033,25 @@ export class Slack extends Connector<Slack> {
       }
     } catch (error) {
       if (error instanceof SlackRateLimitedError) {
-        // Drop the event rather than queue a retry: Slack will redeliver the
-        // webhook, and we have no per-star task to reschedule.
-        console.warn(
-          `handleStarEvent: rate limited on ${error.method}; dropping event for ${channelId}/${parentTs}`
+        const runAt = new Date(Date.now() + error.retryAfterMs);
+        const retry = await this.callback(
+          this.applyStarEvent,
+          channelId,
+          parentTs,
+          isStarred
         );
+        console.log(
+          `applyStarEvent: rate limited on ${error.method}; rescheduling ${channelId}/${parentTs} at ${runAt.toISOString()}`
+        );
+        await this.scheduleTask(`star-apply:${channelId}:${parentTs}`, retry, {
+          runAt,
+        });
+        // Leave the starred state unrecorded so the retry isn't skipped as
+        // an echo and duplicate events keep coalescing onto the keyed task.
         return;
       }
       console.warn(
-        `handleStarEvent failed for ${channelId}/${parentTs}`,
+        `applyStarEvent failed for ${channelId}/${parentTs}`,
         error
       );
     }
