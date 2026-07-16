@@ -1,4 +1,4 @@
-import type { Product } from "./products/product";
+import type { Product } from "./products";
 
 /**
  * Per-product enablement, surfaced to the client (frozen contract §4.2) and

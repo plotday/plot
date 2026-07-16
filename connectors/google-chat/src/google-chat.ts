@@ -1,4 +1,4 @@
-import GoogleContacts from "@plotday/connector-google-contacts";
+import GoogleContacts from "@plotday/google-contacts";
 import {
   Connector,
   type CreateLinkDraft,

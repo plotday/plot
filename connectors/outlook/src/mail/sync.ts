@@ -16,7 +16,7 @@
  * function genuinely needs to schedule work or create a callback, it does so
  * through `host.scheduler.*` — a thin set of bound references back to the
  * concrete connector's spied instance methods — or it returns a descriptor and
- * lets the caller own the scheduling (mirrors @plotday/connector-gmail).
+ * lets the caller own the scheduling (mirrors the Google connector's src/mail).
  */
 
 import {

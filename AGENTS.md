@@ -41,9 +41,9 @@ All types in `twister/src/` with full JSDoc:
 - **Sync Strategies**: `twister/docs/SYNC_STRATEGIES.md`
 - **Plot-initiated item creation (`onCreateLink`)**:
   `twister/docs/BUILDING_CONNECTORS.md#creating-items-from-plot-oncreatelink`
-- **Working Connector Examples**: `connectors/linear/`, `connectors/google/` (deployed composite
-  Gmail + Calendar connector — see `connectors/AGENTS.md` "Examples" for its non-deployed library
-  dependencies), `connectors/slack/`, `connectors/jira/`
+- **Working Connector Examples**: `connectors/linear/`, `connectors/google/` (composite Gmail +
+  Calendar connector — see `connectors/AGENTS.md` "Examples" for how its per-product modules are
+  laid out), `connectors/slack/`, `connectors/jira/`
 
 ## Changesets: Only for `twister/`
 

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { AuthToken } from "@plotday/twister/tools/integrations";
-import { CALENDAR_EVENTS_SCOPE } from "@plotday/connector-google-calendar";
-import { calendarProduct } from "../src/products/calendar";
-import { PRODUCTS_BY_KEY } from "../src/products/product";
+import { CALENDAR_EVENTS_SCOPE } from "../src/calendar/channels";
+import { calendarProduct } from "../src/products";
+import { PRODUCTS_BY_KEY } from "../src/products";
 import { composeChannels } from "../src/compose";
 
 function makeToken(scopes: string[]): AuthToken {

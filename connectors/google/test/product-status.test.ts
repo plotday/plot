@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LinkTypeConfig } from "@plotday/twister/tools/integrations";
-import type { Product } from "../src/products/product";
+import type { Product } from "../src/products";
 import { computeProductStatus } from "../src/product-status";
 
 // Minimal fake products: a channel-bearing one ("mail") and a channelless one

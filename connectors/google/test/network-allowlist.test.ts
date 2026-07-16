@@ -3,9 +3,9 @@ import type { ToolBuilder } from "@plotday/twister";
 import { Google } from "../src/google";
 
 /**
- * The composite connector reuses the mail send path from
- * `@plotday/connector-gmail`, which resolves the account's display name from
- * Google's userinfo endpoint to build a `"Name" <email>` From header. That
+ * The composite connector's mail send path (`src/mail`) resolves the
+ * account's display name from Google's userinfo endpoint to build a
+ * `"Name" <email>` From header. That
  * lookup is a plain `fetch`, so the endpoint must be in this connector's own
  * Network allowlist — the outbound proxy 403s anything that isn't, and the
  * send path then silently falls back to a bare address.

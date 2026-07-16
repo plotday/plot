@@ -1,15 +1,8 @@
 {
-  "name": "@plotday/connector-gmail",
-  "plotTwistId": "7176b853-4495-4bba-82ee-645ae5d398d7",
-  "displayName": "Gmail",
-  "description": "Send and reply to email, tracking threads for follow-up and snoozing what can wait.",
-  "category": "messaging",
-  "logoUrl": "https://api.iconify.design/logos/google-gmail.svg",
-  "publisher": "Plot",
-  "publisherUrl": "https://plot.day",
+  "name": "@plotday/google-contacts",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
-  "version": "0.9.1",
+  "version": "0.6.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,24 +17,18 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "deploy": "plot deploy",
-    "lint": "plot lint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "lint": "plot lint"
   },
   "dependencies": {
-    "@plotday/connector-google-contacts": "workspace:^",
-    "@plotday/email-classifier": "workspace:^",
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "vitest": "^2.1.8"
+    "typescript": "^5.9.3"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/plotday/plot.git",
-    "directory": "tools/gmail"
+    "directory": "libs/google-contacts"
   },
   "homepage": "https://plot.day",
   "bugs": {
@@ -51,8 +38,7 @@
     "plot",
     "agent",
     "tool",
-    "gmail",
-    "messaging",
-    "email"
+    "google-contacts",
+    "contacts"
   ]
 }

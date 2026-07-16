@@ -3,16 +3,16 @@ import type { AuthToken } from "@plotday/twister/tools/integrations";
 import {
   GMAIL_MODIFY_SCOPE,
   GMAIL_LINK_TYPES,
-} from "@plotday/connector-gmail";
+} from "../src/mail/channels";
 import {
   TASKS_SCOPE,
   TASKS_LINK_TYPES,
-} from "@plotday/connector-google-tasks";
-import { CONTACTS_SCOPES } from "@plotday/connector-google-contacts";
-import { mailProduct } from "../src/products/mail";
-import { tasksProduct } from "../src/products/tasks";
-import { contactsProduct } from "../src/products/contacts";
-import { PRODUCTS_BY_KEY } from "../src/products/product";
+} from "../src/tasks/channels";
+import { CONTACTS_SCOPES } from "@plotday/google-contacts";
+import { mailProduct } from "../src/products";
+import { tasksProduct } from "../src/products";
+import { contactsProduct } from "../src/products";
+import { PRODUCTS_BY_KEY } from "../src/products";
 import { composeChannels } from "../src/compose";
 
 function makeToken(scopes: string[]): AuthToken {

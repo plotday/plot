@@ -30,8 +30,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@plotday/connector-outlook-mail": "workspace:^",
-    "@plotday/connector-outlook-calendar": "workspace:^",
+    "@plotday/email-classifier": "workspace:^",
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {

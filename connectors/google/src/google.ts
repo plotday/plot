@@ -3,7 +3,7 @@ import GoogleContacts, {
   onChannelEnabledFn as contactsOnChannelEnabledFn,
   onChannelDisabledFn as contactsOnChannelDisabledFn,
   syncBatchFn as contactsSyncBatchFn,
-} from "@plotday/connector-google-contacts";
+} from "@plotday/google-contacts";
 import {
   type CalendarSyncHost,
   clearBuffersFn,
@@ -18,7 +18,7 @@ import {
   updateEventRSVPWithApiFn,
   validateCalendarWebhookFn,
   getApiFn,
-} from "@plotday/connector-google-calendar";
+} from "./calendar/sync";
 import {
   type GmailSyncHost,
   type InitialSyncState,
@@ -44,7 +44,7 @@ import {
   INCREMENTAL_SYNC_TASK_KEY,
   SELF_HEAL_INTERVAL_MS,
   WRITEBACK_RETRY_DELAY_MS,
-} from "@plotday/connector-gmail";
+} from "./mail/sync";
 import {
   type TasksSyncHost,
   POLL_INTERVAL_MS,
@@ -56,7 +56,7 @@ import {
   periodicSyncBatchFn as tasksPeriodicSyncBatchFn,
   onCreateLinkFn as tasksOnCreateLinkFn,
   onLinkUpdatedFn as tasksOnLinkUpdatedFn,
-} from "@plotday/connector-google-tasks";
+} from "./tasks/sync";
 import { Connector } from "@plotday/twister";
 import type {
   Actor,
@@ -81,9 +81,9 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Files } from "@plotday/twister/tools/files";
 
 import { GOOGLE_SCOPES, PRODUCTS } from "./scopes";
-import { composeChannels, resolveProductForChannelId } from "./compose";
+import { composeChannels } from "./compose";
 import { parse } from "./product-channel";
-import { PRODUCTS_BY_KEY } from "./products/product";
+import { PRODUCTS_BY_KEY } from "./products";
 
 /**
  * Combined Google connector: Mail, Calendar, Tasks, and Contacts under a
@@ -183,13 +183,6 @@ export class Google extends Connector<Google> {
       await this.onContactsChannelEnabled(rawId);
       return;
     }
-
-    const product = resolveProductForChannelId(
-      Object.values(PRODUCTS_BY_KEY),
-      channel.id
-    );
-    if (!product) return;
-    await product.onEnable(rawId, context);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -214,13 +207,6 @@ export class Google extends Connector<Google> {
       await contactsOnChannelDisabledFn(this.makeContactsHost(), rawId);
       return;
     }
-
-    const product = resolveProductForChannelId(
-      Object.values(PRODUCTS_BY_KEY),
-      channel.id
-    );
-    if (!product) return;
-    await product.onDisable(rawId);
   }
 
   // ---------------------------------------------------------------------------
@@ -594,8 +580,8 @@ export class Google extends Connector<Google> {
   }
 
   // ===========================================================================
-  // Mail (Gmail) — mirrors @plotday/connector-gmail. All storage keys + locks
-  // are namespaced under "mail:"; scheduling (callback/scheduleRecurring/
+  // Mail (Gmail) — delegates to ./mail. All storage keys + locks are
+  // namespaced under "mail:"; scheduling (callback/scheduleRecurring/
   // cancelScheduledTask) is owned here, like the Calendar section above.
   // ===========================================================================
 
@@ -899,7 +885,7 @@ export class Google extends Connector<Google> {
   }
 
   // ===========================================================================
-  // Tasks (Google Tasks) — mirrors @plotday/connector-google-tasks. Polling
+  // Tasks (Google Tasks) — delegates to ./tasks. Polling
   // only (no webhooks). Storage keys are namespaced under "tasks:"; scheduling
   // is owned here. The poll task key `poll:<listId>` is NOT prefixed (a
   // per-instance task key the extracted onChannelDisabledFn passes raw to
@@ -1006,7 +992,7 @@ export class Google extends Connector<Google> {
   }
 
   // ===========================================================================
-  // Contacts (Google Contacts) — mirrors @plotday/connector-google-contacts.
+  // Contacts (Google Contacts) — delegates to @plotday/google-contacts.
   // A channelless single-channel, read-only contact IMPORT (no webhooks, no
   // recurring poll, no write-backs). Storage keys namespaced under "contacts:".
   // ===========================================================================
