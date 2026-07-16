@@ -189,8 +189,8 @@ export class Granola extends Connector<Granola> {
     } catch (err) {
       if (isGranolaAuthError(err)) {
         // Expected, user-actionable failure — surface the app's Reconnect
-        // prompt and stop the batch chain. recovery_pending on the flagged
-        // connection re-dispatches the sync after the user reconnects.
+        // prompt and stop the batch chain. The platform re-dispatches the
+        // sync after the user reconnects.
         console.warn(
           `[Granola] auth error during sync for ${channelId}; flagging needs-reauth:`,
           err
