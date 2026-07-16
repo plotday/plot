@@ -19,6 +19,7 @@ import {
   syncBatchFn,
   periodicSyncBatchFn,
   onLinkUpdatedFn,
+  transformTask,
   type SyncState,
   type PeriodicSyncState,
   type TasksSyncHost,
@@ -173,5 +174,52 @@ describe("onLinkUpdatedFn — deleted task/list (404)", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
     ).rejects.toThrow(/500/);
+  });
+});
+
+describe("transformTask — to-do mapping (no link schedules)", () => {
+  const baseTask = {
+    id: "task-1",
+    title: "Buy milk",
+    status: "needsAction" as const,
+    updated: "2026-07-01T12:00:00.000Z",
+    position: "0001",
+    selfLink: "https://tasks.googleapis.com/tasks/v1/task-1",
+  };
+
+  it("maps an open task with a due date to todo + todoDate", () => {
+    const link = transformTask(
+      { ...baseTask, due: "2026-07-15T00:00:00.000Z" },
+      LIST_ID,
+      false,
+      [],
+      null
+    );
+    expect(link.todo).toBe(true);
+    expect(link.todoDate).toBe("2026-07-15");
+    // Tasks must never carry link schedules: those are shared,
+    // calendar-event-shaped, and would render the task in the agenda.
+    expect(link.schedules).toBeUndefined();
+  });
+
+  it("maps an open task without a due date to todo (Now bucket)", () => {
+    const link = transformTask(baseTask, LIST_ID, false, [], null);
+    expect(link.todo).toBe(true);
+    expect(link.todoDate).toBeUndefined();
+    expect(link.schedules).toBeUndefined();
+  });
+
+  it("leaves to-do state untouched for completed tasks (done status handles it)", () => {
+    const link = transformTask(
+      { ...baseTask, status: "completed", due: "2026-07-15T00:00:00.000Z" },
+      LIST_ID,
+      false,
+      [],
+      null
+    );
+    expect(link.status).toBe("done");
+    expect(link.todo).toBeUndefined();
+    expect(link.todoDate).toBeUndefined();
+    expect(link.schedules).toBeUndefined();
   });
 });
