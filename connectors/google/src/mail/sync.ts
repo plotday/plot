@@ -379,8 +379,11 @@ export function fnv1aHex(input: string): string {
  *   1. Custom (user-defined) labels — alphabetically.
  *   2. STARRED → IMPORTANT → INBOX → SENT → DRAFT (system labels).
  *
- * Returns null if no enabled channel matches the thread (the thread came in
- * via mailbox-wide history but doesn't belong to any channel the user wants).
+ * Returns null if no enabled channel matches the thread. Note this answers
+ * "does it belong to a channel *now*", and conflates two cases the caller must
+ * separate: a thread that never belonged to one (mailbox-wide history reports
+ * labels the user doesn't sync), and a thread that has just left one (archived
+ * or trashed in Gmail). See {@link markDepartedThreadRead}.
  *
  * Custom labels in Gmail use IDs like `Label_14`. We treat anything not in
  * the system-label list above as "custom", which matches getChannels()'s
@@ -413,6 +416,48 @@ export function pickChannelForThread(
   }
 
   return null;
+}
+
+/**
+ * Mark a thread read in Plot after it has left every enabled channel — the
+ * user archived it, trashed it, or stripped its last synced label in Gmail.
+ *
+ * Deliberately does not archive the Plot thread: clearing an email out of
+ * Gmail says "I'm done reading this", not "delete my Plot copy". Marking it
+ * read is enough to move it out of Active and into Done, since Active holds
+ * to-dos plus unread threads.
+ *
+ * No-ops for threads we have never synced. `unread:<id>` is written for every
+ * thread we save and is never cleared, so its presence is our record that this
+ * thread is one of ours — including for threads synced long before this code
+ * shipped, which a dedicated marker key would have missed.
+ *
+ * Read state is applied via setThreadToDo(todo=false), whose clear path stamps
+ * `read_at` for this connection's owner. It resolves the thread by source URL,
+ * so no channel is needed — which matters here precisely because the thread no
+ * longer belongs to one. The stamp only fires when `read_at` is NULL, so
+ * repeat history events for the same thread are harmless.
+ */
+async function markDepartedThreadRead(
+  host: GmailSyncHost,
+  thread: GmailThread
+): Promise<void> {
+  const synced = await host.get<boolean>(`unread:${thread.id}`);
+  if (synced == null) return; // Never synced — not ours to touch.
+
+  const actorId = await host.get<ActorId>("auth_actor_id");
+  if (!actorId) return;
+
+  await host.tools.integrations.setThreadToDo(
+    `https://mail.google.com/mail/u/0/#inbox/${thread.id}`,
+    actorId,
+    false
+  );
+
+  // Keep the unread cache honest: Plot now considers this read. If the thread
+  // returns to the inbox unread later, saveTransformedThread sees the
+  // false → true flip and syncs it back to unread.
+  await host.set(`unread:${thread.id}`, false);
 }
 
 /**
@@ -1311,7 +1356,23 @@ export async function processEmailThreadsFn(
 
     const chosen =
       forceChannelId ?? pickChannelForThread(thread, enabledChannels);
-    if (!chosen) continue; // Thread doesn't match any enabled channel.
+    if (!chosen) {
+      // No enabled channel matches. Two very different situations land here,
+      // and telling them apart is the whole point:
+      //
+      //  - We have never synced this thread. Mailbox-wide history reports
+      //    every thread in the account, including ones living only in labels
+      //    the user chose not to sync. Not ours — ignore it.
+      //  - We HAVE synced it and it has since left every enabled channel,
+      //    i.e. the user archived or trashed it in Gmail.
+      //
+      // For the latter we deliberately do NOT archive in Plot: the thread
+      // stays put. But an email the user has cleared out of Gmail shouldn't
+      // keep sitting in Active as unread, so mark it read and let it fall
+      // through to Done.
+      await markDepartedThreadRead(host, thread);
+      continue;
+    }
 
     transformed.push({ thread, plot, channelId: chosen });
     for (const c of plot.accessContacts ?? []) {
