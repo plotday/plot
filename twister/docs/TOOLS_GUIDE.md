@@ -1463,7 +1463,7 @@ async onNoteCreated(note: Note) {
 
 `read()` throws `FileNotFoundError` if the file is missing or out of scope.
 
-For **inbound** attachments (files that live in the external system), connectors emit `ActionType.fileRef` actions and implement `Connector.downloadAttachment()` — the bytes are fetched on demand and never stored in Plot.
+For **inbound** attachments (files that live in the external system), connectors emit `ActionType.fileRef` actions and implement `Connector.downloadAttachment()` — the bytes are fetched on demand and never stored in Plot. Alongside the `ref`, the method receives the owning link's `meta` as an optional second argument, so a ref doesn't have to encode context the connector already stored on the link (e.g. a chat id or channel id needed to address the provider's download endpoint).
 
 ---
 

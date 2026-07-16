@@ -648,6 +648,11 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * authenticated API call, like Gmail attachments.get).
    *
    * @param ref Opaque value the connector previously emitted on a fileRef action.
+   * @param linkMeta The `meta` of the link owning the fileRef's note — the same
+   *   connector-authored metadata surfaced as `thread.meta` in write-back
+   *   callbacks (e.g. `chatId`/`channelId` for chat connectors). `null` when
+   *   the note has no link or the link carries no meta. Connectors whose refs
+   *   are self-contained can ignore it.
    * @returns Either `{ redirectUrl }` or `{ body, mimeType, fileName? }`.
    * @throws If the source is unavailable, the connection is broken, or `ref` is invalid.
    *
@@ -655,6 +660,8 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    */
   async downloadAttachment(
     ref: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    linkMeta?: Record<string, unknown> | null,
   ): Promise<
     | { redirectUrl: string }
     | { body: ReadableStream | Uint8Array; mimeType: string; fileName?: string }
