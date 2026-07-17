@@ -816,9 +816,20 @@ export type NewNote = Partial<
         };
 
     /**
-     * The person that created the item, or leave undefined to use the twist as author.
+     * The person who wrote this note in the external system.
+     *
+     * **Connectors MUST set this** to the note's real author (the comment
+     * author, the message sender, the description's creator). Leaving it unset
+     * credits the note to the connector itself, so it surfaces as authored by
+     * the integration's name instead of a person — the most common connector
+     * attribution bug. Prefer `authoredBySelf` for the connection owner's own
+     * messages (see below). Set an explicit `null` only for a genuinely
+     * authorless/system note (it documents the intent and suppresses the
+     * development-time "missing author" warning).
+     *
+     * Twists may leave this unset to author the note as the twist itself.
      */
-    author?: NewActor;
+    author?: NewActor | null;
 
     /**
      * Mark this note as authored by the connection owner (the person whose
@@ -1240,8 +1251,28 @@ export type NewLink = Partial<
      * no heuristic is confident. See `@plotday/twister/facets`.
      */
     facets?: ThreadFacets;
-    /** The person that created the item. By default, it will be the twist itself. */
-    author?: NewActor;
+    /**
+     * The person who created this item in the external system.
+     *
+     * **Connectors MUST set this** to the real external author (the message
+     * sender, the card/issue creator, the document owner, the meeting owner —
+     * whatever your API exposes). If you leave it unset, the item is credited
+     * to the connector itself, so the thread surfaces as authored by the
+     * integration's name ("Trello", "Slack") instead of a person. That is
+     * almost always wrong and is the single most common connector attribution
+     * bug — set the author on the link AND on its primary/description note AND
+     * on every comment/message note (see the `Authorship` section of the
+     * connector guide). Use `Note.authoredBySelf` for the connection owner's
+     * own messages when the provider gives no usable sender id.
+     *
+     * Set an explicit `null` only when the item genuinely has no human author
+     * (e.g. a system-generated record) — that documents the intent and
+     * suppresses the development-time "missing author" warning.
+     *
+     * Twists may leave this unset: an item a twist creates is authored by the
+     * twist, which is the intended default for twist-generated content.
+     */
+    author?: NewActor | null;
     /** The person assigned to the item. */
     assignee?: NewActor | null;
     /**

@@ -699,12 +699,20 @@ export function transformSlackThread(
   // Canonical URL using Slack's app_redirect (works across all workspaces)
   const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
 
+  // Attribute the THREAD to the root message's sender. Without this the link
+  // has no author and the thread falls back to the connector itself.
+  const rootUserId = parentMessage.user || parentMessage.bot_id;
+  const threadAuthor = rootUserId
+    ? slackUserToNewActor(rootUserId, userInfos?.get(rootUserId))
+    : null;
+
   // Create link
   const thread: NewLinkWithNotes = {
     channelId,
     source: canonicalUrl,
     type: "thread",
     title,
+    ...(threadAuthor ? { author: threadAuthor } : {}),
     created: new Date(parseFloat(parentMessage.ts) * 1000),
     meta: {
       channelId: channelId,

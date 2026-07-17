@@ -61,6 +61,12 @@ export type TodoistComment = {
   task_id: string;
   content: string;
   posted_at: string;
+  /**
+   * Collaborator id of the user who posted the comment. Used to attribute the
+   * synced note to its real author rather than to the connector. May be absent
+   * on older payloads.
+   */
+  posted_uid?: string | null;
   attachment?: TodoistCommentAttachment | null;
 };
 

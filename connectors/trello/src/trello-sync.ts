@@ -28,9 +28,16 @@ export function transformCard(
   const created = cardCreatedAt(card.id);
   const hasDesc = (card.desc ?? "").trim().length > 0;
 
+  // The createCard action carries the card's real creator. Older cards (or
+  // cards whose createCard action falls outside the 50-action window) won't
+  // have it — that's an acceptable best-effort fallback (undefined author),
+  // and we never invent a creator from card members (they're assignees).
+  const createAction = (card.actions ?? []).find((a) => a.type === "createCard");
+  const cardAuthor = createAction?.memberCreator ? memberContact(createAction.memberCreator) : undefined;
+
   type CardNote = NonNullable<NewLinkWithNotes["notes"]>[number];
   const notes: CardNote[] = [];
-  notes.push({ key: "description", content: hasDesc ? card.desc : null, created } as CardNote);
+  notes.push({ key: "description", content: hasDesc ? card.desc : null, created, author: cardAuthor } as CardNote);
 
   for (const action of card.actions ?? []) {
     if (action.type !== "commentCard") continue;
@@ -47,6 +54,7 @@ export function transformCard(
       key: `attachment-${att.id}`,
       content: `[${att.name}](${att.url})`,
       created,
+      author: cardAuthor,
     } as CardNote);
   }
 
@@ -62,6 +70,7 @@ export function transformCard(
         key: `checkitem-${item.id}`,
         content: item.name,
         created,
+        author: cardAuthor,
         sectionKey: checklist.id,
         sectionLabel: checklist.name,
         sectionPosition: String(checklist.pos),
@@ -78,6 +87,7 @@ export function transformCard(
     type: "card",
     title: card.name,
     created,
+    author: cardAuthor,
     status: card.idList,
     channelId: boardId,
     sourceUrl: card.url,

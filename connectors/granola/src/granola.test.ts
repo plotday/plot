@@ -44,7 +44,7 @@ function makeGranola(
 const channelId = "meeting-notes";
 
 function noteSummary(id: string) {
-  return { id, object: "note" as const, title: `Note ${id}`, owner: { name: null, email: "a@b.com" }, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" };
+  return { id, object: "note" as const, title: `Note ${id}`, owner: { name: "Meeting Owner", email: "owner@example.com" }, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" };
 }
 
 function fullNote(id: string): GranolaNote {
@@ -163,6 +163,72 @@ describe("syncBatch", () => {
 
     expect(listNotes).not.toHaveBeenCalled();
     expect(channelSyncCompleted).not.toHaveBeenCalled();
+  });
+});
+
+describe("author attribution", () => {
+  it("attributes the summary note and its link to the meeting owner", async () => {
+    const store = makeStore({
+      [`sync_state_${channelId}`]: { cursor: null, initialSync: true },
+    });
+    const saveNotes = vi.fn().mockResolvedValue(undefined);
+    const { granola } = makeGranola({ store, integrations: { saveNotes } });
+    const listNotes = vi
+      .fn()
+      .mockResolvedValue({ data: [noteSummary("n1")], cursor: null, hasMore: false });
+    const getNote = vi.fn().mockResolvedValue(fullNote("n1"));
+    (granola as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ listNotes, getNote });
+
+    await (
+      granola as unknown as {
+        syncBatch: (id: string, initial?: boolean) => Promise<void>;
+      }
+    ).syncBatch(channelId, true);
+
+    expect(saveNotes).toHaveBeenCalledTimes(1);
+    const [notes] = saveNotes.mock.calls[0] as [
+      Array<{
+        author?: { name: string; email: string };
+        link?: { author?: { name: string; email: string } };
+      }>,
+    ];
+    const expectedAuthor = { name: "Meeting Owner", email: "owner@example.com" };
+    // 1. summary note author
+    expect(notes[0].author).toEqual(expectedAuthor);
+    // 2. note-scoped link author
+    expect(notes[0].link?.author).toEqual(expectedAuthor);
+  });
+
+  it("maps a null owner name to an empty string", async () => {
+    const store = makeStore({
+      [`sync_state_${channelId}`]: { cursor: null, initialSync: true },
+    });
+    const saveNotes = vi.fn().mockResolvedValue(undefined);
+    const { granola } = makeGranola({ store, integrations: { saveNotes } });
+    const summary = { ...noteSummary("n1"), owner: { name: null, email: "nameless@example.com" } };
+    const listNotes = vi
+      .fn()
+      .mockResolvedValue({ data: [summary], cursor: null, hasMore: false });
+    const getNote = vi.fn().mockResolvedValue({
+      ...fullNote("n1"),
+      owner: { name: null, email: "nameless@example.com" },
+    });
+    (granola as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ listNotes, getNote });
+
+    await (
+      granola as unknown as {
+        syncBatch: (id: string, initial?: boolean) => Promise<void>;
+      }
+    ).syncBatch(channelId, true);
+
+    const [notes] = saveNotes.mock.calls[0] as [
+      Array<{ author?: { name: string; email: string } }>,
+    ];
+    expect(notes[0].author).toEqual({ name: "", email: "nameless@example.com" });
   });
 });
 

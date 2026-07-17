@@ -812,6 +812,7 @@ export async function processOutlookEventsFn(
           // self/organizer signal (no `isOrganizer`, no per-attendee `self`),
           // so this is a constant rather than a 100/50 split like Google.
           priority: 1,
+          ...(cancelAuthorContact ? { author: cancelAuthorContact } : {}),
           meta: { syncProvider: "microsoft", syncableId: calendarId },
           notes: cancelEmailSeen ? [] : [cancelNote],
           ...(cancelMentions.length > 0
@@ -973,6 +974,7 @@ export async function processOutlookEventsFn(
                 : "text") as ContentType,
               created: descFirstSeen,
               accessContacts: attendeeMentions,
+              ...(authorContact ? { author: authorContact } : {}),
             }
           : null;
 

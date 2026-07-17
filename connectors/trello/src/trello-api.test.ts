@@ -30,7 +30,7 @@ describe("TrelloApi request shaping", () => {
     expect(url).toContain("/boards/b1/cards");
     expect(url).toContain("limit=50");
     expect(url).toContain("before=card9");
-    expect(url).toContain("actions=commentCard");
+    expect(url).toContain("actions=commentCard,createCard");
     expect(url).toContain("attachments=true");
     expect(url).toContain("members=true");
   });

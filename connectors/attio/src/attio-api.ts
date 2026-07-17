@@ -44,6 +44,16 @@ export type AttioRecord = {
   created_at: string;
 };
 
+/**
+ * The actor that created an entity (note, task, record). `type` is one of
+ * `workspace-member`, `system`, `api-token`, `app`; only `workspace-member`
+ * maps to a human author. Both fields are nullable in Attio's schema.
+ */
+export type AttioActor = {
+  type: string | null;
+  id: string | null;
+};
+
 export type AttioTask = {
   id: { task_id: string; workspace_id: string };
   content_plaintext: string;
@@ -54,6 +64,8 @@ export type AttioTask = {
   is_completed: boolean;
   deadline_at: string | null;
   created_at: string;
+  /** The actor that created this task (used for author attribution). */
+  created_by_actor?: AttioActor;
   linked_records: Array<{
     target_object: string;
     target_record_id: string;
@@ -66,11 +78,23 @@ export type AttioNote = {
   parent_record_id: string;
   title: string;
   content_plaintext: string;
-  created_by_actor: {
-    type: string;
-    id: string;
-  };
+  created_by_actor: AttioActor;
   created_at: string;
+};
+
+/**
+ * A member of the Attio workspace. `id.workspace_member_id` is the actor id
+ * carried by `created_by_actor` / `created_by` for `workspace-member` actors,
+ * so it's the key to resolve an actor id back to a real person.
+ */
+export type AttioWorkspaceMember = {
+  id: { workspace_id: string; workspace_member_id: string };
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+  email_address: string | null;
+  access_level?: string;
+  created_at?: string;
 };
 
 /**
@@ -239,6 +263,23 @@ export function extractOwner(
   };
 }
 
+/**
+ * Extract the record creator from the `created_by` system attribute (an
+ * actor-reference every Attio object carries). Returns the actor that
+ * created the record — NOT the person a "people" record describes — so it's
+ * the right source for the thread's author.
+ */
+export function extractCreatedByActor(
+  values: Record<string, AttioAttributeValue[]>
+): { actorType: string; actorId: string } | undefined {
+  const entry = currentValue(values["created_by"]);
+  if (!entry?.referenced_actor_id) return undefined;
+  return {
+    actorType: entry.referenced_actor_type ?? "workspace-member",
+    actorId: entry.referenced_actor_id,
+  };
+}
+
 // ---- API Client ----
 
 export class AttioAPI {
@@ -318,6 +359,19 @@ export class AttioAPI {
     const result = await this.request<{ data: AttioObject[] }>(
       "GET",
       "/objects"
+    );
+    return result.data ?? [];
+  }
+
+  /**
+   * List the workspace's members. Used to resolve `workspace-member` actor
+   * ids (from `created_by_actor` / `created_by`) to real people for author
+   * attribution. Requires the `user_management:read` scope.
+   */
+  async listWorkspaceMembers(): Promise<AttioWorkspaceMember[]> {
+    const result = await this.request<{ data: AttioWorkspaceMember[] }>(
+      "GET",
+      "/workspace_members"
     );
     return result.data ?? [];
   }

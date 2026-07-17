@@ -71,6 +71,36 @@ export function mapTaskStatus(
 }
 
 /**
+ * Resolve a Todoist collaborator id (task creator, comment poster, assignee)
+ * to a Plot contact.
+ *
+ * - Found in the project's collaborator list → full contact (email + name)
+ *   keyed on the platform account id.
+ * - Not found but an id is present → minimal contact keyed on the account id.
+ *   Personal/non-shared projects frequently omit the creator/poster from the
+ *   collaborator list; without this fallback the link and its notes would be
+ *   attributed to the connector itself rather than to the real author.
+ * - No id → `undefined`.
+ *
+ * Pure function — exported for unit testing.
+ */
+export function resolveCollaboratorContact(
+  collaborators: TodoistCollaborator[],
+  id: string | null | undefined
+): NewContact | undefined {
+  if (!id) return undefined;
+  const collaborator = collaborators.find((c) => c.id === id);
+  if (collaborator) {
+    return {
+      email: collaborator.email,
+      name: collaborator.name,
+      source: { accountId: id },
+    };
+  }
+  return { name: "", source: { accountId: id } };
+}
+
+/**
  * Todoist connector
  *
  * Syncs Todoist projects and tasks with Plot threads.
@@ -307,7 +337,14 @@ export class Todoist extends Connector<Todoist> {
       );
       // Backfill existing comments as notes on initial sync (webhooks only
       // deliver go-forward comments). Best-effort per task.
-      await this.backfillComments(token, task.id, projectId, link, state.initialSync);
+      await this.backfillComments(
+        token,
+        task.id,
+        projectId,
+        link,
+        state.initialSync,
+        collaborators
+      );
       await this.tools.integrations.saveLink(link);
     }
 
@@ -322,7 +359,14 @@ export class Todoist extends Connector<Todoist> {
             [],
             collaborators
           );
-          await this.backfillComments(token, subtask.id, projectId, link, state.initialSync);
+          await this.backfillComments(
+            token,
+            subtask.id,
+            projectId,
+            link,
+            state.initialSync,
+            collaborators
+          );
           await this.tools.integrations.saveLink(link);
         }
       }
@@ -346,7 +390,8 @@ export class Todoist extends Connector<Todoist> {
     taskId: string,
     projectId: string,
     link: NewLinkWithNotes,
-    initialSync: boolean
+    initialSync: boolean,
+    collaborators: TodoistCollaborator[]
   ): Promise<void> {
     // History backfill is only needed on the initial sync; go-forward
     // comments arrive via the note:added/note:updated webhook.
@@ -362,7 +407,7 @@ export class Todoist extends Connector<Todoist> {
 
     const notes = (link.notes ?? []) as any[];
     for (const comment of comments) {
-      const note = await this.buildCommentNote(comment, projectId);
+      const note = await this.buildCommentNote(comment, projectId, collaborators);
       notes.push(note);
     }
     link.notes = notes;
@@ -445,6 +490,15 @@ export class Todoist extends Connector<Todoist> {
         const taskId = eventData.item_id || eventData.task_id;
         if (!taskId) return;
 
+        // Resolve collaborators so the comment note is attributed to its real
+        // author (via posted_uid) rather than to the connector.
+        let collaborators: TodoistCollaborator[] = [];
+        try {
+          collaborators = await listCollaborators(token, projectId);
+        } catch {
+          // Non-shared project or no access — fall back to account-id contact.
+        }
+
         const source = `todoist:task:${taskId}`;
         const note = await this.buildCommentNote(
           {
@@ -452,9 +506,11 @@ export class Todoist extends Connector<Todoist> {
             task_id: taskId,
             content: eventData.content || "",
             posted_at: eventData.posted_at,
+            posted_uid: eventData.posted_uid ?? null,
             attachment: eventData.file_attachment ?? eventData.attachment ?? null,
           },
-          projectId
+          projectId,
+          collaborators
         );
 
         const link: NewLinkWithNotes = {
@@ -484,13 +540,18 @@ export class Todoist extends Connector<Todoist> {
    * an identical note shape (content verbatim as plain text, matching the
    * `externalContent` baseline returned from `onNoteCreated`/`onNoteUpdated`).
    *
+   * The comment's `posted_uid` is resolved against the project's collaborator
+   * list to attribute the note to its real author (falling back to the account
+   * id for non-shared projects) rather than to the connector.
+   *
    * A file attachment on the comment is emitted as a `fileRef` action and its
    * URL cached under `todoist:att-url:<ref>` so `downloadAttachment` can
    * redirect to it.
    */
   private async buildCommentNote(
     comment: TodoistComment,
-    projectId: string
+    projectId: string,
+    collaborators: TodoistCollaborator[]
   ): Promise<any> {
     const note: any = {
       key: `comment-${comment.id}`,
@@ -499,6 +560,7 @@ export class Todoist extends Connector<Todoist> {
       content: comment.content || "",
       contentType: "text" as const,
       created: comment.posted_at ? new Date(comment.posted_at) : undefined,
+      author: resolveCollaboratorContact(collaborators, comment.posted_uid),
     };
 
     const attachment = comment.attachment;
@@ -557,15 +619,14 @@ export class Todoist extends Connector<Todoist> {
       }
     }
 
-    // Resolve creator
-    let authorContact: NewContact | undefined;
-    const creator = collaborators.find((c) => c.id === task.creator_id);
-    if (creator) {
-      authorContact = {
-        email: creator.email,
-        name: creator.name,
-      };
-    }
+    // Resolve creator. On personal/non-shared projects the creator is often
+    // absent from the collaborator list, so fall back to a minimal contact
+    // keyed on the account id — otherwise the link and description note fall
+    // through to the connector instead of the real author.
+    const authorContact = resolveCollaboratorContact(
+      collaborators,
+      task.creator_id
+    );
 
     // Build notes
     const notes: any[] = [];
