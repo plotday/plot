@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.79.1
+
+### Changed
+
+- `integrations.markNeedsReauth` now also works for key-based (API-key) connectors — calling it flags the connection so the app prompts the user to re-enter their key. Previously it was documented as a no-op for key-based connectors. ([#307](https://github.com/plotday/plot/pull/307) [`a4e2554`](https://github.com/plotday/plot/commit/a4e2554836230fd74ec9b570a7f528118575a328))
+
 ## 0.79.0
 
 ### Added
