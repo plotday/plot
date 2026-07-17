@@ -541,6 +541,26 @@ export class GitHub extends Connector<GitHub> {
       // Re-arm the recurring schedule only — no immediate kick on every deploy.
       await this.startFollowedPoll(false);
     }
+
+    // One-time heal: earlier versions registered a fresh webhook on every
+    // channel enable/recovery without removing the previous one, so repos
+    // accumulated duplicate hooks with mismatched secrets (all but the newest
+    // failed signature verification). Re-run the now-idempotent webhook setup
+    // once per repo to converge each on a single verifiable hook. Gated behind
+    // a flag so we don't re-sweep every repo on every subsequent deploy.
+    if (!(await this.get<boolean>("hooks_reconciled_v1"))) {
+      const enabledKeys = await this.listStoreKeys("sync_enabled_");
+      for (const key of enabledKeys) {
+        const channelId = key.replace("sync_enabled_", "");
+        if (!isRepoChannelId(channelId)) continue;
+        const webhookCallback = await this.callback(
+          this.setupWebhook,
+          channelId,
+        );
+        await this.runTask(webhookCallback);
+      }
+      await this.set("hooks_reconciled_v1", true);
+    }
   }
 
   /**
@@ -994,9 +1014,22 @@ export class GitHub extends Connector<GitHub> {
   // ---------- Webhook ----------
 
   /**
-   * Setup GitHub webhook for real-time updates.
-   * Subscribes to all event types regardless of options,
-   * so toggling on later works without re-creating the webhook.
+   * Set up (or reconcile) the GitHub webhook for real-time updates.
+   * Subscribes to all event types regardless of options, so toggling one on
+   * later works without re-creating the webhook.
+   *
+   * This method is idempotent and self-healing. It runs on every channel
+   * enable and on recovery re-dispatch, so it must NOT blindly register a new
+   * webhook each time: doing so left a repo with multiple live hooks, each
+   * signed with a different secret, while only the most recent secret was
+   * stored — so GitHub fanned every event out to all of them and every
+   * delivery except the newest failed HMAC verification. Instead:
+   *
+   *  - If we already registered a hook that is still live on GitHub, keep it
+   *    (and its stored secret) and only prune any *other* Plot hooks left over
+   *    from earlier registrations.
+   *  - Otherwise register a fresh hook, after first removing any stale Plot
+   *    hooks so the repo converges on exactly one hook whose secret we hold.
    */
   async setupWebhook(repositoryId: string): Promise<void> {
     if (await this.get<boolean>(`repo_no_admin_${repositoryId}`)) {
@@ -1006,6 +1039,49 @@ export class GitHub extends Connector<GitHub> {
     }
 
     try {
+      const token = await this.getToken(repositoryId);
+      const [owner, repo] = repositoryId.split("/");
+
+      // Fast, idempotent path: if a previously-registered hook is still live on
+      // GitHub, keep it (and its secret). Only prune duplicate Plot hooks.
+      const storedId = await this.get<string>(`webhook_id_${repositoryId}`);
+      const storedSecret = await this.get<string>(
+        `webhook_secret_${repositoryId}`,
+      );
+      if (storedId && storedSecret) {
+        const existing = await this.githubFetch(
+          token,
+          `/repos/${owner}/${repo}/hooks/${storedId}`,
+        );
+        if (existing.ok) {
+          const hook = (await existing.json()) as {
+            config?: { url?: string };
+          };
+          const url = hook?.config?.url;
+          if (typeof url === "string") {
+            await this.removeStalePlotWebhooks(
+              token,
+              owner,
+              repo,
+              this.plotWebhookOrigin(url),
+              storedId,
+            );
+          }
+          return;
+        }
+        if (existing.status !== 404) {
+          // Transient failure (rate limit, 5xx) — don't churn the registration;
+          // the next enable/recovery pass will retry.
+          console.warn(
+            "GitHub webhook health check failed, will retry later:",
+            existing.status,
+          );
+          return;
+        }
+        // 404: the stored registration is gone. Fall through to recreate.
+      }
+
+      // (Re)create path.
       const secret = crypto.randomUUID();
 
       const webhookUrl = await this.tools.network.createWebhook(
@@ -1021,10 +1097,18 @@ export class GitHub extends Connector<GitHub> {
         return;
       }
 
-      await this.set(`webhook_secret_${repositoryId}`, secret);
+      // Remove any previously-registered Plot hooks (whose secrets we no longer
+      // store) before creating the replacement, so GitHub isn't left fanning
+      // events out to a hook we can no longer verify.
+      await this.removeStalePlotWebhooks(
+        token,
+        owner,
+        repo,
+        this.plotWebhookOrigin(webhookUrl),
+        null,
+      );
 
-      const token = await this.getToken(repositoryId);
-      const [owner, repo] = repositoryId.split("/");
+      await this.set(`webhook_secret_${repositoryId}`, secret);
 
       const response = await this.githubFetch(
         token,
@@ -1069,6 +1153,80 @@ export class GitHub extends Connector<GitHub> {
         "Failed to set up GitHub webhook - real-time updates will not work:",
         error,
       );
+    }
+  }
+
+  /**
+   * The origin of a Plot webhook URL, used to recognise which of a repo's
+   * hooks were registered by Plot. Returns null if the URL can't be parsed.
+   */
+  private plotWebhookOrigin(webhookUrl: string): string | null {
+    try {
+      return new URL(webhookUrl).origin;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Delete every hook on the repo that points at our webhook host (`origin`)
+   * except `keepId`. Identifies Plot hooks by matching both the origin and the
+   * `/hook` path prefix that all Plot webhook URLs share, so third-party hooks
+   * are never touched. Best-effort: listing or deleting failures are logged
+   * and swallowed so they never abort webhook setup.
+   */
+  private async removeStalePlotWebhooks(
+    token: string,
+    owner: string,
+    repo: string,
+    origin: string | null,
+    keepId: string | null,
+  ): Promise<void> {
+    if (!origin) return;
+    try {
+      const resp = await this.githubFetch(
+        token,
+        `/repos/${owner}/${repo}/hooks?per_page=100`,
+      );
+      if (!resp.ok) return;
+      const hooks = (await resp.json()) as Array<{
+        id?: number | string;
+        config?: { url?: string };
+      }>;
+      if (!Array.isArray(hooks)) return;
+
+      for (const hook of hooks) {
+        const id = hook?.id;
+        const url = hook?.config?.url;
+        if (id == null || typeof url !== "string") continue;
+        if (keepId != null && String(id) === keepId) continue;
+
+        let parsed: URL;
+        try {
+          parsed = new URL(url);
+        } catch {
+          continue;
+        }
+        // Only our own webhooks: same API host and the shared `/hook` path.
+        if (parsed.origin !== origin || !parsed.pathname.startsWith("/hook")) {
+          continue;
+        }
+
+        const del = await this.githubFetch(
+          token,
+          `/repos/${owner}/${repo}/hooks/${id}`,
+          { method: "DELETE" },
+        );
+        if (!del.ok && del.status !== 404) {
+          console.warn(
+            "Failed to delete stale GitHub webhook:",
+            id,
+            del.status,
+          );
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to reconcile GitHub webhooks:", error);
     }
   }
 

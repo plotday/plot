@@ -283,6 +283,180 @@ describe("setupWebhook no-admin skip", () => {
   });
 });
 
+describe("setupWebhook reconciliation", () => {
+  type LiveHook = { id: number | string; config: { url: string } };
+
+  function makeWebhookFake(opts: {
+    store?: Record<string, unknown>;
+    liveHooks?: LiveHook[];
+    createUrl?: string;
+    newHookId?: number;
+    forceHealthStatus?: number;
+  }) {
+    const store: Record<string, unknown> = opts.store ?? {};
+    const liveHooks = opts.liveHooks ?? [];
+    const createUrl = opts.createUrl ?? "https://api.plot.day/hook/tok-new";
+    const newHookId = opts.newHookId ?? 999;
+    const deleted: string[] = [];
+    let postCalled = false;
+    let createWebhookCalled = false;
+
+    const fake: any = {
+      get: async (k: string) => (k in store ? store[k] : null),
+      set: async (k: string, v: unknown) => {
+        store[k] = v;
+      },
+      clear: async (k: string) => {
+        delete store[k];
+      },
+      getToken: async () => "fake-token",
+      tools: {
+        network: {
+          createWebhook: async () => {
+            createWebhookCalled = true;
+            return createUrl;
+          },
+        },
+      },
+      githubFetch: async (_token: string, path: string, options?: any) => {
+        const method = options?.method ?? "GET";
+        if (method === "GET" && path.includes("/hooks?")) {
+          return { ok: true, status: 200, json: async () => liveHooks };
+        }
+        const idMatch = /\/hooks\/([^/?]+)$/.exec(path);
+        if (method === "GET" && idMatch) {
+          if (opts.forceHealthStatus) {
+            return {
+              ok: false,
+              status: opts.forceHealthStatus,
+              json: async () => ({}),
+            };
+          }
+          const hook = liveHooks.find((h) => String(h.id) === idMatch[1]);
+          if (!hook) return { ok: false, status: 404, json: async () => ({}) };
+          return { ok: true, status: 200, json: async () => hook };
+        }
+        if (method === "DELETE" && idMatch) {
+          deleted.push(idMatch[1]);
+          return { ok: true, status: 204 };
+        }
+        if (method === "POST" && /\/hooks$/.test(path)) {
+          postCalled = true;
+          return { ok: true, status: 201, json: async () => ({ id: newHookId }) };
+        }
+        throw new Error(`unexpected fetch ${method} ${path}`);
+      },
+    };
+
+    // setupWebhook delegates to these real prototype helpers (they only touch
+    // `this.githubFetch`), so wire them onto the duck-typed fake to exercise
+    // the actual reconcile logic.
+    fake.plotWebhookOrigin = (GitHub.prototype as any).plotWebhookOrigin;
+    fake.removeStalePlotWebhooks = (GitHub.prototype as any).removeStalePlotWebhooks;
+
+    return {
+      fake,
+      store,
+      deleted: () => deleted,
+      postCalled: () => postCalled,
+      createWebhookCalled: () => createWebhookCalled,
+    };
+  }
+
+  it("reuses a still-live hook and prunes duplicate Plot hooks without re-creating", async () => {
+    const t = makeWebhookFake({
+      store: {
+        "webhook_id_acme/web": "100",
+        "webhook_secret_acme/web": "old-secret",
+      },
+      liveHooks: [
+        { id: 100, config: { url: "https://api.plot.day/hook/tok-a" } },
+        { id: 200, config: { url: "https://api.plot.day/hook/tok-b" } },
+        { id: 300, config: { url: "https://evil.example.com/hook/x" } },
+      ],
+    });
+
+    await GitHub.prototype.setupWebhook.call(t.fake, "acme/web");
+
+    expect(t.postCalled()).toBe(false); // no new hook created
+    expect(t.createWebhookCalled()).toBe(false);
+    expect(t.deleted()).toEqual(["200"]); // duplicate pruned, kept 100, spared 3rd-party 300
+    expect(t.store["webhook_secret_acme/web"]).toBe("old-secret"); // secret unchanged
+    expect(t.store["webhook_id_acme/web"]).toBe("100");
+  });
+
+  it("recreates when the stored hook is gone (404), clearing stale Plot hooks first", async () => {
+    const t = makeWebhookFake({
+      store: {
+        "webhook_id_acme/web": "100",
+        "webhook_secret_acme/web": "old-secret",
+      },
+      // 100 no longer live; a leftover duplicate 200 still exists.
+      liveHooks: [
+        { id: 200, config: { url: "https://api.plot.day/hook/tok-b" } },
+        { id: 300, config: { url: "https://evil.example.com/hook/x" } },
+      ],
+      newHookId: 999,
+    });
+
+    await GitHub.prototype.setupWebhook.call(t.fake, "acme/web");
+
+    expect(t.createWebhookCalled()).toBe(true);
+    expect(t.postCalled()).toBe(true);
+    expect(t.deleted()).toEqual(["200"]); // stale Plot hook removed, 3rd-party spared
+    expect(t.store["webhook_id_acme/web"]).toBe("999"); // new registration stored
+    expect(t.store["webhook_secret_acme/web"]).not.toBe("old-secret"); // fresh secret
+  });
+
+  it("registers a single hook on first setup", async () => {
+    const t = makeWebhookFake({ store: {}, liveHooks: [] });
+
+    await GitHub.prototype.setupWebhook.call(t.fake, "acme/web");
+
+    expect(t.postCalled()).toBe(true);
+    expect(t.deleted()).toEqual([]);
+    expect(t.store["webhook_id_acme/web"]).toBe("999");
+    expect(typeof t.store["webhook_secret_acme/web"]).toBe("string");
+  });
+
+  it("does not churn the registration on a transient health-check failure", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const t = makeWebhookFake({
+      store: {
+        "webhook_id_acme/web": "100",
+        "webhook_secret_acme/web": "old-secret",
+      },
+      liveHooks: [
+        { id: 100, config: { url: "https://api.plot.day/hook/tok-a" } },
+      ],
+      forceHealthStatus: 500,
+    });
+
+    await GitHub.prototype.setupWebhook.call(t.fake, "acme/web");
+    warn.mockRestore();
+
+    expect(t.postCalled()).toBe(false); // no recreate on a transient error
+    expect(t.createWebhookCalled()).toBe(false);
+    expect(t.deleted()).toEqual([]);
+    expect(t.store["webhook_id_acme/web"]).toBe("100"); // registration untouched
+    expect(t.store["webhook_secret_acme/web"]).toBe("old-secret");
+  });
+
+  it("skips localhost webhook URLs without creating a hook", async () => {
+    const t = makeWebhookFake({
+      store: {},
+      liveHooks: [],
+      createUrl: "http://localhost:8787/hook/tok-new",
+    });
+
+    await GitHub.prototype.setupWebhook.call(t.fake, "acme/web");
+
+    expect(t.createWebhookCalled()).toBe(true);
+    expect(t.postCalled()).toBe(false);
+    expect(t.store["webhook_id_acme/web"]).toBeUndefined();
+  });
+});
+
 describe("pollFollowed overlap guard", () => {
   function guardFake(store: Record<string, unknown>) {
     let accountTokenCalls = 0;
