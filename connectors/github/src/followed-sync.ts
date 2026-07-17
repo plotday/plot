@@ -163,6 +163,14 @@ export async function syncFollowedItems(
           : new Date(Date.now() + 60 * 1000);
       return { done: true, retryAt };
     }
+    // Transient server error (5xx): GitHub's backend briefly failed — e.g. the
+    // "Unicorn!" overload page returned as a 503. Like a rate-limit, this
+    // self-resolves, so back off and resume from the unchanged cursor instead
+    // of throwing. Throwing here surfaces the whole HTML error page as an
+    // exception message on every retry — noise, not a bug the caller can fix.
+    if (response.status >= 500) {
+      return { done: true, retryAt: new Date(Date.now() + 60 * 1000) };
+    }
     throw new Error(
       `Failed to fetch notifications: ${response.status} ${await response.text()}`,
     );

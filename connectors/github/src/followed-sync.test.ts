@@ -90,6 +90,10 @@ function makeFakeSource(opts: {
   enabled?: string[];
   store?: Record<string, unknown>;
   rateLimited?: boolean;
+  /** Simulate a non-ok notifications response with this status (e.g. 503, 404). */
+  notificationsStatus?: number;
+  /** Body returned for the simulated error response (e.g. GitHub's HTML 5xx page). */
+  notificationsBody?: string;
 }): {
   source: FollowedSource;
   saved: any[];
@@ -113,6 +117,14 @@ function makeFakeSource(opts: {
                 h === "x-ratelimit-remaining" ? "0" : h === "x-ratelimit-reset" ? "9999999999" : null,
             },
             text: async () => "rate limited",
+          } as any;
+        }
+        if (opts.notificationsStatus) {
+          return {
+            ok: false,
+            status: opts.notificationsStatus,
+            headers: { get: () => null },
+            text: async () => opts.notificationsBody ?? "error",
           } as any;
         }
         // single page
@@ -253,5 +265,29 @@ describe("syncFollowedItems", () => {
     expect(result.retryAt).toEqual(new Date(9999999999 * 1000));
     expect(saved).toEqual([]);
     expect(store.followed_initial_done).toBeUndefined();
+  });
+
+  it("ends the pass cleanly with a retryAt (no throw) on a transient 5xx", async () => {
+    // GitHub's "Unicorn!" 503 overload page is a transient backend failure that
+    // self-resolves — treat it like a rate-limit backoff, not an error to page.
+    const { source, saved, store } = makeFakeSource({
+      notificationsStatus: 503,
+      notificationsBody: "<!DOCTYPE html><title>Unicorn! · GitHub</title>",
+    });
+    const result = await syncFollowedItems(source);
+    expect(result.done).toBe(true);
+    expect(result.retryAt).toBeInstanceOf(Date);
+    expect(saved).toEqual([]);
+    expect(store.followed_initial_done).toBeUndefined();
+  });
+
+  it("throws on a genuine non-transient error (4xx) so real failures still surface", async () => {
+    const { source } = makeFakeSource({
+      notificationsStatus: 422,
+      notificationsBody: '{"message":"Validation Failed"}',
+    });
+    await expect(syncFollowedItems(source)).rejects.toThrow(
+      /Failed to fetch notifications: 422/,
+    );
   });
 });
