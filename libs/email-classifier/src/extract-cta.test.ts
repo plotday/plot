@@ -43,6 +43,103 @@ describe("extractCta — OTP", () => {
       bodyText: "Your verification code expires in 2026.",
     }))).toBeNull();
   });
+  it("extracts a code shown on the line AFTER the keyword line", () => {
+    // Many providers display the code prominently on its own line/box, below
+    // the "enter the following code" sentence — the keyword and the code are
+    // NOT on the same line.
+    const cta = extractCta(signals({
+      fromAddress: "no-reply@example.com", fromName: "Example",
+      subject: "Verifying it's you",
+      bodyText: "To access Example, enter the following code:\n\nFP9I0Z\n\nThis code expires soon.",
+    }));
+    expect(cta?.kind).toBe("otp");
+    expect(cta?.code).toBe("FP9I0Z");
+  });
+  it("extracts an interleaved alphanumeric code (e.g. FP9I0Z) on a keyword line", () => {
+    const cta = extractCta(signals({
+      fromAddress: "no-reply@example.com", fromName: "Example",
+      subject: "Your access code",
+      bodyText: "Your access code is FP9I0Z.",
+    }));
+    expect(cta?.kind).toBe("otp");
+    expect(cta?.code).toBe("FP9I0Z");
+  });
+  it("extracts a code from an HTML body where the code sits in its own block element", () => {
+    // Connectors commonly pass the raw HTML note body. Block boundaries, not
+    // newlines, separate the keyword sentence from the displayed code.
+    const cta = extractCta(signals({
+      fromAddress: "no-reply@example.com", fromName: "Example",
+      subject: "Verifying it's you",
+      bodyText:
+        "<p>To access Example, enter the following code:</p>" +
+        '<div style="font-size:32px;font-weight:bold">FP9I0Z</div>' +
+        "<p>This code expires soon.</p>",
+    }));
+    expect(cta?.kind).toBe("otp");
+    expect(cta?.code).toBe("FP9I0Z");
+  });
+  it("does NOT treat a number in an HTML tag attribute as a code", () => {
+    // Numbers living inside tag attributes (widths, tracking ids) must never
+    // surface — tag stripping removes them before scanning.
+    expect(extractCta(signals({
+      fromAddress: "no-reply@shop.com", fromName: "Shop",
+      subject: "Your verification code",
+      bodyText:
+        "<p>Your verification code:</p>" +
+        '<table width="480123"><tr><td>Welcome aboard!</td></tr></table>',
+    }))).toBeNull();
+  });
+  it("does NOT treat a bare word on the line after a keyword as a code", () => {
+    // The line after the keyword must contain digits to be a code — a plain
+    // word (sign-off, service name) must not be picked up.
+    expect(extractCta(signals({
+      fromAddress: "no-reply@acme.com", fromName: "Acme",
+      subject: "Your verification code",
+      bodyText: "Enter the verification code below:\n\nRegards\n\nThe Acme team",
+    }))).toBeNull();
+  });
+});
+
+describe("extractCta — transactional OTP on mailing-list mail", () => {
+  // Real transactional senders (identity/security mail) increasingly stamp
+  // List-Unsubscribe on their OTP messages, which classifies them reach=list.
+  // A genuine one-time code must NOT be suppressed just because of that header
+  // — only promotional mail (format=promotion) is the false-positive class.
+  it("extracts an OTP from a list-classified (List-Unsubscribe) transactional mail with code in subject", () => {
+    const cta = extractCta(signals({
+      fromAddress: "no-reply@asana.com", fromName: "Asana",
+      listUnsubscribe: "<https://asana.com/unsubscribe>",
+      subject: "Asana confirmation code: 412855",
+      bodyText:
+        "Confirm your email address\n\n" +
+        "Thank you for signing up for Asana! Enter the code below in your open web browser window.\n\n" +
+        "412855",
+      bodyLength: 1400,
+    }));
+    expect(cta?.kind).toBe("otp");
+    expect(cta?.code).toBe("412855");
+    expect(cta?.service).toBe("Asana");
+  });
+  it("extracts an OTP from list-classified mail with the code only in the body", () => {
+    const cta = extractCta(signals({
+      fromAddress: "no-reply@service.com", fromName: "Service",
+      listUnsubscribe: "<https://service.com/unsubscribe>",
+      subject: "Your verification code",
+      bodyText: "Your verification code is 771234. It expires in 10 minutes.",
+    }));
+    expect(cta?.kind).toBe("otp");
+    expect(cta?.code).toBe("771234");
+  });
+  it("STILL suppresses a promotional (format=promotion) discount code on list mail", () => {
+    // The promo false-positive class stays suppressed — promotion, not merely
+    // list membership, is what disqualifies a code.
+    expect(extractCta(signals({
+      fromAddress: "sale@promo.com", fromName: "Promo",
+      listUnsubscribe: "<https://promo.com/u>",
+      subject: "50% OFF everything this weekend!",
+      bodyText: "Use code 8558 at checkout for an extra discount.",
+    }))).toBeNull();
+  });
 });
 
 describe("extractCta — confirm link", () => {
