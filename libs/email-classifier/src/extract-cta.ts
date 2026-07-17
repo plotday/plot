@@ -53,6 +53,13 @@ const CODE_KEYWORD =
 // avoid matching short incidental numbers, and ≤8 so a long identifier (a
 // 15-digit order number) can never satisfy it even as a slice.
 const CODE_CORE = /^([A-Z]{1,4}-\d{3,8}|[A-Z]{1,4}\d{3,8}|\d{4,8})$/;
+// A code with letters and digits INTERLEAVED (e.g. "FP9I0Z"), which CODE_CORE's
+// letters-then-digits shape misses. Constrained to 6–8 uppercase alphanumerics
+// carrying at least one letter AND one digit — tight enough that ordinary prose
+// words (lowercase, no digits) and long tracking identifiers (>8 chars) can't
+// satisfy it. Kept separate from CODE_CORE so the looser shape only applies
+// where a code is strongly signalled (see extractOtp).
+const CODE_ALNUM = /^(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\d)[A-Z0-9]{6,8}$/;
 // Wrapper punctuation stripped from a token's ends before the whole-token test.
 // Deliberately excludes '-' '/' '+' '=' '%' '.' (and alphanumerics): those are
 // identifier/URL/decimal characters, so a token glued to them is NOT a
@@ -74,27 +81,89 @@ function looksLikePlaceholder(t: string): boolean {
   return /^(\d)\1{3,}$/.test(t);
 }
 
+// Price / order-identifier context that turns a nearby number into a total or
+// an order/invoice number rather than a one-time code.
+const PRICE_ID_LINE = /\$\s?\d|#\s?\d|\border\b|\binvoice\b|\btotal\b/i;
+
+// Block-level tags whose boundaries are visual line breaks. Turned into
+// newlines so a code displayed in its own block element becomes its own line.
+const BLOCK_BREAK =
+  /<\s*(br|\/?(p|div|td|tr|table|h[1-6]|li|ul|ol|section|header|footer|blockquote))\b[^>]*>/gi;
+const HTML_ENTITY: Record<string, string> = {
+  "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&apos;": "'",
+};
+
+// Normalize a body that may be HTML (some connectors pass the raw HTML note
+// body rather than plain text) into line-structured text for code scanning:
+// block boundaries → newlines, remaining tags stripped (so attribute numbers
+// like width="480123" or tracking ids never survive), common entities decoded.
+// Already-plain text passes through essentially unchanged.
+function htmlToLines(body: string): string {
+  if (!/<[a-z!/]/i.test(body)) return body; // no tags — plain text, leave as-is
+  return body
+    .replace(/<\s*(script|style)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, " ")
+    .replace(BLOCK_BREAK, "\n")
+    .replace(/<[^>]+>/g, "") // strip any remaining tags (attributes go with them)
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&[a-z]+;|&#\d+;/gi, (m) => HTML_ENTITY[m.toLowerCase()] ?? " ");
+}
+
+// True when a whole line is a single standalone token (no whitespace), the shape
+// providers use to display a code prominently on its own line/box.
+function isBareTokenLine(line: string): boolean {
+  return line.length > 0 && !/\s/.test(line);
+}
+
+// Scan one line for a standalone code token. `allowAlnum` additionally accepts
+// the looser interleaved-alphanumeric shape (CODE_ALNUM) — enabled only where a
+// code is strongly signalled (a bare code line beneath a keyword line).
+function scanLineForCode(line: string, allowAlnum: boolean): string | null {
+  for (const m of line.matchAll(/\S+/g)) {
+    const core = m[0].replace(WRAP, "");
+    if (!CODE_CORE.test(core) && !(allowAlnum && CODE_ALNUM.test(core))) continue;
+    if (looksLikeYear(core)) continue;
+    if (looksLikePlaceholder(core)) continue;
+    // Reject numbers introduced by an identifier label ("order/account number").
+    if (ID_LABEL.test(line.slice(0, m.index ?? 0))) continue;
+    return core;
+  }
+  return null;
+}
+
 // A real one-time code is a small STANDALONE token, never a fragment spliced
-// out of a longer number, URL, or UUID-like tracking token. We therefore scan
-// each keyword line word-by-word and only accept a whitespace-delimited token
-// that matches CODE_CORE in full — rejecting the dominant residual FP where a
-// 4–8 digit run sat inside a tracking link (…-39378156-…, …+750993/…) on a line
-// that happened to carry a code keyword.
+// out of a longer number, URL, or UUID-like tracking token. We scan each keyword
+// line word-by-word and only accept a whitespace-delimited token that matches a
+// code shape in full — rejecting the dominant residual FP where a 4–8 digit run
+// sat inside a tracking link (…-39378156-…, …+750993/…) on a line that happened
+// to carry a code keyword.
+//
+// Codes are also commonly displayed on the line BELOW the "enter this code"
+// sentence rather than inline, so a bare code line immediately following a
+// keyword line is accepted too (and there the interleaved-alphanumeric shape is
+// allowed, since the surrounding keyword context makes a false positive unlikely).
 function extractOtp(s: EmailSignals): string | null {
-  const hay = `${s.subject ?? ""}\n${s.bodyText ?? ""}`;
+  const hay = `${s.subject ?? ""}\n${htmlToLines(s.bodyText ?? "")}`;
   if (!hay.trim()) return null;
-  for (const rawLine of hay.split(/\n+/)) {
-    const line = rawLine.trim();
-    if (!CODE_KEYWORD.test(line)) continue;
-    if (/\$\s?\d|#\s?\d|\border\b|\binvoice\b|\btotal\b/i.test(line)) continue;
-    for (const m of line.matchAll(/\S+/g)) {
-      const core = m[0].replace(WRAP, "");
-      if (!CODE_CORE.test(core)) continue;
-      if (looksLikeYear(core)) continue;
-      if (looksLikePlaceholder(core)) continue;
-      // Reject numbers introduced by an identifier label ("order/account number").
-      if (ID_LABEL.test(line.slice(0, m.index ?? 0))) continue;
-      return core;
+  const lines = hay
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isKeyword = CODE_KEYWORD.test(line) && !PRICE_ID_LINE.test(line);
+    // (1) Inline: a code token sitting on the keyword line itself.
+    if (isKeyword) {
+      const found = scanLineForCode(line, /* allowAlnum */ true);
+      if (found) return found;
+    }
+    // (2) Below: a bare code line directly under a keyword line.
+    if (i > 0 && isBareTokenLine(line)) {
+      const prev = lines[i - 1];
+      const prevIsKeyword = CODE_KEYWORD.test(prev) && !PRICE_ID_LINE.test(prev);
+      if (prevIsKeyword) {
+        const found = scanLineForCode(line, /* allowAlnum */ true);
+        if (found) return found;
+      }
     }
   }
   return null;
@@ -165,20 +234,28 @@ function extractConfirmUrl(s: EmailSignals): string | null {
  * registrable domain. Returns null unless a high-confidence detection is made
  * (bias to false-negative).
  *
- * Bulk/promotional mail is suppressed up front: a genuine one-time code or
- * account-confirmation link is transactional and directly addressed — never a
- * mailing-list blast. Gating on reach=list / format=promotion eliminates the
- * dominant false-positive class (a 4-8 digit discount code, price, or SKU
- * sitting near the word "code" in a marketing email) that otherwise fires an
- * immediate, gate-bypassing OTP push for every promo the user receives.
+ * Promotional mail is suppressed up front: the dominant false-positive class is
+ * a 4-8 digit discount code, price, or SKU sitting near the word "code" in a
+ * marketing email, which would otherwise fire an immediate, gate-bypassing OTP
+ * push for every promo the user receives. `format === "promotion"` (a
+ * promotional subject or a Gmail CATEGORY_PROMOTIONS label) captures that class.
+ *
+ * A genuine one-time code is NOT suppressed merely for being reach=list: many
+ * legitimate identity/security senders now stamp List-Unsubscribe on their OTP
+ * mail, which classifies it list even though the code is real. The precise
+ * extractor (standalone token, no price/order/placeholder/year context) plus the
+ * promotion gate above are what reject discount-code blasts. Confirm LINKS,
+ * however, stay gated to direct mail — a "confirm"/"verify" link in bulk mail is
+ * almost always a manage-preferences / re-engagement CTA, not account verification.
  */
 export function extractCta(s: EmailSignals): Cta | null {
   const { reach, format } = classifyEmail(s);
-  if (reach === "list" || format === "promotion") return null;
+  if (format === "promotion") return null;
 
   const service = serviceName(s);
   const code = extractOtp(s);
   if (code) return { kind: "otp", service, code, url: extractConfirmUrl(s) };
+  if (reach === "list") return null;
   const url = extractConfirmUrl(s);
   if (url) return { kind: "confirm", service, code: null, url };
   return null;
