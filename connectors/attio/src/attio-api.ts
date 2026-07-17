@@ -73,9 +73,20 @@ export type AttioNote = {
   created_at: string;
 };
 
+/**
+ * Attio's list/query endpoints paginate with `limit`/`offset` only — the
+ * response body carries just `data`, no cursor. Callers detect the end of
+ * the collection by receiving a partial (or empty) page.
+ */
 export type AttioPaginatedResponse<T> = {
   data: T[];
-  next_cursor: string | null;
+};
+
+export type AttioObject = {
+  id: { object_id: string; workspace_id: string };
+  api_slug: string;
+  singular_noun?: string;
+  plural_noun?: string;
 };
 
 export type AttioSelectOption = {
@@ -102,11 +113,34 @@ export type AttioWebhookSubscription = {
   } | null;
 };
 
+/**
+ * One event inside a webhook delivery. Attio sends only ids — never the
+ * full record/note/task object — so handlers must fetch the entity by id.
+ * Which id fields are present depends on `event_type` (`record.*` events
+ * carry `object_id` + `record_id`, `note.*` carry `note_id`, `task.*`
+ * carry `task_id`).
+ */
 export type AttioWebhookEvent = {
   event_type: string;
-  object?: { id: { object_id: string }; slug?: string };
-  record?: AttioRecord;
-  task?: AttioTask;
+  id: {
+    workspace_id: string;
+    object_id?: string;
+    record_id?: string;
+    note_id?: string;
+    task_id?: string;
+  };
+  parent_object_id?: string;
+  parent_record_id?: string;
+  actor?: { type: string; id: string };
+};
+
+/**
+ * The body Attio POSTs to a webhook target: events arrive batched, not one
+ * per delivery.
+ */
+export type AttioWebhookPayload = {
+  webhook_id: string;
+  events: AttioWebhookEvent[];
 };
 
 // ---- Value Extraction Helpers ----
@@ -229,8 +263,13 @@ export class AttioAPI {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(
-        `Attio API ${method} ${path} failed (${response.status}): ${text}`
+      // Carry the HTTP status so callers can branch on expected failures
+      // (e.g. 404 for a record deleted upstream) without string matching.
+      throw Object.assign(
+        new Error(
+          `Attio API ${method} ${path} failed (${response.status}): ${text}`
+        ),
+        { status: response.status }
       );
     }
 
@@ -253,11 +292,14 @@ export class AttioAPI {
     };
   }
 
-  /** Query records for a given object type (deals, people, companies). */
+  /**
+   * Query records for a given object type. `objectSlug` may be the slug
+   * ("people") or the object's UUID — Attio accepts either in the path.
+   */
   async queryRecords(
     objectSlug: string,
     options?: {
-      cursor?: string;
+      offset?: number;
       limit?: number;
       filter?: unknown;
       sorts?: unknown;
@@ -267,8 +309,17 @@ export class AttioAPI {
     if (options?.filter) body.filter = options.filter;
     if (options?.sorts) body.sorts = options.sorts;
     if (options?.limit) body.limit = options.limit;
-    if (options?.cursor) body.offset = options.cursor;
+    if (options?.offset != null) body.offset = options.offset;
     return this.request("POST", `/objects/${objectSlug}/records/query`, body);
+  }
+
+  /** List the workspace's objects (standard and custom). */
+  async listObjects(): Promise<AttioObject[]> {
+    const result = await this.request<{ data: AttioObject[] }>(
+      "GET",
+      "/objects"
+    );
+    return result.data ?? [];
   }
 
   /** Get a single record by ID. */
@@ -292,26 +343,36 @@ export class AttioAPI {
 
   /** List tasks. */
   async queryTasks(options?: {
-    cursor?: string;
+    offset?: number;
     limit?: number;
   }): Promise<AttioPaginatedResponse<AttioTask>> {
     const params = new URLSearchParams();
     if (options?.limit) params.set("limit", String(options.limit));
-    if (options?.cursor) params.set("offset", options.cursor);
+    if (options?.offset != null) params.set("offset", String(options.offset));
     const qs = params.toString();
     return this.request("GET", `/tasks${qs ? `?${qs}` : ""}`);
   }
 
+  /** Get a single task by ID. */
+  async getTask(taskId: string): Promise<{ data: AttioTask }> {
+    return this.request("GET", `/tasks/${taskId}`);
+  }
+
   /** List notes. */
   async queryNotes(options?: {
-    cursor?: string;
+    offset?: number;
     limit?: number;
   }): Promise<AttioPaginatedResponse<AttioNote>> {
     const params = new URLSearchParams();
     if (options?.limit) params.set("limit", String(options.limit));
-    if (options?.cursor) params.set("offset", options.cursor);
+    if (options?.offset != null) params.set("offset", String(options.offset));
     const qs = params.toString();
     return this.request("GET", `/notes${qs ? `?${qs}` : ""}`);
+  }
+
+  /** Get a single note by ID. */
+  async getNote(noteId: string): Promise<{ data: AttioNote }> {
+    return this.request("GET", `/notes/${noteId}`);
   }
 
   /** Create a note on a record. */

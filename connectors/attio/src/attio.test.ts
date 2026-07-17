@@ -30,6 +30,7 @@ function makeAttio(
   opts: {
     store?: ReturnType<typeof makeStore>;
     integrations?: Record<string, unknown>;
+    network?: Record<string, unknown>;
   } = {}
 ): Attio {
   const tools = {
@@ -37,11 +38,15 @@ function makeAttio(
     integrations: {
       get: vi.fn().mockResolvedValue({ token: "tok" }),
       saveLink: vi.fn().mockResolvedValue("thread-1"),
+      archiveLinks: vi.fn().mockResolvedValue(undefined),
       channelSyncCompleted: vi.fn().mockResolvedValue(undefined),
       ...opts.integrations,
     },
     tasks: { runTask: vi.fn() },
-    network: {},
+    network: {
+      createWebhook: vi.fn().mockResolvedValue("https://hooks.example.com/h/tok1"),
+      ...opts.network,
+    },
   };
   return new Attio("twist-1" as never, { getTools: () => tools } as never);
 }
@@ -51,7 +56,7 @@ const ALL_TYPES = ["deals", "people", "companies", "tasks", "notes"];
 
 function seedState(overrides: Record<string, unknown> = {}) {
   return {
-    cursor: null,
+    offset: 0,
     batchNumber: 1,
     recordsProcessed: 0,
     initialSync: true,
@@ -65,6 +70,38 @@ function makeRecord(id: string): AttioRecord {
     values: {},
     created_at: "2026-01-01T00:00:00Z",
   };
+}
+
+const valueMeta = {
+  active_from: "2026-01-01T00:00:00Z",
+  active_until: null,
+  attribute_type: "text",
+};
+
+function makeCompanyRecord(id: string, name: string): AttioRecord {
+  return {
+    id: { record_id: id, object_id: "obj-companies", workspace_id: "ws1" },
+    values: { name: [{ ...valueMeta, value: name }] },
+    created_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+function makePersonRecord(id: string, fullName: string): AttioRecord {
+  return {
+    id: { record_id: id, object_id: "obj-people", workspace_id: "ws1" },
+    values: {
+      name: [{ ...valueMeta, full_name: fullName }],
+      email_addresses: [{ ...valueMeta, email_address: "person@example.com" }],
+    },
+    created_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+/** An Error shaped like AttioAPI.request's failures, carrying the HTTP status. */
+function apiError(status: number): Error {
+  return Object.assign(new Error(`Attio API GET /x failed (${status}): nope`), {
+    status,
+  });
 }
 
 function makeTask(id: string): AttioTask {
@@ -108,9 +145,7 @@ describe("initial-sync completion across the three/five batch chains", () => {
     const saveLink = vi.fn().mockResolvedValue("t1");
     const attio = makeAttio({ store, integrations: { channelSyncCompleted, saveLink } });
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
-      queryRecords: vi
-        .fn()
-        .mockResolvedValue({ data: [makeRecord("r1")], next_cursor: null }),
+      queryRecords: vi.fn().mockResolvedValue({ data: [makeRecord("r1")] }),
     });
 
     await callSyncBatch(attio, "deals");
@@ -137,9 +172,10 @@ describe("initial-sync completion across the three/five batch chains", () => {
     const channelSyncCompleted = vi.fn().mockResolvedValue(undefined);
     const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
-      queryNotes: vi
+      queryNotes: vi.fn().mockResolvedValue({ data: [makeNote("n1")] }),
+      getRecord: vi
         .fn()
-        .mockResolvedValue({ data: [makeNote("n1")], next_cursor: null }),
+        .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") }),
     });
 
     await callSyncBatch(attio, "notes");
@@ -157,9 +193,9 @@ describe("initial-sync completion across the three/five batch chains", () => {
     const channelSyncCompleted = vi.fn().mockResolvedValue(undefined);
     const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
-      queryRecords: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
-      queryTasks: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
-      queryNotes: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
+      queryRecords: vi.fn().mockResolvedValue({ data: [] }),
+      queryTasks: vi.fn().mockResolvedValue({ data: [] }),
+      queryNotes: vi.fn().mockResolvedValue({ data: [] }),
     });
 
     // Finish four of the five chains first — completion must NOT fire yet.
@@ -184,10 +220,12 @@ describe("initial-sync completion across the three/five batch chains", () => {
     });
     const channelSyncCompleted = vi.fn();
     const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
+    // A full page (page-size items) means more may remain — the chain must
+    // continue, not complete. Attio's API returns no cursor; a full page is
+    // the only continuation signal.
+    const fullPage = Array.from({ length: 50 }, (_, i) => makeTask(`tk${i}`));
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
-      queryTasks: vi
-        .fn()
-        .mockResolvedValue({ data: [makeTask("tk1")], next_cursor: "cursor2" }),
+      queryTasks: vi.fn().mockResolvedValue({ data: fullPage }),
     });
     (attio as unknown as { callback: unknown }).callback = vi.fn().mockResolvedValue("cb");
 
@@ -196,8 +234,8 @@ describe("initial-sync completion across the three/five batch chains", () => {
     expect(channelSyncCompleted).not.toHaveBeenCalled();
     // Pending set is untouched — the "tasks" chain hasn't finished yet.
     expect(store.map.get("initial_sync_pending")).toEqual([...ALL_TYPES]);
-    const state = store.map.get("sync_state_tasks") as { cursor: string };
-    expect(state.cursor).toBe("cursor2");
+    const state = store.map.get("sync_state_tasks") as { offset: number };
+    expect(state.offset).toBe(50);
   });
 
   it("does not signal completion for an incremental (non-initial) sync", async () => {
@@ -211,7 +249,7 @@ describe("initial-sync completion across the three/five batch chains", () => {
     const channelSyncCompleted = vi.fn();
     const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
-      queryRecords: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
+      queryRecords: vi.fn().mockResolvedValue({ data: [] }),
     });
 
     await callSyncBatch(attio, "deals");
@@ -235,7 +273,7 @@ describe("initial-sync completion across the three/five batch chains", () => {
     const saveLink = vi.fn().mockResolvedValue("t1");
     const attio = makeAttio({ store, integrations: { channelSyncCompleted, saveLink } });
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
-      queryRecords: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
+      queryRecords: vi.fn().mockResolvedValue({ data: [] }),
     });
 
     await callSyncBatch(attio, "deals");
@@ -291,7 +329,7 @@ describe("markSyncTypeComplete lock contention", () => {
     const channelSyncCompleted = vi.fn();
     const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
-      queryRecords: vi.fn().mockResolvedValue({ data: [], next_cursor: null }),
+      queryRecords: vi.fn().mockResolvedValue({ data: [] }),
     });
 
     vi.stubGlobal(
@@ -317,5 +355,532 @@ describe("markSyncTypeComplete lock contention", () => {
     // stranding "deals" in initial_sync_pending.
     expect(store.map.has("sync_state_deals")).toBe(true);
     expect(store.map.get("initial_sync_pending")).toEqual([...ALL_TYPES]);
+  });
+});
+
+describe("offset pagination (Attio's API returns no cursor)", () => {
+  it("continues to the next page when a full page of records returns", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      initial_sync_pending: [...ALL_TYPES],
+      sync_state_people: seedState(),
+    });
+    const channelSyncCompleted = vi.fn();
+    const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
+    const fullPage = Array.from({ length: 50 }, (_, i) => makeRecord(`r${i}`));
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryRecords: vi.fn().mockResolvedValue({ data: fullPage }),
+    });
+    (attio as unknown as { callback: unknown }).callback = vi
+      .fn()
+      .mockResolvedValue("cb");
+    const runTask = (attio as unknown as { tools: { tasks: { runTask: unknown } } })
+      .tools.tasks.runTask;
+
+    await callSyncBatch(attio, "people");
+
+    const state = store.map.get("sync_state_people") as {
+      offset: number;
+      batchNumber: number;
+    };
+    expect(state.offset).toBe(50);
+    expect(state.batchNumber).toBe(2);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(channelSyncCompleted).not.toHaveBeenCalled();
+  });
+
+  it("requests the stored offset from the API", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_people: seedState({ offset: 100, batchNumber: 3 }),
+    });
+    const attio = makeAttio({ store });
+    const queryRecords = vi.fn().mockResolvedValue({ data: [] });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ queryRecords });
+
+    await callSyncBatch(attio, "people");
+
+    expect(queryRecords).toHaveBeenCalledWith(
+      "people",
+      expect.objectContaining({ offset: 100, limit: 50 })
+    );
+  });
+
+  it("finishes the chain on a partial page", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      initial_sync_pending: ["people"],
+      sync_state_people: seedState({ offset: 50, batchNumber: 2 }),
+    });
+    const channelSyncCompleted = vi.fn().mockResolvedValue(undefined);
+    const attio = makeAttio({ store, integrations: { channelSyncCompleted } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryRecords: vi
+        .fn()
+        .mockResolvedValue({ data: [makeRecord("r50"), makeRecord("r51")] }),
+    });
+
+    await callSyncBatch(attio, "people");
+
+    expect(channelSyncCompleted).toHaveBeenCalledWith("attio");
+    expect(store.map.has("sync_state_people")).toBe(false);
+  });
+
+  it("continues notes pagination on a full page", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_notes: seedState(),
+    });
+    const attio = makeAttio({ store });
+    // Empty-content notes are skipped before any parent fetch, isolating
+    // the pagination behavior.
+    const fullPage = Array.from({ length: 50 }, (_, i) => ({
+      ...makeNote(`n${i}`),
+      title: "",
+      content_plaintext: "",
+    }));
+    const queryNotes = vi.fn().mockResolvedValue({ data: fullPage });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ queryNotes });
+    (attio as unknown as { callback: unknown }).callback = vi
+      .fn()
+      .mockResolvedValue("cb");
+
+    await callSyncBatch(attio, "notes");
+
+    const state = store.map.get("sync_state_notes") as { offset: number };
+    expect(state.offset).toBe(50);
+  });
+});
+
+describe("note sync fetches the parent record", () => {
+  function notesAttio(opts: {
+    initialSync?: boolean;
+    getRecord: ReturnType<typeof vi.fn>;
+    saveLink?: ReturnType<typeof vi.fn>;
+  }) {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_notes: seedState({ initialSync: opts.initialSync ?? true }),
+    });
+    const saveLink = opts.saveLink ?? vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { saveLink } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryNotes: vi.fn().mockResolvedValue({ data: [makeNote("n1")] }),
+      getRecord: opts.getRecord,
+    });
+    return { attio, saveLink };
+  }
+
+  it("titles the parent thread from the fetched record", async () => {
+    const getRecord = vi
+      .fn()
+      .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") });
+    const { attio, saveLink } = notesAttio({ getRecord });
+
+    await callSyncBatch(attio, "notes");
+
+    expect(getRecord).toHaveBeenCalledWith("companies", "rec1");
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const link = saveLink.mock.calls[0][0];
+    expect(link.title).toBe("Acme Corp");
+    expect(link.type).toBe("company");
+    expect(link.source).toBe("attio:ws1:company:rec1");
+    expect(link.notes).toHaveLength(1);
+    expect(link.notes[0].key).toBe("note-n1");
+    expect(link.notes[0].content).toBe("**A note**\n\nnote body");
+  });
+
+  it("skips notes whose parent record no longer exists (404)", async () => {
+    const getRecord = vi.fn().mockRejectedValue(apiError(404));
+    const { attio, saveLink } = notesAttio({ getRecord });
+
+    await callSyncBatch(attio, "notes");
+
+    expect(saveLink).not.toHaveBeenCalled();
+  });
+
+  it("still fails on non-404 fetch errors", async () => {
+    const getRecord = vi.fn().mockRejectedValue(apiError(500));
+    const { attio, saveLink } = notesAttio({ getRecord });
+
+    await expect(callSyncBatch(attio, "notes")).rejects.toThrow(/500/);
+    expect(saveLink).not.toHaveBeenCalled();
+  });
+
+  it("marks the thread unread:false during initial sync", async () => {
+    const getRecord = vi
+      .fn()
+      .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") });
+    const { attio, saveLink } = notesAttio({ getRecord, initialSync: true });
+
+    await callSyncBatch(attio, "notes");
+
+    const link = saveLink.mock.calls[0][0];
+    expect(link.unread).toBe(false);
+    expect(link.archived).toBe(false);
+  });
+
+  it("omits the unread flag for incremental note sync", async () => {
+    const getRecord = vi
+      .fn()
+      .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") });
+    const { attio, saveLink } = notesAttio({ getRecord, initialSync: false });
+
+    await callSyncBatch(attio, "notes");
+
+    const link = saveLink.mock.calls[0][0];
+    expect(link).not.toHaveProperty("unread");
+    expect(link).not.toHaveProperty("archived");
+  });
+});
+
+describe("task sync fetches linked parent records", () => {
+  it("titles each linked thread from its fetched record and skips 404s", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_tasks: seedState({ initialSync: true }),
+    });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { saveLink } });
+    const task = {
+      ...makeTask("tk1"),
+      linked_records: [
+        { target_object: "people", target_record_id: "p1" },
+        { target_object: "people", target_record_id: "gone" },
+      ],
+    };
+    const getRecord = vi.fn(async (_slug: string, recordId: string) => {
+      if (recordId === "gone") throw apiError(404);
+      return { data: makePersonRecord(recordId, "Ada Lovelace") };
+    });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryTasks: vi.fn().mockResolvedValue({ data: [task] }),
+      getRecord,
+    });
+
+    await callSyncBatch(attio, "tasks");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const link = saveLink.mock.calls[0][0];
+    expect(link.title).toBe("Ada Lovelace");
+    expect(link.source).toBe("attio:ws1:person:p1");
+    expect(link.notes[0].key).toBe("task-tk1");
+    expect(link.unread).toBe(false);
+  });
+});
+
+describe("webhook event handling (batched, id-only payloads)", () => {
+  function webhookAttio(store = makeStore({ workspace_slug: "acme" })) {
+    const archiveLinks = vi.fn().mockResolvedValue(undefined);
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { archiveLinks, saveLink } });
+    const scheduleDrain = vi.fn().mockResolvedValue(undefined);
+    (attio as unknown as { scheduleDrain: unknown }).scheduleDrain = scheduleDrain;
+    return { attio, archiveLinks, saveLink, scheduleDrain };
+  }
+
+  function callOnWebhook(attio: Attio, body: unknown): Promise<void> {
+    return (
+      attio as unknown as { onWebhook: (r: { body: unknown }) => Promise<void> }
+    ).onWebhook({ body });
+  }
+
+  it("queues record events from a batched payload for drain", async () => {
+    const { attio, scheduleDrain } = webhookAttio();
+
+    await callOnWebhook(attio, {
+      webhook_id: "wh1",
+      events: [
+        {
+          event_type: "record.created",
+          id: { workspace_id: "ws1", object_id: "obj-1", record_id: "rec-1" },
+          actor: { type: "workspace-member", id: "wm1" },
+        },
+        {
+          event_type: "record.updated",
+          id: { workspace_id: "ws1", object_id: "obj-1", record_id: "rec-2" },
+          actor: { type: "workspace-member", id: "wm1" },
+        },
+      ],
+    });
+
+    expect(scheduleDrain).toHaveBeenCalledTimes(1);
+    const [, , options] = scheduleDrain.mock.calls[0];
+    expect(options).toEqual({ ids: ["record:obj-1:rec-1", "record:obj-1:rec-2"] });
+  });
+
+  it("archives links inline for record.deleted events", async () => {
+    const { attio, archiveLinks, scheduleDrain } = webhookAttio();
+
+    await callOnWebhook(attio, {
+      webhook_id: "wh1",
+      events: [
+        {
+          event_type: "record.deleted",
+          id: { workspace_id: "ws1", object_id: "obj-1", record_id: "rec-9" },
+          actor: { type: "workspace-member", id: "wm1" },
+        },
+      ],
+    });
+
+    expect(archiveLinks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({ attioRecordId: "rec-9" }),
+      })
+    );
+    expect(scheduleDrain).not.toHaveBeenCalled();
+  });
+
+  it("queues note and task events for drain", async () => {
+    const { attio, scheduleDrain } = webhookAttio();
+
+    await callOnWebhook(attio, {
+      webhook_id: "wh1",
+      events: [
+        {
+          event_type: "note.created",
+          id: { workspace_id: "ws1", note_id: "n-1" },
+          parent_object_id: "obj-1",
+          parent_record_id: "rec-1",
+          actor: { type: "workspace-member", id: "wm1" },
+        },
+        {
+          event_type: "note-content.updated",
+          id: { workspace_id: "ws1", note_id: "n-2" },
+          parent_object_id: "obj-1",
+          parent_record_id: "rec-1",
+          actor: { type: "workspace-member", id: "wm1" },
+        },
+        {
+          event_type: "task.created",
+          id: { workspace_id: "ws1", task_id: "t-1" },
+          actor: { type: "workspace-member", id: "wm1" },
+        },
+      ],
+    });
+
+    const [, , options] = scheduleDrain.mock.calls[0];
+    expect(options).toEqual({ ids: ["note:n-1", "note:n-2", "task:t-1"] });
+  });
+
+  it("ignores payloads with no recognized events", async () => {
+    const { attio, scheduleDrain, archiveLinks } = webhookAttio();
+
+    await callOnWebhook(attio, { webhook_id: "wh1", events: [] });
+    await callOnWebhook(attio, { some: "other shape" });
+    await callOnWebhook(attio, undefined);
+
+    expect(scheduleDrain).not.toHaveBeenCalled();
+    expect(archiveLinks).not.toHaveBeenCalled();
+  });
+});
+
+describe("webhook drain", () => {
+  function drainAttio(api: Record<string, unknown>, store = makeStore({ workspace_slug: "acme" })) {
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { saveLink } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue(api);
+    const drain = (
+      attio as unknown as { drainWebhookEvents: (ids: string[]) => Promise<void> }
+    ).drainWebhookEvents.bind(attio);
+    return { attio, saveLink, drain };
+  }
+
+  it("fetches records by object id, resolves the slug, and upserts without unread", async () => {
+    const listObjects = vi.fn().mockResolvedValue([
+      { id: { object_id: "obj-people", workspace_id: "ws1" }, api_slug: "people" },
+    ]);
+    const getRecord = vi
+      .fn()
+      .mockResolvedValue({ data: makePersonRecord("rec-1", "Ada Lovelace") });
+    const { saveLink, drain } = drainAttio({ listObjects, getRecord });
+
+    await drain(["record:obj-people:rec-1"]);
+
+    expect(getRecord).toHaveBeenCalledWith("obj-people", "rec-1");
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const link = saveLink.mock.calls[0][0];
+    expect(link.title).toBe("Ada Lovelace");
+    expect(link.type).toBe("person");
+    // Webhook-driven syncs are incremental — unread must be left unset.
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("skips records whose object type is not synced", async () => {
+    const listObjects = vi.fn().mockResolvedValue([
+      { id: { object_id: "obj-projects", workspace_id: "ws1" }, api_slug: "projects" },
+    ]);
+    const getRecord = vi.fn();
+    const { saveLink, drain } = drainAttio({ listObjects, getRecord });
+
+    await drain(["record:obj-projects:rec-1"]);
+
+    expect(getRecord).not.toHaveBeenCalled();
+    expect(saveLink).not.toHaveBeenCalled();
+  });
+
+  it("skips records deleted before the drain ran (404)", async () => {
+    const listObjects = vi.fn().mockResolvedValue([
+      { id: { object_id: "obj-people", workspace_id: "ws1" }, api_slug: "people" },
+    ]);
+    const getRecord = vi.fn().mockRejectedValue(apiError(404));
+    const { saveLink, drain } = drainAttio({ listObjects, getRecord });
+
+    await drain(["record:obj-people:rec-1"]);
+
+    expect(saveLink).not.toHaveBeenCalled();
+  });
+
+  it("caches the object-id-to-slug map in the store", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      attio_object_slugs: { "obj-people": "people" },
+    });
+    const listObjects = vi.fn();
+    const getRecord = vi
+      .fn()
+      .mockResolvedValue({ data: makePersonRecord("rec-1", "Ada Lovelace") });
+    const { saveLink, drain } = drainAttio({ listObjects, getRecord }, store);
+
+    await drain(["record:obj-people:rec-1"]);
+
+    expect(listObjects).not.toHaveBeenCalled();
+    expect(saveLink).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches notes by id and saves them on their fetched parent", async () => {
+    const getNote = vi.fn().mockResolvedValue({ data: makeNote("n-1") });
+    const getRecord = vi
+      .fn()
+      .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") });
+    const { saveLink, drain } = drainAttio({ getNote, getRecord });
+
+    await drain(["note:n-1"]);
+
+    expect(getNote).toHaveBeenCalledWith("n-1");
+    const link = saveLink.mock.calls[0][0];
+    expect(link.title).toBe("Acme Corp");
+    expect(link.notes[0].key).toBe("note-n-1");
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("fetches tasks by id and saves them on their linked records", async () => {
+    const task = {
+      ...makeTask("t-1"),
+      linked_records: [{ target_object: "companies", target_record_id: "rec1" }],
+    };
+    const getTask = vi.fn().mockResolvedValue({ data: task });
+    const getRecord = vi
+      .fn()
+      .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") });
+    const { saveLink, drain } = drainAttio({ getTask, getRecord });
+
+    await drain(["task:t-1"]);
+
+    expect(getTask).toHaveBeenCalledWith("t-1");
+    const link = saveLink.mock.calls[0][0];
+    expect(link.title).toBe("Acme Corp");
+    expect(link.notes[0].key).toBe("task-t-1");
+  });
+
+  it("skips notes deleted before the drain ran (404)", async () => {
+    const getNote = vi.fn().mockRejectedValue(apiError(404));
+    const { saveLink, drain } = drainAttio({ getNote });
+
+    await drain(["note:n-1"]);
+
+    expect(saveLink).not.toHaveBeenCalled();
+  });
+});
+
+describe("webhook setup", () => {
+  it("subscribes to record, note, and task events", async () => {
+    const store = makeStore({ workspace_slug: "acme" });
+    const attio = makeAttio({ store });
+    const createWebhook = vi
+      .fn()
+      .mockResolvedValue({ data: { id: { webhook_id: "wh-new" } } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ createWebhook, deleteWebhook: vi.fn() });
+
+    await (
+      attio as unknown as { setupAttioWebhook: () => Promise<void> }
+    ).setupAttioWebhook();
+
+    const [, subscriptions] = createWebhook.mock.calls[0];
+    const types = (subscriptions as Array<{ event_type: string }>).map(
+      (s) => s.event_type
+    );
+    expect(types).toEqual(
+      expect.arrayContaining([
+        "record.created",
+        "record.updated",
+        "record.deleted",
+        "note.created",
+        "note-content.updated",
+        "task.created",
+        "task.updated",
+      ])
+    );
+    expect(store.map.get("webhook_id")).toBe("wh-new");
+  });
+
+  it("replaces a previously registered webhook instead of stacking a duplicate", async () => {
+    const store = makeStore({ workspace_slug: "acme", webhook_id: "wh-old" });
+    const attio = makeAttio({ store });
+    const deleteWebhook = vi.fn().mockResolvedValue(undefined);
+    const createWebhook = vi
+      .fn()
+      .mockResolvedValue({ data: { id: { webhook_id: "wh-new" } } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ createWebhook, deleteWebhook });
+
+    await (
+      attio as unknown as { setupAttioWebhook: () => Promise<void> }
+    ).setupAttioWebhook();
+
+    expect(deleteWebhook).toHaveBeenCalledWith("wh-old");
+    expect(store.map.get("webhook_id")).toBe("wh-new");
+  });
+
+  it("propagates registration failures so the task queue can retry", async () => {
+    const store = makeStore({ workspace_slug: "acme" });
+    const attio = makeAttio({ store });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      createWebhook: vi.fn().mockRejectedValue(apiError(500)),
+      deleteWebhook: vi.fn(),
+    });
+
+    await expect(
+      (
+        attio as unknown as { setupAttioWebhook: () => Promise<void> }
+      ).setupAttioWebhook()
+    ).rejects.toThrow(/500/);
+  });
+
+  it("skips registration for localhost webhook URLs", async () => {
+    const store = makeStore({ workspace_slug: "acme" });
+    const attio = makeAttio({
+      store,
+      network: {
+        createWebhook: vi.fn().mockResolvedValue("http://localhost:8787/hook/x"),
+      },
+    });
+    const createWebhook = vi.fn();
+    (attio as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ createWebhook, deleteWebhook: vi.fn() });
+
+    await (
+      attio as unknown as { setupAttioWebhook: () => Promise<void> }
+    ).setupAttioWebhook();
+
+    expect(createWebhook).not.toHaveBeenCalled();
   });
 });

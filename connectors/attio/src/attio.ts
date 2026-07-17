@@ -26,7 +26,7 @@ import {
   type AttioNote,
   type AttioRecord,
   type AttioTask,
-  type AttioWebhookEvent,
+  type AttioWebhookPayload,
   type AttioWebhookSubscription,
   extractName,
   extractPersonName,
@@ -44,12 +44,31 @@ const OBJECT_TO_LINK_TYPE: Record<string, string> = {
   companies: "company",
 };
 
+/**
+ * Batch page size for record/task/note crawls. Attio's list endpoints
+ * return no cursor — a page shorter than this is the end-of-collection
+ * signal, so every query must pass the same limit it checks against.
+ */
+const PAGE_SIZE = 50;
+
+/** Drain key for webhook-driven incremental sync. */
+const WEBHOOK_DRAIN_KEY = "webhook-events";
+
 type SyncState = {
-  cursor: string | null;
+  offset: number;
   batchNumber: number;
   recordsProcessed: number;
   initialSync: boolean;
 };
+
+/** True when an Attio API error means the entity no longer exists. */
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { status?: unknown }).status === 404
+  );
+}
 
 /**
  * Attio CRM connector — syncs deals, people, and companies from Attio.
@@ -243,6 +262,9 @@ export class Attio extends Connector<Attio> {
       await this.clear("webhook_id");
     }
 
+    // Stop draining queued webhook events
+    await this.cancelDrain(WEBHOOK_DRAIN_KEY);
+
     // Clean up per-entity sync state
     for (const entityType of Attio.ENTITY_TYPES) {
       await this.clear(`sync_state_${entityType}`);
@@ -251,13 +273,14 @@ export class Attio extends Connector<Attio> {
     await this.clear("sync_state_notes");
     await this.clear("sync_enabled");
     await this.clear("initial_sync_pending");
+    await this.clear("attio_object_slugs");
   }
 
   // ---- Batch Sync ----
 
   private async startBatchSync(entityType: string): Promise<void> {
     await this.set(`sync_state_${entityType}`, {
-      cursor: null,
+      offset: 0,
       batchNumber: 1,
       recordsProcessed: 0,
       initialSync: true,
@@ -265,6 +288,42 @@ export class Attio extends Connector<Attio> {
 
     const batchCallback = await this.callback(this.syncBatch, entityType);
     await this.tools.tasks.runTask(batchCallback);
+  }
+
+  /**
+   * Persist continuation state and queue the next page of a batch chain,
+   * or run the chain's terminal branch when the page was partial (Attio
+   * returns no cursor — a full page is the only "more may remain" signal).
+   */
+  private async continueOrFinishChain(
+    entityType: string,
+    state: SyncState,
+    pageLength: number
+  ): Promise<void> {
+    if (pageLength === PAGE_SIZE) {
+      await this.set(`sync_state_${entityType}`, {
+        offset: state.offset + pageLength,
+        batchNumber: state.batchNumber + 1,
+        recordsProcessed: state.recordsProcessed + pageLength,
+        initialSync: state.initialSync,
+      } satisfies SyncState);
+
+      const nextBatch = await this.callback(this.syncBatch, entityType);
+      await this.tools.tasks.runTask(nextBatch);
+    } else {
+      // No more pages left to schedule for this chain — one of the five
+      // initial-sync chains is done. Signal completion (once all five have
+      // reported in) so the platform stamps initial_sync_completed_at;
+      // otherwise the stuck-sync watchdog eventually force-flags a healthy
+      // connection as needing reconnection. Gating on initialSync avoids a
+      // pointless call for incremental re-syncs. markSyncTypeComplete may
+      // throw (lock starvation) — that must happen BEFORE the clear() so a
+      // retry of this batch can still record the completion.
+      if (state.initialSync) {
+        await this.markSyncTypeComplete(entityType);
+      }
+      await this.clear(`sync_state_${entityType}`);
+    }
   }
 
   /**
@@ -344,6 +403,11 @@ export class Attio extends Connector<Attio> {
     const state = await this.get<SyncState>(`sync_state_${entityType}`);
     if (!state) throw new Error(`Sync state not found for ${entityType}`);
 
+    // A state persisted by a previous connector version has no `offset`
+    // (it tracked a cursor that Attio's API never actually returned).
+    // Restart that chain from the beginning — upserts make this idempotent.
+    if (typeof state.offset !== "number") state.offset = 0;
+
     const api = this.getAPI();
 
     if (entityType === "tasks") {
@@ -361,45 +425,21 @@ export class Attio extends Connector<Attio> {
     state: SyncState
   ): Promise<void> {
     const result = await api.queryRecords(entityType, {
-      cursor: state.cursor ?? undefined,
-      limit: 50,
+      offset: state.offset,
+      limit: PAGE_SIZE,
     });
 
     for (const record of result.data) {
-      let link: NewLinkWithNotes;
-      if (entityType === "deals") {
-        link = await this.convertDealToLink(record, state.initialSync);
-      } else if (entityType === "companies") {
-        link = await this.convertCompanyToLink(record, state.initialSync);
-      } else {
-        link = await this.convertPersonToLink(record, state.initialSync);
-      }
+      const link = await this.convertRecordToLink(
+        entityType,
+        record,
+        state.initialSync
+      );
+      if (!link) continue;
       await this.tools.integrations.saveLink(link);
     }
 
-    if (result.next_cursor) {
-      await this.set(`sync_state_${entityType}`, {
-        cursor: result.next_cursor,
-        batchNumber: state.batchNumber + 1,
-        recordsProcessed: state.recordsProcessed + result.data.length,
-        initialSync: state.initialSync,
-      } satisfies SyncState);
-
-      const nextBatch = await this.callback(this.syncBatch, entityType);
-      await this.tools.tasks.runTask(nextBatch);
-    } else {
-      // No more pages left to schedule for this record type — this one of
-      // the five initial-sync chains is done. Signal completion (once all
-      // five have reported in) so the platform stamps
-      // initial_sync_completed_at; otherwise the stuck-sync watchdog
-      // eventually force-flags a healthy connection as needing
-      // reconnection. Gating on initialSync avoids a pointless call for
-      // incremental/webhook-driven re-syncs.
-      if (state.initialSync) {
-        await this.markSyncTypeComplete(entityType);
-      }
-      await this.clear(`sync_state_${entityType}`);
-    }
+    await this.continueOrFinishChain(entityType, state, result.data.length);
   }
 
   private async syncTaskBatch(
@@ -408,33 +448,15 @@ export class Attio extends Connector<Attio> {
     entityType: string
   ): Promise<void> {
     const result = await api.queryTasks({
-      cursor: state.cursor ?? undefined,
-      limit: 50,
+      offset: state.offset,
+      limit: PAGE_SIZE,
     });
 
     for (const task of result.data) {
-      await this.saveTaskAsNotes(task);
+      await this.saveTaskAsNotes(task, state.initialSync);
     }
 
-    if (result.next_cursor) {
-      await this.set(`sync_state_${entityType}`, {
-        cursor: result.next_cursor,
-        batchNumber: state.batchNumber + 1,
-        recordsProcessed: state.recordsProcessed + result.data.length,
-        initialSync: state.initialSync,
-      } satisfies SyncState);
-
-      const nextBatch = await this.callback(this.syncBatch, entityType);
-      await this.tools.tasks.runTask(nextBatch);
-    } else {
-      // Tasks chain done — see syncRecordBatch's terminal branch above for
-      // why this must go through markSyncTypeComplete rather than calling
-      // channelSyncCompleted directly.
-      if (state.initialSync) {
-        await this.markSyncTypeComplete(entityType);
-      }
-      await this.clear(`sync_state_${entityType}`);
-    }
+    await this.continueOrFinishChain(entityType, state, result.data.length);
   }
 
   private async syncNoteBatch(
@@ -443,33 +465,15 @@ export class Attio extends Connector<Attio> {
     entityType: string
   ): Promise<void> {
     const result = await api.queryNotes({
-      cursor: state.cursor ?? undefined,
-      limit: 50,
+      offset: state.offset,
+      limit: PAGE_SIZE,
     });
 
     for (const note of result.data) {
-      await this.saveNoteOnParent(note);
+      await this.saveNoteOnParent(note, state.initialSync);
     }
 
-    if (result.next_cursor) {
-      await this.set(`sync_state_${entityType}`, {
-        cursor: result.next_cursor,
-        batchNumber: state.batchNumber + 1,
-        recordsProcessed: state.recordsProcessed + result.data.length,
-        initialSync: state.initialSync,
-      } satisfies SyncState);
-
-      const nextBatch = await this.callback(this.syncBatch, entityType);
-      await this.tools.tasks.runTask(nextBatch);
-    } else {
-      // Notes chain done — see syncRecordBatch's terminal branch above for
-      // why this must go through markSyncTypeComplete rather than calling
-      // channelSyncCompleted directly.
-      if (state.initialSync) {
-        await this.markSyncTypeComplete(entityType);
-      }
-      await this.clear(`sync_state_${entityType}`);
-    }
+    await this.continueOrFinishChain(entityType, state, result.data.length);
   }
 
   /** Build an Attio web app URL for a record. */
@@ -501,6 +505,44 @@ export class Attio extends Connector<Attio> {
   }
 
   // ---- Data Transformation ----
+
+  /**
+   * Convert a record to a link based on its object slug. Returns null for
+   * object types this connector doesn't sync.
+   */
+  private async convertRecordToLink(
+    objectSlug: string,
+    record: AttioRecord,
+    initialSync: boolean
+  ): Promise<NewLinkWithNotes | null> {
+    if (objectSlug === "deals") {
+      return this.convertDealToLink(record, initialSync);
+    }
+    if (objectSlug === "people") {
+      return this.convertPersonToLink(record, initialSync);
+    }
+    if (objectSlug === "companies") {
+      return this.convertCompanyToLink(record, initialSync);
+    }
+    return null;
+  }
+
+  /**
+   * Fetch a record, treating 404 as "deleted upstream" (null). `objectRef`
+   * may be a slug or the object's UUID — Attio accepts either in the path.
+   */
+  private async fetchRecordOrNull(
+    objectRef: string,
+    recordId: string
+  ): Promise<AttioRecord | null> {
+    try {
+      const result = await this.getAPI().getRecord(objectRef, recordId);
+      return result.data;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
 
   private async convertDealToLink(
     record: AttioRecord,
@@ -611,8 +653,16 @@ export class Attio extends Connector<Attio> {
   /**
    * Save an Attio task as a note on each of its linked parent records.
    * Tasks without linked_records are skipped.
+   *
+   * The parent record is fetched so the upserted link carries the real
+   * title and fields — the task payload holds only ids, and upserting a
+   * bare id-only link would create an untitled thread whenever the parent
+   * hasn't been imported yet. Parents deleted upstream (404) are skipped.
    */
-  private async saveTaskAsNotes(task: AttioTask): Promise<void> {
+  private async saveTaskAsNotes(
+    task: AttioTask,
+    initialSync: boolean
+  ): Promise<void> {
     const taskId = task.id.task_id;
     if (!task.linked_records?.length) return;
 
@@ -620,141 +670,262 @@ export class Attio extends Connector<Attio> {
     const content =
       (task.content_plaintext || "Untitled Task") + statusSuffix;
 
-    const workspaceId = task.id.workspace_id;
-
     for (const linked of task.linked_records) {
-      const linkType = OBJECT_TO_LINK_TYPE[linked.target_object];
-      if (!linkType) continue;
+      if (!OBJECT_TO_LINK_TYPE[linked.target_object]) continue;
 
-      await this.tools.integrations.saveLink({
-        source: `attio:${workspaceId}:${linkType}:${linked.target_record_id}`,
-        type: linkType,
-        channelId: "attio",
-        meta: {
-          attioRecordId: linked.target_record_id,
-          attioObjectSlug: linked.target_object,
-          syncProvider: "attio",
-          channelId: "attio",
-        },
-        notes: [
-          {
-            key: `task-${taskId}`,
-            content,
-            created: new Date(task.created_at),
-          } as any,
-        ],
-      });
+      const record = await this.fetchRecordOrNull(
+        linked.target_object,
+        linked.target_record_id
+      );
+      if (!record) continue;
+
+      const link = await this.convertRecordToLink(
+        linked.target_object,
+        record,
+        initialSync
+      );
+      if (!link) continue;
+
+      link.notes = [
+        {
+          key: `task-${taskId}`,
+          content,
+          created: new Date(task.created_at),
+        } as any,
+      ];
+      await this.tools.integrations.saveLink(link);
     }
   }
 
   /**
    * Save an Attio note as a Plot note on its parent record.
+   *
+   * Fetches the parent record for the same reason as {@link saveTaskAsNotes}:
+   * the note payload carries only the parent's ids, and a note can reference
+   * a record the record chains never imported. Notes whose parent was
+   * deleted in Attio (404) are skipped entirely rather than creating an
+   * untitled stub thread.
    */
-  private async saveNoteOnParent(note: AttioNote): Promise<void> {
+  private async saveNoteOnParent(
+    note: AttioNote,
+    initialSync: boolean
+  ): Promise<void> {
     const noteId = note.id.note_id;
-    const linkType = OBJECT_TO_LINK_TYPE[note.parent_object];
-    if (!linkType) return;
+    if (!OBJECT_TO_LINK_TYPE[note.parent_object]) return;
 
     const content = note.content_plaintext || note.title || "";
     if (!content) return;
 
-    const workspaceId = note.id.workspace_id;
+    const record = await this.fetchRecordOrNull(
+      note.parent_object,
+      note.parent_record_id
+    );
+    if (!record) return;
 
-    await this.tools.integrations.saveLink({
-      source: `attio:${workspaceId}:${linkType}:${note.parent_record_id}`,
-      type: linkType,
-      channelId: "attio",
-      meta: {
-        attioRecordId: note.parent_record_id,
-        attioObjectSlug: note.parent_object,
-        syncProvider: "attio",
-        channelId: "attio",
-      },
-      notes: [
-        {
-          key: `note-${noteId}`,
-          content: note.title ? `**${note.title}**\n\n${note.content_plaintext}` : content,
-          created: new Date(note.created_at),
-        } as any,
-      ],
-    });
+    const link = await this.convertRecordToLink(
+      note.parent_object,
+      record,
+      initialSync
+    );
+    if (!link) return;
+
+    link.notes = [
+      {
+        key: `note-${noteId}`,
+        content: note.title
+          ? `**${note.title}**\n\n${note.content_plaintext}`
+          : content,
+        created: new Date(note.created_at),
+      } as any,
+    ];
+    await this.tools.integrations.saveLink(link);
   }
 
   // ---- Webhooks ----
 
   async setupAttioWebhook(): Promise<void> {
-    try {
-      const webhookUrl = await this.tools.network.createWebhook(
-        {},
-        this.onWebhook
-      );
+    const webhookUrl = await this.tools.network.createWebhook(
+      {},
+      this.onWebhook
+    );
 
-      // Skip webhook registration in development
-      if (
-        webhookUrl.includes("localhost") ||
-        webhookUrl.includes("127.0.0.1")
-      ) {
-        return;
+    // Skip webhook registration in development
+    if (
+      webhookUrl.includes("localhost") ||
+      webhookUrl.includes("127.0.0.1")
+    ) {
+      return;
+    }
+
+    const api = this.getAPI();
+
+    // This method re-runs on every channel re-enable/recovery; delete the
+    // previous registration so Attio doesn't accumulate duplicate webhooks
+    // (each duplicate re-delivers every event).
+    const previousId = await this.get<string>("webhook_id");
+    if (previousId) {
+      try {
+        await api.deleteWebhook(previousId);
+      } catch (error) {
+        // Already gone (or revoked) is fine — anything else still shouldn't
+        // block registering the replacement.
+        if (!isNotFound(error)) {
+          console.warn("Failed to delete previous Attio webhook:", error);
+        }
       }
+    }
 
-      const api = this.getAPI();
-      const subscriptions: AttioWebhookSubscription[] = [
-        { event_type: "record.created", filter: null },
-        { event_type: "record.updated", filter: null },
-        { event_type: "record.deleted", filter: null },
-      ];
-      const result = await api.createWebhook(webhookUrl, subscriptions);
+    const subscriptions: AttioWebhookSubscription[] = [
+      { event_type: "record.created", filter: null },
+      { event_type: "record.updated", filter: null },
+      { event_type: "record.deleted", filter: null },
+      { event_type: "note.created", filter: null },
+      { event_type: "note.updated", filter: null },
+      { event_type: "note-content.updated", filter: null },
+      { event_type: "task.created", filter: null },
+      { event_type: "task.updated", filter: null },
+    ];
+    // Registration failures propagate: this runs as a queued task, so
+    // throwing lets the queue retry instead of silently leaving the
+    // connection without any incremental sync.
+    const result = await api.createWebhook(webhookUrl, subscriptions);
 
-      const webhookId = result?.data?.id?.webhook_id;
-      if (webhookId) {
-        await this.set("webhook_id", webhookId);
-      }
-    } catch (error) {
-      console.error("Failed to set up Attio webhook:", error);
+    const webhookId = result?.data?.id?.webhook_id;
+    if (webhookId) {
+      await this.set("webhook_id", webhookId);
     }
   }
 
+  /**
+   * Attio delivers events batched — `{ webhook_id, events: [...] }` — and
+   * each event carries only ids, never the full entity. Queue the ids for
+   * the drain (which fetches each entity), except deletions, which need no
+   * fetch and archive inline.
+   */
   private async onWebhook(request: WebhookRequest): Promise<void> {
-    const payload = request.body as AttioWebhookEvent | undefined;
-    if (!payload?.event_type) return;
+    const payload = request.body as AttioWebhookPayload | undefined;
+    const events = Array.isArray(payload?.events) ? payload.events : [];
+    if (!events.length) return;
 
-    if (
-      payload.event_type === "record.created" ||
-      payload.event_type === "record.updated"
-    ) {
-      const record = payload.record;
-      if (!record) return;
-
-      // Determine entity type from the webhook event's object slug
-      const objectSlug = payload.object?.slug;
-      let link: NewLinkWithNotes;
-      if (objectSlug === "deals") {
-        link = await this.convertDealToLink(record, false);
-      } else if (objectSlug === "people") {
-        link = await this.convertPersonToLink(record, false);
-      } else if (objectSlug === "companies") {
-        link = await this.convertCompanyToLink(record, false);
-      } else {
-        return;
+    const ids: string[] = [];
+    for (const event of events) {
+      switch (event.event_type) {
+        case "record.created":
+        case "record.updated":
+          if (event.id.object_id && event.id.record_id) {
+            ids.push(`record:${event.id.object_id}:${event.id.record_id}`);
+          }
+          break;
+        case "record.deleted":
+          if (event.id.record_id) {
+            await this.tools.integrations.archiveLinks({
+              meta: {
+                attioRecordId: event.id.record_id,
+                syncProvider: "attio",
+              },
+            });
+          }
+          break;
+        case "note.created":
+        case "note.updated":
+        case "note-content.updated":
+          if (event.id.note_id) {
+            ids.push(`note:${event.id.note_id}`);
+          }
+          break;
+        case "task.created":
+        case "task.updated":
+          if (event.id.task_id) {
+            ids.push(`task:${event.id.task_id}`);
+          }
+          break;
+        default:
+          break;
       }
+    }
 
-      await this.tools.integrations.saveLink(link);
-    } else if (payload.event_type === "record.deleted") {
-      const recordId = payload.record?.id?.record_id;
-      if (!recordId) return;
-
-      await this.tools.integrations.archiveLinks({
-        meta: {
-          attioRecordId: recordId,
-          syncProvider: "attio",
-        },
+    if (ids.length) {
+      await this.scheduleDrain(WEBHOOK_DRAIN_KEY, this.drainWebhookEvents, {
+        ids,
       });
     }
+  }
 
-    // Handle task webhooks — save as notes on parent records
-    if (payload.task) {
-      await this.saveTaskAsNotes(payload.task);
+  /**
+   * Drain handler for webhook events: fetches each changed entity by id
+   * and upserts it. Entities deleted between notification and drain (404)
+   * are skipped. Always incremental — never sets `unread: false`.
+   */
+  async drainWebhookEvents(ids: string[]): Promise<void> {
+    const api = this.getAPI();
+
+    for (const id of ids) {
+      const [kind, ...rest] = id.split(":");
+
+      if (kind === "record") {
+        const [objectId, recordId] = rest;
+        const slug = await this.getObjectSlug(objectId);
+        if (!slug || !OBJECT_TO_LINK_TYPE[slug]) continue;
+
+        const record = await this.fetchRecordOrNull(objectId, recordId);
+        if (!record) continue;
+
+        const link = await this.convertRecordToLink(slug, record, false);
+        if (!link) continue;
+        await this.tools.integrations.saveLink(link);
+      } else if (kind === "note") {
+        const note = await this.fetchNoteOrNull(api, rest[0]);
+        if (!note) continue;
+        await this.saveNoteOnParent(note, false);
+      } else if (kind === "task") {
+        const task = await this.fetchTaskOrNull(api, rest[0]);
+        if (!task) continue;
+        await this.saveTaskAsNotes(task, false);
+      }
     }
+  }
+
+  private async fetchNoteOrNull(
+    api: AttioAPI,
+    noteId: string
+  ): Promise<AttioNote | null> {
+    try {
+      return (await api.getNote(noteId)).data;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  private async fetchTaskOrNull(
+    api: AttioAPI,
+    taskId: string
+  ): Promise<AttioTask | null> {
+    try {
+      return (await api.getTask(taskId)).data;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * Resolve an object UUID (the only object identifier webhook events
+   * carry) to its API slug, caching the workspace's object map.
+   */
+  private async getObjectSlug(objectId: string): Promise<string | null> {
+    const cached = await this.get<Record<string, string>>(
+      "attio_object_slugs"
+    );
+    if (cached?.[objectId]) return cached[objectId];
+
+    const objects = await this.getAPI().listObjects();
+    const map: Record<string, string> = {};
+    for (const object of objects) {
+      map[object.id.object_id] = object.api_slug;
+    }
+    await this.set("attio_object_slugs", map);
+    return map[objectId] ?? null;
   }
 
   // ---- Write-backs ----
