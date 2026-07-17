@@ -588,8 +588,9 @@ export abstract class Integrations extends ITool {
    * runtime can't see.
    *
    * Idempotent: safe to call repeatedly; existing reauth flags are not
-   * overwritten. No-op when the channel has no `enabledBy` actor (e.g.
-   * key-based connectors).
+   * overwritten. No-op when the channel has no `enabledBy` actor. Key-based
+   * (API-key) connectors are supported: the connection is flagged and the
+   * app prompts the user to re-enter a working key.
    *
    * @param channelId - The channel resource ID whose token is bad
    */
