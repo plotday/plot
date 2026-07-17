@@ -21,6 +21,14 @@ export type TrelloCommentAction = {
   memberCreator: TrelloMember | null;
   data: { text: string };
 };
+export type TrelloCreateAction = {
+  id: string;
+  type: "createCard";
+  date: string;
+  memberCreator: TrelloMember | null;
+  data: { card?: { id?: string; name?: string } };
+};
+export type TrelloAction = TrelloCommentAction | TrelloCreateAction;
 export type TrelloCheckItem = {
   id: string;
   name: string;
@@ -47,7 +55,7 @@ export type TrelloCard = {
   idMembers: string[];
   members?: TrelloMember[];
   attachments?: TrelloAttachment[];
-  actions?: TrelloCommentAction[];
+  actions?: TrelloAction[];
   checklists?: TrelloChecklist[];
   dateLastActivity: string;
 };
@@ -94,7 +102,7 @@ export class TrelloApi {
       `member_fields=${MEMBER_FIELDS}`,
       "attachments=true",
       "attachment_fields=id,name,url,bytes,mimeType",
-      "actions=commentCard",
+      "actions=commentCard,createCard",
       "actions_limit=50",
       "checklists=all",
       "checklist_fields=name,pos",
@@ -113,7 +121,7 @@ export class TrelloApi {
       `member_fields=${MEMBER_FIELDS}`,
       "attachments=true",
       "attachment_fields=id,name,url,bytes,mimeType",
-      "actions=commentCard",
+      "actions=commentCard,createCard",
       "actions_limit=50",
       "checklists=all",
       "checklist_fields=name,pos",

@@ -709,6 +709,9 @@ export class Asana extends Connector<Asana> {
       key: "description",
       content: description,
       created: task.created_at ? new Date(task.created_at) : undefined,
+      // Attribute the task body to its creator, matching the link author —
+      // without this the description note falls back to the connector itself.
+      ...(authorContact ? { author: authorContact } : {}),
       ...(task.likes ? { reactions: buildLikeReactions(task.likes) } : {}),
     });
 

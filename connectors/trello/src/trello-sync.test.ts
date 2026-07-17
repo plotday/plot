@@ -17,6 +17,13 @@ function card(overrides: Partial<TrelloCard> = {}): TrelloCard {
     attachments: [{ id: "att1", name: "spec.pdf", url: "https://t.co/spec", bytes: 10, mimeType: "application/pdf" }],
     actions: [
       {
+        id: "create1",
+        type: "createCard",
+        date: "2026-01-01T00:00:00.000Z",
+        memberCreator: { id: "m3", fullName: "Cara", username: "cara", avatarUrl: "https://img/cara" },
+        data: { card: { id: "5f000000aaaaaaaaaaaaaaaa", name: "Ship the thing" } },
+      },
+      {
         id: "act1",
         type: "commentCard",
         date: "2026-01-03T00:00:00.000Z",
@@ -42,16 +49,29 @@ describe("transformCard", () => {
     expect(link.meta).toEqual({ syncProvider: "trello", boardId: "board-1", cardId: "5f000000aaaaaaaaaaaaaaaa", idList: "list-todo" });
     // members → accessContacts
     expect(link.accessContacts).toEqual([{ name: "Ada", avatar: "https://img/ada", source: { accountId: "m1" } }]);
+    // link author comes from the createCard action's memberCreator (the card creator)
+    expect(link.author).toEqual({ name: "Cara", avatar: "https://img/cara", source: { accountId: "m3" } });
     // notes: description + comment + attachment
     type KN = { key?: string; content?: string | null; created?: Date; author?: unknown };
     const kn = (link.notes ?? []) as KN[];
     expect(kn.map((n) => n.key)).toEqual(["description", "comment-act1", "attachment-att1"]);
+    const desc = kn.find((n) => n.key === "description")!;
+    expect(desc.author).toEqual({ name: "Cara", avatar: "https://img/cara", source: { accountId: "m3" } });
     const comment = kn.find((n) => n.key === "comment-act1")!;
     expect(comment.content).toBe("looks good");
     expect(comment.created).toEqual(new Date("2026-01-03T00:00:00.000Z"));
     expect(comment.author).toEqual({ name: "Bob", avatar: undefined, source: { accountId: "m2" } });
     const att = kn.find((n) => n.key === "attachment-att1")!;
     expect(att.content).toBe("[spec.pdf](https://t.co/spec)");
+    expect(att.author).toEqual({ name: "Cara", avatar: "https://img/cara", source: { accountId: "m3" } });
+  });
+
+  it("leaves author undefined on the link and description note when there is no createCard action", () => {
+    const link = transformCard(card({ actions: [] }), "board-1", false);
+    expect(link.author).toBeUndefined();
+    type KN = { key?: string; author?: unknown };
+    const desc = (link.notes as KN[]).find((n) => n.key === "description")!;
+    expect(desc.author).toBeUndefined();
   });
 
   it("sets unread:false + archived:false only on initial sync for open cards", () => {

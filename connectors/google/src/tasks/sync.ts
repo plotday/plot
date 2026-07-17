@@ -475,6 +475,9 @@ export function transformTask(
       key: "description",
       content: task.notes,
       contentType: "text" as const,
+      // Google Tasks are the connection owner's own to-dos, so the owner is
+      // the author. Without this the note falls back to the connector itself.
+      ...(authActorId ? { author: { id: authActorId } } : {}),
     });
   }
 
@@ -519,6 +522,9 @@ export function transformTask(
     },
     actions,
     sourceUrl: taskUrl,
+    // The task belongs to the connection owner, so credit the thread to them
+    // rather than defaulting to the connector.
+    author: authActorId ? { id: authActorId } : null,
     assignee: authActorId ? { id: authActorId } : null,
     status: task.status === "completed" ? "done" : "open",
     notes,

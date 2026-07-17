@@ -157,6 +157,10 @@ describe("processOutlookEventsFn — message-model note/link audiences", () => {
       .map((c) => c.email)
       .sort();
     expect(emails).toEqual(["bob@x.com", "org@x.com"]);
+    // The description note is authored by the organizer, not the connection.
+    expect((desc as { author?: { email?: string } }).author?.email).toBe(
+      "org@x.com"
+    );
   });
 
   it("dedupes the organizer when they're also listed as an attendee", async () => {
@@ -220,6 +224,10 @@ describe("processOutlookEventsFn — message-model note/link audiences", () => {
       .map((c) => c.email)
       .sort();
     expect(linkEmails).toEqual(["bob@x.com", "org@x.com"]);
+    // The cancellation link is authored by the organizer, not the connection.
+    expect((link as { author?: { email?: string } }).author?.email).toBe(
+      "org@x.com"
+    );
 
     const cancelNote = link?.notes?.find(
       (n) => (n as { key?: string }).key === "cancellation"

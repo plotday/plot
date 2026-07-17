@@ -752,5 +752,14 @@ export function transformOutlookConversation(opts: {
     plotThread.notes!.push(note);
   }
 
+  // Credit the thread to its originator — the first message's sender — so the
+  // thread is authored by the human who started it, not the connection.
+  // We reuse the first note's author so DMARC name suppression carries
+  // through. Without this the runtime defaults thread.author_id to the
+  // connection's twist_instance (e.g. "Outlook (Plot)"), which then surfaces
+  // as the author in notifications and the thread header.
+  const originator = plotThread.notes![0]?.author;
+  if (originator) plotThread.author = originator;
+
   return plotThread;
 }

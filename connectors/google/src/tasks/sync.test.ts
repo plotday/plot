@@ -222,4 +222,32 @@ describe("transformTask — to-do mapping (no link schedules)", () => {
     expect(link.todoDate).toBeUndefined();
     expect(link.schedules).toBeUndefined();
   });
+
+  it("attributes the thread and description note to the connection owner", () => {
+    const authActorId = "actor-owner" as unknown as Parameters<typeof transformTask>[4];
+    const link = transformTask(
+      { ...baseTask, notes: "remember the oat milk" },
+      LIST_ID,
+      false,
+      [],
+      authActorId
+    );
+    // Thread author = owner, not the connector.
+    expect(link.author).toEqual({ id: authActorId });
+    const desc = (link.notes ?? []).find(
+      (n) => (n as { key?: string }).key === "description"
+    ) as { author?: unknown } | undefined;
+    expect(desc?.author).toEqual({ id: authActorId });
+  });
+
+  it("declares an authorless thread (null) when the owner actor is unknown", () => {
+    const link = transformTask(
+      { ...baseTask, notes: "body" },
+      LIST_ID,
+      false,
+      [],
+      null
+    );
+    expect(link.author).toBeNull();
+  });
 });

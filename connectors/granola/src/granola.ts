@@ -1,6 +1,6 @@
 import { ActionType } from "@plotday/twister";
 import { Connector } from "@plotday/twister/connector";
-import type { NewNote } from "@plotday/twister/plot";
+import type { NewContact, NewNote } from "@plotday/twister/plot";
 import { Options } from "@plotday/twister/options";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import { Callbacks } from "@plotday/twister/tools/callbacks";
@@ -15,7 +15,12 @@ import { Network } from "@plotday/twister/tools/network";
 import { Store } from "@plotday/twister/tools/store";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
-import { GranolaAPI, GranolaApiError, type GranolaNote } from "./granola-api";
+import {
+  GranolaAPI,
+  GranolaApiError,
+  type GranolaNote,
+  type GranolaUser,
+} from "./granola-api";
 
 type SyncState = {
   cursor: string | null;
@@ -288,6 +293,11 @@ export class Granola extends Connector<Granola> {
       );
     }
 
+    // The meeting owner authored the summary. Without this the note (and its
+    // link) fall through to the connector itself, so the summary would surface
+    // as authored by "Granola" rather than the person who ran the meeting.
+    const author = ownerToContact(note.owner);
+
     const rawContent = note.summary_markdown ?? note.summary_text ?? "";
     const { content, chatUrl } = stripChatTrailer(rawContent);
 
@@ -310,10 +320,12 @@ export class Granola extends Connector<Granola> {
       content,
       contentType: "markdown",
       created: new Date(note.updated_at),
+      author,
       ...(initialSync ? { unread: false } : {}),
       link: {
         source: `granola:note:${note.id}`,
         sources,
+        author,
         title:
           note.title ?? note.calendar_event?.event_title ?? "Meeting notes",
         type: "meeting",
@@ -338,6 +350,19 @@ export class Granola extends Connector<Granola> {
       },
     };
   }
+}
+
+/**
+ * Map a Granola meeting owner (`GranolaUser`) to a `NewContact` so the synced
+ * summary is attributed to the person who ran the meeting rather than the
+ * connector. Granola's public API doesn't expose a stable user id, so we key
+ * the contact on the owner's email (always present) plus their display name.
+ */
+function ownerToContact(owner: GranolaUser): NewContact {
+  return {
+    email: owner.email,
+    name: owner.name ?? "",
+  };
 }
 
 /**

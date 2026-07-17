@@ -128,6 +128,48 @@ function makeNote(id: string): AttioNote {
   };
 }
 
+/** Workspace members keyed the way the actor id (workspace_member_id) resolves. */
+function makeWorkspaceMembers() {
+  return [
+    {
+      id: { workspace_id: "ws1", workspace_member_id: "wm1" },
+      first_name: "Ada",
+      last_name: "Lovelace",
+      avatar_url: "https://img.example.com/ada.png",
+      email_address: "ada@example.com",
+      access_level: "member",
+      created_at: "2026-01-01T00:00:00Z",
+    },
+  ];
+}
+
+/** A vi.fn resolving the workspace member list, for `getAPI` mocks. */
+function listWorkspaceMembersMock() {
+  return vi.fn().mockResolvedValue(makeWorkspaceMembers());
+}
+
+/** Add a `created_by` actor-reference system attribute to a record. */
+function withCreator(
+  record: AttioRecord,
+  actorId: string,
+  actorType = "workspace-member"
+): AttioRecord {
+  return {
+    ...record,
+    values: {
+      ...record.values,
+      created_by: [
+        {
+          ...valueMeta,
+          attribute_type: "actor-reference",
+          referenced_actor_type: actorType,
+          referenced_actor_id: actorId,
+        },
+      ],
+    },
+  };
+}
+
 function callSyncBatch(attio: Attio, entityType: string): Promise<void> {
   return (attio as unknown as { syncBatch: (e: string) => Promise<void> }).syncBatch(
     entityType
@@ -176,6 +218,7 @@ describe("initial-sync completion across the three/five batch chains", () => {
       getRecord: vi
         .fn()
         .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") }),
+      listWorkspaceMembers: listWorkspaceMembersMock(),
     });
 
     await callSyncBatch(attio, "notes");
@@ -471,6 +514,7 @@ describe("note sync fetches the parent record", () => {
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
       queryNotes: vi.fn().mockResolvedValue({ data: [makeNote("n1")] }),
       getRecord: opts.getRecord,
+      listWorkspaceMembers: listWorkspaceMembersMock(),
     });
     return { attio, saveLink };
   }
@@ -492,6 +536,14 @@ describe("note sync fetches the parent record", () => {
     expect(link.notes).toHaveLength(1);
     expect(link.notes[0].key).toBe("note-n1");
     expect(link.notes[0].content).toBe("**A note**\n\nnote body");
+    // The note is attributed to its Attio author (created_by_actor), resolved
+    // via the workspace-member map — not the connector.
+    expect(link.notes[0].author).toEqual({
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      avatar: "https://img.example.com/ada.png",
+      source: { accountId: "wm1" },
+    });
   });
 
   it("skips notes whose parent record no longer exists (404)", async () => {
@@ -560,6 +612,7 @@ describe("task sync fetches linked parent records", () => {
     (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
       queryTasks: vi.fn().mockResolvedValue({ data: [task] }),
       getRecord,
+      listWorkspaceMembers: listWorkspaceMembersMock(),
     });
 
     await callSyncBatch(attio, "tasks");
@@ -570,6 +623,163 @@ describe("task sync fetches linked parent records", () => {
     expect(link.source).toBe("attio:ws1:person:p1");
     expect(link.notes[0].key).toBe("task-tk1");
     expect(link.unread).toBe(false);
+  });
+});
+
+describe("author attribution", () => {
+  /** Build an Attio wired to sync one record (label is for readability only). */
+  function recordAttio(_entityType: string, record: AttioRecord) {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_people: seedState(),
+      sync_state_deals: seedState(),
+      sync_state_companies: seedState(),
+    });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { saveLink } });
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryRecords: vi.fn().mockResolvedValue({ data: [record] }),
+      listWorkspaceMembers: listWorkspaceMembersMock(),
+    });
+    return { attio, saveLink };
+  }
+
+  it("attributes a person link to the record creator, NOT the subject", async () => {
+    // The person the record describes (Ada) must not be credited as the author
+    // — the workspace member who created the record (wm1) is.
+    const record = withCreator(makePersonRecord("p1", "Grace Hopper"), "wm1");
+    const { attio, saveLink } = recordAttio("people", record);
+
+    await callSyncBatch(attio, "people");
+
+    const link = saveLink.mock.calls[0][0];
+    expect(link.title).toBe("Grace Hopper");
+    // Author is the creator (Ada, wm1) resolved via the member map — the
+    // subject's own email (person@example.com) is NOT used as the author.
+    expect(link.author).toEqual({
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      avatar: "https://img.example.com/ada.png",
+      source: { accountId: "wm1" },
+    });
+  });
+
+  it("attributes a deal link to the record creator", async () => {
+    const record = withCreator(makeCompanyRecord("d1", "Big Deal"), "wm1");
+    // Reuse the company record shape but sync it as a deal — only the
+    // created_by attribution is under test here.
+    record.id = { record_id: "d1", object_id: "obj-deals", workspace_id: "ws1" };
+    const { attio, saveLink } = recordAttio("deals", record);
+
+    await callSyncBatch(attio, "deals");
+
+    const link = saveLink.mock.calls[0][0];
+    expect(link.type).toBe("deal");
+    expect(link.author).toMatchObject({ source: { accountId: "wm1" } });
+  });
+
+  it("leaves a record authorless when created by a non-human actor", async () => {
+    // A system/api-token actor has no human author → explicit null, not a
+    // connector fallback.
+    const record = withCreator(makeCompanyRecord("c1", "Acme"), "sys", "system");
+    const { attio, saveLink } = recordAttio("companies", record);
+
+    await callSyncBatch(attio, "companies");
+
+    const link = saveLink.mock.calls[0][0];
+    expect(link.type).toBe("company");
+    expect(link.author).toBeNull();
+  });
+
+  it("leaves a record authorless when no creator attribute is present", async () => {
+    const { attio, saveLink } = recordAttio(
+      "companies",
+      makeCompanyRecord("c2", "NoCreator Inc")
+    );
+
+    await callSyncBatch(attio, "companies");
+
+    expect(saveLink.mock.calls[0][0].author).toBeNull();
+  });
+
+  it("attributes a note authored by a non-human actor as authorless", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_notes: seedState(),
+    });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { saveLink } });
+    const systemNote = {
+      ...makeNote("n1"),
+      created_by_actor: { type: "system", id: "sys" },
+    };
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryNotes: vi.fn().mockResolvedValue({ data: [systemNote] }),
+      getRecord: vi
+        .fn()
+        .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") }),
+      listWorkspaceMembers: listWorkspaceMembersMock(),
+    });
+
+    await callSyncBatch(attio, "notes");
+
+    expect(saveLink.mock.calls[0][0].notes[0].author).toBeNull();
+  });
+
+  it("attributes a task note to the task creator", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_tasks: seedState(),
+    });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { saveLink } });
+    const task = {
+      ...makeTask("tk1"),
+      created_by_actor: { type: "workspace-member", id: "wm1" },
+      linked_records: [{ target_object: "companies", target_record_id: "rec1" }],
+    };
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryTasks: vi.fn().mockResolvedValue({ data: [task] }),
+      getRecord: vi
+        .fn()
+        .mockResolvedValue({ data: makeCompanyRecord("rec1", "Acme Corp") }),
+      listWorkspaceMembers: listWorkspaceMembersMock(),
+    });
+
+    await callSyncBatch(attio, "tasks");
+
+    const link = saveLink.mock.calls[0][0];
+    expect(link.notes[0].key).toBe("task-tk1");
+    expect(link.notes[0].author).toMatchObject({
+      name: "Ada Lovelace",
+      source: { accountId: "wm1" },
+    });
+  });
+
+  it("caches the workspace-member list across records in a batch", async () => {
+    const store = makeStore({
+      workspace_slug: "acme",
+      sync_state_people: seedState(),
+    });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const attio = makeAttio({ store, integrations: { saveLink } });
+    const listWorkspaceMembers = listWorkspaceMembersMock();
+    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      queryRecords: vi.fn().mockResolvedValue({
+        data: [
+          withCreator(makePersonRecord("p1", "A"), "wm1"),
+          withCreator(makePersonRecord("p2", "B"), "wm1"),
+        ],
+      }),
+      listWorkspaceMembers,
+    });
+
+    await callSyncBatch(attio, "people");
+
+    // Two records synced, but the member list is fetched at most once (cached
+    // in the store after the first resolution).
+    expect(saveLink).toHaveBeenCalledTimes(2);
+    expect(listWorkspaceMembers).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -683,7 +893,9 @@ describe("webhook drain", () => {
   function drainAttio(api: Record<string, unknown>, store = makeStore({ workspace_slug: "acme" })) {
     const saveLink = vi.fn().mockResolvedValue("t1");
     const attio = makeAttio({ store, integrations: { saveLink } });
-    (attio as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue(api);
+    (attio as unknown as { getAPI: unknown }).getAPI = vi
+      .fn()
+      .mockReturnValue({ listWorkspaceMembers: listWorkspaceMembersMock(), ...api });
     const drain = (
       attio as unknown as { drainWebhookEvents: (ids: string[]) => Promise<void> }
     ).drainWebhookEvents.bind(attio);

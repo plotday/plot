@@ -64,6 +64,11 @@ describe("transformOutlookConversation", () => {
       .map((c) => c.email)
       .sort();
     expect(emails).toEqual(["ann@x.com", "bob@y.com"]);
+    // The thread link is authored by the originating (first) message's sender,
+    // not the connection, and matches the first note's author.
+    const threadAuthor = link.author as { email: string };
+    expect(threadAuthor.email).toBe("ann@x.com");
+    expect(threadAuthor).toEqual((link.notes![0] as { author: unknown }).author);
   });
 
   it("skips drafts and returns empty link when only drafts exist", () => {

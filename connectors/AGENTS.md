@@ -554,6 +554,40 @@ Resolve category statuses (`"unstarted"`, etc.) to the provider's state id yours
 
 The returned link is written with `updated_by` set to the twist, so subsequent syncs of the same id won't re-fire `onCreateLink`/`onLinkUpdated` for the initial state.
 
+## Authorship (REQUIRED)
+
+**Every link and every note you save carries an `author`. If you omit it, the item is attributed to the connector itself** — the thread and its notes surface as authored by the integration's name ("Trello", "Slack", "Attio") instead of the real person. This is silent (no error, no warning in prod) and is the single most common connector attribution bug, precisely because omission is the failure mode. A connector is a conduit for other people's content; it is almost never the author.
+
+Set the real external author in **three places**:
+
+1. **The link** (`NewLinkWithNotes.author`) → the thread's author. Use the item's creator (issue/card creator, document owner, meeting owner) or, for a conversation, the first message's sender.
+2. **The primary / description note** (the body note, `key: "description"` or equivalent) → the same author as the link. This is the note that's most often forgotten — the link author gets set but the description note falls through to the connector.
+3. **Every comment / message / activity note** → that note's own author, resolved per-item.
+
+```typescript
+const author = creatorToContact(item.creator); // NewContact from the API's creator/sender
+const link: NewLinkWithNotes = {
+  author,                                       // 1. thread author
+  notes: [
+    { key: "description", content: item.body, author },        // 2. primary note
+    ...comments.map((c) => ({                                  // 3. per-comment author
+      key: `comment-${c.id}`, content: c.body, author: commentToContact(c.author),
+    })),
+  ],
+};
+```
+
+Rules:
+
+- **Actually fetch the author.** Several connectors were attributed to themselves only because the creator/sender field was never requested from the API (e.g. asking Trello for `actions=commentCard` but not `createCard`, so the card creator is never obtained). If your list/get call doesn't return a creator, add the field or a follow-up fetch.
+- **Owner-sent messages → `note.authoredBySelf = true`.** For the connection owner's own messages (a reply you sent), many providers send an empty sender id and omit you from 1:1 rosters, so `author` can't identify you. Set `authoredBySelf: true` instead — the runtime credits your own contact deterministically. (See `slack/`, `libs/unipile`.)
+- **Genuinely authorless items → `author: null`.** System-generated records with no human author (e.g. an analytics event, a "This event was cancelled." system note) should pass an explicit `null`. That documents the intent and suppresses the development-time "missing author" warning `integrations.saveLink()` logs when both a link and its primary note lack an author.
+- **The author is the *creator*, not the *subject*.** For a CRM record about a person, the author is whoever created the record, not the person the record describes. Don't set the subject as the author.
+
+Reference implementations that get this right: `linear/` (link + description + comment notes), `google-drive/` (file owner + per-comment/reply authors), `github/`, `jira/`, `apple-calendar/` (organizer), `google/src/mail` (thread author = originating sender).
+
+> **Twists** are different: an item a twist creates is authored by the twist, so twists may leave `author` unset. This rule is about **connectors**, which relay content authored by real people.
+
 ## Contacts
 
 Contacts are created implicitly when you save threads/links — no `addContacts()` call, no `ContactAccess.Write`.
@@ -618,6 +652,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 - [ ] `created` on notes = external timestamp, not sync time
 - [ ] `initialSync` propagated through every entry point and batch; set `unread: false, archived: false` on initial, omit on incremental
 - [ ] Create `NewContact` for authors/assignees
+- [ ] Set `author` on the LINK, its PRIMARY/description note, and every comment/message note (see "Authorship") — omitting it attributes the item to the connector. Use `authoredBySelf` for owner-sent messages; `author: null` only for genuinely authorless/system items
 - [ ] Clean up callbacks, webhooks, stored state in `stopSync()` and `onChannelDisabled()`
 - [ ] Recurring/self-renewing tasks (watch renewals, polling, periodic syncs, self-heal) use `this.scheduleRecurring(key, …)` — NOT `scheduleTask` or `runTask({ runAt })` + manual token bookkeeping — and `cancelScheduledTask(key)` on teardown
 - [ ] For Plot-initiated creation: add a `compose` block to the `LinkTypeConfig` AND implement `onCreateLink` — don't call `saveLink` from inside it
@@ -647,6 +682,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 20. Calling `integrations.saveLink()` inside `onNoteCreated` to set the note's `key` → legacy workaround, no longer needed. The runtime sets `key` automatically from the `NoteWriteBackResult` return.
 21. Scheduling a recurring/self-renewing task with `scheduleTask` or `runTask({ runAt })` + manual token bookkeeping → `scheduleTask` is one-shot (the task fires once and is gone; a self-rescheduling callback leaks a new parallel chain on every redundant setup call). Use `this.scheduleRecurring(key, …)` — the durable recurring primitive where the platform owns the cadence and re-arms the task every `intervalMs`. The callback does NOT need to reschedule itself; re-scheduling under the same key with a new `firstRunAt` is safe and atomic (tightens the next fire without leaking a second chain).
 22. `runTask()` per webhook notification → a notification burst floods the queue with duplicate sync passes that stack into one worker's memory. Use `this.scheduleDrain(key, this.handler, { ids })` — the platform coalesces bursts, bounds each pass, and owns the dirty-set bookkeeping (see "Webhook-driven sync uses `scheduleDrain`" above). Similarly, looping `this.set()` for per-item batch state → use `this.setMany()` (one round-trip, atomic).
+23. Omitting `author` on a synced link or note → the item is silently attributed to the connector, so the thread surfaces as authored by the integration's name instead of the real person (see "Authorship (REQUIRED)"). The trap is that it's an omission, not a wrong value — the link author often gets set while the description note is forgotten, or the creator field was never fetched from the API at all. Set `author` on the link + primary note + every comment note; `authoredBySelf` for owner-sent; `author: null` only when genuinely authorless.
 
 ## Examples
 

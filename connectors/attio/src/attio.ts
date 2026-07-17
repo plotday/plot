@@ -23,6 +23,7 @@ import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 
 import {
   AttioAPI,
+  type AttioActor,
   type AttioNote,
   type AttioRecord,
   type AttioTask,
@@ -35,6 +36,7 @@ import {
   extractDealStage,
   extractCurrencyValue,
   extractDomain,
+  extractCreatedByActor,
 } from "./attio-api";
 
 /** Maps Attio object slugs to connector link type identifiers. */
@@ -274,6 +276,7 @@ export class Attio extends Connector<Attio> {
     await this.clear("sync_enabled");
     await this.clear("initial_sync_pending");
     await this.clear("attio_object_slugs");
+    await this.clear("attio_workspace_members");
   }
 
   // ---- Batch Sync ----
@@ -504,6 +507,87 @@ export class Attio extends Connector<Attio> {
     return `https://app.attio.com/${objectSlug}/record/${recordId}/overview`;
   }
 
+  // ---- Author Attribution ----
+
+  /**
+   * Load (and cache) the workspace's members as an actor-id → contact-fields
+   * map. Attio's created-by actors carry only an id, so we resolve it here to
+   * a real name/email/avatar. The map is cached in the store so the crawl and
+   * webhook drain don't re-list members per entity.
+   *
+   * `user_management:read` may be ungranted (or the API may fail) — in that
+   * case we skip caching and return an empty map, so callers still attribute
+   * via the actor id alone (the platform resolves a contact by accountId) and
+   * a later pass can retry the listing.
+   */
+  private async getWorkspaceMemberMap(): Promise<
+    Record<string, { name: string; email: string | null; avatar: string | null }>
+  > {
+    const cached = await this.get<
+      Record<string, { name: string; email: string | null; avatar: string | null }>
+    >("attio_workspace_members");
+    if (cached) return cached;
+
+    let members: Awaited<ReturnType<AttioAPI["listWorkspaceMembers"]>> = [];
+    try {
+      members = await this.getAPI().listWorkspaceMembers();
+    } catch (error) {
+      // Missing scope or a transient failure — degrade to accountId-only
+      // attribution rather than blocking the sync. Don't cache the miss.
+      console.warn("Failed to list Attio workspace members:", error);
+      return {};
+    }
+
+    const map: Record<
+      string,
+      { name: string; email: string | null; avatar: string | null }
+    > = {};
+    for (const m of members) {
+      const name = [m.first_name, m.last_name].filter(Boolean).join(" ");
+      map[m.id.workspace_member_id] = {
+        name,
+        email: m.email_address ?? null,
+        avatar: m.avatar_url ?? null,
+      };
+    }
+    if (members.length) await this.set("attio_workspace_members", map);
+    return map;
+  }
+
+  /**
+   * Resolve an Attio actor to a Plot author. Only `workspace-member` actors
+   * are human authors; `system` / `api-token` / `app` actors (and actors with
+   * no id) resolve to `null` — an explicit "authorless" that documents intent
+   * and avoids mis-attributing the item to the connector itself.
+   *
+   * The returned contact always carries `source: { accountId }` (the actor
+   * id), which the platform resolves to a contact even without an email; the
+   * workspace-member map enriches it with name/email/avatar when available.
+   */
+  private async resolveMemberAuthor(
+    actorType: string | null | undefined,
+    actorId: string | null | undefined
+  ): Promise<NewContact | null> {
+    if (!actorId) return null;
+    if (actorType && actorType !== "workspace-member") return null;
+
+    const members = await this.getWorkspaceMemberMap();
+    const member = members[actorId];
+    return {
+      name: member?.name || "",
+      ...(member?.email ? { email: member.email } : {}),
+      ...(member?.avatar ? { avatar: member.avatar } : {}),
+      source: { accountId: actorId },
+    };
+  }
+
+  /** Resolve an entity's `created_by_actor` (note/task) to a Plot author. */
+  private resolveActorAuthor(
+    actor: AttioActor | undefined | null
+  ): Promise<NewContact | null> {
+    return this.resolveMemberAuthor(actor?.type, actor?.id);
+  }
+
   // ---- Data Transformation ----
 
   /**
@@ -559,6 +643,11 @@ export class Attio extends Connector<Attio> {
       : null;
 
     const workspaceId = record.id.workspace_id;
+    const creator = extractCreatedByActor(v);
+    const author = await this.resolveMemberAuthor(
+      creator?.actorType,
+      creator?.actorId
+    );
 
     return {
       source: `attio:${workspaceId}:deal:${recordId}`,
@@ -566,6 +655,7 @@ export class Attio extends Connector<Attio> {
       title: name,
       created: new Date(record.created_at),
       status: stage?.title ?? null,
+      author,
       channelId: "attio",
       meta: {
         attioRecordId: recordId,
@@ -591,11 +681,14 @@ export class Attio extends Connector<Attio> {
     const phone = extractPhone(v);
     const recordId = record.id.record_id;
 
-    const author: NewContact | undefined = email
-      ? { email, name: name || email }
-      : name
-        ? { name }
-        : undefined;
+    // The author is the workspace member who created this record — NOT the
+    // person the record describes (the subject). Attributing the subject as
+    // the author would falsely credit them with adding the record to the CRM.
+    const creator = extractCreatedByActor(v);
+    const author = await this.resolveMemberAuthor(
+      creator?.actorType,
+      creator?.actorId
+    );
 
     const workspaceId = record.id.workspace_id;
 
@@ -629,12 +722,18 @@ export class Attio extends Connector<Attio> {
     const domain = extractDomain(v);
     const recordId = record.id.record_id;
     const workspaceId = record.id.workspace_id;
+    const creator = extractCreatedByActor(v);
+    const author = await this.resolveMemberAuthor(
+      creator?.actorType,
+      creator?.actorId
+    );
 
     return {
       source: `attio:${workspaceId}:company:${recordId}`,
       type: "company",
       title: name,
       created: new Date(record.created_at),
+      author,
       channelId: "attio",
       meta: {
         attioRecordId: recordId,
@@ -670,6 +769,11 @@ export class Attio extends Connector<Attio> {
     const content =
       (task.content_plaintext || "Untitled Task") + statusSuffix;
 
+    // Attribute the note to the workspace member who created the task, not
+    // the connector. `created_by_actor` is nullable / may be a non-human
+    // actor → resolveActorAuthor returns null (authorless) in that case.
+    const noteAuthor = await this.resolveActorAuthor(task.created_by_actor);
+
     for (const linked of task.linked_records) {
       if (!OBJECT_TO_LINK_TYPE[linked.target_object]) continue;
 
@@ -691,6 +795,7 @@ export class Attio extends Connector<Attio> {
           key: `task-${taskId}`,
           content,
           created: new Date(task.created_at),
+          author: noteAuthor,
         } as any,
       ];
       await this.tools.integrations.saveLink(link);
@@ -729,6 +834,10 @@ export class Attio extends Connector<Attio> {
     );
     if (!link) return;
 
+    // Attribute the note to the workspace member who authored it in Attio
+    // (from the fetched note's `created_by_actor`), not the connector.
+    const noteAuthor = await this.resolveActorAuthor(note.created_by_actor);
+
     link.notes = [
       {
         key: `note-${noteId}`,
@@ -736,6 +845,7 @@ export class Attio extends Connector<Attio> {
           ? `**${note.title}**\n\n${note.content_plaintext}`
           : content,
         created: new Date(note.created_at),
+        author: noteAuthor,
       } as any,
     ];
     await this.tools.integrations.saveLink(link);

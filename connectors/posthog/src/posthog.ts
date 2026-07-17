@@ -192,6 +192,9 @@ export class PostHog extends Connector<PostHog> {
           content: `**${event.event}** at ${event.timestamp}\n\n${propsMarkdown}`,
           contentType: "markdown" as const,
           created: new Date(event.timestamp),
+          // Analytics events have no human author — declare authorless
+          // explicitly rather than defaulting to the connector.
+          author: null,
         };
       });
 
@@ -203,6 +206,9 @@ export class PostHog extends Connector<PostHog> {
         source: `posthog:${projectId}:person:${distinctId}`,
         title: personName,
         type: "person",
+        // A person/events thread has no human author — declare it authorless
+        // explicitly so it isn't attributed to the connector.
+        author: null,
         channelId: eventName,
         meta: {
           syncProvider: "posthog",
