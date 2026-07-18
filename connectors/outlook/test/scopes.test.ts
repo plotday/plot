@@ -22,4 +22,12 @@ describe("outlook scopes", () => {
       "https://graph.microsoft.com/contacts.read",
     ]);
   });
+  it("gives mail and calendar each a distinct channelNoun", () => {
+    const byKey = new Map(PRODUCTS.map((p) => [p.key, p.channelNoun]));
+    expect(byKey.get("mail")).toEqual({ singular: "folder", plural: "folders" });
+    expect(byKey.get("calendar")).toEqual({
+      singular: "calendar",
+      plural: "calendars",
+    });
+  });
 });
