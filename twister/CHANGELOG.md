@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.80.0
+
+### Added
+
+- `ProductInfo.channelNoun` lets a combined connector's products (e.g. Gmail vs. Google Calendar within the Google connector) each declare their own channel vocabulary, overriding the connector-level `channelNoun`. ([#319](https://github.com/plotday/plot/pull/319) [`2b77894`](https://github.com/plotday/plot/commit/2b778947ff8997a98a4dfe25b1fdb69b3c2140f2))
+
+### Changed
+
+- `NewLinkWithNotes.author` and `NewNote.author` now accept an explicit `null` to declare that an item is intentionally authorless (system-generated), alongside clearer JSDoc. Connectors should set `author` to the real external author on the link, its primary note, and every comment/message note; leaving it unset credits the item to the connector itself rather than a person. Passing `null` documents a deliberately authorless item and suppresses the development-time "missing author" warning. ([#314](https://github.com/plotday/plot/pull/314) [`2c6eb04`](https://github.com/plotday/plot/commit/2c6eb046e67650437d142eabee8bae02828b4e98))
+
 ## 0.79.1
 
 ### Changed
