@@ -13,8 +13,25 @@ export interface FollowedRef {
   type: "issue" | "pull_request";
 }
 
-/** Notifications per page — exactly one page is processed per execution. */
-const PAGE_SIZE = 50;
+/**
+ * Notifications per page — exactly one page is processed per execution.
+ *
+ * This bounds an execution's WALL-CLOCK, which is a separate constraint from
+ * the per-execution request budget that `pagination.ts` bounds. Every ref on a
+ * page is processed strictly serially, and each one costs several sequential
+ * round-trips (1 item fetch + 1-3 comment/review list fetches + 1 saveLink), so
+ * a page of PRs is roughly `PAGE_SIZE * 5` sequential hops at minimum. At 50 a
+ * page took ~60s of wall-clock — comfortably inside the ~1000-request budget,
+ * but long enough that the platform reset the Durable Object underneath the
+ * execution and the run-queue message exhausted its retries. 10 keeps a page
+ * near ~12s.
+ *
+ * Throughput is unchanged: a full page schedules a `runTask` continuation, so
+ * a large backlog still drains — just across more, shorter executions.
+ *
+ * If you raise this, re-check the duration, not just the request count.
+ */
+export const PAGE_SIZE = 10;
 /** Initial-sync lookback cap (the max plan window; server drops the rest). */
 const INITIAL_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000;
 /** Incremental fallback lookback when no prior poll timestamp is stored. */
