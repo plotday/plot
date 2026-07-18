@@ -3,7 +3,7 @@
   "plotTwistId": "019efc35-1807-7928-b58e-4994539a39cc",
   "displayName": "Outlook",
   "description": "Email, calendar, and contacts from your Outlook account.",
-  "category": "messaging",
+  "category": "email",
   "logoUrl": "https://api.iconify.design/simple-icons/microsoftoutlook.svg?color=%230078D4",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
