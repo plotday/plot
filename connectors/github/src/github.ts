@@ -561,6 +561,20 @@ export class GitHub extends Connector<GitHub> {
       }
       await this.set("hooks_reconciled_v1", true);
     }
+
+    // One-time heal: the followed-poll page size shrank, and the stored cursor
+    // is a GitHub page NUMBER whose offset depends on that width (page 3 meant
+    // items 101-150 at the old size, 21-30 at the new one). Resuming an
+    // in-flight pass across the change would silently skip the window in
+    // between — and because a completed pass checkpoints `followed_poll_since`,
+    // those items would never be revisited. Drop the cursor so any in-flight
+    // pass restarts from page 1 under the new width; re-processing is
+    // idempotent (saveLink upserts on `source`), so the only cost is repeating
+    // work already done in that pass.
+    if (!(await this.get<boolean>("followed_cursor_reset_v1"))) {
+      await this.clear("followed_sync_state");
+      await this.set("followed_cursor_reset_v1", true);
+    }
   }
 
   /**

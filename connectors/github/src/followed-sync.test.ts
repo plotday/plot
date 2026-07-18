@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseFollowedNotifications, syncFollowedItems, type FollowedSource } from "./followed-sync";
+import { PAGE_SIZE, parseFollowedNotifications, syncFollowedItems, type FollowedSource } from "./followed-sync";
 import type { GitHubNotification } from "./github";
 
 function makeNotification(
@@ -127,8 +127,12 @@ function makeFakeSource(opts: {
             text: async () => opts.notificationsBody ?? "error",
           } as any;
         }
-        // single page
-        return { ok: true, json: async () => (path.includes("page=1") ? opts.notifications ?? [] : []) } as any;
+        // Full page for page 1, empty thereafter. Matched with an anchored
+        // regex, NOT `path.includes("page=1")` — the latter also matches the
+        // `per_page=10` that precedes it in the query string, so every page
+        // would look like page 1 and the pass would never terminate.
+        const isFirstPage = /[?&]page=1(?:&|$)/.test(path);
+        return { ok: true, json: async () => (isFirstPage ? opts.notifications ?? [] : []) } as any;
       }
       if (path.includes("/comments")) {
         // converters fetch comments (with a `?per_page=...` query string) and
@@ -214,9 +218,10 @@ describe("syncFollowedItems", () => {
   });
 
   it("returns done:false and advances the cursor when a full page is returned", async () => {
-    // A full page (PAGE_SIZE=50) signals more may remain: the pass should
-    // checkpoint page 2 and NOT mark itself complete yet.
-    const fullPage = Array.from({ length: 50 }, (_, i) =>
+    // A full page signals more may remain: the pass should checkpoint page 2
+    // and NOT mark itself complete yet. Sized from PAGE_SIZE so tuning the page
+    // width (a wall-clock knob) can't silently invalidate this assertion.
+    const fullPage = Array.from({ length: PAGE_SIZE }, (_, i) =>
       makeNotification({
         id: String(i),
         subject: { url: `https://api.github.com/repos/acme/web/issues/${i + 1}` },
@@ -230,7 +235,7 @@ describe("syncFollowedItems", () => {
   });
 
   it("resumes at page 2 with a frozen since window and completes on a short page", async () => {
-    const fullPage = Array.from({ length: 50 }, (_, i) =>
+    const fullPage = Array.from({ length: PAGE_SIZE }, (_, i) =>
       makeNotification({
         id: String(i),
         subject: { url: `https://api.github.com/repos/acme/web/issues/${i + 1}` },
