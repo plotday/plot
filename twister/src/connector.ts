@@ -236,6 +236,15 @@ export type ProductInfo = {
   icon: string;
   /** Matches an {@link OptionalScopeGroup.id} in this connector's scopes. */
   scopeGroupId: string;
+  /**
+   * Per-product override of {@link Connector.channelNoun} — what this
+   * product's channels represent (e.g. Gmail's are "labels", Google
+   * Calendar's are "calendars"). Needed because a combined connector's
+   * products often have different channel vocabularies, so one
+   * connector-level noun can't describe all of them. Falls back to
+   * "channel"/"channels" when omitted.
+   */
+  channelNoun?: { singular: string; plural: string };
 };
 
 /**

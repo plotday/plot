@@ -74,4 +74,29 @@ describe("PRODUCTS metadata array", () => {
       expect(groupIds.has(product.scopeGroupId)).toBe(true);
     }
   });
+
+  it("gives mail, calendar, and tasks each a distinct channelNoun", () => {
+    const byKey = new Map(PRODUCTS.map((p) => [p.key, p.channelNoun]));
+    expect(byKey.get("mail")).toEqual({ singular: "label", plural: "labels" });
+    expect(byKey.get("calendar")).toEqual({
+      singular: "calendar",
+      plural: "calendars",
+    });
+    expect(byKey.get("tasks")).toEqual({
+      singular: "task list",
+      plural: "task lists",
+    });
+  });
+
+  it("channelNoun singular/plural are distinct non-empty lowercase words", () => {
+    for (const product of PRODUCTS) {
+      if (!product.channelNoun) continue;
+      const { singular, plural } = product.channelNoun;
+      expect(singular).not.toBe("");
+      expect(plural).not.toBe("");
+      expect(singular).not.toBe(plural);
+      expect(singular).toBe(singular.toLowerCase());
+      expect(plural).toBe(plural.toLowerCase());
+    }
+  });
 });

@@ -63,6 +63,12 @@ export interface ProductInfo {
   icon: string;
   /** Must equal key — validated in tests. */
   scopeGroupId: string;
+  /**
+   * What this product's channels represent (e.g. Gmail's are "labels").
+   * Overrides the connector-level channelNoun in the composite setup UI.
+   * Omitted for contacts — its single synthetic channel never renders one.
+   */
+  channelNoun?: { singular: string; plural: string };
 }
 
 // Descriptions intentionally fold each product's scope-reason (what access is
@@ -80,6 +86,7 @@ export const PRODUCTS: ProductInfo[] = [
     description: "Turns email into threads; sends replies and updates labels from Plot.",
     icon: "https://api.iconify.design/logos/google-gmail.svg",
     scopeGroupId: "mail",
+    channelNoun: { singular: "label", plural: "labels" },
   },
   {
     key: "calendar",
@@ -87,6 +94,7 @@ export const PRODUCTS: ProductInfo[] = [
     description: "Adds your events to your agenda and writes your RSVPs.",
     icon: "https://api.iconify.design/logos/google-calendar.svg",
     scopeGroupId: "calendar",
+    channelNoun: { singular: "calendar", plural: "calendars" },
   },
   {
     key: "tasks",
@@ -94,6 +102,7 @@ export const PRODUCTS: ProductInfo[] = [
     description: "Syncs your to-do lists — reads, creates, and completes tasks.",
     icon: "https://plot.day/assets/logo-google-tasks.svg",
     scopeGroupId: "tasks",
+    channelNoun: { singular: "task list", plural: "task lists" },
   },
   {
     key: "contacts",
