@@ -22,6 +22,7 @@ export class Trello extends Connector<Trello> {
   readonly provider = AuthProvider.Trello;
   readonly scopes = ["read", "write"];
   readonly dynamicLinkTypes = true; // per-board statuses are attached in getChannels
+  readonly channelNoun = { singular: "board", plural: "boards" };
   readonly access = [
     "Reads your boards, cards, comments, and attachments",
     "Creates and updates cards and posts comments you make in Plot",
