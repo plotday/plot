@@ -578,10 +578,7 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
  * attribution is per-note and self-corrects on the next sync; a poisoned
  * contact row does not.
  */
-function slackUserToNewActor(
-  userId: string,
-  info?: SlackUserInfo
-): NewActor | null {
+function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
   const source = {
     accountId: userId,
     ...(info?.handle ? { descriptor: `@${info.handle}` } : {}),
@@ -595,7 +592,14 @@ function slackUserToNewActor(
   if (info?.name) {
     return { name: info.name, source };
   }
-  return null;
+  // No resolvable identity — users.info was unavailable, which is almost
+  // always a transient rate-limit rather than a deleted user (deactivated
+  // users still return a name). Fall back to the raw user id as the name so
+  // the note stays attributed to a distinct person rather than collapsing to
+  // the connection itself. This is a healing placeholder, not poison: the API
+  // treats a contact whose name equals its own account id as unresolved and
+  // replaces it with the real name the moment users.info succeeds.
+  return { name: userId, source };
 }
 
 /**
@@ -653,9 +657,9 @@ export function extractSlackMessageReactions(
     }
     if (!key) continue; // truly unknown — drop
 
-    const actors = reaction.users
-      .map((userId) => slackUserToNewActor(userId, userInfos?.get(userId)))
-      .filter((a): a is NewActor => a !== null);
+    const actors = reaction.users.map((userId) =>
+      slackUserToNewActor(userId, userInfos?.get(userId))
+    );
     const existing = byEmoji.get(key) ?? [];
     byEmoji.set(key, [...existing, ...actors]);
   }
@@ -764,12 +768,10 @@ export function transformSlackThread(
       imageHeight: f.original_h ?? null,
     }));
 
-    const noteAuthor = slackUserToNewActor(userId, userInfos?.get(userId));
-
     // Create NewNote with idempotent key
     const note = {
       key: message.ts,
-      ...(noteAuthor ? { author: noteAuthor } : {}),
+      author: slackUserToNewActor(userId, userInfos?.get(userId)),
       content: text,
       created: new Date(parseFloat(message.ts) * 1000),
       checkForTasks: true,

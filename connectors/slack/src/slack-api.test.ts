@@ -34,16 +34,22 @@ describe("transformSlackThread", () => {
     expect(link.author).toEqual(link.notes?.[0]?.author);
   });
 
-  it("omits the author when the root message has no user info", () => {
+  it("falls back to the raw id as a healing placeholder with no user info", () => {
     const messages: SlackMessage[] = [
       { type: "message", ts: "2000.0001", bot_id: "B_BOT", text: "Automated" },
     ];
 
     const link = transformSlackThread(messages, "C123");
 
-    // No users.info available for B_BOT, so slackUserToNewActor returns
-    // null rather than poisoning the contact with the raw id as its name.
-    expect(link.author).toBeUndefined();
-    expect(link.notes?.[0]?.author).toBeUndefined();
+    // No users.info available for B_BOT, so the author name is the raw id and
+    // its source keys on that same id. The API treats a contact whose name
+    // equals its account id as an unresolved placeholder and replaces it with
+    // the real name as soon as users.info succeeds — so this attributes the
+    // note to a distinct person rather than to the connection, and heals.
+    expect(link.author).toEqual({
+      name: "B_BOT",
+      source: { accountId: "B_BOT" },
+    });
+    expect(link.notes?.[0]?.author).toEqual(link.author);
   });
 });
