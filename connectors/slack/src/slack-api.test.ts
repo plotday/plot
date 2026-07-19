@@ -12,8 +12,14 @@ describe("transformSlackThread", () => {
       { type: "message", ts: "1000.0002", user: "U_REPLY", text: "Hi back" },
     ];
     const userInfos: SlackUserInfoMap = new Map([
-      ["U_ROOT", { name: "Root Person", email: "root@example.com" }],
-      ["U_REPLY", { name: "Reply Person", email: "reply@example.com" }],
+      [
+        "U_ROOT",
+        { name: "Root Person", email: "root@example.com", handle: "root" },
+      ],
+      [
+        "U_REPLY",
+        { name: "Reply Person", email: "reply@example.com", handle: "reply" },
+      ],
     ]);
 
     const link = transformSlackThread(messages, "C123", userInfos);
@@ -23,21 +29,21 @@ describe("transformSlackThread", () => {
     expect(link.author).toEqual({
       name: "Root Person",
       email: "root@example.com",
-      source: { accountId: "U_ROOT" },
+      source: { accountId: "U_ROOT", descriptor: "@root" },
     });
     expect(link.author).toEqual(link.notes?.[0]?.author);
   });
 
-  it("falls back to bot_id when the root message has no user", () => {
+  it("omits the author when the root message has no user info", () => {
     const messages: SlackMessage[] = [
       { type: "message", ts: "2000.0001", bot_id: "B_BOT", text: "Automated" },
     ];
 
     const link = transformSlackThread(messages, "C123");
 
-    expect(link.author).toEqual({
-      name: "B_BOT",
-      source: { accountId: "B_BOT" },
-    });
+    // No users.info available for B_BOT, so slackUserToNewActor returns
+    // null rather than poisoning the contact with the raw id as its name.
+    expect(link.author).toBeUndefined();
+    expect(link.notes?.[0]?.author).toBeUndefined();
   });
 });

@@ -545,6 +545,8 @@ export class SlackApi {
 export type SlackUserInfo = {
   name: string | null;
   email: string | null;
+  /** Login handle (`user.name`), display-only. Null when Slack omits it. */
+  handle: string | null;
 };
 
 export type SlackUserInfoMap = Map<string, SlackUserInfo>;
@@ -562,20 +564,28 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
     user.name ||
     null;
   const email = user.profile?.email || null;
-  return { name, email };
+  const handle = user.name || null;
+  return { name, email, handle };
 }
 
 /**
- * Converts a Slack user ID to a NewActor.
+ * Converts a Slack user ID to a NewActor, or null when nothing is known
+ * about the user.
  *
- * When `info` is provided (resolved via users.info), the actor carries the
- * user's real name and email so the Plot contact row gets meaningful
- * identity info. Without it we fall back to the Slack user id as the name,
- * which keeps the actor upsertable by `source` but displays poorly — callers
- * should prefetch user info whenever possible.
+ * Returning null is deliberate. `NewContact` requires an email or a name, and
+ * the only remaining candidate would be the raw `U…` id — which becomes the
+ * contact's display name and pollutes every picker permanently. A dropped
+ * attribution is per-note and self-corrects on the next sync; a poisoned
+ * contact row does not.
  */
-function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
-  const source = { accountId: userId };
+function slackUserToNewActor(
+  userId: string,
+  info?: SlackUserInfo
+): NewActor | null {
+  const source = {
+    accountId: userId,
+    ...(info?.handle ? { descriptor: `@${info.handle}` } : {}),
+  };
   if (info?.email && info.name) {
     return { name: info.name, email: info.email, source };
   }
@@ -585,10 +595,7 @@ function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
   if (info?.name) {
     return { name: info.name, source };
   }
-  // Fallback: no info available. `NewContact` requires at least one of
-  // `email` or `name`, so use the user id as the name — same as the
-  // pre-resolver behavior.
-  return { name: userId, source };
+  return null;
 }
 
 /**
@@ -646,9 +653,9 @@ export function extractSlackMessageReactions(
     }
     if (!key) continue; // truly unknown — drop
 
-    const actors = reaction.users.map((userId) =>
-      slackUserToNewActor(userId, userInfos?.get(userId))
-    );
+    const actors = reaction.users
+      .map((userId) => slackUserToNewActor(userId, userInfos?.get(userId)))
+      .filter((a): a is NewActor => a !== null);
     const existing = byEmoji.get(key) ?? [];
     byEmoji.set(key, [...existing, ...actors]);
   }
@@ -757,10 +764,12 @@ export function transformSlackThread(
       imageHeight: f.original_h ?? null,
     }));
 
+    const noteAuthor = slackUserToNewActor(userId, userInfos?.get(userId));
+
     // Create NewNote with idempotent key
     const note = {
       key: message.ts,
-      author: slackUserToNewActor(userId, userInfos?.get(userId)),
+      ...(noteAuthor ? { author: noteAuthor } : {}),
       content: text,
       created: new Date(parseFloat(message.ts) * 1000),
       checkForTasks: true,

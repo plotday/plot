@@ -7,6 +7,7 @@ import {
   SlackPermanentError,
   SlackRateLimitedError,
   type SlackMessage,
+  type SlackUserInfoMap,
 } from "./slack-api";
 
 /**
@@ -549,10 +550,17 @@ describe("extractSlackMessageReactions (custom emoji)", () => {
       user: "U1",
       reactions: [{ name: "party_parrot", users: ["U1", "U2"], count: 2 }],
     } as unknown as SlackMessage;
+    // Reactors need resolvable user info: with no info at all,
+    // slackUserToNewActor returns null (no raw-id fallback) and unresolved
+    // reactors are filtered out of the reaction's actor list.
+    const userInfos: SlackUserInfoMap = new Map([
+      ["U1", { name: "User One", email: null, handle: "user1" }],
+      ["U2", { name: "User Two", email: null, handle: "user2" }],
+    ]);
 
     const result = extractSlackMessageReactions(
       msg,
-      undefined,
+      userInfos,
       "T0",
       new Set(["party_parrot"])
     );
