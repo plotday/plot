@@ -569,14 +569,16 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
 }
 
 /**
- * Converts a Slack user ID to a NewActor, or null when nothing is known
- * about the user.
+ * Converts a Slack user ID to a NewActor. Always returns an actor: with no
+ * resolvable name or email it falls back to the raw user id as the name.
  *
- * Returning null is deliberate. `NewContact` requires an email or a name, and
- * the only remaining candidate would be the raw `U…` id — which becomes the
- * contact's display name and pollutes every picker permanently. A dropped
- * attribution is per-note and self-corrects on the next sync; a poisoned
- * contact row does not.
+ * That fallback is a healing placeholder, not poison. `users.info` being
+ * unavailable is almost always a transient rate limit rather than a deleted
+ * user (deactivated users still return a name), so attributing the note to a
+ * distinct id keeps people apart until the name resolves — better than
+ * crediting the connection itself. The API treats a contact whose name equals
+ * its own account id as unresolved and replaces it with the real name as soon
+ * as `users.info` succeeds, so the id never sticks.
  */
 function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
   const source = {
