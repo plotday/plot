@@ -1,33 +1,52 @@
 /**
- * Todoist REST API v2 client helpers.
+ * Todoist API v1 client helpers.
  *
- * Uses the REST API directly.
- * https://developer.todoist.com/rest/v2/
+ * Uses Todoist's unified REST API directly.
+ * https://developer.todoist.com/api/v1/
+ *
+ * Todoist retired the old REST v2 (`/rest/v2`) and Sync v9 (`/sync/v9`)
+ * surfaces — both now return `410 Gone`. Everything lives under `/api/v1/`
+ * now, with a few breaking changes from v2 baked in:
+ * - List endpoints return `{ results, next_cursor }` instead of a bare array
+ *   — callers here paginate internally so every exported `list*` function
+ *   still returns a plain array of all items.
+ * - Several task fields were renamed: `is_completed` → `checked`,
+ *   `creator_id` → `added_by_uid`, `assignee_id` → `responsible_uid`,
+ *   `created_at` → `added_at`.
+ * - Comments: `task_id` → `item_id`, `attachment` → `file_attachment`.
+ * - Sections: `order` → `section_order`.
+ * - Responses no longer include a `url` field — it's computed client-side
+ *   from the resource id (see {@link taskUrl}).
+ * - Moving a task between sections/projects is a dedicated
+ *   `POST /tasks/{id}/move` endpoint; the general task-update endpoint no
+ *   longer accepts `section_id`/`project_id`.
  */
 
-const BASE_URL = "https://api.todoist.com/rest/v2";
-const SYNC_URL = "https://api.todoist.com/sync/v9";
+const BASE_URL = "https://api.todoist.com/api/v1";
+const WEB_BASE_URL = "https://app.todoist.com/app";
+
+/** Build the web app URL for a task. Todoist accepts a bare id (no slug). */
+function taskUrl(id: string): string {
+  return `${WEB_BASE_URL}/task/${id}`;
+}
 
 export type TodoistProject = {
   id: string;
   name: string;
   color: string;
   is_shared: boolean;
-  order: number;
   is_favorite: boolean;
-  url: string;
 };
 
 export type TodoistTask = {
   id: string;
   content: string;
   description: string;
-  is_completed: boolean;
+  checked: boolean;
   project_id: string;
   /** Section the task belongs to, or null if it is not in a section. */
   section_id: string | null;
   parent_id: string | null;
-  order: number;
   priority: number; // 1 (normal) to 4 (urgent)
   due: {
     date: string;
@@ -37,17 +56,20 @@ export type TodoistTask = {
     is_recurring: boolean;
   } | null;
   url: string;
-  assignee_id: string | null;
-  creator_id: string;
-  created_at: string;
+  /** Collaborator id of whoever is responsible for (assigned to) the task. */
+  responsible_uid: string | null;
+  /** Collaborator id of whoever created the task. */
+  added_by_uid: string | null;
+  added_at: string | null;
   labels: string[];
 };
 
 /**
  * A file attachment on a Todoist comment.
  *
- * REST v2 returns this as the `attachment` object on a comment; the write
- * path (`createComment`) accepts the same shape with `resource_type: "file"`.
+ * The API returns this as the `file_attachment` object on a comment; the
+ * write path (`createComment`) accepts the same shape with
+ * `resource_type: "file"`.
  */
 export type TodoistCommentAttachment = {
   file_name: string;
@@ -58,7 +80,7 @@ export type TodoistCommentAttachment = {
 
 export type TodoistComment = {
   id: string;
-  task_id: string;
+  item_id: string;
   content: string;
   posted_at: string;
   /**
@@ -67,13 +89,13 @@ export type TodoistComment = {
    * on older payloads.
    */
   posted_uid?: string | null;
-  attachment?: TodoistCommentAttachment | null;
+  file_attachment?: TodoistCommentAttachment | null;
 };
 
 export type TodoistSection = {
   id: string;
   project_id: string;
-  order: number;
+  section_order: number;
   name: string;
 };
 
@@ -90,19 +112,25 @@ export type TodoistTaskCreate = {
 };
 
 /**
- * Fields accepted when updating a task via POST /tasks/{id}. All optional;
- * `assignee_id`/`section_id` may be null to clear. REST v2 supports
- * `section_id` directly — no Sync `item_move` needed.
+ * Fields accepted when updating a task via POST /tasks/{id}. All optional.
+ * `section_id`/`project_id` are NOT accepted here in the v1 API — moving a
+ * task between sections/projects is a dedicated endpoint, see {@link moveTask}.
+ * `assignee_id` may be `null` to clear it.
  */
 export type TodoistTaskUpdate = {
   content?: string;
   description?: string;
-  section_id?: string | null;
   assignee_id?: string | null;
   due_string?: string;
   priority?: number;
   labels?: string[];
 };
+
+/** Target to move a task to. Exactly one of these must be set. */
+export type TodoistTaskMoveTarget =
+  | { project_id: string; section_id?: undefined; parent_id?: undefined }
+  | { section_id: string; project_id?: undefined; parent_id?: undefined }
+  | { parent_id: string; project_id?: undefined; section_id?: undefined };
 
 export type TodoistCollaborator = {
   id: string;
@@ -110,16 +138,14 @@ export type TodoistCollaborator = {
   email: string;
 };
 
+type PagedResponse<T> = { results: T[]; next_cursor: string | null };
+
 async function request<T>(
   token: string,
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const url = path.startsWith("/sync/")
-    ? `${SYNC_URL}${path.replace("/sync/", "/")}`
-    : `${BASE_URL}${path}`;
-
-  const response = await fetch(url, {
+  const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -139,12 +165,43 @@ async function request<T>(
 }
 
 /**
+ * Fetch every page of a `{ results, next_cursor }` list endpoint and return
+ * the concatenated results. All of this connector's list endpoints
+ * (projects, tasks, sections, comments, collaborators) return small enough
+ * sets per project that looping to exhaustion in one execution is safe.
+ */
+async function listAll<T>(
+  token: string,
+  path: string,
+  params: Record<string, string> = {}
+): Promise<T[]> {
+  const results: T[] = [];
+  let cursor: string | null = null;
+  do {
+    const qs = new URLSearchParams(params);
+    if (cursor) qs.set("cursor", cursor);
+    const query = qs.toString();
+    const page = await request<PagedResponse<T>>(
+      token,
+      `${path}${query ? `?${query}` : ""}`
+    );
+    results.push(...page.results);
+    cursor = page.next_cursor;
+  } while (cursor);
+  return results;
+}
+
+function withUrl(task: Omit<TodoistTask, "url">): TodoistTask {
+  return { ...task, url: taskUrl(task.id) };
+}
+
+/**
  * List all projects for the authenticated user.
  */
 export async function listProjects(
   token: string
 ): Promise<TodoistProject[]> {
-  return request<TodoistProject[]>(token, "/projects");
+  return listAll<TodoistProject>(token, "/projects");
 }
 
 /**
@@ -154,15 +211,12 @@ export async function listTasks(
   token: string,
   projectId?: string
 ): Promise<TodoistTask[]> {
-  const params = new URLSearchParams();
-  if (projectId) {
-    params.set("project_id", projectId);
-  }
-  const query = params.toString();
-  return request<TodoistTask[]>(
+  const tasks = await listAll<Omit<TodoistTask, "url">>(
     token,
-    `/tasks${query ? `?${query}` : ""}`
+    "/tasks",
+    projectId ? { project_id: projectId } : {}
   );
+  return tasks.map(withUrl);
 }
 
 /**
@@ -172,7 +226,8 @@ export async function getTask(
   token: string,
   taskId: string
 ): Promise<TodoistTask> {
-  return request<TodoistTask>(token, `/tasks/${taskId}`);
+  const task = await request<Omit<TodoistTask, "url">>(token, `/tasks/${taskId}`);
+  return withUrl(task);
 }
 
 /**
@@ -193,15 +248,17 @@ export async function createTask(
   if (fields.labels !== undefined) body.labels = fields.labels;
   if (fields.assignee_id !== undefined) body.assignee_id = fields.assignee_id;
 
-  return request<TodoistTask>(token, "/tasks", {
+  const task = await request<Omit<TodoistTask, "url">>(token, "/tasks", {
     method: "POST",
     body: JSON.stringify(body),
   });
+  return withUrl(task);
 }
 
 /**
- * Update an existing task. Only the provided fields are sent. `section_id`
- * and `assignee_id` may be `null` to clear them (REST v2 accepts null).
+ * Update an existing task's content/description/assignee/etc. Does NOT move
+ * the task between sections/projects — use {@link moveTask} for that (the v1
+ * API rejects `section_id`/`project_id` on this endpoint).
  */
 export async function updateTask(
   token: string,
@@ -211,16 +268,34 @@ export async function updateTask(
   const body: Record<string, unknown> = {};
   if (fields.content !== undefined) body.content = fields.content;
   if (fields.description !== undefined) body.description = fields.description;
-  if (fields.section_id !== undefined) body.section_id = fields.section_id;
   if (fields.assignee_id !== undefined) body.assignee_id = fields.assignee_id;
   if (fields.due_string !== undefined) body.due_string = fields.due_string;
   if (fields.priority !== undefined) body.priority = fields.priority;
   if (fields.labels !== undefined) body.labels = fields.labels;
 
-  return request<TodoistTask>(token, `/tasks/${taskId}`, {
+  const task = await request<Omit<TodoistTask, "url">>(token, `/tasks/${taskId}`, {
     method: "POST",
     body: JSON.stringify(body),
   });
+  return withUrl(task);
+}
+
+/**
+ * Move a task to a different project, section, or parent task. Exactly one
+ * of `project_id`/`section_id`/`parent_id` must be set — moving to a project
+ * clears any section (the v1 equivalent of v2's `section_id: null`).
+ */
+export async function moveTask(
+  token: string,
+  taskId: string,
+  target: TodoistTaskMoveTarget
+): Promise<TodoistTask> {
+  const task = await request<Omit<TodoistTask, "url">>(
+    token,
+    `/tasks/${taskId}/move`,
+    { method: "POST", body: JSON.stringify(target) }
+  );
+  return withUrl(task);
 }
 
 /**
@@ -230,10 +305,7 @@ export async function listSections(
   token: string,
   projectId: string
 ): Promise<TodoistSection[]> {
-  return request<TodoistSection[]>(
-    token,
-    `/sections?project_id=${encodeURIComponent(projectId)}`
-  );
+  return listAll<TodoistSection>(token, "/sections", { project_id: projectId });
 }
 
 /**
@@ -243,10 +315,7 @@ export async function listComments(
   token: string,
   taskId: string
 ): Promise<TodoistComment[]> {
-  return request<TodoistComment[]>(
-    token,
-    `/comments?task_id=${encodeURIComponent(taskId)}`
-  );
+  return listAll<TodoistComment>(token, "/comments", { task_id: taskId });
 }
 
 /**
@@ -324,7 +393,7 @@ export async function uploadFile(
   );
   form.append("file_name", fileName);
 
-  const response = await fetch(`${SYNC_URL}/uploads/add`, {
+  const response = await fetch(`${BASE_URL}/uploads`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -341,8 +410,6 @@ export async function uploadFile(
 
 /**
  * Update an existing comment's content.
- *
- * Todoist's REST v2 supports POST /comments/{id} for partial updates.
  */
 export async function updateComment(
   token: string,
@@ -362,8 +429,5 @@ export async function listCollaborators(
   token: string,
   projectId: string
 ): Promise<TodoistCollaborator[]> {
-  return request<TodoistCollaborator[]>(
-    token,
-    `/projects/${projectId}/collaborators`
-  );
+  return listAll<TodoistCollaborator>(token, `/projects/${projectId}/collaborators`);
 }

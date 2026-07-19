@@ -33,6 +33,7 @@ import {
   getTask,
   createTask,
   updateTask,
+  moveTask,
   closeTask,
   reopenTask,
   createComment,
@@ -63,9 +64,9 @@ type SyncState = {
  * Pure function — exported for unit testing.
  */
 export function mapTaskStatus(
-  task: Pick<TodoistTask, "is_completed" | "section_id">
+  task: Pick<TodoistTask, "checked" | "section_id">
 ): string {
-  if (task.is_completed) return "done";
+  if (task.checked) return "done";
   if (task.section_id) return task.section_id;
   return "open";
 }
@@ -182,7 +183,7 @@ export class Todoist extends Connector<Todoist> {
         } catch {
           // Section-less projects or no access — fall back to open/done.
         }
-        sections.sort((a, b) => a.order - b.order);
+        sections.sort((a, b) => a.section_order - b.section_order);
 
         const statuses = [
           { status: "open", label: "Open", icon: "todo" as StatusIcon },
@@ -470,7 +471,7 @@ export class Todoist extends Connector<Todoist> {
         if (eventName === "item:completed") {
           link.status = "done";
         } else if (eventName === "item:uncompleted") {
-          link.status = mapTaskStatus({ ...task, is_completed: false });
+          link.status = mapTaskStatus({ ...task, checked: false });
         }
 
         await this.tools.integrations.saveLink(link);
@@ -503,11 +504,11 @@ export class Todoist extends Connector<Todoist> {
         const note = await this.buildCommentNote(
           {
             id: eventData.id,
-            task_id: taskId,
+            item_id: taskId,
             content: eventData.content || "",
             posted_at: eventData.posted_at,
             posted_uid: eventData.posted_uid ?? null,
-            attachment: eventData.file_attachment ?? eventData.attachment ?? null,
+            file_attachment: eventData.file_attachment ?? eventData.attachment ?? null,
           },
           projectId,
           collaborators
@@ -516,7 +517,10 @@ export class Todoist extends Connector<Todoist> {
         const link: NewLinkWithNotes = {
           source,
           type: "task",
-          title: taskId, // Placeholder; upsert by source preserves existing title
+          // No title: the link already exists (created by item:added/initial
+          // sync), and the upsert OVERWRITES title whenever the key is
+          // present — even with a placeholder. Omitting it preserves the
+          // real title already stored.
           channelId: projectId,
           meta: {
             taskId,
@@ -563,7 +567,7 @@ export class Todoist extends Connector<Todoist> {
       author: resolveCollaboratorContact(collaborators, comment.posted_uid),
     };
 
-    const attachment = comment.attachment;
+    const attachment = comment.file_attachment;
     if (attachment?.file_url) {
       // Build an opaque fileRef (`<projectId>:<commentId>`); cache the URL so
       // downloadAttachment can redirect to it.
@@ -607,9 +611,9 @@ export class Todoist extends Connector<Todoist> {
 
     // Resolve assignee
     let assigneeContact: NewContact | undefined;
-    if (task.assignee_id) {
+    if (task.responsible_uid) {
       const collaborator = collaborators.find(
-        (c) => c.id === task.assignee_id
+        (c) => c.id === task.responsible_uid
       );
       if (collaborator) {
         assigneeContact = {
@@ -625,7 +629,7 @@ export class Todoist extends Connector<Todoist> {
     // through to the connector instead of the real author.
     const authorContact = resolveCollaboratorContact(
       collaborators,
-      task.creator_id
+      task.added_by_uid
     );
 
     // Build notes
@@ -650,14 +654,14 @@ export class Todoist extends Connector<Todoist> {
         key: `subtask-${subtask.id}`,
         content: subtask.content,
         tags: {
-          add: subtask.is_completed ? [Tag.Done] : [Tag.Todo],
+          add: subtask.checked ? [Tag.Done] : [Tag.Todo],
         },
       };
 
       // Add assignee mention if subtask has an assignee
-      if (subtask.assignee_id) {
+      if (subtask.responsible_uid) {
         const subtaskAssignee = collaborators.find(
-          (c) => c.id === subtask.assignee_id
+          (c) => c.id === subtask.responsible_uid
         );
         if (subtaskAssignee) {
           subtaskNote.author = {
@@ -678,7 +682,7 @@ export class Todoist extends Connector<Todoist> {
       source,
       type: "task",
       title: task.content,
-      created: task.created_at ? new Date(task.created_at) : undefined,
+      created: task.added_at ? new Date(task.added_at) : undefined,
       channelId: projectId,
       meta: {
         taskId: task.id,
@@ -777,7 +781,7 @@ export class Todoist extends Connector<Todoist> {
       type: "task",
       title: task.content,
       status: draft.status ?? "open",
-      created: task.created_at ? new Date(task.created_at) : undefined,
+      created: task.added_at ? new Date(task.added_at) : undefined,
       channelId: projectId,
       meta: {
         taskId: task.id,
@@ -832,19 +836,22 @@ export class Todoist extends Connector<Todoist> {
         if (assigneeId) fields.assignee_id = assigneeId;
       }
 
-      if (link.status && link.status !== "open" && link.status !== "done") {
-        fields.section_id = link.status;
-      } else if (link.status === "open") {
-        // Clearing back to the no-section "open" status removes the section.
-        fields.section_id = null;
-      }
-
       if (Object.keys(fields).length > 0) {
         await updateTask(token, taskId, fields);
       }
 
-      // Completion is a separate close/reopen call (REST v2 has no
-      // is_completed field on the update endpoint). Only act on a real status:
+      // Moving between sections is a dedicated endpoint in the v1 API (the
+      // general task-update endpoint above no longer accepts section_id).
+      // Moving to the project root (no section_id target) is how "open"
+      // clears a section — the v1 equivalent of v2's `section_id: null`.
+      if (link.status && link.status !== "open" && link.status !== "done") {
+        await moveTask(token, taskId, { section_id: link.status });
+      } else if (link.status === "open") {
+        await moveTask(token, taskId, { project_id: projectId });
+      }
+
+      // Completion is a separate close/reopen call (the update endpoint has no
+      // completion field). Only act on a real status:
       // `done` closes; any other non-null status reopens (idempotent). A null
       // status (title/assignee/section-only edit) leaves completion untouched.
       if (isDone) {
