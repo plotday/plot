@@ -1114,7 +1114,29 @@ type NewContactBase = {
    * reachable through multiple connections (e.g. two Slack workspaces,
    * Gmail + Google Chat sharing one Google account).
    */
-  source?: { accountId: string };
+  source?: {
+    /**
+     * Stable provider-side id. This is the sync and dedupe key: an inbound
+     * contact matches an existing record on `(connection, accountId)`. It
+     * MUST NOT be a handle, username, or phone number — those are mutable,
+     * and re-keying identity onto them spawns duplicate contacts whenever a
+     * user renames themselves.
+     */
+    accountId: string;
+    /**
+     * Display-only disambiguator: the most human-meaningful string this
+     * connection has for this person. A handle (`@beth`), a phone number
+     * (`+15551234567`), a company, a department — whatever best tells them
+     * apart from a same-named person on this connection.
+     *
+     * Never used for matching, so it is free to change over time. Store it
+     * display-ready, including any sigil: write `@beth`, not `beth`.
+     *
+     * Omit when the connection has nothing better than an opaque id — Plot
+     * then shows the connection name alone rather than exposing the id.
+     */
+    descriptor?: string;
+  };
   /**
    * Optional connector-defined role for this contact on the thread, matching
    * a `LinkTypeConfig.contactRoles[].id` (e.g. "to" / "cc" / "bcc" for

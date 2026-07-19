@@ -1597,7 +1597,10 @@ export class Slack extends Connector<Slack> {
             ...(email ? { email } : {}),
             ...(name ? { name } : {}),
             ...(avatar ? { avatar } : {}),
-            source: { accountId: member.id },
+            source: {
+              accountId: member.id,
+              ...(member.name ? { descriptor: `@${member.name}` } : {}),
+            },
           } as NewContact;
 
           contacts.push(contact);

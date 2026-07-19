@@ -545,6 +545,8 @@ export class SlackApi {
 export type SlackUserInfo = {
   name: string | null;
   email: string | null;
+  /** Login handle (`user.name`), display-only. Null when Slack omits it. */
+  handle: string | null;
 };
 
 export type SlackUserInfoMap = Map<string, SlackUserInfo>;
@@ -562,20 +564,27 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
     user.name ||
     null;
   const email = user.profile?.email || null;
-  return { name, email };
+  const handle = user.name || null;
+  return { name, email, handle };
 }
 
 /**
- * Converts a Slack user ID to a NewActor.
+ * Converts a Slack user ID to a NewActor. Always returns an actor: with no
+ * resolvable name or email it falls back to the raw user id as the name.
  *
- * When `info` is provided (resolved via users.info), the actor carries the
- * user's real name and email so the Plot contact row gets meaningful
- * identity info. Without it we fall back to the Slack user id as the name,
- * which keeps the actor upsertable by `source` but displays poorly — callers
- * should prefetch user info whenever possible.
+ * That fallback is a healing placeholder, not poison. `users.info` being
+ * unavailable is almost always a transient rate limit rather than a deleted
+ * user (deactivated users still return a name), so attributing the note to a
+ * distinct id keeps people apart until the name resolves — better than
+ * crediting the connection itself. The API treats a contact whose name equals
+ * its own account id as unresolved and replaces it with the real name as soon
+ * as `users.info` succeeds, so the id never sticks.
  */
 function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
-  const source = { accountId: userId };
+  const source = {
+    accountId: userId,
+    ...(info?.handle ? { descriptor: `@${info.handle}` } : {}),
+  };
   if (info?.email && info.name) {
     return { name: info.name, email: info.email, source };
   }
@@ -585,9 +594,13 @@ function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
   if (info?.name) {
     return { name: info.name, source };
   }
-  // Fallback: no info available. `NewContact` requires at least one of
-  // `email` or `name`, so use the user id as the name — same as the
-  // pre-resolver behavior.
+  // No resolvable identity — users.info was unavailable, which is almost
+  // always a transient rate-limit rather than a deleted user (deactivated
+  // users still return a name). Fall back to the raw user id as the name so
+  // the note stays attributed to a distinct person rather than collapsing to
+  // the connection itself. This is a healing placeholder, not poison: the API
+  // treats a contact whose name equals its own account id as unresolved and
+  // replaces it with the real name the moment users.info succeeds.
   return { name: userId, source };
 }
 
