@@ -38,4 +38,9 @@ describe("stripQuotedReply", () => {
     const text = "Thanks!\nOn Tue, Jun 10, 2026, Bob wrote:\n> earlier";
     expect(stripQuotedReply(text, "text")).toBe("Thanks!");
   });
+
+  it("cuts plain-text quotes whose 'On ... wrote:' attribution is itself quote-prefixed", () => {
+    const text = "Thanks!\n> On Tue, Jun 10, 2026, at 9:00 AM, Bob <bob@example.com> wrote:\n> earlier";
+    expect(stripQuotedReply(text, "text")).toBe("Thanks!");
+  });
 });
