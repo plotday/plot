@@ -862,8 +862,11 @@ export function stripQuotedReply(
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // "On [date], [name] wrote:" or "On [date], [name] <email> wrote:"
-    if (/^On .+ wrote:\s*$/.test(line)) {
+    // "On [date], [name] wrote:" or "On [date], [name] <email> wrote:".
+    // Some clients quote-prefix the attribution line itself (e.g. "> On ...
+    // wrote:") instead of leaving it bare — allow an optional leading ">"
+    // quote marker so that case is still recognized as the reply boundary.
+    if (/^(?:>+\s*)*On .+ wrote:\s*$/.test(line)) {
       // Verify next non-empty line starts with ">" (actual quoted content)
       const nextContentLine = lines.slice(i + 1).find((l) => l.trim() !== "");
       if (nextContentLine && nextContentLine.trim().startsWith(">")) {

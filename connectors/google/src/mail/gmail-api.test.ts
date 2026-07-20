@@ -298,6 +298,20 @@ describe("forwarded email body extraction", () => {
     expect(reply).not.toContain("old message text");
   });
 
+  it("strips plain-text quoted replies whose 'On ... wrote:' attribution is itself quote-prefixed", () => {
+    // Some clients (observed from a real reply) emit the attribution line
+    // WITH a leading "> " rather than leaving it unquoted, e.g.:
+    //   Reply text.
+    //   > On Jun 1, 2026, at 9:00 AM, Bob <bob@example.com> wrote:
+    //   > old message text
+    const reply = stripQuotedReply(
+      "My answer is yes.\r\n> On Mon, Jun 1, 2026, at 9:00 AM, Bob <bob@example.com> wrote:\r\n> old message text",
+      "text"
+    );
+    expect(reply).toContain("My answer is yes.");
+    expect(reply).not.toContain("old message text");
+  });
+
   it("strips Apple Mail quoted replies (<blockquote type=\"cite\">)", () => {
     // Apple Mail (Mail.app / iPhone Mail) wraps the "On <date>, <name> wrote:"
     // attribution and the quoted history in <blockquote type="cite">. The
