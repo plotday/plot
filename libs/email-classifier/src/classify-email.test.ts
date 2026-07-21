@@ -39,6 +39,24 @@ describe("classifyEmail — automation", () => {
   it("treats a plain person email as human", () => {
     expect(classifyEmail(signals()).automation).toBe("human");
   });
+  it("flags a sender whose display NAME signals automation, even with a benign address", () => {
+    // Marketing/phishing blasts often omit List-* headers and use an ordinary
+    // local-part, so the address heuristics miss them — but the display name
+    // ("… NOTIFICATION SYSTEM") is a strong automated signal.
+    expect(
+      classifyEmail(
+        signals({ fromName: "BLUEREWARDS NOTIFICATION SYSTEM", fromAddress: "massage@teravistawellness.com" })
+      ).automation
+    ).toBe("automated");
+  });
+  it("flags a 'do not reply' display name with an ordinary address", () => {
+    expect(
+      classifyEmail(signals({ fromName: "Acme (do not reply)", fromAddress: "hello@acme.com" })).automation
+    ).toBe("automated");
+  });
+  it("does not flag an ordinary personal display name as automated", () => {
+    expect(classifyEmail(signals({ fromName: "Jane Smith", fromAddress: "jane@example.com" })).automation).toBe("human");
+  });
 });
 
 describe("classifyEmail — reach", () => {
