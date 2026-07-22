@@ -306,6 +306,34 @@ function extractUrlsFromText(text: string): string[] {
 }
 
 /**
+ * Some URLs in a meeting invite match a conferencing provider's host yet are
+ * not click-to-join links. Surfacing them as extra "Join" buttons is noise, so
+ * filter them out before building conferencing actions:
+ *
+ *  - dial-in landing pages (local-number lookup, reset-PIN, PSTN conferencing)
+ *    served from a `dialin.*` host,
+ *  - the Microsoft Teams `/meetingOptions` organizer settings page,
+ *  - Webex's `/msteams` "join on a video device / more info" gateway (SIP dial
+ *    instructions, not a personal join link).
+ */
+function isConferencingJoinUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const path = parsed.pathname.toLowerCase();
+
+  if (host.startsWith("dialin.")) return false;
+  if (path.startsWith("/meetingoptions")) return false;
+  if (host.endsWith("webex.com") && path.startsWith("/msteams")) return false;
+
+  return true;
+}
+
+/**
  * Extracts all conferencing links from a Google Calendar event
  * Uses multi-layer extraction: conferenceData -> location -> description
  */
@@ -320,7 +348,7 @@ export function extractConferencingLinks(
     for (const entryPoint of event.conferenceData.entryPoints) {
       if (entryPoint.entryPointType === "video" && entryPoint.uri) {
         const url = entryPoint.uri;
-        if (!seenUrls.has(url)) {
+        if (!seenUrls.has(url) && isConferencingJoinUrl(url)) {
           seenUrls.add(url);
           const provider =
             detectConferencingProvider(url) || ConferencingProvider.other;
@@ -339,7 +367,7 @@ export function extractConferencingLinks(
     const urls = extractUrlsFromText(event.location);
     for (const url of urls) {
       const provider = detectConferencingProvider(url);
-      if (provider && !seenUrls.has(url)) {
+      if (provider && !seenUrls.has(url) && isConferencingJoinUrl(url)) {
         seenUrls.add(url);
         links.push({
           url,
@@ -354,7 +382,7 @@ export function extractConferencingLinks(
     const urls = extractUrlsFromText(event.description);
     for (const url of urls) {
       const provider = detectConferencingProvider(url);
-      if (provider && !seenUrls.has(url)) {
+      if (provider && !seenUrls.has(url) && isConferencingJoinUrl(url)) {
         seenUrls.add(url);
         links.push({
           url,
@@ -364,7 +392,21 @@ export function extractConferencingLinks(
     }
   }
 
-  return links;
+  // Collapse to a single join link per provider. A meeting is reached through
+  // one provider even when the invite lists several forms of the same link
+  // (e.g. Teams `/meet/` and `/l/meetup-join/`, or a Google Meet URL present
+  // in both conferenceData and the description) — showing one button per
+  // provider keeps the affordance without duplicate icons. Layers run
+  // most-reliable first and a Map preserves insertion order, so the first
+  // (best) link seen for each provider wins.
+  const perProvider = new Map<ConferencingProvider, ConferencingLink>();
+  for (const link of links) {
+    if (!perProvider.has(link.provider)) {
+      perProvider.set(link.provider, link);
+    }
+  }
+
+  return [...perProvider.values()];
 }
 
 export function transformGoogleEvent(
@@ -528,11 +570,24 @@ export async function syncGoogleCalendar(
 }
 
 /**
- * Detects if a string contains HTML tags
+ * Detects if a string contains real HTML tags.
+ *
+ * Google Calendar descriptions may be HTML (rich editor) or plain text. Only
+ * HTML should route through the server-side HTML→Markdown converter; plain text
+ * goes through the plaintext path, which correctly handles the angle-bracket
+ * autolinks (`Label<https://url>`, `<tel:…>`) and ASCII separator bars that
+ * Outlook/Teams invites use.
+ *
+ * A real HTML tag is a name immediately after `<` followed by whitespace, `/`,
+ * or `>` (`<div>`, `<a href=…>`, `<br/>`). An angle-bracket autolink like
+ * `<https://…>` or `<tel:…>` has a `:` right after the scheme letters, so it is
+ * NOT matched — the previous `/<[a-z][\s\S]*>/` treated those as HTML and sent
+ * plain-text invites through the HTML converter, which flattened newlines and
+ * left escaped-underscore walls.
  */
 export function containsHtml(text: string | null | undefined): boolean {
   if (!text) return false;
-  return /<[a-z][\s\S]*>/i.test(text);
+  return /<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?\/?>/i.test(text);
 }
 
 /**
