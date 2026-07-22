@@ -1471,7 +1471,7 @@ For **inbound** attachments (files that live in the external system), connectors
 
 A few specialized tools are also available — see their type definitions for full APIs:
 
-- **Imap** (`@plotday/twister/tools/imap`) and **Smtp** (`@plotday/twister/tools/smtp`) — raw IMAP/SMTP sessions for password-based email connectors (connect, list mailboxes, search/fetch messages, set flags, send).
+- **Imap** (`@plotday/twister/tools/imap`) and **Smtp** (`@plotday/twister/tools/smtp`) — raw IMAP/SMTP sessions for password-based email connectors (connect, list mailboxes, search/fetch messages, set flags, send). `Imap.watch(key, options, callback)` registers a platform-held IMAP IDLE push watch on a mailbox: the platform keeps the connection open and invokes your callback within seconds of new mail or flag changes. Watches are keyed upserts — re-arm from your recurring poll (self-healing + credential refresh), route the callback through `scheduleDrain` (pushes burst), keep the poll as the safety net, and `unwatch(key)` on channel disable.
 - **Twists** (`@plotday/twister/tools/twists`) — programmatically create, generate, and deploy twists, and subscribe to their logs. Used by twist-builder twists.
 
 ---

@@ -1,4 +1,5 @@
 import { ITool } from "..";
+import type { Callback } from "./callbacks";
 
 /** Opaque session handle returned by connect(). */
 export type ImapSession = string;
@@ -115,6 +116,12 @@ export type ImapFetchOptions = {
 
 /** How to modify flags. */
 export type ImapFlagOperation = "add" | "remove" | "set";
+
+/** Server, credentials, and mailbox for a push watch. */
+export type ImapWatchOptions = ImapConnectOptions & {
+  /** Mailbox to watch for changes (e.g. "INBOX"). */
+  mailbox: string;
+};
 
 /**
  * Built-in tool for IMAP email access.
@@ -263,4 +270,45 @@ export abstract class Imap extends ITool {
    * @param session - Session handle from connect()
    */
   abstract disconnect(session: ImapSession): Promise<void>;
+
+  /**
+   * Starts (or updates) a server-maintained IMAP IDLE push watch on a
+   * mailbox. The platform holds the connection open and invokes `callback`
+   * whenever the mailbox changes (new mail, flag changes), so the connector
+   * can run an incremental sync within seconds instead of waiting for its
+   * next poll.
+   *
+   * Idempotent upsert per `key`: re-calling with the same options while the
+   * watch is healthy is a cheap no-op, so connectors should re-arm the watch
+   * from their recurring poll — that both restarts a watch the platform may
+   * have dropped and refreshes rotated credentials. Calling with changed
+   * options reconnects with the new configuration.
+   *
+   * The callback is invoked with no additional arguments — bind what you
+   * need (e.g. the channel id) when creating it. Expect bursts: route the
+   * callback through `scheduleDrain` rather than syncing inline. Push can be
+   * lossy across reconnects (the platform catches up on reconnect, but keep
+   * a recurring poll as the outer safety net).
+   *
+   * @param key - Stable watch identity within this connector instance
+   *              (e.g. the channel id). One live watch per key.
+   * @param options - Server, credentials, and mailbox to watch. The host
+   *                  must be in the declared hosts list.
+   * @param callback - Token from `this.callback(...)` to invoke on changes
+   * @throws If the host is not in the declared hosts list
+   */
+  abstract watch(
+    key: string,
+    options: ImapWatchOptions,
+    callback: Callback
+  ): Promise<void>;
+
+  /**
+   * Stops the push watch for `key` and discards its stored configuration.
+   * Call from `onChannelDisabled` (and any other teardown path). No-op if
+   * no watch exists.
+   *
+   * @param key - The key the watch was created with
+   */
+  abstract unwatch(key: string): Promise<void>;
 }
