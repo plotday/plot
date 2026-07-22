@@ -2,7 +2,7 @@ import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
 import type { MailHost } from "./mail-host";
 
-const ICLOUD_IMAP = { host: "imap.mail.me.com", port: 993, tls: true } as const;
+export const ICLOUD_IMAP = { host: "imap.mail.me.com", port: 993, tls: true } as const;
 
 export async function connectIcloud(host: MailHost): Promise<ImapSession> {
   return host.imap.connect({

@@ -19,6 +19,7 @@ import type {
   NewScheduleOccurrence,
   ScheduleContactStatus,
 } from "@plotday/twister/schedule";
+import type { Callback } from "@plotday/twister/tools/callbacks";
 import {
   type AuthToken,
   type Authorization,
@@ -43,6 +44,7 @@ import {
 } from "./calendar/ics-parser";
 import { composeChannels } from "./compose";
 import { getMailChannels } from "./mail/channels";
+import { ICLOUD_IMAP } from "./mail/imap-fetch";
 import type { MailHost } from "./mail/mail-host";
 import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
 import { parse } from "./product-channel";
@@ -503,6 +505,13 @@ export class Apple extends Connector<Apple> {
    */
   private async onMailChannelDisabled(channel: Channel): Promise<void> {
     await this.cancelScheduledTask(`mailpoll:${channel.id}`);
+    await this.tools.imap.unwatch(channel.id);
+    await this.cancelDrain(`mail-push:${channel.id}`);
+    const pushCb = await this.get<Callback>(`mail:push_cb_${channel.id}`);
+    if (pushCb) {
+      await this.deleteCallback(pushCb);
+      await this.clear(`mail:push_cb_${channel.id}`);
+    }
     await this.clear(`mail:enabled_${channel.id}`);
     await this.clear(`mail:state_${channel.id}`);
     await this.clear(`mail:sync_history_min_${channel.id}`);
@@ -524,17 +533,79 @@ export class Apple extends Connector<Apple> {
       new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     await mailInitialSync(host, "INBOX", channelId, min);
     await this.scheduleMailPoll(channelId);
+    await this.armMailWatch(channelId);
   }
 
   /**
    * Recurring mail poll (dispatched callback). Bails if the channel was
-   * disabled since this poll was scheduled; otherwise runs the incremental
-   * IMAP sync.
+   * disabled since this poll was scheduled; otherwise re-arms the push
+   * watch (self-healing: restarts a dropped watch and refreshes rotated
+   * credentials — a cheap upsert when nothing changed) and runs the
+   * incremental IMAP sync. With push active, this poll is the safety net
+   * for anything IDLE missed.
    */
   async mailPoll(channelId: string): Promise<void> {
     const enabled = await this.get<boolean>(`mail:enabled_${channelId}`);
     if (!enabled) return;
+    await this.armMailWatch(channelId);
     await mailIncrementalSync(this.buildMailHost(), channelId);
+  }
+
+  /**
+   * Push notification from the platform's IMAP IDLE watch (dispatched
+   * callback). Never syncs inline: pushes arrive in bursts (one per new
+   * message / flag change), so route through a short-delay drain that
+   * coalesces them into one incremental sync pass.
+   */
+  async mailPushed(channelId: string): Promise<void> {
+    const enabled = await this.get<boolean>(`mail:enabled_${channelId}`);
+    if (!enabled) return;
+    await this.scheduleDrain(`mail-push:${channelId}`, this.mailPushDrain, {
+      // Signal-only drain: the incremental sync derives its own work from
+      // mailbox state. 2s keeps push feeling instant while still folding a
+      // burst into one pass.
+      delayMs: 2000,
+      handlerArgs: [channelId],
+    });
+  }
+
+  /** Coalesced drain pass behind `mailPushed` — one incremental sync. */
+  async mailPushDrain(_ids: string[], channelId: string): Promise<void> {
+    const enabled = await this.get<boolean>(`mail:enabled_${channelId}`);
+    if (!enabled) return;
+    await mailIncrementalSync(this.buildMailHost(), channelId);
+  }
+
+  /**
+   * Start (or refresh) the platform-held IMAP IDLE watch on this channel's
+   * mailbox. The callback token is created once and reused across re-arms —
+   * `imap.watch` is a keyed upsert, so re-arming every poll costs one cheap
+   * call and never stacks watches or callbacks. Failures degrade to polling
+   * rather than failing the caller's sync.
+   */
+  private async armMailWatch(channelId: string): Promise<void> {
+    try {
+      let cb = await this.get<Callback>(`mail:push_cb_${channelId}`);
+      if (!cb) {
+        cb = (await this.callback(this.mailPushed, channelId)) as Callback;
+        await this.set(`mail:push_cb_${channelId}`, cb);
+      }
+      await this.tools.imap.watch(
+        channelId,
+        {
+          ...ICLOUD_IMAP,
+          username: this.tools.options.appleId as string,
+          password: this.tools.options.appPassword as string,
+          mailbox: parse(channelId).rawId,
+        },
+        cb
+      );
+    } catch (error) {
+      // Push is an enhancement over the 15-minute poll — a watch-arm
+      // failure must not fail the sync that triggered it. The next poll
+      // retries.
+      console.warn(`[Apple] Failed to arm IMAP watch for ${channelId}:`, error);
+    }
   }
 
   /**
