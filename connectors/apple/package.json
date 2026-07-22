@@ -2,7 +2,7 @@
   "name": "@plotday/connector-apple",
   "plotTwistId": "174bbfb4-97f5-49a7-abde-cb237675dd51",
   "displayName": "iCloud Mail & Calendar",
-  "description": "Your iCloud mail and calendar — email threads, events, RSVPs, and to-dos in one place.",
+  "description": "Your iCloud Mail and Calendar (also called Apple Mail and Apple Calendar) — email threads, events, RSVPs, and to-dos for @icloud.com, @me.com, and @mac.com accounts, all in one place.",
   "category": "email",
   "logoUrl": "https://plot.day/assets/logo-apple-calendar.svg",
   "publisher": "Plot",

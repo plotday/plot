@@ -10,8 +10,17 @@ import type { MailHost } from "./mail-host";
 export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "email",
-    label: "Email",
+    // "Thread" (matching Gmail) so the type filter reads "… thread", not
+    // "… email". `sourceName` brands the type per-product, so it reads
+    // "iCloud email thread" rather than the full connector name.
+    label: "Thread",
+    sourceName: "iCloud email",
     sharingModel: "thread",
+    // A mail mark so email threads don't fall back to the connector's
+    // calendar logo. Iconify URLs render crisply at logo size and resolve
+    // without a site deploy.
+    logo: "https://api.iconify.design/fluent-emoji-flat/envelope.svg",
+    logoMono: "https://api.iconify.design/lucide/mail.svg",
   },
 ];
 

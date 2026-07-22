@@ -7,10 +7,13 @@ export const CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "event",
     label: "Event",
+    sourceName: "iCloud Calendar",
     sharingModel: "thread",
     includesSchedules: true,
-    logo: "https://plot.day/assets/logo-apple-calendar.svg",
-    logoMono: "https://api.iconify.design/simple-icons/apple.svg",
+    // Crisp, high-contrast calendar mark; the previous rounded-square SVG was
+    // mostly white with thin red strokes and washed out at logo size.
+    logo: "https://api.iconify.design/fluent-emoji-flat/calendar.svg",
+    logoMono: "https://api.iconify.design/lucide/calendar.svg",
   },
 ];
 

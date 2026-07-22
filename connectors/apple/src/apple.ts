@@ -7,6 +7,7 @@ import {
   Connector,
   type NewContact,
   type NewLinkWithNotes,
+  type ProductInfo,
   type Serializable,
   type Thread,
   type ToolBuilder,
@@ -44,7 +45,7 @@ import { composeChannels } from "./compose";
 import { getMailChannels } from "./mail/channels";
 import type { MailHost } from "./mail/mail-host";
 import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
-import { namespace, parse } from "./product-channel";
+import { parse } from "./product-channel";
 import { appleProducts } from "./products";
 
 /**
@@ -138,6 +139,31 @@ export class Apple extends Connector<Apple> {
   readonly access = [
     "Reads your iCloud mail and calendar to add them to Plot",
     "Sends replies and writes your event RSVPs",
+  ];
+
+  // Per-product metadata for the combined-connection setup/status UX. Declaring
+  // `products` makes the app render top-level Email / Calendar sections, each
+  // expanding to its own channels (mail folders / calendars), instead of one
+  // flat channel list. This connector has no OAuth scopes, so `scopeGroupId`
+  // matches no optional scope group — the API then treats each product as
+  // having no required scopes, i.e. always granted once credentials are set.
+  readonly products: ProductInfo[] = [
+    {
+      key: "mail",
+      label: "Email",
+      description: "Turns your iCloud email into organized threads.",
+      icon: "https://api.iconify.design/fluent-emoji-flat/envelope.svg",
+      scopeGroupId: "mail",
+      channelNoun: { singular: "folder", plural: "folders" },
+    },
+    {
+      key: "calendar",
+      label: "Calendar",
+      description: "Adds your iCloud events to your agenda and writes your RSVPs.",
+      icon: "https://api.iconify.design/fluent-emoji-flat/calendar.svg",
+      scopeGroupId: "calendar",
+      channelNoun: { singular: "calendar", plural: "calendars" },
+    },
   ];
 
   // Lock TTL covering the worst-case full backfill. The framework releases
