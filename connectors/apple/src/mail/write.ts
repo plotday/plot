@@ -54,14 +54,20 @@ export async function onNoteCreatedFn(
 
   const selfEmails = new Set<string>([host.appleId.toLowerCase()]);
 
-  // Best-effort: resolve the thread's latest INBOX message for threading
-  // headers + reply-all recipients.
-  const session = await connectIcloud(host);
-  let resolved: ResolvedThread;
+  // Resolve the thread's latest INBOX message for threading headers + reply-all
+  // recipients (best-effort). A transient IMAP failure (connection cap under
+  // IDLE pressure, network blip) must NOT abort the send or page — fall back to
+  // the accessContacts + root-id path.
+  let resolved: ResolvedThread = { inboxMessages: [], inboxUids: [], latest: null };
   try {
-    resolved = await resolveThreadMessages(host, session, rootId, thread.title);
-  } finally {
-    await host.imap.disconnect(session);
+    const session = await connectIcloud(host);
+    try {
+      resolved = await resolveThreadMessages(host, session, rootId, thread.title);
+    } finally {
+      await host.imap.disconnect(session);
+    }
+  } catch {
+    // Best-effort resolution; proceed with the reply-all/accessContacts fallback.
   }
   const latest = resolved.latest;
 
@@ -233,13 +239,17 @@ async function setThreadFlag(
   const rootId = mailRootId(thread);
   if (!rootId) return;
 
-  const session = await connectIcloud(host);
   try {
-    const { inboxUids } = await resolveThreadMessages(host, session, rootId, thread.title);
-    if (inboxUids.length === 0) return;
-    await host.imap.setFlags(session, inboxUids, [flag], operation);
-  } finally {
-    await host.imap.disconnect(session);
+    const session = await connectIcloud(host);
+    try {
+      const { inboxUids } = await resolveThreadMessages(host, session, rootId, thread.title);
+      if (inboxUids.length === 0) return;
+      await host.imap.setFlags(session, inboxUids, [flag], operation);
+    } finally {
+      await host.imap.disconnect(session);
+    }
+  } catch {
+    // Flag write-back is best-effort; a transient IMAP failure must not page.
   }
 }
 

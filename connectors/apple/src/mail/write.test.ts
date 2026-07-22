@@ -11,10 +11,14 @@ import { onCreateLinkFn, onNoteCreatedFn, onThreadReadFn, onThreadToDoFn } from 
  *  SMTP records the sent message (or throws `sendError`). `set`/`get` are
  *  backed by a real Map (not independent no-ops) so a single mockHost()
  *  instance can exercise the compose dedup path across sequential calls.
- *  `flagCalls` records every `imap.setFlags` invocation for write-back tests. */
+ *  `flagCalls` records every `imap.setFlags` invocation for write-back tests.
+ *  `searchError`, if set, makes `imap.search` reject — simulating a transient
+ *  IMAP failure inside `resolveThreadMessages` (after connect+selectMailbox,
+ *  so it also exercises the `disconnect` path via the inner `finally`). */
 function mockHost(opts: {
   inboxMessages?: Partial<ImapMessage>[];
   sendError?: Error;
+  searchError?: Error;
 }): { host: MailHost; sent: SmtpMessage[]; flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> } {
   const sent: SmtpMessage[] = [];
   const flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> = [];
@@ -26,7 +30,10 @@ function mockHost(opts: {
     selectMailbox: async (_s: string, box: string) => ({
       name: box, exists: 0, recent: 0, uidValidity: 1, uidNext: 99,
     }),
-    search: async () => uids,
+    search: async () => {
+      if (opts.searchError) throw opts.searchError;
+      return uids;
+    },
     fetchMessages: async (_s: string, u: number[]) =>
       u.map((uid) => ({ uid, flags: [], ...(opts.inboxMessages ?? [])[uid - 1] }) as ImapMessage),
     setFlags: async (_s: string, uids: number[], flags: string[], op: string) => {
@@ -128,6 +135,19 @@ describe("onNoteCreatedFn", () => {
     const { host } = mockHost({ inboxMessages: [] });
     const out = await onNoteCreatedFn(host, replyNote(), mailThread({ accessContacts: [] }));
     expect(out).toMatchObject({ deliveryError: { code: "no_recipients" } });
+  });
+
+  it("proceeds via the accessContacts + root-id fallback when IMAP resolve throws", async () => {
+    const { host, sent } = mockHost({ searchError: new Error("connection refused") });
+    const note = replyNote({
+      recipients: [
+        { id: "1", name: null, externalAccountId: "jane@x.com", role: "to" },
+      ] as never,
+    });
+    const out = await onNoteCreatedFn(host, note, mailThread());
+    expect(sent).toHaveLength(1);
+    expect(sent[0].inReplyTo).toBe("<root@x.com>");
+    expect(out).toEqual({ key: "sent-123@plot.day", deliveryError: null });
   });
 });
 
@@ -237,5 +257,11 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
     const cal = mockHost({ inboxMessages: inbox });
     await onThreadToDoFn(cal.host, mailThread({ meta: { syncProvider: "apple" } as never }), {} as never, true, {});
     expect(cal.flagCalls).toHaveLength(0);
+  });
+
+  it("no-ops silently (no throw, no setFlags) when IMAP resolve fails", async () => {
+    const { host, flagCalls } = mockHost({ searchError: new Error("connection refused") });
+    await expect(onThreadReadFn(host, mailThread(), {} as never, false)).resolves.toBeUndefined();
+    expect(flagCalls).toHaveLength(0);
   });
 });
