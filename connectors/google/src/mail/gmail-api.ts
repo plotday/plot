@@ -537,6 +537,27 @@ export function splitEmailList(headerValue: string): string[] {
 }
 
 /**
+ * Canonicalizes a Gmail/Googlemail address for self-identity comparison.
+ * Gmail treats dots in the local part and anything after a `+` as
+ * insignificant for delivery — `kris.braun@gmail.com`, `krisbraun@gmail.com`,
+ * and `kris.braun+tag@gmail.com` all route to the same mailbox — but message
+ * headers preserve whichever exact variant was used to address the mail. A
+ * literal string comparison against the account's canonical address (as
+ * returned by the Gmail API) therefore misses these variants, letting the
+ * user's own address survive into an outbound reply-all as if it were a
+ * distinct recipient. Non-Gmail domains are returned lowercased, unchanged.
+ */
+export function canonicalizeGmailAddress(email: string): string {
+  const lower = email.trim().toLowerCase();
+  const at = lower.lastIndexOf("@");
+  if (at === -1) return lower;
+  const domain = lower.slice(at + 1);
+  if (domain !== "gmail.com" && domain !== "googlemail.com") return lower;
+  const local = lower.slice(0, at).split("+")[0]!.replace(/\./g, "");
+  return `${local}@gmail.com`;
+}
+
+/**
  * Parses a comma-separated email header value into an array of email address strings.
  * Skips entries that are not valid email addresses (e.g. "undisclosed-recipients:;").
  */

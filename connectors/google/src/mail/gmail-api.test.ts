@@ -4,6 +4,7 @@ import {
   buildForwardMessage,
   buildNewEmailMessage,
   buildReplyMessage,
+  canonicalizeGmailAddress,
   classifyCalendarThread,
   formatFromHeader,
   stripQuotedReply,
@@ -667,5 +668,38 @@ describe("classifyCalendarThread", () => {
 
   it("skips an RSVP (METHOD:REPLY)", () => {
     expect(classifyCalendarThread([msgWithIcs(icsReply)])).toBeNull();
+  });
+});
+
+describe("canonicalizeGmailAddress", () => {
+  it("strips dots from the local part of a gmail.com address", () => {
+    expect(canonicalizeGmailAddress("kris.braun@gmail.com")).toBe(
+      "krisbraun@gmail.com"
+    );
+    expect(canonicalizeGmailAddress("krisbraun@gmail.com")).toBe(
+      "krisbraun@gmail.com"
+    );
+  });
+
+  it("strips a +tag suffix from the local part", () => {
+    expect(canonicalizeGmailAddress("kris.braun+updates@gmail.com")).toBe(
+      "krisbraun@gmail.com"
+    );
+  });
+
+  it("normalizes googlemail.com to the same canonical form as gmail.com", () => {
+    expect(canonicalizeGmailAddress("kris.braun@googlemail.com")).toBe(
+      "krisbraun@gmail.com"
+    );
+  });
+
+  it("lowercases but otherwise leaves non-Gmail domains untouched", () => {
+    expect(canonicalizeGmailAddress("Kris.Braun@Example.com")).toBe(
+      "kris.braun@example.com"
+    );
+  });
+
+  it("returns the lowercased input unchanged when there's no @", () => {
+    expect(canonicalizeGmailAddress("not-an-email")).toBe("not-an-email");
   });
 });

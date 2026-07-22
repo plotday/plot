@@ -446,6 +446,86 @@ describe("onNoteCreatedFn — calendar event thread", () => {
   });
 });
 
+/** A plain (non-calendar) Gmail thread whose sole message addressed the
+ *  connected mailbox via a dot-variant of its own address. */
+function gmailAliasReplyThread(): GmailThread {
+  const message: GmailMessage = {
+    id: "msg-orig-1",
+    threadId: "gmail-thread-1",
+    labelIds: ["INBOX"],
+    snippet: "Hi Kris",
+    historyId: "1",
+    internalDate: "1700000000000",
+    sizeEstimate: 100,
+    payload: {
+      mimeType: "text/plain",
+      headers: [
+        { name: "Message-ID", value: "<orig@mail.gmail.com>" },
+        { name: "From", value: "Hilary Collier <hilary.collier@example.com>" },
+        { name: "To", value: "krisbraun@gmail.com" },
+        { name: "Cc", value: "annie@example.com" },
+        { name: "Subject", value: "Surprise Tribute Video" },
+      ],
+      body: { size: 10, data: b64url("Hi Kris") },
+    },
+  };
+  return { id: "gmail-thread-1", historyId: "1", messages: [message] };
+}
+
+function plainThread(over: Record<string, unknown> = {}) {
+  return {
+    id: "T2",
+    title: "Surprise Tribute Video",
+    meta: { channelId: "INBOX", threadId: "gmail-thread-1" },
+    accessContacts: [
+      { id: "c-me", email: "kris.braun@gmail.com" },
+      { id: "c-hilary", email: "hilary.collier@example.com" },
+      { id: "c-annie", email: "annie@example.com" },
+    ],
+    ...over,
+  } as unknown as import("@plotday/twister").Thread;
+}
+
+function plainReplyNote(over: Record<string, unknown> = {}) {
+  return {
+    id: "n2",
+    author: { id: "c-me" },
+    content: "Sounds good!",
+    recipients: null,
+    accessContacts: null,
+    actions: [],
+    ...over,
+  } as unknown as import("@plotday/twister").Note;
+}
+
+describe("onNoteCreatedFn — plain Gmail thread reply-all", () => {
+  it("excludes the connected mailbox's own dot-variant alias address from the outbound recipients", async () => {
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(
+      gmailAliasReplyThread()
+    );
+    // The account's canonical/connected address (with dot) never literally
+    // matches the alias form the original message was addressed to
+    // (krisbraun@gmail.com) — Gmail treats both as the same mailbox.
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "sent-9", threadId: "gmail-thread-1" });
+    const { host } = makeHost();
+
+    await onNoteCreatedFn(host, plainReplyNote(), plainThread());
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).not.toContain("krisbraun@gmail.com");
+    expect(raw).toContain("hilary.collier@example.com");
+  });
+});
+
 /** Build a GmailMessagePart, encoding `data` as base64url like the real API. */
 function part(
   mimeType: string,
