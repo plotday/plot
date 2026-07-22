@@ -27,7 +27,7 @@ import {
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
-import { CalDAVClient, type CalDAVEvent, toCalDAVTimeString } from "./caldav";
+import { CalDAVClient, type CalDAVEvent, toCalDAVTimeString } from "./calendar/caldav";
 import {
   type ICSEvent,
   parseICSDateTime,
@@ -35,7 +35,7 @@ import {
   parseRRuleCount,
   parseRRuleEnd,
   updateAttendeePartstat,
-} from "./ics-parser";
+} from "./calendar/ics-parser";
 
 /**
  * Build canonical identifiers for an Apple calendar (ICS) event. First
@@ -121,7 +121,7 @@ async function hashContent(content: string): Promise<string> {
  * Polls for changes using ctag/etag change detection since CalDAV
  * does not support push notifications.
  */
-export class AppleCalendar extends Connector<AppleCalendar> {
+export class Apple extends Connector<Apple> {
   readonly linkTypes = [
     {
       type: "event",
@@ -299,7 +299,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // (e.g. an in-flight poll or a previous initChannel that hasn't drained).
     const acquired = await this.tools.store.acquireLock(
       `sync_${channelId}`,
-      AppleCalendar.SYNC_LOCK_TTL_MS
+      Apple.SYNC_LOCK_TTL_MS
     );
     if (!acquired) {
       // Another sync holds the lock (e.g. an in-flight init from a previous
@@ -845,7 +845,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // run is still draining batches.
     const acquired = await this.tools.store.acquireLock(
       `sync_${calendarHref}`,
-      AppleCalendar.SYNC_LOCK_TTL_MS
+      Apple.SYNC_LOCK_TTL_MS
     );
     if (!acquired) {
       // Another sync is in flight. Don't reschedule a poll either — the
@@ -1700,4 +1700,4 @@ function extractConferencingUrls(
   }
 }
 
-export default AppleCalendar;
+export default Apple;
