@@ -1,4 +1,5 @@
 import type { NewLinkWithNotes } from "@plotday/twister";
+import type { ImapSession } from "@plotday/twister/tools/imap";
 
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
 import type { MailHost, MailSyncState } from "./mail-host";
@@ -22,6 +23,63 @@ function resolveSinceFloor(syncHistoryMin: string | undefined): Date {
 }
 
 /**
+ * Full backfill of INBOX plus the Sent mailbox (for the owner's own
+ * in-thread replies) since a history floor, using an already-open IMAP
+ * `session`. Persists a `MailSyncState` cursor for subsequent incremental
+ * syncs and signals `channelSyncCompleted` once the backfill is saved.
+ *
+ * Shared by `mailInitialSync` (which opens its own session) and
+ * `mailIncrementalSync`'s re-baseline paths (which reuse their already-open
+ * session) so at most one IMAP session to the account is ever open at once —
+ * iCloud enforces a per-account connection cap.
+ */
+async function runInitialBackfill(
+  host: MailHost,
+  session: ImapSession,
+  channelId: string,
+  syncHistoryMin: string | undefined | null
+): Promise<void> {
+  const since = resolveSinceFloor(syncHistoryMin ?? undefined);
+
+  const status = await host.imap.selectMailbox(session, "INBOX");
+  const inboxUids = await host.imap.search(session, { since });
+  const inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
+  const inboxLinks = transformMessages(inbox, {
+    channelId,
+    appleId: host.appleId,
+    fromSent: false,
+    initialSync: true,
+  });
+
+  let sentLinks: NewLinkWithNotes[] = [];
+  const sentBox = await resolveSentMailbox(host, session);
+  if (sentBox) {
+    await host.imap.selectMailbox(session, sentBox);
+    const sentUids = await host.imap.search(session, { since });
+    const sent = await fetchUidRange(host, session, sentBox, sentUids);
+    sentLinks = transformMessages(sent, {
+      channelId,
+      appleId: host.appleId,
+      fromSent: true,
+      initialSync: true,
+    });
+  }
+
+  const links = [...inboxLinks, ...sentLinks];
+  if (links.length > 0) await host.integrations.saveLinks(links);
+
+  const lastUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
+  const state: MailSyncState = {
+    uidValidity: status.uidValidity,
+    lastUid,
+    syncHistoryMin: since.toISOString(),
+  };
+  await host.set(`state_${channelId}`, state);
+
+  await host.channelSyncCompleted(channelId);
+}
+
+/**
  * Full backfill of `rawMailbox` (INBOX) plus the Sent mailbox (for the
  * owner's own in-thread replies) since a history floor. Persists a
  * `MailSyncState` cursor for subsequent incremental syncs and signals
@@ -35,44 +93,7 @@ export async function mailInitialSync(
 ): Promise<void> {
   const session = await connectIcloud(host);
   try {
-    const since = resolveSinceFloor(syncHistoryMin);
-
-    const status = await host.imap.selectMailbox(session, rawMailbox);
-    const inboxUids = await host.imap.search(session, { since });
-    const inbox = await fetchUidRange(host, session, rawMailbox, inboxUids);
-    const inboxLinks = transformMessages(inbox, {
-      channelId,
-      appleId: host.appleId,
-      fromSent: false,
-      initialSync: true,
-    });
-
-    let sentLinks: NewLinkWithNotes[] = [];
-    const sentBox = await resolveSentMailbox(host, session);
-    if (sentBox) {
-      await host.imap.selectMailbox(session, sentBox);
-      const sentUids = await host.imap.search(session, { since });
-      const sent = await fetchUidRange(host, session, sentBox, sentUids);
-      sentLinks = transformMessages(sent, {
-        channelId,
-        appleId: host.appleId,
-        fromSent: true,
-        initialSync: true,
-      });
-    }
-
-    const links = [...inboxLinks, ...sentLinks];
-    if (links.length > 0) await host.integrations.saveLinks(links);
-
-    const lastUid = inboxUids.length > 0 ? Math.max(...inboxUids) : 0;
-    const state: MailSyncState = {
-      uidValidity: status.uidValidity,
-      lastUid,
-      syncHistoryMin: since.toISOString(),
-    };
-    await host.set(`state_${channelId}`, state);
-
-    await host.channelSyncCompleted(channelId);
+    await runInitialBackfill(host, session, channelId, syncHistoryMin);
   } finally {
     await host.imap.disconnect(session);
   }
@@ -83,7 +104,8 @@ export async function mailInitialSync(
  * rescan to pick up `\Seen` flag changes, and a recent-window rescan of Sent
  * for new owner replies (Sent has no separate cursor — the recent rescan
  * plus idempotent upsert by `source`/note key is intentional). Re-baselines
- * via `mailInitialSync` when UIDVALIDITY has changed or no cursor exists yet.
+ * (via the shared `runInitialBackfill`, reusing this sync's already-open
+ * IMAP session) when UIDVALIDITY has changed or no cursor exists yet.
  */
 export async function mailIncrementalSync(host: MailHost, channelId: string): Promise<void> {
   const session = await connectIcloud(host);
@@ -93,16 +115,18 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
 
     if (!state) {
       // No cursor yet (first poll before an initial sync ever completed) —
-      // run a full initial sync instead of guessing a delta.
-      await mailInitialSync(host, "INBOX", channelId, undefined);
+      // run a full initial sync instead of guessing a delta. Reuse this
+      // already-open session (not `mailInitialSync`, which would open a
+      // second concurrent IMAP session to the same account).
+      await runInitialBackfill(host, session, channelId, undefined);
       return;
     }
 
     if (status.uidValidity !== state.uidValidity) {
       // UIDVALIDITY changed (mailbox recreated/reindexed server-side) — old
       // UIDs are no longer meaningful. Re-baseline from the previously
-      // stored history floor.
-      await mailInitialSync(host, "INBOX", channelId, state.syncHistoryMin);
+      // stored history floor, reusing this already-open session.
+      await runInitialBackfill(host, session, channelId, state.syncHistoryMin);
       return;
     }
 
@@ -145,7 +169,7 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
     const links = [...inboxLinks, ...sentLinks];
     if (links.length > 0) await host.integrations.saveLinks(links);
 
-    const newMaxUid = inboxUids.length > 0 ? Math.max(...inboxUids) : 0;
+    const newMaxUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
     const nextState: MailSyncState = {
       uidValidity: status.uidValidity,
       lastUid: Math.max(newMaxUid, state.lastUid),
