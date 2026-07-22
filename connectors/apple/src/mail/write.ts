@@ -1,4 +1,4 @@
-import type { CreateLinkDraft, NewContact, NoteWriteBackResult, Thread } from "@plotday/twister";
+import type { Actor, CreateLinkDraft, NewContact, NoteWriteBackResult, Thread } from "@plotday/twister";
 import type { CreateLinkResult, Note } from "@plotday/twister/plot";
 import type { SmtpMessage } from "@plotday/twister/tools/smtp";
 
@@ -221,4 +221,54 @@ export async function onCreateLinkFn(
     ...composeLink(host, draft, subject, rootId),
     originatingNote: { key: rootId, deliveryError: null },
   };
+}
+
+/** Set/clear a flag on every INBOX message of the thread (best-effort). */
+async function setThreadFlag(
+  host: MailHost,
+  thread: Thread,
+  flag: string,
+  operation: "add" | "remove"
+): Promise<void> {
+  const rootId = mailRootId(thread);
+  if (!rootId) return;
+
+  const session = await connectIcloud(host);
+  try {
+    const { inboxUids } = await resolveThreadMessages(host, session, rootId, thread.title);
+    if (inboxUids.length === 0) return;
+    await host.imap.setFlags(session, inboxUids, [flag], operation);
+  } finally {
+    await host.imap.disconnect(session);
+  }
+}
+
+/**
+ * Read-state write-back: mark the thread's INBOX messages \Seen (read) or clear
+ * it (unread). No echo guard is needed — the incremental read path only flips a
+ * thread unread on a genuinely-new unseen UID, so our own \Seen write can't
+ * bounce back.
+ */
+export async function onThreadReadFn(
+  host: MailHost,
+  thread: Thread,
+  _actor: Actor,
+  unread: boolean
+): Promise<void> {
+  await setThreadFlag(host, thread, "\\Seen", unread ? "remove" : "add");
+}
+
+/**
+ * To-do write-back: mark the thread's INBOX messages \Flagged (to-do) or clear
+ * it. Write-only — the read path does not (yet) ingest \Flagged into Plot's
+ * to-do state, so there is no echo.
+ */
+export async function onThreadToDoFn(
+  host: MailHost,
+  thread: Thread,
+  _actor: Actor,
+  todo: boolean,
+  _options: { date?: Date }
+): Promise<void> {
+  await setThreadFlag(host, thread, "\\Flagged", todo ? "add" : "remove");
 }

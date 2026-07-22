@@ -5,17 +5,19 @@ import type { ImapMessage } from "@plotday/twister/tools/imap";
 import type { SmtpMessage, SmtpSendResult } from "@plotday/twister/tools/smtp";
 
 import type { MailHost } from "./mail-host";
-import { onCreateLinkFn, onNoteCreatedFn } from "./write";
+import { onCreateLinkFn, onNoteCreatedFn, onThreadReadFn, onThreadToDoFn } from "./write";
 
 /** A MailHost whose IMAP returns `inboxMessages` from search+fetch and whose
  *  SMTP records the sent message (or throws `sendError`). `set`/`get` are
  *  backed by a real Map (not independent no-ops) so a single mockHost()
- *  instance can exercise the compose dedup path across sequential calls. */
+ *  instance can exercise the compose dedup path across sequential calls.
+ *  `flagCalls` records every `imap.setFlags` invocation for write-back tests. */
 function mockHost(opts: {
   inboxMessages?: Partial<ImapMessage>[];
   sendError?: Error;
-}): { host: MailHost; sent: SmtpMessage[] } {
+}): { host: MailHost; sent: SmtpMessage[]; flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> } {
   const sent: SmtpMessage[] = [];
+  const flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> = [];
   const uids = (opts.inboxMessages ?? []).map((_m, i) => i + 1);
   const imap = {
     connect: async () => "s",
@@ -27,7 +29,9 @@ function mockHost(opts: {
     search: async () => uids,
     fetchMessages: async (_s: string, u: number[]) =>
       u.map((uid) => ({ uid, flags: [], ...(opts.inboxMessages ?? [])[uid - 1] }) as ImapMessage),
-    setFlags: async () => {},
+    setFlags: async (_s: string, uids: number[], flags: string[], op: string) => {
+      flagCalls.push({ uids, flags, op });
+    },
   };
   const smtp = {
     connect: async () => "smtp",
@@ -51,7 +55,7 @@ function mockHost(opts: {
     clear: async () => {},
     channelSyncCompleted: async () => {},
   } as unknown as MailHost;
-  return { host, sent };
+  return { host, sent, flagCalls };
 }
 
 function mailThread(over: Partial<Thread> = {}): Thread {
@@ -200,5 +204,38 @@ describe("onCreateLinkFn", () => {
     // Same original content again, but past the 10-minute window → sends again.
     await onCreateLinkFn(host, draft, new Date(t0.getTime() + 11 * 60 * 1000));
     expect(sent).toHaveLength(3);
+  });
+});
+
+describe("onThreadReadFn / onThreadToDoFn", () => {
+  const inbox = [
+    { messageId: "<root@x.com>", subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+    { messageId: "<r2@x.com>", references: ["<root@x.com>"], subject: "Re: Lunch?", date: new Date("2026-07-15T11:00:00Z") },
+  ];
+
+  it("adds \\Seen on read and removes it on unread across the thread's uids", async () => {
+    const read = mockHost({ inboxMessages: inbox });
+    await onThreadReadFn(read.host, mailThread(), {} as never, false);
+    expect(read.flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Seen"], op: "add" }]);
+
+    const unread = mockHost({ inboxMessages: inbox });
+    await onThreadReadFn(unread.host, mailThread(), {} as never, true);
+    expect(unread.flagCalls[0].op).toBe("remove");
+  });
+
+  it("toggles \\Flagged for to-do", async () => {
+    const todo = mockHost({ inboxMessages: inbox });
+    await onThreadToDoFn(todo.host, mailThread(), {} as never, true, {});
+    expect(todo.flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Flagged"], op: "add" }]);
+  });
+
+  it("no-ops when nothing resolves or the thread isn't apple-mail", async () => {
+    const none = mockHost({ inboxMessages: [] });
+    await onThreadReadFn(none.host, mailThread(), {} as never, false);
+    expect(none.flagCalls).toHaveLength(0);
+
+    const cal = mockHost({ inboxMessages: inbox });
+    await onThreadToDoFn(cal.host, mailThread({ meta: { syncProvider: "apple" } as never }), {} as never, true, {});
+    expect(cal.flagCalls).toHaveLength(0);
   });
 });
