@@ -87,10 +87,37 @@ describe("transformMessages", () => {
     expect(note.contentType).toBe("html");
   });
 
-  it("on incremental sync marks the thread unread when a message is unseen", () => {
+  it("on incremental sync marks the thread unread when a NEW message is unseen", () => {
     const m = msg({ uid: 6, flags: [] }); // no \\Seen
-    const link = transformMessages([m], { ...ctx, initialSync: false })[0];
+    const link = transformMessages([m], {
+      ...ctx,
+      initialSync: false,
+      newUids: [6],
+    })[0];
     expect(link.unread).toBe(true);
+  });
+
+  it("does NOT re-mark an existing unseen thread unread on incremental (read preserved)", () => {
+    // uid 6 is a recent-window rescan re-fetch, NOT new mail (not in newUids).
+    // A message read in Plot but still unseen on IMAP must keep Plot's read
+    // state — `unread` is left untouched, never re-asserted true.
+    const m = msg({ uid: 6, flags: [] }); // unseen on IMAP
+    const link = transformMessages([m], {
+      ...ctx,
+      initialSync: false,
+      newUids: [],
+    })[0];
+    expect(link.unread).toBeUndefined();
+  });
+
+  it("propagates an Apple Mail read: incremental marks the thread read when all seen", () => {
+    const m = msg({ uid: 6, flags: ["\\Seen"] });
+    const link = transformMessages([m], {
+      ...ctx,
+      initialSync: false,
+      newUids: [],
+    })[0];
+    expect(link.unread).toBe(false);
   });
 
   it("sets author null (not the connector) when a message has no From", () => {
@@ -128,7 +155,11 @@ describe("transformMessages", () => {
       date: new Date("2026-07-15T10:00:00Z"),
       bodyText: "Sounds good",
     });
-    const links = transformMessages([ownerSent, reply], { ...ctx, initialSync: false });
+    const links = transformMessages([ownerSent, reply], {
+      ...ctx,
+      initialSync: false,
+      newUids: [20], // the inbound reply is the newly-arrived INBOX message
+    });
     expect(links).toHaveLength(1);
     expect(links[0].unread).toBe(true);
     type NoteLike = { key?: string; authoredBySelf?: boolean; author?: { email?: string } | null };

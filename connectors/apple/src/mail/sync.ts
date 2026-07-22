@@ -147,6 +147,9 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       channelId,
       appleId: host.appleId,
       initialSync: false,
+      // Only these newly-arrived UIDs may (re)mark a thread unread; the
+      // recent-window rescan messages are read-state propagation only.
+      newUids,
     });
     if (links.length > 0) await host.integrations.saveLinks(links);
 

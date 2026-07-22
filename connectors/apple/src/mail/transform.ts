@@ -28,6 +28,16 @@ export type TransformCtx = {
   /** The connection owner's Apple ID (their own address). */
   appleId: string;
   initialSync: boolean;
+  /**
+   * INBOX UIDs that are NEW this pass (uid > the stored cursor). Drives the
+   * incremental unread decision: a thread is only (re)marked unread by a
+   * genuinely new unseen message. The recent-window `\Seen` rescan re-fetches
+   * already-synced messages to propagate reads done in Apple Mail — but those
+   * must NEVER re-assert unread, or a message read in Plot yet still unseen on
+   * IMAP (no `\Seen` write-back until mail-write ships) would flip back to
+   * unread on every poll. Omitted on initial sync (which sets unread:false).
+   */
+  newUids?: number[];
 };
 
 function toContact(a: ImapAddress): NewContact {
@@ -75,6 +85,7 @@ export function transformMessages(
   ctx: TransformCtx
 ): NewLinkWithNotes[] {
   const ownEmail = ctx.appleId.toLowerCase();
+  const newUids = ctx.newUids ? new Set(ctx.newUids) : undefined;
   // Group by thread root (skip messages with no id to thread on).
   const byRoot = new Map<string, ImapMessage[]>();
   for (const m of messages) {
@@ -119,7 +130,20 @@ export function transformMessages(
       };
     });
 
-    const anyUnseen = msgs.some((m) => !isSeen(m));
+    // Incremental read-state (see TransformCtx.newUids):
+    //  - every message seen        → mark read (a read done in Apple Mail)
+    //  - a NEW unseen message      → mark unread (genuinely new mail)
+    //  - only existing unseen mail → leave `unread` untouched, so IMAP's stale
+    //    unseen flag can't clobber a read the user did in Plot.
+    const allSeen = msgs.every((m) => isSeen(m));
+    const hasNewUnseen = msgs.some(
+      (m) => !isSeen(m) && (newUids?.has(m.uid) ?? false)
+    );
+    const incrementalRead: { unread?: boolean } = allSeen
+      ? { unread: false }
+      : hasNewUnseen
+        ? { unread: true }
+        : {};
     const link: NewLinkWithNotes = {
       source: mailSource(root),
       type: "email",
@@ -138,7 +162,7 @@ export function transformMessages(
       author: originatorFrom ? toContact(originatorFrom) : null,
       ...(ctx.initialSync
         ? { unread: false, archived: false }
-        : { unread: anyUnseen }),
+        : incrementalRead),
     };
     links.push(link);
   }
