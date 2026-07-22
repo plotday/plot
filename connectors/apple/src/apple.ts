@@ -5,13 +5,16 @@ import {
   type ActorId,
   ConferencingProvider,
   Connector,
+  type CreateLinkDraft,
   type NewContact,
   type NewLinkWithNotes,
+  type NoteWriteBackResult,
   type ProductInfo,
   type Serializable,
   type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
+import type { CreateLinkResult, Note } from "@plotday/twister/plot";
 import { Options } from "@plotday/twister/options";
 import type {
   NewSchedule,
@@ -47,6 +50,12 @@ import { getMailChannels } from "./mail/channels";
 import { ICLOUD_IMAP } from "./mail/imap-fetch";
 import type { MailHost } from "./mail/mail-host";
 import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
+import {
+  onCreateLinkFn,
+  onNoteCreatedFn,
+  onThreadReadFn,
+  onThreadToDoFn,
+} from "./mail/write";
 import { parse } from "./product-channel";
 import { appleProducts } from "./products";
 
@@ -142,6 +151,9 @@ export class Apple extends Connector<Apple> {
     "Reads your iCloud mail and calendar to add them to Plot",
     "Sends replies and writes your event RSVPs",
   ];
+
+  // Bidirectional: user replies to mail threads are dispatched to onNoteCreated.
+  static readonly handleReplies = true;
 
   // Per-product metadata for the combined-connection setup/status UX. Declaring
   // `products` makes the app render top-level Email / Calendar sections, each
@@ -667,6 +679,42 @@ export class Apple extends Connector<Apple> {
     for (const key of seenMasterKeys) {
       await this.clear(key);
     }
+  }
+
+  // ---- Mail Write-Back ----
+
+  /**
+   * A reply on a mail thread → send it over SMTP. No-ops for calendar threads
+   * (the mail fn gates on meta.syncProvider === "apple-mail").
+   */
+  override async onNoteCreated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
+    return onNoteCreatedFn(this.buildMailHost(), note, thread);
+  }
+
+  /**
+   * A Plot-composed email thread → send a new message over SMTP and attach the
+   * resulting link. No-ops for non-email link types (returns null).
+   */
+  override async onCreateLink(draft: CreateLinkDraft): Promise<CreateLinkResult | null> {
+    return onCreateLinkFn(this.buildMailHost(), draft);
+  }
+
+  /** Read/unread on a mail thread → \Seen write-back over IMAP. */
+  override async onThreadRead(thread: Thread, actor: Actor, unread: boolean): Promise<void> {
+    await onThreadReadFn(this.buildMailHost(), thread, actor, unread);
+  }
+
+  /** To-do toggle on a mail thread → \Flagged write-back over IMAP. */
+  override async onThreadToDo(
+    thread: Thread,
+    actor: Actor,
+    todo: boolean,
+    options: { date?: Date }
+  ): Promise<void> {
+    await onThreadToDoFn(this.buildMailHost(), thread, actor, todo, options);
   }
 
   // ---- Sync Logic ----
