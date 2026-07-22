@@ -146,6 +146,7 @@ export class CalDAVClient {
     <d:displayname/>
     <cs:getctag/>
     <d:resourcetype/>
+    <c:supported-calendar-component-set/>
   </d:prop>
 </d:propfind>`;
 
@@ -159,15 +160,21 @@ export class CalDAVClient {
 
     const calendars: CalDAVCalendar[] = [];
     for (const entry of entries) {
-      // Only include entries that are calendars (have <c:calendar/> in resourcetype)
       const resourceType = entry.props["resourcetype"] || "";
-      if (!resourceType.includes("calendar")) continue;
-      // Skip VTODO-only or VJOURNAL-only collections
-      if (resourceType.includes("vevent") === false && resourceType.includes("calendar") && entry.props["supported-calendar-component-set"]?.includes("VEVENT") === false) {
-        // If supported-calendar-component-set is available and doesn't include VEVENT, skip.
-        // But if it's not available, include (most calendars support VEVENT).
-        if (entry.props["supported-calendar-component-set"]) continue;
-      }
+      // Require a real CalDAV <calendar> ELEMENT in resourcetype. A plain
+      // substring test for "calendar" also matches the "calendarserver.org"
+      // namespace URL that iCloud stamps on system collections (e.g. the
+      // nameless `notification` collection), which would otherwise surface as
+      // an "Untitled Calendar". Match the tag itself instead. This also
+      // excludes the scheduling inbox/outbox and the account root, which are
+      // plain collections with no <calendar>.
+      if (!/<(?:[a-z0-9]+:)?calendar[\s/>]/i.test(resourceType)) continue;
+      // Exclude non-event calendars: iCloud Reminders is a VTODO list, not an
+      // events calendar. iCloud returns supported-calendar-component-set, so
+      // require VEVENT; if a server omits the property, keep the calendar
+      // (assume it holds events).
+      const compSet = entry.props["supported-calendar-component-set"];
+      if (compSet && !/VEVENT/i.test(compSet)) continue;
 
       calendars.push({
         href: entry.href,
@@ -394,8 +401,16 @@ function extractNestedHref(xml: string): string | null {
 function parseMultistatus(xml: string): MultistatusEntry[] {
   const entries: MultistatusEntry[] = [];
 
-  // Split on response boundaries — handle various namespace prefixes
-  const responseBlocks = xml.split(/<[^/][^>]*?response[^>]*>/i);
+  // Split on response boundaries. iCloud returns the DAV: namespace as the
+  // default (unprefixed) namespace — e.g. `<response xmlns="DAV:">` — while
+  // other servers use a prefix (`<D:response>`). Match an OPTIONAL namespace
+  // prefix; a required leading char would consume the "r" of an unprefixed
+  // "response" and silently produce zero entries. The lookahead pins the tag
+  // name so `<responses>`/substrings don't match, and the missing `/` branch
+  // keeps closing tags out.
+  const responseBlocks = xml.split(
+    /<(?:[a-zA-Z][\w.-]*:)?response(?=[\s>/])[^>]*>/i
+  );
 
   for (let i = 1; i < responseBlocks.length; i++) {
     const block = responseBlocks[i];
