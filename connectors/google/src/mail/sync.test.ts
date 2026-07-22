@@ -526,6 +526,76 @@ describe("onNoteCreatedFn — plain Gmail thread reply-all", () => {
   });
 });
 
+/** A Gmail thread the user sent between two of their own linked addresses:
+ *  From = their other linked identity, To = the connected mailbox. Both are
+ *  the same person, so a reply must fall back to the original sender. */
+function selfEmailReplyThread(): GmailThread {
+  const message: GmailMessage = {
+    id: "msg-self-1",
+    threadId: "gmail-self-thread-1",
+    labelIds: ["INBOX"],
+    snippet: "note to self",
+    historyId: "1",
+    internalDate: "1700000000000",
+    sizeEstimate: 100,
+    payload: {
+      mimeType: "text/plain",
+      headers: [
+        { name: "Message-ID", value: "<self-orig@mail.gmail.com>" },
+        { name: "From", value: "kris.work@example.com" },
+        { name: "To", value: "kris.braun@gmail.com" },
+        { name: "Subject", value: "Note to self" },
+      ],
+      body: { size: 12, data: b64url("note to self") },
+    },
+  };
+  return { id: "gmail-self-thread-1", historyId: "1", messages: [message] };
+}
+
+function selfThread(over: Record<string, unknown> = {}) {
+  return {
+    id: "T-self",
+    title: "Note to self",
+    meta: { channelId: "INBOX", threadId: "gmail-self-thread-1" },
+    accessContacts: [
+      { id: "c-me", email: "kris.braun@gmail.com" },
+      { id: "c-work", email: "kris.work@example.com" },
+    ],
+    ...over,
+  } as unknown as import("@plotday/twister").Thread;
+}
+
+describe("onNoteCreatedFn — self-email thread reply", () => {
+  it("addresses the original sender when a default (uncurated) reply resolves to only self", async () => {
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(
+      selfEmailReplyThread()
+    );
+    // Connected mailbox = one linked identity; the note is authored as the
+    // OTHER linked identity, so both original participants are self.
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "sent-self", threadId: "gmail-self-thread-1" });
+    const { host } = makeHost();
+
+    // Default reply: accessContacts null (uncurated), authored as the work identity.
+    await onNoteCreatedFn(
+      host,
+      plainReplyNote({ author: { id: "c-work" }, accessContacts: null }),
+      selfThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain("kris.work@example.com");
+  });
+});
+
 /** Build a GmailMessagePart, encoding `data` as base64url like the real API. */
 function part(
   mimeType: string,
