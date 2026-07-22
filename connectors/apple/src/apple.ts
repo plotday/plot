@@ -7,6 +7,7 @@ import {
   Connector,
   type NewContact,
   type NewLinkWithNotes,
+  type Serializable,
   type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -41,6 +42,7 @@ import {
 } from "./calendar/ics-parser";
 import { composeChannels } from "./compose";
 import { getMailChannels } from "./mail/channels";
+import type { MailHost } from "./mail/mail-host";
 import { namespace, parse } from "./product-channel";
 import { appleProducts } from "./products";
 
@@ -214,6 +216,36 @@ export class Apple extends Connector<Apple> {
     return appleId && appleId.length > 0 ? appleId : null;
   }
 
+  /**
+   * Adapter the mail/* pure sync functions depend on. Storage keys are
+   * namespaced with a "mail:" prefix here so mail's per-channel cursors can
+   * never collide with calendar's `sync_state_<id>` etc. keys — callers in
+   * `src/mail/*` pass bare keys (e.g. `state_<channelId>`) and rely on this
+   * prefixing, never adding "mail:" themselves.
+   */
+  private buildMailHost(): MailHost {
+    const mailKey = (key: string) => `mail:${key}`;
+    return {
+      imap: this.tools.imap,
+      integrations: this.tools.integrations,
+      appleId: this.tools.options.appleId as string,
+      appPassword: this.tools.options.appPassword as string,
+      set: async <T>(key: string, value: T) => {
+        await this.set(mailKey(key), value as unknown as Serializable);
+      },
+      get: async <T>(key: string): Promise<T | undefined> => {
+        const value = await this.get<Serializable>(mailKey(key));
+        return (value as T | null) ?? undefined;
+      },
+      clear: async (key: string) => {
+        await this.clear(mailKey(key));
+      },
+      channelSyncCompleted: async (channelId: string) => {
+        await this.tools.integrations.channelSyncCompleted(channelId);
+      },
+    };
+  }
+
   // ---- Channel Lifecycle ----
 
   /**
@@ -234,7 +266,7 @@ export class Apple extends Connector<Apple> {
         const calendarHome = await this.discoverCalendarHome();
         return getCalendarChannels(this.getCalDAV(), calendarHome);
       },
-      getMailChannels,
+      getMailChannels: () => getMailChannels(this.buildMailHost()),
     });
     return composeChannels(products);
   }
@@ -246,8 +278,10 @@ export class Apple extends Connector<Apple> {
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     const { product } = parse(channel.id);
     if (product === "calendar") return this.onCalendarChannelEnabled(channel, context);
-    // mail: stub until Plan 3 — no channels are emitted, so this is unreachable
-    // in normal flow; no-op keeps it safe if a stale mail channel is enabled.
+    // mail: getMailChannels now enumerates a real INBOX channel (see
+    // buildMailHost/getChannels above), so this IS reachable — enabling it
+    // currently no-ops. Wiring enable/disable to mailInitialSync/
+    // mailIncrementalSync (host construction, polling) is a follow-up.
   }
 
   /**
@@ -405,7 +439,8 @@ export class Apple extends Connector<Apple> {
   async onChannelDisabled(channel: Channel): Promise<void> {
     const { product } = parse(channel.id);
     if (product === "calendar") return this.onCalendarChannelDisabled(channel);
-    // mail: stub — no-op.
+    // mail: stub — no-op. Follow-up: clear `mail:state_<channelId>` and any
+    // scheduled mail poll for this channel.
   }
 
   /**
