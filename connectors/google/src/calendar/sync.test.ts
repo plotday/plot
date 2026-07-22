@@ -1061,6 +1061,10 @@ describe("prepareEventInstanceFn — stale occurrence cancellations", () => {
         (n as { key?: string }).key?.startsWith("cancellation-")
       )
     ).toBe(true);
+    // The cancellation link is emitted as update-only: the platform applies it
+    // only if the recurring master's thread already exists, and skips it (no
+    // phantom "cancelled" thread) when the master was never imported.
+    expect((saved[0] as { updateOnly?: boolean }).updateOnly).toBe(true);
   });
 });
 

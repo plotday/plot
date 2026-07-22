@@ -1366,6 +1366,19 @@ export type NewLink = Partial<
      * {@link Connector.autoThreading}.
      */
     autoThread?: AutoThreadConfig | null;
+    /**
+     * Apply this link only as an UPDATE to a thread that already exists for its
+     * `source`/`sources`; never CREATE a new thread. When no matching thread is
+     * found, `saveLink()`/`saveLinks()` skip the link entirely and return
+     * `null` for it.
+     *
+     * Use for signals that are only meaningful as an update to an item the user
+     * already has — most notably a calendar cancellation, which should annotate
+     * an event that was imported, never materialize a standalone "cancelled"
+     * thread for an occurrence the user never saw. Leave undefined/false for
+     * normal links, which create the thread when absent.
+     */
+    updateOnly?: boolean;
   };
 
 /**
