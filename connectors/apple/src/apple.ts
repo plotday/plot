@@ -256,6 +256,7 @@ export class Apple extends Connector<Apple> {
     const mailKey = (key: string) => `mail:${key}`;
     return {
       imap: this.tools.imap,
+      smtp: this.tools.smtp,
       integrations: this.tools.integrations,
       appleId: this.tools.options.appleId as string,
       appPassword: this.tools.options.appPassword as string,

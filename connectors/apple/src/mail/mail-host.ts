@@ -1,5 +1,6 @@
 import type { Imap } from "@plotday/twister/tools/imap";
 import type { Integrations } from "@plotday/twister/tools/integrations";
+import type { Smtp } from "@plotday/twister/tools/smtp";
 
 /** Persisted per-channel cursor for incremental IMAP sync. */
 export type MailSyncState = {
@@ -18,6 +19,7 @@ export type MailSyncState = {
  */
 export interface MailHost {
   imap: Imap;
+  smtp: Smtp;
   integrations: Integrations;
   appleId: string;
   appPassword: string;
