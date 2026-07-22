@@ -1746,10 +1746,16 @@ export async function onNoteCreatedFn(
   // Raw original sender(s) — drives the shared helper's self-reply fallback so
   // a reply in a self-email thread addresses the original sender instead of
   // resolving to nobody. Not self-filtered: the helper needs to see that the
-  // sender is self.
-  const headerFrom = parseEmailAddresses(fromHeader).map((email) =>
-    email.toLowerCase()
+  // sender is self. Only fall back to a self-reply when the user actually
+  // addressed someone (in a self-thread that "someone" is another of their
+  // linked identities) — a private note-to-self must stay private, not
+  // become an outbound email.
+  const choseOthers = (note.accessContacts ?? []).some(
+    (id) => id !== note.author.id
   );
+  const headerFrom = choseOthers
+    ? parseEmailAddresses(fromHeader).map((email) => email.toLowerCase())
+    : [];
 
   const { to, cc, bcc } = resolveOutboundReplyRecipients({
     recipients: note.recipients ?? null,
@@ -1765,9 +1771,6 @@ export async function onNoteCreatedFn(
     // and none are deliverable, surface it instead of dropping silently. A
     // private note (access list = the author only) or an empty reply-all just
     // skips quietly.
-    const choseOthers = (note.accessContacts ?? []).some(
-      (id) => id !== note.author.id
-    );
     if (choseOthers) {
       return {
         deliveryError: {

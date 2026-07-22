@@ -233,5 +233,32 @@ describe("resolveOutboundReplyRecipients", () => {
       });
       expect(r.to).toEqual([]);
     });
+
+    it("fires even when headerTo/headerCc still contain self (unfiltered, Outlook shape)", () => {
+      // Outlook passes raw headers (self not pre-stripped); the fallback must
+      // still recognize a self-only thread via selfEmails.
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox, workEmail]),
+        headerFrom: [workEmail],
+        headerTo: [mailbox, workEmail],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([workEmail]);
+      expect(r.curated).toBe(true);
+    });
+
+    it("still does NOT fire when an unfiltered header holds a non-self participant", () => {
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox]),
+        headerFrom: [mailbox],
+        headerTo: [mailbox, anthropic],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(r.to).toEqual([]);
+    });
   });
 });

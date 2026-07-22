@@ -69,8 +69,8 @@ function dedupe(addresses: string[]): string[] {
  *
  * @param recipients platform-resolved curated recipients (`note.recipients`), or null
  * @param accessContactEmails note access list resolved to lowercased emails, or null (fallback only)
- * @param headerTo original message From ∪ To addresses (any case), self already filtered by the connector
- * @param headerCc original message Cc addresses (any case), self already filtered by the connector
+ * @param headerTo original message From ∪ To addresses (any case); may include self, which the header-driven cases exclude
+ * @param headerCc original message Cc addresses (any case); may include self, which the header-driven cases exclude
  * @param selfEmails the acting user's own addresses (lowercased) — excluded in the header-driven cases
  * @param headerFrom original message From address(es) (any case), NOT self-filtered — drives the self-reply fallback
  * @param defaultRole role for recipients whose `role` is null (defaults to `"to"`)
@@ -96,17 +96,28 @@ export function resolveOutboundReplyRecipients(args: {
 
   const base = resolveBase();
 
-  // Self-reply fallback (see the doc comment above). Only fires for a genuine
-  // self-thread: an empty result whose original message had no non-self To/Cc
-  // participant and whose every sender is self.
+  // Self-reply fallback: a self-email thread — a message you sent to your own
+  // or another linked address — otherwise resolves to no recipients, because
+  // every original participant is you and each case above removes self. When
+  // the result is empty AND the original message had no non-self To/Cc
+  // participant (i.e. a genuine self-thread, not a mixed thread the user
+  // narrowed to themselves) AND every original sender is self, address the
+  // reply back to the original sender (`headerFrom`) so it stays deliverable.
+  // The connector still sends as its own mailbox — for the copy you received
+  // in, that mailbox is the original recipient. Self is judged by `selfEmails`
+  // here (not by assuming the connector pre-filtered the headers), so this
+  // works whether or not a given connector strips self before calling.
+  const isSelf = (email: string) => selfEmails.has(email.toLowerCase());
+  const hasNonSelfHeaderParticipant =
+    headerTo.some((email) => !isSelf(email)) ||
+    headerCc.some((email) => !isSelf(email));
   if (
     base.to.length === 0 &&
     base.cc.length === 0 &&
     base.bcc.length === 0 &&
-    headerTo.length === 0 &&
-    headerCc.length === 0 &&
+    !hasNonSelfHeaderParticipant &&
     headerFrom.length > 0 &&
-    headerFrom.every((email) => selfEmails.has(email.toLowerCase()))
+    headerFrom.every(isSelf)
   ) {
     return splitPrecedence(dedupe(headerFrom), [], [], base.curated);
   }
