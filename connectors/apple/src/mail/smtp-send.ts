@@ -10,7 +10,7 @@ const ICLOUD_SMTP = {
 
 export type SendError = {
   class: "transient" | "permanent" | "auth";
-  /** Stable machine code: "rejected" | "rate_limited" | "server_error" | "auth" | "send_failed". */
+  /** Stable machine code: "rejected" | "rate_limited" | "connection_error" | "server_error" | "auth" | "send_failed". */
   code: string;
   /** User-safe message, or null. */
   message: string | null;
@@ -41,9 +41,11 @@ export function classifySmtpError(err: unknown): SendError {
   if (
     lower.includes("connection closed") ||
     lower.includes("connection failed") ||
-    lower.includes("network") ||
-    (code !== null && code >= 400 && code < 500)
+    lower.includes("network")
   ) {
+    return { class: "transient", code: "connection_error", message: null };
+  }
+  if (code !== null && code >= 400 && code < 500) {
     return { class: "transient", code: "rate_limited", message: null };
   }
   if (code !== null && code >= 500) {

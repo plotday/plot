@@ -528,6 +528,14 @@ export class Apple extends Connector<Apple> {
     await this.clear(`mail:enabled_${channel.id}`);
     await this.clear(`mail:state_${channel.id}`);
     await this.clear(`mail:sync_history_min_${channel.id}`);
+    // Sweep the compose-dedup guard keys (`mail:compose:<hash>`). They are
+    // written on each Plot-initiated compose and never expire on their own, so
+    // clear them on disable to avoid unbounded accumulation. Not channel-scoped
+    // (there is a single mail channel in v1), so all `mail:compose:*` are ours.
+    const composeKeys = await this.tools.store.list("mail:compose:");
+    for (const key of composeKeys) {
+      await this.clear(key);
+    }
     await this.tools.integrations.archiveLinks({
       channelId: channel.id,
       meta: { syncProvider: "apple-mail", syncableId: channel.id },

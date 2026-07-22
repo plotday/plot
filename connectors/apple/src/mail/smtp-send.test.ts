@@ -16,9 +16,16 @@ describe("classifySmtpError", () => {
     expect(e.class).toBe("auth");
     expect(e.code).toBe("auth");
   });
-  it("classifies a 4xx / connection error as transient", () => {
-    expect(classifySmtpError(new Error("451 4.7.1 try later")).class).toBe("transient");
-    expect(classifySmtpError(new Error("SMTP connection closed unexpectedly")).class).toBe("transient");
+  it("classifies a 4xx as transient/rate_limited", () => {
+    const e = classifySmtpError(new Error("451 4.7.1 try later"));
+    expect(e.class).toBe("transient");
+    expect(e.code).toBe("rate_limited");
+  });
+  it("classifies a connection/network error as transient/connection_error", () => {
+    const closed = classifySmtpError(new Error("SMTP connection closed unexpectedly"));
+    expect(closed.class).toBe("transient");
+    expect(closed.code).toBe("connection_error");
+    expect(classifySmtpError(new Error("network unreachable")).code).toBe("connection_error");
   });
   it("classifies an unrecognised error as permanent send_failed (not a page)", () => {
     const e = classifySmtpError(new Error("something weird"));
