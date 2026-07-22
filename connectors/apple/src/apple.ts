@@ -24,10 +24,13 @@ import {
   Integrations,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
+import { Imap } from "@plotday/twister/tools/imap";
 import { Network } from "@plotday/twister/tools/network";
+import { Smtp } from "@plotday/twister/tools/smtp";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 import { CalDAVClient, type CalDAVEvent, toCalDAVTimeString } from "./calendar/caldav";
+import { getCalendarChannels } from "./calendar/channels";
 import {
   type ICSEvent,
   parseICSDateTime,
@@ -36,6 +39,10 @@ import {
   parseRRuleEnd,
   updateAttendeePartstat,
 } from "./calendar/ics-parser";
+import { composeChannels } from "./compose";
+import { getMailChannels } from "./mail/channels";
+import { namespace, parse } from "./product-channel";
+import { appleProducts } from "./products";
 
 /**
  * Build canonical identifiers for an Apple calendar (ICS) event. First
@@ -122,21 +129,12 @@ async function hashContent(content: string): Promise<string> {
  * does not support push notifications.
  */
 export class Apple extends Connector<Apple> {
-  readonly linkTypes = [
-    {
-      type: "event",
-      label: "Event",
-      sharingModel: "thread" as const,
-      includesSchedules: true,
-      logo: "https://plot.day/assets/logo-apple-calendar.svg",
-      logoMono: "https://api.iconify.design/simple-icons/apple.svg",
-    },
-  ];
+  readonly dynamicLinkTypes = true;
   readonly channelNoun = { singular: "calendar", plural: "calendars" };
   readonly autoEnableNewChannelsByDefault = true;
   readonly access = [
-    "Reads your iCloud calendar events to add them to your agenda",
-    "Writes your event RSVPs",
+    "Reads your iCloud mail and calendar to add them to Plot",
+    "Sends replies and writes your event RSVPs",
   ];
 
   // Lock TTL covering the worst-case full backfill. The framework releases
@@ -164,6 +162,8 @@ export class Apple extends Connector<Apple> {
             "Generate at appleid.apple.com > Sign-In and Security > App-Specific Passwords",
         },
       }),
+      imap: build(Imap, { hosts: ["imap.mail.me.com"] }),
+      smtp: build(Smtp, { hosts: ["smtp.mail.me.com"] }),
       network: build(Network, {
         urls: ["https://caldav.icloud.com/*", "https://*.icloud.com/*"],
       }),
@@ -182,6 +182,11 @@ export class Apple extends Connector<Apple> {
       );
     }
     return new CalDAVClient({ appleId, appPassword });
+  }
+
+  /** Raw CalDAV href for a namespaced calendar channel id. */
+  private calDavHref(channelId: string): string {
+    return parse(channelId).rawId;
   }
 
   /**
@@ -212,17 +217,37 @@ export class Apple extends Connector<Apple> {
   // ---- Channel Lifecycle ----
 
   /**
-   * Returns available iCloud calendars as channels.
+   * Returns available channels across every Apple product (calendar, mail).
    * Auth params are null since we use Options for credentials.
    */
   async getChannels(
     _auth: Authorization | null,
     _token: AuthToken | null
   ): Promise<Channel[]> {
-    const calendarHome = await this.discoverCalendarHome();
-    const client = this.getCalDAV();
-    const calendars = await client.listCalendars(calendarHome);
-    return calendars.map((c) => ({ id: c.href, title: c.displayName }));
+    // No creds → no products available yet (user hasn't filled Options).
+    const appleId = this.tools.options.appleId as string | undefined;
+    const appPassword = this.tools.options.appPassword as string | undefined;
+    if (!appleId || !appPassword) return [];
+
+    const products = appleProducts({
+      getCalendarChannels: async () => {
+        const calendarHome = await this.discoverCalendarHome();
+        return getCalendarChannels(this.getCalDAV(), calendarHome);
+      },
+      getMailChannels,
+    });
+    return composeChannels(products);
+  }
+
+  /**
+   * Routes channel-enable dispatch to the product identified by the
+   * namespaced channel id's prefix.
+   */
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    const { product } = parse(channel.id);
+    if (product === "calendar") return this.onCalendarChannelEnabled(channel, context);
+    // mail: stub until Plan 3 — no channels are emitted, so this is unreachable
+    // in normal flow; no-op keeps it safe if a stale mail channel is enabled.
   }
 
   /**
@@ -243,7 +268,7 @@ export class Apple extends Connector<Apple> {
    * starting ctag, first batch) is deferred to initChannel which runs
    * inside a queued task.
    */
-  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+  private async onCalendarChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     if (context?.recovering) {
       // Wipe persisted cursors and per-event state so the next pass
       // re-walks history. Each clear is idempotent. Release any TTL-stuck
@@ -313,7 +338,7 @@ export class Apple extends Connector<Apple> {
     try {
       // Store initial ctag for incremental sync
       const client = this.getCalDAV();
-      const ctag = await client.getCalendarCtag(channelId);
+      const ctag = await client.getCalendarCtag(this.calDavHref(channelId));
       if (ctag) await this.set(`ctag_${channelId}`, ctag);
 
       // Two-pass initial sync:
@@ -374,9 +399,19 @@ export class Apple extends Connector<Apple> {
   }
 
   /**
-   * Called when a calendar channel is disabled.
+   * Routes channel-disable dispatch to the product identified by the
+   * namespaced channel id's prefix.
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
+    const { product } = parse(channel.id);
+    if (product === "calendar") return this.onCalendarChannelDisabled(channel);
+    // mail: stub — no-op.
+  }
+
+  /**
+   * Called when a calendar channel is disabled.
+   */
+  private async onCalendarChannelDisabled(channel: Channel): Promise<void> {
     // Cancel scheduled poll (singleton keyed task).
     await this.cancelScheduledTask(`poll:${channel.id}`);
 
@@ -441,7 +476,7 @@ export class Apple extends Connector<Apple> {
         // before queuing again).
         const seeded = await this.get<SyncState>(`sync_state_${calendarHref}`);
         const phase = seeded?.phase;
-        const events = await client.fetchEvents(calendarHref, {
+        const events = await client.fetchEvents(this.calDavHref(calendarHref), {
           start: timeRangeStart,
           end: timeRangeEnd,
         });
@@ -561,7 +596,7 @@ export class Apple extends Connector<Apple> {
       const batch = state.pendingHrefs.slice(0, 50);
       const remaining = state.pendingHrefs.slice(50);
 
-      const events = await client.fetchEventsByHref(calendarHref, batch);
+      const events = await client.fetchEventsByHref(this.calDavHref(calendarHref), batch);
       await this.processCalDAVEvents(events, calendarHref, initialSync);
 
       if (remaining.length > 0) {
@@ -772,7 +807,7 @@ export class Apple extends Connector<Apple> {
 
     // Update ctag
     const client = this.getCalDAV();
-    const ctag = await client.getCalendarCtag(calendarHref);
+    const ctag = await client.getCalendarCtag(this.calDavHref(calendarHref));
     if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
 
     await this.clear(`sync_state_${calendarHref}`);
@@ -819,7 +854,7 @@ export class Apple extends Connector<Apple> {
 
     try {
       const client = this.getCalDAV();
-      const currentCtag = await client.getCalendarCtag(calendarHref);
+      const currentCtag = await client.getCalendarCtag(this.calDavHref(calendarHref));
       const storedCtag = await this.get<string>(`ctag_${calendarHref}`);
 
       if (currentCtag && currentCtag !== storedCtag) {
@@ -857,7 +892,7 @@ export class Apple extends Connector<Apple> {
       const client = this.getCalDAV();
 
       // Get current etags
-      const currentEtags = await client.getEventEtags(calendarHref);
+      const currentEtags = await client.getEventEtags(this.calDavHref(calendarHref));
       const storedEtags =
         (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
       const storedUids =
@@ -931,7 +966,7 @@ export class Apple extends Connector<Apple> {
       // incremental syncs can archive them precisely.
       if (changedHrefs.length > 0) {
         const events = await client.fetchEventsByHref(
-          calendarHref,
+          this.calDavHref(calendarHref),
           changedHrefs
         );
         await this.processCalDAVEvents(events, calendarHref, false);
@@ -948,7 +983,7 @@ export class Apple extends Connector<Apple> {
 
       // Update stored etags and ctag
       await this.set(`etags_${calendarHref}`, newEtagMap);
-      const ctag = await client.getCalendarCtag(calendarHref);
+      const ctag = await client.getCalendarCtag(this.calDavHref(calendarHref));
       if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
 
       // Release lock before scheduling the next poll so the poll can
