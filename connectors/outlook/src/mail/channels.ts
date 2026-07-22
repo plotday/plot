@@ -8,8 +8,8 @@ import { EXCLUDED_WELL_KNOWN, GraphMailApi } from "./graph-mail-api";
 // ---------------------------------------------------------------------------
 
 export const OUTLOOK_MAIL_SCOPES: string[] = [
-  "https://graph.microsoft.com/mail.readwrite",
-  "https://graph.microsoft.com/mail.send",
+  "https://graph.microsoft.com/Mail.ReadWrite",
+  "https://graph.microsoft.com/Mail.Send",
 ];
 
 // ---------------------------------------------------------------------------
@@ -63,8 +63,12 @@ export async function getOutlookMailChannels(
   token: AuthToken
 ): Promise<Channel[]> {
   const api = new GraphMailApi(token.token);
-  const folders = await api.getMailFolders();
-  const wellKnown = await api.getWellKnownFolderIds();
+  // Independent Graph calls — run concurrently rather than paying the sum of
+  // both round-trips during the synchronous connect-time getChannels() call.
+  const [folders, wellKnown] = await Promise.all([
+    api.getMailFolders(),
+    api.getWellKnownFolderIds(),
+  ]);
 
   const excluded = new Set(
     EXCLUDED_WELL_KNOWN.map((n) => wellKnown[n]).filter(Boolean) as string[]

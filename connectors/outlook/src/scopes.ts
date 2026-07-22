@@ -2,14 +2,22 @@ import type { ScopeConfig, OptionalScopeGroup } from "@plotday/twister";
 
 export const OPTIONAL_SCOPE_GROUPS: OptionalScopeGroup[] = [
   { id: "mail", label: "Mail", default: true,
-    scopes: ["https://graph.microsoft.com/mail.readwrite", "https://graph.microsoft.com/mail.send"] },
+    scopes: ["https://graph.microsoft.com/Mail.ReadWrite", "https://graph.microsoft.com/Mail.Send"] },
   { id: "calendar", label: "Calendar", default: true,
-    scopes: ["https://graph.microsoft.com/calendars.readwrite"] },
+    scopes: ["https://graph.microsoft.com/Calendars.ReadWrite"] },
   { id: "contacts", label: "Contacts", default: true,
-    scopes: ["https://graph.microsoft.com/people.read", "https://graph.microsoft.com/contacts.read"] },
+    scopes: ["https://graph.microsoft.com/People.Read", "https://graph.microsoft.com/Contacts.Read"] },
 ];
 
-export const OUTLOOK_SCOPES: ScopeConfig = { required: [], optional: OPTIONAL_SCOPE_GROUPS };
+// User.Read is required (not part of any toggleable product group): it's the
+// permission Graph checks for GET /me, which ensureUserEmailFn calls to
+// resolve the connected mailbox's own address — needed for self-sent-message
+// detection (mail), organizer matching (calendar), etc. regardless of which
+// optional groups the user enables. Without it, /me returns a 403.
+export const OUTLOOK_SCOPES: ScopeConfig = {
+  required: ["https://graph.microsoft.com/User.Read"],
+  optional: OPTIONAL_SCOPE_GROUPS,
+};
 
 export interface ProductInfo {
   key: "mail" | "calendar" | "contacts";

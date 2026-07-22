@@ -34,17 +34,25 @@ export async function composeChannels(
 ): Promise<Channel[]> {
   const grantedScopes = new Set(token.scopes ?? []);
 
+  // Enumerate every eligible product concurrently (each getRawChannels is an
+  // independent network call to Microsoft Graph). Order is preserved by
+  // enumerating results in `eligible` order, which is products' declaration
+  // order. See connectors/google/src/compose.ts for the reference pattern —
+  // this function used to await each product serially, which paid the sum of
+  // every product's round-trips (plus Mail's own internal serial calls)
+  // during the synchronous connect-time getChannels() call.
+  const eligible = products.filter((product) =>
+    product.requiredScopes.every((s) => grantedScopes.has(s))
+  );
+  const perProduct = await Promise.all(
+    eligible.map((product) => product.getRawChannels(token))
+  );
+
   const result: Channel[] = [];
-
-  for (const product of products) {
-    const hasAllScopes = product.requiredScopes.every((s) => grantedScopes.has(s));
-    if (!hasAllScopes) continue;
-
-    const rawChannels = await product.getRawChannels(token);
-    for (const raw of rawChannels) {
+  eligible.forEach((product, i) => {
+    for (const raw of perProduct[i]) {
       result.push(prefixChannel(product.key, raw, product.linkTypes));
     }
-  }
-
+  });
   return result;
 }

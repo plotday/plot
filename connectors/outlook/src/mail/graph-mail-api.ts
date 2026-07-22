@@ -42,7 +42,6 @@ export type GraphMessage = {
   internetMessageHeaders?: GraphHeader[];
   "@odata.type"?: string;
   meetingMessageType?: string;
-  meetingRequestType?: string;
   event?: { iCalUId?: string };
 };
 
@@ -117,13 +116,7 @@ export function odataQuote(value: string): string {
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
-/**
- * $select used wherever full message content is needed.
- * internetMessageHeaders is intentionally absent — Graph only reliably
- * returns it on single-message GETs, so facets fetch it separately
- * (getInternetMessageHeaders).
- */
-export const MESSAGE_SELECT = [
+const MESSAGE_SELECT_FIELDS = [
   "id",
   "conversationId",
   "internetMessageId",
@@ -144,8 +137,42 @@ export const MESSAGE_SELECT = [
   "parentFolderId",
   "hasAttachments",
   "webLink",
+] as const;
+
+/**
+ * $select used wherever full message content is needed.
+ * internetMessageHeaders is intentionally absent — Graph only reliably
+ * returns it on single-message GETs, so facets fetch it separately
+ * (getInternetMessageHeaders).
+ *
+ * meetingMessageType lives on the eventMessage subtype, not the base
+ * `message` type. A single-item GET (getMessage) resolves the entity's
+ * concrete runtime type, so referencing it bare here is fine — only
+ * polymorphic *collection* queries need the OData cast (see
+ * MESSAGE_SELECT_COLLECTION below). (There is no `meetingRequestType` in
+ * Graph — that's an Exchange Web Services concept, not Graph's; Graph only
+ * exposes `meetingMessageType`.)
+ */
+export const MESSAGE_SELECT = [
+  ...MESSAGE_SELECT_FIELDS,
   "meetingMessageType",
-  "meetingRequestType",
+].join(",");
+
+/**
+ * $select for the polymorphic /messages *collection* endpoints
+ * (getMessagesPage, getConversationMessages). Graph requires an OData
+ * type-cast for eventMessage-only properties here — and once any cast
+ * segment appears in the query (the $expand for `event` needs one too),
+ * Graph validates the whole request strictly and rejects a bare
+ * meetingMessageType with "Could not find a property... on type
+ * 'Microsoft.OutlookServices.Message'". Casting both eventMessage-only
+ * references consistently (this + the $expand) is what Microsoft's own
+ * docs specify for querying eventMessage fields on a collection:
+ * https://learn.microsoft.com/en-us/graph/api/resources/eventmessage
+ */
+const MESSAGE_SELECT_COLLECTION = [
+  ...MESSAGE_SELECT_FIELDS,
+  "microsoft.graph.eventMessage/meetingMessageType",
 ].join(",");
 
 /** Upload-session chunk size: 10 × 320 KiB (Graph requires 320 KiB multiples). */
@@ -229,16 +256,27 @@ export class GraphMailApi {
   /**
    * Resolve well-known folder ids by GETting /me/mailFolders/{name} per name.
    * 404s (e.g. no `archive` on some consumer accounts) are tolerated.
+   *
+   * Each name is an independent Graph call, so they're fired concurrently —
+   * this runs during the synchronous connect-time getChannels() call, and 8
+   * serial round-trips there risked exceeding the connect path's execution
+   * budget (see connectors/AGENTS.md "Connect / enable-path performance
+   * contract").
    */
   async getWellKnownFolderIds(): Promise<WellKnownFolders> {
+    const entries = await Promise.all(
+      WELL_KNOWN_NAMES.map(async (name) => {
+        const data = (await this.call(
+          "GET",
+          `${GRAPH}/me/mailFolders/${name}`,
+          { $select: "id" }
+        )) as { id?: string } | null;
+        return [name, data?.id] as const;
+      })
+    );
     const result: WellKnownFolders = {};
-    for (const name of WELL_KNOWN_NAMES) {
-      const data = (await this.call(
-        "GET",
-        `${GRAPH}/me/mailFolders/${name}`,
-        { $select: "id" }
-      )) as { id?: string } | null;
-      if (data?.id) result[name] = data.id;
+    for (const [name, id] of entries) {
+      if (id) result[name] = id;
     }
     return result;
   }
@@ -252,17 +290,26 @@ export class GraphMailApi {
   }): Promise<{ messages: GraphMessage[]; nextLink: string | null }> {
     let data: any;
     if (args.nextLink) {
+      console.log("top ", args);
       data = await this.call("GET", args.nextLink);
     } else {
+      console.log("bottom ", args);
       const params: Record<string, string> = {
         $top: String(args.top ?? 20),
         $orderby: "receivedDateTime desc",
-        $select: MESSAGE_SELECT,
-        $expand: "event($select=iCalUId)",
+        $select: MESSAGE_SELECT_COLLECTION,
+        // `event` lives on the eventMessage subtype, not the base `message`
+        // type this polymorphic /messages collection returns — Graph rejects
+        // a bare `event(...)` expand with "Could not find a property named
+        // 'event' on type 'microsoft.graph.message'". The OData type-cast
+        // segment scopes the expand to items that are actually eventMessages;
+        // plain messages just come back without an `event` field.
+        $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
       };
       if (args.since) {
         params.$filter = `receivedDateTime ge ${args.since.toISOString()}`;
       }
+      console.log("params ", params);
       data = await this.call(
         "GET",
         `${GRAPH}/me/mailFolders/${encodeURIComponent(args.folderId!)}/messages`,
@@ -299,8 +346,8 @@ export class GraphMailApi {
     let data: any = await this.call("GET", `${GRAPH}/me/messages`, {
       $filter: `conversationId eq ${odataQuote(conversationId)}`,
       $top: "100",
-      $select: MESSAGE_SELECT,
-      $expand: "event($select=iCalUId)",
+      $select: MESSAGE_SELECT_COLLECTION,
+      $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
     });
     for (let page = 0; page < 5; page++) {
       messages.push(...((data?.value as GraphMessage[] | undefined) ?? []));
@@ -606,8 +653,15 @@ export function sortConversation(messages: GraphMessage[]): GraphMessage[] {
  * bundling onto the event's Plot thread. Two signals: our own
  * `X-Plot-Event-UID` header on the parent's raw headers (a Plot-sent reply
  * chain — checked first, regardless of any message-derived signal), or a
- * message's Graph meeting-message metadata (update/cancellation). Bare new
- * invites and RSVP responses (accept/decline/tentative) are skipped.
+ * message's Graph meeting-message metadata (update/cancellation).
+ *
+ * Graph's `meetingMessageType` doesn't distinguish a brand-new invite from
+ * an update/reschedule to an existing meeting the way Exchange Web
+ * Services' `MeetingRequestType` (fullUpdate/informationalUpdate/
+ * newMeetingRequest) does — Graph has no equivalent property, so every
+ * `meetingRequest` bundles onto its event's thread here, new invite or not.
+ * RSVP responses (accept/decline/tentative) fall through and are skipped,
+ * since they match neither branch below.
  */
 export function classifyOutlookCalendar(
   messages: GraphMessage[],
@@ -621,13 +675,7 @@ export function classifyOutlookCalendar(
     const uid = m.event?.iCalUId;
     if (!uid) continue;
     if (m.meetingMessageType === "meetingCancelled") return { uid, kind: "cancel" };
-    if (
-      m.meetingMessageType === "meetingRequest" &&
-      (m.meetingRequestType === "fullUpdate" ||
-        m.meetingRequestType === "informationalUpdate")
-    ) {
-      return { uid, kind: "update" };
-    }
+    if (m.meetingMessageType === "meetingRequest") return { uid, kind: "update" };
   }
   return null;
 }
