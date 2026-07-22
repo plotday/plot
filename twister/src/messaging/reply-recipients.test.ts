@@ -163,4 +163,75 @@ describe("resolveOutboundReplyRecipients", () => {
       expect(r.to).toEqual([]);
     });
   });
+
+  describe("self-reply fallback (headerFrom all self)", () => {
+    it("self→self single address addresses the original sender", () => {
+      // Note-to-self: connector strips the self From/To, leaving empty headers;
+      // headerFrom carries the raw original sender (still self).
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: null,
+        headerFrom: [mailbox],
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(r.to).toEqual([mailbox]);
+      expect(r.cc).toEqual([]);
+      expect(r.bcc).toEqual([]);
+    });
+
+    it("A→B both linked (curated) addresses the original sender", () => {
+      // Cross-connector self-email: both identities are self, so the curated
+      // resolution empties out; fall back to the original sender.
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox, workEmail]),
+        headerFrom: [workEmail],
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([workEmail]);
+      expect(r.curated).toBe(true);
+    });
+
+    it("does NOT fall back when the original sender is external (private note)", () => {
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([workEmail]),
+        headerFrom: [anthropic],
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([]);
+      expect(r.curated).toBe(true);
+    });
+
+    it("does NOT fall back when a non-self participant was narrowed out", () => {
+      // You emailed yourself AND an external contact, then restricted the note
+      // to just yourself: stays private, must not email your own address.
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox]),
+        headerFrom: [mailbox],
+        headerTo: [anthropic],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(r.to).toEqual([]);
+    });
+
+    it("without headerFrom, an all-self result stays empty (unchanged)", () => {
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([workEmail]),
+        headerTo: [anthropic, mailbox],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([]);
+    });
+  });
 });
