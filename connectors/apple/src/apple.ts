@@ -43,6 +43,7 @@ import {
 import { composeChannels } from "./compose";
 import { getMailChannels } from "./mail/channels";
 import type { MailHost } from "./mail/mail-host";
+import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
 import { namespace, parse } from "./product-channel";
 import { appleProducts } from "./products";
 
@@ -278,10 +279,36 @@ export class Apple extends Connector<Apple> {
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     const { product } = parse(channel.id);
     if (product === "calendar") return this.onCalendarChannelEnabled(channel, context);
-    // mail: getMailChannels now enumerates a real INBOX channel (see
-    // buildMailHost/getChannels above), so this IS reachable — enabling it
-    // currently no-ops. Wiring enable/disable to mailInitialSync/
-    // mailIncrementalSync (host construction, polling) is a follow-up.
+    if (product === "mail") return this.onMailChannelEnabled(channel, context);
+  }
+
+  /**
+   * Called when the mail channel is enabled. Widens the persisted
+   * `sync_history_min` floor (never narrows it — a plan downgrade must not
+   * erase history already synced), marks the channel enabled, and queues the
+   * initial backfill as a task so the HTTP response returns quickly.
+   *
+   * Always queues `mailInitialSyncTask`, even on re-dispatch (auto-enable /
+   * recovery): `mailInitialSync`/`runInitialBackfill` upsert by `source`, so
+   * re-running is a safe, idempotent no-op catch-up rather than something
+   * that needs to be skipped.
+   */
+  private async onMailChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    if (context?.syncHistoryMin) {
+      const incoming = context.syncHistoryMin.toISOString();
+      const host = this.buildMailHost();
+      const key = `sync_history_min_${channel.id}`;
+      const stored = await host.get<string>(key);
+      if (!stored || new Date(incoming) < new Date(stored)) {
+        await host.set(key, incoming);
+      }
+    }
+
+    await this.set(`mail:enabled_${channel.id}`, true);
+
+    // Run the initial backfill off the HTTP path.
+    const cb = await this.callback(this.mailInitialSyncTask, channel.id);
+    await this.runTask(cb);
   }
 
   /**
@@ -439,8 +466,63 @@ export class Apple extends Connector<Apple> {
   async onChannelDisabled(channel: Channel): Promise<void> {
     const { product } = parse(channel.id);
     if (product === "calendar") return this.onCalendarChannelDisabled(channel);
-    // mail: stub — no-op. Follow-up: clear `mail:state_<channelId>` and any
-    // scheduled mail poll for this channel.
+    if (product === "mail") return this.onMailChannelDisabled(channel);
+  }
+
+  /**
+   * Called when the mail channel is disabled. Cancels the recurring poll,
+   * clears all persisted mail state for this channel, and archives its
+   * synced links. Scoped to `syncProvider: "apple-mail"` (distinct from
+   * calendar's `"apple"`) so disabling mail never touches calendar links.
+   */
+  private async onMailChannelDisabled(channel: Channel): Promise<void> {
+    await this.cancelScheduledTask(`mailpoll:${channel.id}`);
+    await this.clear(`mail:enabled_${channel.id}`);
+    await this.clear(`mail:state_${channel.id}`);
+    await this.clear(`mail:sync_history_min_${channel.id}`);
+    await this.tools.integrations.archiveLinks({
+      channelId: channel.id,
+      meta: { syncProvider: "apple-mail", syncableId: channel.id },
+    });
+  }
+
+  /**
+   * Runs the mail initial backfill as a queued task (dispatched callback).
+   * Resolves the plan-based history floor (falling back to 7 days), runs
+   * `mailInitialSync` against INBOX, then schedules the recurring poll.
+   */
+  async mailInitialSyncTask(channelId: string): Promise<void> {
+    const host = this.buildMailHost();
+    const min =
+      (await host.get<string>(`sync_history_min_${channelId}`)) ??
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    await mailInitialSync(host, "INBOX", channelId, min);
+    await this.scheduleMailPoll(channelId);
+  }
+
+  /**
+   * Recurring mail poll (dispatched callback). Bails if the channel was
+   * disabled since this poll was scheduled; otherwise runs the incremental
+   * IMAP sync.
+   */
+  async mailPoll(channelId: string): Promise<void> {
+    const enabled = await this.get<boolean>(`mail:enabled_${channelId}`);
+    if (!enabled) return;
+    await mailIncrementalSync(this.buildMailHost(), channelId);
+  }
+
+  /**
+   * Schedule the recurring mail poll. Keyed distinctly from calendar's
+   * `poll:<id>` so the two products' polling chains never collide.
+   * `scheduleRecurring` re-arms automatically — `mailPoll` must not
+   * reschedule itself.
+   */
+  private async scheduleMailPoll(channelId: string): Promise<void> {
+    const cb = await this.callback(this.mailPoll, channelId);
+    await this.scheduleRecurring(`mailpoll:${channelId}`, cb, {
+      intervalMs: 15 * 60 * 1000,
+      firstRunAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
   }
 
   /**
