@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Thread } from "@plotday/twister";
+import type { CreateLinkDraft, Thread } from "@plotday/twister";
 import type { Note } from "@plotday/twister/plot";
 import type { ImapMessage } from "@plotday/twister/tools/imap";
 import type { SmtpMessage, SmtpSendResult } from "@plotday/twister/tools/smtp";
 
 import type { MailHost } from "./mail-host";
-import { onNoteCreatedFn } from "./write";
+import { onCreateLinkFn, onNoteCreatedFn } from "./write";
 
 /** A MailHost whose IMAP returns `inboxMessages` from search+fetch and whose
- *  SMTP records the sent message (or throws `sendError`). */
+ *  SMTP records the sent message (or throws `sendError`). `set`/`get` are
+ *  backed by a real Map (not independent no-ops) so a single mockHost()
+ *  instance can exercise the compose dedup path across sequential calls. */
 function mockHost(opts: {
   inboxMessages?: Partial<ImapMessage>[];
   sendError?: Error;
@@ -36,13 +38,16 @@ function mockHost(opts: {
       return { messageId: "<sent-123@plot.day>", accepted: m.to.map((a) => a.address), rejected: [] };
     },
   };
+  const store = new Map<string, unknown>();
   const host = {
     imap, smtp,
     integrations: {} as never,
     appleId: "me@icloud.com",
     appPassword: "pw",
-    set: vi.fn(async () => {}),
-    get: vi.fn(async () => undefined),
+    set: vi.fn(async (key: string, value: unknown) => {
+      store.set(key, value);
+    }),
+    get: vi.fn(async (key: string) => store.get(key)),
     clear: async () => {},
     channelSyncCompleted: async () => {},
   } as unknown as MailHost;
@@ -119,5 +124,81 @@ describe("onNoteCreatedFn", () => {
     const { host } = mockHost({ inboxMessages: [] });
     const out = await onNoteCreatedFn(host, replyNote(), mailThread({ accessContacts: [] }));
     expect(out).toMatchObject({ deliveryError: { code: "no_recipients" } });
+  });
+});
+
+function emailDraft(over: Partial<CreateLinkDraft> = {}): CreateLinkDraft {
+  return {
+    channelId: "mail:INBOX",
+    type: "email",
+    status: null,
+    title: "Coffee next week?",
+    noteContent: "Are you free Tuesday?",
+    contacts: [],
+    recipients: [{ id: "1", name: null, externalAccountId: "jane@x.com", role: "to" }] as never,
+    inviteEmails: ["bob@x.com"],
+    ...over,
+  } as unknown as CreateLinkDraft;
+}
+
+describe("onCreateLinkFn", () => {
+  it("returns null for non-email link types", async () => {
+    const { host } = mockHost({});
+    expect(await onCreateLinkFn(host, emailDraft({ type: "event" }))).toBeNull();
+  });
+
+  it("sends the composed mail and roots the link source at the sent Message-ID", async () => {
+    const { host, sent } = mockHost({});
+    const out = await onCreateLinkFn(host, emailDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to.map((a) => a.address).sort()).toEqual(["bob@x.com", "jane@x.com"]);
+    expect(sent[0].subject).toBe("Coffee next week?");
+    expect(out?.source).toBe("icloud-mail:thread:sent-123@plot.day");
+    expect(out?.type).toBe("email");
+    expect(out?.originatingNote).toEqual({ key: "sent-123@plot.day", deliveryError: null });
+    // `notes[0]` types as `Omit<NewNote, "thread">`, which — due to a TS
+    // keyof-of-union quirk — excludes `key` even though NewNote allows it;
+    // cast to read the field the runtime actually receives at this shape.
+    const rootNote = out?.notes?.[0] as unknown as { key?: string; authoredBySelf?: boolean } | undefined;
+    expect(rootNote?.key).toBe("sent-123@plot.day");
+    expect(rootNote?.authoredBySelf).toBe(true);
+    // channelId omitted so the platform auto-fills from the draft.
+    expect(out?.channelId ?? null).toBeNull();
+  });
+
+  it("surfaces a send failure on the originating note without a link source", async () => {
+    const { host } = mockHost({ sendError: new Error("550 rejected") });
+    const out = await onCreateLinkFn(host, emailDraft());
+    expect(out?.originatingNote?.deliveryError).toMatchObject({ code: "rejected" });
+    expect(out?.source).toBeUndefined();
+  });
+
+  it("returns no_recipients when the draft has no addresses", async () => {
+    const { host } = mockHost({});
+    const out = await onCreateLinkFn(host, emailDraft({ recipients: [] as never, inviteEmails: [] }));
+    expect(out?.originatingNote?.deliveryError).toMatchObject({ code: "no_recipients" });
+  });
+
+  it("dedupes an identical re-invoked draft inside the window, but re-sends on different content or after the window", async () => {
+    const { host, sent } = mockHost({});
+    const draft = emailDraft();
+    const t0 = new Date("2026-07-20T00:00:00Z");
+
+    const first = await onCreateLinkFn(host, draft, t0);
+    expect(sent).toHaveLength(1);
+
+    // Same content, 5 minutes later — still inside the 10-minute window: no
+    // second SMTP send; the dedup hit reuses the prior root id.
+    const dup = await onCreateLinkFn(host, draft, new Date(t0.getTime() + 5 * 60 * 1000));
+    expect(sent).toHaveLength(1);
+    expect(dup?.originatingNote?.key).toBe(first?.originatingNote?.key);
+
+    // Different content → distinct dedup key → sends again.
+    await onCreateLinkFn(host, emailDraft({ title: "Something else" }), new Date(t0.getTime() + 5 * 60 * 1000));
+    expect(sent).toHaveLength(2);
+
+    // Same original content again, but past the 10-minute window → sends again.
+    await onCreateLinkFn(host, draft, new Date(t0.getTime() + 11 * 60 * 1000));
+    expect(sent).toHaveLength(3);
   });
 });

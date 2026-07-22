@@ -4,8 +4,8 @@ import { connectIcloud } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 
 /**
- * Link types for mail threads. Plan 3 fills in statuses/compose; declared now
- * so the composite's product registry is complete.
+ * Link types for mail threads. Email is status-less (no `statuses[]`), so
+ * this type only ever carries the compose/contact-role/copy fields below.
  */
 export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
   {
@@ -21,6 +21,16 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
     // without a site deploy.
     logo: "https://api.iconify.design/fluent-emoji-flat/envelope.svg",
     logoMono: "https://api.iconify.design/lucide/mail.svg",
+    compose: { targets: "addresses" as const },
+    contactRoles: [
+      { id: "to", label: "To", default: true },
+      { id: "cc", label: "CC" },
+      { id: "bcc", label: "BCC", hidden: true },
+    ],
+    composeVerb: "Send",
+    replyVerb: "Send",
+    replyPlaceholder: "Reply",
+    composePlaceholder: "Send an email",
   },
 ];
 

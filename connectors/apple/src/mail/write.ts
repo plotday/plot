@@ -1,11 +1,12 @@
-import type { NewContact, NoteWriteBackResult, Thread } from "@plotday/twister";
-import type { Note } from "@plotday/twister/plot";
+import type { CreateLinkDraft, NewContact, NoteWriteBackResult, Thread } from "@plotday/twister";
+import type { CreateLinkResult, Note } from "@plotday/twister/plot";
 import type { SmtpMessage } from "@plotday/twister/tools/smtp";
 
 import { connectIcloud, resolveThreadMessages, type ResolvedThread } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 import {
   accessContactsToRecipients,
+  composeRecipients,
   deriveReplyAll,
   isEmpty,
   type OutboundRecipients,
@@ -13,7 +14,7 @@ import {
   splitByRole,
 } from "./recipients";
 import { sendViaSmtp, sendWithRetry } from "./smtp-send";
-import { stripAngle } from "./transform";
+import { mailSource, stripAngle } from "./transform";
 
 /** syncProvider tag for this connector's mail links (distinct from calendar "apple"). */
 export const APPLE_MAIL = "apple-mail";
@@ -101,4 +102,123 @@ export async function onNoteCreatedFn(
     return { deliveryError: { code: outcome.error.code, message: outcome.error.message } };
   }
   return { key: stripAngle(outcome.result.messageId), deliveryError: null };
+}
+
+const COMPOSE_DEDUP_WINDOW_MS = 10 * 60 * 1000;
+
+/** Small non-crypto content hash for the compose idempotency key. */
+function fnv1aHex(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
+/** Build the CreateLinkResult (minus originatingNote) for a sent compose. */
+function composeLink(
+  host: MailHost,
+  draft: CreateLinkDraft,
+  subject: string,
+  rootId: string
+): CreateLinkResult {
+  // Built as a standalone variable (not an inline array literal) so its `key`
+  // field — valid on NewNote but excluded from the narrower `Omit<NewNote,
+  // "thread">` the `notes` field's type collapses to — isn't rejected by
+  // TS's excess-property check on a fresh object literal.
+  const rootNote = {
+    key: rootId,
+    content: draft.noteContent ?? "",
+    contentType: "markdown" as const,
+    authoredBySelf: true,
+  };
+  return {
+    source: mailSource(rootId),
+    type: "email",
+    title: subject || undefined,
+    status: null,
+    created: new Date(),
+    author: ownerContact(host.appleId),
+    meta: {
+      syncProvider: APPLE_MAIL,
+      syncableId: draft.channelId,
+      rootMessageId: rootId,
+    },
+    notes: [rootNote],
+    // channelId omitted → platform auto-fills from draft.channelId.
+  };
+}
+
+/**
+ * Compose write-back: send a brand-new email the user composed in Plot and
+ * return a link rooted at the sent Message-ID (so the composed thread becomes
+ * the mail thread root, and a Sent-mailbox re-ingest dedups by source). A
+ * short content-hash window guards against a re-invoked create double-sending.
+ * Delivery failures set `originatingNote.deliveryError` and return no source.
+ */
+export async function onCreateLinkFn(
+  host: MailHost,
+  draft: CreateLinkDraft,
+  now: Date = new Date()
+): Promise<CreateLinkResult | null> {
+  if (draft.type !== "email") return null;
+
+  const recipients = composeRecipients(draft.recipients, draft.inviteEmails);
+  const subject = draft.title ?? "";
+  const body = draft.noteContent ?? "";
+
+  if (isEmpty(recipients)) {
+    return {
+      originatingNote: {
+        deliveryError: { code: "no_recipients", message: "No recipients" },
+      },
+    };
+  }
+
+  // Content-hash dedup: a compose draft has no stable id, so guard against a
+  // re-invoked create double-sending within a short window.
+  const dedupKey = `compose:${fnv1aHex(
+    JSON.stringify([
+      subject,
+      body,
+      recipients.to.map((a) => a.address).sort(),
+      recipients.cc.map((a) => a.address).sort(),
+      recipients.bcc.map((a) => a.address).sort(),
+    ])
+  )}`;
+  const prior = await host.get<{ rootId: string; at: number }>(dedupKey);
+  if (prior && now.getTime() - prior.at < COMPOSE_DEDUP_WINDOW_MS) {
+    return {
+      ...composeLink(host, draft, subject, prior.rootId),
+      originatingNote: { key: prior.rootId, deliveryError: null },
+    };
+  }
+
+  const message: SmtpMessage = {
+    from: { address: host.appleId },
+    to: recipients.to,
+    cc: recipients.cc.length ? recipients.cc : undefined,
+    bcc: recipients.bcc.length ? recipients.bcc : undefined,
+    subject,
+    text: body,
+  };
+  const outcome = await sendWithRetry(() =>
+    sendViaSmtp(host.smtp, host.appleId, host.appPassword, message)
+  );
+  if (!outcome.ok) {
+    // Preserve the composed content in Plot; surface the failure on its note.
+    return {
+      originatingNote: {
+        deliveryError: { code: outcome.error.code, message: outcome.error.message },
+      },
+    };
+  }
+
+  const rootId = stripAngle(outcome.result.messageId);
+  await host.set(dedupKey, { rootId, at: now.getTime() });
+  return {
+    ...composeLink(host, draft, subject, rootId),
+    originatingNote: { key: rootId, deliveryError: null },
+  };
 }
