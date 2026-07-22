@@ -1,5 +1,4 @@
-import type { NewLinkWithNotes } from "@plotday/twister";
-import type { ImapSession } from "@plotday/twister/tools/imap";
+import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
 import type { MailHost, MailSyncState } from "./mail-host";
@@ -44,28 +43,20 @@ async function runInitialBackfill(
   const status = await host.imap.selectMailbox(session, "INBOX");
   const inboxUids = await host.imap.search(session, { since });
   const inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
-  const inboxLinks = transformMessages(inbox, {
-    channelId,
-    appleId: host.appleId,
-    fromSent: false,
-    initialSync: true,
-  });
 
-  let sentLinks: NewLinkWithNotes[] = [];
+  let sent: ImapMessage[] = [];
   const sentBox = await resolveSentMailbox(host, session);
   if (sentBox) {
     await host.imap.selectMailbox(session, sentBox);
     const sentUids = await host.imap.search(session, { since });
-    const sent = await fetchUidRange(host, session, sentBox, sentUids);
-    sentLinks = transformMessages(sent, {
-      channelId,
-      appleId: host.appleId,
-      fromSent: true,
-      initialSync: true,
-    });
+    sent = await fetchUidRange(host, session, sentBox, sentUids);
   }
 
-  const links = [...inboxLinks, ...sentLinks];
+  const links = transformMessages([...inbox, ...sent], {
+    channelId,
+    appleId: host.appleId,
+    initialSync: true,
+  });
   if (links.length > 0) await host.integrations.saveLinks(links);
 
   const lastUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
@@ -130,43 +121,33 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       return;
     }
 
-    // New mail since the stored cursor.
-    const upperUid = status.uidNext - 1;
-    let newUids: number[] = [];
-    if (upperUid >= state.lastUid + 1) {
-      const range: number[] = [];
-      for (let uid = state.lastUid + 1; uid <= upperUid; uid++) range.push(uid);
-      newUids = await host.imap.search(session, { uid: range });
-    }
+    // New mail since the stored cursor, bounded by the plan floor so a
+    // dormant account (stored lastUid: 0) can't fetch the entire mailbox.
+    const floor = resolveSinceFloor(state.syncHistoryMin);
+    const windowUids = await host.imap.search(session, { since: floor });
+    const newUids = windowUids.filter((u) => u > state.lastUid);
 
-    // Recent-window rescan to catch \Seen flag changes on already-synced mail.
-    const recentSince = new Date(Date.now() - RECENT_WINDOW_MS);
+    // Recent-window rescan to catch \Seen flag changes on already-synced
+    // mail, also capped at the plan floor.
+    const recentSince = new Date(Math.max(floor.getTime(), Date.now() - RECENT_WINDOW_MS));
     const recentUids = await host.imap.search(session, { since: recentSince });
 
     const inboxUids = Array.from(new Set([...newUids, ...recentUids]));
     const inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
-    const inboxLinks = transformMessages(inbox, {
-      channelId,
-      appleId: host.appleId,
-      fromSent: false,
-      initialSync: false,
-    });
 
-    let sentLinks: NewLinkWithNotes[] = [];
+    let sent: ImapMessage[] = [];
     const sentBox = await resolveSentMailbox(host, session);
     if (sentBox) {
       await host.imap.selectMailbox(session, sentBox);
       const sentUids = await host.imap.search(session, { since: recentSince });
-      const sent = await fetchUidRange(host, session, sentBox, sentUids);
-      sentLinks = transformMessages(sent, {
-        channelId,
-        appleId: host.appleId,
-        fromSent: true,
-        initialSync: false,
-      });
+      sent = await fetchUidRange(host, session, sentBox, sentUids);
     }
 
-    const links = [...inboxLinks, ...sentLinks];
+    const links = transformMessages([...inbox, ...sent], {
+      channelId,
+      appleId: host.appleId,
+      initialSync: false,
+    });
     if (links.length > 0) await host.integrations.saveLinks(links);
 
     const newMaxUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);

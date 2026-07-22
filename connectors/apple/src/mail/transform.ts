@@ -27,8 +27,6 @@ export type TransformCtx = {
   channelId: string;
   /** The connection owner's Apple ID (their own address). */
   appleId: string;
-  /** True when these messages came from the Sent mailbox. */
-  fromSent: boolean;
   initialSync: boolean;
 };
 
@@ -60,6 +58,17 @@ function bodyOf(msg: ImapMessage): { content: string; contentType: "html" | "tex
  * link author is the earliest message's sender; accessContacts is the union of
  * every participant seen; the owner's own messages are credited via
  * authoredBySelf.
+ *
+ * `messages` must include both INBOX and Sent for a sync pass in a single
+ * call: iCloud Sent messages carry the owner's address in `From`, so
+ * per-message address comparison alone identifies owner messages without a
+ * batch-level flag. This lets INBOX and Sent be merged into one call, which
+ * in turn ensures a thread has exactly one NewLinkWithNotes per sync pass —
+ * two separate calls for the same thread each recompute `unread` in
+ * isolation, and whichever is saved last (e.g. an owner Sent reply saved
+ * after an unseen inbound one) wins and can incorrectly clear `unread`. See
+ * `sync.ts`. (Alias-`From` sent mail attributes to the alias's contact
+ * instead of `authoredBySelf` — an accepted minor edge case.)
  */
 export function transformMessages(
   messages: ImapMessage[],
@@ -97,7 +106,7 @@ export function transformMessages(
       const key = m.messageId ? stripAngle(m.messageId) : `uid-${m.uid}`;
       const body = bodyOf(m);
       const from = m.from && m.from[0] ? m.from[0] : null;
-      const isOwner = ctx.fromSent || (from?.address.toLowerCase() === ownEmail);
+      const isOwner = from?.address.toLowerCase() === ownEmail;
       return {
         key,
         content: body?.content ?? "",

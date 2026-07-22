@@ -20,7 +20,6 @@ function msg(over: Partial<ImapMessage>): ImapMessage {
 const ctx = {
   channelId: "mail:INBOX",
   appleId: "kris@icloud.com",
-  fromSent: false,
   initialSync: true,
 };
 
@@ -106,5 +105,38 @@ describe("transformMessages", () => {
     const mine = msg({ uid: 10, from: [{ address: "kris@icloud.com", name: "Kris" }] });
     const link = transformMessages([mine], ctx)[0];
     expect((link.author as { email?: string } | undefined)?.email).toBe("kris@icloud.com");
+  });
+
+  it("merges an owner Sent message and an inbound unseen reply into one unread thread on incremental sync", () => {
+    const ownerSent = msg({
+      uid: 10,
+      messageId: "<root@icloud.com>",
+      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      to: [{ address: "jane@example.com", name: "Jane" }],
+      flags: ["\\Seen"],
+      date: new Date("2026-07-15T09:00:00Z"),
+      subject: "Proposal",
+      bodyText: "Here's the proposal",
+    });
+    const reply = msg({
+      uid: 20,
+      messageId: "<reply@example.com>",
+      references: ["<root@icloud.com>"],
+      from: [{ address: "jane@example.com", name: "Jane" }],
+      to: [{ address: "kris@icloud.com", name: "Kris" }],
+      flags: [],
+      date: new Date("2026-07-15T10:00:00Z"),
+      bodyText: "Sounds good",
+    });
+    const links = transformMessages([ownerSent, reply], { ...ctx, initialSync: false });
+    expect(links).toHaveLength(1);
+    expect(links[0].unread).toBe(true);
+    type NoteLike = { key?: string; authoredBySelf?: boolean; author?: { email?: string } | null };
+    const byKey = Object.fromEntries(
+      links[0].notes!.map((n) => [(n as NoteLike).key, n as NoteLike])
+    );
+    expect(byKey["root@icloud.com"].authoredBySelf).toBe(true);
+    expect(byKey["reply@example.com"].author?.email).toBe("jane@example.com");
+    expect((links[0].author as { email?: string } | undefined)?.email).toBe("kris@icloud.com");
   });
 });
