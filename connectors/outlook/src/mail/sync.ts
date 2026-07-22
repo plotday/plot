@@ -1728,12 +1728,21 @@ export async function onNoteCreatedFn(
   // pre-resolved note.recipients (curated, self-excluded, role-aware), else
   // narrow/augment the original participants by the access constraint, else
   // reply-all. Identical logic to every other email-style connector.
+
+  // Raw original sender(s) — drives the shared helper's self-reply fallback so
+  // a reply in a self-email thread addresses the original sender instead of
+  // resolving to nobody. Not self-filtered.
+  const headerFrom = recipientEmails(
+    targetMessage.from ? [targetMessage.from] : []
+  ).map((email) => email.toLowerCase());
+
   const { to, cc, bcc } = resolveOutboundReplyRecipients({
     recipients: note.recipients ?? null,
     accessContactEmails,
     headerTo: toCandidates,
     headerCc: Array.from(ccCandidates),
     selfEmails,
+    headerFrom,
   });
 
   if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
