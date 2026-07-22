@@ -84,8 +84,6 @@ export function transformMessages(
     );
     const originator = ordered[0];
     const originatorFrom = originator.from && originator.from[0] ? originator.from[0] : null;
-    const originatorIsOwner =
-      ctx.fromSent || (originatorFrom?.address.toLowerCase() === ownEmail);
 
     // Union of participants for thread access.
     const participants = new Map<string, NewContact>();
@@ -108,9 +106,7 @@ export function transformMessages(
         // Owner's own messages: credit via authoredBySelf, leave author unset.
         ...(isOwner
           ? { authoredBySelf: true as const }
-          : from
-            ? { author: toContact(from) }
-            : {}),
+          : { author: from ? toContact(from) : null }),
       };
     });
 
@@ -127,12 +123,10 @@ export function transformMessages(
         rootMessageId: root,
       },
       notes,
-      // Thread author = originating sender (unless it's the owner's own thread).
-      ...(originatorIsOwner
-        ? {}
-        : originatorFrom
-          ? { author: toContact(originatorFrom) }
-          : {}),
+      // Thread author = originating sender (the owner's own address for
+      // owner-sent threads); explicit null when the sender is unknown, so a
+      // From-less message is never mis-credited to the connector.
+      author: originatorFrom ? toContact(originatorFrom) : null,
       ...(ctx.initialSync
         ? { unread: false, archived: false }
         : { unread: anyUnseen }),

@@ -93,4 +93,18 @@ describe("transformMessages", () => {
     const link = transformMessages([m], { ...ctx, initialSync: false })[0];
     expect(link.unread).toBe(true);
   });
+
+  it("sets author null (not the connector) when a message has no From", () => {
+    const m = msg({ uid: 9, from: undefined });
+    const link = transformMessages([m], ctx)[0];
+    expect(link.author).toBeNull();
+    expect(link.notes![0].author).toBeNull();
+    expect(link.notes![0].authoredBySelf).toBeUndefined();
+  });
+
+  it("credits the owner as thread author for an owner-originated thread", () => {
+    const mine = msg({ uid: 10, from: [{ address: "kris@icloud.com", name: "Kris" }] });
+    const link = transformMessages([mine], ctx)[0];
+    expect((link.author as { email?: string } | undefined)?.email).toBe("kris@icloud.com");
+  });
 });
