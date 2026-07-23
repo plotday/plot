@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.83.0
+
+### Changed
+
+- resolveOutboundReplyRecipients now returns recipients as { address, name } objects instead of bare address strings, so email connectors can include display names in outbound To/Cc/Bcc headers. ([#332](https://github.com/plotday/plot/pull/332) [`e12bb04`](https://github.com/plotday/plot/commit/e12bb04cf294fd200478b0d677aa272d0f087b1c))
+
 ## 0.82.0
 
 ### Added
