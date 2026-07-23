@@ -319,4 +319,26 @@ export abstract class Imap extends ITool {
    * @param key - The key the watch was created with
    */
   abstract unwatch(key: string): Promise<void>;
+
+  /**
+   * Fetches the raw, decoded bytes of one MIME part of a message — typically
+   * an attachment discovered via `fetchMessages()`'s `attachments` field.
+   *
+   * Issues a separate FETCH for just that part (attachment bytes are not
+   * included by `fetchMessages()`, which only reports part metadata), and
+   * decodes the part's content per its own Content-Transfer-Encoding
+   * (base64 or quoted-printable) to raw bytes.
+   *
+   * @param session - Session handle from connect()
+   * @param uid - Message UID (from fetchMessages())
+   * @param partNumber - IMAP part number, e.g. `attachments[i].partNumber`
+   *                      from fetchMessages() (like "2" or "2.1")
+   * @returns The part's raw decoded bytes
+   * @throws If the message or part cannot be found, or the fetch fails
+   */
+  abstract fetchAttachment(
+    session: ImapSession,
+    uid: number,
+    partNumber: string
+  ): Promise<Uint8Array>;
 }
