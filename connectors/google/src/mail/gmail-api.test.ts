@@ -664,6 +664,23 @@ describe("buildReactionMessage", () => {
     // still show something.
     expect(decodeMimePart(raw, "text/plain")).toBe("💖");
   });
+
+  it("HTML-escapes the emoji in the html fallback (no markup injection)", () => {
+    const raw = decodeRawMessage(
+      buildReactionMessage({
+        to: ["alice@example.com"],
+        cc: [],
+        from: "me@example.com",
+        subject: "Hi",
+        emoji: "<img src=x onerror=alert(1)>",
+        messageId: "<orig@mail.gmail.com>",
+        references: "",
+      })
+    );
+    const html = decodeMimePart(raw, "text/html");
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
 });
 
 describe("isSendableGmailReaction", () => {

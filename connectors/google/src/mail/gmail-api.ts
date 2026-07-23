@@ -1883,6 +1883,16 @@ export function isSendableGmailReaction(emoji: string): boolean {
   return true;
 }
 
+/** Escapes the five HTML metacharacters so a value is safe inside HTML text. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /**
  * Builds a Gmail emoji-reaction email for the message identified by
  * `messageId` (its RFC Message-ID). Per
@@ -1928,7 +1938,12 @@ export function buildReactionMessage(options: {
   const altBoundary = mimeBoundary("alt");
   const enc = new TextEncoder();
   const reactionJson = JSON.stringify({ version: 1, emoji });
-  const htmlFallback = `<!DOCTYPE html>\r\n<html><body>\r\n<p>${emoji}</p>\r\n</body></html>`;
+  // HTML-escape the emoji before interpolating it into the html fallback part.
+  // A real emoji never contains HTML metacharacters, but `emoji` is ultimately a
+  // user-supplied reaction string (only custom-emoji refs are pre-filtered, not
+  // arbitrary content), so escape defensively to keep the outbound email's HTML
+  // body injection-free.
+  const htmlFallback = `<!DOCTYPE html>\r\n<html><body>\r\n<p>${escapeHtml(emoji)}</p>\r\n</body></html>`;
 
   const altBlock = [
     `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
