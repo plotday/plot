@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ImapMessage } from "@plotday/twister/tools/imap";
 
 import { Apple } from "./apple";
 import { composeChannels } from "./compose";
@@ -157,5 +158,104 @@ describe("Apple.downloadAttachment", () => {
     await expect(
       Apple.prototype.downloadAttachment.call(self, "not-a-valid-ref")
     ).rejects.toThrow(/Invalid Apple Mail attachment ref/);
+  });
+});
+
+describe("Apple.mailWritebackDrain", () => {
+  /** Fake self exposing enough of `this.tools`/`this.set`/`this.get`/`this.clear`
+   *  for `buildMailHost()` (copied onto `self` the same way `downloadAttachment`'s
+   *  `makeSelf` above does) to construct a working MailHost. `inboxMessages`
+   *  seeds one shared INBOX fixture (uids assigned by array order) that
+   *  `resolveThreadMessages` filters down by each message's computed thread
+   *  root, mirroring write.test.ts's mockHost. `initialStore` seeds the
+   *  `mail:writeback:<kind>:<rootId>` payload keys `setThreadFlag` would have
+   *  written on the original deferred failure. */
+  function makeSelf(opts: {
+    inboxMessages?: Partial<ImapMessage>[];
+    searchError?: Error;
+    setFlagsError?: Error;
+    initialStore?: Record<string, unknown>;
+  }) {
+    const store = new Map<string, unknown>(Object.entries(opts.initialStore ?? {}));
+    const flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> = [];
+    const messages = opts.inboxMessages ?? [];
+    const uids = messages.map((_m, i) => i + 1);
+    const imap = {
+      connect: async () => "session-1",
+      disconnect: async () => {},
+      selectMailbox: async (_s: string, box: string) => ({
+        name: box, exists: 0, recent: 0, uidValidity: 1, uidNext: 99,
+      }),
+      search: async () => {
+        if (opts.searchError) throw opts.searchError;
+        return uids;
+      },
+      fetchMessages: async (_s: string, u: number[]) =>
+        u.map((uid) => ({ uid, flags: [], ...messages[uid - 1] }) as ImapMessage),
+      setFlags: async (_s: string, u: number[], flags: string[], op: string) => {
+        if (opts.setFlagsError) throw opts.setFlagsError;
+        flagCalls.push({ uids: u, flags, op });
+      },
+    };
+    const buildMailHost = (
+      Apple.prototype as unknown as { buildMailHost: () => unknown }
+    ).buildMailHost;
+    const self = {
+      buildMailHost,
+      tools: {
+        options: { appleId: "me@icloud.com", appPassword: "pw" },
+        imap,
+        smtp: {},
+        integrations: {},
+        files: {},
+      },
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      get: async (key: string) => store.get(key),
+      clear: async (key: string) => {
+        store.delete(key);
+      },
+    } as unknown as Apple;
+    return { self, flagCalls, store };
+  }
+
+  const pendingRead = { title: "Lunch?", flag: "\\Seen", operation: "add" };
+
+  it("re-applies the flag over IMAP and clears the payload on success", async () => {
+    const { self, flagCalls, store } = makeSelf({
+      inboxMessages: [
+        { messageId: "<root@x.com>", subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+      initialStore: { "mail:writeback:read:root@x.com": pendingRead },
+    });
+
+    const result = await Apple.prototype.mailWritebackDrain.call(self, ["read:root@x.com"]);
+
+    expect(flagCalls).toEqual([{ uids: [1], flags: ["\\Seen"], op: "add" }]);
+    expect(store.has("mail:writeback:read:root@x.com")).toBe(false);
+    expect(result).toEqual({ retry: [] });
+  });
+
+  it("returns the id for retry and leaves the payload in place when IMAP fails again", async () => {
+    const { self, flagCalls, store } = makeSelf({
+      searchError: new Error("connection refused"),
+      initialStore: { "mail:writeback:todo:root@x.com": { title: "Lunch?", flag: "\\Flagged", operation: "add" } },
+    });
+
+    const result = await Apple.prototype.mailWritebackDrain.call(self, ["todo:root@x.com"]);
+
+    expect(flagCalls).toHaveLength(0);
+    expect(store.has("mail:writeback:todo:root@x.com")).toBe(true);
+    expect(result).toEqual({ retry: ["todo:root@x.com"] });
+  });
+
+  it("skips an id with no stored payload (already resolved by a fresher direct call) without retrying it", async () => {
+    const { self, flagCalls } = makeSelf({ initialStore: {} });
+
+    const result = await Apple.prototype.mailWritebackDrain.call(self, ["read:gone@x.com"]);
+
+    expect(flagCalls).toHaveLength(0);
+    expect(result).toEqual({ retry: [] });
   });
 });

@@ -29,4 +29,11 @@ export interface MailHost {
   get<T>(key: string): Promise<T | undefined>;
   clear(key: string): Promise<void>;
   channelSyncCompleted(channelId: string): Promise<void>;
+  /**
+   * Enqueue `id` (`${"read"|"todo"}:${rootId}`) on the durable write-back
+   * retry drain. Called when an IMAP flag write-back fails transiently —
+   * the connector re-applies it from `mailWritebackDrain` once the drain
+   * fires. See `setThreadFlag` in `write.ts`.
+   */
+  queueWritebackDrain(id: string): Promise<void>;
 }

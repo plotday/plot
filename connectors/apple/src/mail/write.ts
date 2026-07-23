@@ -416,7 +416,16 @@ export async function onCreateLinkFn(
   };
 }
 
-/** Set/clear a flag on every INBOX message of the thread (best-effort). */
+/**
+ * Set/clear a flag on every INBOX message of the thread. A transient IMAP
+ * failure (connection cap under IDLE pressure, network blip) must not page —
+ * but it also must not silently drop the write. Instead, the desired flag
+ * state is persisted under a small per-thread key and handed to the durable
+ * write-back drain (`mailWritebackDrain` in apple.ts, via
+ * `host.queueWritebackDrain`) to re-apply once IMAP is reachable again.
+ * Re-notifying the same id before the drain fires (a fresh toggle) resets its
+ * attempt counter and simply overwrites the stored payload — last-write-wins.
+ */
 async function setThreadFlag(
   host: MailHost,
   thread: Thread,
@@ -430,13 +439,15 @@ async function setThreadFlag(
     const session = await connectIcloud(host);
     try {
       const { inboxUids } = await resolveThreadMessages(host, session, rootId, thread.title);
-      if (inboxUids.length === 0) return;
+      if (inboxUids.length === 0) return; // nothing to flag — not a failure
       await host.imap.setFlags(session, inboxUids, [flag], operation);
     } finally {
       await host.imap.disconnect(session);
     }
   } catch {
-    // Flag write-back is best-effort; a transient IMAP failure must not page.
+    const kind = flag === "\\Seen" ? "read" : "todo";
+    await host.set(`writeback:${kind}:${rootId}`, { title: thread.title, flag, operation });
+    await host.queueWritebackDrain(`${kind}:${rootId}`);
   }
 }
 

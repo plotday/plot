@@ -111,6 +111,10 @@ function buildFakeHost(opts: {
       stored.delete(key);
     },
     channelSyncCompleted: async (): Promise<void> => {},
+    // Not exercised by this file's tests (sync-in only, no flag write-back);
+    // satisfies MailHost's required `queueWritebackDrain` field. See
+    // write.test.ts (Task 5) for the real write-back defer/drain coverage.
+    queueWritebackDrain: async (): Promise<void> => {},
   };
 
   return { host, stored, savedLinks, searchCalls };

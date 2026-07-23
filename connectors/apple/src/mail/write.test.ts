@@ -27,10 +27,12 @@ function mockHost(opts: {
   sent: SmtpMessage[];
   flagCalls: Array<{ uids: number[]; flags: string[]; op: string }>;
   fileReads: string[];
+  queuedDrains: string[];
 } {
   const sent: SmtpMessage[] = [];
   const flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> = [];
   const fileReads: string[] = [];
+  const queuedDrains: string[] = [];
   const uids = (opts.inboxMessages ?? []).map((_m, i) => i + 1);
   const imap = {
     connect: async () => "s",
@@ -85,8 +87,11 @@ function mockHost(opts: {
     get: vi.fn(async (key: string) => store.get(key)),
     clear: async () => {},
     channelSyncCompleted: async () => {},
+    queueWritebackDrain: vi.fn(async (id: string) => {
+      queuedDrains.push(id);
+    }),
   } as unknown as MailHost;
-  return { host, sent, flagCalls, fileReads };
+  return { host, sent, flagCalls, fileReads, queuedDrains };
 }
 
 function mailThread(over: Partial<Thread> = {}): Thread {
@@ -501,19 +506,47 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
     expect(todo.flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Flagged"], op: "add" }]);
   });
 
-  it("no-ops when nothing resolves or the thread isn't apple-mail", async () => {
+  it("no-ops when nothing resolves or the thread isn't apple-mail — not a failure, so no defer/drain", async () => {
     const none = mockHost({ inboxMessages: [] });
     await onThreadReadFn(none.host, mailThread(), {} as never, false);
     expect(none.flagCalls).toHaveLength(0);
+    expect(none.host.set).not.toHaveBeenCalled();
+    expect(none.queuedDrains).toHaveLength(0);
 
     const cal = mockHost({ inboxMessages: inbox });
     await onThreadToDoFn(cal.host, mailThread({ meta: { syncProvider: "apple" } as never }), {} as never, true, {});
     expect(cal.flagCalls).toHaveLength(0);
+    expect(cal.host.set).not.toHaveBeenCalled();
+    expect(cal.queuedDrains).toHaveLength(0);
   });
 
-  it("no-ops silently (no throw, no setFlags) when IMAP resolve fails", async () => {
-    const { host, flagCalls } = mockHost({ searchError: new Error("connection refused") });
+  it("defers a durable retry (persists the desired flag + queues the drain) when IMAP resolve fails for a read toggle", async () => {
+    const { host, flagCalls, queuedDrains } = mockHost({
+      searchError: new Error("connection refused"),
+    });
     await expect(onThreadReadFn(host, mailThread(), {} as never, false)).resolves.toBeUndefined();
     expect(flagCalls).toHaveLength(0);
+    expect(host.set).toHaveBeenCalledWith("writeback:read:root@x.com", {
+      title: "Lunch?",
+      flag: "\\Seen",
+      operation: "add",
+    });
+    expect(queuedDrains).toEqual(["read:root@x.com"]);
+  });
+
+  it("defers a durable retry keyed \"todo\" when IMAP resolve fails for a to-do toggle", async () => {
+    const { host, flagCalls, queuedDrains } = mockHost({
+      searchError: new Error("connection refused"),
+    });
+    await expect(
+      onThreadToDoFn(host, mailThread(), {} as never, true, {})
+    ).resolves.toBeUndefined();
+    expect(flagCalls).toHaveLength(0);
+    expect(host.set).toHaveBeenCalledWith("writeback:todo:root@x.com", {
+      title: "Lunch?",
+      flag: "\\Flagged",
+      operation: "add",
+    });
+    expect(queuedDrains).toEqual(["todo:root@x.com"]);
   });
 });

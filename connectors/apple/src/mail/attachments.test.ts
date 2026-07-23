@@ -82,6 +82,7 @@ function mockAttachmentHost(opts: {
     get: async () => undefined,
     clear: async () => {},
     channelSyncCompleted: async () => {},
+    queueWritebackDrain: async () => {},
   } as unknown as MailHost;
   return { host, selected };
 }

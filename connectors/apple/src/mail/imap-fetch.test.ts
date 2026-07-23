@@ -36,6 +36,7 @@ function mockHost(messagesByUid: Record<number, Partial<ImapMessage>>): {
     get: async () => undefined,
     clear: async () => {},
     channelSyncCompleted: async () => {},
+    queueWritebackDrain: async () => {},
   } as unknown as MailHost;
   return { host, calls };
 }
@@ -126,6 +127,7 @@ function mockMultiMailboxHost(opts: {
     get: async () => undefined,
     clear: async () => {},
     channelSyncCompleted: async () => {},
+    queueWritebackDrain: async () => {},
   } as unknown as MailHost;
   return { host, calls };
 }

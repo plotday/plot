@@ -49,7 +49,7 @@ import {
 import { composeChannels } from "./compose";
 import { downloadAttachmentFn } from "./mail/attachments";
 import { getMailChannels } from "./mail/channels";
-import { ICLOUD_IMAP } from "./mail/imap-fetch";
+import { connectIcloud, ICLOUD_IMAP, resolveThreadMessages } from "./mail/imap-fetch";
 import type { MailHost } from "./mail/mail-host";
 import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
 import {
@@ -60,6 +60,14 @@ import {
 } from "./mail/write";
 import { parse } from "./product-channel";
 import { appleProducts } from "./products";
+
+/**
+ * Return shape `scheduleDrain`'s handler expects (`{ retry?: string[] } |
+ * void` — retryable ids from the just-processed batch, or nothing when
+ * everything succeeded). Mirrored locally rather than imported: it isn't part
+ * of `@plotday/twister`'s public export surface.
+ */
+type DrainResult = { retry?: string[] } | void;
 
 /**
  * Build canonical identifiers for an Apple calendar (ICS) event. First
@@ -301,6 +309,8 @@ export class Apple extends Connector<Apple> {
       channelSyncCompleted: async (channelId: string) => {
         await this.tools.integrations.channelSyncCompleted(channelId);
       },
+      queueWritebackDrain: (id: string) =>
+        this.scheduleDrain("mail-writeback", this.mailWritebackDrain, { ids: [id] }),
     };
   }
 
@@ -536,6 +546,10 @@ export class Apple extends Connector<Apple> {
     await this.cancelScheduledTask(`mailpoll:${channel.id}`);
     await this.tools.imap.unwatch(channel.id);
     await this.cancelDrain(`mail-push:${channel.id}`);
+    // Not channel-scoped (single shared drain key, like `mail-writeback`'s
+    // producer side in buildMailHost()) — there is a single mail channel in
+    // v1, so tearing down the one drain on disable is correct.
+    await this.cancelDrain("mail-writeback");
     const pushCb = await this.get<Callback>(`mail:push_cb_${channel.id}`);
     if (pushCb) {
       await this.deleteCallback(pushCb);
@@ -550,6 +564,14 @@ export class Apple extends Connector<Apple> {
     // (there is a single mail channel in v1), so all `mail:compose:*` are ours.
     const composeKeys = await this.tools.store.list("mail:compose:");
     for (const key of composeKeys) {
+      await this.clear(key);
+    }
+    // Sweep any write-back retry payloads left behind by `cancelDrain` above
+    // (which clears the drain's pending-id set, not these payload keys).
+    // Harmless if left (only read by a drain that will no longer fire), but
+    // tidier to clear — mirrors the compose sweep just above.
+    const writebackKeys = await this.tools.store.list("mail:writeback:");
+    for (const key of writebackKeys) {
       await this.clear(key);
     }
     await this.tools.integrations.archiveLinks({
@@ -611,6 +633,46 @@ export class Apple extends Connector<Apple> {
     const enabled = await this.get<boolean>(`mail:enabled_${channelId}`);
     if (!enabled) return;
     await mailIncrementalSync(this.buildMailHost(), channelId);
+  }
+
+  /**
+   * Coalesced drain pass for deferred read/to-do flag write-backs queued by
+   * `setThreadFlag` (`mail/write.ts`) when a direct IMAP write fails
+   * transiently. Each id is `${"read"|"todo"}:${rootId}`; `scheduleDrain`'s
+   * durable set only tracks id presence + attempt count, so the desired flag
+   * state is looked up from its own `writeback:${kind}:${rootId}` key
+   * (written by `setThreadFlag`) and re-applied here. A missing payload means
+   * a fresher direct call already resolved it — skip without retrying. Ids
+   * that fail again are returned in `retry`; `scheduleDrain` bumps their
+   * attempt count and drops them once `maxAttempts` (default 5) is exceeded.
+   */
+  async mailWritebackDrain(ids: string[]): Promise<DrainResult> {
+    const host = this.buildMailHost();
+    const retry: string[] = [];
+    for (const id of ids) {
+      const sep = id.indexOf(":");
+      const kind = id.slice(0, sep);
+      const rootId = id.slice(sep + 1);
+      const pending = await host.get<{ title?: string; flag: string; operation: "add" | "remove" }>(
+        `writeback:${kind}:${rootId}`
+      );
+      if (!pending) continue; // already resolved by a fresher direct call
+      try {
+        const session = await connectIcloud(host);
+        try {
+          const { inboxUids } = await resolveThreadMessages(host, session, rootId, pending.title);
+          if (inboxUids.length > 0) {
+            await host.imap.setFlags(session, inboxUids, [pending.flag], pending.operation);
+          }
+          await host.clear(`writeback:${kind}:${rootId}`);
+        } finally {
+          await host.imap.disconnect(session);
+        }
+      } catch {
+        retry.push(id); // scheduleDrain bumps attempts + auto-drops after maxAttempts
+      }
+    }
+    return { retry };
   }
 
   /**
