@@ -170,3 +170,70 @@ describe("CalDAVClient.getCollectionChanges", () => {
     expect(body).not.toMatch(/<A:sync-token>[^/]/);
   });
 });
+
+describe("CalDAVClient.getSyncToken", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("extracts the sync-token from a depth-0 PROPFIND response, nested in a single <response> like getctag", async () => {
+    const PROPFIND_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<multistatus xmlns="DAV:">
+<response>
+ <href>/289842362/calendars/work/</href>
+ <propstat>
+  <prop>
+   <sync-token>HwoQEgwAAEtvRDAmkwAAAAAYARgAIhUI7YrB98zK+bIDEJml3pqc7L7MhgEoAA==</sync-token>
+  </prop>
+  <status>HTTP/1.1 200 OK</status>
+ </propstat>
+</response>
+</multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, PROPFIND_XML));
+    const client = makeClient();
+
+    const token = await client.getSyncToken("/289842362/calendars/work/");
+
+    expect(token).toBe(
+      "HwoQEgwAAEtvRDAmkwAAAAAYARgAIhUI7YrB98zK+bIDEJml3pqc7L7MhgEoAA=="
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((options.headers as Record<string, string>)["Depth"]).toBe("0");
+    expect(options.body as string).toContain("<d:sync-token/>");
+  });
+
+  it("parses a prefixed (<D:sync-token>) response identically", async () => {
+    const PROPFIND_XML = `<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+<D:response>
+<D:href>/cal/collection/</D:href>
+<D:propstat><D:prop><D:sync-token>opaque-prefixed-token-1</D:sync-token></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+</D:response>
+</D:multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, PROPFIND_XML));
+    const client = makeClient();
+
+    const token = await client.getSyncToken("/cal/collection/");
+
+    expect(token).toBe("opaque-prefixed-token-1");
+  });
+
+  it("returns null when no response carries a sync-token", async () => {
+    const EMPTY_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<multistatus xmlns="DAV:"></multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, EMPTY_XML));
+    const client = makeClient();
+
+    const token = await client.getSyncToken("/289842362/calendars/work/");
+
+    expect(token).toBeNull();
+  });
+});

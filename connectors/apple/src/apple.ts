@@ -36,7 +36,12 @@ import { Network } from "@plotday/twister/tools/network";
 import { Smtp } from "@plotday/twister/tools/smtp";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
-import { CalDAVClient, type CalDAVEvent, toCalDAVTimeString } from "./calendar/caldav";
+import {
+  CalDAVClient,
+  type CalDAVEvent,
+  InvalidSyncTokenError,
+  toCalDAVTimeString,
+} from "./calendar/caldav";
 import { getCalendarChannels } from "./calendar/channels";
 import {
   type ICSEvent,
@@ -130,6 +135,53 @@ type SyncState = {
 };
 
 /**
+ * Tail bookkeeping to apply once every chunk of an incremental sync's
+ * changed-href multiget has been processed (see `processChangedHrefsChunked`
+ * / `completeIncrementalSync`). Carries whichever the fast path (RFC 6578
+ * `sync-collection`) or the fallback (ctag/etag-diff) needs to persist a new
+ * cursor — kept as a discriminated union rather than two optional fields so
+ * a caller can't accidentally construct a tail that mixes both.
+ */
+type IncrementalSyncTail =
+  | {
+      mode: "fast";
+      /**
+       * The exact token `getCollectionChanges` returned for this pass.
+       * Persisted verbatim in `completeIncrementalSync` — NOT re-fetched via
+       * `getSyncToken()` — because it's the server's authoritative marker
+       * for "everything up to and including what this pass just processed".
+       * An extra PROPFIND after the fact could race ahead (something
+       * changes between the REPORT and the PROPFIND), silently skipping
+       * that gap on the next poll.
+       */
+      syncToken: string;
+    }
+  | {
+      mode: "fallback";
+      /**
+       * The authoritative etag snapshot for every href currently on the
+       * calendar, captured up front by the ctag/etag-diff walk (before any
+       * chunk was processed). Applied in `completeIncrementalSync` as a
+       * wholesale overwrite of `etags_<calendarHref>` — this is what prunes
+       * hrefs that no longer exist (a partial per-chunk merge, like
+       * `processCalDAVEvents` does for the hrefs it's actually given, can
+       * only ADD/UPDATE entries, never remove ones for hrefs that vanished).
+       */
+      newEtagMap: Record<string, string>;
+    };
+
+/** Continuation state for a chunked incremental-sync changed-href multiget
+ *  (see `processChangedHrefsChunked`). Mirrors `SyncState.pendingHrefs`'s
+ *  role for initial sync, but kept separate from `SyncState`/`sync_state_`
+ *  so incremental continuations don't have to thread fast-path/fallback
+ *  distinctions through the initial-sync-only phase/orphan-flush machinery
+ *  those are built around. */
+type IncrementalSyncState = {
+  pendingHrefs: string[];
+  tail: IncrementalSyncTail;
+};
+
+/**
  * Short stable hash of a string for use in note keys. Same content
  * produces the same key (idempotent upsert on re-sync); edited content
  * produces a different key (new note, prior versions preserved as
@@ -207,6 +259,15 @@ export class Apple extends Connector<Apple> {
   // a user would notice. `acquireLock` is non-blocking (returns immediately),
   // so gating these entry points behind it can never deadlock.
   private static readonly MAIL_SYNC_LOCK_TTL_MS = 30 * 60 * 1000;
+
+  // Multiget chunk size for calendar-multiget REPORTs, matching
+  // syncBatch/syncBatchContinue's established initial-sync chunk size (see
+  // those methods' `slice(0, 50)`/`slice(50)`). Used by both incremental
+  // sync paths (processChangedHrefsChunked) so a large delta (post-outage
+  // catch-up, mass edit) can't blow one execution's ~1000-request / CPU /
+  // memory budget — batches beyond the first are handed to a queued task
+  // (`incrementalSyncContinue`), which gets a fresh budget of its own.
+  private static readonly CALDAV_MULTIGET_CHUNK_SIZE = 50;
 
   build(build: ToolBuilder) {
     return {
@@ -434,6 +495,8 @@ export class Apple extends Connector<Apple> {
       await this.clear(`etags_${channel.id}`);
       await this.clear(`event_uids_${channel.id}`);
       await this.clear(`sync_state_${channel.id}`);
+      await this.clear(`synctoken_${channel.id}`);
+      await this.clear(`incremental_state_${channel.id}`);
       await this.tools.store.releaseLock(`sync_${channel.id}`);
 
       // Cancel any scheduled poll so the post-recovery sync starts cleanly
@@ -846,6 +909,8 @@ export class Apple extends Connector<Apple> {
     await this.clear(`ctag_${channel.id}`);
     await this.clear(`etags_${channel.id}`);
     await this.clear(`event_uids_${channel.id}`);
+    await this.clear(`synctoken_${channel.id}`);
+    await this.clear(`incremental_state_${channel.id}`);
 
     // Release the framework-managed sync lock so a re-enable can acquire
     // cleanly without waiting for the TTL.
@@ -1295,6 +1360,15 @@ export class Apple extends Connector<Apple> {
     const ctag = await client.getCalendarCtag(this.calDavHref(calendarHref));
     if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
 
+    // Seed the RFC 6578 sync token so the first incremental poll after this
+    // initial sync can take the fast `sync-collection` path instead of
+    // falling back to the ctag/etag-diff walk (see startIncrementalSync). A
+    // depth-0 PROPFIND — cheap regardless of calendar size, unlike
+    // `getCollectionChanges(href, null)`, which would return every object
+    // in the collection to compute a token.
+    const syncToken = await client.getSyncToken(this.calDavHref(calendarHref));
+    if (syncToken) await this.set(`synctoken_${calendarHref}`, syncToken);
+
     await this.clear(`sync_state_${calendarHref}`);
 
     // Initial sync is fully complete — clear the "syncing…" indicator on
@@ -1351,13 +1425,33 @@ export class Apple extends Connector<Apple> {
       }
     } catch (error) {
       console.error(`Poll failed for calendar ${calendarHref}:`, error);
-      // Schedule next poll even on failure
+      // Schedule next poll even on failure — a transient blip (network
+      // hiccup, momentary iCloud outage) shouldn't kill the polling chain.
       await this.schedulePoll(calendarHref);
+      // Re-throw so the runtime reports it (PostHog capture, etc.) — same
+      // reasoning as every other calendar catch in this file (see the
+      // comment on syncBatch's catch). A failing ctag check is genuinely
+      // unexpected (revoked app password, iCloud outage, 401) and was
+      // previously invisible: this caught it, logged it, and swallowed it
+      // with no way to notice a persistent failure.
+      throw error;
     }
   }
 
   /**
-   * Incremental sync: compare etags to find changed/new/deleted events.
+   * Incremental sync entry point. Tries the RFC 6578 WebDAV-Sync fast path
+   * first — a `sync-collection` REPORT that returns only what changed since
+   * the stored token, skipping the O(all events) PROPFIND `getEventEtags`
+   * does on every poll — and falls back to the proven ctag/etag-diff walk
+   * whenever the fast path isn't available or is rejected. This is a GATE in
+   * front of the fallback, not a replacement for it:
+   *
+   *  - No stored token (first incremental pass after enable/recovery): runs
+   *    the fallback unchanged, and seeds a token at the end for next time.
+   *  - Stored token, server accepts it: fast path only — the win.
+   *  - Stored token, server rejects it (`InvalidSyncTokenError`, RFC 6578
+   *    §3.7): the token is discarded and the fallback runs for THIS pass,
+   *    reseeding a fresh token at the end. Never surfaces as a failure.
    */
   private async startIncrementalSync(calendarHref: string): Promise<void> {
     // Acquire sync lock to prevent the 15-min poll from racing an
@@ -1369,114 +1463,32 @@ export class Apple extends Connector<Apple> {
     );
     if (!acquired) {
       // Another sync is in flight. Don't reschedule a poll either — the
-      // running sync's finishSync will schedule the next one.
+      // running sync's completion (finishSync / completeIncrementalSync)
+      // will schedule the next one.
       return;
     }
 
     try {
       const client = this.getCalDAV();
+      const storedToken = await this.get<string>(`synctoken_${calendarHref}`);
 
-      // Get current etags
-      const currentEtags = await client.getEventEtags(this.calDavHref(calendarHref));
-      const storedEtags =
-        (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
-      const storedUids =
-        (await this.get<Record<string, string>>(
-          `event_uids_${calendarHref}`
-        )) || {};
-
-      // Find new/changed events
-      const changedHrefs: string[] = [];
-      const newEtagMap: Record<string, string> = {};
-
-      for (const [href, etag] of currentEtags) {
-        newEtagMap[href] = etag;
-        if (!storedEtags[href] || storedEtags[href] !== etag) {
-          changedHrefs.push(href);
+      if (storedToken) {
+        try {
+          await this.runFastIncrementalSync(client, calendarHref, storedToken);
+          return; // completeIncrementalSync (inline, or via a queued
+          // continuation for a large delta) already released the lock and
+          // scheduled the next poll.
+        } catch (error) {
+          if (!(error instanceof InvalidSyncTokenError)) throw error;
+          // RFC 6578 §3.7 precondition failure — the token is stale
+          // (expired, or the collection was reset server-side). Discard it
+          // and fall through to the fallback below for THIS pass; a fresh
+          // token is reseeded once it completes.
+          await this.clear(`synctoken_${calendarHref}`);
         }
       }
 
-      // Find deleted events (present in stored, absent from current)
-      const deletedHrefs: string[] = [];
-      for (const href of Object.keys(storedEtags)) {
-        if (!currentEtags.has(href)) {
-          deletedHrefs.push(href);
-        }
-      }
-
-      // Archive deleted events selectively, per-uid. Previously this code
-      // called archiveLinks with only the channel-level meta — a
-      // containment filter that matches every Apple event on the channel.
-      // One deleted event would wipe the whole calendar. The href→uid map
-      // built in processEvent/processEventInstance lets us resolve each
-      // deleted href back to its uid and archive precisely.
-      //
-      // Hrefs missing from the uid map are skipped (logged): they were
-      // synced before this map existed, will be rebuilt on the next batch
-      // that touches them, but on this one run we can't safely archive by
-      // channel without the data-loss risk above.
-      let archivedCount = 0;
-      let missingUidCount = 0;
-      // Per-uid archive is serial — fine for typical incremental drift
-      // (≤handful of deletes per poll), but a bulk delete (user clearing
-      // a multi-year backfill) could approach the ~1000-request runtime
-      // limit.
-      //
-      // TODO: extend `integrations.archiveLinks` to accept a `uids[]`
-      // filter (or chunk this loop into batched callbacks via runTask)
-      // before this becomes a real-world cap. Deferred for now —
-      // typical deletion volume is well below the budget.
-      for (const href of deletedHrefs) {
-        const uid = storedUids[href];
-        if (!uid) {
-          missingUidCount += 1;
-          continue;
-        }
-        await this.tools.integrations.archiveLinks({
-          channelId: calendarHref,
-          meta: { syncProvider: "apple", syncableId: calendarHref, uid },
-        });
-        archivedCount += 1;
-      }
-      if (deletedHrefs.length > 0) {
-        console.log(
-          `[AppleCalendar] incremental sync: calendar=${calendarHref} ` +
-            `deleted=${deletedHrefs.length} archived=${archivedCount} ` +
-            `missingUid=${missingUidCount}`
-        );
-      }
-
-      // Fetch and process changed events. processCalDAVEvents updates
-      // event_uids_<calendarHref> from each event's uid so future
-      // incremental syncs can archive them precisely.
-      if (changedHrefs.length > 0) {
-        const events = await client.fetchEventsByHref(
-          this.calDavHref(calendarHref),
-          changedHrefs
-        );
-        await this.processCalDAVEvents(events, calendarHref, false);
-      }
-
-      // Prune the uid map: drop entries whose href is no longer present in
-      // the current etag set. Keeps the map bounded as events are deleted.
-      const newUidMap: Record<string, string> = {};
-      for (const href of Object.keys(newEtagMap)) {
-        const uid = storedUids[href];
-        if (uid) newUidMap[href] = uid;
-      }
-      await this.set(`event_uids_${calendarHref}`, newUidMap);
-
-      // Update stored etags and ctag
-      await this.set(`etags_${calendarHref}`, newEtagMap);
-      const ctag = await client.getCalendarCtag(this.calDavHref(calendarHref));
-      if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
-
-      // Release lock before scheduling the next poll so the poll can
-      // re-acquire cleanly.
-      await this.tools.store.releaseLock(`sync_${calendarHref}`);
-
-      // Schedule next poll
-      await this.schedulePoll(calendarHref);
+      await this.runFallbackIncrementalSync(client, calendarHref);
     } catch (error) {
       console.error(
         `Apple Calendar incremental sync failed for ${calendarHref}:`,
@@ -1488,6 +1500,7 @@ export class Apple extends Connector<Apple> {
       // error — the lock's TTL is the safety net.
       try {
         await this.tools.store.releaseLock(`sync_${calendarHref}`);
+        await this.clear(`incremental_state_${calendarHref}`);
       } catch (cleanupError) {
         console.error(
           `Apple Calendar incremental sync cleanup after failure also failed for ${calendarHref}:`,
@@ -1513,6 +1526,355 @@ export class Apple extends Connector<Apple> {
 
       throw error;
     }
+  }
+
+  /**
+   * RFC 6578 WebDAV-Sync fast path: ask the server for only what changed
+   * since `storedToken` instead of PROPFINDing every event's etag. Never
+   * catches `InvalidSyncTokenError` — that propagates to the caller
+   * (`startIncrementalSync`), which clears the stored token and retries via
+   * the fallback for this pass.
+   */
+  private async runFastIncrementalSync(
+    client: CalDAVClient,
+    calendarHref: string,
+    storedToken: string
+  ): Promise<void> {
+    const { token, changed, deletedHrefs } = await client.getCollectionChanges(
+      this.calDavHref(calendarHref),
+      storedToken
+    );
+
+    const storedUids =
+      (await this.get<Record<string, string>>(
+        `event_uids_${calendarHref}`
+      )) || {};
+
+    if (deletedHrefs.length > 0) {
+      const { archivedCount, missingUidCount } = await this.archiveDeletedHrefs(
+        calendarHref,
+        deletedHrefs,
+        storedUids
+      );
+      console.log(
+        `[AppleCalendar] fast incremental sync: calendar=${calendarHref} ` +
+          `deleted=${deletedHrefs.length} archived=${archivedCount} ` +
+          `missingUid=${missingUidCount}`
+      );
+    }
+
+    // Fetch and process changed events, chunked (see
+    // processChangedHrefsChunked). Completes the pass — including
+    // persisting the new sync token — once every chunk has succeeded.
+    await this.processChangedHrefsChunked(
+      client,
+      calendarHref,
+      changed.map((c) => c.href),
+      { mode: "fast", syncToken: token }
+    );
+  }
+
+  /**
+   * The ctag/etag-diff incremental sync: PROPFIND every event's etag and
+   * diff against the stored map to find changed/new/deleted events. Runs
+   * when no sync token is stored yet (first incremental pass after
+   * enabling/recovery) or when the server rejected the stored token (see
+   * startIncrementalSync's catch). Unchanged in substance from before RFC
+   * 6578 support was added, other than routing changed-href processing
+   * through the shared chunking helper.
+   */
+  private async runFallbackIncrementalSync(
+    client: CalDAVClient,
+    calendarHref: string
+  ): Promise<void> {
+    // Get current etags
+    const currentEtags = await client.getEventEtags(this.calDavHref(calendarHref));
+    const storedEtags =
+      (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
+    const storedUids =
+      (await this.get<Record<string, string>>(
+        `event_uids_${calendarHref}`
+      )) || {};
+
+    // Find new/changed events
+    const changedHrefs: string[] = [];
+    const newEtagMap: Record<string, string> = {};
+
+    for (const [href, etag] of currentEtags) {
+      newEtagMap[href] = etag;
+      if (!storedEtags[href] || storedEtags[href] !== etag) {
+        changedHrefs.push(href);
+      }
+    }
+
+    // Find deleted events (present in stored, absent from current)
+    const deletedHrefs: string[] = [];
+    for (const href of Object.keys(storedEtags)) {
+      if (!currentEtags.has(href)) {
+        deletedHrefs.push(href);
+      }
+    }
+
+    // Archive deleted events selectively, per-uid — see archiveDeletedHrefs
+    // for why a channel-level filter is unsafe and why this can't be
+    // batched into fewer archiveLinks calls.
+    if (deletedHrefs.length > 0) {
+      const { archivedCount, missingUidCount } = await this.archiveDeletedHrefs(
+        calendarHref,
+        deletedHrefs,
+        storedUids
+      );
+      console.log(
+        `[AppleCalendar] incremental sync: calendar=${calendarHref} ` +
+          `deleted=${deletedHrefs.length} archived=${archivedCount} ` +
+          `missingUid=${missingUidCount}`
+      );
+    }
+
+    // Fetch and process changed events, chunked (see
+    // processChangedHrefsChunked). Completes the pass — pruning the uid
+    // map, persisting the authoritative etag snapshot, refreshing the
+    // ctag, and seeding a fresh sync token — once every chunk has
+    // succeeded.
+    await this.processChangedHrefsChunked(client, calendarHref, changedHrefs, {
+      mode: "fallback",
+      newEtagMap,
+    });
+  }
+
+  /**
+   * Archive deleted calendar hrefs by resolving each to its persisted uid
+   * via `event_uids_<calendarHref>`, then `archiveLinks` per uid. Previously
+   * this code called `archiveLinks` with only the channel-level meta — a
+   * containment filter that matches every Apple event on the channel. One
+   * deleted event would wipe the whole calendar. The href→uid map built in
+   * `processCalDAVEvents` lets us resolve each deleted href back to its uid
+   * and archive precisely.
+   *
+   * Hrefs missing from the uid map are skipped (logged): they were synced
+   * before this map existed, and will be rebuilt on the next batch that
+   * touches them, but on this one run we can't safely archive by channel
+   * without the data-loss risk above.
+   *
+   * NOT BATCHABLE: `integrations.archiveLinks` (see
+   * `@plotday/twister/tools/integrations`) takes a SINGLE `ArchiveLinkFilter`
+   * matched via jsonb containment (`link.meta @> filter.meta` — see
+   * `archive_links` in the schema), not a `uid: string[]` / IN-list form. N
+   * distinct uids genuinely require N calls; there's no way to widen the
+   * filter to match several uids at once without also matching every OTHER
+   * event on the channel (the exact data-loss bug this per-uid approach was
+   * written to avoid). Left serial, per the existing TODO below.
+   *
+   * Per-uid archive is serial — fine for typical incremental drift (≤
+   * handful of deletes per poll), but a bulk delete (user clearing a
+   * multi-year backfill) could approach the ~1000-request runtime limit.
+   *
+   * TODO: extend `integrations.archiveLinks` to accept a `uids[]` filter (or
+   * chunk this loop into batched callbacks via runTask) before this becomes
+   * a real-world cap. Deferred for now — typical deletion volume is well
+   * below the budget.
+   */
+  private async archiveDeletedHrefs(
+    calendarHref: string,
+    deletedHrefs: string[],
+    storedUids: Record<string, string>
+  ): Promise<{ archivedCount: number; missingUidCount: number }> {
+    let archivedCount = 0;
+    let missingUidCount = 0;
+    for (const href of deletedHrefs) {
+      const uid = storedUids[href];
+      if (!uid) {
+        missingUidCount += 1;
+        continue;
+      }
+      await this.tools.integrations.archiveLinks({
+        channelId: calendarHref,
+        meta: { syncProvider: "apple", syncableId: calendarHref, uid },
+      });
+      archivedCount += 1;
+    }
+    return { archivedCount, missingUidCount };
+  }
+
+  /**
+   * Process `changedHrefs` in calendar-multiget REPORTs of
+   * `CALDAV_MULTIGET_CHUNK_SIZE` (50), mirroring `syncBatch`/
+   * `syncBatchContinue`'s established initial-sync chunk size. When
+   * everything fits in one chunk (the common case — a normal 15-minute
+   * poll's delta is typically tiny), this completes the pass inline via
+   * `completeIncrementalSync`. When more remain, the remainder plus enough
+   * state to finish correctly is persisted to
+   * `incremental_state_<calendarHref>` and handed to a queued
+   * `incrementalSyncContinue` task instead of being processed inline — so a
+   * large delta (post-outage catch-up, mass edit) can't blow one
+   * execution's ~1000-request / CPU / memory budget. The sync lock stays
+   * held across continuations; only `completeIncrementalSync` releases it.
+   * Shared by both the fast path and the fallback path — `tail` carries
+   * whichever bookkeeping each path's `completeIncrementalSync` call needs
+   * once every chunk has succeeded.
+   */
+  private async processChangedHrefsChunked(
+    client: CalDAVClient,
+    calendarHref: string,
+    changedHrefs: string[],
+    tail: IncrementalSyncTail
+  ): Promise<void> {
+    const chunk = changedHrefs.slice(0, Apple.CALDAV_MULTIGET_CHUNK_SIZE);
+    const remaining = changedHrefs.slice(Apple.CALDAV_MULTIGET_CHUNK_SIZE);
+
+    if (chunk.length > 0) {
+      const events = await client.fetchEventsByHref(
+        this.calDavHref(calendarHref),
+        chunk
+      );
+      await this.processCalDAVEvents(events, calendarHref, false);
+    }
+
+    if (remaining.length === 0) {
+      await this.completeIncrementalSync(calendarHref, tail);
+      return;
+    }
+
+    await this.set(`incremental_state_${calendarHref}`, {
+      pendingHrefs: remaining,
+      tail,
+    } as IncrementalSyncState);
+    const nextBatch = await this.callback(
+      this.incrementalSyncContinue,
+      calendarHref
+    );
+    await this.runTask(nextBatch);
+  }
+
+  /**
+   * Continuation task for a chunked incremental-sync changed-href multiget
+   * (see `processChangedHrefsChunked`). Runs as its OWN execution (queued
+   * via `runTask`), so it gets a fresh request/CPU/memory budget — the
+   * entire reason for chunking in the first place. Processes the next
+   * chunk and either re-queues itself (more remain) or completes the pass.
+   */
+  async incrementalSyncContinue(calendarHref: string): Promise<void> {
+    try {
+      const state = await this.get<IncrementalSyncState>(
+        `incremental_state_${calendarHref}`
+      );
+      if (!state?.pendingHrefs?.length) {
+        // Shouldn't normally happen — processChangedHrefsChunked only
+        // queues this continuation when `remaining` is non-empty — but
+        // degrade gracefully rather than leaving the lock stuck until its
+        // TTL: finish with whatever tail we have, or if even that's gone
+        // (e.g. a disable cleared `incremental_state_` between this
+        // continuation being queued and it firing), just release the lock
+        // and reschedule.
+        if (state?.tail) {
+          await this.completeIncrementalSync(calendarHref, state.tail);
+        } else {
+          await this.tools.store.releaseLock(`sync_${calendarHref}`);
+          await this.schedulePoll(calendarHref);
+        }
+        return;
+      }
+
+      const client = this.getCalDAV();
+      await this.processChangedHrefsChunked(
+        client,
+        calendarHref,
+        state.pendingHrefs,
+        state.tail
+      );
+    } catch (error) {
+      console.error(
+        `Apple Calendar incremental sync continuation failed for ${calendarHref}:`,
+        error
+      );
+
+      // Release lock and clear continuation state so future syncs aren't
+      // permanently blocked. Wrap in its own try/catch so a release/clear
+      // failure doesn't mask the original error — the lock's TTL is the
+      // safety net. Mirrors syncBatchContinue's catch.
+      try {
+        await this.tools.store.releaseLock(`sync_${calendarHref}`);
+        await this.clear(`incremental_state_${calendarHref}`);
+      } catch (cleanupError) {
+        console.error(
+          `Apple Calendar incremental sync continuation cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Reschedule a poll so we recover on the next interval —
+      // startIncrementalSync's lock-fail bail relies on the active holder
+      // (us) to reschedule.
+      await this.schedulePoll(calendarHref);
+
+      throw error;
+    }
+  }
+
+  /**
+   * Apply the tail bookkeeping for a completed incremental sync pass — see
+   * `IncrementalSyncTail` — then release the sync lock and schedule the
+   * next poll. Called either inline from `processChangedHrefsChunked`
+   * (common case: the whole delta fit in one chunk) or from
+   * `incrementalSyncContinue`'s terminal chunk (a large delta that needed
+   * multiple chunks/executions).
+   *
+   * ⚠️ CRASH-SAFETY ORDERING: this is the ONLY place a new sync cursor
+   * (`synctoken_<calendarHref>`, or the fallback's `etags_`/`ctag_`
+   * snapshot) is persisted for an incremental pass, and it runs LAST — only
+   * after every chunk's deletions/changed-events have already been
+   * archived/saved. If a worker crashes between chunks (before this runs),
+   * the OLD cursor is still stored, so the next poll simply re-derives and
+   * re-applies the same delta — archiveLinks/saveLinks are both
+   * idempotent upserts, so that replay is a safe no-op for whatever was
+   * already applied. Persisting the cursor BEFORE processing finished would
+   * instead let a crash permanently skip whatever wasn't yet processed,
+   * with no way to re-derive it — the same class of bug as writing
+   * `etags_`/`ctag_` early (see the note on `processCalDAVEvents`).
+   */
+  private async completeIncrementalSync(
+    calendarHref: string,
+    tail: IncrementalSyncTail
+  ): Promise<void> {
+    if (tail.mode === "fast") {
+      await this.set(`synctoken_${calendarHref}`, tail.syncToken);
+    } else {
+      // Prune the uid map: drop entries whose href is no longer present in
+      // the current (authoritative) etag set. Keeps the map bounded as
+      // events are deleted.
+      const storedUids =
+        (await this.get<Record<string, string>>(
+          `event_uids_${calendarHref}`
+        )) || {};
+      const newUidMap: Record<string, string> = {};
+      for (const href of Object.keys(tail.newEtagMap)) {
+        const uid = storedUids[href];
+        if (uid) newUidMap[href] = uid;
+      }
+      await this.set(`event_uids_${calendarHref}`, newUidMap);
+
+      // Update stored etags and ctag
+      await this.set(`etags_${calendarHref}`, tail.newEtagMap);
+      const client = this.getCalDAV();
+      const ctag = await client.getCalendarCtag(this.calDavHref(calendarHref));
+      if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
+
+      // Seed a fresh sync token for the next poll's fast path. The
+      // ctag/etag-diff walk never gets one from a REPORT response the way
+      // the fast path does, so a dedicated (cheap, depth-0) PROPFIND is the
+      // only way to obtain one here.
+      const syncToken = await client.getSyncToken(this.calDavHref(calendarHref));
+      if (syncToken) await this.set(`synctoken_${calendarHref}`, syncToken);
+    }
+
+    await this.clear(`incremental_state_${calendarHref}`);
+
+    // Release lock before scheduling the next poll so the poll can
+    // re-acquire cleanly.
+    await this.tools.store.releaseLock(`sync_${calendarHref}`);
+
+    // Schedule next poll
+    await this.schedulePoll(calendarHref);
   }
 
   // ---- Event Processing ----

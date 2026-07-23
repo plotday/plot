@@ -319,6 +319,46 @@ export class CalDAVClient {
   }
 
   /**
+   * Get the current RFC 6578 WebDAV-Sync `sync-token` for a calendar
+   * collection via a depth-0 PROPFIND. Used ONLY to seed/refresh the token
+   * this connector persists for `getCollectionChanges`'s fast path — never
+   * to fetch changes themselves. Passing `syncToken: null` to
+   * `getCollectionChanges` also returns a token, but the server computes it
+   * by returning EVERY object in the collection, which is unbounded; this
+   * PROPFIND is one cheap request regardless of collection size. Modeled on
+   * `getCalendarCtag` (identical request/parsing shape — a single property
+   * nested in one `<response>`, unlike the sync-collection REPORT's
+   * `<sync-token>`, which is a direct child of `<multistatus>`).
+   *
+   * MEASURED (iCloud): the returned value happens to be byte-identical to
+   * `getctag` today. That is an iCloud implementation coincidence, not a
+   * spec guarantee — always fetch `sync-token` explicitly here rather than
+   * substituting a cached ctag.
+   */
+  async getSyncToken(calendarHref: string): Promise<string | null> {
+    const body = `<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:sync-token/>
+  </d:prop>
+</d:propfind>`;
+
+    const xml = await this.request(
+      "PROPFIND",
+      this.resolveUrl(calendarHref),
+      body,
+      0
+    );
+    const entries = parseMultistatus(xml);
+
+    for (const entry of entries) {
+      if (entry.props["sync-token"]) return entry.props["sync-token"];
+    }
+
+    return null;
+  }
+
+  /**
    * Fetch incremental changes to a calendar collection via RFC 6578
    * WebDAV-Sync (a `sync-collection` REPORT). Unlike `getEventEtags`
    * (PROPFIND depth-1 over every event, every poll), this asks the server
@@ -521,6 +561,16 @@ function parseMultistatus(xml: string): MultistatusEntry[] {
     // Extract getctag
     const ctag = extractTagContent(responseXml, "getctag");
     if (ctag) props["getctag"] = ctag;
+
+    // Extract sync-token — used by getSyncToken's depth-0 PROPFIND, where
+    // it's nested inside this single <response> like any other property
+    // (same shape as getctag above). The sync-collection REPORT's
+    // <sync-token> (parsed by parseSyncCollectionResponse, not here) is a
+    // different shape: a direct child of <multistatus>, a SIBLING of every
+    // <response> block rather than nested in one — extractTagContent(xml,
+    // ...) on the whole document handles that case instead.
+    const syncToken = extractTagContent(responseXml, "sync-token");
+    if (syncToken) props["sync-token"] = syncToken;
 
     // Extract getetag
     const etag = extractTagContent(responseXml, "getetag");

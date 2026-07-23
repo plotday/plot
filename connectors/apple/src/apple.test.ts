@@ -12,6 +12,7 @@ vi.mock("./mail/sync", () => ({
 }));
 
 import { Apple } from "./apple";
+import { InvalidSyncTokenError } from "./calendar/caldav";
 import { composeChannels } from "./compose";
 import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
 import { appleProducts } from "./products";
@@ -609,5 +610,398 @@ describe("Apple mail sync lock", () => {
 
       expect(releaseLockCalls).toEqual([lockKey]);
     });
+  });
+});
+
+describe("Apple calendar incremental sync", () => {
+  const calendarHref = "calendar:/1234/calendars/home/";
+  const rawHref = "/1234/calendars/home/";
+  const lockKey = `sync_${calendarHref}`;
+
+  /** Pulls a private method off `Apple.prototype` for use against a plain
+   *  fake `self` — same rationale as `buildMailHost`/`armMailWatch`/
+   *  `scheduleMailPoll` above (not inherited by a bare object literal), just
+   *  factored into a helper since the incremental-sync chain touches many
+   *  more private methods (`runFastIncrementalSync`,
+   *  `runFallbackIncrementalSync`, `archiveDeletedHrefs`,
+   *  `processChangedHrefsChunked`, `completeIncrementalSync`, `calDavHref`,
+   *  `schedulePoll`, `clearBuffers`) than any single prior describe block. */
+  function privateMethod<T>(name: string): T {
+    return (Apple.prototype as unknown as Record<string, T>)[name];
+  }
+
+  const startIncrementalSync = privateMethod<
+    (calendarHref: string) => Promise<void>
+  >("startIncrementalSync");
+
+  type FakeCollectionChanges = {
+    token: string;
+    changed: Array<{ href: string; etag: string }>;
+    deletedHrefs: string[];
+  };
+
+  /**
+   * Fake self for `startIncrementalSync`/`incrementalSyncContinue`.
+   * `getCalDAV()` is entirely REPLACED (not copied from the prototype) with
+   * a fake CalDAV client so no real network call is ever attempted; every
+   * other private method the chain dispatches through `this.xxx(...)` is
+   * copied onto `self` as an own property via `privateMethod` so runtime
+   * dispatch resolves to the real implementation. `processCalDAVEvents` is
+   * stubbed out entirely (mirrors how the mail-sync-lock tests above mock
+   * `mailInitialSync`/`mailIncrementalSync`): these tests cover the
+   * fast-path/fallback selection, chunking, deletion archiving, and sync-
+   * cursor persistence ordering — not ICS parsing, which has its own
+   * coverage elsewhere.
+   *
+   * `runTask` immediately invokes the queued continuation (simulating the
+   * platform executing it) so a chunked run's full chain — including a
+   * second `incrementalSyncContinue` execution — completes within one
+   * `await startIncrementalSync(...)` in the test.
+   */
+  function makeSelf(opts: {
+    storedToken?: string;
+    syncEnabled?: boolean;
+    acquireLockResult?: boolean;
+    initialStore?: Record<string, unknown>;
+    getCollectionChanges?: (
+      href: string,
+      token: string | null
+    ) => Promise<FakeCollectionChanges>;
+    getEventEtags?: (href: string) => Promise<Map<string, string>>;
+    getCalendarCtag?: (href: string) => Promise<string | null>;
+    getSyncToken?: (href: string) => Promise<string | null>;
+  }) {
+    const store = new Map<string, unknown>(
+      Object.entries({
+        [`sync_enabled_${calendarHref}`]: opts.syncEnabled ?? true,
+        ...(opts.storedToken !== undefined
+          ? { [`synctoken_${calendarHref}`]: opts.storedToken }
+          : {}),
+        ...opts.initialStore,
+      })
+    );
+
+    const acquireLockCalls: Array<{ key: string; ttlMs: number }> = [];
+    const releaseLockCalls: string[] = [];
+    const acquireLock = vi.fn(async (key: string, ttlMs: number) => {
+      acquireLockCalls.push({ key, ttlMs });
+      return opts.acquireLockResult ?? true;
+    });
+    const releaseLock = vi.fn(async (key: string) => {
+      releaseLockCalls.push(key);
+    });
+
+    const archiveLinksCalls: Array<{
+      channelId?: string;
+      meta?: Record<string, unknown>;
+    }> = [];
+    const archiveLinks = vi.fn(
+      async (filter: { channelId?: string; meta?: Record<string, unknown> }) => {
+        archiveLinksCalls.push(filter);
+      }
+    );
+
+    const scheduleRecurringCalls: Array<{ key: string }> = [];
+    const scheduleRecurring = vi.fn(async (key: string) => {
+      scheduleRecurringCalls.push({ key });
+    });
+
+    const callback = vi.fn(
+      async (fn: (...a: unknown[]) => unknown, ...args: unknown[]) => ({
+        fn,
+        args,
+      })
+    );
+    const runTask = vi.fn(
+      async (token: { fn: (...a: unknown[]) => Promise<unknown>; args: unknown[] }) => {
+        await token.fn.call(self, ...token.args);
+      }
+    );
+
+    const getCollectionChanges = vi.fn(
+      opts.getCollectionChanges ??
+        (async () => ({ token: "unused", changed: [], deletedHrefs: [] }))
+    );
+    const getEventEtags = vi.fn(
+      opts.getEventEtags ?? (async () => new Map<string, string>())
+    );
+    const getCalendarCtag = vi.fn(opts.getCalendarCtag ?? (async () => null));
+    const getSyncToken = vi.fn(opts.getSyncToken ?? (async () => null));
+    const fetchEventsByHrefCalls: string[][] = [];
+    const fetchEventsByHref = vi.fn(async (_href: string, hrefs: string[]) => {
+      fetchEventsByHrefCalls.push(hrefs);
+      return [];
+    });
+
+    const processCalDAVEventsCalls: Array<{
+      events: unknown[];
+      calendarHref: string;
+      initialSync: boolean;
+    }> = [];
+    const processCalDAVEvents = vi.fn(
+      async (events: unknown[], href: string, initialSync: boolean) => {
+        processCalDAVEventsCalls.push({
+          events,
+          calendarHref: href,
+          initialSync,
+        });
+      }
+    );
+
+    const self = {
+      // Overridden — see the function-level doc above.
+      getCalDAV: () => ({
+        getCollectionChanges,
+        getEventEtags,
+        getCalendarCtag,
+        getSyncToken,
+        fetchEventsByHref,
+      }),
+      processCalDAVEvents,
+      // Copied off the prototype so `this.xxx(...)` dispatch inside the real
+      // (private) implementations resolves correctly against this fake.
+      runFastIncrementalSync: privateMethod("runFastIncrementalSync"),
+      runFallbackIncrementalSync: privateMethod("runFallbackIncrementalSync"),
+      archiveDeletedHrefs: privateMethod("archiveDeletedHrefs"),
+      processChangedHrefsChunked: privateMethod("processChangedHrefsChunked"),
+      completeIncrementalSync: privateMethod("completeIncrementalSync"),
+      calDavHref: privateMethod("calDavHref"),
+      schedulePoll: privateMethod("schedulePoll"),
+      clearBuffers: privateMethod("clearBuffers"),
+      // Public — no cast needed.
+      incrementalSyncContinue: Apple.prototype.incrementalSyncContinue,
+      tools: {
+        options: { appleId: "me@icloud.com", appPassword: "pw" },
+        integrations: { archiveLinks },
+        store: { acquireLock, releaseLock, list: vi.fn(async () => []) },
+      },
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      clear: async (key: string) => {
+        store.delete(key);
+      },
+      callback,
+      runTask,
+      scheduleRecurring,
+    } as unknown as Apple;
+
+    return {
+      self,
+      store,
+      acquireLockCalls,
+      releaseLockCalls,
+      archiveLinksCalls,
+      scheduleRecurringCalls,
+      fetchEventsByHrefCalls,
+      processCalDAVEventsCalls,
+      getCollectionChanges,
+      getEventEtags,
+      getCalendarCtag,
+      getSyncToken,
+    };
+  }
+
+  it("fast path: skips getEventEtags, processes changed hrefs, and persists the returned token verbatim", async () => {
+    const getCollectionChanges = vi.fn(async () => ({
+      token: "new-token",
+      changed: [{ href: "/cal/h1.ics", etag: "e1" }],
+      deletedHrefs: [],
+    }));
+    const {
+      self,
+      store,
+      acquireLockCalls,
+      releaseLockCalls,
+      scheduleRecurringCalls,
+      fetchEventsByHrefCalls,
+      processCalDAVEventsCalls,
+      getEventEtags,
+    } = makeSelf({ storedToken: "old-token", getCollectionChanges });
+
+    await startIncrementalSync.call(self, calendarHref);
+
+    expect(acquireLockCalls).toEqual([
+      { key: lockKey, ttlMs: 2 * 60 * 60 * 1000 },
+    ]);
+    expect(getCollectionChanges).toHaveBeenCalledWith(rawHref, "old-token");
+    expect(getEventEtags).not.toHaveBeenCalled(); // the whole win
+    expect(fetchEventsByHrefCalls).toEqual([["/cal/h1.ics"]]);
+    expect(processCalDAVEventsCalls).toEqual([
+      { events: [], calendarHref, initialSync: false },
+    ]);
+    expect(store.get(`synctoken_${calendarHref}`)).toBe("new-token");
+    expect(releaseLockCalls).toEqual([lockKey]);
+    expect(scheduleRecurringCalls).toEqual([
+      { key: `poll:${calendarHref}` },
+    ]);
+  });
+
+  it("no stored token: runs the fallback path and seeds a token", async () => {
+    const getEventEtags = vi.fn(
+      async () => new Map([["/cal/h1.ics", "e1"]])
+    );
+    const getCalendarCtag = vi.fn(async () => "ctag-1");
+    const getSyncToken = vi.fn(async () => "seeded-token");
+    const getCollectionChanges = vi.fn(async () => ({
+      token: "unused",
+      changed: [],
+      deletedHrefs: [],
+    }));
+    const { self, store, releaseLockCalls, fetchEventsByHrefCalls } =
+      makeSelf({ getEventEtags, getCalendarCtag, getSyncToken, getCollectionChanges });
+
+    await startIncrementalSync.call(self, calendarHref);
+
+    expect(getCollectionChanges).not.toHaveBeenCalled(); // no token → never tries the fast path
+    expect(getEventEtags).toHaveBeenCalledWith(rawHref);
+    expect(fetchEventsByHrefCalls).toEqual([["/cal/h1.ics"]]);
+    expect(store.get(`etags_${calendarHref}`)).toEqual({ "/cal/h1.ics": "e1" });
+    expect(store.get(`ctag_${calendarHref}`)).toBe("ctag-1");
+    expect(store.get(`synctoken_${calendarHref}`)).toBe("seeded-token");
+    expect(releaseLockCalls).toEqual([lockKey]);
+  });
+
+  it("InvalidSyncTokenError: clears the stored token, runs the fallback, and lets no throw escape", async () => {
+    const getCollectionChanges = vi.fn(async () => {
+      throw new InvalidSyncTokenError();
+    });
+    const getEventEtags = vi.fn(async () => new Map<string, string>());
+    const getSyncToken = vi.fn(async () => "fresh-token");
+    const { self, store, releaseLockCalls } = makeSelf({
+      storedToken: "stale-token",
+      getCollectionChanges,
+      getEventEtags,
+      getSyncToken,
+    });
+
+    await expect(
+      startIncrementalSync.call(self, calendarHref)
+    ).resolves.toBeUndefined(); // no throw escapes
+
+    expect(getCollectionChanges).toHaveBeenCalledWith(rawHref, "stale-token");
+    expect(getEventEtags).toHaveBeenCalledTimes(1); // fallback ran
+    expect(store.get(`synctoken_${calendarHref}`)).toBe("fresh-token"); // reseeded, not the stale one
+    expect(releaseLockCalls).toEqual([lockKey]);
+  });
+
+  it("persists the token only after successful processing — a chunk failure leaves it unwritten", async () => {
+    const getCollectionChanges = vi.fn(async () => ({
+      token: "new-token",
+      changed: [{ href: "/cal/h1.ics", etag: "e1" }],
+      deletedHrefs: [],
+    }));
+    const { self, store, releaseLockCalls } = makeSelf({
+      storedToken: "old-token",
+      getCollectionChanges,
+    });
+    // Force the changed-href multiget to fail.
+    (self as unknown as { getCalDAV: () => { fetchEventsByHref: unknown } }).getCalDAV =
+      () => ({
+        getCollectionChanges,
+        getEventEtags: vi.fn(async () => new Map<string, string>()),
+        getCalendarCtag: vi.fn(async () => null),
+        getSyncToken: vi.fn(async () => null),
+        fetchEventsByHref: vi.fn(async () => {
+          throw new Error("network blip");
+        }),
+      });
+
+    await expect(startIncrementalSync.call(self, calendarHref)).rejects.toThrow(
+      "network blip"
+    );
+
+    // The OLD token is still there — never overwritten by the in-flight
+    // "new-token" that was never fully applied.
+    expect(store.get(`synctoken_${calendarHref}`)).toBe("old-token");
+    // Cleanup still ran despite the failure.
+    expect(releaseLockCalls).toEqual([lockKey]);
+  });
+
+  it("archives every deletedHref returned by the fast path, resolved to its uid", async () => {
+    const getCollectionChanges = vi.fn(async () => ({
+      token: "new-token",
+      changed: [],
+      deletedHrefs: ["/cal/d1.ics", "/cal/d2.ics"],
+    }));
+    const { self, archiveLinksCalls } = makeSelf({
+      storedToken: "old-token",
+      getCollectionChanges,
+      initialStore: {
+        [`event_uids_${calendarHref}`]: {
+          "/cal/d1.ics": "uid-1",
+          "/cal/d2.ics": "uid-2",
+        },
+      },
+    });
+
+    await startIncrementalSync.call(self, calendarHref);
+
+    expect(archiveLinksCalls).toEqual([
+      {
+        channelId: calendarHref,
+        meta: { syncProvider: "apple", syncableId: calendarHref, uid: "uid-1" },
+      },
+      {
+        channelId: calendarHref,
+        meta: { syncProvider: "apple", syncableId: calendarHref, uid: "uid-2" },
+      },
+    ]);
+  });
+
+  it("chunks a >50 changed-href fast-path delta into multiple multigets and completes once, at the end", async () => {
+    const hrefs = Array.from({ length: 120 }, (_, i) => `/cal/h${i}.ics`);
+    const getCollectionChanges = vi.fn(async () => ({
+      token: "final-token",
+      changed: hrefs.map((href) => ({ href, etag: "e" })),
+      deletedHrefs: [],
+    }));
+    const {
+      self,
+      store,
+      releaseLockCalls,
+      scheduleRecurringCalls,
+      fetchEventsByHrefCalls,
+    } = makeSelf({ storedToken: "old-token", getCollectionChanges });
+
+    await startIncrementalSync.call(self, calendarHref);
+
+    expect(fetchEventsByHrefCalls).toEqual([
+      hrefs.slice(0, 50),
+      hrefs.slice(50, 100),
+      hrefs.slice(100, 120),
+    ]);
+    // Completed exactly once, only after every chunk succeeded.
+    expect(store.get(`synctoken_${calendarHref}`)).toBe("final-token");
+    expect(releaseLockCalls).toEqual([lockKey]);
+    expect(scheduleRecurringCalls).toEqual([
+      { key: `poll:${calendarHref}` },
+    ]);
+  });
+
+  it("chunks a >50 changed-href fallback delta into multiple multigets and completes once, at the end", async () => {
+    const hrefs = Array.from({ length: 75 }, (_, i) => `/cal/h${i}.ics`);
+    const currentEtags = new Map(hrefs.map((href) => [href, "e"]));
+    const getEventEtags = vi.fn(async () => currentEtags);
+    const getCalendarCtag = vi.fn(async () => "ctag-final");
+    const getSyncToken = vi.fn(async () => "fallback-final-token");
+    const { self, store, releaseLockCalls, fetchEventsByHrefCalls } =
+      makeSelf({ getEventEtags, getCalendarCtag, getSyncToken });
+
+    await startIncrementalSync.call(self, calendarHref);
+
+    expect(fetchEventsByHrefCalls).toEqual([
+      hrefs.slice(0, 50),
+      hrefs.slice(50, 75),
+    ]);
+    expect(store.get(`etags_${calendarHref}`)).toEqual(
+      Object.fromEntries(currentEtags)
+    );
+    expect(store.get(`ctag_${calendarHref}`)).toBe("ctag-final");
+    expect(store.get(`synctoken_${calendarHref}`)).toBe(
+      "fallback-final-token"
+    );
+    expect(releaseLockCalls).toEqual([lockKey]);
   });
 });
