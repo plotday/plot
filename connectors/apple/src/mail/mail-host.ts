@@ -18,7 +18,13 @@ export type MailSyncState = {
    * full rescan on the next incremental pass rather than a false "unchanged".
    */
   lastModSeq?: number;
-  /** Same as `lastModSeq`, but for the Sent mailbox (independent cursor). */
+  /**
+   * Same as `lastModSeq`, but for the Sent mailbox. The two cursors are
+   * stored per-mailbox, but `mailIncrementalSync` combines them into a single
+   * rescan decision — a change in EITHER mailbox rescans BOTH — so a thread is
+   * never rebuilt from a partial message set (e.g. a Sent-only reply must not
+   * re-title an INBOX-rooted thread). Do not gate the two independently.
+   */
   sentLastModSeq?: number;
 };
 
