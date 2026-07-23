@@ -195,6 +195,19 @@ export class Apple extends Connector<Apple> {
   // no stuck-sync recovery is needed.
   private static readonly SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
 
+  // Mail sync lock TTL. iCloud enforces a per-account IMAP connection cap, so
+  // `mailInitialSyncTask`/`mailPoll`/`mailPushDrain` share one lock
+  // (`mail_sync_<channelId>`) to bound concurrent IMAP sessions to one and
+  // coalesce overlapping passes (e.g. `onMailChannelEnabled` re-dispatch from
+  // auto-enable/recovery racing an in-flight poll). 30 minutes is
+  // comfortably longer than any single-execution mailbox backfill/rescan (the
+  // work this guards is far smaller than a full CalDAV history walk) while
+  // being shorter than calendar's 2-hour TTL so a crashed run self-heals
+  // faster — the next 15-minute poll or push drain can reacquire well before
+  // a user would notice. `acquireLock` is non-blocking (returns immediately),
+  // so gating these entry points behind it can never deadlock.
+  private static readonly MAIL_SYNC_LOCK_TTL_MS = 30 * 60 * 1000;
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
@@ -562,6 +575,10 @@ export class Apple extends Connector<Apple> {
     await this.cancelScheduledTask(`mailpoll:${channel.id}`);
     await this.tools.imap.unwatch(channel.id);
     await this.cancelDrain(`mail-push:${channel.id}`);
+    // Release the mail sync lock (mirrors calendar's disable-time release
+    // above in onCalendarChannelDisabled) so a re-enable can acquire cleanly
+    // without waiting out the TTL.
+    await this.tools.store.releaseLock(`mail_sync_${channel.id}`);
     // Not channel-scoped (single shared drain key, like `mail-writeback`'s
     // producer side in buildMailHost()) — there is a single mail channel in
     // v1, so tearing down the one drain on disable is correct.
@@ -611,13 +628,36 @@ export class Apple extends Connector<Apple> {
    * Runs the mail initial backfill as a queued task (dispatched callback).
    * Resolves the plan-based history floor (falling back to 7 days), runs
    * `mailInitialSync` against INBOX, then schedules the recurring poll.
+   *
+   * Guarded by the `mail_sync_<channelId>` lock: `onMailChannelEnabled`
+   * always re-queues this task, even on re-dispatch (auto-enable/recovery),
+   * so a re-dispatch can land while a previous backfill, poll, or push
+   * drain is still in flight against the same iCloud account. If the lock
+   * is already held, skip the backfill itself — it's idempotent (upsert by
+   * `source`) and the in-flight pass already covers current mailbox state,
+   * so re-running it would just waste an IMAP session against iCloud's
+   * per-account connection cap. Either way, `scheduleMailPoll`/`armMailWatch`
+   * still run unconditionally (both idempotent and lock-free) so a
+   * re-dispatch that lost the race never leaves the channel without
+   * scheduled work or a push watch.
    */
   async mailInitialSyncTask(channelId: string): Promise<void> {
-    const host = this.buildMailHost();
-    const min =
-      (await host.get<string>(`sync_history_min_${channelId}`)) ??
-      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    await mailInitialSync(host, "INBOX", channelId, min);
+    const lockKey = `mail_sync_${channelId}`;
+    const acquired = await this.tools.store.acquireLock(
+      lockKey,
+      Apple.MAIL_SYNC_LOCK_TTL_MS
+    );
+    if (acquired) {
+      try {
+        const host = this.buildMailHost();
+        const min =
+          (await host.get<string>(`sync_history_min_${channelId}`)) ??
+          new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        await mailInitialSync(host, "INBOX", channelId, min);
+      } finally {
+        await this.tools.store.releaseLock(lockKey);
+      }
+    }
     await this.scheduleMailPoll(channelId);
     await this.armMailWatch(channelId);
   }
@@ -629,12 +669,30 @@ export class Apple extends Connector<Apple> {
    * credentials — a cheap upsert when nothing changed) and runs the
    * incremental IMAP sync. With push active, this poll is the safety net
    * for anything IDLE missed.
+   *
+   * The watch re-arm happens BEFORE the `mail_sync_<channelId>` lock check
+   * so a dropped IDLE watch always self-heals, even while another sync (an
+   * initial backfill or a push drain) holds the lock. The incremental sync
+   * itself is guarded: if the lock is already held, another pass already
+   * covers current mailbox state, so this poll skips its own sync and
+   * relies on the next 15-minute interval to retry.
    */
   async mailPoll(channelId: string): Promise<void> {
     const enabled = await this.get<boolean>(`mail:enabled_${channelId}`);
     if (!enabled) return;
     await this.armMailWatch(channelId);
-    await mailIncrementalSync(this.buildMailHost(), channelId);
+
+    const lockKey = `mail_sync_${channelId}`;
+    const acquired = await this.tools.store.acquireLock(
+      lockKey,
+      Apple.MAIL_SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) return;
+    try {
+      await mailIncrementalSync(this.buildMailHost(), channelId);
+    } finally {
+      await this.tools.store.releaseLock(lockKey);
+    }
   }
 
   /**
@@ -655,11 +713,38 @@ export class Apple extends Connector<Apple> {
     });
   }
 
-  /** Coalesced drain pass behind `mailPushed` — one incremental sync. */
+  /**
+   * Coalesced drain pass behind `mailPushed` — one incremental sync, guarded
+   * by the same `mail_sync_<channelId>` lock as `mailPoll`/
+   * `mailInitialSyncTask`. Unlike `mailPoll` (which just skips and waits for
+   * the next interval), a lost race here RESCHEDULES the drain instead of
+   * dropping it: the change that triggered this push may have landed AFTER
+   * the in-flight sync's mailbox SEARCH already ran, so it isn't guaranteed
+   * to be covered. The non-blocking acquire + reschedule can't deadlock or
+   * busy-loop — the current holder releases within one sync's duration, well
+   * inside the 2s delay before this retries.
+   */
   async mailPushDrain(_ids: string[], channelId: string): Promise<void> {
     const enabled = await this.get<boolean>(`mail:enabled_${channelId}`);
     if (!enabled) return;
-    await mailIncrementalSync(this.buildMailHost(), channelId);
+
+    const lockKey = `mail_sync_${channelId}`;
+    const acquired = await this.tools.store.acquireLock(
+      lockKey,
+      Apple.MAIL_SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
+      await this.scheduleDrain(`mail-push:${channelId}`, this.mailPushDrain, {
+        delayMs: 2000,
+        handlerArgs: [channelId],
+      });
+      return;
+    }
+    try {
+      await mailIncrementalSync(this.buildMailHost(), channelId);
+    } finally {
+      await this.tools.store.releaseLock(lockKey);
+    }
   }
 
   /**
@@ -795,6 +880,19 @@ export class Apple extends Connector<Apple> {
   }
 
   // ---- Mail Write-Back ----
+  //
+  // None of the write-back/user-action handlers below (onNoteCreated,
+  // onCreateLink, onThreadRead, onThreadToDo, downloadAttachment) or
+  // mailWritebackDrain/getMailChannels take the `mail_sync_<channelId>` lock
+  // used by mailInitialSyncTask/mailPoll/mailPushDrain. They're
+  // user-latency-sensitive (a reply, a read/to-do toggle, an attachment
+  // download the user is waiting on) and/or open their own short-lived IMAP
+  // session — gating them behind a possibly-long backfill would add
+  // user-visible latency for no correctness benefit. Because `acquireLock` is
+  // non-blocking, leaving them unlocked can't deadlock against the sync
+  // lock; the residual concurrency (one read-sync session alongside a short
+  // write-back/reply session and the always-on IDLE watch) is small and
+  // acceptable.
 
   /**
    * A reply on a mail thread → send it over SMTP. No-ops for calendar threads

@@ -1,8 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImapMessage } from "@plotday/twister/tools/imap";
+
+// Mocked so mailInitialSyncTask/mailPoll/mailPushDrain tests below never
+// attempt a real IMAP session — only the mail sync lock's decision logic
+// (acquire/skip/release) is under test here, not the sync functions
+// themselves (covered by sync.test.ts). Hoisted by vitest above the imports
+// below regardless of source position.
+vi.mock("./mail/sync", () => ({
+  mailInitialSync: vi.fn(),
+  mailIncrementalSync: vi.fn(),
+}));
 
 import { Apple } from "./apple";
 import { composeChannels } from "./compose";
+import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
 import { appleProducts } from "./products";
 import { parse } from "./product-channel";
 
@@ -296,5 +307,307 @@ describe("Apple.mailWritebackDrain", () => {
 
     expect(flagCalls).toHaveLength(0);
     expect(result).toEqual({ retry: [] });
+  });
+});
+
+describe("Apple mail sync lock", () => {
+  const channelId = "mail:INBOX";
+  const lockKey = `mail_sync_${channelId}`;
+
+  beforeEach(() => {
+    vi.mocked(mailInitialSync).mockReset().mockResolvedValue(undefined);
+    vi.mocked(mailIncrementalSync).mockReset().mockResolvedValue(undefined);
+  });
+
+  /**
+   * Fake self for `mailInitialSyncTask`/`mailPoll`/`mailPushDrain`. Copies
+   * the real (private) `buildMailHost`, `armMailWatch`, and
+   * `scheduleMailPoll` onto a plain object the same way other describe
+   * blocks above copy `buildMailHost` — these aren't inherited by a bare
+   * object literal, so we pull them off `Apple.prototype` and let them run
+   * for real against stubbed primitives (`get`/`set`/`clear`, `callback`,
+   * `scheduleRecurring`, `scheduleDrain`, `tools.imap.watch`,
+   * `tools.options`). This lets the tests below observe the REAL
+   * downstream effects of "scheduleMailPoll/armMailWatch still ran" (a
+   * `scheduleRecurring` call under the `mailpoll:` key, an `imap.watch`
+   * call) rather than asserting against a stubbed-out spy standing in for
+   * those helpers. `mailInitialSync`/`mailIncrementalSync` are mocked at
+   * the module level (see top of file) so no real IMAP session is opened.
+   */
+  function makeSelf(opts: {
+    enabled?: boolean;
+    acquireLockResult?: boolean;
+    initialStore?: Record<string, unknown>;
+  }) {
+    const store = new Map<string, unknown>(
+      Object.entries({
+        [`mail:enabled_${channelId}`]: opts.enabled ?? true,
+        ...opts.initialStore,
+      })
+    );
+    const acquireLockCalls: Array<{ key: string; ttlMs: number }> = [];
+    const releaseLockCalls: string[] = [];
+    const acquireLock = vi.fn(async (key: string, ttlMs: number) => {
+      acquireLockCalls.push({ key, ttlMs });
+      return opts.acquireLockResult ?? true;
+    });
+    const releaseLock = vi.fn(async (key: string) => {
+      releaseLockCalls.push(key);
+    });
+
+    const scheduleDrainCalls: Array<{
+      key: string;
+      handler: unknown;
+      options: unknown;
+    }> = [];
+    const scheduleDrain = vi.fn(
+      async (key: string, handler: unknown, options: unknown) => {
+        scheduleDrainCalls.push({ key, handler, options });
+      }
+    );
+
+    const scheduleRecurringCalls: Array<{
+      key: string;
+      cb: unknown;
+      options: unknown;
+    }> = [];
+    const scheduleRecurring = vi.fn(
+      async (key: string, cb: unknown, options: unknown) => {
+        scheduleRecurringCalls.push({ key, cb, options });
+      }
+    );
+
+    const callback = vi.fn(async (..._args: unknown[]) => ({
+      __callbackToken: true,
+    }));
+
+    const watchCalls: Array<{ channelId: string; config: unknown }> = [];
+    const imapWatch = vi.fn(async (id: string, config: unknown) => {
+      watchCalls.push({ channelId: id, config });
+    });
+
+    const buildMailHost = (
+      Apple.prototype as unknown as { buildMailHost: () => unknown }
+    ).buildMailHost;
+    const armMailWatch = (
+      Apple.prototype as unknown as {
+        armMailWatch: (id: string) => Promise<void>;
+      }
+    ).armMailWatch;
+    const scheduleMailPoll = (
+      Apple.prototype as unknown as {
+        scheduleMailPoll: (id: string) => Promise<void>;
+      }
+    ).scheduleMailPoll;
+
+    const self = {
+      buildMailHost,
+      armMailWatch,
+      scheduleMailPoll,
+      mailPushDrain: Apple.prototype.mailPushDrain,
+      tools: {
+        options: { appleId: "me@icloud.com", appPassword: "pw" },
+        imap: { watch: imapWatch },
+        smtp: {},
+        integrations: {},
+        files: {},
+        store: { acquireLock, releaseLock },
+      },
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      clear: async (key: string) => {
+        store.delete(key);
+      },
+      callback,
+      scheduleDrain,
+      scheduleRecurring,
+    } as unknown as Apple;
+
+    return {
+      self,
+      store,
+      acquireLockCalls,
+      releaseLockCalls,
+      scheduleDrainCalls,
+      scheduleRecurringCalls,
+      watchCalls,
+    };
+  }
+
+  describe("mailPoll", () => {
+    it("acquires the lock, runs the incremental sync once, and releases it", async () => {
+      const { self, acquireLockCalls, releaseLockCalls } = makeSelf({
+        acquireLockResult: true,
+      });
+
+      await Apple.prototype.mailPoll.call(self, channelId);
+
+      expect(acquireLockCalls).toEqual([
+        { key: lockKey, ttlMs: 30 * 60 * 1000 },
+      ]);
+      expect(mailIncrementalSync).toHaveBeenCalledTimes(1);
+      expect(mailIncrementalSync).toHaveBeenCalledWith(
+        expect.anything(),
+        channelId
+      );
+      expect(releaseLockCalls).toEqual([lockKey]);
+    });
+
+    it("re-arms the watch but skips the sync when another pass holds the lock", async () => {
+      const { self, watchCalls, releaseLockCalls } = makeSelf({
+        acquireLockResult: false,
+      });
+
+      await Apple.prototype.mailPoll.call(self, channelId);
+
+      expect(mailIncrementalSync).not.toHaveBeenCalled();
+      // No lock we didn't take should be released.
+      expect(releaseLockCalls).toEqual([]);
+      // The watch re-arm runs BEFORE the lock check, so it must still fire.
+      expect(watchCalls).toEqual([
+        expect.objectContaining({ channelId }),
+      ]);
+    });
+
+    it("releases the lock even when the incremental sync throws", async () => {
+      const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
+      vi.mocked(mailIncrementalSync).mockRejectedValueOnce(
+        new Error("IMAP timeout")
+      );
+
+      await expect(
+        Apple.prototype.mailPoll.call(self, channelId)
+      ).rejects.toThrow("IMAP timeout");
+
+      expect(releaseLockCalls).toEqual([lockKey]);
+    });
+
+    it("does nothing when the channel is disabled", async () => {
+      const { self, acquireLockCalls, watchCalls } = makeSelf({
+        enabled: false,
+      });
+
+      await Apple.prototype.mailPoll.call(self, channelId);
+
+      expect(acquireLockCalls).toEqual([]);
+      expect(watchCalls).toEqual([]);
+      expect(mailIncrementalSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("mailPushDrain", () => {
+    it("acquires the lock, runs the incremental sync once, and releases it", async () => {
+      const { self, acquireLockCalls, releaseLockCalls } = makeSelf({
+        acquireLockResult: true,
+      });
+
+      await Apple.prototype.mailPushDrain.call(self, [], channelId);
+
+      expect(acquireLockCalls).toEqual([
+        { key: lockKey, ttlMs: 30 * 60 * 1000 },
+      ]);
+      expect(mailIncrementalSync).toHaveBeenCalledTimes(1);
+      expect(releaseLockCalls).toEqual([lockKey]);
+    });
+
+    it("reschedules the drain instead of dropping it when another pass holds the lock", async () => {
+      const { self, scheduleDrainCalls, releaseLockCalls } = makeSelf({
+        acquireLockResult: false,
+      });
+
+      await Apple.prototype.mailPushDrain.call(self, [], channelId);
+
+      expect(mailIncrementalSync).not.toHaveBeenCalled();
+      expect(releaseLockCalls).toEqual([]);
+      expect(scheduleDrainCalls).toEqual([
+        {
+          key: `mail-push:${channelId}`,
+          handler: Apple.prototype.mailPushDrain,
+          options: { delayMs: 2000, handlerArgs: [channelId] },
+        },
+      ]);
+    });
+
+    it("releases the lock even when the incremental sync throws", async () => {
+      const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
+      vi.mocked(mailIncrementalSync).mockRejectedValueOnce(
+        new Error("IMAP timeout")
+      );
+
+      await expect(
+        Apple.prototype.mailPushDrain.call(self, [], channelId)
+      ).rejects.toThrow("IMAP timeout");
+
+      expect(releaseLockCalls).toEqual([lockKey]);
+    });
+
+    it("does nothing when the channel is disabled", async () => {
+      const { self, acquireLockCalls } = makeSelf({ enabled: false });
+
+      await Apple.prototype.mailPushDrain.call(self, [], channelId);
+
+      expect(acquireLockCalls).toEqual([]);
+      expect(mailIncrementalSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("mailInitialSyncTask", () => {
+    it("acquires the lock, runs the backfill, releases the lock, and still schedules the poll + watch", async () => {
+      const { self, acquireLockCalls, releaseLockCalls, scheduleRecurringCalls, watchCalls } =
+        makeSelf({ acquireLockResult: true });
+
+      await Apple.prototype.mailInitialSyncTask.call(self, channelId);
+
+      expect(acquireLockCalls).toEqual([
+        { key: lockKey, ttlMs: 30 * 60 * 1000 },
+      ]);
+      expect(mailInitialSync).toHaveBeenCalledTimes(1);
+      expect(mailInitialSync).toHaveBeenCalledWith(
+        expect.anything(),
+        "INBOX",
+        channelId,
+        expect.any(String)
+      );
+      expect(releaseLockCalls).toEqual([lockKey]);
+      // scheduleMailPoll's real effect: a scheduleRecurring call keyed
+      // `mailpoll:<channelId>`.
+      expect(scheduleRecurringCalls).toEqual([
+        expect.objectContaining({ key: `mailpoll:${channelId}` }),
+      ]);
+      // armMailWatch's real effect: an imap.watch call for this channel.
+      expect(watchCalls).toEqual([expect.objectContaining({ channelId })]);
+    });
+
+    it("skips the backfill but still schedules the poll + watch when another pass holds the lock", async () => {
+      const { self, scheduleRecurringCalls, watchCalls, releaseLockCalls } =
+        makeSelf({ acquireLockResult: false });
+
+      await Apple.prototype.mailInitialSyncTask.call(self, channelId);
+
+      expect(mailInitialSync).not.toHaveBeenCalled();
+      // No lock we didn't take should be released.
+      expect(releaseLockCalls).toEqual([]);
+      // A re-dispatch that lost the race must not leave the channel without
+      // scheduled work or a push watch.
+      expect(scheduleRecurringCalls).toEqual([
+        expect.objectContaining({ key: `mailpoll:${channelId}` }),
+      ]);
+      expect(watchCalls).toEqual([expect.objectContaining({ channelId })]);
+    });
+
+    it("releases the lock even when the backfill throws", async () => {
+      const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
+      vi.mocked(mailInitialSync).mockRejectedValueOnce(
+        new Error("IMAP auth failure")
+      );
+
+      await expect(
+        Apple.prototype.mailInitialSyncTask.call(self, channelId)
+      ).rejects.toThrow("IMAP auth failure");
+
+      expect(releaseLockCalls).toEqual([lockKey]);
+    });
   });
 });
