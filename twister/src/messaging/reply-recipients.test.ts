@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ResolvedRecipient } from "../plot";
+import { type ResolvedRecipient, Uuid } from "../plot";
 import { resolveOutboundReplyRecipients } from "./reply-recipients";
 
 const rcpt = (
@@ -41,8 +41,18 @@ describe("resolveOutboundReplyRecipients", () => {
     it("carries platform-resolved recipient names (Case 1)", () => {
       const result = resolveOutboundReplyRecipients({
         recipients: [
-          { id: "1", name: "Dana Wagner", externalAccountId: "dw@x.com", role: "to" },
-          { id: "2", name: null, externalAccountId: "no-name@x.com", role: "cc" },
+          {
+            id: Uuid.Generate(),
+            name: "Dana Wagner",
+            externalAccountId: "dw@x.com",
+            role: "to",
+          },
+          {
+            id: Uuid.Generate(),
+            name: null,
+            externalAccountId: "no-name@x.com",
+            role: "cc",
+          },
         ],
         accessContactEmails: null,
         headerTo: [],
