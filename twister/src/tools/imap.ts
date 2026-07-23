@@ -102,6 +102,14 @@ export type ImapMessage = {
   bodyHtml?: string;
   /** Message size in bytes */
   size?: number;
+  /**
+   * Attachment parts discovered from the message's BODYSTRUCTURE (populated
+   * when body is fetched). Each entry describes one MIME part, not its bytes —
+   * `partNumber` is the IMAP part number (e.g. "2" or "2.1") used to fetch that
+   * part's content separately, and `encoding` is the part's own
+   * Content-Transfer-Encoding.
+   */
+  attachments?: { partNumber: string; fileName: string; mimeType: string; size: number; encoding: string }[];
 };
 
 /** Options for fetchMessages(). */
