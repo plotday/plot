@@ -1,14 +1,17 @@
 import type { ResolvedRecipient } from "../plot";
 
+/** A resolved outbound recipient: address plus optional display name. */
+export type Addressee = { address: string; name: string | null };
+
 /**
  * Outbound recipient lists for a reply, split by header role. `bcc` recipients
  * MUST be addressed privately (a separate Bcc header / bccRecipients field) so
  * they are never exposed to the To/Cc recipients.
  */
 export type ReplyRecipients = {
-  to: string[];
-  cc: string[];
-  bcc: string[];
+  to: Addressee[];
+  cc: Addressee[];
+  bcc: Addressee[];
   /**
    * True when the note carried an explicit, user-curated recipient set (either
    * platform-resolved `recipients` or a connector-resolved access-contact
@@ -27,12 +30,12 @@ function roleOf(role: string | null | undefined, fallback: Role): Role {
   return role === "cc" || role === "bcc" || role === "to" ? role : fallback;
 }
 
-/** Case-insensitive de-dupe preserving first-seen order. */
-function dedupe(addresses: string[]): string[] {
+/** Case-insensitive de-dupe preserving first-seen order, keyed on address. */
+function dedupe(addressees: Addressee[]): Addressee[] {
   const seen = new Set<string>();
-  const out: string[] = [];
-  for (const a of addresses) {
-    const key = a.toLowerCase();
+  const out: Addressee[] = [];
+  for (const a of addressees) {
+    const key = a.address.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(a);
@@ -50,7 +53,9 @@ function dedupe(addresses: string[]): string[] {
  *
  * 1. **Platform-resolved recipients** (`recipients` non-null): the note carried
  *    a curated recipient set and the runtime resolved it to addresses + roles,
- *    with the acting user's own identities already removed. Authoritative.
+ *    with the acting user's own identities already removed. Authoritative. This
+ *    is the only case that can carry a display `name` — it comes from the
+ *    resolved contact — so connectors relying on the other cases get `name: null`.
  * 2. **Access-contact fallback** (`recipients` null, `accessContactEmails`
  *    non-null): header participants are narrowed to that set; curated addresses
  *    not on the message are folded into `To`. Self is excluded via `selfEmails`.
@@ -119,53 +124,65 @@ export function resolveOutboundReplyRecipients(args: {
     headerFrom.length > 0 &&
     headerFrom.every(isSelf)
   ) {
-    return splitPrecedence(dedupe(headerFrom), [], [], base.curated);
+    const fallbackTo: Addressee[] = headerFrom.map((address) => ({
+      address,
+      name: null,
+    }));
+    return splitPrecedence(dedupe(fallbackTo), [], [], base.curated);
   }
 
   return base;
 
   function resolveBase(): ReplyRecipients {
-    // Case 1: platform-resolved curated recipients (authoritative).
+    // Case 1: platform-resolved curated recipients (authoritative). Names come
+    // from the platform-resolved contact, so they're carried through.
     if (recipients !== null) {
-      const to: string[] = [];
-      const cc: string[] = [];
-      const bcc: string[] = [];
+      const to: Addressee[] = [];
+      const cc: Addressee[] = [];
+      const bcc: Addressee[] = [];
       for (const r of recipients) {
         if (!r.externalAccountId) continue;
         const bucket = roleOf(r.role, defaultRole);
-        (bucket === "bcc" ? bcc : bucket === "cc" ? cc : to).push(
-          r.externalAccountId
-        );
+        const addressee: Addressee = { address: r.externalAccountId, name: r.name };
+        (bucket === "bcc" ? bcc : bucket === "cc" ? cc : to).push(addressee);
       }
       return splitPrecedence(to, cc, bcc, true);
     }
 
     // Case 2: access-contact constraint resolved by the connector (fallback).
+    // Addresses come from message headers, which carry no display name.
     if (accessContactEmails !== null) {
       const allow = (email: string) =>
         !selfEmails.has(email.toLowerCase()) &&
         accessContactEmails.has(email.toLowerCase());
-      const to = headerTo.filter(allow);
-      const cc = headerCc.filter(allow);
+      const to: Addressee[] = headerTo
+        .filter(allow)
+        .map((address) => ({ address, name: null }));
+      const cc: Addressee[] = headerCc
+        .filter(allow)
+        .map((address) => ({ address, name: null }));
       // Fold in curated addresses that weren't on the original message.
       const headerEmails = new Set(
         [...headerTo, ...headerCc].map((e) => e.toLowerCase())
       );
-      const already = new Set([...to, ...cc].map((e) => e.toLowerCase()));
+      const already = new Set(
+        [...to, ...cc].map((a) => a.address.toLowerCase())
+      );
       for (const email of accessContactEmails) {
         if (selfEmails.has(email)) continue;
         if (headerEmails.has(email)) continue;
         if (already.has(email)) continue;
-        to.push(email);
+        to.push({ address: email, name: null });
       }
       return splitPrecedence(to, cc, [], true);
     }
 
-    // Case 3: reply-all — every original participant except self.
+    // Case 3: reply-all — every original participant except self. Addresses
+    // come from message headers, which carry no display name.
     const notSelf = (email: string) => !selfEmails.has(email.toLowerCase());
     return splitPrecedence(
-      headerTo.filter(notSelf),
-      headerCc.filter(notSelf),
+      headerTo.filter(notSelf).map((address) => ({ address, name: null })),
+      headerCc.filter(notSelf).map((address) => ({ address, name: null })),
       [],
       false
     );
@@ -178,18 +195,18 @@ export function resolveOutboundReplyRecipients(args: {
  * never leaks (a Bcc address must not also sit in To/Cc).
  */
 function splitPrecedence(
-  to: string[],
-  cc: string[],
-  bcc: string[],
+  to: Addressee[],
+  cc: Addressee[],
+  bcc: Addressee[],
   curated: boolean
 ): ReplyRecipients {
-  const bccSet = new Set(bcc.map((e) => e.toLowerCase()));
-  const ccSet = new Set(cc.map((e) => e.toLowerCase()));
+  const bccSet = new Set(bcc.map((a) => a.address.toLowerCase()));
+  const ccSet = new Set(cc.map((a) => a.address.toLowerCase()));
   return {
     to: dedupe(to).filter(
-      (e) => !bccSet.has(e.toLowerCase()) && !ccSet.has(e.toLowerCase())
+      (a) => !bccSet.has(a.address.toLowerCase()) && !ccSet.has(a.address.toLowerCase())
     ),
-    cc: dedupe(cc).filter((e) => !bccSet.has(e.toLowerCase())),
+    cc: dedupe(cc).filter((a) => !bccSet.has(a.address.toLowerCase())),
     bcc: dedupe(bcc),
     curated,
   };

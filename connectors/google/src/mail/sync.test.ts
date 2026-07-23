@@ -282,8 +282,8 @@ describe("onCreateLinkFn — draft.forward", () => {
     );
 
     const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
-    expect(raw).toContain("Bcc: eve@example.com");
-    expect(raw).toContain("To: bob@example.com");
+    expect(raw).toContain('Bcc: "Eve" <eve@example.com>');
+    expect(raw).toContain('To: "Bob" <bob@example.com>');
     expect(raw).not.toContain("To: bob@example.com, eve@example.com");
   });
 
@@ -361,6 +361,58 @@ describe("onCreateLinkFn — draft.forward", () => {
   });
 });
 
+/** A plain (non-forward) compose draft: `draft.forward` unset, so onCreateLinkFn
+ *  takes the toEmails/ccEmails/bccEmails addRecipient branch rather than
+ *  delegating to onCreateLinkForwardFn. */
+function composeDraft(overrides: Partial<CreateLinkDraft> = {}): CreateLinkDraft {
+  return {
+    channelId: "INBOX",
+    type: "email",
+    status: null,
+    title: "Q3 planning",
+    noteContent: "Let's sync on this",
+    contacts: [],
+    recipients: [],
+    inviteEmails: [],
+    ...overrides,
+  } as CreateLinkDraft;
+}
+
+describe("onCreateLinkFn — plain compose (no draft.forward)", () => {
+  it("carries a curated recipient's display name into the To header", async () => {
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-compose-1", threadId: "sent-thread-compose-1" });
+    const { host } = makeHost();
+
+    const link = await onCreateLinkFn(
+      host,
+      composeDraft({
+        recipients: [
+          {
+            id: "c-dana" as Uuid,
+            name: "Robin Fielder",
+            externalAccountId: "dana@example.com",
+            role: null,
+          },
+        ],
+      })
+    );
+
+    expect(sendNewMessage).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    expect(raw).toContain('To: "Robin Fielder" <dana@example.com>');
+    expect(link?.type).toBe("email");
+  });
+});
+
 function calThread(over: Record<string, unknown> = {}) {
   return {
     id: "T",
@@ -374,12 +426,12 @@ function calThread(over: Record<string, unknown> = {}) {
     ...over,
   } as unknown as import("@plotday/twister").Thread;
 }
-function replyNote(recipients: Array<{ externalAccountId: string; role: string | null }>, over: Record<string, unknown> = {}) {
+function replyNote(recipients: Array<{ externalAccountId: string; role: string | null; name?: string | null }>, over: Record<string, unknown> = {}) {
   return {
     id: "n1",
     author: { id: "c-me" },
     content: "See you there",
-    recipients: recipients.map((r) => ({ id: r.externalAccountId, name: null, externalAccountId: r.externalAccountId, role: r.role })),
+    recipients: recipients.map((r) => ({ id: r.externalAccountId, name: r.name ?? null, externalAccountId: r.externalAccountId, role: r.role })),
     accessContacts: null,
     actions: [],
     ...over,
@@ -429,6 +481,25 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     const raw = decodeRawMessage(sendReply.mock.calls[0][0]);
     expect(raw).toContain("In-Reply-To: <seed@plot.day>");
     expect(raw).toContain("X-Plot-Event-UID: uid-123");
+  });
+
+  it("carries the recipient's display name into the To header", async () => {
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-named", threadId: "gt-named" });
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({ emailAddress: "me@example.com" });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({ email: "me@example.com", name: "Me" });
+    const { host } = makeHost();
+
+    await onNoteCreatedFn(
+      host,
+      replyNote([{ externalAccountId: "org@x.com", role: null, name: "Org Person" }]),
+      calThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain('To: "Org Person" <org@x.com>');
   });
 
   it("private note (no deliverable recipients) sends nothing", async () => {
@@ -523,6 +594,44 @@ describe("onNoteCreatedFn — plain Gmail thread reply-all", () => {
     const raw = decodeRawMessage(send.mock.calls[0][0]);
     expect(raw).not.toContain("krisbraun@gmail.com");
     expect(raw).toContain("hilary.collier@example.com");
+  });
+
+  it("carries a curated (platform-resolved) recipient's display name into the To header", async () => {
+    // note.recipients non-null is Case 1 (curated) in resolveOutboundReplyRecipients
+    // — the only case that carries a display name — as opposed to the header-driven
+    // fallback cases exercised by the test above, which always resolve to name: null.
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(
+      gmailAliasReplyThread()
+    );
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "sent-10", threadId: "gmail-thread-1" });
+    const { host } = makeHost();
+
+    await onNoteCreatedFn(
+      host,
+      plainReplyNote({
+        recipients: [
+          {
+            id: "c-hilary",
+            name: "Hilary Collier",
+            externalAccountId: "hilary.collier@example.com",
+            role: null,
+          },
+        ],
+      }),
+      plainThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain('To: "Hilary Collier" <hilary.collier@example.com>');
   });
 });
 

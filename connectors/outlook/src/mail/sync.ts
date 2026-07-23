@@ -20,6 +20,7 @@
  */
 
 import {
+  type Addressee,
   type CreateLinkDraft,
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
@@ -1781,7 +1782,9 @@ export async function onNoteCreatedFn(
   // PATCHing the body replaces Outlook's quoted-history block — Plot
   // threads carry the history as notes, and Gmail replies are likewise
   // unquoted.
-  const addr = (address: string) => ({ emailAddress: { address } });
+  const addr = (a: Addressee) => ({
+    emailAddress: { address: a.address, ...(a.name ? { name: a.name } : {}) },
+  });
   await api.updateMessage(draft.id, {
     // Send rendered HTML rather than raw Markdown as plain text, so the
     // recipient sees clean formatting and Outlook doesn't hard-wrap prose.
@@ -1896,7 +1899,9 @@ export async function sendCalendarEventReplyFn(
     return; // private note or empty roster
   }
 
-  const addr = (address: string) => ({ emailAddress: { address } });
+  const addr = (a: Addressee) => ({
+    emailAddress: { address: a.address, ...(a.name ? { name: a.name } : {}) },
+  });
   const bodyHtml = { contentType: "html", content: markdownToHtml(note.content ?? "") };
   const stateKey = `cal-reply:${iCalUID}`;
   const prior = await host.get<{ conversationId: string; lastMessageId: string }>(stateKey);
@@ -1980,12 +1985,13 @@ export async function onCreateLinkFn(
   if (draft.type !== "email") return null;
 
   const seenEmails = new Set<string>();
-  const toEmails: string[] = [];
-  const ccEmails: string[] = [];
-  const bccEmails: string[] = [];
+  const toEmails: Addressee[] = [];
+  const ccEmails: Addressee[] = [];
+  const bccEmails: Addressee[] = [];
   const addRecipient = (
     raw: string | null | undefined,
-    role: string | null
+    role: string | null,
+    name: string | null
   ) => {
     if (!raw) return;
     const trimmed = raw.trim();
@@ -1993,15 +1999,16 @@ export async function onCreateLinkFn(
     const key = trimmed.toLowerCase();
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
-    if (role === "cc") ccEmails.push(trimmed);
-    else if (role === "bcc") bccEmails.push(trimmed);
-    else toEmails.push(trimmed);
+    const addressee: Addressee = { address: trimmed, name };
+    if (role === "cc") ccEmails.push(addressee);
+    else if (role === "bcc") bccEmails.push(addressee);
+    else toEmails.push(addressee);
   };
 
   for (const r of draft.recipients ?? []) {
-    addRecipient(r.externalAccountId, r.role);
+    addRecipient(r.externalAccountId, r.role, r.name);
   }
-  for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
+  for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (toEmails.length + ccEmails.length + bccEmails.length === 0) {
     console.error(
@@ -2046,15 +2053,17 @@ export async function onCreateLinkFn(
     },
   });
 
-  // Idempotency: dedupe on a content hash within the retry window.
+  // Idempotency: dedupe on a content hash within the retry window. Keyed on
+  // the raw addresses only (not display names) so the same recipient set
+  // dedupes regardless of name resolution differences between retries.
   const dedupKey = `compose:${fnv1aHex(
     JSON.stringify([
       draft.type,
       subject,
       body,
-      [...toEmails].sort(),
-      [...ccEmails].sort(),
-      [...bccEmails].sort(),
+      toEmails.map((a) => a.address).sort(),
+      ccEmails.map((a) => a.address).sort(),
+      bccEmails.map((a) => a.address).sort(),
     ])
   )}`;
   const prior = await host.get<{ conversationId: string; at: number }>(
@@ -2070,7 +2079,9 @@ export async function onCreateLinkFn(
     return linkFor(prior.conversationId);
   }
 
-  const addr = (address: string) => ({ emailAddress: { address } });
+  const addr = (a: Addressee) => ({
+    emailAddress: { address: a.address, ...(a.name ? { name: a.name } : {}) },
+  });
   const created = await api.createDraft({
     subject,
     // Send rendered HTML rather than raw Markdown as plain text, so the

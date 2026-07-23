@@ -490,6 +490,21 @@ describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
     // the injected CRLF was collapsed to a space (single header line)
     expect(raw).not.toMatch(/X-Plot-Event-UID:.*\r\nBcc: evil@x/);
   });
+
+  it("buildReplyMessage renders named recipients in the To header", () => {
+    const raw = decodeRawMessage(
+      buildReplyMessage({
+        to: [formatFromHeader("dana@x.com", "Robin Fielder")],
+        cc: [],
+        from: "me@x.com",
+        subject: "Re: x",
+        body: "hi",
+        messageId: "<m@x>",
+        references: "",
+      })
+    );
+    expect(raw).toContain('To: "Robin Fielder" <dana@x.com>');
+  });
 });
 
 describe("buildForwardMessage", () => {
