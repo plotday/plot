@@ -173,6 +173,47 @@ describe("transformMessages", () => {
   });
 });
 
+describe("transformMessages — calendar thread bundling", () => {
+  it("adds icaluid to sources and OMITS the title key when the thread's root has a cancel bundle", () => {
+    const m = msg({ uid: 30, messageId: "<invite@example.com>" });
+    const bundles = new Map([["invite@example.com", { uid: "evt-1", kind: "cancel" as const }]]);
+    const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
+
+    expect(link.sources).toEqual(["icaluid:evt-1"]);
+    // The title key must be ABSENT (not null, not ""), per plot.ts's "Omit
+    // to preserve the existing title" contract — the runtime's title field
+    // is last-writer-wins, so setting it (even to the same subject) would
+    // clobber the calendar event's title on every mail sync pass.
+    expect("title" in link).toBe(false);
+  });
+
+  it("adds icaluid to sources and OMITS the title key when the thread's root has an update bundle", () => {
+    const m = msg({ uid: 31, messageId: "<invite2@example.com>" });
+    const bundles = new Map([["invite2@example.com", { uid: "evt-2", kind: "update" as const }]]);
+    const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
+
+    expect(link.sources).toEqual(["icaluid:evt-2"]);
+    expect("title" in link).toBe(false);
+  });
+
+  it("leaves title and sources untouched when no bundle matches the thread's root", () => {
+    const m = msg({ uid: 32, messageId: "<plain@example.com>" });
+    const bundles = new Map([["someone-elses-root@example.com", { uid: "evt-3", kind: "cancel" as const }]]);
+    const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
+
+    expect(link.sources).toBeUndefined();
+    expect(link.title).toBe("Lunch?");
+  });
+
+  it("leaves title and sources untouched when calendarBundles is omitted entirely (regression / backward compat)", () => {
+    const m = msg({ uid: 33, messageId: "<noctx@example.com>" });
+    const link = transformMessages([m], ctx)[0];
+
+    expect(link.sources).toBeUndefined();
+    expect(link.title).toBe("Lunch?");
+  });
+});
+
 type ActionLike = {
   type?: ActionType;
   ref?: string;

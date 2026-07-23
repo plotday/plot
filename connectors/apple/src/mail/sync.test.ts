@@ -13,7 +13,13 @@ import type { Integrations } from "@plotday/twister/tools/integrations";
 import type { Smtp } from "@plotday/twister/tools/smtp";
 import type { NewLinkWithNotes } from "@plotday/twister";
 
-import { mailIncrementalSync, mailInitialSync, reconcileTodoFlags } from "./sync";
+import { buildAttachmentRef } from "./attachments";
+import {
+  detectCalendarBundles,
+  mailIncrementalSync,
+  mailInitialSync,
+  reconcileTodoFlags,
+} from "./sync";
 import type { MailHost, MailSyncState } from "./mail-host";
 import type { MailMessage } from "./transform";
 
@@ -27,17 +33,27 @@ type MailboxFixture = {
 
 type SearchCall = { mailbox: string; criteria: ImapSearchCriteria };
 type FetchCall = { mailbox: string; uids: number[] };
+type FetchAttachmentCall = { mailbox: string; uid: number; partNumber: string };
 
 /** Minimal in-memory MailHost — no real IMAP. Captures search() calls and saveLinks() output. */
 function buildFakeHost(opts: {
   appleId: string;
   inbox: MailboxFixture;
   sent?: (MailboxFixture & { specialUse?: string }) | null;
+  /**
+   * Fixture attachment bytes for `imap.fetchAttachment`, keyed by
+   * `buildAttachmentRef(mailbox, uid, partNumber)` — the same
+   * mailbox:uid:partNumber shape `detectCalendarBundles` fetches by. A
+   * lookup miss throws, so an unexpected fetch fails the test loudly
+   * instead of silently returning garbage bytes.
+   */
+  attachments?: Record<string, Uint8Array>;
 }) {
   const stored = new Map<string, unknown>();
   const savedLinks: NewLinkWithNotes[] = [];
   const searchCalls: SearchCall[] = [];
   const fetchCalls: FetchCall[] = [];
+  const fetchAttachmentCalls: FetchAttachmentCall[] = [];
   let selected = "INBOX";
 
   const mailboxes = new Map<string, MailboxFixture>();
@@ -84,6 +100,17 @@ function buildFakeHost(opts: {
     },
     setFlags: async (): Promise<void> => {},
     disconnect: async (): Promise<void> => {},
+    fetchAttachment: async (
+      _session: ImapSession,
+      uid: number,
+      partNumber: string
+    ): Promise<Uint8Array> => {
+      fetchAttachmentCalls.push({ mailbox: selected, uid, partNumber });
+      const key = buildAttachmentRef(selected, uid, partNumber);
+      const bytes = opts.attachments?.[key];
+      if (!bytes) throw new Error(`no such attachment part: ${key}`);
+      return bytes;
+    },
   } as unknown as Imap;
 
   const setThreadToDo = vi.fn(async () => {});
@@ -126,7 +153,7 @@ function buildFakeHost(opts: {
     queueWritebackDrain: async (): Promise<void> => {},
   };
 
-  return { host, stored, savedLinks, searchCalls, fetchCalls, setThreadToDo };
+  return { host, stored, savedLinks, searchCalls, fetchCalls, fetchAttachmentCalls, setThreadToDo };
 }
 
 const CHANNEL_ID = "mail:INBOX";
@@ -741,5 +768,297 @@ describe("reconcileTodoFlags", () => {
     await reconcileTodoFlags(host, [flaggedMsg(true, { messageId: undefined })], false);
 
     expect(setThreadToDo).not.toHaveBeenCalled();
+  });
+});
+
+/** Build a minimal VCALENDAR/VEVENT ICS blob (same shape as
+ *  calendar-bundle.test.ts's helper — duplicated locally per this file's
+ *  existing convention of self-contained fixtures, see `msg()` above). */
+function ics(opts: { method?: string; uid?: string; sequence?: number }): string {
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0"];
+  if (opts.method) lines.push(`METHOD:${opts.method}`);
+  lines.push("BEGIN:VEVENT");
+  if (opts.uid !== undefined) lines.push(`UID:${opts.uid}`);
+  if (opts.sequence !== undefined) lines.push(`SEQUENCE:${opts.sequence}`);
+  lines.push("SUMMARY:Team sync");
+  lines.push("DTSTART:20260801T140000Z");
+  lines.push("END:VEVENT");
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
+/** UTF-8 encode an ICS string as the raw bytes `imap.fetchAttachment` returns. */
+function icsBytes(icsText: string): Uint8Array {
+  return new TextEncoder().encode(icsText);
+}
+
+describe("detectCalendarBundles", () => {
+  it("classifies a CANCEL invite, returns it keyed by thread root, and writes a cancel-email marker", async () => {
+    const m = msg({
+      uid: 50,
+      messageId: "<invite@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "invite.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const bytes = icsBytes(ics({ method: "CANCEL", uid: "evt-1" }));
+    const { host, stored } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: { [buildAttachmentRef("INBOX", 50, "2")]: bytes },
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(bundles.get("invite@example.com")).toEqual({ uid: "evt-1", kind: "cancel" });
+    expect(stored.get("cancel-email:evt-1")).toBeTruthy();
+  });
+
+  it("classifies a REQUEST/SEQUENCE>0 update, returns it, and writes NO cancel-email marker", async () => {
+    const m = msg({
+      uid: 51,
+      messageId: "<update@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "update.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const bytes = icsBytes(ics({ method: "REQUEST", uid: "evt-2", sequence: 1 }));
+    const { host, stored } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: { [buildAttachmentRef("INBOX", 51, "2")]: bytes },
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(bundles.get("update@example.com")).toEqual({ uid: "evt-2", kind: "update" });
+    expect(stored.get("cancel-email:evt-2")).toBeUndefined();
+  });
+
+  it("does not bundle a bare initial invite (REQUEST/SEQUENCE 0)", async () => {
+    const m = msg({
+      uid: 52,
+      messageId: "<bare-invite@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "invite.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const bytes = icsBytes(ics({ method: "REQUEST", uid: "evt-3", sequence: 0 }));
+    const { host } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: { [buildAttachmentRef("INBOX", 52, "2")]: bytes },
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(bundles.has("bare-invite@example.com")).toBe(false);
+  });
+
+  it("does not bundle an RSVP reply (METHOD:REPLY)", async () => {
+    const m = msg({
+      uid: 53,
+      messageId: "<rsvp@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "reply.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const bytes = icsBytes(ics({ method: "REPLY", uid: "evt-4", sequence: 1 }));
+    const { host } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: { [buildAttachmentRef("INBOX", 53, "2")]: bytes },
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(bundles.has("rsvp@example.com")).toBe(false);
+  });
+
+  it("scans every message in a thread, not just the first — a later CANCEL after an earlier bare invite still bundles", async () => {
+    const bareInvite = msg({
+      uid: 54,
+      messageId: "<root-multi@example.com>",
+      date: new Date("2026-07-15T09:00:00Z"),
+      attachments: [
+        { partNumber: "2", fileName: "invite.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const cancelUpdate = msg({
+      uid: 55,
+      messageId: "<followup-multi@example.com>",
+      references: ["<root-multi@example.com>"],
+      date: new Date("2026-07-15T10:00:00Z"),
+      attachments: [
+        { partNumber: "2", fileName: "cancel.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const { host } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: {
+        [buildAttachmentRef("INBOX", 54, "2")]: icsBytes(ics({ method: "REQUEST", uid: "evt-5", sequence: 0 })),
+        [buildAttachmentRef("INBOX", 55, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-5" })),
+      },
+    });
+
+    const merged: MailMessage[] = [
+      { ...bareInvite, mailbox: "INBOX" },
+      { ...cancelUpdate, mailbox: "INBOX" },
+    ];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(bundles.get("root-multi@example.com")).toEqual({ uid: "evt-5", kind: "cancel" });
+  });
+
+  it("a message with no calendar part is completely unaffected: no fetchAttachment call, no bundle", async () => {
+    const m = msg({ uid: 56, messageId: "<plain@example.com>" });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(fetchAttachmentCalls).toHaveLength(0);
+    expect(bundles.size).toBe(0);
+  });
+
+  it("a non-calendar attachment (e.g. a PDF) is not fetched as a calendar part", async () => {
+    const m = msg({
+      uid: 57,
+      messageId: "<pdf@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "invoice.pdf", mimeType: "application/pdf", size: 1000, encoding: "base64" },
+      ],
+    });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(fetchAttachmentCalls).toHaveLength(0);
+    expect(bundles.size).toBe(0);
+  });
+
+  it("returns an empty map for an empty message list (no I/O)", async () => {
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 0, recent: 0, uidValidity: 1, uidNext: 1 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+    });
+
+    const bundles = await detectCalendarBundles(host, "session-1", []);
+
+    expect(fetchAttachmentCalls).toHaveLength(0);
+    expect(bundles.size).toBe(0);
+  });
+
+  it("selects the message's own mailbox (e.g. Sent) before fetching its attachment", async () => {
+    const m = msg({
+      uid: 58,
+      messageId: "<from-sent@example.com>",
+      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      attachments: [
+        { partNumber: "2", fileName: "cancel.ics", mimeType: "application/ics", size: 100, encoding: "8bit" },
+      ],
+    });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 0, recent: 0, uidValidity: 1, uidNext: 1 }, searchUids: [], messagesByUid: new Map() },
+      sent: {
+        name: "Sent Messages",
+        specialUse: "\\Sent",
+        status: { name: "Sent Messages", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 },
+        searchUids: [],
+        messagesByUid: new Map(),
+      },
+      attachments: {
+        [buildAttachmentRef("Sent Messages", 58, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-6" })),
+      },
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "Sent Messages" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(fetchAttachmentCalls).toEqual([{ mailbox: "Sent Messages", uid: 58, partNumber: "2" }]);
+    expect(bundles.get("from-sent@example.com")).toEqual({ uid: "evt-6", kind: "cancel" });
+  });
+});
+
+describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
+  it("bundles a CANCEL invite email's link onto the event thread and omits its title key", async () => {
+    const cancelMsg = msg({
+      uid: 60,
+      messageId: "<cancel-e2e@example.com>",
+      subject: "Cancelled: Team sync",
+      attachments: [
+        { partNumber: "2", fileName: "cancel.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const { host, savedLinks, stored } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: {
+        name: "INBOX",
+        status: { name: "INBOX", exists: 1, recent: 1, uidValidity: 1, uidNext: 61, unseen: 1 },
+        searchUids: [60],
+        messagesByUid: new Map([[60, cancelMsg]]),
+      },
+      sent: null,
+      attachments: {
+        [buildAttachmentRef("INBOX", 60, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-e2e" })),
+      },
+    });
+
+    const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    const link = savedLinks.find((l) => l.source === "icloud-mail:thread:cancel-e2e@example.com");
+    expect(link).toBeDefined();
+    expect(link!.sources).toEqual(["icaluid:evt-e2e"]);
+    expect("title" in link!).toBe(false);
+    expect(stored.get("cancel-email:evt-e2e")).toBeTruthy();
+  });
+
+  it("a plain reply with no calendar attachment is unaffected: no icaluid, title present, no attachment fetch", async () => {
+    const plain = msg({ uid: 61, messageId: "<plain-e2e@example.com>", subject: "Just chatting" });
+    const { host, savedLinks, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: {
+        name: "INBOX",
+        status: { name: "INBOX", exists: 1, recent: 1, uidValidity: 1, uidNext: 62, unseen: 1 },
+        searchUids: [61],
+        messagesByUid: new Map([[61, plain]]),
+      },
+      sent: null,
+    });
+
+    const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    const link = savedLinks.find((l) => l.source === "icloud-mail:thread:plain-e2e@example.com");
+    expect(link).toBeDefined();
+    expect(link!.sources).toBeUndefined();
+    expect(link!.title).toBe("Just chatting");
+    expect(fetchAttachmentCalls).toHaveLength(0);
   });
 });

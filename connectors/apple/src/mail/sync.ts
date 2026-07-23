@@ -1,6 +1,7 @@
 import type { ActorId } from "@plotday/twister";
 import type { ImapMailboxStatus, ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
+import { classifyICS, isCalendarAttachment, type CalendarBundle } from "./calendar-bundle";
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
 import type { MailHost, MailSyncState } from "./mail-host";
 import { mailSource, rootMessageId, transformMessages, type MailMessage } from "./transform";
@@ -88,6 +89,65 @@ export async function reconcileTodoFlags(
 }
 
 /**
+ * Detects mail↔calendar thread bundling for a sync pass: groups `messages`
+ * by thread root, and for each thread fetches + classifies (via
+ * `classifyICS`) every `text/calendar`/`application/ics` attachment found —
+ * across ALL of the thread's messages, not just the first, mirroring
+ * Google's `classifyCalendarThread` (`google/src/mail/gmail-api.ts`), which
+ * evaluates every ICS part in a Gmail thread and bundles on the first
+ * CANCEL or REQUEST/SEQUENCE>0 hit. This is the I/O layer: `transform.ts`'s
+ * `transformMessages` is pure and must not fetch, so this function does the
+ * fetching (using the already-open `session`) and hands the pure
+ * `classifyICS` decoded ICS text.
+ *
+ * Also records a `cancel-email:<uid>` marker (mirroring Google's
+ * `mail/sync.ts`) for every CANCEL bundle, so a later calendar-side sync can
+ * prefer the cancellation email's own note over its generic "This event was
+ * cancelled." text.
+ *
+ * Most mail carries no calendar attachment at all, so this only issues IMAP
+ * round-trips (a `selectMailbox` + `fetchAttachment` per calendar part
+ * encountered) for the rare thread that actually has one — an empty
+ * `messages` array, or messages with no calendar-mime attachments, does no
+ * I/O.
+ */
+export async function detectCalendarBundles(
+  host: MailHost,
+  session: ImapSession,
+  messages: MailMessage[]
+): Promise<Map<string, CalendarBundle>> {
+  const byRoot = new Map<string, MailMessage[]>();
+  for (const m of messages) {
+    const root = rootMessageId(m);
+    if (!root) continue;
+    const list = byRoot.get(root) ?? [];
+    list.push(m);
+    byRoot.set(root, list);
+  }
+
+  const bundles = new Map<string, CalendarBundle>();
+  for (const [root, msgs] of byRoot.entries()) {
+    for (const m of msgs) {
+      const part = (m.attachments ?? []).find((a) => isCalendarAttachment(a.mimeType));
+      if (!part) continue;
+
+      await host.imap.selectMailbox(session, m.mailbox);
+      const bytes = await host.imap.fetchAttachment(session, m.uid, part.partNumber);
+      const ics = new TextDecoder("utf-8").decode(bytes);
+      const classified = classifyICS(ics);
+      if (!classified) continue; // bare invite or RSVP — check the thread's other messages
+
+      bundles.set(root, classified);
+      if (classified.kind === "cancel") {
+        await host.set(`cancel-email:${classified.uid}`, { at: new Date().toISOString() });
+      }
+      break; // this thread is classified; stop scanning its remaining messages
+    }
+  }
+  return bundles;
+}
+
+/**
  * Full backfill of INBOX plus the Sent mailbox (for the owner's own
  * in-thread replies) since a history floor, using an already-open IMAP
  * `session`. Persists a `MailSyncState` cursor for subsequent incremental
@@ -127,10 +187,12 @@ async function runInitialBackfill(
     ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
     ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
   ];
+  const calendarBundles = await detectCalendarBundles(host, session, merged);
   const links = transformMessages(merged, {
     channelId,
     appleId: host.appleId,
     initialSync: true,
+    calendarBundles,
   });
   if (links.length > 0) await host.integrations.saveLinks(links);
 
@@ -285,6 +347,7 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
       ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
     ];
+    const calendarBundles = await detectCalendarBundles(host, session, merged);
     const links = transformMessages(merged, {
       channelId,
       appleId: host.appleId,
@@ -292,6 +355,7 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       // Only these newly-arrived UIDs may (re)mark a thread unread; the
       // recent-window rescan messages are read-state propagation only.
       newUids,
+      calendarBundles,
     });
     if (links.length > 0) await host.integrations.saveLinks(links);
 

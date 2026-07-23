@@ -2,6 +2,7 @@ import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
 import { ActionType, type Action, type NewContact, type NewLinkWithNotes } from "@plotday/twister";
 
 import { buildAttachmentRef } from "./attachments";
+import type { CalendarBundle } from "./calendar-bundle";
 import { looksLikeHtml } from "./html";
 
 /** Strip surrounding angle brackets and whitespace from a Message-ID. */
@@ -60,6 +61,16 @@ export type TransformCtx = {
    * unread on every poll. Omitted on initial sync (which sets unread:false).
    */
   newUids?: number[];
+  /**
+   * Per-thread-root calendar-invite bundling decisions, computed by
+   * `sync.ts`'s `detectCalendarBundles` (which fetches and classifies any
+   * `text/calendar`/`application/ics` attachment — I/O that this pure
+   * function must not do itself). When a thread's root id has an entry, its
+   * link bundles onto the referenced calendar event's thread via the shared
+   * `icaluid:<uid>` alias — see the `sources` doc on `Link` in
+   * `@plotday/twister/plot`.
+   */
+  calendarBundles?: Map<string, CalendarBundle>;
 };
 
 function toContact(a: ImapAddress): NewContact {
@@ -168,10 +179,21 @@ export function transformMessages(
       : hasNewUnseen
         ? { unread: true }
         : {};
+
+    // Calendar thread bundling (see TransformCtx.calendarBundles doc): when
+    // this thread's root was classified as a cancellation/update ICS, bundle
+    // onto the calendar event's thread via the shared `icaluid:<uid>` alias
+    // and — critically — OMIT `title` entirely. `title` is last-writer-wins
+    // on a bundled thread (unlike `author_id`, which is first-writer-wins),
+    // so setting it here (even to the correct-looking raw subject) would
+    // clobber the event's title back to the email subject on every mail
+    // sync pass that runs after a calendar pass. Per plot.ts's `NewLinkWithNotes.title`
+    // doc: "Omit to preserve the existing title." The key must be ABSENT,
+    // not `null`/`""` — a present key of any value still overwrites.
+    const calendarBundle = ctx.calendarBundles?.get(root);
     const link: NewLinkWithNotes = {
       source: mailSource(root),
       type: "email",
-      title: originator.subject ?? "",
       channelId: ctx.channelId,
       accessContacts: [...participants.values()],
       meta: {
@@ -187,6 +209,9 @@ export function transformMessages(
       ...(ctx.initialSync
         ? { unread: false, archived: false }
         : incrementalRead),
+      ...(calendarBundle
+        ? { sources: [`icaluid:${calendarBundle.uid}`] }
+        : { title: originator.subject ?? "" }),
     };
     links.push(link);
   }
