@@ -71,7 +71,7 @@ function isSeen(msg: ImapMessage): boolean {
 }
 
 /** Pick body content + contentType for one message. */
-function bodyOf(msg: ImapMessage): { content: string; contentType: "html" | "text" } | null {
+export function bodyOf(msg: ImapMessage): { content: string; contentType: "html" | "text" } | null {
   if (msg.bodyHtml && msg.bodyHtml.trim().length > 0) {
     return { content: msg.bodyHtml, contentType: "html" };
   }

@@ -31,6 +31,10 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
     replyVerb: "Send",
     replyPlaceholder: "Reply",
     composePlaceholder: "Send an email",
+    // onCreateLink reconstructs a real forward (original message +
+    // attachments) when `CreateLinkDraft.forward` is set, so the runtime
+    // should route native forwards here instead of the blockquote fallback.
+    supportsForward: true,
   },
 ];
 

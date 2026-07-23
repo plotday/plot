@@ -2,7 +2,7 @@ import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
 import type { MailHost } from "./mail-host";
 import { baseSubject } from "./recipients";
-import { rootMessageId } from "./transform";
+import { rootMessageId, stripAngle } from "./transform";
 
 export const ICLOUD_IMAP = { host: "imap.mail.me.com", port: 993, tls: true } as const;
 
@@ -111,4 +111,60 @@ export async function resolveThreadMessages(
     inboxUids: inboxMessages.map((m) => m.uid),
     latest: inboxMessages.length > 0 ? inboxMessages[inboxMessages.length - 1] : null,
   };
+}
+
+/**
+ * Locate a forward's source message by its stripped Message-ID. There is no
+ * IMAP "search by Message-ID" (`ImapSearchCriteria` has no such field), so
+ * this reuses the exact window-search-then-local-filter technique
+ * `resolveThreadMessages` already uses: search a bounded window (base
+ * subject + the same `WRITE_BACK_WINDOW_MS` floor), fetch headers only for
+ * the candidates, then filter locally by exact Message-ID match. INBOX is
+ * tried first, then the Sent mailbox (a forwarded message may be one the
+ * owner sent, not just received mail). On a match, the full headers+body
+ * are fetched for that one UID via `fetchUidRange`.
+ *
+ * Accepted v1 limitation: since this reuses the 180-day subject+since
+ * window (same as reply threading), a source whose compose subject was
+ * fully rewritten, or that is older than 180 days, may not resolve — the
+ * caller surfaces a `not_found` delivery error in that case. A persistent
+ * uid index was deliberately rejected (uidValidity invalidation + storage
+ * growth).
+ */
+export async function fetchOriginalMessage(
+  host: MailHost,
+  session: ImapSession,
+  forwardKey: string,
+  subjectHint: string | undefined,
+  now: Date = new Date()
+): Promise<{ mailbox: string; message: ImapMessage } | null> {
+  const since = new Date(now.getTime() - WRITE_BACK_WINDOW_MS);
+  const base = baseSubject(subjectHint);
+  const criteria = base ? { subject: base, since } : { since };
+
+  const findUidIn = async (mailbox: string): Promise<number | null> => {
+    await host.imap.selectMailbox(session, mailbox);
+    const uids = await host.imap.search(session, criteria);
+    const candidates = await fetchHeaders(host, session, uids);
+    const match = candidates.find((m) => stripAngle(m.messageId ?? "") === forwardKey);
+    return match ? match.uid : null;
+  };
+
+  const resolve = async (mailbox: string): Promise<{ mailbox: string; message: ImapMessage } | null> => {
+    const uid = await findUidIn(mailbox);
+    if (uid === null) return null;
+    const full = await fetchUidRange(host, session, mailbox, [uid]);
+    return full.length > 0 ? { mailbox, message: full[0] } : null;
+  };
+
+  const inboxHit = await resolve("INBOX");
+  if (inboxHit) return inboxHit;
+
+  const sentMailbox = await resolveSentMailbox(host, session);
+  if (sentMailbox) {
+    const sentHit = await resolve(sentMailbox);
+    if (sentHit) return sentHit;
+  }
+
+  return null;
 }

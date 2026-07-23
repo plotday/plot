@@ -20,6 +20,8 @@ function mockHost(opts: {
   sendError?: Error;
   searchError?: Error;
   files?: Record<string, { data: Uint8Array; fileName: string; mimeType: string; fileSize: number }>;
+  attachmentBytes?: Record<string, Uint8Array>;
+  attachmentFailing?: Set<string>;
 }): {
   host: MailHost;
   sent: SmtpMessage[];
@@ -45,6 +47,12 @@ function mockHost(opts: {
       u.map((uid) => ({ uid, flags: [], ...(opts.inboxMessages ?? [])[uid - 1] }) as ImapMessage),
     setFlags: async (_s: string, uids: number[], flags: string[], op: string) => {
       flagCalls.push({ uids, flags, op });
+    },
+    fetchAttachment: async (_s: string, _uid: number, partNumber: string) => {
+      if (opts.attachmentFailing?.has(partNumber)) throw new Error(`fetch failed: ${partNumber}`);
+      const bytes = opts.attachmentBytes?.[partNumber];
+      if (!bytes) throw new Error(`no such part: ${partNumber}`);
+      return bytes;
     },
   };
   const smtp = {
@@ -299,6 +307,156 @@ describe("onCreateLinkFn", () => {
 
     // Different content → distinct dedup key → sends again.
     await onCreateLinkFn(host, emailDraft({ title: "Something else" }), new Date(t0.getTime() + 5 * 60 * 1000));
+    expect(sent).toHaveLength(2);
+
+    // Same original content again, but past the 10-minute window → sends again.
+    await onCreateLinkFn(host, draft, new Date(t0.getTime() + 11 * 60 * 1000));
+    expect(sent).toHaveLength(3);
+  });
+});
+
+function forwardDraft(over: Partial<CreateLinkDraft> = {}): CreateLinkDraft {
+  return {
+    channelId: "mail:INBOX",
+    type: "email",
+    status: null,
+    title: "Coffee next week?",
+    noteContent: "Check this out!",
+    contacts: [],
+    recipients: [{ id: "1", name: null, externalAccountId: "jane@x.com", role: "to" }] as never,
+    inviteEmails: ["bob@x.com"],
+    forward: { key: "root@x.com" },
+    ...over,
+  } as unknown as CreateLinkDraft;
+}
+
+const originalMessage: Partial<ImapMessage> = {
+  messageId: "<root@x.com>",
+  from: [{ address: "sender@x.com", name: "Sender Person" }],
+  to: [{ address: "me@icloud.com" }],
+  subject: "Original subject line",
+  date: new Date("2026-07-10T09:00:00Z"),
+  bodyText: "This is the original message body.",
+};
+
+describe("onCreateLinkFn (forward)", () => {
+  it("builds a Fwd: subject, omits In-Reply-To/References, and composes forwarder-note-on-top body", async () => {
+    const { host, sent } = mockHost({ inboxMessages: [originalMessage] });
+    const out = await onCreateLinkFn(host, forwardDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(sent).toHaveLength(1);
+    const m = sent[0];
+    expect(m.subject).toBe("Fwd: Coffee next week?");
+    expect(m.inReplyTo).toBeUndefined();
+    expect(m.references).toBeUndefined();
+    // Forwarder's own note sits above the quoted attribution block + original body.
+    const text = m.text ?? "";
+    const noteIdx = text.indexOf("Check this out!");
+    const separatorIdx = text.indexOf("---------- Forwarded message ----------");
+    const bodyIdx = text.indexOf("This is the original message body.");
+    expect(noteIdx).toBeGreaterThanOrEqual(0);
+    expect(separatorIdx).toBeGreaterThan(noteIdx);
+    expect(bodyIdx).toBeGreaterThan(separatorIdx);
+    expect(m.text).toContain("From: Sender Person <sender@x.com>");
+    expect(m.text).toContain("Subject: Original subject line");
+    expect(m.text).toContain("To: me@icloud.com");
+    expect(m.to.map((a) => a.address).sort()).toEqual(["bob@x.com", "jane@x.com"]);
+    expect(out?.source).toBe("icloud-mail:thread:sent-123@plot.day");
+    expect(out?.type).toBe("email");
+    expect(out?.originatingNote).toEqual({ key: "sent-123@plot.day", deliveryError: null });
+  });
+
+  it("leaves an already-prefixed Fwd: subject unchanged", async () => {
+    const { host, sent } = mockHost({ inboxMessages: [originalMessage] });
+    await onCreateLinkFn(
+      host,
+      forwardDraft({ title: "Fwd: Already prefixed" }),
+      new Date("2026-07-20T00:00:00Z")
+    );
+    expect(sent[0].subject).toBe("Fwd: Already prefixed");
+  });
+
+  it("re-attaches the original message's attachments", async () => {
+    const data = new Uint8Array([1, 2, 3]);
+    const withAttachment = {
+      ...originalMessage,
+      attachments: [
+        { partNumber: "2", fileName: "photo.png", mimeType: "image/png", size: 3, encoding: "base64" },
+      ],
+    };
+    const { host, sent } = mockHost({
+      inboxMessages: [withAttachment],
+      attachmentBytes: { "2": data },
+    });
+    await onCreateLinkFn(host, forwardDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(sent[0].attachments).toEqual([{ fileName: "photo.png", mimeType: "image/png", data }]);
+  });
+
+  it("skips an attachment part that fails to fetch and still sends the forward", async () => {
+    const data = new Uint8Array([4, 5]);
+    const withAttachments = {
+      ...originalMessage,
+      attachments: [
+        { partNumber: "2", fileName: "bad.png", mimeType: "image/png", size: 1, encoding: "base64" },
+        { partNumber: "3", fileName: "good.png", mimeType: "image/png", size: 2, encoding: "base64" },
+      ],
+    };
+    const { host, sent } = mockHost({
+      inboxMessages: [withAttachments],
+      attachmentBytes: { "3": data },
+      attachmentFailing: new Set(["2"]),
+    });
+    await onCreateLinkFn(host, forwardDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].attachments).toEqual([{ fileName: "good.png", mimeType: "image/png", data }]);
+  });
+
+  it("returns a not_found deliveryError when the original message can't be located", async () => {
+    const { host } = mockHost({ inboxMessages: [] });
+    const out = await onCreateLinkFn(host, forwardDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(out?.originatingNote?.deliveryError).toMatchObject({ code: "not_found" });
+    expect(out?.source).toBeUndefined();
+  });
+
+  it("returns no_recipients when the forward draft has no addresses", async () => {
+    const { host } = mockHost({ inboxMessages: [originalMessage] });
+    const out = await onCreateLinkFn(
+      host,
+      forwardDraft({ recipients: [] as never, inviteEmails: [] }),
+      new Date("2026-07-20T00:00:00Z")
+    );
+    expect(out?.originatingNote?.deliveryError).toMatchObject({ code: "no_recipients" });
+  });
+
+  it("surfaces a send failure on the originating note without a link source", async () => {
+    const { host } = mockHost({
+      inboxMessages: [originalMessage],
+      sendError: new Error("550 rejected"),
+    });
+    const out = await onCreateLinkFn(host, forwardDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(out?.originatingNote?.deliveryError).toMatchObject({ code: "rejected" });
+    expect(out?.source).toBeUndefined();
+  });
+
+  it("dedupes an identical re-invoked forward inside the window, but re-sends on different content or after the window", async () => {
+    const { host, sent } = mockHost({ inboxMessages: [originalMessage] });
+    const draft = forwardDraft();
+    const t0 = new Date("2026-07-20T00:00:00Z");
+
+    const first = await onCreateLinkFn(host, draft, t0);
+    expect(sent).toHaveLength(1);
+
+    // Same content, 5 minutes later — still inside the 10-minute window: no
+    // second SMTP send; the dedup hit reuses the prior root id.
+    const dup = await onCreateLinkFn(host, draft, new Date(t0.getTime() + 5 * 60 * 1000));
+    expect(sent).toHaveLength(1);
+    expect(dup?.originatingNote?.key).toBe(first?.originatingNote?.key);
+
+    // Different content → distinct dedup key → sends again.
+    await onCreateLinkFn(
+      host,
+      forwardDraft({ noteContent: "A different note" }),
+      new Date(t0.getTime() + 5 * 60 * 1000)
+    );
     expect(sent).toHaveLength(2);
 
     // Same original content again, but past the 10-minute window → sends again.

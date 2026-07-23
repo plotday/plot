@@ -8,10 +8,16 @@ import {
   type Thread,
 } from "@plotday/twister";
 import type { CreateLinkResult, Note } from "@plotday/twister/plot";
+import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
 import type { SmtpMessage } from "@plotday/twister/tools/smtp";
 
-import { collectFileAttachments } from "./attachments";
-import { connectIcloud, resolveThreadMessages, type ResolvedThread } from "./imap-fetch";
+import { collectFileAttachments, fetchOriginalAttachments } from "./attachments";
+import {
+  connectIcloud,
+  fetchOriginalMessage,
+  resolveThreadMessages,
+  type ResolvedThread,
+} from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 import {
   accessContactsToRecipients,
@@ -23,7 +29,7 @@ import {
   splitByRole,
 } from "./recipients";
 import { sendViaSmtp, sendWithRetry } from "./smtp-send";
-import { mailSource, stripAngle } from "./transform";
+import { bodyOf, mailSource, stripAngle } from "./transform";
 
 /** syncProvider tag for this connector's mail links (distinct from calendar "apple"). */
 export const APPLE_MAIL = "apple-mail";
@@ -177,12 +183,147 @@ function composeLink(
   };
 }
 
+/** Format an ImapAddress for a forwarded header line: "Name <address>" if a name is present, else just the address. */
+function formatAddress(a: ImapAddress): string {
+  return a.name ? `${a.name} <${a.address}>` : a.address;
+}
+
+/**
+ * Build the "---------- Forwarded message ----------" attribution block's
+ * header lines (From/Date/Subject/To) for a source message being forwarded,
+ * mirroring the block Apple Mail's own UI inserts. Omits any header the
+ * source message doesn't carry rather than emitting a blank line.
+ */
+function buildForwardedHeader(message: ImapMessage): string {
+  const lines: string[] = [];
+  const from = message.from && message.from.length > 0 ? message.from[0] : null;
+  if (from) lines.push(`From: ${formatAddress(from)}`);
+  if (message.date) lines.push(`Date: ${message.date.toUTCString()}`);
+  if (message.subject) lines.push(`Subject: ${message.subject}`);
+  if (message.to && message.to.length > 0) {
+    lines.push(`To: ${message.to.map(formatAddress).join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Handles `onCreateLink` when `draft.forward` is set — the runtime is asking
+ * the connector to reconstruct a native forward of an existing message
+ * (declared via `LinkTypeConfig.supportsForward`) instead of falling back to
+ * the generic blockquote forward. A forward is a brand-new message (new
+ * thread, no In-Reply-To/References) whose body carries the forwarder's own
+ * note on top of the quoted original, with the original's attachments
+ * re-attached. Mirrors the compose path's idempotency guard and
+ * delivery-error surfacing so a retried dispatch behaves the same way a
+ * retried compose does.
+ */
+async function onCreateLinkForwardFn(
+  host: MailHost,
+  draft: CreateLinkDraft,
+  forwardKey: string,
+  now: Date = new Date()
+): Promise<CreateLinkResult | null> {
+  const recipients = composeRecipients(draft.recipients, draft.inviteEmails);
+  if (isEmpty(recipients)) {
+    return {
+      originatingNote: {
+        deliveryError: { code: "no_recipients", message: "No recipients" },
+      },
+    };
+  }
+
+  const session = await connectIcloud(host);
+  let found: { mailbox: string; message: ImapMessage } | null;
+  let attachments: { fileName: string; mimeType: string; data: Uint8Array }[];
+  try {
+    found = await fetchOriginalMessage(host, session, forwardKey, draft.title, now);
+    if (!found) {
+      return {
+        originatingNote: {
+          deliveryError: {
+            code: "not_found",
+            message: "The original message could not be found — it may have been deleted.",
+          },
+        },
+      };
+    }
+    attachments = await fetchOriginalAttachments(host, session, found.mailbox, found.message);
+  } finally {
+    await host.imap.disconnect(session);
+  }
+
+  const subject = draft.title.startsWith("Fwd:") ? draft.title : `Fwd: ${draft.title}`;
+  const quoted = [
+    "---------- Forwarded message ----------",
+    buildForwardedHeader(found.message),
+    "",
+    bodyOf(found.message)?.content ?? "",
+  ].join("\n");
+  const noteContent = draft.noteContent ?? "";
+  const text = noteContent.length > 0 ? `${noteContent}\n\n${quoted}` : quoted;
+
+  // Content-hash dedup: same pattern + window as compose (below), but keyed
+  // off the forward source so a re-invoked dispatch reuses the prior send
+  // instead of forwarding a second time.
+  const dedupKey = `forward:${fnv1aHex(
+    JSON.stringify([
+      "forward",
+      forwardKey,
+      subject,
+      text,
+      recipients.to.map((a) => a.address).sort(),
+      recipients.cc.map((a) => a.address).sort(),
+      recipients.bcc.map((a) => a.address).sort(),
+    ])
+  )}`;
+  const prior = await host.get<{ rootId: string; at: number }>(dedupKey);
+  if (prior && now.getTime() - prior.at < COMPOSE_DEDUP_WINDOW_MS) {
+    return {
+      ...composeLink(host, draft, subject, prior.rootId),
+      originatingNote: { key: prior.rootId, deliveryError: null },
+    };
+  }
+
+  const message: SmtpMessage = {
+    from: { address: host.appleId },
+    to: recipients.to,
+    cc: recipients.cc.length ? recipients.cc : undefined,
+    bcc: recipients.bcc.length ? recipients.bcc : undefined,
+    subject,
+    text,
+    ...(attachments.length ? { attachments } : {}),
+    // NO inReplyTo / references — a forward starts a new thread.
+  };
+  const outcome = await sendWithRetry(() =>
+    sendViaSmtp(host.smtp, host.appleId, host.appPassword, message)
+  );
+  if (!outcome.ok) {
+    // Preserve the composed content in Plot; surface the failure on its note.
+    return {
+      originatingNote: {
+        deliveryError: { code: outcome.error.code, message: outcome.error.message },
+      },
+    };
+  }
+
+  const rootId = stripAngle(outcome.result.messageId);
+  await host.set(dedupKey, { rootId, at: now.getTime() });
+  return {
+    ...composeLink(host, draft, subject, rootId),
+    originatingNote: { key: rootId, deliveryError: null },
+  };
+}
+
 /**
  * Compose write-back: send a brand-new email the user composed in Plot and
  * return a link rooted at the sent Message-ID (so the composed thread becomes
  * the mail thread root, and a Sent-mailbox re-ingest dedups by source). A
  * short content-hash window guards against a re-invoked create double-sending.
  * Delivery failures set `originatingNote.deliveryError` and return no source.
+ *
+ * When `draft.forward` is set (the link type declares `supportsForward`),
+ * delegates to {@link onCreateLinkForwardFn} to reconstruct a native forward
+ * of the source message instead of composing a brand-new email.
  */
 export async function onCreateLinkFn(
   host: MailHost,
@@ -190,6 +331,8 @@ export async function onCreateLinkFn(
   now: Date = new Date()
 ): Promise<CreateLinkResult | null> {
   if (draft.type !== "email") return null;
+
+  if (draft.forward) return onCreateLinkForwardFn(host, draft, draft.forward.key, now);
 
   const recipients = composeRecipients(draft.recipients, draft.inviteEmails);
   const subject = draft.title ?? "";

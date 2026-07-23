@@ -1,3 +1,5 @@
+import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
+
 import { connectIcloud } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 
@@ -100,6 +102,37 @@ export async function collectFileAttachments(
     } catch (err) {
       console.error(
         `[apple-mail] failed to read attachment file ${fileId}:`,
+        err
+      );
+    }
+  }
+  return attachments;
+}
+
+/**
+ * Re-downloads a forward's source message's attachment bytes so they can be
+ * re-attached to the outbound forward — iCloud IMAP has no server-side
+ * "forward with attachments" operation, so the connector must fetch and
+ * resend the bytes itself. Best-effort per part: a single failed fetch is
+ * logged and skipped rather than failing the whole forward. `mailbox` must
+ * already be resolved by the caller (e.g. from `fetchOriginalMessage`);
+ * SELECTing it here is idempotent if it's already the selected mailbox.
+ */
+export async function fetchOriginalAttachments(
+  host: MailHost,
+  session: ImapSession,
+  mailbox: string,
+  message: ImapMessage
+): Promise<{ fileName: string; mimeType: string; data: Uint8Array }[]> {
+  await host.imap.selectMailbox(session, mailbox);
+  const attachments: { fileName: string; mimeType: string; data: Uint8Array }[] = [];
+  for (const part of message.attachments ?? []) {
+    try {
+      const data = await host.imap.fetchAttachment(session, message.uid, part.partNumber);
+      attachments.push({ fileName: part.fileName, mimeType: part.mimeType, data });
+    } catch (err) {
+      console.error(
+        `[apple-mail] forward: failed to fetch attachment ${part.partNumber} on message ${message.uid}:`,
         err
       );
     }
