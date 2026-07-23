@@ -1,7 +1,16 @@
-import type { Actor, CreateLinkDraft, NewContact, NoteWriteBackResult, Thread } from "@plotday/twister";
+import {
+  ActionType,
+  type Action,
+  type Actor,
+  type CreateLinkDraft,
+  type NewContact,
+  type NoteWriteBackResult,
+  type Thread,
+} from "@plotday/twister";
 import type { CreateLinkResult, Note } from "@plotday/twister/plot";
 import type { SmtpMessage } from "@plotday/twister/tools/smtp";
 
+import { collectFileAttachments } from "./attachments";
 import { connectIcloud, resolveThreadMessages, type ResolvedThread } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 import {
@@ -35,6 +44,13 @@ export function mailRootId(thread: Thread): string | null {
   if (meta.syncProvider !== APPLE_MAIL) return null;
   const rootId = meta.rootMessageId;
   return typeof rootId === "string" && rootId.length > 0 ? rootId : null;
+}
+
+/** File ids of a note's `ActionType.file` actions, for outbound attachment collection. */
+function fileActionIds(actions: Array<Action> | null | undefined): string[] {
+  return (actions ?? [])
+    .filter((a): a is Extract<Action, { type: ActionType.file }> => a.type === ActionType.file)
+    .map((a) => a.fileId);
 }
 
 /**
@@ -90,6 +106,10 @@ export async function onNoteCreatedFn(
     ? [...(latest.references ?? []), latest.messageId ?? angle(rootId)]
     : [angle(rootId)];
 
+  const fileIds = fileActionIds(note.actions);
+  const attachments =
+    fileIds.length > 0 ? await collectFileAttachments(host, fileIds) : undefined;
+
   const message: SmtpMessage = {
     from: { address: host.appleId },
     to: recipients.to,
@@ -99,6 +119,7 @@ export async function onNoteCreatedFn(
     text: note.content ?? "",
     inReplyTo,
     references,
+    ...(attachments && attachments.length > 0 ? { attachments } : {}),
   };
 
   const outcome = await sendWithRetry(() =>
@@ -201,6 +222,10 @@ export async function onCreateLinkFn(
     };
   }
 
+  const fileIds = (draft.attachments ?? []).map((a) => a.fileId);
+  const attachments =
+    fileIds.length > 0 ? await collectFileAttachments(host, fileIds) : undefined;
+
   const message: SmtpMessage = {
     from: { address: host.appleId },
     to: recipients.to,
@@ -208,6 +233,7 @@ export async function onCreateLinkFn(
     bcc: recipients.bcc.length ? recipients.bcc : undefined,
     subject,
     text: body,
+    ...(attachments && attachments.length > 0 ? { attachments } : {}),
   };
   const outcome = await sendWithRetry(() =>
     sendViaSmtp(host.smtp, host.appleId, host.appPassword, message)

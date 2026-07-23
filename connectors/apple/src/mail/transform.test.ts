@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ImapMessage } from "@plotday/twister/tools/imap";
+import { ActionType } from "@plotday/twister";
 
-import { rootMessageId, mailSource, transformMessages } from "./transform";
+import { rootMessageId, mailSource, transformMessages, type MailMessage } from "./transform";
 
-function msg(over: Partial<ImapMessage>): ImapMessage {
+function msg(over: Partial<MailMessage>): MailMessage {
   return {
     uid: 1,
     flags: [],
@@ -13,6 +13,7 @@ function msg(over: Partial<ImapMessage>): ImapMessage {
     date: new Date("2026-07-15T10:00:00Z"),
     subject: "Lunch?",
     bodyText: "Can we meet?",
+    mailbox: "INBOX",
     ...over,
   };
 }
@@ -169,5 +170,64 @@ describe("transformMessages", () => {
     expect(byKey["root@icloud.com"].authoredBySelf).toBe(true);
     expect(byKey["reply@example.com"].author?.email).toBe("jane@example.com");
     expect((links[0].author as { email?: string } | undefined)?.email).toBe("kris@icloud.com");
+  });
+});
+
+type ActionLike = {
+  type?: ActionType;
+  ref?: string;
+  fileName?: string;
+  fileSize?: number | null;
+  mimeType?: string;
+};
+
+describe("transformMessages attachments", () => {
+  it("maps message.attachments to fileRef actions with a mailbox:uid:partNumber ref", () => {
+    const m = msg({
+      uid: 11,
+      mailbox: "INBOX",
+      attachments: [
+        { partNumber: "2", fileName: "invoice.pdf", mimeType: "application/pdf", size: 1234, encoding: "base64" },
+      ],
+    });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions).toHaveLength(1);
+    expect(note.actions![0]).toEqual({
+      type: ActionType.fileRef,
+      ref: "INBOX:11:2",
+      fileName: "invoice.pdf",
+      fileSize: 1234,
+      mimeType: "application/pdf",
+    });
+  });
+
+  it("maps multiple attachment parts to multiple fileRef actions", () => {
+    const m = msg({
+      uid: 12,
+      attachments: [
+        { partNumber: "2", fileName: "a.png", mimeType: "image/png", size: 10, encoding: "base64" },
+        { partNumber: "3", fileName: "b.png", mimeType: "image/png", size: 20, encoding: "base64" },
+      ],
+    });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions?.map((a) => a.ref)).toEqual(["INBOX:12:2", "INBOX:12:3"]);
+  });
+
+  it("encodes the message's own mailbox (e.g. Sent) into the ref, not a hardcoded INBOX", () => {
+    const m = msg({
+      uid: 13,
+      mailbox: "Sent Messages",
+      attachments: [
+        { partNumber: "2", fileName: "doc.pdf", mimeType: "application/pdf", size: 99, encoding: "base64" },
+      ],
+    });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions![0].ref).toBe("Sent%20Messages:13:2");
+  });
+
+  it("leaves actions unset (not an empty array) for a message with no attachments", () => {
+    const m = msg({ uid: 14 });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions).toBeUndefined();
   });
 });

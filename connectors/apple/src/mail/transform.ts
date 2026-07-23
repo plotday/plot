@@ -1,6 +1,7 @@
 import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
-import type { NewContact, NewLinkWithNotes } from "@plotday/twister";
+import { ActionType, type Action, type NewContact, type NewLinkWithNotes } from "@plotday/twister";
 
+import { buildAttachmentRef } from "./attachments";
 import { looksLikeHtml } from "./html";
 
 /** Strip surrounding angle brackets and whitespace from a Message-ID. */
@@ -20,6 +21,27 @@ export function rootMessageId(msg: ImapMessage): string | null {
 /** Global dedup key for a mail thread. */
 export function mailSource(rootId: string): string {
   return `icloud-mail:thread:${rootId}`;
+}
+
+/**
+ * An `ImapMessage` tagged with the mailbox it was fetched from. `sync.ts`
+ * fetches INBOX and Sent separately then merges them into one
+ * `transformMessages` call (see the docstring below), so the mailbox tag is
+ * the only way to build a correct attachment ref once the arrays are
+ * combined — UIDs are only unique within a single mailbox.
+ */
+export type MailMessage = ImapMessage & { mailbox: string };
+
+/** Build this message's `fileRef` actions from its attachment parts, or undefined when none. */
+function attachmentActions(m: MailMessage): Action[] | undefined {
+  if (!m.attachments || m.attachments.length === 0) return undefined;
+  return m.attachments.map((a) => ({
+    type: ActionType.fileRef as ActionType.fileRef,
+    ref: buildAttachmentRef(m.mailbox, m.uid, a.partNumber),
+    fileName: a.fileName,
+    fileSize: a.size,
+    mimeType: a.mimeType,
+  }));
 }
 
 export type TransformCtx = {
@@ -81,13 +103,13 @@ function bodyOf(msg: ImapMessage): { content: string; contentType: "html" | "tex
  * instead of `authoredBySelf` — an accepted minor edge case.)
  */
 export function transformMessages(
-  messages: ImapMessage[],
+  messages: MailMessage[],
   ctx: TransformCtx
 ): NewLinkWithNotes[] {
   const ownEmail = ctx.appleId.toLowerCase();
   const newUids = ctx.newUids ? new Set(ctx.newUids) : undefined;
   // Group by thread root (skip messages with no id to thread on).
-  const byRoot = new Map<string, ImapMessage[]>();
+  const byRoot = new Map<string, MailMessage[]>();
   for (const m of messages) {
     const root = rootMessageId(m);
     if (!root) continue;
@@ -118,6 +140,7 @@ export function transformMessages(
       const body = bodyOf(m);
       const from = m.from && m.from[0] ? m.from[0] : null;
       const isOwner = from?.address.toLowerCase() === ownEmail;
+      const actions = attachmentActions(m);
       return {
         key,
         content: body?.content ?? "",
@@ -127,6 +150,7 @@ export function transformMessages(
         ...(isOwner
           ? { authoredBySelf: true as const }
           : { author: from ? toContact(from) : null }),
+        ...(actions ? { actions } : {}),
       };
     });
 

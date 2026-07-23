@@ -53,3 +53,109 @@ describe("Apple.getAccountIdentity", () => {
     expect(result).toBeNull();
   });
 });
+
+describe("Apple.downloadAttachment", () => {
+  /** Fake self exposing just enough of `this.tools`/`this.set`/`this.get`/
+   *  `this.clear` for `buildMailHost()` (called internally by the override)
+   *  to construct a working MailHost. */
+  function makeSelf(opts: {
+    selectedMailboxes?: string[];
+    fetchedParts?: Array<{ uid: number; partNumber: string }>;
+    bytes?: Uint8Array;
+    disconnected?: { count: number };
+    fetchAttachmentImpl?: (
+      session: string,
+      uid: number,
+      partNumber: string
+    ) => Promise<Uint8Array>;
+  }) {
+    const selectedMailboxes = opts.selectedMailboxes ?? [];
+    const fetchedParts = opts.fetchedParts ?? [];
+    const disconnected = opts.disconnected ?? { count: 0 };
+    // downloadAttachment() calls the private buildMailHost() helper. It's
+    // not inherited by a bare object literal (unlike getAccountIdentity
+    // above, which touches no private helper), and `tools` is a getter-only
+    // accessor on the real Twist base class so we can't route through
+    // Object.create(Apple.prototype) either — instead, copy the real
+    // buildMailHost implementation onto `self` as an own property so
+    // `this.buildMailHost()` inside downloadAttachment resolves to it,
+    // called with `this` bound to our plain fake.
+    const buildMailHost = (
+      Apple.prototype as unknown as { buildMailHost: () => unknown }
+    ).buildMailHost;
+    return {
+      buildMailHost,
+      tools: {
+        options: { appleId: "me@icloud.com", appPassword: "pw" },
+        imap: {
+          connect: async () => "session-1",
+          selectMailbox: async (_session: string, mailbox: string) => {
+            selectedMailboxes.push(mailbox);
+            return { name: mailbox, exists: 0, recent: 0, uidValidity: 1, uidNext: 1 };
+          },
+          fetchAttachment:
+            opts.fetchAttachmentImpl ??
+            (async (_session: string, uid: number, partNumber: string) => {
+              fetchedParts.push({ uid, partNumber });
+              return opts.bytes ?? new Uint8Array([1, 2, 3]);
+            }),
+          disconnect: async () => {
+            disconnected.count += 1;
+          },
+        },
+        smtp: {},
+        integrations: {},
+        files: {},
+      },
+      set: async () => {},
+      get: async () => undefined,
+      clear: async () => {},
+    } as unknown as Apple;
+  }
+
+  it("selects the ref's mailbox and fetches the part's bytes", async () => {
+    const selectedMailboxes: string[] = [];
+    const fetchedParts: Array<{ uid: number; partNumber: string }> = [];
+    const bytes = new Uint8Array([5, 6, 7]);
+    const self = makeSelf({ selectedMailboxes, fetchedParts, bytes });
+
+    const result = await Apple.prototype.downloadAttachment.call(self, "INBOX:42:2");
+
+    expect(selectedMailboxes).toEqual(["INBOX"]);
+    expect(fetchedParts).toEqual([{ uid: 42, partNumber: "2" }]);
+    expect(result).toEqual({ body: bytes, mimeType: "application/octet-stream" });
+  });
+
+  it("resolves a non-INBOX mailbox encoded in the ref", async () => {
+    const selectedMailboxes: string[] = [];
+    const fetchedParts: Array<{ uid: number; partNumber: string }> = [];
+    const self = makeSelf({ selectedMailboxes, fetchedParts });
+
+    await Apple.prototype.downloadAttachment.call(self, "Sent%20Messages:7:2.1");
+
+    expect(selectedMailboxes).toEqual(["Sent Messages"]);
+    expect(fetchedParts).toEqual([{ uid: 7, partNumber: "2.1" }]);
+  });
+
+  it("disconnects the IMAP session even when fetchAttachment throws", async () => {
+    const disconnected = { count: 0 };
+    const self = makeSelf({
+      disconnected,
+      fetchAttachmentImpl: async () => {
+        throw new Error("part not found");
+      },
+    });
+
+    await expect(
+      Apple.prototype.downloadAttachment.call(self, "INBOX:42:2")
+    ).rejects.toThrow("part not found");
+    expect(disconnected.count).toBe(1);
+  });
+
+  it("throws a clear error for a malformed ref", async () => {
+    const self = makeSelf({});
+    await expect(
+      Apple.prototype.downloadAttachment.call(self, "not-a-valid-ref")
+    ).rejects.toThrow(/Invalid Apple Mail attachment ref/);
+  });
+});

@@ -8,6 +8,7 @@ import type {
   ImapSearchCriteria,
   ImapSession,
 } from "@plotday/twister/tools/imap";
+import type { Files } from "@plotday/twister/tools/files";
 import type { Integrations } from "@plotday/twister/tools/integrations";
 import type { Smtp } from "@plotday/twister/tools/smtp";
 import type { NewLinkWithNotes } from "@plotday/twister";
@@ -91,11 +92,15 @@ function buildFakeHost(opts: {
   // Not exercised by this file's tests (sync-in only); satisfies MailHost's
   // required `smtp` field. See write.test.ts (Task 5) for real SMTP mocking.
   const smtp = {} as unknown as Smtp;
+  // Not exercised by this file's tests (sync-in only, no attachment
+  // download/write-back); satisfies MailHost's required `files` field.
+  const files = {} as unknown as Files;
 
   const host: MailHost = {
     imap,
     smtp,
     integrations,
+    files,
     appleId: opts.appleId,
     appPassword: "app-specific-password",
     set: async <T>(key: string, value: T): Promise<void> => {

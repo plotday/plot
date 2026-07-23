@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CreateLinkDraft, Thread } from "@plotday/twister";
+import { ActionType, type CreateLinkDraft, type Thread } from "@plotday/twister";
 import type { Note } from "@plotday/twister/plot";
 import type { ImapMessage } from "@plotday/twister/tools/imap";
 import type { SmtpMessage, SmtpSendResult } from "@plotday/twister/tools/smtp";
@@ -19,9 +19,16 @@ function mockHost(opts: {
   inboxMessages?: Partial<ImapMessage>[];
   sendError?: Error;
   searchError?: Error;
-}): { host: MailHost; sent: SmtpMessage[]; flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> } {
+  files?: Record<string, { data: Uint8Array; fileName: string; mimeType: string; fileSize: number }>;
+}): {
+  host: MailHost;
+  sent: SmtpMessage[];
+  flagCalls: Array<{ uids: number[]; flags: string[]; op: string }>;
+  fileReads: string[];
+} {
   const sent: SmtpMessage[] = [];
   const flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> = [];
+  const fileReads: string[] = [];
   const uids = (opts.inboxMessages ?? []).map((_m, i) => i + 1);
   const imap = {
     connect: async () => "s",
@@ -49,10 +56,19 @@ function mockHost(opts: {
       return { messageId: "<sent-123@plot.day>", accepted: m.to.map((a) => a.address), rejected: [] };
     },
   };
+  const files = {
+    read: vi.fn(async (fileId: string) => {
+      fileReads.push(fileId);
+      const file = opts.files?.[fileId];
+      if (!file) throw new Error(`no such file: ${fileId}`);
+      return file;
+    }),
+  };
   const store = new Map<string, unknown>();
   const host = {
     imap, smtp,
     integrations: {} as never,
+    files,
     appleId: "me@icloud.com",
     appPassword: "pw",
     set: vi.fn(async (key: string, value: unknown) => {
@@ -62,7 +78,7 @@ function mockHost(opts: {
     clear: async () => {},
     channelSyncCompleted: async () => {},
   } as unknown as MailHost;
-  return { host, sent, flagCalls };
+  return { host, sent, flagCalls, fileReads };
 }
 
 function mailThread(over: Partial<Thread> = {}): Thread {
@@ -149,6 +165,49 @@ describe("onNoteCreatedFn", () => {
     expect(sent[0].inReplyTo).toBe("<root@x.com>");
     expect(out).toEqual({ key: "sent-123@plot.day", deliveryError: null });
   });
+
+  it("reads ActionType.file note actions via Files.read and attaches their bytes", async () => {
+    const data = new Uint8Array([1, 2, 3]);
+    const { host, sent, fileReads } = mockHost({
+      inboxMessages: [{ messageId: "<root@x.com>", from: [{ address: "jane@x.com" }], subject: "Lunch?", date: new Date() }],
+      files: { "file-1": { data, fileName: "photo.png", mimeType: "image/png", fileSize: 3 } },
+    });
+    const note = replyNote({
+      actions: [
+        { type: ActionType.file, fileId: "file-1", fileName: "photo.png", fileSize: 3, mimeType: "image/png" },
+      ] as never,
+    });
+    await onNoteCreatedFn(host, note, mailThread());
+    expect(fileReads).toEqual(["file-1"]);
+    expect(sent[0].attachments).toEqual([
+      { fileName: "photo.png", mimeType: "image/png", data },
+    ]);
+  });
+
+  it("omits attachments entirely (no empty array) when the note has no file actions", async () => {
+    const { host, sent } = mockHost({
+      inboxMessages: [{ messageId: "<root@x.com>", from: [{ address: "jane@x.com" }], subject: "Lunch?", date: new Date() }],
+    });
+    await onNoteCreatedFn(host, replyNote(), mailThread());
+    expect(sent[0].attachments).toBeUndefined();
+  });
+
+  it("skips a file that fails to read and still sends the rest of the message", async () => {
+    const { host, sent, fileReads } = mockHost({
+      inboxMessages: [{ messageId: "<root@x.com>", from: [{ address: "jane@x.com" }], subject: "Lunch?", date: new Date() }],
+      files: {}, // "missing" throws inside the mock files.read
+    });
+    const note = replyNote({
+      actions: [
+        { type: ActionType.file, fileId: "missing", fileName: "x.png", fileSize: 1, mimeType: "image/png" },
+      ] as never,
+    });
+    const out = await onNoteCreatedFn(host, note, mailThread());
+    expect(fileReads).toEqual(["missing"]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].attachments).toBeUndefined();
+    expect(out).toEqual({ key: "sent-123@plot.day", deliveryError: null });
+  });
 });
 
 function emailDraft(over: Partial<CreateLinkDraft> = {}): CreateLinkDraft {
@@ -201,6 +260,27 @@ describe("onCreateLinkFn", () => {
     const { host } = mockHost({});
     const out = await onCreateLinkFn(host, emailDraft({ recipients: [] as never, inviteEmails: [] }));
     expect(out?.originatingNote?.deliveryError).toMatchObject({ code: "no_recipients" });
+  });
+
+  it("reads draft.attachments via Files.read and attaches their bytes to the composed mail", async () => {
+    const data = new Uint8Array([9, 9, 9]);
+    const { host, sent, fileReads } = mockHost({
+      files: { "file-2": { data, fileName: "agenda.pdf", mimeType: "application/pdf", fileSize: 3 } },
+    });
+    const draft = emailDraft({
+      attachments: [{ fileId: "file-2", fileName: "agenda.pdf", mimeType: "application/pdf", fileSize: 3 }],
+    } as never);
+    await onCreateLinkFn(host, draft, new Date("2026-07-20T00:00:00Z"));
+    expect(fileReads).toEqual(["file-2"]);
+    expect(sent[0].attachments).toEqual([
+      { fileName: "agenda.pdf", mimeType: "application/pdf", data },
+    ]);
+  });
+
+  it("omits attachments entirely when the draft has none", async () => {
+    const { host, sent } = mockHost({});
+    await onCreateLinkFn(host, emailDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(sent[0].attachments).toBeUndefined();
   });
 
   it("dedupes an identical re-invoked draft inside the window, but re-sends on different content or after the window", async () => {

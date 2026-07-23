@@ -30,6 +30,7 @@ import {
   Integrations,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
+import { Files } from "@plotday/twister/tools/files";
 import { Imap } from "@plotday/twister/tools/imap";
 import { Network } from "@plotday/twister/tools/network";
 import { Smtp } from "@plotday/twister/tools/smtp";
@@ -46,6 +47,7 @@ import {
   updateAttendeePartstat,
 } from "./calendar/ics-parser";
 import { composeChannels } from "./compose";
+import { downloadAttachmentFn } from "./mail/attachments";
 import { getMailChannels } from "./mail/channels";
 import { ICLOUD_IMAP } from "./mail/imap-fetch";
 import type { MailHost } from "./mail/mail-host";
@@ -211,6 +213,7 @@ export class Apple extends Connector<Apple> {
         urls: ["https://caldav.icloud.com/*", "https://*.icloud.com/*"],
       }),
       tasks: build(Tasks),
+      files: build(Files),
     };
   }
 
@@ -282,6 +285,7 @@ export class Apple extends Connector<Apple> {
       imap: this.tools.imap,
       smtp: this.tools.smtp,
       integrations: this.tools.integrations,
+      files: this.tools.files,
       appleId: this.tools.options.appleId as string,
       appPassword: this.tools.options.appPassword as string,
       set: async <T>(key: string, value: T) => {
@@ -735,6 +739,17 @@ export class Apple extends Connector<Apple> {
     options: { date?: Date }
   ): Promise<void> {
     await onThreadToDoFn(this.buildMailHost(), thread, actor, todo, options);
+  }
+
+  /**
+   * Resolve an inbound mail attachment's bytes for download. `ref` is the
+   * opaque `<mailbox>:<uid>:<partNumber>` value transform.ts emitted on the
+   * note's `fileRef` action — see mail/attachments.ts.
+   */
+  override async downloadAttachment(
+    ref: string
+  ): Promise<{ body: Uint8Array; mimeType: string }> {
+    return downloadAttachmentFn(this.buildMailHost(), ref);
   }
 
   // ---- Sync Logic ----

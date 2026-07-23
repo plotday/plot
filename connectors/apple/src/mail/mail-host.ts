@@ -1,3 +1,4 @@
+import type { Files } from "@plotday/twister/tools/files";
 import type { Imap } from "@plotday/twister/tools/imap";
 import type { Integrations } from "@plotday/twister/tools/integrations";
 import type { Smtp } from "@plotday/twister/tools/smtp";
@@ -21,6 +22,7 @@ export interface MailHost {
   imap: Imap;
   smtp: Smtp;
   integrations: Integrations;
+  files: Files;
   appleId: string;
   appPassword: string;
   set<T>(key: string, value: T): Promise<void>;

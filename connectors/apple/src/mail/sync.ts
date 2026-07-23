@@ -52,11 +52,21 @@ async function runInitialBackfill(
     sent = await fetchUidRange(host, session, sentBox, sentUids);
   }
 
-  const links = transformMessages([...inbox, ...sent], {
-    channelId,
-    appleId: host.appleId,
-    initialSync: true,
-  });
+  // Tag each message with its originating mailbox — UIDs are only unique
+  // within a single mailbox, so this is required to build correct
+  // attachment refs once INBOX and Sent are merged into one call. See
+  // transform.ts's `MailMessage` doc.
+  const links = transformMessages(
+    [
+      ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
+      ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
+    ],
+    {
+      channelId,
+      appleId: host.appleId,
+      initialSync: true,
+    }
+  );
   if (links.length > 0) await host.integrations.saveLinks(links);
 
   const lastUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
@@ -143,14 +153,22 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       sent = await fetchUidRange(host, session, sentBox, sentUids);
     }
 
-    const links = transformMessages([...inbox, ...sent], {
-      channelId,
-      appleId: host.appleId,
-      initialSync: false,
-      // Only these newly-arrived UIDs may (re)mark a thread unread; the
-      // recent-window rescan messages are read-state propagation only.
-      newUids,
-    });
+    // See runInitialBackfill: tag each message with its originating mailbox
+    // for correct attachment refs once INBOX and Sent are merged.
+    const links = transformMessages(
+      [
+        ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
+        ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
+      ],
+      {
+        channelId,
+        appleId: host.appleId,
+        initialSync: false,
+        // Only these newly-arrived UIDs may (re)mark a thread unread; the
+        // recent-window rescan messages are read-state propagation only.
+        newUids,
+      }
+    );
     if (links.length > 0) await host.integrations.saveLinks(links);
 
     const newMaxUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
