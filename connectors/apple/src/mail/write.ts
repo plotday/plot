@@ -467,9 +467,21 @@ export async function onThreadReadFn(
 }
 
 /**
- * To-do write-back: mark the thread's INBOX messages \Flagged (to-do) or clear
- * it. Write-only — the read path does not (yet) ingest \Flagged into Plot's
- * to-do state, so there is no echo.
+ * To-do write-back: mark the thread's INBOX messages \Flagged (to-do) or
+ * clear it. Bidirectional: the read path (`reconcileTodoFlags` in sync.ts)
+ * also ingests \Flagged into Plot's to-do state, so an echo-dedup marker is
+ * required here. The marker is set to the desired state BEFORE the IMAP
+ * write — mirroring Gmail's `starred:<id>` ordering (`onThreadToDoFn` in
+ * `google/src/mail/sync.ts`) — so the read pass that next re-fetches this
+ * thread (poll or push-drain) sees `isFlagged === wasFlagged` for a change
+ * that originated here, and does not re-propagate it back into Plot.
+ *
+ * Set unconditionally, even when the IMAP write itself defers to the
+ * writeback retry queue (Task 5): the to-do state already lives in Plot, so
+ * the marker should reflect that intent regardless of when — or whether —
+ * the deferred write ultimately lands (see write-parity recon for the
+ * bounded edge case where a poison-dropped write leaves the marker
+ * momentarily ahead of IMAP).
  */
 export async function onThreadToDoFn(
   host: MailHost,
@@ -478,5 +490,8 @@ export async function onThreadToDoFn(
   todo: boolean,
   _options: { date?: Date }
 ): Promise<void> {
+  const rootId = mailRootId(thread);
+  if (!rootId) return;
+  await host.set(`flagged:${rootId}`, todo);
   await setThreadFlag(host, thread, "\\Flagged", todo ? "add" : "remove");
 }

@@ -1,8 +1,9 @@
+import type { ActorId } from "@plotday/twister";
 import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
 import type { MailHost, MailSyncState } from "./mail-host";
-import { transformMessages } from "./transform";
+import { mailSource, rootMessageId, transformMessages, type MailMessage } from "./transform";
 
 const DEFAULT_HISTORY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RECENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -19,6 +20,71 @@ function resolveSinceFloor(syncHistoryMin: string | undefined): Date {
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return new Date(Date.now() - DEFAULT_HISTORY_MS);
+}
+
+/**
+ * Read-direction half of the to-do ↔ \Flagged loop (write direction is
+ * `onThreadToDoFn` in write.ts). Groups `messages` by thread root
+ * (`rootMessageId`), computes whether any message in the thread carries
+ * `\Flagged`, and diffs that against the stored `flagged:<rootId>` marker:
+ *
+ *  - On `initialSync`, the marker is SEEDED from the current \Flagged state
+ *    for every thread, but `setThreadToDo` is never called — a message
+ *    flagged years before the connection ever existed must not spam a
+ *    fresh to-do on first connect (mirrors the initial-sync unread
+ *    discipline in `transformMessages`).
+ *  - Otherwise (incremental), a state change since the marker propagates
+ *    once via `integrations.setThreadToDo` and updates the marker. An
+ *    unchanged state — including the write path's own just-set marker (see
+ *    `onThreadToDoFn` in write.ts) — is a no-op. That "no-op on no change"
+ *    is what breaks the echo loop: our own Plot→\Flagged write is
+ *    indistinguishable here from "nothing changed since we last looked".
+ *
+ * Requires a stored `auth_actor_id` (set by `Apple.activate()` on connect)
+ * to know who to attribute the to-do to. Older connections that predate
+ * that override have no marker or actor id yet, so the whole reconciliation
+ * is skipped cleanly — no crash, no marker writes — until a future
+ * activate/reconnect (or re-baseline) seeds it.
+ *
+ * Ordering hazard (accepted, same class Gmail ships with): the write-back
+ * queue's ~2s coalescing drain can complete its multi-round-trip IMAP
+ * `setFlags` concurrently, in a different worker, with a read pass landing
+ * here. A read pass that lands between the write path's marker-set and the
+ * drain's flag write completing could read stale \Flagged and momentarily
+ * propagate the OLD value back to Plot. Not locked against — bounded, and
+ * self-corrects on the next poll.
+ */
+export async function reconcileTodoFlags(
+  host: MailHost,
+  messages: MailMessage[],
+  initialSync: boolean
+): Promise<void> {
+  const actorId = await host.get<ActorId>("auth_actor_id");
+  if (!actorId) return;
+
+  const byRoot = new Map<string, MailMessage[]>();
+  for (const m of messages) {
+    const root = rootMessageId(m);
+    if (!root) continue;
+    const list = byRoot.get(root) ?? [];
+    list.push(m);
+    byRoot.set(root, list);
+  }
+
+  for (const [root, msgs] of byRoot.entries()) {
+    const isFlagged = msgs.some((m) => m.flags.includes("\\Flagged"));
+
+    if (initialSync) {
+      await host.set(`flagged:${root}`, isFlagged);
+      continue;
+    }
+
+    const wasFlagged = await host.get<boolean>(`flagged:${root}`);
+    if (isFlagged !== !!wasFlagged) {
+      await host.integrations.setThreadToDo(mailSource(root), actorId, isFlagged, {});
+      await host.set(`flagged:${root}`, isFlagged);
+    }
+  }
 }
 
 /**
@@ -56,18 +122,20 @@ async function runInitialBackfill(
   // within a single mailbox, so this is required to build correct
   // attachment refs once INBOX and Sent are merged into one call. See
   // transform.ts's `MailMessage` doc.
-  const links = transformMessages(
-    [
-      ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
-      ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
-    ],
-    {
-      channelId,
-      appleId: host.appleId,
-      initialSync: true,
-    }
-  );
+  const merged: MailMessage[] = [
+    ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
+    ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
+  ];
+  const links = transformMessages(merged, {
+    channelId,
+    appleId: host.appleId,
+    initialSync: true,
+  });
   if (links.length > 0) await host.integrations.saveLinks(links);
+
+  // Seed the \Flagged↔to-do marker from history without propagating: see
+  // reconcileTodoFlags's doc.
+  await reconcileTodoFlags(host, merged, true);
 
   const lastUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
   const state: MailSyncState = {
@@ -155,21 +223,23 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
 
     // See runInitialBackfill: tag each message with its originating mailbox
     // for correct attachment refs once INBOX and Sent are merged.
-    const links = transformMessages(
-      [
-        ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
-        ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
-      ],
-      {
-        channelId,
-        appleId: host.appleId,
-        initialSync: false,
-        // Only these newly-arrived UIDs may (re)mark a thread unread; the
-        // recent-window rescan messages are read-state propagation only.
-        newUids,
-      }
-    );
+    const merged: MailMessage[] = [
+      ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
+      ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
+    ];
+    const links = transformMessages(merged, {
+      channelId,
+      appleId: host.appleId,
+      initialSync: false,
+      // Only these newly-arrived UIDs may (re)mark a thread unread; the
+      // recent-window rescan messages are read-state propagation only.
+      newUids,
+    });
     if (links.length > 0) await host.integrations.saveLinks(links);
+
+    // Same recent-window messages double as the \Flagged rescan — any flag
+    // change (like the \Seen rescan above) shows up within this window.
+    await reconcileTodoFlags(host, merged, false);
 
     const newMaxUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
     const nextState: MailSyncState = {

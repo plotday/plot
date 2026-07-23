@@ -77,7 +77,10 @@ function mockHost(opts: {
   const store = new Map<string, unknown>();
   const host = {
     imap, smtp,
-    integrations: {} as never,
+    // Only `setThreadToDo` is exercised by these tests (the read-direction
+    // reconciliation lives in sync.ts/sync.test.ts); stubbed here so any
+    // future write.ts code path that reaches for it doesn't hit `undefined`.
+    integrations: { setThreadToDo: vi.fn() } as never,
     files,
     appleId: "me@icloud.com",
     appPassword: "pw",
@@ -506,6 +509,25 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
     expect(todo.flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Flagged"], op: "add" }]);
   });
 
+  it("sets the flagged:<rootId> echo-dedup marker BEFORE writing \\Flagged over IMAP", async () => {
+    const { host, flagCalls } = mockHost({ inboxMessages: inbox });
+    const setFlagsSpy = vi.spyOn(host.imap, "setFlags");
+
+    await onThreadToDoFn(host, mailThread(), {} as never, true, {});
+
+    expect(host.set).toHaveBeenCalledWith("flagged:root@x.com", true);
+    const setCallOrder = (host.set as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    const setFlagsCallOrder = setFlagsSpy.mock.invocationCallOrder[0];
+    expect(setCallOrder).toBeLessThan(setFlagsCallOrder);
+    expect(flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Flagged"], op: "add" }]);
+  });
+
+  it("marks the marker false when clearing the to-do", async () => {
+    const { host } = mockHost({ inboxMessages: inbox });
+    await onThreadToDoFn(host, mailThread(), {} as never, false, {});
+    expect(host.set).toHaveBeenCalledWith("flagged:root@x.com", false);
+  });
+
   it("no-ops when nothing resolves or the thread isn't apple-mail — not a failure, so no defer/drain", async () => {
     const none = mockHost({ inboxMessages: [] });
     await onThreadReadFn(none.host, mailThread(), {} as never, false);
@@ -548,5 +570,9 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
       operation: "add",
     });
     expect(queuedDrains).toEqual(["todo:root@x.com"]);
+    // The echo-dedup marker is set unconditionally BEFORE the IMAP attempt,
+    // so it still reflects Plot's intent even though the write itself
+    // deferred to the writeback retry queue (see onThreadToDoFn's doc).
+    expect(host.set).toHaveBeenCalledWith("flagged:root@x.com", true);
   });
 });

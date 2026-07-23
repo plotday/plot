@@ -55,6 +55,45 @@ describe("Apple.getAccountIdentity", () => {
   });
 });
 
+describe("Apple.activate", () => {
+  /** Fake self exposing just enough of `this.tools`/`this.set`/`this.get`/
+   *  `this.clear` for `buildMailHost()` (copied onto `self` the same way
+   *  the describe blocks below do) to construct a working MailHost. */
+  function makeSelf() {
+    const store = new Map<string, unknown>();
+    const buildMailHost = (
+      Apple.prototype as unknown as { buildMailHost: () => unknown }
+    ).buildMailHost;
+    const self = {
+      buildMailHost,
+      tools: {
+        options: { appleId: "me@icloud.com", appPassword: "pw" },
+        imap: {},
+        smtp: {},
+        integrations: {},
+        files: {},
+      },
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      get: async (key: string) => store.get(key),
+      clear: async () => {},
+    } as unknown as Apple;
+    return { self, store };
+  }
+
+  it("stores the activating actor's id under the mail: namespace", async () => {
+    const { self, store } = makeSelf();
+
+    await Apple.prototype.activate.call(self, {
+      auth: {} as never,
+      actor: { id: "actor-123" } as never,
+    });
+
+    expect(store.get("mail:auth_actor_id")).toBe("actor-123");
+  });
+});
+
 describe("Apple.downloadAttachment", () => {
   /** Fake self exposing just enough of `this.tools`/`this.set`/`this.get`/
    *  `this.clear` for `buildMailHost()` (called internally by the override)

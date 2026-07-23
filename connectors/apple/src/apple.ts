@@ -281,6 +281,22 @@ export class Apple extends Connector<Apple> {
   }
 
   /**
+   * Records the connecting user's actor id so mail sync's to-do↔\Flagged
+   * reconciliation (`reconcileTodoFlags` in `mail/sync.ts`) knows who to
+   * attribute a flag change made directly in Apple Mail to. Mirrors Gmail's
+   * identical override (`google/src/google.ts`), which the same
+   * reconciliation pattern is based on. Apple has no OAuth (Options-based
+   * credentials instead), but `activate()` still fires on connect with
+   * `context.actor` populated from the owner contact.
+   */
+  override async activate(context: {
+    auth: Authorization;
+    actor: Actor;
+  }): Promise<void> {
+    await this.buildMailHost().set("auth_actor_id", context.actor.id);
+  }
+
+  /**
    * Adapter the mail/* pure sync functions depend on. Storage keys are
    * namespaced with a "mail:" prefix here so mail's per-channel cursors can
    * never collide with calendar's `sync_state_<id>` etc. keys — callers in
