@@ -16,12 +16,13 @@
  * references back to the concrete connector's spied instance methods — or it
  * returns a descriptor and lets the caller own the scheduling.
  */
-
+import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 import {
   type CreateLinkDraft,
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
 } from "@plotday/twister";
+import type { Cta } from "@plotday/twister/facets";
 import { ActionType } from "@plotday/twister/plot";
 import type {
   Actor,
@@ -32,18 +33,15 @@ import type {
   Thread,
 } from "@plotday/twister/plot";
 import type { WebhookRequest } from "@plotday/twister/tools/network";
-import type { Cta } from "@plotday/twister/facets";
-
-import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 
 import {
+  type AttachmentData,
   GmailApi,
   GmailApiError,
-  UserInfoError,
   type GmailMessage,
   type GmailThread,
-  type AttachmentData,
   type SyncState,
+  UserInfoError,
   buildForwardMessage,
   buildNewEmailMessage,
   buildReactionMessage,
@@ -63,7 +61,10 @@ import {
   transformGmailThread,
 } from "./gmail-api";
 import { gmailFacets } from "./gmail-facets";
-import { classifySendError, type ClassifiedSendError } from "./gmail-send-errors";
+import {
+  type ClassifiedSendError,
+  classifySendError,
+} from "./gmail-send-errors";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
@@ -508,7 +509,9 @@ export function mergePendingThreads(
     const attempts = (attemptsById.get(id) ?? 0) + 1;
     if (attempts > MAX_THREAD_FETCH_ATTEMPTS) {
       console.error(
-        `[gmail] giving up on thread ${id} after ${attempts - 1} failed fetch attempts; its change may be lost`
+        `[gmail] giving up on thread ${id} after ${
+          attempts - 1
+        } failed fetch attempts; its change may be lost`
       );
       continue;
     }
@@ -648,7 +651,9 @@ export async function findChannelForMessageFn(
       if (!token?.token) continue;
       const api = new GmailApi(token.token);
       // Probe with minimal format (just confirms the message exists for this auth)
-      await api.call(`/messages/${messageId}`, { params: { format: "minimal" } });
+      await api.call(`/messages/${messageId}`, {
+        params: { format: "minimal" },
+      });
       // Found it — cache and return
       await host.set(`gmail:msg-channel:${messageId}`, channelId);
       return channelId;
@@ -840,8 +845,9 @@ export async function setupMailboxWebhookFn(
   // Seed the incremental cursor so the first webhook has somewhere to
   // start. Gmail's watch returns the current historyId; any change after
   // this point will appear in history.list from this seed.
-  const existingIncremental =
-    await host.get<{ historyId?: string }>("incremental_state");
+  const existingIncremental = await host.get<{ historyId?: string }>(
+    "incremental_state"
+  );
   if (!existingIncremental?.historyId) {
     await host.set("incremental_state", {
       historyId: watchResult.historyId,
@@ -1436,12 +1442,10 @@ export async function processEmailThreadsFn(
   // message (hundreds per pass), which dominated the pass's wall-clock time.
   const messageChannelEntries: [string, unknown][] = transformed.flatMap(
     ({ thread, channelId }) =>
-      (thread.messages ?? []).map(
-        (message): [string, unknown] => [
-          `gmail:msg-channel:${message.id}`,
-          channelId,
-        ]
-      )
+      (thread.messages ?? []).map((message): [string, unknown] => [
+        `gmail:msg-channel:${message.id}`,
+        channelId,
+      ])
   );
   if (messageChannelEntries.length > 0) {
     await host.setMany(messageChannelEntries);
@@ -1493,7 +1497,7 @@ async function saveTransformedThread(
       thread.messages?.some((m) => m.labelIds?.includes("UNREAD")) ?? false;
 
     if (initialSync) {
-      plotThread.unread = false;
+      plotThread.unread = isUnread;
       plotThread.archived = false;
       await host.set(`unread:${thread.id}`, isUnread);
     } else {
@@ -2029,7 +2033,10 @@ export async function onNoteCreatedFn(
     attachments: attachments.length > 0 ? attachments : undefined,
   });
 
-  const sent = await sendWithRetry(() => api.sendMessage(raw, threadId), "reply");
+  const sent = await sendWithRetry(
+    () => api.sendMessage(raw, threadId),
+    "reply"
+  );
   if (!sent.ok) {
     // Surface the failure to the user (thread goes unread + "Failed to send"
     // affordance). Do NOT set the idempotency guard, so an explicit retry
@@ -2091,7 +2098,8 @@ export async function sendCalendarEventReplyFn(
     const allowed = new Set<ActorId>(note.accessContacts);
     accessContactEmails = new Set<string>();
     for (const c of thread.accessContacts ?? []) {
-      if (allowed.has(c.id) && c.email) accessContactEmails.add(c.email.toLowerCase());
+      if (allowed.has(c.id) && c.email)
+        accessContactEmails.add(c.email.toLowerCase());
     }
   }
 
@@ -2104,9 +2112,16 @@ export async function sendCalendarEventReplyFn(
   });
 
   if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
-    const choseOthers = (note.accessContacts ?? []).some((id) => id !== note.author.id);
+    const choseOthers = (note.accessContacts ?? []).some(
+      (id) => id !== note.author.id
+    );
     if (choseOthers) {
-      return { deliveryError: { code: "no_recipients", message: "This reply had no deliverable recipients." } };
+      return {
+        deliveryError: {
+          code: "no_recipients",
+          message: "This reply had no deliverable recipients.",
+        },
+      };
     }
     return; // private note or empty roster
   }
@@ -2123,7 +2138,10 @@ export async function sendCalendarEventReplyFn(
   const bccHeaders = bcc.map((a) => formatFromHeader(a.address, a.name));
 
   const stateKey = `cal-reply:${iCalUID}`;
-  const prior = await host.get<{ gmailThreadId: string; seedMessageId: string }>(stateKey);
+  const prior = await host.get<{
+    gmailThreadId: string;
+    seedMessageId: string;
+  }>(stateKey);
 
   let sentId: string;
   if (!prior) {
@@ -2132,24 +2150,53 @@ export async function sendCalendarEventReplyFn(
     // one in verbatim produces a double-`@` malformed Message-ID. The
     // X-Plot-Event-UID header below still carries the raw iCalUID unchanged
     // — only this synthetic Message-ID needs to be token-safe.
-    const seedMessageId = `<plot-cal-${iCalUID.replace(/[^A-Za-z0-9._-]/g, "-")}-${note.id}@plot.day>`;
+    const seedMessageId = `<plot-cal-${iCalUID.replace(
+      /[^A-Za-z0-9._-]/g,
+      "-"
+    )}-${note.id}@plot.day>`;
     const raw = buildNewEmailMessage({
-      to: toHeaders, cc: ccHeaders, bcc: bccHeaders, from, subject, body: note.content ?? "",
+      to: toHeaders,
+      cc: ccHeaders,
+      bcc: bccHeaders,
+      from,
+      subject,
+      body: note.content ?? "",
       extraHeaders: [`Message-ID: ${seedMessageId}`, uidHeader],
     });
-    const sent = await sendWithRetry(() => api.sendNewMessage(raw), "cal-reply");
-    if (!sent.ok) return { deliveryError: { code: sent.error.code, message: sent.error.message } };
+    const sent = await sendWithRetry(
+      () => api.sendNewMessage(raw),
+      "cal-reply"
+    );
+    if (!sent.ok)
+      return {
+        deliveryError: { code: sent.error.code, message: sent.error.message },
+      };
     sentId = sent.result.id;
-    await host.set(stateKey, { gmailThreadId: sent.result.threadId, seedMessageId });
+    await host.set(stateKey, {
+      gmailThreadId: sent.result.threadId,
+      seedMessageId,
+    });
     await host.set(`sent:${sentId}`, true);
   } else {
     const raw = buildReplyMessage({
-      to: toHeaders, cc: ccHeaders, bcc: bccHeaders, from, subject, body: note.content ?? "",
-      messageId: prior.seedMessageId, references: prior.seedMessageId,
+      to: toHeaders,
+      cc: ccHeaders,
+      bcc: bccHeaders,
+      from,
+      subject,
+      body: note.content ?? "",
+      messageId: prior.seedMessageId,
+      references: prior.seedMessageId,
       extraHeaders: [uidHeader],
     });
-    const sent = await sendWithRetry(() => api.sendMessage(raw, prior.gmailThreadId), "cal-reply");
-    if (!sent.ok) return { deliveryError: { code: sent.error.code, message: sent.error.message } };
+    const sent = await sendWithRetry(
+      () => api.sendMessage(raw, prior.gmailThreadId),
+      "cal-reply"
+    );
+    if (!sent.ok)
+      return {
+        deliveryError: { code: sent.error.code, message: sent.error.message },
+      };
     sentId = sent.result.id;
     await host.set(`sent:${sentId}`, true);
   }
@@ -2416,7 +2463,11 @@ async function fetchOriginalAttachments(
       const binary = atob(padded);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      attachments.push({ fileName: part.fileName, mimeType: part.mimeType, data: bytes });
+      attachments.push({
+        fileName: part.fileName,
+        mimeType: part.mimeType,
+        data: bytes,
+      });
     } catch (err) {
       console.error(
         `[gmail] onCreateLink(forward): failed to fetch attachment ${part.partId} on message ${messageId}:`,
@@ -2479,7 +2530,8 @@ async function onCreateLinkForwardFn(
     else if (role === "bcc") bcc.push(formatted);
     else to.push(formatted);
   };
-  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role, r.name);
+  for (const r of draft.recipients ?? [])
+    addRecipient(r.externalAccountId, r.role, r.name);
   for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (to.length + cc.length + bcc.length === 0) {
@@ -2670,7 +2722,8 @@ export async function onCreateLinkFn(
     else toEmails.push(formatted);
   };
 
-  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role, r.name);
+  for (const r of draft.recipients ?? [])
+    addRecipient(r.externalAccountId, r.role, r.name);
   for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (toEmails.length + ccEmails.length + bccEmails.length === 0) {
