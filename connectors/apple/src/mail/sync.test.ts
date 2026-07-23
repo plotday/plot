@@ -13,7 +13,7 @@ import type { Integrations } from "@plotday/twister/tools/integrations";
 import type { Smtp } from "@plotday/twister/tools/smtp";
 import type { NewLinkWithNotes } from "@plotday/twister";
 
-import { mailIncrementalSync, reconcileTodoFlags } from "./sync";
+import { mailIncrementalSync, mailInitialSync, reconcileTodoFlags } from "./sync";
 import type { MailHost, MailSyncState } from "./mail-host";
 import type { MailMessage } from "./transform";
 
@@ -26,6 +26,7 @@ type MailboxFixture = {
 };
 
 type SearchCall = { mailbox: string; criteria: ImapSearchCriteria };
+type FetchCall = { mailbox: string; uids: number[] };
 
 /** Minimal in-memory MailHost — no real IMAP. Captures search() calls and saveLinks() output. */
 function buildFakeHost(opts: {
@@ -36,6 +37,7 @@ function buildFakeHost(opts: {
   const stored = new Map<string, unknown>();
   const savedLinks: NewLinkWithNotes[] = [];
   const searchCalls: SearchCall[] = [];
+  const fetchCalls: FetchCall[] = [];
   let selected = "INBOX";
 
   const mailboxes = new Map<string, MailboxFixture>();
@@ -73,6 +75,7 @@ function buildFakeHost(opts: {
       uids: number[],
       _options?: ImapFetchOptions
     ): Promise<ImapMessage[]> => {
+      fetchCalls.push({ mailbox: selected, uids });
       const fixture = mailboxes.get(selected);
       if (!fixture) return [];
       return uids
@@ -123,7 +126,7 @@ function buildFakeHost(opts: {
     queueWritebackDrain: async (): Promise<void> => {},
   };
 
-  return { host, stored, savedLinks, searchCalls, setThreadToDo };
+  return { host, stored, savedLinks, searchCalls, fetchCalls, setThreadToDo };
 }
 
 const CHANNEL_ID = "mail:INBOX";
@@ -236,6 +239,213 @@ describe("mailIncrementalSync", () => {
     // range. That shape must never appear now; every search must be date-floored.
     expect(searchCalls.every((c) => c.criteria.uid === undefined)).toBe(true);
     expect(searchCalls.some((c) => c.criteria.since !== undefined)).toBe(true);
+  });
+});
+
+describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
+  const SENT_BOX = "Sent Messages";
+
+  /** An INBOX-only fixture carrying a given HIGHESTMODSEQ; searchUids/messagesByUid
+   *  are populated with one message so a broken gate (fetching when it
+   *  shouldn't) is caught by the fetchCalls/savedLinks assertions. */
+  function inboxFixture(highestModSeq: number | undefined, uid: number): MailboxFixture {
+    return {
+      name: "INBOX",
+      status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: uid + 1, unseen: 0, ...(highestModSeq !== undefined ? { highestModSeq } : {}) },
+      searchUids: [uid],
+      messagesByUid: new Map([[uid, msg({ uid, messageId: `<inbox-${uid}@x.com>`, flags: [] })]]),
+    };
+  }
+
+  function sentFixture(highestModSeq: number | undefined, uid: number): MailboxFixture & { specialUse?: string } {
+    return {
+      name: SENT_BOX,
+      specialUse: "\\Sent",
+      status: { name: SENT_BOX, exists: 1, recent: 0, uidValidity: 1, uidNext: uid + 1, ...(highestModSeq !== undefined ? { highestModSeq } : {}) },
+      searchUids: [uid],
+      messagesByUid: new Map([
+        [
+          uid,
+          msg({
+            uid,
+            messageId: `<sent-${uid}@icloud.com>`,
+            from: [{ address: "kris@icloud.com", name: "Kris" }],
+            flags: ["\\Seen"],
+          }),
+        ],
+      ]),
+    };
+  }
+
+  it("gate hit: both mailboxes unchanged — no fetch, no saveLinks, cursors preserved", async () => {
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(100, 30),
+      sent: sentFixture(50, 40),
+    });
+    const state: MailSyncState = {
+      uidValidity: 1,
+      lastUid: 5,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100,
+      sentLastModSeq: 50,
+    };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    expect(fetchCalls).toHaveLength(0);
+    expect(savedLinks).toHaveLength(0);
+    const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(next?.lastModSeq).toBe(100);
+    expect(next?.sentLastModSeq).toBe(50);
+    expect(next?.lastUid).toBe(5);
+  });
+
+  it("gate miss: INBOX modseq advanced — full rescan runs, nextState.lastModSeq updates", async () => {
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(101, 30),
+      sent: null,
+    });
+    const state: MailSyncState = {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100,
+    };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    expect(fetchCalls.length).toBeGreaterThan(0);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
+    const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(next?.lastModSeq).toBe(101);
+  });
+
+  it("no CONDSTORE support: highestModSeq undefined — always full rescan", async () => {
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(undefined, 30),
+      sent: null,
+    });
+    const state: MailSyncState = {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100, // stored from a prior CONDSTORE-capable poll; must not matter
+    };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    expect(fetchCalls.length).toBeGreaterThan(0);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
+    const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(next?.lastModSeq).toBeUndefined();
+  });
+
+  it("no baseline yet: state.lastModSeq undefined with a defined highestModSeq — full rescan this pass, cursor seeded for next time", async () => {
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(55, 30),
+      sent: null,
+    });
+    const state: MailSyncState = {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      // lastModSeq intentionally omitted — state written before this shipped.
+    };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    expect(fetchCalls.length).toBeGreaterThan(0);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
+    const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(next?.lastModSeq).toBe(55);
+  });
+
+  it("independent gate: INBOX unchanged, Sent advanced — Sent is fetched, INBOX is not", async () => {
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(100, 30),
+      sent: sentFixture(61, 40),
+    });
+    const state: MailSyncState = {
+      uidValidity: 1,
+      lastUid: 5,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100,
+      sentLastModSeq: 60,
+    };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    expect(fetchCalls.every((c) => c.mailbox !== "INBOX")).toBe(true);
+    expect(fetchCalls.some((c) => c.mailbox === SENT_BOX)).toBe(true);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:sent-40@icloud.com")).toBe(true);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(false);
+    const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(next?.lastModSeq).toBe(100);
+    expect(next?.sentLastModSeq).toBe(61);
+  });
+
+  it("independent gate: INBOX advanced, Sent unchanged — INBOX is fetched, Sent is not", async () => {
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(101, 30),
+      sent: sentFixture(50, 40),
+    });
+    const state: MailSyncState = {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100,
+      sentLastModSeq: 50,
+    };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    expect(fetchCalls.some((c) => c.mailbox === "INBOX")).toBe(true);
+    expect(fetchCalls.every((c) => c.mailbox !== SENT_BOX)).toBe(true);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:sent-40@icloud.com")).toBe(false);
+    const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(next?.lastModSeq).toBe(101);
+    expect(next?.sentLastModSeq).toBe(50);
+  });
+
+  it("runInitialBackfill persists lastModSeq and sentLastModSeq", async () => {
+    const { host } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(77, 30),
+      sent: sentFixture(33, 40),
+    });
+
+    await mailInitialSync(host, "INBOX", CHANNEL_ID, undefined);
+
+    const state = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(state?.lastModSeq).toBe(77);
+    expect(state?.sentLastModSeq).toBe(33);
+  });
+
+  it("runInitialBackfill persists lastModSeq without a Sent box (sentLastModSeq stays undefined)", async () => {
+    const { host } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: inboxFixture(77, 30),
+      sent: null,
+    });
+
+    await mailInitialSync(host, "INBOX", CHANNEL_ID, undefined);
+
+    const state = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(state?.lastModSeq).toBe(77);
+    expect(state?.sentLastModSeq).toBeUndefined();
   });
 });
 

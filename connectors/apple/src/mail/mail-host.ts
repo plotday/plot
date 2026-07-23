@@ -11,6 +11,15 @@ export type MailSyncState = {
   lastUid: number;
   /** ISO date floor for the initial backfill (plan-based). */
   syncHistoryMin?: string;
+  /**
+   * INBOX's HIGHESTMODSEQ (RFC 7162 CONDSTORE) as of the last successful
+   * poll. Absent when the server doesn't advertise CONDSTORE, or for state
+   * written before this cursor existed — either way, its absence forces a
+   * full rescan on the next incremental pass rather than a false "unchanged".
+   */
+  lastModSeq?: number;
+  /** Same as `lastModSeq`, but for the Sent mailbox (independent cursor). */
+  sentLastModSeq?: number;
 };
 
 /**

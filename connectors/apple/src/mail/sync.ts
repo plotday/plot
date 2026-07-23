@@ -1,5 +1,5 @@
 import type { ActorId } from "@plotday/twister";
-import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
+import type { ImapMailboxStatus, ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
 import type { MailHost, MailSyncState } from "./mail-host";
@@ -111,9 +111,10 @@ async function runInitialBackfill(
   const inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
 
   let sent: ImapMessage[] = [];
+  let sentStatus: ImapMailboxStatus | undefined;
   const sentBox = await resolveSentMailbox(host, session);
   if (sentBox) {
-    await host.imap.selectMailbox(session, sentBox);
+    sentStatus = await host.imap.selectMailbox(session, sentBox);
     const sentUids = await host.imap.search(session, { since });
     sent = await fetchUidRange(host, session, sentBox, sentUids);
   }
@@ -142,6 +143,11 @@ async function runInitialBackfill(
     uidValidity: status.uidValidity,
     lastUid,
     syncHistoryMin: since.toISOString(),
+    // Re-baselining (first sync, no-state, or UIDVALIDITY change) always
+    // resets both modseq cursors from the fresh SELECT — correct, since a
+    // new UIDVALIDITY invalidates old mod-sequences too.
+    lastModSeq: status.highestModSeq,
+    sentLastModSeq: sentStatus?.highestModSeq,
   };
   await host.set(`state_${channelId}`, state);
 
@@ -199,26 +205,59 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       return;
     }
 
-    // New mail since the stored cursor, bounded by the plan floor so a
-    // dormant account (stored lastUid: 0) can't fetch the entire mailbox.
+    // CONDSTORE gate (RFC 7162): an unchanged HIGHESTMODSEQ since the last
+    // successful poll means nothing in the mailbox changed — a new message,
+    // a flag change (\Seen, \Flagged, ...), and an expunge all advance it —
+    // so there is nothing new to (re)fetch this pass. Because ANY change
+    // bumps the mod-sequence, gating on it can never miss new mail. Falls
+    // back to today's full rescan when the server doesn't advertise
+    // CONDSTORE (`highestModSeq === undefined`) or no baseline cursor exists
+    // yet (`state.lastModSeq === undefined`, e.g. state written before this
+    // cursor shipped) — either case reads as "assume changed".
+    const inboxUnchanged =
+      status.highestModSeq !== undefined &&
+      state.lastModSeq !== undefined &&
+      status.highestModSeq === state.lastModSeq;
+
+    // Pure date math, shared by INBOX's own rescan (when it runs) and the
+    // Sent gate below — computing it doesn't touch IMAP, so it's cheap to
+    // keep even when the INBOX gate skips its own search calls.
     const floor = resolveSinceFloor(state.syncHistoryMin);
-    const windowUids = await host.imap.search(session, { since: floor });
-    const newUids = windowUids.filter((u) => u > state.lastUid);
-
-    // Recent-window rescan to catch \Seen flag changes on already-synced
-    // mail, also capped at the plan floor.
     const recentSince = new Date(Math.max(floor.getTime(), Date.now() - RECENT_WINDOW_MS));
-    const recentUids = await host.imap.search(session, { since: recentSince });
 
-    const inboxUids = Array.from(new Set([...newUids, ...recentUids]));
-    const inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
+    let newUids: number[] = [];
+    let inboxUids: number[] = [];
+    let inbox: ImapMessage[] = [];
+    if (!inboxUnchanged) {
+      // New mail since the stored cursor, bounded by the plan floor so a
+      // dormant account (stored lastUid: 0) can't fetch the entire mailbox.
+      const windowUids = await host.imap.search(session, { since: floor });
+      newUids = windowUids.filter((u) => u > state.lastUid);
+
+      // Recent-window rescan to catch \Seen flag changes on already-synced
+      // mail, also capped at the plan floor.
+      const recentUids = await host.imap.search(session, { since: recentSince });
+
+      inboxUids = Array.from(new Set([...newUids, ...recentUids]));
+      inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
+    }
 
     let sent: ImapMessage[] = [];
+    let sentStatus: ImapMailboxStatus | undefined;
     const sentBox = await resolveSentMailbox(host, session);
     if (sentBox) {
-      await host.imap.selectMailbox(session, sentBox);
-      const sentUids = await host.imap.search(session, { since: recentSince });
-      sent = await fetchUidRange(host, session, sentBox, sentUids);
+      sentStatus = await host.imap.selectMailbox(session, sentBox);
+      // Independent gate from INBOX: Sent has no separate incremental-mail
+      // cursor (see the module doc), so this only decides whether to run
+      // its own recent-window rescan.
+      const sentUnchanged =
+        sentStatus.highestModSeq !== undefined &&
+        state.sentLastModSeq !== undefined &&
+        sentStatus.highestModSeq === state.sentLastModSeq;
+      if (!sentUnchanged) {
+        const sentUids = await host.imap.search(session, { since: recentSince });
+        sent = await fetchUidRange(host, session, sentBox, sentUids);
+      }
     }
 
     // See runInitialBackfill: tag each message with its originating mailbox
@@ -241,11 +280,17 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
     // change (like the \Seen rescan above) shows up within this window.
     await reconcileTodoFlags(host, merged, false);
 
+    // When the INBOX gate skipped (inboxUids stays []), newMaxUid is 0 and
+    // Math.max preserves the prior lastUid unchanged.
     const newMaxUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
     const nextState: MailSyncState = {
       uidValidity: status.uidValidity,
       lastUid: Math.max(newMaxUid, state.lastUid),
       syncHistoryMin: state.syncHistoryMin,
+      // Seed/update every pass: undefined (no CONDSTORE) correctly forces a
+      // full rescan next poll too.
+      lastModSeq: status.highestModSeq,
+      sentLastModSeq: sentStatus?.highestModSeq,
     };
     await host.set(`state_${channelId}`, nextState);
   } finally {
