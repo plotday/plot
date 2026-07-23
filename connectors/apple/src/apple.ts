@@ -2374,6 +2374,11 @@ export class Apple extends Connector<Apple> {
         start: start instanceof Date ? start : new Date(start),
         end: end,
         cancelled: true,
+        // Same initial-sync rule the non-cancelled branch below follows: a
+        // historical backfill must land already-read so importing a calendar
+        // can't spray notifications for occurrences that were cancelled long
+        // ago. Omitted on incremental so a genuine cancellation still surfaces.
+        ...(initialSync ? { unread: false } : {}),
       };
 
       // During initial sync, buffer the occurrence under a unique key for
