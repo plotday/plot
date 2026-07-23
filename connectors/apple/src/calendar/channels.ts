@@ -12,7 +12,7 @@ export const CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
     includesSchedules: true,
     // Crisp, high-contrast calendar mark; the previous rounded-square SVG was
     // mostly white with thin red strokes and washed out at logo size.
-    logo: "https://api.iconify.design/fluent-emoji-flat/calendar.svg",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Apple_Calendar_%28iOS%29.svg/1280px-Apple_Calendar_%28iOS%29.svg.png",
     logoMono: "https://api.iconify.design/lucide/calendar.svg",
   },
 ];

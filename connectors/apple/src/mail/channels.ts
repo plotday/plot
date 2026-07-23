@@ -19,7 +19,7 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
     // A mail mark so email threads don't fall back to the connector's
     // calendar logo. Iconify URLs render crisply at logo size and resolve
     // without a site deploy.
-    logo: "https://api.iconify.design/fluent-emoji-flat/envelope.svg",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Mail_%28iOS%29.svg/1280px-Mail_%28iOS%29.svg.png",
     logoMono: "https://api.iconify.design/lucide/mail.svg",
     compose: { targets: "addresses" as const },
     contactRoles: [
