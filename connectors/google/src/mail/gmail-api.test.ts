@@ -356,6 +356,41 @@ describe("forwarded email body extraction", () => {
     expect(reply).not.toContain("SECRETYAHOOQUOTE");
   });
 
+  it("strips Outlook-for-Mac quoted replies whose header labels the date line 'Date:' (not 'Sent:') and carries a Cc:", () => {
+    // Outlook for Mac / "new Outlook" wraps a reply's quoted history in a
+    // bold "From: / Date: / To: / Cc: / Subject:" header block — labelling
+    // the date line "Date:" rather than the desktop-Outlook "Sent:", and
+    // adding a Cc: line. The header detector only recognized "Sent:", so the
+    // whole quoted chain (which itself embeds an "On ... wrote:" line) leaked
+    // into the note body.
+    const cc =
+      "Carol Example &lt;carol@example.com&gt;; " +
+      "Dan Example &lt;dan@example.com&gt;; " +
+      "Erin Example &lt;erin@example.com&gt;; " +
+      "Frank Example &lt;frank@example.com&gt;";
+    const html =
+      '<div dir="ltr">Great to have you onboard! Looking forward to meeting you soon.</div>' +
+      "<div>Alice</div>" +
+      "<div>" +
+      "<b>From:</b> Bob Example &lt;bob@example.com&gt;<br>" +
+      "<b>Date:</b> Wednesday, July 22, 2026 at 10:24 PM<br>" +
+      "<b>To:</b> Wael Example &lt;wael@example.com&gt;<br>" +
+      "<b>Cc:</b> " +
+      cc +
+      "<br>" +
+      "<b>Subject:</b> Re: Welcome to the board!<br>" +
+      "</div>" +
+      "<div>Welcome! SECRETOUTLOOKMAC must be stripped." +
+      "<br>On Wed, Jul 22, 2026, 20:56 Someone &lt;someone@example.com&gt; wrote:" +
+      "<br>older quoted history</div>";
+    const reply = stripQuotedReply(html, "html");
+    expect(reply).toContain("Great to have you onboard");
+    expect(reply).toContain("Alice");
+    expect(reply).not.toContain("SECRETOUTLOOKMAC");
+    expect(reply).not.toContain("Bob Example");
+    expect(reply).not.toContain("older quoted history");
+  });
+
   it("keeps an Apple Mail forwarded message (blockquote type=cite around forward)", () => {
     // A forward wrapped in a cite blockquote must be preserved — the forwarded
     // content IS the note. The forward guard runs before quote stripping.

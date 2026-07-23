@@ -20,8 +20,10 @@
  */
 export function findOutlookHeaderTagAgnostic(content: string): number {
   const flat = content.replace(/<[^>]*>/g, (m) => " ".repeat(m.length));
+  // The date line is labelled "Sent:" by desktop Outlook / OWA but "Date:" by
+  // Outlook for Mac / "new Outlook" — accept either.
   const re =
-    /(?<=^|\n|[ \t]{3,})From:[\s\S]{0,1500}?(?<=\n|[ \t]{3,})Sent:[\s\S]{0,800}?(?<=\n|[ \t]{3,})To:[\s\S]{0,1500}?(?<=\n|[ \t]{3,})Subject:/i;
+    /(?<=^|\n|[ \t]{3,})From:[\s\S]{0,1500}?(?<=\n|[ \t]{3,})(?:Sent|Date):[\s\S]{0,800}?(?<=\n|[ \t]{3,})To:[\s\S]{0,1500}?(?<=\n|[ \t]{3,})Subject:/i;
   const m = flat.match(re);
   return m?.index ?? -1;
 }
@@ -88,11 +90,13 @@ export function stripQuotedReply(
     // with a "From: / Sent: / To: / Subject:" header block. The markup
     // varies — sometimes `<b>` or `<strong>`, sometimes `<span
     // style="font-weight:bold">`, sometimes a `MsoNormal` paragraph with
-    // no inline bold at all (Gowling-style corporate Exchange). Try the
-    // tight bold-wrapped pattern first, then fall back to a tag-agnostic
-    // boundary match.
+    // no inline bold at all (Gowling-style corporate Exchange). The date line
+    // is labelled "Sent:" by desktop Outlook / OWA but "Date:" by Outlook for
+    // Mac / "new Outlook" (which also inserts a Cc: line between To: and
+    // Subject:) — accept either label. Try the tight bold-wrapped pattern
+    // first, then fall back to a tag-agnostic boundary match.
     const outlookHeaderRe =
-      /<(b|strong)[^>]*>\s*From:?\s*<\/\1>[\s\S]{0,1000}<(b|strong)[^>]*>\s*Sent:?\s*<\/\2>[\s\S]{0,1000}<(b|strong)[^>]*>\s*To:?\s*<\/\3>[\s\S]{0,1000}<(b|strong)[^>]*>\s*Subject:?\s*<\/\4>/i;
+      /<(b|strong)[^>]*>\s*From:?\s*<\/\1>[\s\S]{0,1000}<(b|strong)[^>]*>\s*(?:Sent|Date):?\s*<\/\2>[\s\S]{0,1500}<(b|strong)[^>]*>\s*To:?\s*<\/\3>[\s\S]{0,1500}<(b|strong)[^>]*>\s*Subject:?\s*<\/\4>/i;
     const outlookHeaderMatch = content.match(outlookHeaderRe);
     const fromIdx =
       outlookHeaderMatch?.index ?? findOutlookHeaderTagAgnostic(content);
