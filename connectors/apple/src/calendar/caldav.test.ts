@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CalDAVClient, InvalidSyncTokenError } from "./caldav";
+import { CalDAVClient, InvalidSyncTokenError, PreconditionFailedError } from "./caldav";
 
 /** Minimal fetch Response stand-in — only the members CalDAVClient reads. */
 function mockResponse(status: number, body: string): Response {
@@ -235,5 +235,132 @@ describe("CalDAVClient.getSyncToken", () => {
     const token = await client.getSyncToken("/289842362/calendars/work/");
 
     expect(token).toBeNull();
+  });
+});
+
+describe("CalDAVClient.fetchEventICS / updateEventICS — etag + If-Match", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Response stand-in that also carries a headers.get("ETag"), unlike the
+   *  bare `mockResponse` helper above (which none of those tests need). */
+  function icsResponse(
+    status: number,
+    body: string,
+    etag: string | null
+  ): Response {
+    return {
+      status,
+      ok: status >= 200 && status < 300,
+      statusText: "",
+      text: async () => body,
+      headers: { get: (name: string) => (name === "ETag" ? etag : null) },
+    } as unknown as Response;
+  }
+
+  it("fetchEventICS returns the ICS body with the etag unquoted", async () => {
+    fetchMock.mockResolvedValue(
+      icsResponse(200, "BEGIN:VCALENDAR\r\nEND:VCALENDAR", '"abc123"')
+    );
+    const client = makeClient();
+
+    const result = await client.fetchEventICS("/cal/evt-1.ics");
+
+    expect(result).toEqual({
+      icsData: "BEGIN:VCALENDAR\r\nEND:VCALENDAR",
+      etag: "abc123",
+    });
+  });
+
+  it("fetchEventICS returns a null etag when the server sends none", async () => {
+    fetchMock.mockResolvedValue(icsResponse(200, "BEGIN:VCALENDAR", null));
+    const client = makeClient();
+
+    const result = await client.fetchEventICS("/cal/evt-1.ics");
+
+    expect(result).toEqual({ icsData: "BEGIN:VCALENDAR", etag: null });
+  });
+
+  it("fetchEventICS returns null on a non-ok response", async () => {
+    fetchMock.mockResolvedValue(icsResponse(404, "", null));
+    const client = makeClient();
+
+    expect(await client.fetchEventICS("/cal/evt-1.ics")).toBeNull();
+  });
+
+  it("updateEventICS sends the given etag as a quoted If-Match header", async () => {
+    fetchMock.mockResolvedValue(icsResponse(204, "", null));
+    const client = makeClient();
+
+    await client.updateEventICS(
+      "/cal/evt-1.ics",
+      "BEGIN:VCALENDAR\r\nEND:VCALENDAR",
+      "abc123"
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((options.headers as Record<string, string>)["If-Match"]).toBe(
+      '"abc123"'
+    );
+  });
+
+  it("updateEventICS omits If-Match when no etag is given (unchanged behavior)", async () => {
+    fetchMock.mockResolvedValue(icsResponse(204, "", null));
+    const client = makeClient();
+
+    await client.updateEventICS(
+      "/cal/evt-1.ics",
+      "BEGIN:VCALENDAR\r\nEND:VCALENDAR"
+    );
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(
+      (options.headers as Record<string, string>)["If-Match"]
+    ).toBeUndefined();
+  });
+
+  it("updateEventICS throws PreconditionFailedError on a 412 response", async () => {
+    fetchMock.mockResolvedValue(icsResponse(412, "", null));
+    const client = makeClient();
+
+    await expect(
+      client.updateEventICS(
+        "/cal/evt-1.ics",
+        "BEGIN:VCALENDAR\r\nEND:VCALENDAR",
+        "stale-etag"
+      )
+    ).rejects.toBeInstanceOf(PreconditionFailedError);
+  });
+
+  it("updateEventICS still resolves to false (not throw) for a generic non-412 failure", async () => {
+    fetchMock.mockResolvedValue(icsResponse(500, "", null));
+    const client = makeClient();
+
+    await expect(
+      client.updateEventICS(
+        "/cal/evt-1.ics",
+        "BEGIN:VCALENDAR\r\nEND:VCALENDAR",
+        "abc123"
+      )
+    ).resolves.toBe(false);
+  });
+
+  it("updateEventICS resolves true on 204 and on 200", async () => {
+    const client = makeClient();
+
+    fetchMock.mockResolvedValue(icsResponse(204, "", null));
+    expect(await client.updateEventICS("/cal/evt-1.ics", "ICS")).toBe(true);
+
+    fetchMock.mockResolvedValue(icsResponse(200, "", null));
+    expect(await client.updateEventICS("/cal/evt-1.ics", "ICS")).toBe(true);
   });
 });

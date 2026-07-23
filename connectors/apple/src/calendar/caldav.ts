@@ -55,6 +55,25 @@ export class InvalidSyncTokenError extends Error {
   }
 }
 
+/**
+ * Thrown when a PUT to `updateEventICS` is rejected with `412 Precondition
+ * Failed` — the `If-Match` etag no longer matches the event's current
+ * version because it was modified concurrently between the caller's GET and
+ * PUT (another client's edit, another RSVP write, or a sync pass landing in
+ * between). Distinguishable from a generic write failure (which still
+ * resolves `updateEventICS` to `false`, unchanged) so callers can react —
+ * re-read the fresh event, re-apply their patch, and retry — rather than
+ * treating it like any other error. Mirrors `InvalidSyncTokenError` above.
+ */
+export class PreconditionFailedError extends Error {
+  constructor(
+    message = "CalDAV event was modified concurrently (412 Precondition Failed)"
+  ) {
+    super(message);
+    this.name = "PreconditionFailedError";
+  }
+}
+
 type MultistatusEntry = {
   href: string;
   props: Record<string, string>;
@@ -435,9 +454,17 @@ ${hrefElements}
     return parseEventResponses(xml);
   }
   /**
-   * Fetch a single event's ICS data by its href (GET).
+   * Fetch a single event's ICS data by its href (GET), along with its
+   * current etag so a subsequent `updateEventICS` write can pass it as
+   * `If-Match` and detect a concurrent modification (see
+   * {@link PreconditionFailedError}). The etag is unquoted here (the `ETag`
+   * response header is normally quoted) for consistency with the etags
+   * `parseMultistatus`'s `getetag` extraction produces elsewhere in this
+   * file — `updateEventICS` re-adds the quotes when sending `If-Match`.
    */
-  async fetchEventICS(eventHref: string): Promise<string | null> {
+  async fetchEventICS(
+    eventHref: string
+  ): Promise<{ icsData: string; etag: string | null } | null> {
     try {
       const response = await fetch(this.resolveUrl(eventHref), {
         method: "GET",
@@ -449,7 +476,9 @@ ${hrefElements}
       });
 
       if (!response.ok) return null;
-      return await response.text();
+      const icsData = await response.text();
+      const rawEtag = response.headers.get("ETag");
+      return { icsData, etag: rawEtag ? rawEtag.replace(/"/g, "") : null };
     } catch {
       return null;
     }
@@ -457,7 +486,10 @@ ${hrefElements}
 
   /**
    * Update an event by PUTting modified ICS data back to its href.
-   * Returns true on success.
+   * Returns true on success. Throws {@link PreconditionFailedError} for a
+   * `412` response (the `If-Match` etag is stale — a concurrent write raced
+   * this one) so callers can distinguish "lost the race, retry" from any
+   * other write failure, which still just resolves to `false` as before.
    */
   async updateEventICS(
     eventHref: string,
@@ -479,6 +511,10 @@ ${hrefElements}
       body: icsData,
       redirect: "follow",
     });
+
+    if (response.status === 412) {
+      throw new PreconditionFailedError();
+    }
 
     return response.ok || response.status === 204;
   }

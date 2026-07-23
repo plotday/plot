@@ -40,6 +40,7 @@ import {
   CalDAVClient,
   type CalDAVEvent,
   InvalidSyncTokenError,
+  PreconditionFailedError,
   toCalDAVTimeString,
 } from "./calendar/caldav";
 import { getCalendarChannels } from "./calendar/channels";
@@ -679,6 +680,19 @@ export class Apple extends Connector<Apple> {
     // `activate()` on connect, and must survive a channel re-enable.
     const flaggedKeys = await this.tools.store.list("mail:flagged:");
     for (const key of flaggedKeys) {
+      await this.clear(key);
+    }
+    // Sweep any `mail:cancel-email:<uid>` markers left behind by
+    // `detectCalendarBundles` (`src/mail/sync.ts`). The calendar side
+    // (`prepareEvent` in this file) consumes and clears its own marker as
+    // soon as it observes the matching cancellation, so this is only a
+    // backstop for markers that never get consumed that way — e.g. the
+    // event was removed from CalDAV outright (rather than left CANCELLED)
+    // before the calendar sync ever saw it, or it belongs to a calendar the
+    // user never enabled. Not channel-scoped, like the sweeps above (single
+    // mail channel in v1), so all `mail:cancel-email:*` are ours.
+    const cancelEmailKeys = await this.tools.store.list("mail:cancel-email:");
+    for (const key of cancelEmailKeys) {
       await this.clear(key);
     }
     await this.tools.integrations.archiveLinks({
@@ -2087,6 +2101,28 @@ export class Apple extends Connector<Apple> {
     const source = `apple-calendar:${icsEvent.uid}`;
     const isCancelled = icsEvent.status === "CANCELLED";
 
+    // Consume any `cancel-email:<uid>` marker the mail sync recorded when it
+    // bundled a real METHOD:CANCEL invite email onto this event's thread via
+    // the shared `icaluid:<uid>` alias (see `detectCalendarBundles` in
+    // `src/mail/sync.ts`). Read (and clear) it here — before the
+    // initial-sync skip just below — so the one-shot marker is spent
+    // whenever we observe the cancellation at all, including the
+    // initial-sync case where no cancellation link/note is even produced.
+    // Namespaced with `mail:` because `buildMailHost()` prefixes every
+    // mail-side key with that prefix when writing through `host.set()` — a
+    // bare `cancel-email:` key here would never match what mail wrote. A
+    // leftover, never-consumed marker (e.g. the event was removed from
+    // CalDAV outright rather than left CANCELLED, so this method never runs
+    // for it) is swept by `onMailChannelDisabled`'s `mail:cancel-email:`
+    // sweep as a backstop.
+    const cancelEmailMarkerKey = `mail:cancel-email:${icsEvent.uid}`;
+    const cancelEmailMarker = isCancelled
+      ? await this.get<{ at: string }>(cancelEmailMarkerKey)
+      : null;
+    if (cancelEmailMarker) {
+      await this.clear(cancelEmailMarkerKey);
+    }
+
     // On initial sync, skip cancelled events
     if (initialSync && isCancelled) return null;
 
@@ -2112,6 +2148,12 @@ export class Apple extends Connector<Apple> {
         return null;
       }
 
+      // Prefer the cancellation email's own wording (the organizer's actual
+      // message, already on this thread via mail/calendar bundling) over our
+      // generic note when `cancelEmailMarker` says the mail sync already put
+      // it there — avoids a redundant, lower-fidelity note on the same
+      // thread. The structural cancellation below (status/schedule/unread)
+      // always applies regardless of this signal.
       const cancelNote = {
         key: "cancellation" as const,
         content: icsEvent.organizer?.name
@@ -2141,7 +2183,7 @@ export class Apple extends Connector<Apple> {
           syncProvider: "apple",
           syncableId: calendarHref,
         },
-        notes: [cancelNote],
+        notes: cancelEmailMarker ? [] : [cancelNote],
         schedules: [
           {
             start: start instanceof Date ? start : new Date(),
@@ -2486,7 +2528,17 @@ export class Apple extends Connector<Apple> {
 
   /**
    * Update RSVP status for the connector user on a CalDAV event.
-   * Fetches the event ICS, modifies the ATTENDEE PARTSTAT, and PUTs it back.
+   * Fetches the event ICS, modifies the ATTENDEE PARTSTAT, and PUTs it back
+   * with `If-Match` set to the etag it just read, so a change that landed on
+   * the server between the GET and the PUT (another RSVP write, a sync
+   * pass, an organizer edit) is detected instead of silently clobbered.
+   *
+   * On a `412` (the race was lost), re-reads the now-current ICS + etag,
+   * re-applies the PARTSTAT patch to that fresh copy, and retries the PUT
+   * exactly once — an expected, self-resolving condition, not a bug. If the
+   * retry also loses the race, this throws and lets the caller
+   * (`onScheduleContactUpdated`) log it via its existing catch, same as any
+   * other write failure.
    */
   private async updateRSVP(
     _calendarHref: string,
@@ -2496,14 +2548,12 @@ export class Apple extends Connector<Apple> {
   ): Promise<void> {
     const client = this.getCalDAV();
 
-    // Fetch current ICS
-    const icsData = await client.fetchEventICS(eventHref);
-    if (!icsData) {
+    const fetched = await client.fetchEventICS(eventHref);
+    if (!fetched) {
       throw new Error(`Event not found: ${eventHref}`);
     }
 
-    // Update the attendee's PARTSTAT
-    const updatedICS = updateAttendeePartstat(icsData, email, partstat);
+    const updatedICS = updateAttendeePartstat(fetched.icsData, email, partstat);
     if (!updatedICS) {
       console.warn(
         `[RSVP Sync] User ${email} is not an attendee of event ${eventHref}`
@@ -2511,10 +2561,47 @@ export class Apple extends Connector<Apple> {
       return;
     }
 
-    // PUT the updated ICS back
-    const success = await client.updateEventICS(eventHref, updatedICS);
-    if (!success) {
-      throw new Error(`Failed to update event: ${eventHref}`);
+    try {
+      const success = await client.updateEventICS(
+        eventHref,
+        updatedICS,
+        fetched.etag ?? undefined
+      );
+      if (!success) {
+        throw new Error(`Failed to update event: ${eventHref}`);
+      }
+    } catch (error) {
+      if (!(error instanceof PreconditionFailedError)) throw error;
+
+      console.warn(
+        `[RSVP Sync] Lost a concurrent-write race on ${eventHref} (412); ` +
+          `re-reading and retrying once`
+      );
+
+      const retryFetched = await client.fetchEventICS(eventHref);
+      if (!retryFetched) {
+        throw new Error(`Event not found on retry: ${eventHref}`);
+      }
+      const retryICS = updateAttendeePartstat(
+        retryFetched.icsData,
+        email,
+        partstat
+      );
+      if (!retryICS) {
+        console.warn(
+          `[RSVP Sync] User ${email} is not an attendee of event ` +
+            `${eventHref} (retry)`
+        );
+        return;
+      }
+      const retrySuccess = await client.updateEventICS(
+        eventHref,
+        retryICS,
+        retryFetched.etag ?? undefined
+      );
+      if (!retrySuccess) {
+        throw new Error(`Failed to update event after retry: ${eventHref}`);
+      }
     }
   }
 }

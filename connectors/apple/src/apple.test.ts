@@ -12,7 +12,9 @@ vi.mock("./mail/sync", () => ({
 }));
 
 import { Apple } from "./apple";
-import { InvalidSyncTokenError } from "./calendar/caldav";
+import { InvalidSyncTokenError, PreconditionFailedError } from "./calendar/caldav";
+import type { ICSEvent } from "./calendar/ics-parser";
+import type { NewLinkWithNotes } from "@plotday/twister";
 import { composeChannels } from "./compose";
 import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
 import { appleProducts } from "./products";
@@ -1003,5 +1005,329 @@ describe("Apple calendar incremental sync", () => {
       "fallback-final-token"
     );
     expect(releaseLockCalls).toEqual([lockKey]);
+  });
+});
+
+describe("Apple.prepareEvent — cancellation note vs mail cancel-email marker", () => {
+  /** Pulls `prepareEvent` off `Apple.prototype` — same rationale as
+   *  `privateMethod` in the incremental-sync describe block above (not
+   *  inherited by a bare object literal). */
+  function privateMethod<T>(name: string): T {
+    return (Apple.prototype as unknown as Record<string, T>)[name];
+  }
+
+  const prepareEvent = privateMethod<
+    (
+      icsEvent: ICSEvent,
+      calendarHref: string,
+      initialSync: boolean,
+      eventHref?: string
+    ) => Promise<NewLinkWithNotes | null>
+  >("prepareEvent");
+
+  /** Minimal fake self: `prepareEvent`'s cancelled-event branch only calls
+   *  `this.get`/`this.clear`, both backed by a plain Map here. */
+  function makeSelf(initialStore: Record<string, unknown> = {}) {
+    const store = new Map<string, unknown>(Object.entries(initialStore));
+    const clearedKeys: string[] = [];
+    const self = {
+      get: async <T>(key: string) => (store.get(key) as T | undefined) ?? null,
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      clear: async (key: string) => {
+        clearedKeys.push(key);
+        store.delete(key);
+      },
+    } as unknown as Apple;
+    return { self, store, clearedKeys };
+  }
+
+  // Far-future so `cancellationIsForPastEventFn` never drops it as noise,
+  // regardless of when this test runs.
+  const cancelledEvent: ICSEvent = {
+    uid: "evt-1",
+    summary: "Team Sync",
+    description: null,
+    dtstart: { value: "20990101T100000Z", params: {} },
+    dtend: { value: "20990101T110000Z", params: {} },
+    duration: null,
+    rrule: null,
+    exdates: [],
+    rdates: [],
+    recurrenceId: null,
+    status: "CANCELLED",
+    location: null,
+    organizer: { email: "organizer@example.com", name: "Pat Organizer" },
+    attendees: [],
+    sequence: 1,
+    created: null,
+    lastModified: "20990101T090000Z",
+    url: null,
+  };
+
+  it("suppresses the generic cancellation note and consumes the marker when the mail sync already bundled the cancellation email", async () => {
+    const { self, store, clearedKeys } = makeSelf({
+      "mail:cancel-email:evt-1": { at: "2026-07-20T00:00:00.000Z" },
+    });
+
+    const link = await prepareEvent.call(
+      self,
+      cancelledEvent,
+      "cal-href",
+      false,
+      "/cal/evt-1.ics"
+    );
+
+    expect(link).not.toBeNull();
+    // Redundant note suppressed — the real cancellation email is already on
+    // this thread via icaluid bundling.
+    expect(link!.notes).toEqual([]);
+    // Structural cancellation still applied unconditionally.
+    expect(link!.status).toBe("Cancelled");
+    expect(link!.schedules?.[0]?.archived).toBe(true);
+    // One-shot marker consumed.
+    expect(store.has("mail:cancel-email:evt-1")).toBe(false);
+    expect(clearedKeys).toContain("mail:cancel-email:evt-1");
+  });
+
+  it("writes the generic cancellation note when there is no mail cancellation marker (regression guard)", async () => {
+    const { self, clearedKeys } = makeSelf({});
+
+    const link = await prepareEvent.call(
+      self,
+      cancelledEvent,
+      "cal-href",
+      false,
+      "/cal/evt-1.ics"
+    );
+
+    expect(link).not.toBeNull();
+    expect(link!.notes).toHaveLength(1);
+    expect(link!.notes?.[0]).toMatchObject({
+      key: "cancellation",
+      content: "Pat Organizer cancelled this event.",
+    });
+    expect(link!.status).toBe("Cancelled");
+    expect(link!.schedules?.[0]?.archived).toBe(true);
+    // Nothing to consume — no marker was ever written for this uid.
+    expect(clearedKeys).toEqual([]);
+  });
+
+  it("consumes the marker even on initial sync, where the cancelled event itself is skipped as noise", async () => {
+    const { self, store, clearedKeys } = makeSelf({
+      "mail:cancel-email:evt-1": { at: "2026-07-20T00:00:00.000Z" },
+    });
+
+    const link = await prepareEvent.call(
+      self,
+      cancelledEvent,
+      "cal-href",
+      true, // initialSync
+      "/cal/evt-1.ics"
+    );
+
+    expect(link).toBeNull();
+    expect(store.has("mail:cancel-email:evt-1")).toBe(false);
+    expect(clearedKeys).toContain("mail:cancel-email:evt-1");
+  });
+});
+
+describe("Apple.onMailChannelDisabled — mail:cancel-email: marker sweep", () => {
+  function privateMethod<T>(name: string): T {
+    return (Apple.prototype as unknown as Record<string, T>)[name];
+  }
+
+  const onMailChannelDisabled = privateMethod<
+    (channel: { id: string }) => Promise<void>
+  >("onMailChannelDisabled");
+
+  it("sweeps leftover mail:cancel-email: markers alongside compose/writeback/flagged, on disable", async () => {
+    const cleared: string[] = [];
+    const listedPrefixes: string[] = [];
+    const self = {
+      cancelScheduledTask: vi.fn(async () => {}),
+      cancelDrain: vi.fn(async () => {}),
+      deleteCallback: vi.fn(async () => {}),
+      get: async () => null,
+      clear: async (key: string) => {
+        cleared.push(key);
+      },
+      tools: {
+        imap: { unwatch: vi.fn(async () => {}) },
+        store: {
+          releaseLock: vi.fn(async () => {}),
+          list: vi.fn(async (prefix: string) => {
+            listedPrefixes.push(prefix);
+            if (prefix === "mail:cancel-email:") {
+              return ["mail:cancel-email:evt-1", "mail:cancel-email:evt-2"];
+            }
+            return [];
+          }),
+        },
+        integrations: { archiveLinks: vi.fn(async () => {}) },
+      },
+    } as unknown as Apple;
+
+    await onMailChannelDisabled.call(self, { id: "mail:default" });
+
+    expect(listedPrefixes).toContain("mail:cancel-email:");
+    expect(cleared).toEqual(
+      expect.arrayContaining(["mail:cancel-email:evt-1", "mail:cancel-email:evt-2"])
+    );
+  });
+});
+
+describe("Apple.updateRSVP — If-Match etag + 412 retry", () => {
+  function privateMethod<T>(name: string): T {
+    return (Apple.prototype as unknown as Record<string, T>)[name];
+  }
+
+  const updateRSVP = privateMethod<
+    (
+      calendarHref: string,
+      eventHref: string,
+      email: string,
+      partstat: string
+    ) => Promise<void>
+  >("updateRSVP");
+
+  const icsFixture = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "UID:evt-1",
+    "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:kris@plot.day",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  function makeSelf(caldav: {
+    fetchEventICS: (
+      href: string
+    ) => Promise<{ icsData: string; etag: string | null } | null>;
+    updateEventICS: (
+      href: string,
+      ics: string,
+      etag?: string
+    ) => Promise<boolean>;
+  }) {
+    const self = {
+      getCalDAV: () => caldav,
+    } as unknown as Apple;
+    return self;
+  }
+
+  it("passes the etag read from fetchEventICS through to updateEventICS (If-Match)", async () => {
+    const updateCalls: Array<{ href: string; ics: string; etag?: string }> = [];
+    const fetchEventICS = vi.fn(async () => ({
+      icsData: icsFixture,
+      etag: "etag-1",
+    }));
+    const updateEventICS = vi.fn(
+      async (href: string, ics: string, etag?: string) => {
+        updateCalls.push({ href, ics, etag });
+        return true;
+      }
+    );
+    const self = makeSelf({ fetchEventICS, updateEventICS });
+
+    await updateRSVP.call(
+      self,
+      "cal-href",
+      "/cal/evt-1.ics",
+      "kris@plot.day",
+      "ACCEPTED"
+    );
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].etag).toBe("etag-1");
+    expect(updateCalls[0].ics).toContain("PARTSTAT=ACCEPTED");
+  });
+
+  it("on 412, re-reads the event, re-applies the PARTSTAT patch, and retries once — succeeding without throwing", async () => {
+    // Second read simulates a concurrent edit that changed the server's
+    // etag without touching this attendee's PARTSTAT line — the patch must
+    // still apply cleanly to this fresh copy.
+    let fetchCount = 0;
+    const fetchEventICS = vi.fn(async () => {
+      fetchCount++;
+      return fetchCount === 1
+        ? { icsData: icsFixture, etag: "etag-1" }
+        : { icsData: icsFixture, etag: "etag-2" };
+    });
+    const updateCalls: Array<{ etag?: string }> = [];
+    let updateCount = 0;
+    const updateEventICS = vi.fn(
+      async (_href: string, _ics: string, etag?: string) => {
+        updateCount++;
+        updateCalls.push({ etag });
+        if (updateCount === 1) throw new PreconditionFailedError();
+        return true;
+      }
+    );
+    const self = makeSelf({ fetchEventICS, updateEventICS });
+
+    await expect(
+      updateRSVP.call(
+        self,
+        "cal-href",
+        "/cal/evt-1.ics",
+        "kris@plot.day",
+        "ACCEPTED"
+      )
+    ).resolves.toBeUndefined();
+
+    expect(fetchEventICS).toHaveBeenCalledTimes(2);
+    expect(updateEventICS).toHaveBeenCalledTimes(2);
+    // The retry PUT carries the freshly re-read etag, not the stale one.
+    expect(updateCalls[0].etag).toBe("etag-1");
+    expect(updateCalls[1].etag).toBe("etag-2");
+  });
+
+  it("on a 412 that recurs on the retry, propagates instead of silently swallowing", async () => {
+    const fetchEventICS = vi.fn(async () => ({
+      icsData: icsFixture,
+      etag: "etag-1",
+    }));
+    const updateEventICS = vi.fn(async () => {
+      throw new PreconditionFailedError();
+    });
+    const self = makeSelf({ fetchEventICS, updateEventICS });
+
+    await expect(
+      updateRSVP.call(
+        self,
+        "cal-href",
+        "/cal/evt-1.ics",
+        "kris@plot.day",
+        "ACCEPTED"
+      )
+    ).rejects.toThrow();
+
+    // Read once + retry read once; wrote once + retried write once.
+    expect(fetchEventICS).toHaveBeenCalledTimes(2);
+    expect(updateEventICS).toHaveBeenCalledTimes(2);
+  });
+
+  it("a non-412 write failure still throws directly, with no retry", async () => {
+    const fetchEventICS = vi.fn(async () => ({
+      icsData: icsFixture,
+      etag: "etag-1",
+    }));
+    const updateEventICS = vi.fn(async () => false);
+    const self = makeSelf({ fetchEventICS, updateEventICS });
+
+    await expect(
+      updateRSVP.call(
+        self,
+        "cal-href",
+        "/cal/evt-1.ics",
+        "kris@plot.day",
+        "ACCEPTED"
+      )
+    ).rejects.toThrow(/Failed to update event/);
+
+    expect(fetchEventICS).toHaveBeenCalledTimes(1);
+    expect(updateEventICS).toHaveBeenCalledTimes(1);
   });
 });
