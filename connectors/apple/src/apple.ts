@@ -590,6 +590,17 @@ export class Apple extends Connector<Apple> {
     for (const key of writebackKeys) {
       await this.clear(key);
     }
+    // Sweep the to-do↔\Flagged echo-dedup markers (`mail:flagged:<rootId>`,
+    // written by `onThreadToDoFn`/`reconcileTodoFlags`). Never expire on
+    // their own, so clear them on disable — mirrors the compose and
+    // write-back sweeps above. Not channel-scoped (single mail channel in
+    // v1), so all `mail:flagged:*` are ours. Deliberately NOT sweeping
+    // `mail:auth_actor_id` here: that key is connection-scoped, re-set by
+    // `activate()` on connect, and must survive a channel re-enable.
+    const flaggedKeys = await this.tools.store.list("mail:flagged:");
+    for (const key of flaggedKeys) {
+      await this.clear(key);
+    }
     await this.tools.integrations.archiveLinks({
       channelId: channel.id,
       meta: { syncProvider: "apple-mail", syncableId: channel.id },

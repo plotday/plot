@@ -232,24 +232,44 @@ async function onCreateLinkForwardFn(
     };
   }
 
-  const session = await connectIcloud(host);
-  let found: { mailbox: string; message: ImapMessage } | null;
-  let attachments: { fileName: string; mimeType: string; data: Uint8Array }[];
+  // A transient IMAP failure (connect, fetch original message/attachments)
+  // must not throw+page — degrade like the reply and flag write-back paths
+  // do: return a deliveryError so the note surfaces "Failed to send" with
+  // Retry, and leave the dedup guard below unset so Retry re-sends. A
+  // genuine null result (message not found) is handled OUTSIDE the try so it
+  // still yields its own `not_found` error rather than being folded into
+  // `imap_unavailable`.
+  let found: { mailbox: string; message: ImapMessage } | null = null;
+  let attachments: { fileName: string; mimeType: string; data: Uint8Array }[] = [];
   try {
-    found = await fetchOriginalMessage(host, session, forwardKey, draft.title, now);
-    if (!found) {
-      return {
-        originatingNote: {
-          deliveryError: {
-            code: "not_found",
-            message: "The original message could not be found — it may have been deleted.",
-          },
-        },
-      };
+    const session = await connectIcloud(host);
+    try {
+      found = await fetchOriginalMessage(host, session, forwardKey, draft.title, now);
+      if (found) {
+        attachments = await fetchOriginalAttachments(host, session, found.mailbox, found.message);
+      }
+    } finally {
+      await host.imap.disconnect(session);
     }
-    attachments = await fetchOriginalAttachments(host, session, found.mailbox, found.message);
-  } finally {
-    await host.imap.disconnect(session);
+  } catch {
+    return {
+      originatingNote: {
+        deliveryError: {
+          code: "imap_unavailable",
+          message: "Couldn't reach iCloud to load the original message. Try again.",
+        },
+      },
+    };
+  }
+  if (!found) {
+    return {
+      originatingNote: {
+        deliveryError: {
+          code: "not_found",
+          message: "The original message could not be found — it may have been deleted.",
+        },
+      },
+    };
   }
 
   const subject = draft.title.startsWith("Fwd:") ? draft.title : `Fwd: ${draft.title}`;
@@ -425,6 +445,15 @@ export async function onCreateLinkFn(
  * `host.queueWritebackDrain`) to re-apply once IMAP is reachable again.
  * Re-notifying the same id before the drain fires (a fresh toggle) resets its
  * attempt counter and simply overwrites the stored payload — last-write-wins.
+ *
+ * Any direct call that resolves WITHOUT deferring — a successful IMAP write,
+ * or a superseding no-op (no INBOX uids left to flag) — clears the
+ * `writeback:${kind}:${rootId}` payload. This is required, not cosmetic: the
+ * drain (`mailWritebackDrain` in apple.ts) skips re-applying when the payload
+ * is absent (`if (!pending) continue`), but nothing else ever clears it. If a
+ * failed toggle persists a payload + queues a drain, and the OPPOSITE toggle
+ * then succeeds directly (without this clear), the stale payload survives and
+ * the queued drain later re-applies the OLD, now-wrong operation.
  */
 async function setThreadFlag(
   host: MailHost,
@@ -434,18 +463,27 @@ async function setThreadFlag(
 ): Promise<void> {
   const rootId = mailRootId(thread);
   if (!rootId) return;
+  const kind = flag === "\\Seen" ? "read" : "todo";
 
   try {
     const session = await connectIcloud(host);
     try {
       const { inboxUids } = await resolveThreadMessages(host, session, rootId, thread.title);
-      if (inboxUids.length === 0) return; // nothing to flag — not a failure
+      if (inboxUids.length === 0) {
+        // Nothing to flag — not a failure, but still a superseding
+        // resolution: drop any stale pending payload from a prior failure.
+        await host.clear(`writeback:${kind}:${rootId}`);
+        return;
+      }
       await host.imap.setFlags(session, inboxUids, [flag], operation);
+      // This direct write succeeded — supersede any stale pending payload so
+      // the queued drain (if one is still pending from an earlier failure)
+      // skips instead of re-applying the old operation.
+      await host.clear(`writeback:${kind}:${rootId}`);
     } finally {
       await host.imap.disconnect(session);
     }
   } catch {
-    const kind = flag === "\\Seen" ? "read" : "todo";
     await host.set(`writeback:${kind}:${rootId}`, { title: thread.title, flag, operation });
     await host.queueWritebackDrain(`${kind}:${rootId}`);
   }
@@ -479,9 +517,16 @@ export async function onThreadReadFn(
  * Set unconditionally, even when the IMAP write itself defers to the
  * writeback retry queue (Task 5): the to-do state already lives in Plot, so
  * the marker should reflect that intent regardless of when — or whether —
- * the deferred write ultimately lands (see write-parity recon for the
- * bounded edge case where a poison-dropped write leaves the marker
- * momentarily ahead of IMAP).
+ * the deferred write ultimately lands. If the deferred write eventually
+ * drains successfully, the marker and IMAP converge with no user-visible
+ * effect. But if it is instead POISON-DROPPED — retried and failed until
+ * `mailWritebackDrain` (apple.ts) gives up after `maxAttempts` — the next
+ * read pass (`reconcileTodoFlags` in sync.ts) sees the true, never-flagged
+ * IMAP state disagree with this marker and silently flips Plot's to-do back
+ * to match it. That is a one-way revert of the user's action, NOT a
+ * self-correcting flip-flop: nothing subsequently restores the user's
+ * intent. This is an accepted limitation (the same class Gmail's equivalent
+ * write-back ships with), not something this connector attempts to fix.
  */
 export async function onThreadToDoFn(
   host: MailHost,

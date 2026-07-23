@@ -88,7 +88,9 @@ function mockHost(opts: {
       store.set(key, value);
     }),
     get: vi.fn(async (key: string) => store.get(key)),
-    clear: async () => {},
+    clear: vi.fn(async (key: string) => {
+      store.delete(key);
+    }),
     channelSyncCompleted: async () => {},
     queueWritebackDrain: vi.fn(async (id: string) => {
       queuedDrains.push(id);
@@ -434,6 +436,17 @@ describe("onCreateLinkFn (forward)", () => {
     expect(out?.source).toBeUndefined();
   });
 
+  it("returns an imap_unavailable deliveryError (does not throw) when fetching the original message throws", async () => {
+    const { host, sent } = mockHost({
+      inboxMessages: [originalMessage],
+      searchError: new Error("connection refused"),
+    });
+    const out = await onCreateLinkFn(host, forwardDraft(), new Date("2026-07-20T00:00:00Z"));
+    expect(out?.originatingNote?.deliveryError).toMatchObject({ code: "imap_unavailable" });
+    expect(out?.source).toBeUndefined();
+    expect(sent).toHaveLength(0);
+  });
+
   it("returns no_recipients when the forward draft has no addresses", async () => {
     const { host } = mockHost({ inboxMessages: [originalMessage] });
     const out = await onCreateLinkFn(
@@ -574,5 +587,30 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
     // so it still reflects Plot's intent even though the write itself
     // deferred to the writeback retry queue (see onThreadToDoFn's doc).
     expect(host.set).toHaveBeenCalledWith("flagged:root@x.com", true);
+  });
+
+  // Discriminating tests for the stale-payload bug: a direct write that
+  // resolves WITHOUT deferring (success, or a superseding no-op) must clear
+  // any `writeback:${kind}:${rootId}` payload left by an earlier failed
+  // toggle. Without this, an opposite toggle that succeeds directly leaves
+  // the stale payload in place, and the still-queued drain later re-applies
+  // the OLD operation — see setThreadFlag's doc comment.
+  it("clears any stale writeback payload on a successful direct \\Seen write", async () => {
+    const { host } = mockHost({ inboxMessages: inbox });
+    await onThreadReadFn(host, mailThread(), {} as never, false);
+    expect(host.clear).toHaveBeenCalledWith("writeback:read:root@x.com");
+  });
+
+  it("clears any stale writeback payload on a successful direct \\Flagged write", async () => {
+    const { host } = mockHost({ inboxMessages: inbox });
+    await onThreadToDoFn(host, mailThread(), {} as never, true, {});
+    expect(host.clear).toHaveBeenCalledWith("writeback:todo:root@x.com");
+  });
+
+  it("clears any stale writeback payload on a superseding no-op (no INBOX uids to flag)", async () => {
+    const { host, flagCalls } = mockHost({ inboxMessages: [] });
+    await onThreadToDoFn(host, mailThread(), {} as never, true, {});
+    expect(flagCalls).toHaveLength(0);
+    expect(host.clear).toHaveBeenCalledWith("writeback:todo:root@x.com");
   });
 });
