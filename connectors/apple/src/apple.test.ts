@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { Apple } from "./apple";
 import { composeChannels } from "./compose";
 import { appleProducts } from "./products";
 import { parse } from "./product-channel";
@@ -21,5 +22,34 @@ describe("Apple composite wiring", () => {
     expect(parse("calendar:/1234/calendars/home/").rawId).toBe(
       "/1234/calendars/home/"
     );
+  });
+});
+
+describe("Apple.getAccountIdentity", () => {
+  // getAccountIdentity is a matchable-identity hook (unlike getAccountName,
+  // display-only) the runtime uses to link the connected Apple ID's email to
+  // the signed-in Plot user — see AGENTS.md's runtime owner-identity recon
+  // and getAccountIdentity's JSDoc in @plotday/twister/connector.
+  function makeSelf(appleId: string | undefined) {
+    return { tools: { options: { appleId } } } as unknown as Apple;
+  }
+
+  it("returns the configured Apple ID as the identity email", async () => {
+    const result = await Apple.prototype.getAccountIdentity.call(
+      makeSelf("me@icloud.com")
+    );
+    expect(result).toEqual({ email: "me@icloud.com" });
+  });
+
+  it("returns null when no Apple ID is configured yet", async () => {
+    const result = await Apple.prototype.getAccountIdentity.call(makeSelf(""));
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the Apple ID option is unset", async () => {
+    const result = await Apple.prototype.getAccountIdentity.call(
+      makeSelf(undefined)
+    );
+    expect(result).toBeNull();
   });
 });

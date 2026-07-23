@@ -258,6 +258,18 @@ export class Apple extends Connector<Apple> {
   }
 
   /**
+   * The Apple ID IS an email address, so — unlike getAccountName above,
+   * which is display-only — it doubles as a matchable identity: the
+   * platform links it to the signed-in Plot user's contact so the
+   * connector's own mail/calendar activity is recognized as "you" (see
+   * getAccountIdentity's JSDoc in @plotday/twister/connector).
+   */
+  override async getAccountIdentity(): Promise<{ email: string } | null> {
+    const appleId = this.tools.options.appleId as string | undefined;
+    return appleId && appleId.length > 0 ? { email: appleId } : null;
+  }
+
+  /**
    * Adapter the mail/* pure sync functions depend on. Storage keys are
    * namespaced with a "mail:" prefix here so mail's per-channel cursors can
    * never collide with calendar's `sync_state_<id>` etc. keys — callers in
