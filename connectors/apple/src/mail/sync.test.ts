@@ -368,7 +368,89 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     expect(next?.lastModSeq).toBe(55);
   });
 
-  it("independent gate: INBOX unchanged, Sent advanced — Sent is fetched, INBOX is not", async () => {
+  it("INBOX unchanged + Sent changed must not corrupt an INBOX-rooted thread (regression)", async () => {
+    // INBOX modseq is unchanged (100 → 100) but Sent advanced (60 → 61). An
+    // owner reply sent from Apple Mail (or Plot, whose Sent copy re-ingests)
+    // threads onto an already-read INBOX thread without ever touching
+    // INBOX's own modseq. The combined gate must still rescan INBOX so the
+    // thread is rebuilt from its complete message set, not just the Sent
+    // reply — otherwise the reply's "Re: …" subject and owner sender
+    // overwrite the thread's real title/author.
+    const orig = msg({
+      uid: 30,
+      messageId: "<orig@x>",
+      subject: "Original",
+      from: [{ address: "alice@example.com", name: "Alice" }],
+      to: [{ address: "kris@icloud.com", name: "Kris" }],
+      flags: ["\\Seen"],
+      date: new Date("2026-07-14T09:00:00Z"),
+    });
+    const reply = msg({
+      uid: 40,
+      messageId: "<reply@x>",
+      references: ["<orig@x>"],
+      subject: "Re: Original",
+      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      to: [{ address: "alice@example.com", name: "Alice" }],
+      flags: ["\\Seen"],
+      date: new Date("2026-07-15T10:00:00Z"),
+    });
+
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: {
+        name: "INBOX",
+        status: {
+          name: "INBOX",
+          exists: 1,
+          recent: 0,
+          uidValidity: 1,
+          uidNext: 31,
+          unseen: 0,
+          highestModSeq: 100, // unchanged from state.lastModSeq below
+        },
+        searchUids: [30],
+        messagesByUid: new Map([[30, orig]]),
+      },
+      sent: {
+        name: SENT_BOX,
+        specialUse: "\\Sent",
+        status: {
+          name: SENT_BOX,
+          exists: 1,
+          recent: 0,
+          uidValidity: 1,
+          uidNext: 41,
+          highestModSeq: 61, // advanced from state.sentLastModSeq below
+        },
+        searchUids: [40],
+        messagesByUid: new Map([[40, reply]]),
+      },
+    });
+
+    const state: MailSyncState = {
+      uidValidity: 1,
+      lastUid: 25,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100,
+      sentLastModSeq: 60,
+    };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    // Proves INBOX was rescanned even though its own modseq didn't move.
+    expect(fetchCalls.some((c) => c.mailbox === "INBOX")).toBe(true);
+
+    const rootLinks = savedLinks.filter((l) => l.source === "icloud-mail:thread:orig@x");
+    expect(rootLinks).toHaveLength(1);
+    expect(rootLinks[0].title).toBe("Original");
+    expect((rootLinks[0].author as { email?: string } | undefined)?.email).toBe(
+      "alice@example.com"
+    );
+  });
+
+  it("combined gate: INBOX unchanged, Sent advanced — BOTH mailboxes are fetched", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
       inbox: inboxFixture(100, 30),
@@ -385,16 +467,18 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
 
     await mailIncrementalSync(host, CHANNEL_ID);
 
-    expect(fetchCalls.every((c) => c.mailbox !== "INBOX")).toBe(true);
+    // A change on either side must rescan both, so a thread rooted in the
+    // unchanged mailbox is never rebuilt from a partial message set.
+    expect(fetchCalls.some((c) => c.mailbox === "INBOX")).toBe(true);
     expect(fetchCalls.some((c) => c.mailbox === SENT_BOX)).toBe(true);
     expect(savedLinks.some((l) => l.source === "icloud-mail:thread:sent-40@icloud.com")).toBe(true);
-    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(false);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
     const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
     expect(next?.lastModSeq).toBe(100);
     expect(next?.sentLastModSeq).toBe(61);
   });
 
-  it("independent gate: INBOX advanced, Sent unchanged — INBOX is fetched, Sent is not", async () => {
+  it("combined gate: INBOX advanced, Sent unchanged — BOTH mailboxes are fetched", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
       inbox: inboxFixture(101, 30),
@@ -411,10 +495,12 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
 
     await mailIncrementalSync(host, CHANNEL_ID);
 
+    // A change on either side must rescan both, so a thread rooted in the
+    // unchanged mailbox is never rebuilt from a partial message set.
     expect(fetchCalls.some((c) => c.mailbox === "INBOX")).toBe(true);
-    expect(fetchCalls.every((c) => c.mailbox !== SENT_BOX)).toBe(true);
+    expect(fetchCalls.some((c) => c.mailbox === SENT_BOX)).toBe(true);
     expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
-    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:sent-40@icloud.com")).toBe(false);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:sent-40@icloud.com")).toBe(true);
     const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
     expect(next?.lastModSeq).toBe(101);
     expect(next?.sentLastModSeq).toBe(50);

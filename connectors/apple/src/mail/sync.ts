@@ -205,30 +205,61 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       return;
     }
 
-    // CONDSTORE gate (RFC 7162): an unchanged HIGHESTMODSEQ since the last
-    // successful poll means nothing in the mailbox changed — a new message,
-    // a flag change (\Seen, \Flagged, ...), and an expunge all advance it —
-    // so there is nothing new to (re)fetch this pass. Because ANY change
-    // bumps the mod-sequence, gating on it can never miss new mail. Falls
-    // back to today's full rescan when the server doesn't advertise
+    // COMBINED CONDSTORE gate (RFC 7162). INBOX and Sent are always merged
+    // into a single transformMessages() call per pass (see
+    // runInitialBackfill's doc) so that a thread rooted in one mailbox is
+    // never rebuilt from a partial message set — e.g. an INBOX-rooted
+    // thread's title/author must never be recomputed from just a Sent
+    // reply. That merge invariant means the two mailboxes' gates cannot be
+    // decided independently: if EITHER mailbox's HIGHESTMODSEQ advanced
+    // since the last successful poll, BOTH must be (re)fetched this pass so
+    // any thread the change touches is rebuilt from its complete message
+    // set. Only skip both when NEITHER advanced. Falls back to "assume
+    // changed" for a given mailbox when the server doesn't advertise
     // CONDSTORE (`highestModSeq === undefined`) or no baseline cursor exists
-    // yet (`state.lastModSeq === undefined`, e.g. state written before this
-    // cursor shipped) — either case reads as "assume changed".
+    // yet for it (`lastModSeq`/`sentLastModSeq === undefined`, e.g. state
+    // written before this cursor shipped).
     const inboxUnchanged =
       status.highestModSeq !== undefined &&
       state.lastModSeq !== undefined &&
       status.highestModSeq === state.lastModSeq;
 
-    // Pure date math, shared by INBOX's own rescan (when it runs) and the
-    // Sent gate below — computing it doesn't touch IMAP, so it's cheap to
-    // keep even when the INBOX gate skips its own search calls.
+    // Read Sent's HIGHESTMODSEQ up front (before deciding whether to
+    // rescan) so the combined decision below can see both mailboxes' state.
+    // This SELECTs Sent, moving the session's selected mailbox off INBOX.
+    const sentBox = await resolveSentMailbox(host, session);
+    let sentStatus: ImapMailboxStatus | undefined;
+    if (sentBox) {
+      sentStatus = await host.imap.selectMailbox(session, sentBox);
+    }
+    // No Sent mailbox at all means there's nothing to gate on that side, so
+    // it can never block a rescan the INBOX side needs (and vice versa) —
+    // treat as "unchanged" so the combined decision rests on whichever
+    // mailbox actually exists.
+    const sentUnchanged =
+      !sentBox ||
+      (sentStatus!.highestModSeq !== undefined &&
+        state.sentLastModSeq !== undefined &&
+        sentStatus!.highestModSeq === state.sentLastModSeq);
+
+    // Pure date math, shared by both mailboxes' rescans below.
     const floor = resolveSinceFloor(state.syncHistoryMin);
     const recentSince = new Date(Math.max(floor.getTime(), Date.now() - RECENT_WINDOW_MS));
 
     let newUids: number[] = [];
     let inboxUids: number[] = [];
     let inbox: ImapMessage[] = [];
-    if (!inboxUnchanged) {
+    let sent: ImapMessage[] = [];
+
+    if (!(inboxUnchanged && sentUnchanged)) {
+      // Either mailbox changed => rescan BOTH, exactly today's full-rescan
+      // behavior, so any thread the change touches is rebuilt complete.
+
+      // Re-select INBOX first: the Sent SELECT above (used to read its
+      // HIGHESTMODSEQ) switched the session's currently-selected mailbox,
+      // and IMAP SEARCH always targets whatever's currently selected.
+      await host.imap.selectMailbox(session, "INBOX");
+
       // New mail since the stored cursor, bounded by the plan floor so a
       // dormant account (stored lastUid: 0) can't fetch the entire mailbox.
       const windowUids = await host.imap.search(session, { since: floor });
@@ -240,21 +271,9 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
 
       inboxUids = Array.from(new Set([...newUids, ...recentUids]));
       inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
-    }
 
-    let sent: ImapMessage[] = [];
-    let sentStatus: ImapMailboxStatus | undefined;
-    const sentBox = await resolveSentMailbox(host, session);
-    if (sentBox) {
-      sentStatus = await host.imap.selectMailbox(session, sentBox);
-      // Independent gate from INBOX: Sent has no separate incremental-mail
-      // cursor (see the module doc), so this only decides whether to run
-      // its own recent-window rescan.
-      const sentUnchanged =
-        sentStatus.highestModSeq !== undefined &&
-        state.sentLastModSeq !== undefined &&
-        sentStatus.highestModSeq === state.sentLastModSeq;
-      if (!sentUnchanged) {
+      if (sentBox) {
+        await host.imap.selectMailbox(session, sentBox);
         const sentUids = await host.imap.search(session, { since: recentSince });
         sent = await fetchUidRange(host, session, sentBox, sentUids);
       }
