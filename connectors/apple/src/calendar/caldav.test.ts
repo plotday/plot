@@ -1,0 +1,172 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CalDAVClient, InvalidSyncTokenError } from "./caldav";
+
+/** Minimal fetch Response stand-in — only the members CalDAVClient reads. */
+function mockResponse(status: number, body: string): Response {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    statusText: "",
+    text: async () => body,
+  } as unknown as Response;
+}
+
+function makeClient(): CalDAVClient {
+  return new CalDAVClient({ appleId: "me@icloud.com", appPassword: "app-pw" });
+}
+
+describe("CalDAVClient.getCollectionChanges", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Verbatim (measured) iCloud response for a sync-collection REPORT with no
+  // changes: zero <response> elements, and <sync-token> is a direct child of
+  // <multistatus> — a sibling of any response blocks, not nested in one.
+  const EMPTY_DELTA_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<multistatus xmlns="DAV:">
+ <sync-token>HwoQEgwAAEtvRDAmkwAAAAAYARgAIhUI7YrB98zK+bIDEJml3pqc7L7MhgEoAA==</sync-token>
+</multistatus>`;
+
+  it("parses an empty-delta response as zero changed, zero deleted, with the token extracted", async () => {
+    fetchMock.mockResolvedValue(mockResponse(207, EMPTY_DELTA_XML));
+    const client = makeClient();
+
+    const result = await client.getCollectionChanges(
+      "/289842362/calendars/work/",
+      "some-prior-token"
+    );
+
+    expect(result.changed).toEqual([]);
+    expect(result.deletedHrefs).toEqual([]);
+    expect(result.token).toBe(
+      "HwoQEgwAAEtvRDAmkwAAAAAYARgAIhUI7YrB98zK+bIDEJml3pqc7L7MhgEoAA=="
+    );
+  });
+
+  it("classifies a mixed unprefixed response: .ics change -> changed, 404 -> deletedHrefs, collection's own href -> neither", async () => {
+    // Modeled on the measured iCloud response for a poll where an event was
+    // added/modified and a probe event was deleted. iCloud's default
+    // (unprefixed) DAV: namespace is used throughout, exactly as observed:
+    // <response xmlns="DAV:">, not <D:response>. The first <response> block
+    // below — the calendar COLLECTION's own href, carrying a getetag — is
+    // copied verbatim from the measured payload; it must be filtered out,
+    // not treated as a changed event. The genuine changed-event block
+    // (a real .ics href with a getetag) follows the same shape but was not
+    // itself part of the pasted probe transcript (that probe's add+delete
+    // happened to collapse into a single collection-level entry plus one
+    // 404) — it's synthesized here from the identical response shape so the
+    // "changed" classification path has real coverage.
+    const MIXED_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<multistatus xmlns="DAV:">
+<response xmlns="DAV:">
+ <href>/289842362/calendars/work/</href>
+ <propstat><prop><getetag xmlns="DAV:">"ldp3blyq"</getetag></prop>
+ <status>HTTP/1.1 200 OK</status></propstat>
+</response>
+<response xmlns="DAV:">
+ <href>/289842362/calendars/work/new-event-abc123.ics</href>
+ <propstat><prop><getetag xmlns="DAV:">"xyz789"</getetag></prop>
+ <status>HTTP/1.1 200 OK</status></propstat>
+</response>
+<response xmlns="DAV:">
+ <href>/289842362/calendars/work/plot-sync-probe-97471.ics</href>
+ <status>HTTP/1.1 404 Not Found</status>
+</response>
+<sync-token>HwoQEgwAAEtvRDAmkwAAAAAYARgAIhUI7YrB98zK+bIDEJml3pqc7L7MhgEoAQ==</sync-token>
+</multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, MIXED_XML));
+    const client = makeClient();
+
+    const result = await client.getCollectionChanges(
+      "/289842362/calendars/work/",
+      "some-prior-token"
+    );
+
+    expect(result.changed).toEqual([
+      { href: "/289842362/calendars/work/new-event-abc123.ics", etag: "xyz789" },
+    ]);
+    expect(result.deletedHrefs).toEqual([
+      "/289842362/calendars/work/plot-sync-probe-97471.ics",
+    ]);
+    // The collection's own href must not appear on either side.
+    const allHrefs = [
+      ...result.changed.map((c) => c.href),
+      ...result.deletedHrefs,
+    ];
+    expect(allHrefs).not.toContain("/289842362/calendars/work/");
+    expect(result.token).toBe(
+      "HwoQEgwAAEtvRDAmkwAAAAAYARgAIhUI7YrB98zK+bIDEJml3pqc7L7MhgEoAQ=="
+    );
+  });
+
+  it("parses a prefixed (<D:response>) sync-collection response identically", async () => {
+    const PREFIXED_XML = `<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+<D:response>
+<D:href>/cal/collection/changed-event.ics</D:href>
+<D:propstat><D:prop><D:getetag>"etag-prefixed-1"</D:getetag></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+</D:response>
+<D:response>
+<D:href>/cal/collection/removed-event.ics</D:href>
+<D:status>HTTP/1.1 404 Not Found</D:status>
+</D:response>
+<D:sync-token>opaque-prefixed-token-1</D:sync-token>
+</D:multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, PREFIXED_XML));
+    const client = makeClient();
+
+    const result = await client.getCollectionChanges("/cal/collection/", "prior-token");
+
+    expect(result.changed).toEqual([
+      { href: "/cal/collection/changed-event.ics", etag: "etag-prefixed-1" },
+    ]);
+    expect(result.deletedHrefs).toEqual(["/cal/collection/removed-event.ics"]);
+    expect(result.token).toBe("opaque-prefixed-token-1");
+  });
+
+  it("surfaces a 403 + <valid-sync-token/> body as InvalidSyncTokenError", async () => {
+    // Measured verbatim from iCloud (RFC 6578 §3.7 precondition failure),
+    // both for a garbage token and for a valid-shaped-but-wrong token.
+    const INVALID_TOKEN_XML = `<?xml version='1.0' encoding='UTF-8'?>
+<error xmlns='DAV:'>
+<valid-sync-token/>
+</error>`;
+    fetchMock.mockResolvedValue(mockResponse(403, INVALID_TOKEN_XML));
+    const client = makeClient();
+
+    await expect(
+      client.getCollectionChanges("/289842362/calendars/work/", "garbage-token")
+    ).rejects.toBeInstanceOf(InvalidSyncTokenError);
+  });
+
+  it("still throws a generic error for a 403 that is not a valid-sync-token rejection", async () => {
+    fetchMock.mockResolvedValue(mockResponse(403, ""));
+    const client = makeClient();
+
+    await expect(
+      client.getCollectionChanges("/289842362/calendars/work/", "some-token")
+    ).rejects.not.toBeInstanceOf(InvalidSyncTokenError);
+  });
+
+  it("sends an empty <A:sync-token/> element when the token is null (initial/reset sync)", async () => {
+    fetchMock.mockResolvedValue(mockResponse(207, EMPTY_DELTA_XML));
+    const client = makeClient();
+
+    await client.getCollectionChanges("/289842362/calendars/work/", null);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = options.body as string;
+    expect(body).toContain("<A:sync-token/>");
+    expect(body).not.toMatch(/<A:sync-token>[^/]/);
+  });
+});

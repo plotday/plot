@@ -22,6 +22,39 @@ export type CalDAVEvent = {
   icsData: string;
 };
 
+/** A single added/modified item reported by a `sync-collection` REPORT. */
+export type CalDAVCollectionChange = {
+  href: string;
+  etag: string;
+};
+
+/**
+ * Result of an RFC 6578 WebDAV-Sync `sync-collection` REPORT: the new sync
+ * token to persist for the next incremental poll, plus the hrefs that
+ * changed (added or modified) and the hrefs that were deleted since the
+ * token passed in.
+ */
+export type CalDAVCollectionChanges = {
+  token: string;
+  changed: CalDAVCollectionChange[];
+  deletedHrefs: string[];
+};
+
+/**
+ * Thrown when a `sync-collection` REPORT is rejected because the sync token
+ * is invalid or expired — RFC 6578 §3.7's `DAV:valid-sync-token`
+ * precondition, which iCloud surfaces as an HTTP `403` whose body is
+ * `<error><valid-sync-token/></error>`, not a generic access-denied 403.
+ * Callers should discard the stored token and retry with `syncToken: null`
+ * for a full resync, rather than treating this like any other failure.
+ */
+export class InvalidSyncTokenError extends Error {
+  constructor(message = "CalDAV sync token is invalid or expired") {
+    super(message);
+    this.name = "InvalidSyncTokenError";
+  }
+}
+
 type MultistatusEntry = {
   href: string;
   props: Record<string, string>;
@@ -73,6 +106,15 @@ export class CalDAVClient {
       );
     }
     if (response.status === 403) {
+      // A 403 is normally a revoked app-specific password, but
+      // sync-collection REPORTs also use 403 for the RFC 6578 §3.7
+      // DAV:valid-sync-token precondition (invalid/expired token). Only the
+      // body distinguishes them — read it and check for that specific
+      // element before falling back to the generic access-denied error.
+      const text = await response.text();
+      if (isInvalidSyncTokenResponse(text)) {
+        throw new InvalidSyncTokenError();
+      }
       throw new Error("Access denied — app-specific password may be revoked");
     }
     if (!response.ok && response.status !== 207) {
@@ -274,6 +316,52 @@ export class CalDAVClient {
     }
 
     return etags;
+  }
+
+  /**
+   * Fetch incremental changes to a calendar collection via RFC 6578
+   * WebDAV-Sync (a `sync-collection` REPORT). Unlike `getEventEtags`
+   * (PROPFIND depth-1 over every event, every poll), this asks the server
+   * to return only what changed since `syncToken`.
+   *
+   * Pass `null` for `syncToken` to request the full current state — an
+   * initial or reset sync — sent as an empty `<A:sync-token/>` element per
+   * RFC 6578 §3.2.
+   *
+   * The calendar collection's own href commonly appears in the delta (it
+   * changed too, since a child changed) — this is filtered out and never
+   * appears in `changed` or `deletedHrefs`. Deleted items are reported as a
+   * bare 404 `<response>` with no `getetag`/`calendar-data`, so they're
+   * classified here rather than via `parseEventResponses` (which requires
+   * both and would silently drop them).
+   *
+   * If the server rejects the token as invalid/expired (RFC 6578 §3.7),
+   * this throws `InvalidSyncTokenError` — callers should discard the stored
+   * token and retry with `syncToken: null` for a full resync.
+   */
+  async getCollectionChanges(
+    calendarHref: string,
+    syncToken: string | null
+  ): Promise<CalDAVCollectionChanges> {
+    const tokenElement = syncToken
+      ? `<A:sync-token>${escapeXml(syncToken)}</A:sync-token>`
+      : `<A:sync-token/>`;
+
+    const body = `<?xml version="1.0" encoding="UTF-8"?>
+<A:sync-collection xmlns:A="DAV:">
+  ${tokenElement}
+  <A:sync-level>1</A:sync-level>
+  <A:prop><A:getetag/></A:prop>
+</A:sync-collection>`;
+
+    const xml = await this.request(
+      "REPORT",
+      this.resolveUrl(calendarHref),
+      body,
+      1
+    );
+
+    return parseSyncCollectionResponse(xml, calendarHref);
   }
 
   /**
@@ -500,6 +588,70 @@ function parseEventResponses(xml: string): CalDAVEvent[] {
   }
 
   return events;
+}
+
+/**
+ * Detect the RFC 6578 §3.7 `DAV:valid-sync-token` precondition-failure body
+ * (`<error><valid-sync-token/></error>`) inside a 403 response. Matches an
+ * optional namespace prefix so both iCloud's unprefixed `<valid-sync-token/>`
+ * and a prefixed `<D:valid-sync-token/>` are recognized — same rationale as
+ * the `responseBlocks` split in `parseMultistatus`.
+ */
+function isInvalidSyncTokenResponse(xml: string): boolean {
+  return /<(?:[a-zA-Z][\w.-]*:)?valid-sync-token(?=[\s/>])/i.test(xml);
+}
+
+/**
+ * Normalize an href for equality comparisons by ensuring a trailing slash.
+ * Calendar collection hrefs are conventionally slash-terminated, but this
+ * guards against a caller-supplied href that omits it.
+ */
+function normalizeHref(href: string): string {
+  return href.endsWith("/") ? href : `${href}/`;
+}
+
+/**
+ * Parse a `sync-collection` REPORT response into changed/deleted hrefs plus
+ * the new sync token.
+ *
+ * Three things make this different from `parseEventResponses`:
+ *  - The sync token is a direct child of `<multistatus>` — a SIBLING of the
+ *    `<response>` blocks, not nested inside one — so it's extracted from the
+ *    whole document rather than from any per-response entry.
+ *  - The collection itself shows up as one of the `<response>` entries
+ *    (it "changed" because a child changed), carrying a real `getetag`. It's
+ *    filtered out by comparing hrefs (trailing-slash normalized) against the
+ *    requested collection href, rather than by a fragile `.ics` suffix check.
+ *  - Deletions arrive as a bare `<status>HTTP/1.1 404 Not Found</status>`
+ *    with no `<propstat>`/etag/calendar-data at all, so they're invisible to
+ *    `parseEventResponses`'s `etag && icsData` filter. They're classified
+ *    here directly from the response status instead.
+ */
+function parseSyncCollectionResponse(
+  xml: string,
+  collectionHref: string
+): CalDAVCollectionChanges {
+  const token = extractTagContent(xml, "sync-token") || "";
+  const normalizedCollectionHref = normalizeHref(collectionHref);
+
+  const changed: CalDAVCollectionChange[] = [];
+  const deletedHrefs: string[] = [];
+
+  for (const entry of parseMultistatus(xml)) {
+    if (normalizeHref(entry.href) === normalizedCollectionHref) continue;
+
+    if (entry.status && /\b404\b/.test(entry.status)) {
+      deletedHrefs.push(entry.href);
+      continue;
+    }
+
+    const etag = entry.props["getetag"];
+    if (etag) {
+      changed.push({ href: entry.href, etag });
+    }
+  }
+
+  return { token, changed, deletedHrefs };
 }
 
 /**
