@@ -29,10 +29,28 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin, beth]);
+      expect(r.to).toEqual([
+        { address: tobin, name: null },
+        { address: beth, name: null },
+      ]);
       expect(r.cc).toEqual([]);
       expect(r.bcc).toEqual([]);
       expect(r.curated).toBe(true);
+    });
+
+    it("carries platform-resolved recipient names (Case 1)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          { id: "1", name: "Dana Wagner", externalAccountId: "dw@x.com", role: "to" },
+          { id: "2", name: null, externalAccountId: "no-name@x.com", role: "cc" },
+        ],
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set(),
+      });
+      expect(result.to).toEqual([{ address: "dw@x.com", name: "Dana Wagner" }]);
+      expect(result.cc).toEqual([{ address: "no-name@x.com", name: null }]);
     });
 
     it("ignores the message headers entirely — a dropped participant is not re-added", () => {
@@ -44,7 +62,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [anthropic],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin]);
+      expect(r.to).toEqual([{ address: tobin, name: null }]);
       expect(r.cc).toEqual([]);
     });
 
@@ -56,9 +74,9 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin]);
-      expect(r.cc).toEqual([beth]);
-      expect(r.bcc).toEqual(["x@y.com"]);
+      expect(r.to).toEqual([{ address: tobin, name: null }]);
+      expect(r.cc).toEqual([{ address: beth, name: null }]);
+      expect(r.bcc).toEqual([{ address: "x@y.com", name: null }]);
     });
 
     it("defaults null role to To (or the provided default)", () => {
@@ -70,7 +88,7 @@ describe("resolveOutboundReplyRecipients", () => {
           headerCc: [],
           selfEmails: new Set(),
         }).to
-      ).toEqual([tobin]);
+      ).toEqual([{ address: tobin, name: null }]);
     });
 
     it("a bcc address never also appears in To/Cc (no leak)", () => {
@@ -81,7 +99,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set(),
       });
-      expect(r.bcc).toEqual([tobin]);
+      expect(r.bcc).toEqual([{ address: tobin, name: null }]);
       expect(r.to).toEqual([]);
     });
 
@@ -107,7 +125,10 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox, workEmail]),
       });
-      expect(r.to).toEqual([tobin, beth]);
+      expect(r.to).toEqual([
+        { address: tobin, name: null },
+        { address: beth, name: null },
+      ]);
       expect(r.curated).toBe(true);
     });
 
@@ -119,7 +140,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin]);
+      expect(r.to).toEqual([{ address: tobin, name: null }]);
     });
 
     it("private note (self only) yields no recipients but stays curated", () => {
@@ -145,9 +166,20 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [beth],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([anthropic]);
-      expect(r.cc).toEqual([beth]);
+      expect(r.to).toEqual([{ address: anthropic, name: null }]);
+      expect(r.cc).toEqual([{ address: beth, name: null }]);
       expect(r.curated).toBe(false);
+    });
+
+    it("header-fallback recipients have null names (Case 3 reply-all)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: null,
+        headerTo: ["bob@x.com"],
+        headerCc: [],
+        selfEmails: new Set(),
+      });
+      expect(result.to).toEqual([{ address: "bob@x.com", name: null }]);
     });
 
     it("de-dupes an address that appears in both To and Cc (kept in Cc precedence... actually To wins order)", () => {
@@ -159,7 +191,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [tobin],
         selfEmails: new Set(),
       });
-      expect(r.cc).toEqual([tobin]);
+      expect(r.cc).toEqual([{ address: tobin, name: null }]);
       expect(r.to).toEqual([]);
     });
   });
@@ -176,7 +208,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([mailbox]);
+      expect(r.to).toEqual([{ address: mailbox, name: null }]);
       expect(r.cc).toEqual([]);
       expect(r.bcc).toEqual([]);
     });
@@ -192,7 +224,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox, workEmail]),
       });
-      expect(r.to).toEqual([workEmail]);
+      expect(r.to).toEqual([{ address: workEmail, name: null }]);
       expect(r.curated).toBe(true);
     });
 
@@ -245,7 +277,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox, workEmail]),
       });
-      expect(r.to).toEqual([workEmail]);
+      expect(r.to).toEqual([{ address: workEmail, name: null }]);
       expect(r.curated).toBe(true);
     });
 
