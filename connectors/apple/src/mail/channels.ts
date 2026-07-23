@@ -15,6 +15,9 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
     // "iCloud email thread" rather than the full connector name.
     label: "Thread",
     sourceName: "iCloud email",
+    // The connector's word for a note on this thread, so in-thread composer
+    // copy reads "Add a reply" (matching Gmail) rather than "Add a note".
+    noteLabel: "Reply",
     sharingModel: "thread",
     // A mail mark so email threads don't fall back to the connector's
     // calendar logo. Iconify URLs render crisply at logo size and resolve
@@ -31,6 +34,10 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
     replyVerb: "Send",
     replyPlaceholder: "Reply",
     composePlaceholder: "Send an email",
+    // The connector round-trips file attachments in both directions (outbound
+    // via SMTP, inbound via IMAP part fetch), so surface the "Attach file"
+    // button on the composer/reply.
+    supportsFileAttachments: true,
     // onCreateLink reconstructs a real forward (original message +
     // attachments) when `CreateLinkDraft.forward` is set, so the runtime
     // should route native forwards here instead of the blockquote fallback.
