@@ -282,8 +282,8 @@ describe("onCreateLinkFn — draft.forward", () => {
     );
 
     const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
-    expect(raw).toContain("Bcc: eve@example.com");
-    expect(raw).toContain("To: bob@example.com");
+    expect(raw).toContain('Bcc: "Eve" <eve@example.com>');
+    expect(raw).toContain('To: "Bob" <bob@example.com>');
     expect(raw).not.toContain("To: bob@example.com, eve@example.com");
   });
 
@@ -374,12 +374,12 @@ function calThread(over: Record<string, unknown> = {}) {
     ...over,
   } as unknown as import("@plotday/twister").Thread;
 }
-function replyNote(recipients: Array<{ externalAccountId: string; role: string | null }>, over: Record<string, unknown> = {}) {
+function replyNote(recipients: Array<{ externalAccountId: string; role: string | null; name?: string | null }>, over: Record<string, unknown> = {}) {
   return {
     id: "n1",
     author: { id: "c-me" },
     content: "See you there",
-    recipients: recipients.map((r) => ({ id: r.externalAccountId, name: null, externalAccountId: r.externalAccountId, role: r.role })),
+    recipients: recipients.map((r) => ({ id: r.externalAccountId, name: r.name ?? null, externalAccountId: r.externalAccountId, role: r.role })),
     accessContacts: null,
     actions: [],
     ...over,
@@ -429,6 +429,25 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     const raw = decodeRawMessage(sendReply.mock.calls[0][0]);
     expect(raw).toContain("In-Reply-To: <seed@plot.day>");
     expect(raw).toContain("X-Plot-Event-UID: uid-123");
+  });
+
+  it("carries the recipient's display name into the To header", async () => {
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-named", threadId: "gt-named" });
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({ emailAddress: "me@example.com" });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({ email: "me@example.com", name: "Me" });
+    const { host } = makeHost();
+
+    await onNoteCreatedFn(
+      host,
+      replyNote([{ externalAccountId: "org@x.com", role: null, name: "Org Person" }]),
+      calThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain('To: "Org Person" <org@x.com>');
   });
 
   it("private note (no deliverable recipients) sends nothing", async () => {

@@ -1811,9 +1811,9 @@ export async function onNoteCreatedFn(
 
   // Build and send the reply (with attachments if any)
   const raw = buildReplyMessage({
-    to,
-    cc,
-    bcc,
+    to: to.map((a) => formatFromHeader(a.address, a.name)),
+    cc: cc.map((a) => formatFromHeader(a.address, a.name)),
+    bcc: bcc.map((a) => formatFromHeader(a.address, a.name)),
     from: await getFromHeaderFn(api, profile.emailAddress),
     subject,
     body: note.content ?? "",
@@ -1908,6 +1908,13 @@ export async function sendCalendarEventReplyFn(
   const from = await getFromHeaderFn(api, profile.emailAddress);
   const uidHeader = `X-Plot-Event-UID: ${iCalUID}`;
 
+  // Format addressees into "Name" <email> header strings once — both the
+  // fresh-conversation and threaded-reply branches below consume the same
+  // formatted lists.
+  const toHeaders = to.map((a) => formatFromHeader(a.address, a.name));
+  const ccHeaders = cc.map((a) => formatFromHeader(a.address, a.name));
+  const bccHeaders = bcc.map((a) => formatFromHeader(a.address, a.name));
+
   const stateKey = `cal-reply:${iCalUID}`;
   const prior = await host.get<{ gmailThreadId: string; seedMessageId: string }>(stateKey);
 
@@ -1920,7 +1927,7 @@ export async function sendCalendarEventReplyFn(
     // — only this synthetic Message-ID needs to be token-safe.
     const seedMessageId = `<plot-cal-${iCalUID.replace(/[^A-Za-z0-9._-]/g, "-")}-${note.id}@plot.day>`;
     const raw = buildNewEmailMessage({
-      to, cc, bcc, from, subject, body: note.content ?? "",
+      to: toHeaders, cc: ccHeaders, bcc: bccHeaders, from, subject, body: note.content ?? "",
       extraHeaders: [`Message-ID: ${seedMessageId}`, uidHeader],
     });
     const sent = await sendWithRetry(() => api.sendNewMessage(raw), "cal-reply");
@@ -1930,7 +1937,7 @@ export async function sendCalendarEventReplyFn(
     await host.set(`sent:${sentId}`, true);
   } else {
     const raw = buildReplyMessage({
-      to, cc, bcc, from, subject, body: note.content ?? "",
+      to: toHeaders, cc: ccHeaders, bcc: bccHeaders, from, subject, body: note.content ?? "",
       messageId: prior.seedMessageId, references: prior.seedMessageId,
       extraHeaders: [uidHeader],
     });
@@ -2249,19 +2256,24 @@ async function onCreateLinkForwardFn(
   const to: string[] = [];
   const cc: string[] = [];
   const bcc: string[] = [];
-  const addRecipient = (raw: string | null | undefined, role: string | null) => {
+  const addRecipient = (
+    raw: string | null | undefined,
+    role: string | null,
+    name: string | null
+  ) => {
     if (!raw) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
     const key = trimmed.toLowerCase();
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
-    if (role === "cc") cc.push(trimmed);
-    else if (role === "bcc") bcc.push(trimmed);
-    else to.push(trimmed);
+    const formatted = formatFromHeader(trimmed, name ?? null);
+    if (role === "cc") cc.push(formatted);
+    else if (role === "bcc") bcc.push(formatted);
+    else to.push(formatted);
   };
-  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role);
-  for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
+  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role, r.name);
+  for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (to.length + cc.length + bcc.length === 0) {
     console.error(
@@ -2436,7 +2448,8 @@ export async function onCreateLinkFn(
   const bccEmails: string[] = [];
   const addRecipient = (
     raw: string | null | undefined,
-    role: string | null
+    role: string | null,
+    name: string | null
   ) => {
     if (!raw) return;
     const trimmed = raw.trim();
@@ -2444,13 +2457,14 @@ export async function onCreateLinkFn(
     const key = trimmed.toLowerCase();
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
-    if (role === "cc") ccEmails.push(trimmed);
-    else if (role === "bcc") bccEmails.push(trimmed);
-    else toEmails.push(trimmed);
+    const formatted = formatFromHeader(trimmed, name ?? null);
+    if (role === "cc") ccEmails.push(formatted);
+    else if (role === "bcc") bccEmails.push(formatted);
+    else toEmails.push(formatted);
   };
 
-  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role);
-  for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
+  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role, r.name);
+  for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (toEmails.length + ccEmails.length + bccEmails.length === 0) {
     console.error(
