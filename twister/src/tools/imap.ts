@@ -44,6 +44,18 @@ export type ImapMailboxStatus = {
   uidNext: number;
   /** Number of unseen messages (may be absent) */
   unseen?: number;
+  /**
+   * The mailbox's highest mod-sequence value (CONDSTORE / RFC 7162), when the
+   * server advertises it. A monotonic counter that advances whenever a
+   * message is added, expunged, or has its flags changed, so a connector can
+   * persist it as a "since last poll" cursor and skip re-scanning a mailbox
+   * whose value hasn't moved. Absent when the server or the specific mailbox
+   * does not support mod-sequences (e.g. it reports `NOMODSEQ`). Returned as a
+   * `number`; a server with an astronomically large mod-sequence counter could
+   * in theory exceed safe-integer precision, though real mailboxes stay far
+   * below that.
+   */
+  highestModSeq?: number;
 };
 
 /** Criteria for searching messages. All fields are optional; they are ANDed together. */
