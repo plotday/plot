@@ -7,6 +7,14 @@ describe("stripQuotedReply", () => {
     expect(stripQuotedReply(html, "html")).toBe("<div>New content</div>");
   });
 
+  it("cuts Outlook-for-Mac reply chains that label the date line 'Date:' with a Cc:", () => {
+    const html =
+      `<div>New content</div>` +
+      `<div><b>From:</b> A<br><b>Date:</b> B<br><b>To:</b> C<br>` +
+      `<b>Cc:</b> D<br><b>Subject:</b> E</div>`;
+    expect(stripQuotedReply(html, "html")).toBe("<div>New content</div>");
+  });
+
   it("cuts gmail_quote blocks from cross-client replies", () => {
     const html = `<p>Reply</p><div class="gmail_quote">old</div>`;
     expect(stripQuotedReply(html, "html")).toBe("<p>Reply</p>");
