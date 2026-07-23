@@ -15,7 +15,10 @@ import {
   type GmailSyncHost,
   onCreateLinkFn,
   onNoteCreatedFn,
+  onNoteReactionChangedFn,
   processEmailThreadsFn,
+  REACTION_SEND_DELAY_MS,
+  sendReactionEmailFn,
 } from "./sync";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
@@ -103,6 +106,7 @@ function makeHost(): { host: GmailSyncHost; store: Map<string, unknown> } {
       scheduleMailboxRenewal: vi.fn(async () => {}),
       scheduleSelfHealCheck: vi.fn(async () => {}),
       cancelScheduledTask: vi.fn(async () => {}),
+      scheduleReactionSend: vi.fn(async () => {}),
       queueIncrementalSync: vi.fn(async () => {}),
       queueWriteBackRetry: vi.fn(async () => {}),
     },
@@ -939,5 +943,139 @@ describe("processEmailThreadsFn — archived/trashed in Gmail", () => {
     );
 
     expect(setThreadToDoOf(host)).not.toHaveBeenCalled();
+  });
+});
+
+// A plain Gmail thread for reaction round-trips: message "msg-orig-1" from
+// Hilary, addressed to the connected mailbox (self) with Annie on Cc.
+function reactionThread(): GmailThread {
+  return gmailAliasReplyThread();
+}
+
+function reactionNote(over: Record<string, unknown> = {}) {
+  return {
+    id: "n-react",
+    key: "msg-orig-1",
+    author: { id: "c-me" },
+    ...over,
+  } as unknown as import("@plotday/twister").Note;
+}
+
+describe("onNoteReactionChangedFn", () => {
+  it("schedules a deferred send when a reaction is added (send-undo window)", async () => {
+    const { host } = makeHost();
+    const schedule = host.scheduler.scheduleReactionSend as ReturnType<
+      typeof vi.fn
+    >;
+    const before = Date.now();
+
+    await onNoteReactionChangedFn(host, reactionNote(), plainThread(), "💖", true);
+
+    expect(schedule).toHaveBeenCalledTimes(1);
+    const [key, threadId, channelId, noteKey, emoji, runAt] =
+      schedule.mock.calls[0];
+    expect(key).toBe("mail:reaction-send:msg-orig-1:💖");
+    expect(threadId).toBe("gmail-thread-1");
+    expect(channelId).toBe("INBOX");
+    expect(noteKey).toBe("msg-orig-1");
+    expect(emoji).toBe("💖");
+    expect((runAt as Date).getTime()).toBeGreaterThanOrEqual(
+      before + REACTION_SEND_DELAY_MS - 50
+    );
+  });
+
+  it("cancels a still-pending send when the reaction is removed before it fires", async () => {
+    const { host } = makeHost();
+    const trash = vi.spyOn(GmailApi.prototype, "trashMessage");
+
+    await onNoteReactionChangedFn(host, reactionNote(), plainThread(), "💖", false);
+
+    expect(host.scheduler.cancelScheduledTask).toHaveBeenCalledWith(
+      "mail:reaction-send:msg-orig-1:💖"
+    );
+    // Nothing was sent, so nothing is trashed.
+    expect(trash).not.toHaveBeenCalled();
+  });
+
+  it("retracts an already-sent reaction by trashing our reaction email", async () => {
+    const { host, store } = makeHost();
+    store.set("reaction-msg:msg-orig-1:💖", "reaction-sent-1");
+    const trash = vi
+      .spyOn(GmailApi.prototype, "trashMessage")
+      .mockResolvedValue(undefined);
+
+    await onNoteReactionChangedFn(host, reactionNote(), plainThread(), "💖", false);
+
+    expect(host.scheduler.cancelScheduledTask).toHaveBeenCalled();
+    expect(trash).toHaveBeenCalledWith("reaction-sent-1");
+    expect(store.has("reaction-msg:msg-orig-1:💖")).toBe(false);
+  });
+
+  it("ignores workspace custom-emoji reactions (no Gmail equivalent)", async () => {
+    const { host } = makeHost();
+    await onNoteReactionChangedFn(
+      host,
+      reactionNote(),
+      plainThread(),
+      "slack:T0/party_parrot",
+      true
+    );
+    expect(host.scheduler.scheduleReactionSend).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-Gmail threads (no threadId in meta)", async () => {
+    const { host } = makeHost();
+    await onNoteReactionChangedFn(
+      host,
+      reactionNote(),
+      plainThread({ meta: { calendarId: "primary" } }),
+      "💖",
+      true
+    );
+    expect(host.scheduler.scheduleReactionSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendReactionEmailFn", () => {
+  it("sends a reaction email reply-all to the other participants, threaded on the reacted message", async () => {
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(reactionThread());
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+      name: "Kris",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "reaction-sent-1", threadId: "gmail-thread-1" });
+    const { host, store } = makeHost();
+
+    await sendReactionEmailFn(host, "gmail-thread-1", "INBOX", "msg-orig-1", "💖");
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain("In-Reply-To: <orig@mail.gmail.com>");
+    expect(raw).toContain("Content-Type: text/vnd.google.email-reaction+json");
+    expect(JSON.parse(decodeMimePart(raw, "text/vnd.google.email-reaction+json"))).toEqual(
+      { version: 1, emoji: "💖" }
+    );
+    // Reply-all: original sender + Cc, excluding the connected mailbox (self).
+    expect(raw).toContain("hilary.collier@example.com");
+    expect(raw).toContain("annie@example.com");
+    expect(raw).not.toContain("krisbraun@gmail.com");
+    // Sent id is recorded for later retraction + echo suppression.
+    expect(store.get("reaction-msg:msg-orig-1:💖")).toBe("reaction-sent-1");
+    expect(store.get("sent:reaction-sent-1")).toBe(true);
+  });
+
+  it("is idempotent: a re-dispatched task does not send a second email", async () => {
+    const { host, store } = makeHost();
+    store.set("reaction-msg:msg-orig-1:💖", "reaction-sent-1");
+    const send = vi.spyOn(GmailApi.prototype, "sendMessage");
+
+    await sendReactionEmailFn(host, "gmail-thread-1", "INBOX", "msg-orig-1", "💖");
+
+    expect(send).not.toHaveBeenCalled();
   });
 });

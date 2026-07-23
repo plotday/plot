@@ -3,6 +3,8 @@ import type {
   NewLinkWithNotes,
   NewActor,
   NewContact,
+  NewNote,
+  NewReactions,
   Action,
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
@@ -384,6 +386,16 @@ export class GmailApi {
   }
 
   /**
+   * Moves a message to the trash. Used to retract an emoji reaction the user
+   * removed in Plot: trashing our own sent reaction email drops it from the
+   * mailbox so the sender's own thread reconverges on the next sync. (Recipients
+   * already delivered the reaction can't be retracted — a limit of email.)
+   */
+  public async trashMessage(id: string): Promise<void> {
+    await this.call(`/messages/${id}/trash`, { method: "POST" });
+  }
+
+  /**
    * Sends a brand-new email (not a reply). Gmail allocates a fresh threadId.
    */
   public async sendNewMessage(
@@ -707,6 +719,58 @@ function decodeBase64Url(data: string): string {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return new TextDecoder("utf-8").decode(bytes);
+}
+
+/**
+ * MIME type of the JSON part Gmail attaches to an emoji-reaction email.
+ * See https://developers.google.com/workspace/gmail/reactions/format — the
+ * part body is `{ "version": 1, "emoji": "<one emoji>" }`.
+ */
+const EMAIL_REACTION_MIME = "text/vnd.google.email-reaction+json";
+
+/** First reaction MIME part (with inline body data) anywhere in the tree, or null. */
+function findReactionPart(part: GmailMessagePart): GmailMessagePart | null {
+  if (part.mimeType === EMAIL_REACTION_MIME && part.body?.data) return part;
+  for (const child of part.parts ?? []) {
+    const found = findReactionPart(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * If a Gmail message is an emoji-reaction email, returns the reaction emoji;
+ * otherwise null. Gmail marks reactions with a `text/vnd.google.email-reaction+json`
+ * MIME part; the message also carries regular text/plain + text/html parts so
+ * non-supporting clients render something, which is why an undetected reaction
+ * would otherwise surface as an ordinary "<emoji> — reacted via Gmail" note.
+ */
+export function extractEmailReaction(message: GmailMessage): { emoji: string } | null {
+  const reactionPart = findReactionPart(message.payload);
+  if (!reactionPart?.body?.data) return null;
+  try {
+    const parsed = JSON.parse(decodeBase64Url(reactionPart.body.data)) as {
+      version?: number;
+      emoji?: unknown;
+    };
+    if (typeof parsed.emoji === "string" && parsed.emoji.trim().length > 0) {
+      return { emoji: parsed.emoji };
+    }
+  } catch {
+    // Malformed reaction part — treat the message as an ordinary email.
+  }
+  return null;
+}
+
+/**
+ * Normalizes an RFC 5322 Message-ID / In-Reply-To header value to its
+ * `<...>` token so a reaction's In-Reply-To matches the reacted message's
+ * Message-ID regardless of surrounding whitespace.
+ */
+function normalizeMessageId(raw: string | null): string | null {
+  if (!raw) return null;
+  const match = raw.match(/<[^>]+>/);
+  return match ? match[0] : raw.trim();
 }
 
 /** Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and read a property. */
@@ -1037,6 +1101,17 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
   // Create Notes for all messages (including first). Skip drafts: Gmail
   // autosave replaces the draft message id on every keystroke, so without
   // this filter each autosave creates a fresh note keyed on the new id.
+  // Reaction emails are folded into the note they react to (below) rather than
+  // surfaced as standalone notes. Map each message's RFC Message-ID → its note
+  // so a reaction's In-Reply-To can find its target; collect reactions to apply
+  // after every note exists (a reaction can precede its target in edge cases).
+  const noteByRfcMessageId = new Map<string, Omit<NewNote, "thread">>();
+  const pendingReactions: Array<{
+    note: Omit<NewNote, "thread">;
+    emoji: string;
+    inReplyTo: string | null;
+  }> = [];
+
   for (const message of thread.messages) {
     if (message.labelIds?.includes("DRAFT")) continue;
     const from = getHeader(message, "From");
@@ -1099,7 +1174,66 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       checkForTasks: true,
     };
 
+    // Gmail emoji reactions arrive as their own emails carrying a
+    // text/vnd.google.email-reaction+json part. Rather than surface a
+    // standalone "<emoji> — reacted via Gmail" note, defer it and fold the
+    // reactor onto the reacted message's note below.
+    const reaction = extractEmailReaction(message);
+    if (reaction) {
+      pendingReactions.push({
+        note,
+        emoji: reaction.emoji,
+        inReplyTo: normalizeMessageId(getHeader(message, "In-Reply-To")),
+      });
+      continue;
+    }
+
+    const rfcMessageId = normalizeMessageId(getHeader(message, "Message-ID"));
+    if (rfcMessageId) noteByRfcMessageId.set(rfcMessageId, note);
     plotThread.notes!.push(note);
+  }
+
+  // Apply the deferred reactions. Each reaction's In-Reply-To names the RFC
+  // Message-ID of the message it reacts to; look up that message's note and
+  // record the reactor. The reaction set is reconstructed from the full thread
+  // on every sync, so — following the platform convention that a note's synced
+  // `reactions` declares its complete reaction state (clear-and-replace on
+  // update; see Slack, which syncs reactions the same way) — Gmail's email
+  // reactions are the source of truth for the notes they land on.
+  //
+  // Two consequences of that convention, both intentional:
+  //  - `reactions` is only set on notes that actually carry an email reaction,
+  //    so notes with none are left untouched (their existing reactions, if any,
+  //    are preserved — the runtime skips the clear when `reactions` is unset).
+  //  - On a note that DOES carry an email reaction, the set is rebuilt purely
+  //    from the reaction emails in this thread rather than merged with the
+  //    note's stored reactions. This holds together because a reaction a user
+  //    adds in Plot is round-tripped out as its own Gmail reaction email by the
+  //    outbound write-back (`onNoteReactionChangedFn`), so it comes back through
+  //    this same fold — the mailbox is the single source of truth and no merge
+  //    is needed. Removing a reaction converges once its email leaves the thread
+  //    (the write-back trashes our own sent copy); dropping to zero leaves the
+  //    last one until the note is otherwise resynced (Gmail's removal signalling
+  //    isn't relied on here).
+  for (const { note, emoji, inReplyTo } of pendingReactions) {
+    const target = inReplyTo ? noteByRfcMessageId.get(inReplyTo) : undefined;
+    const reactor = note.author;
+    if (!target || !reactor) {
+      // No resolvable target (In-Reply-To missing, or the reacted message isn't
+      // in this thread): keep the reaction as an ordinary note so it isn't
+      // lost — this mirrors Gmail's own fallback for unresolvable reactions.
+      plotThread.notes!.push(note);
+      continue;
+    }
+    const reactions: NewReactions = target.reactions ?? {};
+    const actors = reactions[emoji] ?? [];
+    const reactorEmail = (reactor as { email?: string }).email?.toLowerCase();
+    const alreadyPresent = actors.some(
+      (a) => (a as { email?: string }).email?.toLowerCase() === reactorEmail
+    );
+    if (!alreadyPresent) actors.push(reactor);
+    reactions[emoji] = actors;
+    target.reactions = reactions;
   }
 
   // Credit the thread to its originator — the first message's sender — so the
@@ -1736,6 +1870,109 @@ export function buildReplyMessage(options: {
   }
 
   return base64UrlEncodeMessage(rawMessage);
+}
+
+/**
+ * True when an emoji reaction can be pushed to Gmail. Gmail accepts a single
+ * Unicode emoji (Unicode Technical Standard 51 v15+); a workspace custom-emoji
+ * ref (`provider:workspace/name`, e.g. `slack:T0/party_parrot`) has no Gmail
+ * equivalent and must be skipped. Bare Unicode emoji never contain a `:`
+ * followed by a provider prefix; Gmail performs the final single-emoji
+ * validation on the value we send.
+ */
+export function isSendableGmailReaction(emoji: string): boolean {
+  if (!emoji) return false;
+  // Provider-scoped custom-emoji ref, e.g. "slack:T0123/party_parrot".
+  if (/^[a-z0-9][a-z0-9._-]*:/i.test(emoji)) return false;
+  return true;
+}
+
+/** Escapes the five HTML metacharacters so a value is safe inside HTML text. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Builds a Gmail emoji-reaction email for the message identified by
+ * `messageId` (its RFC Message-ID). Per
+ * https://developers.google.com/workspace/gmail/reactions/format the message
+ * is a normal reply (In-Reply-To/References threading, "Re:" subject) whose
+ * body is a `multipart/alternative` carrying, in order, a `text/plain`
+ * fallback, the `text/vnd.google.email-reaction+json` reaction part
+ * (`{ version: 1, emoji }`), and a `text/html` fallback. Gmail recipients
+ * render it as a reaction on the referenced message; other clients show the
+ * emoji fallback. Returns the base64url-encoded raw message for `messages.send`.
+ */
+export function buildReactionMessage(options: {
+  to: string[];
+  cc: string[];
+  from: string;
+  subject: string;
+  emoji: string;
+  messageId: string;
+  references: string;
+}): string {
+  const { to, cc, from, subject, emoji, messageId, references } = options;
+
+  // Sanitize every value interpolated into a header (RFC 5322 CRLF injection).
+  const fromHeader = sanitizeHeaderValue(from);
+  const toHeader = to.map(sanitizeHeaderValue).join(", ");
+  const ccHeader = cc.map(sanitizeHeaderValue).join(", ");
+  const safeMessageId = sanitizeHeaderValue(messageId);
+  const safeReferences = sanitizeHeaderValue(references);
+  const reSubject = sanitizeHeaderValue(
+    subject.startsWith("Re:") ? subject : `Re: ${subject}`
+  );
+
+  const headerLines: string[] = [`From: ${fromHeader}`, `To: ${toHeader}`];
+  if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
+  headerLines.push(`Subject: ${reSubject}`);
+  headerLines.push(`In-Reply-To: ${safeMessageId}`);
+  const refChain = safeReferences
+    ? `${safeReferences} ${safeMessageId}`
+    : safeMessageId;
+  headerLines.push(`References: ${refChain}`);
+  headerLines.push(`MIME-Version: 1.0`);
+
+  const altBoundary = mimeBoundary("alt");
+  const enc = new TextEncoder();
+  const reactionJson = JSON.stringify({ version: 1, emoji });
+  // HTML-escape the emoji before interpolating it into the html fallback part.
+  // A real emoji never contains HTML metacharacters, but `emoji` is ultimately a
+  // user-supplied reaction string (only custom-emoji refs are pre-filtered, not
+  // arbitrary content), so escape defensively to keep the outbound email's HTML
+  // body injection-free.
+  const htmlFallback = `<!DOCTYPE html>\r\n<html><body>\r\n<p>${escapeHtml(emoji)}</p>\r\n</body></html>`;
+
+  const altBlock = [
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    "",
+    `--${altBoundary}`,
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(emoji)),
+    // Google recommends the reaction part BETWEEN the plain and html parts so
+    // non-supporting clients still fall through to a rendered emoji.
+    `--${altBoundary}`,
+    `Content-Type: ${EMAIL_REACTION_MIME}; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(reactionJson)),
+    `--${altBoundary}`,
+    `Content-Type: text/html; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(htmlFallback)),
+    `--${altBoundary}--`,
+  ];
+
+  return base64UrlEncodeMessage([...headerLines, ...altBlock].join("\r\n"));
 }
 
 /**

@@ -31,6 +31,8 @@ import {
   initialSyncBatchFn,
   incrementalSyncBatchFn,
   onNoteCreatedFn,
+  onNoteReactionChangedFn,
+  sendReactionEmailFn,
   onThreadReadFn,
   onThreadToDoFn,
   onCreateLinkFn,
@@ -649,6 +651,15 @@ export class Google extends Connector<Google> {
           self.mailScheduleRenewal(expiration),
         scheduleSelfHealCheck: () => self.mailScheduleSelfHeal(),
         cancelScheduledTask: (key) => self.cancelScheduledTask(key),
+        scheduleReactionSend: (key, threadId, channelId, noteKey, emoji, runAt) =>
+          self.mailScheduleReactionSend(
+            key,
+            threadId,
+            channelId,
+            noteKey,
+            emoji,
+            runAt
+          ),
         queueIncrementalSync: () => self.mailQueueIncrementalSync(),
         queueWriteBackRetry: () => self.mailQueueWriteBackRetry(),
       },
@@ -839,6 +850,61 @@ export class Google extends Connector<Google> {
     thread: Thread
   ): Promise<NoteWriteBackResult | void> {
     return onNoteCreatedFn(this.makeMailHost(), note, thread);
+  }
+
+  /**
+   * A user added/removed an emoji reaction on a note. Dispatched on the
+   * reacting user's own instance, so the reaction email is sent as them.
+   * Delegates to the mail module, which schedules the deferred send (add) or
+   * cancels/retracts it (remove).
+   */
+  async onNoteReactionChanged(
+    note: Note,
+    thread: Thread,
+    _actor: Actor,
+    emoji: string,
+    added: boolean
+  ): Promise<void> {
+    await onNoteReactionChangedFn(this.makeMailHost(), note, thread, emoji, added);
+  }
+
+  /**
+   * Schedule the deferred reaction send (host scheduler hook). Keyed one-shot
+   * via `scheduleTask` so a quick remove/change cancels or replaces it before
+   * it fires (send-undo style).
+   */
+  private async mailScheduleReactionSend(
+    key: string,
+    threadId: string,
+    channelId: string,
+    noteKey: string,
+    emoji: string,
+    runAt: Date
+  ): Promise<void> {
+    const callback = await this.callback(
+      this.mailSendReaction,
+      threadId,
+      channelId,
+      noteKey,
+      emoji
+    );
+    await this.scheduleTask(key, callback, { runAt });
+  }
+
+  /** Deferred reaction send callback (fires after the undo window). */
+  async mailSendReaction(
+    threadId: string,
+    channelId: string,
+    noteKey: string,
+    emoji: string
+  ): Promise<void> {
+    await sendReactionEmailFn(
+      this.makeMailHost(),
+      threadId,
+      channelId,
+      noteKey,
+      emoji
+    );
   }
 
   async onThreadRead(

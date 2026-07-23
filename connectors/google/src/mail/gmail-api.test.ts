@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { NewReactions } from "@plotday/twister/plot";
 import {
   GmailApi,
   buildForwardMessage,
   buildNewEmailMessage,
+  buildReactionMessage,
   buildReplyMessage,
   canonicalizeGmailAddress,
   classifyCalendarThread,
   formatFromHeader,
+  isSendableGmailReaction,
   stripQuotedReply,
   transformGmailThread,
   type AttachmentData,
@@ -649,6 +652,194 @@ describe("transformGmailThread sender classification", () => {
       link.accessContacts as Array<{ email: string; automated?: boolean }>
     ).find((c) => c.email === "bob@company.com");
     expect(sender?.automated).toBeFalsy();
+  });
+});
+
+describe("buildReactionMessage", () => {
+  const build = () =>
+    decodeRawMessage(
+      buildReactionMessage({
+        to: ["alice@example.com"],
+        cc: ["carol@example.com"],
+        from: '"Me" <me@example.com>',
+        subject: "Welcome Wael",
+        emoji: "💖",
+        messageId: "<orig@mail.gmail.com>",
+        references: "<root@mail.gmail.com>",
+      })
+    );
+
+  it("threads the reaction onto the reacted message via In-Reply-To/References", () => {
+    const raw = build();
+    expect(raw).toContain("In-Reply-To: <orig@mail.gmail.com>");
+    expect(raw).toContain(
+      "References: <root@mail.gmail.com> <orig@mail.gmail.com>"
+    );
+    expect(raw).toContain("Subject: Re: Welcome Wael");
+    expect(raw).toContain("To: alice@example.com");
+    expect(raw).toContain("Cc: carol@example.com");
+  });
+
+  it("carries a text/vnd.google.email-reaction+json part with the emoji", () => {
+    const raw = build();
+    expect(raw).toContain("Content-Type: text/vnd.google.email-reaction+json");
+    const json = decodeMimePart(raw, "text/vnd.google.email-reaction+json");
+    expect(JSON.parse(json)).toEqual({ version: 1, emoji: "💖" });
+  });
+
+  it("places the reaction part between the text/plain and text/html fallbacks", () => {
+    const raw = build();
+    const plainIdx = raw.indexOf("text/plain");
+    const reactionIdx = raw.indexOf("text/vnd.google.email-reaction+json");
+    const htmlIdx = raw.indexOf("text/html");
+    expect(plainIdx).toBeGreaterThanOrEqual(0);
+    expect(reactionIdx).toBeGreaterThan(plainIdx);
+    expect(htmlIdx).toBeGreaterThan(reactionIdx);
+    // The plain-text fallback is the bare emoji so non-supporting clients
+    // still show something.
+    expect(decodeMimePart(raw, "text/plain")).toBe("💖");
+  });
+
+  it("HTML-escapes the emoji in the html fallback (no markup injection)", () => {
+    const raw = decodeRawMessage(
+      buildReactionMessage({
+        to: ["alice@example.com"],
+        cc: [],
+        from: "me@example.com",
+        subject: "Hi",
+        emoji: "<img src=x onerror=alert(1)>",
+        messageId: "<orig@mail.gmail.com>",
+        references: "",
+      })
+    );
+    const html = decodeMimePart(raw, "text/html");
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+});
+
+describe("isSendableGmailReaction", () => {
+  it("accepts a bare Unicode emoji", () => {
+    expect(isSendableGmailReaction("💖")).toBe(true);
+    expect(isSendableGmailReaction("👍")).toBe(true);
+  });
+
+  it("rejects workspace custom-emoji refs and empty input", () => {
+    expect(isSendableGmailReaction("slack:T0123/party_parrot")).toBe(false);
+    expect(isSendableGmailReaction("")).toBe(false);
+  });
+});
+
+describe("transformGmailThread emoji reactions", () => {
+  /** Build a GmailMessage with the given id, top-level headers, and payload. */
+  function reactionMsg(opts: {
+    id: string;
+    headers: Array<[string, string]>;
+    payload: GmailMessagePart;
+    internalDate?: string;
+  }): GmailMessage {
+    return {
+      id: opts.id,
+      threadId: "thread-1",
+      labelIds: ["INBOX"],
+      snippet: "snippet",
+      historyId: "1",
+      internalDate: opts.internalDate ?? "1700000000000",
+      payload: {
+        ...opts.payload,
+        headers: [
+          ...opts.headers.map(([name, value]) => ({ name, value })),
+          ...opts.payload.headers,
+        ],
+      },
+      sizeEstimate: 1000,
+    };
+  }
+
+  /** A Gmail emoji-reaction email per the text/vnd.google.email-reaction+json spec. */
+  function reactionPayload(emoji: string): GmailMessagePart {
+    return part("multipart/alternative", {
+      parts: [
+        part("text/plain", { data: emoji }),
+        part("text/vnd.google.email-reaction+json", {
+          data: JSON.stringify({ version: 1, emoji }),
+        }),
+        part("text/html", {
+          data: `<div>${emoji}<br>Jennifer reacted via <a href="https://www.google.com/gmail/about/?utm_campaign=emojireactionemail#app">Gmail</a></div>`,
+        }),
+      ],
+    });
+  }
+
+  it("folds a reaction email into the reacted note instead of creating a new note", () => {
+    const original = reactionMsg({
+      id: "msg-orig",
+      headers: [
+        ["From", "Alice <alice@example.com>"],
+        ["Message-ID", "<orig@mail.gmail.com>"],
+        ["Subject", "Welcome Wael"],
+      ],
+      payload: part("text/plain", { data: "Welcome aboard!" }),
+    });
+    const reaction = reactionMsg({
+      id: "msg-react",
+      internalDate: "1700000100000",
+      headers: [
+        ["From", "Jennifer <jennifer@example.com>"],
+        ["In-Reply-To", "<orig@mail.gmail.com>"],
+        ["Subject", "Re: Welcome Wael"],
+      ],
+      payload: reactionPayload("💖"),
+    });
+    const t: GmailThread = {
+      id: "thread-1",
+      historyId: "1",
+      messages: [original, reaction],
+    };
+
+    const link = transformGmailThread(t);
+
+    // Only the original message becomes a note — the reaction is folded in.
+    expect(link.notes).toHaveLength(1);
+    const note = link.notes![0] as {
+      key?: string;
+      content?: string;
+      reactions?: NewReactions;
+    };
+    expect(note.key).toBe("msg-orig");
+    // No note carries the reaction email's "reacted via Gmail" body.
+    expect(
+      link.notes!.some((n) => (n.content ?? "").includes("reacted via"))
+    ).toBe(false);
+    // The reactor is recorded as a reaction on the reacted note.
+    const reactors = note.reactions?.["💖"] as
+      | Array<{ email?: string }>
+      | undefined;
+    expect(reactors).toHaveLength(1);
+    expect(reactors![0].email).toBe("jennifer@example.com");
+  });
+
+  it("keeps the reaction as a normal note when the reacted message is absent", () => {
+    // In-Reply-To points at a message not present in the fetched thread —
+    // fall back to the pre-existing behavior so the reaction isn't lost.
+    const reaction = reactionMsg({
+      id: "msg-react",
+      headers: [
+        ["From", "Jennifer <jennifer@example.com>"],
+        ["In-Reply-To", "<missing@mail.gmail.com>"],
+        ["Subject", "Re: Welcome Wael"],
+      ],
+      payload: reactionPayload("💖"),
+    });
+    const t: GmailThread = {
+      id: "thread-1",
+      historyId: "1",
+      messages: [reaction],
+    };
+
+    const link = transformGmailThread(t);
+    expect(link.notes).toHaveLength(1);
+    expect((link.notes![0] as { key?: string }).key).toBe("msg-react");
   });
 });
 
