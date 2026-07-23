@@ -46,6 +46,7 @@ import {
   type SyncState,
   buildForwardMessage,
   buildNewEmailMessage,
+  buildReactionMessage,
   buildReplyMessage,
   canonicalizeGmailAddress,
   classifyCalendarThread,
@@ -54,6 +55,7 @@ import {
   formatFromHeader,
   getHeader,
   isGmailRateLimitError,
+  isSendableGmailReaction,
   mapWithConcurrency,
   parseEmailAddresses,
   syncGmailChannel,
@@ -342,8 +344,22 @@ export interface GmailSyncHost {
     scheduleMailboxRenewal(expiration: Date): Promise<void>;
     /** (Re)schedule the durable mailbox-self-heal recurring task. */
     scheduleSelfHealCheck(): Promise<void>;
-    /** Cancel a durable recurring task by key. */
+    /** Cancel a durable recurring task by key (also cancels a pending reaction send). */
     cancelScheduledTask(key: string): Promise<void>;
+    /**
+     * Schedule the deferred emoji-reaction send as a keyed one-shot task at
+     * `runAt`. Keyed on `(message, emoji)` so a quick remove/change cancels or
+     * replaces the pending send before it fires (send-undo style). Fires
+     * {@link sendReactionEmailFn} via {@link Google.mailSendReaction}.
+     */
+    scheduleReactionSend(
+      key: string,
+      threadId: string,
+      channelId: string,
+      noteKey: string,
+      emoji: string,
+      runAt: Date
+    ): Promise<void>;
     /** Queue the mailbox-wide incremental sync as a task. */
     queueIncrementalSync(): Promise<void>;
     /**
@@ -661,7 +677,7 @@ export async function findChannelForMessageFn(
  */
 export async function sendWithRetry(
   send: () => Promise<{ id: string; threadId: string }>,
-  label: "reply" | "compose" | "forward" | "cal-reply"
+  label: "reply" | "compose" | "forward" | "cal-reply" | "reaction"
 ): Promise<
   | { ok: true; result: { id: string; threadId: string } }
   | { ok: false; error: ClassifiedSendError }
@@ -1619,6 +1635,197 @@ async function getFromHeaderFn(api: GmailApi, email: string): Promise<string> {
     );
     return email;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Outbound emoji reactions
+// ---------------------------------------------------------------------------
+
+/**
+ * Delay between a user adding a reaction in Plot and the reaction email
+ * actually going out. During the window a remove (or a change, which arrives
+ * as remove-old + add-new) cancels the still-pending send, so a quickly
+ * undone/changed reaction never emails anyone — the same idea as undo-send.
+ */
+export const REACTION_SEND_DELAY_MS = 12_000;
+
+/**
+ * Durable task key for a pending reaction send. This is a raw `scheduleTask`
+ * key (passed straight to the connector's scheduleTask/cancelScheduledTask, NOT
+ * through host.set's `mail:` storage namespace); the literal `mail:` prefix here
+ * is just a hand-written namespace to keep it distinct from other product task
+ * keys (e.g. Calendar's `calendar:watch-renewal:*`).
+ */
+function reactionSendTaskKey(noteKey: string, emoji: string): string {
+  return `mail:reaction-send:${noteKey}:${emoji}`;
+}
+
+/** Storage key mapping a sent reaction to its Gmail message id (for retraction). */
+function reactionMsgStoreKey(noteKey: string, emoji: string): string {
+  return `reaction-msg:${noteKey}:${emoji}`;
+}
+
+/**
+ * Dispatched when a user adds or removes an emoji reaction on a Gmail message
+ * note. Runs on the reacting user's own connector instance, so the sent email
+ * is attributed to them.
+ *
+ * Add → schedule a deferred send (see {@link REACTION_SEND_DELAY_MS}). Remove →
+ * cancel a still-pending send, and if it already went out, best-effort trash our
+ * own reaction email so the sender's mailbox reconverges. Non-Gmail notes
+ * (no `threadId`/message-id key) and non-Unicode reactions are ignored.
+ */
+export async function onNoteReactionChangedFn(
+  host: GmailSyncHost,
+  note: Note,
+  thread: Thread,
+  emoji: string,
+  added: boolean
+): Promise<void> {
+  const meta = thread.meta ?? {};
+  const threadId = meta.threadId as string | undefined;
+  const channelId = (meta.channelId ?? meta.syncableId) as string | undefined;
+  const noteKey = note.key ?? undefined;
+
+  // Only Gmail message notes are reactable here: they carry a Gmail threadId in
+  // meta and a message-id note key. Calendar/other threads and keyless notes
+  // have no reacted message to attach to.
+  if (!threadId || !channelId || !noteKey) return;
+  // Custom workspace emoji have no Gmail equivalent — leave them Plot-only.
+  if (!isSendableGmailReaction(emoji)) return;
+
+  const taskKey = reactionSendTaskKey(noteKey, emoji);
+
+  if (added) {
+    // Defer the send; re-scheduling under the same key replaces any pending
+    // send for this (message, emoji), so a rapid change collapses to one.
+    await host.scheduler.scheduleReactionSend(
+      taskKey,
+      threadId,
+      channelId,
+      noteKey,
+      emoji,
+      new Date(Date.now() + REACTION_SEND_DELAY_MS)
+    );
+    return;
+  }
+
+  // Removed: cancel a still-pending send so it never goes out.
+  await host.scheduler.cancelScheduledTask(taskKey);
+
+  // If it already went out, best-effort trash our own reaction email. On the
+  // sender's next thread resync the reaction email is gone, so the inbound fold
+  // reconstructs the note's reactions without it and the sender's view
+  // converges. Recipients already delivered the reaction keep it — an inherent
+  // limit of email (Gmail's own reaction removal shares it).
+  const storeKey = reactionMsgStoreKey(noteKey, emoji);
+  const sentId = await host.get<string>(storeKey);
+  if (!sentId) return;
+  const api = await tryGetApiFn(host, channelId);
+  if (api) {
+    try {
+      await api.trashMessage(sentId);
+    } catch (error) {
+      console.warn(`[gmail] failed to trash reaction email ${sentId}:`, error);
+    }
+  }
+  await host.clear(storeKey);
+}
+
+/**
+ * Deferred reaction send (fires from the scheduled task in
+ * {@link onNoteReactionChangedFn}). Builds and sends a Gmail emoji-reaction
+ * email on the reacted message's thread, reply-all to the other participants so
+ * Gmail recipients see a native reaction and everyone else gets the fallback
+ * email. Best-effort: reactions are low-stakes, so failures log and stop
+ * rather than surfacing a "Failed to send" affordance.
+ */
+export async function sendReactionEmailFn(
+  host: GmailSyncHost,
+  threadId: string,
+  channelId: string,
+  noteKey: string,
+  emoji: string
+): Promise<void> {
+  const storeKey = reactionMsgStoreKey(noteKey, emoji);
+  // Idempotency: a re-dispatched task must not send a second email.
+  if (await host.get<string>(storeKey)) return;
+
+  // Lapsed/revoked auth → leave the reaction Plot-only (surfaced in the
+  // connections UI); don't page on a best-effort reaction.
+  const api = await tryGetApiFn(host, channelId);
+  if (!api) return;
+
+  const gmailThread = await api.getThread(threadId);
+  const target = gmailThread.messages?.find((m) => m.id === noteKey);
+  if (!target) {
+    console.warn(
+      `[gmail] reaction target ${noteKey} not found in thread ${threadId}; skipping`
+    );
+    return;
+  }
+  const messageId = getHeader(target, "Message-ID");
+  if (!messageId) {
+    console.warn(`[gmail] reaction target ${noteKey} has no Message-ID; skipping`);
+    return;
+  }
+  const references = getHeader(target, "References") ?? "";
+  const subject = getHeader(target, "Subject") ?? "Email";
+
+  // Reply-all recipients: everyone on the reacted message minus the reactor.
+  const profile = await api.getProfile();
+  const selfEmails = new Set<string>([profile.emailAddress.toLowerCase()]);
+  const selfCanonical = new Set(Array.from(selfEmails, canonicalizeGmailAddress));
+  const isSelf = (email: string) =>
+    selfEmails.has(email) || selfCanonical.has(canonicalizeGmailAddress(email));
+
+  const toCandidates = new Set<string>();
+  for (const e of parseEmailAddresses(getHeader(target, "From")))
+    toCandidates.add(e.toLowerCase());
+  for (const e of parseEmailAddresses(getHeader(target, "To")))
+    toCandidates.add(e.toLowerCase());
+  const ccCandidates = new Set<string>();
+  for (const e of parseEmailAddresses(getHeader(target, "Cc")))
+    ccCandidates.add(e.toLowerCase());
+  const to = Array.from(toCandidates).filter(
+    (e) => !ccCandidates.has(e) && !isSelf(e)
+  );
+  const cc = Array.from(ccCandidates).filter((e) => !isSelf(e));
+  if (to.length === 0 && cc.length === 0) {
+    console.log(
+      `[gmail] reaction on ${noteKey} resolved to no other recipients; skipping`
+    );
+    return;
+  }
+
+  const raw = buildReactionMessage({
+    to,
+    cc,
+    from: await getFromHeaderFn(api, profile.emailAddress),
+    subject,
+    emoji,
+    messageId,
+    references,
+  });
+
+  const sent = await sendWithRetry(
+    () => api.sendMessage(raw, threadId),
+    "reaction"
+  );
+  if (!sent.ok) {
+    // Leave no store key so a later change can retry via a fresh add.
+    console.warn(
+      `[gmail] reaction send failed: ${sent.error.code} ${sent.error.message}`
+    );
+    return;
+  }
+  // Echo-suppress the self-copy (belt-and-braces: inbound the reaction email is
+  // folded onto the note, not turned into a note) and record the sent id so a
+  // later removal can retract it.
+  await host.setMany([
+    [`sent:${sent.result.id}`, true],
+    [storeKey, sent.result.id],
+  ]);
 }
 
 export async function onNoteCreatedFn(

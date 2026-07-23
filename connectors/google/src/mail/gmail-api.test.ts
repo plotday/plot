@@ -4,10 +4,12 @@ import {
   GmailApi,
   buildForwardMessage,
   buildNewEmailMessage,
+  buildReactionMessage,
   buildReplyMessage,
   canonicalizeGmailAddress,
   classifyCalendarThread,
   formatFromHeader,
+  isSendableGmailReaction,
   stripQuotedReply,
   transformGmailThread,
   type AttachmentData,
@@ -615,6 +617,64 @@ describe("transformGmailThread sender classification", () => {
       link.accessContacts as Array<{ email: string; automated?: boolean }>
     ).find((c) => c.email === "bob@company.com");
     expect(sender?.automated).toBeFalsy();
+  });
+});
+
+describe("buildReactionMessage", () => {
+  const build = () =>
+    decodeRawMessage(
+      buildReactionMessage({
+        to: ["alice@example.com"],
+        cc: ["carol@example.com"],
+        from: '"Me" <me@example.com>',
+        subject: "Welcome Wael",
+        emoji: "💖",
+        messageId: "<orig@mail.gmail.com>",
+        references: "<root@mail.gmail.com>",
+      })
+    );
+
+  it("threads the reaction onto the reacted message via In-Reply-To/References", () => {
+    const raw = build();
+    expect(raw).toContain("In-Reply-To: <orig@mail.gmail.com>");
+    expect(raw).toContain(
+      "References: <root@mail.gmail.com> <orig@mail.gmail.com>"
+    );
+    expect(raw).toContain("Subject: Re: Welcome Wael");
+    expect(raw).toContain("To: alice@example.com");
+    expect(raw).toContain("Cc: carol@example.com");
+  });
+
+  it("carries a text/vnd.google.email-reaction+json part with the emoji", () => {
+    const raw = build();
+    expect(raw).toContain("Content-Type: text/vnd.google.email-reaction+json");
+    const json = decodeMimePart(raw, "text/vnd.google.email-reaction+json");
+    expect(JSON.parse(json)).toEqual({ version: 1, emoji: "💖" });
+  });
+
+  it("places the reaction part between the text/plain and text/html fallbacks", () => {
+    const raw = build();
+    const plainIdx = raw.indexOf("text/plain");
+    const reactionIdx = raw.indexOf("text/vnd.google.email-reaction+json");
+    const htmlIdx = raw.indexOf("text/html");
+    expect(plainIdx).toBeGreaterThanOrEqual(0);
+    expect(reactionIdx).toBeGreaterThan(plainIdx);
+    expect(htmlIdx).toBeGreaterThan(reactionIdx);
+    // The plain-text fallback is the bare emoji so non-supporting clients
+    // still show something.
+    expect(decodeMimePart(raw, "text/plain")).toBe("💖");
+  });
+});
+
+describe("isSendableGmailReaction", () => {
+  it("accepts a bare Unicode emoji", () => {
+    expect(isSendableGmailReaction("💖")).toBe(true);
+    expect(isSendableGmailReaction("👍")).toBe(true);
+  });
+
+  it("rejects workspace custom-emoji refs and empty input", () => {
+    expect(isSendableGmailReaction("slack:T0123/party_parrot")).toBe(false);
+    expect(isSendableGmailReaction("")).toBe(false);
   });
 });
 

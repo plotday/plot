@@ -36,6 +36,11 @@ export const GMAIL_LINK_TYPES: LinkTypeConfig[] = [
       { id: "bcc", label: "BCC", hidden: true },
     ],
     supportsContactChanges: true,
+    // Gmail emoji reactions round-trip: inbound reactions fold onto the reacted
+    // note (transformGmailThread), and reactions added in Plot are sent back as
+    // Gmail reaction emails (onNoteReactionChanged). Gmail accepts any single
+    // Unicode emoji but no workspace custom emoji.
+    reactionCapabilities: { mode: "open-unicode", customEmoji: "none" },
     // Gmail composes target any address — a Plot contact (with or without
     // a Gmail-connection row) or a free-form typed email delivered via
     // `inviteEmails`. The runtime fills `recipients` from the

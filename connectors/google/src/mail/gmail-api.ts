@@ -386,6 +386,16 @@ export class GmailApi {
   }
 
   /**
+   * Moves a message to the trash. Used to retract an emoji reaction the user
+   * removed in Plot: trashing our own sent reaction email drops it from the
+   * mailbox so the sender's own thread reconverges on the next sync. (Recipients
+   * already delivered the reaction can't be retracted — a limit of email.)
+   */
+  public async trashMessage(id: string): Promise<void> {
+    await this.call(`/messages/${id}/trash`, { method: "POST" });
+  }
+
+  /**
    * Sends a brand-new email (not a reply). Gmail allocates a fresh threadId.
    */
   public async sendNewMessage(
@@ -1192,13 +1202,15 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
   //    so notes with none are left untouched (their existing reactions, if any,
   //    are preserved — the runtime skips the clear when `reactions` is unset).
   //  - On a note that DOES carry an email reaction, the set is rebuilt purely
-  //    from the reaction emails in this thread. A separate in-app reaction on
-  //    that same message is therefore not preserved across a resync, because —
-  //    unlike Slack — the Gmail connector has no reaction write-back
-  //    (`onNoteReactionChanged`) to round-trip it back into the synced set.
-  //    Removing a reaction converges the same way once its email leaves the
-  //    thread; dropping to zero leaves the last one until the note is otherwise
-  //    resynced (Gmail's removal signalling isn't relied on here).
+  //    from the reaction emails in this thread rather than merged with the
+  //    note's stored reactions. This holds together because a reaction a user
+  //    adds in Plot is round-tripped out as its own Gmail reaction email by the
+  //    outbound write-back (`onNoteReactionChangedFn`), so it comes back through
+  //    this same fold — the mailbox is the single source of truth and no merge
+  //    is needed. Removing a reaction converges once its email leaves the thread
+  //    (the write-back trashes our own sent copy); dropping to zero leaves the
+  //    last one until the note is otherwise resynced (Gmail's removal signalling
+  //    isn't relied on here).
   for (const { note, emoji, inReplyTo } of pendingReactions) {
     const target = inReplyTo ? noteByRfcMessageId.get(inReplyTo) : undefined;
     const reactor = note.author;
@@ -1854,6 +1866,94 @@ export function buildReplyMessage(options: {
   }
 
   return base64UrlEncodeMessage(rawMessage);
+}
+
+/**
+ * True when an emoji reaction can be pushed to Gmail. Gmail accepts a single
+ * Unicode emoji (Unicode Technical Standard 51 v15+); a workspace custom-emoji
+ * ref (`provider:workspace/name`, e.g. `slack:T0/party_parrot`) has no Gmail
+ * equivalent and must be skipped. Bare Unicode emoji never contain a `:`
+ * followed by a provider prefix; Gmail performs the final single-emoji
+ * validation on the value we send.
+ */
+export function isSendableGmailReaction(emoji: string): boolean {
+  if (!emoji) return false;
+  // Provider-scoped custom-emoji ref, e.g. "slack:T0123/party_parrot".
+  if (/^[a-z0-9][a-z0-9._-]*:/i.test(emoji)) return false;
+  return true;
+}
+
+/**
+ * Builds a Gmail emoji-reaction email for the message identified by
+ * `messageId` (its RFC Message-ID). Per
+ * https://developers.google.com/workspace/gmail/reactions/format the message
+ * is a normal reply (In-Reply-To/References threading, "Re:" subject) whose
+ * body is a `multipart/alternative` carrying, in order, a `text/plain`
+ * fallback, the `text/vnd.google.email-reaction+json` reaction part
+ * (`{ version: 1, emoji }`), and a `text/html` fallback. Gmail recipients
+ * render it as a reaction on the referenced message; other clients show the
+ * emoji fallback. Returns the base64url-encoded raw message for `messages.send`.
+ */
+export function buildReactionMessage(options: {
+  to: string[];
+  cc: string[];
+  from: string;
+  subject: string;
+  emoji: string;
+  messageId: string;
+  references: string;
+}): string {
+  const { to, cc, from, subject, emoji, messageId, references } = options;
+
+  // Sanitize every value interpolated into a header (RFC 5322 CRLF injection).
+  const fromHeader = sanitizeHeaderValue(from);
+  const toHeader = to.map(sanitizeHeaderValue).join(", ");
+  const ccHeader = cc.map(sanitizeHeaderValue).join(", ");
+  const safeMessageId = sanitizeHeaderValue(messageId);
+  const safeReferences = sanitizeHeaderValue(references);
+  const reSubject = sanitizeHeaderValue(
+    subject.startsWith("Re:") ? subject : `Re: ${subject}`
+  );
+
+  const headerLines: string[] = [`From: ${fromHeader}`, `To: ${toHeader}`];
+  if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
+  headerLines.push(`Subject: ${reSubject}`);
+  headerLines.push(`In-Reply-To: ${safeMessageId}`);
+  const refChain = safeReferences
+    ? `${safeReferences} ${safeMessageId}`
+    : safeMessageId;
+  headerLines.push(`References: ${refChain}`);
+  headerLines.push(`MIME-Version: 1.0`);
+
+  const altBoundary = mimeBoundary("alt");
+  const enc = new TextEncoder();
+  const reactionJson = JSON.stringify({ version: 1, emoji });
+  const htmlFallback = `<!DOCTYPE html>\r\n<html><body>\r\n<p>${emoji}</p>\r\n</body></html>`;
+
+  const altBlock = [
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    "",
+    `--${altBoundary}`,
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(emoji)),
+    // Google recommends the reaction part BETWEEN the plain and html parts so
+    // non-supporting clients still fall through to a rendered emoji.
+    `--${altBoundary}`,
+    `Content-Type: ${EMAIL_REACTION_MIME}; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(reactionJson)),
+    `--${altBoundary}`,
+    `Content-Type: text/html; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    uint8ArrayToBase64Lines(enc.encode(htmlFallback)),
+    `--${altBoundary}--`,
+  ];
+
+  return base64UrlEncodeMessage([...headerLines, ...altBlock].join("\r\n"));
 }
 
 /**
