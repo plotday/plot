@@ -362,7 +362,16 @@ describe("onCreateLinkFn (forward)", () => {
     expect(m.to.map((a) => a.address).sort()).toEqual(["bob@x.com", "jane@x.com"]);
     expect(out?.source).toBe("icloud-mail:thread:sent-123@plot.day");
     expect(out?.type).toBe("email");
-    expect(out?.originatingNote).toEqual({ key: "sent-123@plot.day", deliveryError: null });
+    expect(out?.originatingNote).toEqual({
+      key: "sent-123@plot.day",
+      externalContent: text,
+      deliveryError: null,
+    });
+    // externalContent must equal exactly what was sent, so the Sent-mailbox
+    // re-ingest's baseline hash matches and Plot's clean forwarder note
+    // (draft.noteContent only) is preserved instead of overwritten by the
+    // full quoted blob that IMAP will read back.
+    expect(out?.originatingNote?.externalContent).toBe(m.text);
   });
 
   it("leaves an already-prefixed Fwd: subject unchanged", async () => {
@@ -450,6 +459,11 @@ describe("onCreateLinkFn (forward)", () => {
     const dup = await onCreateLinkFn(host, draft, new Date(t0.getTime() + 5 * 60 * 1000));
     expect(sent).toHaveLength(1);
     expect(dup?.originatingNote?.key).toBe(first?.originatingNote?.key);
+    // The dedup-hit return must carry the same externalContent baseline as
+    // the original send, not omit it — otherwise a re-invoked dispatch loses
+    // sync-baseline protection for the note the first send already sent.
+    expect(dup?.originatingNote?.externalContent).toBe(first?.originatingNote?.externalContent);
+    expect(dup?.originatingNote?.externalContent).toBe(sent[0].text);
 
     // Different content → distinct dedup key → sends again.
     await onCreateLinkFn(

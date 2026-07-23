@@ -276,11 +276,11 @@ async function onCreateLinkForwardFn(
       recipients.bcc.map((a) => a.address).sort(),
     ])
   )}`;
-  const prior = await host.get<{ rootId: string; at: number }>(dedupKey);
+  const prior = await host.get<{ rootId: string; at: number; text: string }>(dedupKey);
   if (prior && now.getTime() - prior.at < COMPOSE_DEDUP_WINDOW_MS) {
     return {
       ...composeLink(host, draft, subject, prior.rootId),
-      originatingNote: { key: prior.rootId, deliveryError: null },
+      originatingNote: { key: prior.rootId, externalContent: prior.text, deliveryError: null },
     };
   }
 
@@ -307,10 +307,28 @@ async function onCreateLinkForwardFn(
   }
 
   const rootId = stripAngle(outcome.result.messageId);
-  await host.set(dedupKey, { rootId, at: now.getTime() });
+  // Store `text` alongside the dedup guard: unlike reply/compose (where the
+  // sent SMTP text equals the stored note's content 1:1), a forward's sent
+  // text = noteContent + the quoted attribution block + original body, but
+  // the stored note only holds the clean `draft.noteContent`. Re-using this
+  // exact `text` as the next `originatingNote.externalContent` on a dedup
+  // hit keeps the sync baseline consistent with the one actually sent.
+  await host.set(dedupKey, { rootId, at: now.getTime(), text });
+  // `externalContent` establishes the sync baseline as exactly what iCloud's
+  // Sent mailbox now stores for this note (the full sent `text`, quoted
+  // original + attribution block included) — see the doc comment above the
+  // dedup guard. Without this, the recent-window Sent rescan re-ingests the
+  // sent message and `transformMessages` builds a note with the SAME key
+  // (stripAngle(sent Message-ID) === rootId) and SAME source, whose content
+  // is the full raw quoted blob; with no baseline to compare against, that
+  // upsert would silently overwrite the clean `draft.noteContent` note this
+  // hook just stored. This assumes the IMAP round-trip of the body is
+  // lossless (the same assumption reply/compose already make); a more
+  // robust echo-suppression marker (mirroring Gmail's `sent:<id>` flag,
+  // which filters the sent note out of re-ingest entirely) is deferred.
   return {
     ...composeLink(host, draft, subject, rootId),
-    originatingNote: { key: rootId, deliveryError: null },
+    originatingNote: { key: rootId, externalContent: text, deliveryError: null },
   };
 }
 
