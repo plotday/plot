@@ -398,7 +398,7 @@ describe("onCreateLinkFn — plain compose (no draft.forward)", () => {
         recipients: [
           {
             id: "c-dana" as Uuid,
-            name: "Dana Sproule",
+            name: "Robin Fielder",
             externalAccountId: "dana@example.com",
             role: null,
           },
@@ -408,7 +408,7 @@ describe("onCreateLinkFn — plain compose (no draft.forward)", () => {
 
     expect(sendNewMessage).toHaveBeenCalledTimes(1);
     const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
-    expect(raw).toContain('To: "Dana Sproule" <dana@example.com>');
+    expect(raw).toContain('To: "Robin Fielder" <dana@example.com>');
     expect(link?.type).toBe("email");
   });
 });

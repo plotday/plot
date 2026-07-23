@@ -43,7 +43,7 @@ describe("resolveOutboundReplyRecipients", () => {
         recipients: [
           {
             id: Uuid.Generate(),
-            name: "Dana Wagner",
+            name: "Casey Morgan",
             externalAccountId: "dw@x.com",
             role: "to",
           },
@@ -59,7 +59,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set(),
       });
-      expect(result.to).toEqual([{ address: "dw@x.com", name: "Dana Wagner" }]);
+      expect(result.to).toEqual([{ address: "dw@x.com", name: "Casey Morgan" }]);
       expect(result.cc).toEqual([{ address: "no-name@x.com", name: null }]);
     });
 

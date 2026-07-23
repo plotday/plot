@@ -494,7 +494,7 @@ describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
   it("buildReplyMessage renders named recipients in the To header", () => {
     const raw = decodeRawMessage(
       buildReplyMessage({
-        to: [formatFromHeader("dana@x.com", "Dana Sproule")],
+        to: [formatFromHeader("dana@x.com", "Robin Fielder")],
         cc: [],
         from: "me@x.com",
         subject: "Re: x",
@@ -503,7 +503,7 @@ describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
         references: "",
       })
     );
-    expect(raw).toContain('To: "Dana Sproule" <dana@x.com>');
+    expect(raw).toContain('To: "Robin Fielder" <dana@x.com>');
   });
 });
 

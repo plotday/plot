@@ -73,7 +73,7 @@ function curatedReplyNote() {
     recipients: [
       {
         id: "c-dana",
-        name: "Dana Sproule",
+        name: "Robin Fielder",
         externalAccountId: "dana@x.com",
         role: null,
       },
@@ -88,7 +88,7 @@ describe("outlook onNoteCreatedFn — plain mail reply carries recipient display
       {
         id: "msg-1",
         isDraft: false,
-        from: { emailAddress: { address: "dana@x.com", name: "Dana Sproule" } },
+        from: { emailAddress: { address: "dana@x.com", name: "Robin Fielder" } },
         toRecipients: [{ emailAddress: { address: "me@work.com" } }],
         ccRecipients: [],
       },
@@ -112,7 +112,7 @@ describe("outlook onNoteCreatedFn — plain mail reply carries recipient display
     expect(graphApi.updateMessage).toHaveBeenCalledTimes(1);
     const updateBody = graphApi.updateMessage.mock.calls[0][1];
     expect(updateBody.toRecipients).toContainEqual({
-      emailAddress: { address: "dana@x.com", name: "Dana Sproule" },
+      emailAddress: { address: "dana@x.com", name: "Robin Fielder" },
     });
   });
 });
@@ -148,7 +148,7 @@ describe("outlook onCreateLinkFn — plain compose carries recipient display nam
         recipients: [
           {
             id: "c-dana" as Uuid,
-            name: "Dana Sproule",
+            name: "Robin Fielder",
             externalAccountId: "dana@x.com",
             role: null,
           },
@@ -159,7 +159,7 @@ describe("outlook onCreateLinkFn — plain compose carries recipient display nam
     expect(graphApi.createDraft).toHaveBeenCalledTimes(1);
     const body = graphApi.createDraft.mock.calls[0][0];
     expect(body.toRecipients).toContainEqual({
-      emailAddress: { address: "dana@x.com", name: "Dana Sproule" },
+      emailAddress: { address: "dana@x.com", name: "Robin Fielder" },
     });
     expect(link?.type).toBe("email");
   });
