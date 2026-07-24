@@ -6,6 +6,7 @@ import {
   ConferencingProvider,
   Connector,
   type CreateLinkDraft,
+  type Link,
   type NewContact,
   type NewLinkWithNotes,
   type NoteWriteBackResult,
@@ -68,6 +69,10 @@ import {
   type RemindersHost,
   type SyncBatchResult as RemindersSyncBatchResult,
 } from "./reminders/sync";
+import {
+  onCreateLinkFn as onRemindersCreateLinkFn,
+  onLinkUpdatedFn as onRemindersLinkUpdatedFn,
+} from "./reminders/write";
 import { connectIcloud, ICLOUD_IMAP, resolveThreadMessages } from "./mail/imap-fetch";
 import type { MailHost, MailSyncState } from "./mail/mail-host";
 import {
@@ -1553,11 +1558,14 @@ export class Apple extends Connector<Apple> {
   }
 
   /**
-   * A Plot-composed email thread → send a new message over SMTP and attach the
-   * resulting link. No-ops for non-email link types (returns null).
+   * A Plot-composed thread → either a new sent email (SMTP) or a new iCloud
+   * reminder (CalDAV), by draft type. No-ops (returns null) for any other
+   * link type.
    */
   override async onCreateLink(draft: CreateLinkDraft): Promise<CreateLinkResult | null> {
-    return onCreateLinkFn(this.buildMailHost(), draft);
+    const mailResult = await onCreateLinkFn(this.buildMailHost(), draft);
+    if (mailResult) return mailResult;
+    return onRemindersCreateLinkFn(this.buildRemindersHost(), draft);
   }
 
   /** Read/unread on a mail thread → \Seen write-back over IMAP. */
@@ -1573,6 +1581,11 @@ export class Apple extends Connector<Apple> {
     options: { date?: Date }
   ): Promise<void> {
     await onThreadToDoFn(this.buildMailHost(), thread, actor, todo, options);
+  }
+
+  /** Status toggle (done <-> reopen) on a reminder link → VTODO STATUS write-back over CalDAV. */
+  override async onLinkUpdated(link: Link): Promise<void> {
+    await onRemindersLinkUpdatedFn(this.buildRemindersHost(), link);
   }
 
   /**
