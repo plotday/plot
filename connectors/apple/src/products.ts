@@ -2,6 +2,7 @@ import type { Channel, LinkTypeConfig } from "@plotday/twister/tools/integration
 
 import { CALENDAR_LINK_TYPES } from "./calendar/channels";
 import { MAIL_LINK_TYPES } from "./mail/channels";
+import { REMINDERS_LINK_TYPES } from "./reminders/channels";
 
 /**
  * A product offered by the Apple composite connector. Unlike google there are
@@ -11,19 +12,21 @@ import { MAIL_LINK_TYPES } from "./mail/channels";
  * per product key (it needs the connector instance for scheduling + storage).
  */
 export interface AppleProduct {
-  key: "calendar" | "mail";
+  key: "calendar" | "mail" | "reminders";
   linkTypes: LinkTypeConfig[];
   getRawChannels(): Promise<Channel[]>;
 }
 
 /**
  * Build the product list. The connector injects the per-product channel
- * enumerators (calendar needs a live CalDAV client + calendar home; mail is a
- * stub for now), keeping this registry free of connector internals.
+ * enumerators (calendar and reminders need a live CalDAV client + calendar
+ * home; mail is a stub for now), keeping this registry free of connector
+ * internals.
  */
 export function appleProducts(opts: {
   getCalendarChannels: () => Promise<Channel[]>;
   getMailChannels: () => Promise<Channel[]>;
+  getRemindersChannels: () => Promise<Channel[]>;
 }): AppleProduct[] {
   return [
     {
@@ -35,6 +38,11 @@ export function appleProducts(opts: {
       key: "mail",
       linkTypes: MAIL_LINK_TYPES,
       getRawChannels: opts.getMailChannels,
+    },
+    {
+      key: "reminders",
+      linkTypes: REMINDERS_LINK_TYPES,
+      getRawChannels: opts.getRemindersChannels,
     },
   ];
 }

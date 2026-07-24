@@ -56,6 +56,18 @@ import {
 import { composeChannels } from "./compose";
 import { downloadAttachmentFn } from "./mail/attachments";
 import { getMailChannels } from "./mail/channels";
+import { getReminderChannels } from "./reminders/channels";
+import {
+  fullSyncFn as remindersFullSyncFn,
+  onChannelDisabledFn as onRemindersChannelDisabledFn,
+  onChannelEnabledFn as onRemindersChannelEnabledFn,
+  pollFn as remindersPollFn,
+  processSyncChunkFn as remindersProcessSyncChunkFn,
+  REMINDERS_POLL_INTERVAL_MS,
+  type PendingResource,
+  type RemindersHost,
+  type SyncBatchResult as RemindersSyncBatchResult,
+} from "./reminders/sync";
 import { connectIcloud, ICLOUD_IMAP, resolveThreadMessages } from "./mail/imap-fetch";
 import type { MailHost, MailSyncState } from "./mail/mail-host";
 import {
@@ -312,6 +324,14 @@ export class Apple extends Connector<Apple> {
       scopeGroupId: "calendar",
       channelNoun: { singular: "calendar", plural: "calendars" },
     },
+    {
+      key: "reminders",
+      label: "Reminders",
+      description: "Turns your iCloud reminders into to-dos.",
+      icon: "https://api.iconify.design/fluent-emoji-flat/spiral-notepad.svg",
+      scopeGroupId: "reminders",
+      channelNoun: { singular: "list", plural: "lists" },
+    },
   ];
 
   // Lock TTL covering the worst-case full backfill. The framework releases
@@ -442,6 +462,7 @@ export class Apple extends Connector<Apple> {
     actor: Actor;
   }): Promise<void> {
     await this.buildMailHost().set("auth_actor_id", context.actor.id);
+    await this.buildRemindersHost().set("auth_actor_id", context.actor.id);
   }
 
   /**
@@ -484,6 +505,61 @@ export class Apple extends Connector<Apple> {
       queueWritebackDrain: (id: string) =>
         this.scheduleDrain("mail-writeback", this.mailWritebackDrain, { ids: [id] }),
       knownEventUids: () => this.knownEventUids(),
+    };
+  }
+
+  /**
+   * Adapter the reminders/* pure sync functions depend on. Storage keys are
+   * namespaced with a "reminders:" prefix — same convention as
+   * `buildMailHost` — so reminders' per-list cursors can never collide with
+   * calendar's `sync_state_<id>` etc. keys. Callers in `src/reminders/*` pass
+   * bare keys and rely on this prefixing.
+   */
+  private buildRemindersHost(): RemindersHost {
+    const remKey = (key: string) => `reminders:${key}`;
+    return {
+      id: this.id,
+      caldav: this.getCalDAV(),
+      set: async <T>(key: string, value: T) => {
+        await this.set(remKey(key), value as unknown as Serializable);
+      },
+      get: async <T>(key: string): Promise<T | undefined> => {
+        const value = await this.get<Serializable>(remKey(key));
+        return (value as T | null) ?? undefined;
+      },
+      clear: async (key: string) => {
+        await this.clear(remKey(key));
+      },
+      setMany: async <T>(entries: [key: string, value: T][]) => {
+        await this.setMany(
+          entries.map(([key, value]): [string, Serializable] => [
+            remKey(key),
+            value as unknown as Serializable,
+          ])
+        );
+      },
+      tools: {
+        integrations: {
+          saveLink: (link) => this.tools.integrations.saveLink(link),
+          channelSyncCompleted: (channelId) =>
+            this.tools.integrations.channelSyncCompleted(channelId),
+          archiveLinks: (filter) => this.tools.integrations.archiveLinks(filter),
+        },
+      },
+      scheduler: {
+        schedulePoll: async (listId: string) => {
+          const cb = await this.callback(this.remindersPoll, listId);
+          await this.scheduleRecurring(`reminders-poll:${listId}`, cb, {
+            intervalMs: REMINDERS_POLL_INTERVAL_MS,
+          });
+        },
+        cancelPoll: (listId: string) =>
+          this.cancelScheduledTask(`reminders-poll:${listId}`),
+        queueFullSync: async (listId: string, initialSync: boolean) => {
+          const cb = await this.callback(this.remindersInit, listId, initialSync);
+          await this.runTask(cb);
+        },
+      },
     };
   }
 
@@ -536,6 +612,15 @@ export class Apple extends Connector<Apple> {
         return getCalendarChannels(this.getCalDAV(), calendarHome);
       },
       getMailChannels: () => getMailChannels(this.buildMailHost()),
+      getRemindersChannels: async () => {
+        // Reuses the calendar product's cached calendar_home/principal_url
+        // (both CalDAV-backed) rather than re-discovering them.
+        const calendarHome = await this.discoverCalendarHome();
+        const principalUrl =
+          (await this.get<string>("principal_url")) ??
+          (await this.getCalDAV().discoverPrincipal());
+        return getReminderChannels(this.getCalDAV(), calendarHome, principalUrl);
+      },
     });
     return composeChannels(products);
   }
@@ -548,6 +633,7 @@ export class Apple extends Connector<Apple> {
     const { product } = parse(channel.id);
     if (product === "calendar") return this.onCalendarChannelEnabled(channel, context);
     if (product === "mail") return this.onMailChannelEnabled(channel, context);
+    if (product === "reminders") return this.onRemindersChannelEnabled(channel, context);
   }
 
   /**
@@ -781,6 +867,7 @@ export class Apple extends Connector<Apple> {
     const { product } = parse(channel.id);
     if (product === "calendar") return this.onCalendarChannelDisabled(channel);
     if (product === "mail") return this.onMailChannelDisabled(channel);
+    if (product === "reminders") return this.onRemindersChannelDisabled(channel);
   }
 
   /**
@@ -876,6 +963,78 @@ export class Apple extends Connector<Apple> {
       channelId: channel.id,
       meta: { syncProvider: "apple-mail", syncableId: channel.id },
     });
+  }
+
+  /**
+   * Called when a reminders list is enabled. `channel.id` is the NAMESPACED
+   * id ("reminders:<href>") — passed straight through to the sync.ts
+   * functions, which de-namespace internally only where a raw CalDAV href is
+   * actually needed (see `rawHref()`'s doc in reminders/sync.ts).
+   */
+  private async onRemindersChannelEnabled(
+    channel: Channel,
+    context?: SyncContext
+  ): Promise<void> {
+    await onRemindersChannelEnabledFn(this.buildRemindersHost(), channel.id, {
+      recovering: context?.recovering,
+    });
+    const cb = await this.callback(this.remindersInit, channel.id, true);
+    await this.runTask(cb);
+  }
+
+  private async onRemindersChannelDisabled(channel: Channel): Promise<void> {
+    await onRemindersChannelDisabledFn(this.buildRemindersHost(), channel.id);
+  }
+
+  /**
+   * Kicks off a full VTODO backfill for a reminders list — the newly-enabled
+   * path (`initialSync: true`) and every rescan trigger `pollFn` queues via
+   * `host.scheduler.queueFullSync` (initial-flagged for a lost cursor,
+   * non-initial for a routine ctag-detected change) share this one entry
+   * point, so a large list's rescan chunks across executions exactly like
+   * the original backfill does.
+   */
+  async remindersInit(listId: string, initialSync: boolean): Promise<void> {
+    const result = await remindersFullSyncFn(this.buildRemindersHost(), listId, initialSync);
+    await this.continueRemindersSync(listId, result, initialSync);
+  }
+
+  /** Continuation for a chunked backfill/rescan — see reminders/sync.ts's SyncBatchResult. */
+  async remindersSyncBatch(
+    listId: string,
+    remaining: PendingResource[],
+    initialSync: boolean
+  ): Promise<void> {
+    const result = await remindersProcessSyncChunkFn(
+      this.buildRemindersHost(),
+      listId,
+      remaining,
+      initialSync
+    );
+    await this.continueRemindersSync(listId, result, initialSync);
+  }
+
+  private async continueRemindersSync(
+    listId: string,
+    result: RemindersSyncBatchResult,
+    initialSync: boolean
+  ): Promise<void> {
+    if ("next" in result) {
+      const cb = await this.callback(
+        this.remindersSyncBatch,
+        listId,
+        result.next.remaining,
+        initialSync
+      );
+      await this.runTask(cb);
+      return;
+    }
+    await this.buildRemindersHost().scheduler.schedulePoll(listId);
+  }
+
+  /** Recurring incremental poll for one reminders list — see reminders/sync.ts's pollFn. */
+  async remindersPoll(listId: string): Promise<void> {
+    await remindersPollFn(this.buildRemindersHost(), listId);
   }
 
   /**

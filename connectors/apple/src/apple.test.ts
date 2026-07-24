@@ -35,6 +35,7 @@ describe("Apple composite wiring", () => {
         { id: "/1234/calendars/home/", title: "Home" },
       ],
       getMailChannels: async () => [],
+      getRemindersChannels: async () => [],
     });
     const channels = await composeChannels(products);
     expect(channels.map((c) => c.id)).toEqual(["calendar:/1234/calendars/home/"]);
@@ -79,15 +80,25 @@ describe("Apple.getAccountIdentity", () => {
 
 describe("Apple.activate", () => {
   /** Fake self exposing just enough of `this.tools`/`this.set`/`this.get`/
-   *  `this.clear` for `buildMailHost()` (copied onto `self` the same way
-   *  the describe blocks below do) to construct a working MailHost. */
+   *  `this.clear` for `buildMailHost()`/`buildRemindersHost()` (copied onto
+   *  `self` the same way the describe blocks below do) to construct working
+   *  hosts. */
   function makeSelf() {
     const store = new Map<string, unknown>();
     const buildMailHost = (
       Apple.prototype as unknown as { buildMailHost: () => unknown }
     ).buildMailHost;
+    const buildRemindersHost = (
+      Apple.prototype as unknown as { buildRemindersHost: () => unknown }
+    ).buildRemindersHost;
+    const getCalDAV = (
+      Apple.prototype as unknown as { getCalDAV: () => unknown }
+    ).getCalDAV;
     const self = {
       buildMailHost,
+      buildRemindersHost,
+      getCalDAV,
+      id: "connector-instance-id",
       tools: {
         options: { appleId: "me@icloud.com", appPassword: "pw" },
         imap: {},
@@ -104,7 +115,7 @@ describe("Apple.activate", () => {
     return { self, store };
   }
 
-  it("stores the activating actor's id under the mail: namespace", async () => {
+  it("stores the activating actor's id under the mail: and reminders: namespaces", async () => {
     const { self, store } = makeSelf();
 
     await Apple.prototype.activate.call(self, {
@@ -113,6 +124,7 @@ describe("Apple.activate", () => {
     });
 
     expect(store.get("mail:auth_actor_id")).toBe("actor-123");
+    expect(store.get("reminders:auth_actor_id")).toBe("actor-123");
   });
 });
 

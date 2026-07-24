@@ -1,4 +1,4 @@
-import type { ActorId } from "@plotday/twister";
+import type { ActorId, JSONValue } from "@plotday/twister";
 
 import {
   AuthenticationError,
@@ -57,7 +57,7 @@ export interface RemindersHost {
       archiveLinks(filter: {
         channelId?: string;
         type?: string;
-        meta?: Record<string, unknown>;
+        meta?: Record<string, JSONValue>;
       }): Promise<void>;
     };
   };
