@@ -1,4 +1,5 @@
 import type { Channel, LinkTypeConfig } from "@plotday/twister/tools/integrations";
+import type { ImapMailbox } from "@plotday/twister/tools/imap";
 
 import { connectIcloud } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
@@ -57,17 +58,41 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
 ];
 
 /**
- * INBOX is the single enabled mail channel in v1. The Sent mailbox is read
- * implicitly during sync (for the owner's own replies), not offered as its own
- * channel; broader multi-folder selection is a follow-up.
+ * Special-use attributes excluded from channel enumeration. Sent is excluded
+ * because it is read implicitly during INBOX's sync pass (see sync.ts)
+ * rather than synced as a channel of its own — offering it separately would
+ * let a folder's pass see Sent messages in isolation, reintroducing the
+ * split-recompute regression `transformMessages` guards against. Drafts,
+ * Trash, and Junk have no sync value. Archive, All, and Flagged are
+ * deliberately NOT excluded — an Archive mailbox (or similar) is the whole
+ * point of this feature.
+ */
+const EXCLUDED_SPECIAL_USE = new Set(["\\Sent", "\\Drafts", "\\Trash", "\\Junk"]);
+
+/** Render a mailbox's hierarchical `name` as a human-readable path, e.g. "Archive / 2024". */
+function mailboxTitle(box: ImapMailbox): string {
+  if (box.name.toUpperCase() === "INBOX") return "Inbox";
+  return box.name.split(box.delimiter || "/").join(" / ");
+}
+
+/**
+ * Every selectable IMAP mailbox becomes its own channel. INBOX is the only one
+ * enabled by default; the rest are opt-in. Sent is excluded because it is read
+ * implicitly during INBOX's sync pass (see sync.ts) rather than synced as a
+ * channel of its own — and Drafts/Trash/Junk have no sync value.
  */
 export async function getMailChannels(host: MailHost): Promise<Channel[]> {
   const session = await connectIcloud(host);
   try {
     const boxes = await host.imap.listMailboxes(session);
-    const hasInbox = boxes.some((b) => b.name.toUpperCase() === "INBOX");
-    if (!hasInbox) return [];
-    return [{ id: "INBOX", title: "Inbox", enabledByDefault: true }];
+    return boxes
+      .filter((b) => !b.flags.includes("\\Noselect"))
+      .filter((b) => !b.specialUse || !EXCLUDED_SPECIAL_USE.has(b.specialUse))
+      .map((b) => ({
+        id: b.name,
+        title: mailboxTitle(b),
+        enabledByDefault: b.name.toUpperCase() === "INBOX",
+      }));
   } finally {
     await host.imap.disconnect(session);
   }
