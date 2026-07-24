@@ -549,27 +549,6 @@ export function splitEmailList(headerValue: string): string[] {
 }
 
 /**
- * Canonicalizes a Gmail/Googlemail address for self-identity comparison.
- * Gmail treats dots in the local part and anything after a `+` as
- * insignificant for delivery — `kris.braun@gmail.com`, `krisbraun@gmail.com`,
- * and `kris.braun+tag@gmail.com` all route to the same mailbox — but message
- * headers preserve whichever exact variant was used to address the mail. A
- * literal string comparison against the account's canonical address (as
- * returned by the Gmail API) therefore misses these variants, letting the
- * user's own address survive into an outbound reply-all as if it were a
- * distinct recipient. Non-Gmail domains are returned lowercased, unchanged.
- */
-export function canonicalizeGmailAddress(email: string): string {
-  const lower = email.trim().toLowerCase();
-  const at = lower.lastIndexOf("@");
-  if (at === -1) return lower;
-  const domain = lower.slice(at + 1);
-  if (domain !== "gmail.com" && domain !== "googlemail.com") return lower;
-  const local = lower.slice(0, at).split("+")[0]!.replace(/\./g, "");
-  return `${local}@gmail.com`;
-}
-
-/**
  * Parses a comma-separated email header value into an array of email address strings.
  * Skips entries that are not valid email addresses (e.g. "undisclosed-recipients:;").
  */
@@ -598,6 +577,9 @@ function parseEmailAddressesToContacts(headerValue: string | null): NewContact[]
     .map((parsed) => ({
       email: parsed.email,
       name: parsed.name || undefined,
+      // A To/Cc display name is whatever the SENDER typed for this person, not
+      // a self-assertion — default tier ("third-party") applies.
+      nameTier: "third-party" as const,
       // NOTE: Gmail message headers don't expose a Google user id (sub/permissionId),
       // so we key contact_external_account on the lowercased email address. Google Chat
       // and Drive connectors key on the numeric Google id; cross-connector dedup is
@@ -1062,6 +1044,8 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
             {
               email: fromContact.email,
               name: fromName,
+              // The sender named themselves on their own message.
+              nameTier: "self" as const,
               // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
               source: { accountId: fromContact.email.toLowerCase() },
               automated: isNoReplySender(fromContact.email),
@@ -1148,12 +1132,16 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const senderActor: NewActor = {
       email: sender.email,
       name: senderName,
+      // The sender named themselves on their own message.
+      nameTier: "self",
       automated: senderIsNoReply,
     };
     const messageContacts: NewContact[] = [
       {
         email: sender.email,
         name: senderName,
+        // The sender named themselves on their own message.
+        nameTier: "self",
         // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
         source: { accountId: sender.email.toLowerCase() },
         automated: senderIsNoReply,

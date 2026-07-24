@@ -1,0 +1,22 @@
+{
+  "comment": "Shared across three runtimes: TypeScript (this package), SQL (libs/db canonical_email/base_email), and Dart (apps/plot canonical_email.dart). Adding a case here MUST be made to pass in all three.",
+  "cases": [
+    { "input": "kris.braun@gmail.com", "canonical": "krisbraun@gmail.com", "base": "krisbraun@gmail.com", "note": "dots stripped on gmail" },
+    { "input": "krisbraun@gmail.com", "canonical": "krisbraun@gmail.com", "base": "krisbraun@gmail.com", "note": "already canonical" },
+    { "input": "KRIS.BRAUN@GMAIL.COM", "canonical": "krisbraun@gmail.com", "base": "krisbraun@gmail.com", "note": "case folded" },
+    { "input": "kris.braun@googlemail.com", "canonical": "krisbraun@gmail.com", "base": "krisbraun@gmail.com", "note": "googlemail folds to gmail" },
+    { "input": "kris.braun+updates@gmail.com", "canonical": "krisbraun+updates@gmail.com", "base": "krisbraun@gmail.com", "note": "canonical KEEPS the tag; base strips it" },
+    { "input": "me+a.b@gmail.com", "canonical": "me+ab@gmail.com", "base": "me@gmail.com", "note": "gmail ignores dots inside the tag too" },
+    { "input": "  Kris.Braun@Gmail.com  ", "canonical": "krisbraun@gmail.com", "base": "krisbraun@gmail.com", "note": "surrounding whitespace trimmed" },
+    { "input": "finance+ap@acme.com", "canonical": "finance+ap@acme.com", "base": "finance+ap@acme.com", "note": "NON-gmail: tag preserved by BOTH functions" },
+    { "input": "a.b@c@gmail.com", "canonical": "ab@c@gmail.com", "base": "ab@c@gmail.com", "note": "multiple @: split on the LAST one, so the local part is everything before it" },
+    { "input": "kris@", "canonical": "kris@", "base": "kris@", "note": "trailing @: no usable split, returned lowercased and unchanged" },
+    { "input": "finance@acme.com", "canonical": "finance@acme.com", "base": "finance@acme.com", "note": "pairs with finance+ap@acme.com: a non-gmail domain must never widen two addresses onto one key" },
+    { "input": "Kris.Braun@Acme.com", "canonical": "kris.braun@acme.com", "base": "kris.braun@acme.com", "note": "NON-gmail: dots preserved, lowercase only" },
+    { "input": "not-an-email", "canonical": "not-an-email", "base": "not-an-email", "note": "no @: lowercased, returned as-is" },
+    { "input": "+tagonly@gmail.com", "canonical": "+tagonly@gmail.com", "base": "+tagonly@gmail.com", "note": "empty base local part: fall back, never emit bare @gmail.com" },
+    { "input": ".@gmail.com", "canonical": ".@gmail.com", "base": ".@gmail.com", "note": "empty canonical local part: fall back" },
+    { "input": "\tkris.braun@gmail.com\n", "canonical": "krisbraun@gmail.com", "base": "krisbraun@gmail.com", "note": "tab/newline padding is trimmed like any other whitespace, so Gmail folding still applies" },
+    { "input": "..+tag@gmail.com", "canonical": "+tag@gmail.com", "base": "..+tag@gmail.com", "note": "base falls back to the ORIGINAL local part (tag included) when the untagged part is empty" }
+  ]
+}

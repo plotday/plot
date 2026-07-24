@@ -1,6 +1,7 @@
 import { ActionType } from "@plotday/twister/plot";
 import type {
   Action,
+  NameTier,
   NewActor,
   NewContact,
   NewLinkWithNotes,
@@ -552,7 +553,10 @@ export function isViaRewrittenName(name: string | undefined): boolean {
 function recipientToContact(
   r: GraphRecipient,
   suppressName = false,
-  automated = false
+  automated = false,
+  // A To/Cc display name is whatever the SENDER typed for this person, not a
+  // self-assertion. Callers building the From contact pass "self" explicitly.
+  nameTier: NameTier = "third-party"
 ): NewContact | null {
   const address = r.emailAddress?.address?.trim();
   if (!address) return null;
@@ -560,6 +564,7 @@ function recipientToContact(
   return {
     email: address,
     ...(name ? { name } : {}),
+    nameTier,
     // Graph messages don't expose the counterparty's AAD object id, so key
     // contact_external_account on the lowercased address (same tradeoff and
     // rationale as gmail's parseEmailAddressesToContacts).
@@ -670,7 +675,9 @@ export function transformOutlookConversation(opts: {
         recipientToContact(
           message.from,
           isViaRewrittenName(message.from.emailAddress?.name),
-          isNoReplySender(message.from.emailAddress?.address ?? null)
+          isNoReplySender(message.from.emailAddress?.address ?? null),
+          // The sender named themselves on their own message.
+          "self"
         )
       );
     }
@@ -727,11 +734,20 @@ export function transformOutlookConversation(opts: {
     const senderActor: NewActor = {
       email: fromAddress,
       name: senderName,
+      // The sender named themselves on their own message.
+      nameTier: "self",
       automated: senderIsNoReply,
     };
     const messageContacts: NewContact[] = [
       ...(message.from
-        ? [recipientToContact(message.from, suppressName, senderIsNoReply)]
+        ? [
+            recipientToContact(
+              message.from,
+              suppressName,
+              senderIsNoReply,
+              "self"
+            ),
+          ]
         : []),
       ...(message.toRecipients ?? []).map((r) => recipientToContact(r)),
       ...(message.ccRecipients ?? []).map((r) => recipientToContact(r)),

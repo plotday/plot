@@ -415,6 +415,47 @@ describe("onCreateLinkFn — plain compose (no draft.forward)", () => {
     expect(raw).toContain('To: "Robin Fielder" <dana@example.com>');
     expect(link?.type).toBe("email");
   });
+
+  it("does not send two copies to the same Gmail mailbox reached via a dot variant", async () => {
+    // A picker-resolved recipient ("dana@gmail.com") and a separately typed
+    // invite address ("d.ana@gmail.com") are the same Gmail mailbox — Gmail
+    // ignores dots in the local part. The dedupe key must recognize this
+    // ROW-identity (canonicalizeEmail), not just an exact lowercase match,
+    // or the compose sends the same person two copies.
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-compose-2", threadId: "sent-thread-compose-2" });
+    const { host } = makeHost();
+
+    await onCreateLinkFn(
+      host,
+      composeDraft({
+        recipients: [
+          {
+            id: "c-dana" as Uuid,
+            name: null,
+            externalAccountId: "dana@gmail.com",
+            role: null,
+          },
+        ],
+        inviteEmails: ["d.ana@gmail.com"],
+      })
+    );
+
+    expect(sendNewMessage).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    const toHeaderLine = raw
+      .split("\r\n")
+      .find((line) => line.startsWith("To:"));
+    expect(toHeaderLine).toBe("To: dana@gmail.com");
+  });
 });
 
 function calThread(over: Record<string, unknown> = {}) {
@@ -518,6 +559,50 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     );
     expect(send).not.toHaveBeenCalled();
     expect(res).toBeUndefined();
+  });
+
+  it("sends nothing when the curated recipient is entirely the organizer's own Gmail alias variant", async () => {
+    // The picker resolved the reply's sole curated recipient to a contact
+    // record for "krisbraun@gmail.com" — a dot-variant of the organizer's own
+    // connected mailbox "kris.braun@gmail.com" that hadn't been merged into
+    // their primary contact. resolveOutboundReplyRecipients' curated-path
+    // self-filter (Case 1) still recognizes it as self via baseEmail and
+    // drops it, so the reply resolves to zero recipients rather than being
+    // sent back to the organizer. Because this is a curated (non-empty
+    // accessContacts) send with no deliverable recipient, the connector
+    // surfaces a deliveryError instead of silently no-op'ing.
+    const send = vi.spyOn(GmailApi.prototype, "sendNewMessage");
+    const sendReply = vi.spyOn(GmailApi.prototype, "sendMessage");
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const { host } = makeHost();
+
+    const res = await onNoteCreatedFn(
+      host,
+      replyNote(
+        [{ externalAccountId: "krisbraun@gmail.com", role: null }],
+        { accessContacts: ["c-alias"] }
+      ),
+      calThread({
+        accessContacts: [
+          { id: "c-me", email: "kris.braun@gmail.com" },
+          { id: "c-alias", email: "krisbraun@gmail.com" },
+        ],
+      })
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(sendReply).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      deliveryError: {
+        code: "no_recipients",
+        message: "This reply had no deliverable recipients.",
+      },
+    });
   });
 });
 

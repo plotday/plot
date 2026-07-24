@@ -18,6 +18,8 @@
  */
 import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 import {
+  baseEmail,
+  canonicalizeEmail,
   type CreateLinkDraft,
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
@@ -46,7 +48,6 @@ import {
   buildNewEmailMessage,
   buildReactionMessage,
   buildReplyMessage,
-  canonicalizeGmailAddress,
   classifyCalendarThread,
   collectAttachments,
   extractBody,
@@ -1779,9 +1780,8 @@ export async function sendReactionEmailFn(
   // Reply-all recipients: everyone on the reacted message minus the reactor.
   const profile = await api.getProfile();
   const selfEmails = new Set<string>([profile.emailAddress.toLowerCase()]);
-  const selfCanonical = new Set(Array.from(selfEmails, canonicalizeGmailAddress));
-  const isSelf = (email: string) =>
-    selfEmails.has(email) || selfCanonical.has(canonicalizeGmailAddress(email));
+  const selfBases = new Set(Array.from(selfEmails, baseEmail));
+  const isSelf = (email: string) => selfBases.has(baseEmail(email));
 
   const toCandidates = new Set<string>();
   for (const e of parseEmailAddresses(getHeader(target, "From")))
@@ -1906,18 +1906,6 @@ export async function onNoteCreatedFn(
   )?.email;
   if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
 
-  // Gmail ignores dots and anything after "+" in the local part, so a header
-  // may address the user via a variant that never string-matches selfEmails
-  // (e.g. "krisbraun@gmail.com" vs the connected "kris.braun@gmail.com").
-  // Compare header candidates against the canonical form of every self
-  // address, in addition to the exact-match `selfEmails` set the shared
-  // helper below still uses for the access-contact/reply-all cases.
-  const selfCanonical = new Set(
-    Array.from(selfEmails, canonicalizeGmailAddress)
-  );
-  const isSelfAddress = (email: string) =>
-    selfEmails.has(email) || selfCanonical.has(canonicalizeGmailAddress(email));
-
   // Fallback access constraint (used only when the runtime didn't resolve
   // note.recipients): resolve the note's access list to lowercased emails.
   let accessContactEmails: Set<string> | null = null;
@@ -1932,8 +1920,9 @@ export async function onNoteCreatedFn(
   }
 
   // Original-message participants: From ∪ To → To, Cc → Cc. Self-address
-  // variants (see isSelfAddress above) are dropped here so they never reach
-  // the shared recipient resolver below.
+  // exclusion happens inside the shared recipient resolver below, which
+  // filters `selfEmails` (including Gmail dot/+tag variants) uniformly
+  // across all its cases.
   const fromToCandidates = new Set<string>();
   for (const email of parseEmailAddresses(fromHeader)) {
     fromToCandidates.add(email.toLowerCase());
@@ -1946,7 +1935,7 @@ export async function onNoteCreatedFn(
     ccCandidates.add(email.toLowerCase());
   }
   const toCandidates = Array.from(fromToCandidates).filter(
-    (email) => !ccCandidates.has(email) && !isSelfAddress(email)
+    (email) => !ccCandidates.has(email)
   );
 
   // Resolve the outbound recipients via the shared helper: prefer the runtime's
@@ -1975,7 +1964,7 @@ export async function onNoteCreatedFn(
     recipients: note.recipients ?? null,
     accessContactEmails,
     headerTo: toCandidates,
-    headerCc: Array.from(ccCandidates).filter((email) => !isSelfAddress(email)),
+    headerCc: Array.from(ccCandidates),
     selfEmails,
     headerFrom,
   });
@@ -2522,7 +2511,7 @@ async function onCreateLinkForwardFn(
     if (!raw) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const key = trimmed.toLowerCase();
+    const key = canonicalizeEmail(trimmed);
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
     const formatted = formatFromHeader(trimmed, name ?? null);
@@ -2713,7 +2702,7 @@ export async function onCreateLinkFn(
     if (!raw) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const key = trimmed.toLowerCase();
+    const key = canonicalizeEmail(trimmed);
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
     const formatted = formatFromHeader(trimmed, name ?? null);

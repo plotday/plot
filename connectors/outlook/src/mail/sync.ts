@@ -21,6 +21,7 @@
 
 import {
   type Addressee,
+  canonicalizeEmail,
   type CreateLinkDraft,
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
@@ -1707,7 +1708,10 @@ export async function onNoteCreatedFn(
     }
   }
 
-  // Original-message participants: From ∪ To → To, Cc → Cc.
+  // Original-message participants: From ∪ To → To, Cc → Cc. Self-address
+  // exclusion happens inside the shared recipient resolver below, which
+  // filters `selfEmails` (including Gmail dot/+tag variants) uniformly
+  // across all its cases.
   const fromToCandidates = new Set<string>();
   for (const email of recipientEmails(
     targetMessage.from ? [targetMessage.from] : []
@@ -1996,7 +2000,7 @@ export async function onCreateLinkFn(
     if (!raw) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const key = trimmed.toLowerCase();
+    const key = canonicalizeEmail(trimmed);
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
     const addressee: Addressee = { address: trimmed, name };
