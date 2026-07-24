@@ -66,6 +66,19 @@ export interface RemindersHost {
     schedulePoll(listId: string): Promise<void>;
     /** Cancel the durable recurring poll for a reminders list. */
     cancelPoll(listId: string): Promise<void>;
+    /**
+     * Queue a full VTODO fetch + chunked save as a background task (mirrors
+     * how the initial-enable path already queues via `runTask()`). Used for
+     * every full-rescan trigger — cold start (no cursor), a lost/invalid
+     * token with an unusable ctag fallback, or a ctag-detected change — so a
+     * large list's rescan chunks across executions via the SAME
+     * `fullSyncFn`/`processSyncChunkFn` continuation chain the initial
+     * backfill uses, instead of looping synchronously inside one poll
+     * execution (which would blow that execution's request budget on a
+     * large list, and which a pure function has no business doing anyway —
+     * scheduling stays the connector's job, per this host's whole design).
+     */
+    queueFullSync(listId: string, initialSync: boolean): Promise<void>;
   };
 }
 
@@ -230,6 +243,16 @@ async function saveOrArchiveTodo(
  * Mirrors Calendar's proven design, including the Batch-7 fix of never
  * re-checking ctag once a sync token is in play — the fast-path REPORT
  * already IS the O(1) change check.
+ *
+ * Every full-rescan trigger below routes through `host.scheduler.queueFullSync`
+ * rather than calling `fullSyncFn` inline. This is load-bearing, not a style
+ * preference: `fullSyncFn` seeds a FRESH sync token/ctag from a REPORT taken
+ * after the full fetch, so if this function only saved the first chunk and
+ * returned, every later incremental poll would take the fast path against
+ * that fresh token and correctly report "nothing changed" — permanently
+ * hiding whatever the chunker didn't get to. Queuing lets a large list's
+ * rescan chunk across executions via the SAME `remindersInit`/
+ * `remindersSyncBatch` continuation chain the initial backfill already uses.
  */
 export async function pollFn(host: RemindersHost, listId: string): Promise<void> {
   const enabled = await host.get<boolean>(`enabled:${listId}`);
@@ -240,8 +263,10 @@ export async function pollFn(host: RemindersHost, listId: string): Promise<void>
 
   const state = await host.get<RemindersListState>(`list:${listId}`);
   if (!state) {
-    await fullSyncFn(host, listId, false);
-    await host.scheduler.schedulePoll(listId);
+    // No cursor at all — treat as a fresh/recovery backfill (mirrors
+    // Calendar's `recovering` semantics) so a flood of already-existing
+    // reminders doesn't surface as freshly-unread.
+    await host.scheduler.queueFullSync(listId, true);
     return;
   }
 
@@ -271,8 +296,9 @@ export async function pollFn(host: RemindersHost, listId: string): Promise<void>
     return; // Nothing changed since the last pass.
   }
 
-  await fullSyncFn(host, listId, false);
-  await host.scheduler.schedulePoll(listId);
+  // Something changed since last ctag — queue a full rescan (chunked,
+  // non-initial: preserves already-synced items' read/archived state).
+  await host.scheduler.queueFullSync(listId, false);
 }
 
 /**

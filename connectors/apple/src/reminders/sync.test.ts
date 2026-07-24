@@ -60,6 +60,7 @@ function baseHostParts() {
     scheduler: {
       schedulePoll: vi.fn().mockResolvedValue(undefined),
       cancelPoll: vi.fn().mockResolvedValue(undefined),
+      queueFullSync: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
@@ -307,17 +308,27 @@ describe("pollFn", () => {
     expect(scheduler.schedulePoll).toHaveBeenCalledWith("/tasks/home/");
   });
 
-  it("does a full rescan when the ctag fallback finds a change", async () => {
+  it("queues a chunked full rescan (does not fetch/save inline) when the ctag fallback finds a change", async () => {
+    // pollFn must NEVER call fullSyncFn/fetchTodos/saveLink directly for a
+    // rescan — a list bigger than one chunk would have its remainder silently
+    // dropped (fullSyncFn seeds a FRESH sync token covering the whole list in
+    // one REPORT, so any un-saved remainder is then permanently invisible to
+    // every future incremental poll, which correctly reports "nothing new").
+    // Rescans must route through host.scheduler.queueFullSync so they chunk
+    // across executions via the SAME continuation chain the initial backfill
+    // uses. This test would have passed against the original (buggy) inline
+    // fullSyncFn call too if it only asserted "a rescan happened" — the
+    // `not.toHaveBeenCalled()` assertions are what actually pin the fix.
     store.set("list:/tasks/home/", { syncToken: null, ctag: "ctag-1", hrefUid: {} });
     caldav.getCalendarCtag.mockResolvedValue("ctag-2");
-    caldav.fetchTodos.mockResolvedValue([
-      { href: "/tasks/home/a.ics", etag: "e1", icsData: makeIcs("a") },
-    ]);
 
     await pollFn(host, "/tasks/home/");
 
-    expect(caldav.fetchTodos).toHaveBeenCalledWith("/tasks/home/");
-    expect(integrations.saveLink).toHaveBeenCalledTimes(1);
+    expect(caldav.fetchTodos).not.toHaveBeenCalled();
+    expect(integrations.saveLink).not.toHaveBeenCalled();
+    expect(scheduler.queueFullSync).toHaveBeenCalledWith("/tasks/home/", false);
+    // The queued task's own completion schedules the next poll, not pollFn itself.
+    expect(scheduler.schedulePoll).not.toHaveBeenCalled();
   });
 
   it("swallows an authentication error and reschedules rather than throwing", async () => {
@@ -327,13 +338,19 @@ describe("pollFn", () => {
     expect(scheduler.schedulePoll).toHaveBeenCalledWith("/tasks/home/");
   });
 
-  it("runs a full sync when no state exists yet (e.g. lost between enable and first backfill)", async () => {
+  it("queues a chunked, INITIAL-flagged full sync (not inline) when no state exists yet", async () => {
+    // Treated as initialSync:true (not false) — matches Calendar's
+    // "recovering" semantics: a lost cursor means every item in the list is
+    // about to be (re-)saved for the first time from this connector's
+    // perspective, so it must suppress unread/archived defaults the same way
+    // a fresh backfill does, or every item in the list would surface as a
+    // notification-worthy change.
     store.delete("list:/tasks/home/");
-    caldav.fetchTodos.mockResolvedValue([]);
 
     await pollFn(host, "/tasks/home/");
 
-    expect(caldav.fetchTodos).toHaveBeenCalledWith("/tasks/home/");
-    expect(scheduler.schedulePoll).toHaveBeenCalledWith("/tasks/home/");
+    expect(caldav.fetchTodos).not.toHaveBeenCalled();
+    expect(scheduler.queueFullSync).toHaveBeenCalledWith("/tasks/home/", true);
+    expect(scheduler.schedulePoll).not.toHaveBeenCalled();
   });
 });
