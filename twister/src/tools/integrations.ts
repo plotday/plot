@@ -289,6 +289,24 @@ export type ComposeConfig = {
    */
   status?: string;
   /**
+   * Default the note editor's To-do toggle ON when composing into this link
+   * type, so a new thread is added to the connection owner's to-do list the
+   * instant it's created — before any server round-trip. The Flutter client
+   * reads this directly from the already-synced `LinkTypeConfig.compose` at
+   * compose time (the same mechanism `status` above uses), so it works
+   * offline and needs no `onCreateLink` round-trip to take effect.
+   *
+   * Use for connectors whose items are the user's personal to-dos (e.g.
+   * Google Tasks, Todoist); omit for project/team trackers (Linear, Jira,
+   * Asana) where a new item shouldn't auto-populate someone's personal
+   * to-do list.
+   *
+   * Connectors declaring this should also return `todo: true` from
+   * `onCreateLink` (see `NewLinkWithNotes.todo`) so the default holds
+   * consistently once the composed item round-trips through sync.
+   */
+  todo?: boolean;
+  /**
    * Optional override for the picker chip / "Create new …" copy. Defaults
    * to the parent linkType's `label`. Use to disambiguate compose entries
    * when the parent label alone isn't specific enough (e.g. "Direct
