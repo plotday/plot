@@ -614,6 +614,10 @@ export async function onCreateLinkFn(
     actions,
     sourceUrl: taskUrl,
     assignee: authActorId ? { id: authActorId } : null,
+    // Mirrors transformTask's sync-in to-do default (see above): a task
+    // composed from Plot is the user's personal to-do the same way a
+    // synced-in open task is.
+    ...(draft.status !== "done" ? { todo: true } : {}),
   };
 }
 

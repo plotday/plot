@@ -280,6 +280,58 @@ describe("onCreateLinkFn — deleted/invalid task list on create (400)", () => {
   });
 });
 
+describe("onCreateLinkFn — to-do default on create", () => {
+  it("marks the created task as to-do when created open", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "task-100",
+      title: "Buy milk",
+      status: "needsAction",
+      updated: "2026-07-24T00:00:00.000Z",
+      position: "0001",
+      selfLink: "https://tasks.googleapis.com/tasks/v1/task-100",
+    });
+
+    const result = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: LIST_ID,
+      title: "Buy milk",
+      status: "open",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result?.todo).toBe(true);
+  });
+
+  it("does not mark the created task as to-do when composed as done", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "task-101",
+      title: "Buy milk",
+      status: "needsAction",
+      updated: "2026-07-24T00:00:00.000Z",
+      position: "0001",
+      selfLink: "https://tasks.googleapis.com/tasks/v1/task-101",
+    });
+
+    const result = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: LIST_ID,
+      title: "Buy milk",
+      status: "done",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result?.todo).toBeUndefined();
+  });
+});
+
 describe("transformTask — to-do mapping (no link schedules)", () => {
   const baseTask = {
     id: "task-1",
