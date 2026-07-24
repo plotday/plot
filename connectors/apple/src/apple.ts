@@ -833,18 +833,26 @@ export class Apple extends Connector<Apple> {
       // One of several folders disabled: keep every connection-level primitive
       // alive for the folders that remain; adjust only this channel's
       // footprint in the shared documents.
-      const state = await this.get<MailSyncState>("mail:state");
-      if (state) {
-        // Prune only this mailbox's cursor; leave the others (and Sent's) in
-        // the single document.
-        if (state.boxes) delete state.boxes[rawMailbox];
-        // Force the next pass to search every remaining mailbox from the
-        // history floor (not the 30-day recent window), so a thread that was
-        // archived just now but still lives in another enabled folder is
-        // re-homed (§3.2) and re-upserted with normal incremental semantics.
-        state.pendingFullRescan = true;
-        await this.set("mail:state", state);
-      }
+      //
+      // Default to an empty document (rather than skipping) when no pass has
+      // ever run yet — the `pendingFullRescan` write below must still land
+      // even though there are no cursors to prune. Harmless either way (an
+      // empty `boxes` has nothing to widen), but skipping it would silently
+      // drop the "force a wide next pass" intent for a connection that
+      // hasn't synced yet.
+      const state = (await this.get<MailSyncState>("mail:state")) ?? {
+        version: 2,
+        boxes: {},
+      };
+      // Prune only this mailbox's cursor; leave the others (and Sent's) in
+      // the single document.
+      if (state.boxes) delete state.boxes[rawMailbox];
+      // Force the next pass to search every remaining mailbox from the
+      // history floor (not the 30-day recent window), so a thread that was
+      // archived just now but still lives in another enabled folder is
+      // re-homed (§3.2) and re-upserted with normal incremental semantics.
+      state.pendingFullRescan = true;
+      await this.set("mail:state", state);
       // Re-home every thread this folder owned: clear ONLY the `channelId`
       // field, keeping the root's `bundle` decision and — crucially — its
       // PRESENCE. The next pass re-resolves the home from live messages
@@ -946,18 +954,33 @@ export class Apple extends Connector<Apple> {
     }
 
     // Seed a `mail:thread:<rootId>` document (channel-less, bundle-less) for
-    // every previously-synced root. `mail:flagged:<rootId>` is written for
-    // EVERY root the prior backfill ingested (see `reconcileTodoFlags`), so it
-    // enumerates them. Seeding marks each root "already known to Plot" so the
-    // first merged pass does NOT treat it as an initial ingest and mass
-    // mark-read / un-archive the whole mailbox (`mail:thread:` would otherwise
-    // be empty, making every root look brand-new). The next pass re-homes each
-    // from live messages and re-classifies bundles as needed.
+    // every previously-synced root that doesn't already have one.
+    // `mail:flagged:<rootId>` is written for EVERY root the prior backfill
+    // ingested (see `reconcileTodoFlags`), so it enumerates them. Seeding
+    // marks each root "already known to Plot" so the first merged pass does
+    // NOT treat it as an initial ingest and mass mark-read / un-archive the
+    // whole mailbox (`mail:thread:` would otherwise be empty, making every
+    // root look brand-new). The next pass re-homes each from live messages
+    // and re-classifies bundles as needed.
+    //
+    // `upgrade()` reruns on EVERY later deploy, not only this v1→v2
+    // transition — skipping roots that already have a `mail:thread:` document
+    // is what makes this one-shot in effect: on a routine v3+ deploy every
+    // root has long since been re-homed by a real merged pass, so the
+    // pre-existing-key filter below leaves them untouched. Without it, a
+    // blanket `setMany` here would overwrite every root's live `{channelId,
+    // bundle}` back to `{}` on every deploy, forcing the next pass to
+    // re-resolve each thread's home (risking a channel flip when the root
+    // aged out of the window but a reply lives in a different enabled
+    // folder) and re-fetch/re-classify every in-window ICS attachment.
     const flaggedKeys = await this.tools.store.list("mail:flagged:");
-    const seed: [string, ThreadMeta][] = flaggedKeys.map((key) => [
-      `mail:thread:${key.slice("mail:flagged:".length)}`,
-      {},
-    ]);
+    const existingThreadKeys = new Set(
+      await this.tools.store.list("mail:thread:")
+    );
+    const seed: [string, ThreadMeta][] = flaggedKeys
+      .map((key): string => `mail:thread:${key.slice("mail:flagged:".length)}`)
+      .filter((threadKey) => !existingThreadKeys.has(threadKey))
+      .map((threadKey): [string, ThreadMeta] => [threadKey, {}]);
     if (seed.length > 0) await this.setMany(seed);
 
     // Persist the migrated connection-level state document.

@@ -2228,6 +2228,32 @@ describe("Apple mail teardown — onMailChannelDisabled + upgrade", () => {
         scheduleRecurringCalls.filter((c) => c.key === "mailpoll")
       ).toHaveLength(1);
     });
+
+    it("does NOT reset an already-populated mail:thread: document on a later deploy's upgrade()", async () => {
+      // upgrade() runs once per active instance on EVERY version deploy, not
+      // only the v1->v2 transition that motivated the seed step. By the time
+      // a routine v3+ deploy re-runs it, a real merged pass has long since
+      // homed this root (channelId + bundle) — the seed must not blanket
+      // that back to {}, which would force a channel re-resolve (risking a
+      // channel flip) and a bundle re-classification on every future deploy.
+      const { self, store } = makeSelf({
+        channels: [INBOX],
+        initialStore: {
+          "mail:flagged:root-x@x.com": true,
+          "mail:thread:root-x@x.com": {
+            channelId: INBOX,
+            bundle: { classified: null },
+          },
+        },
+      });
+
+      await Apple.prototype.upgrade.call(self);
+
+      expect(store.get("mail:thread:root-x@x.com")).toEqual({
+        channelId: INBOX,
+        bundle: { classified: null },
+      });
+    });
   });
 });
 
