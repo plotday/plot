@@ -1,5 +1,18 @@
 # @plotday/twister
 
+## 0.85.0
+
+### Added
+
+- `Connector.getAccountIdentity()` lets non-OAuth connectors declare a matchable identity email for the connected account. ([#331](https://github.com/plotday/plot/pull/331) [`b235fa6`](https://github.com/plotday/plot/commit/b235fa60c175e08fe7de2bf53ec3067903c07bd6))
+- `ImapMessage.attachments` surfaces attachment parts discovered from a fetched message's BODYSTRUCTURE. ([#331](https://github.com/plotday/plot/pull/331) [`b235fa6`](https://github.com/plotday/plot/commit/b235fa60c175e08fe7de2bf53ec3067903c07bd6))
+- `Imap.fetchAttachment()` downloads the raw decoded bytes of a message attachment by IMAP part number (as reported in `ImapMessage.attachments`). ([#331](https://github.com/plotday/plot/pull/331) [`b235fa6`](https://github.com/plotday/plot/commit/b235fa60c175e08fe7de2bf53ec3067903c07bd6))
+- `ImapMessage` now carries `listId`, `listUnsubscribe`, `precedence`, `autoSubmitted`, `returnPath`, `importance`, `xPriority`, and `authenticationResults` (the raw values of any headers a connector's IMAP fetch picked up), so an IMAP-based mail connector can build classifier signals the same way the Gmail and Outlook connectors already do. ([#331](https://github.com/plotday/plot/pull/331) [`b235fa6`](https://github.com/plotday/plot/commit/b235fa60c175e08fe7de2bf53ec3067903c07bd6))
+- `ImapMailboxStatus.highestModSeq` — surfaces a mailbox's CONDSTORE (RFC 7162) `HIGHESTMODSEQ` high-water mark when the IMAP server advertises it. Connectors can persist this value as a since-last-poll cursor and skip re-scanning a mailbox whose mod-sequence hasn't advanced, instead of refetching a recent-message window every poll. The field is absent when the server or mailbox does not support mod-sequences. ([#331](https://github.com/plotday/plot/pull/331) [`b235fa6`](https://github.com/plotday/plot/commit/b235fa60c175e08fe7de2bf53ec3067903c07bd6))
+- `Imap.watch()` / `Imap.unwatch()` — server-maintained IMAP IDLE push
+- `SmtpMessage.attachments` lets connectors include file attachments when sending email through the SMTP tool. ([#331](https://github.com/plotday/plot/pull/331) [`b235fa6`](https://github.com/plotday/plot/commit/b235fa60c175e08fe7de2bf53ec3067903c07bd6))
+- `ComposeConfig.todo` lets a connector's link type default the note
+
 ## 0.84.0
 
 ### Added
