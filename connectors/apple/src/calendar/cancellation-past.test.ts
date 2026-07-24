@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cancellationIsForPastEventFn } from "./apple-calendar";
+import { cancellationIsForPastEventFn } from "../apple";
 
 describe("cancellationIsForPastEventFn (apple-calendar)", () => {
   const now = new Date("2026-06-29T12:00:00.000Z");

@@ -1,4 +1,5 @@
 import { ITool } from "..";
+import type { Callback } from "./callbacks";
 
 /** Opaque session handle returned by connect(). */
 export type ImapSession = string;
@@ -43,6 +44,18 @@ export type ImapMailboxStatus = {
   uidNext: number;
   /** Number of unseen messages (may be absent) */
   unseen?: number;
+  /**
+   * The mailbox's highest mod-sequence value (CONDSTORE / RFC 7162), when the
+   * server advertises it. A monotonic counter that advances whenever a
+   * message is added, expunged, or has its flags changed, so a connector can
+   * persist it as a "since last poll" cursor and skip re-scanning a mailbox
+   * whose value hasn't moved. Absent when the server or the specific mailbox
+   * does not support mod-sequences (e.g. it reports `NOMODSEQ`). Returned as a
+   * `number`; a server with an astronomically large mod-sequence counter could
+   * in theory exceed safe-integer precision, though real mailboxes stay far
+   * below that.
+   */
+  highestModSeq?: number;
 };
 
 /** Criteria for searching messages. All fields are optional; they are ANDed together. */
@@ -95,12 +108,43 @@ export type ImapMessage = {
   inReplyTo?: string;
   /** References header (for threading) */
   references?: string[];
+  /** List-Id header (mailing-list identifier), when present. */
+  listId?: string;
+  /** List-Unsubscribe header, when present. */
+  listUnsubscribe?: string;
+  /** Precedence header (e.g. "bulk", "list", "auto_reply"), when present. */
+  precedence?: string;
+  /** Auto-Submitted header (e.g. "auto-generated"), when present. */
+  autoSubmitted?: string;
+  /** Return-Path header; "<>" typically marks a bounce/auto sender. */
+  returnPath?: string;
+  /** Importance header (e.g. "high"), when present. */
+  importance?: string;
+  /** X-Priority header (legacy priority signal), when present. */
+  xPriority?: string;
+  /**
+   * Raw `Authentication-Results` header values, one per hop that added one —
+   * a message can carry several as it passes through multiple mail
+   * exchangers. Select the value stamped by your own trusted receiving MTA
+   * (by authserv-id) before relying on it for anything security-sensitive
+   * (e.g. DMARC verification) — never trust an arbitrary/unfiltered entry,
+   * which a sender could forge.
+   */
+  authenticationResults?: string[];
   /** Plain text body (when requested) */
   bodyText?: string;
   /** HTML body (when requested) */
   bodyHtml?: string;
   /** Message size in bytes */
   size?: number;
+  /**
+   * Attachment parts discovered from the message's BODYSTRUCTURE (populated
+   * when body is fetched). Each entry describes one MIME part, not its bytes —
+   * `partNumber` is the IMAP part number (e.g. "2" or "2.1") used to fetch that
+   * part's content separately, and `encoding` is the part's own
+   * Content-Transfer-Encoding.
+   */
+  attachments?: { partNumber: string; fileName: string; mimeType: string; size: number; encoding: string }[];
 };
 
 /** Options for fetchMessages(). */
@@ -115,6 +159,12 @@ export type ImapFetchOptions = {
 
 /** How to modify flags. */
 export type ImapFlagOperation = "add" | "remove" | "set";
+
+/** Server, credentials, and mailbox for a push watch. */
+export type ImapWatchOptions = ImapConnectOptions & {
+  /** Mailbox to watch for changes (e.g. "INBOX"). */
+  mailbox: string;
+};
 
 /**
  * Built-in tool for IMAP email access.
@@ -263,4 +313,67 @@ export abstract class Imap extends ITool {
    * @param session - Session handle from connect()
    */
   abstract disconnect(session: ImapSession): Promise<void>;
+
+  /**
+   * Starts (or updates) a server-maintained IMAP IDLE push watch on a
+   * mailbox. The platform holds the connection open and invokes `callback`
+   * whenever the mailbox changes (new mail, flag changes), so the connector
+   * can run an incremental sync within seconds instead of waiting for its
+   * next poll.
+   *
+   * Idempotent upsert per `key`: re-calling with the same options while the
+   * watch is healthy is a cheap no-op, so connectors should re-arm the watch
+   * from their recurring poll — that both restarts a watch the platform may
+   * have dropped and refreshes rotated credentials. Calling with changed
+   * options reconnects with the new configuration.
+   *
+   * The callback is invoked with no additional arguments — bind what you
+   * need (e.g. the channel id) when creating it. Expect bursts: route the
+   * callback through `scheduleDrain` rather than syncing inline. Push can be
+   * lossy across reconnects (the platform catches up on reconnect, but keep
+   * a recurring poll as the outer safety net).
+   *
+   * @param key - Stable watch identity within this connector instance
+   *              (e.g. the channel id). One live watch per key.
+   * @param options - Server, credentials, and mailbox to watch. The host
+   *                  must be in the declared hosts list.
+   * @param callback - Token from `this.callback(...)` to invoke on changes
+   * @throws If the host is not in the declared hosts list
+   */
+  abstract watch(
+    key: string,
+    options: ImapWatchOptions,
+    callback: Callback
+  ): Promise<void>;
+
+  /**
+   * Stops the push watch for `key` and discards its stored configuration.
+   * Call from `onChannelDisabled` (and any other teardown path). No-op if
+   * no watch exists.
+   *
+   * @param key - The key the watch was created with
+   */
+  abstract unwatch(key: string): Promise<void>;
+
+  /**
+   * Fetches the raw, decoded bytes of one MIME part of a message — typically
+   * an attachment discovered via `fetchMessages()`'s `attachments` field.
+   *
+   * Issues a separate FETCH for just that part (attachment bytes are not
+   * included by `fetchMessages()`, which only reports part metadata), and
+   * decodes the part's content per its own Content-Transfer-Encoding
+   * (base64 or quoted-printable) to raw bytes.
+   *
+   * @param session - Session handle from connect()
+   * @param uid - Message UID (from fetchMessages())
+   * @param partNumber - IMAP part number, e.g. `attachments[i].partNumber`
+   *                      from fetchMessages() (like "2" or "2.1")
+   * @returns The part's raw decoded bytes
+   * @throws If the message or part cannot be found, or the fetch fails
+   */
+  abstract fetchAttachment(
+    session: ImapSession,
+    uid: number,
+    partNumber: string
+  ): Promise<Uint8Array>;
 }

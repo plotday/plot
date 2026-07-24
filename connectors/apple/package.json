@@ -1,10 +1,10 @@
 {
-  "name": "@plotday/connector-apple-calendar",
+  "name": "@plotday/connector-apple",
   "plotTwistId": "174bbfb4-97f5-49a7-abde-cb237675dd51",
-  "displayName": "Apple Calendar",
-  "description": "See your iCloud schedule, respond to invites, and add notes and to-dos to events.",
-  "category": "calendar",
-  "logoUrl": "https://plot.day/assets/logo-apple-calendar.svg",
+  "displayName": "iCloud Mail & Calendar",
+  "description": "Your iCloud Mail and Calendar (also called Apple Mail and Apple Calendar) — email threads, events, RSVPs, and to-dos for @icloud.com, @me.com, and @mac.com accounts, all in one place.",
+  "category": "email",
+  "logoUrl": "https://plot.day/assets/logo-icloud-mail.png",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -29,6 +29,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@plotday/email-classifier": "workspace:^",
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {
@@ -38,7 +39,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/plotday/plot.git",
-    "directory": "connectors/apple-calendar"
+    "directory": "connectors/apple"
   },
   "homepage": "https://plot.day",
   "bugs": {
@@ -47,8 +48,10 @@
   "keywords": [
     "plot",
     "connector",
-    "apple-calendar",
+    "apple",
     "icloud",
+    "mail",
+    "imap",
     "caldav",
     "calendar"
   ]

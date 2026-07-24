@@ -505,6 +505,25 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
     return Promise.resolve(null);
   }
 
+  /**
+   * Returns a matchable identity email for the connected account, for
+   * connectors that authenticate without OAuth (e.g. a username/app-password
+   * flow) and so have no provider-verified identity to fall back on.
+   *
+   * Unlike {@link getAccountName}, which is only a display label, the value
+   * returned here is used to recognize the connected account as belonging to
+   * the signed-in Plot user (for example, so the platform can tell the
+   * account's own messages apart from messages sent to it).
+   *
+   * Return `null` (the default) if the connector has no email address that
+   * can reliably identify the account.
+   *
+   * @returns Promise resolving to the account's identity email, or null
+   */
+  getAccountIdentity(): Promise<{ email: string } | null> {
+    return Promise.resolve(null);
+  }
+
   // ---- Channel lifecycle (abstract — every connector must implement) ----
 
   /**

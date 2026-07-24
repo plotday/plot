@@ -51,6 +51,8 @@ export type SmtpMessage = {
   html?: string;
   /** Custom Message-ID; auto-generated as <uuid@plot.day> if omitted */
   messageId?: string;
+  /** File attachments to include in the message. */
+  attachments?: { fileName: string; mimeType: string; data: Uint8Array }[];
 };
 
 /** Result of sending an email. */
