@@ -1041,6 +1041,16 @@ describe("extractCalendarReplies", () => {
     );
   });
 
+  it("keeps an escaped backslash followed by a literal 'n' distinct from a \\n newline escape", () => {
+    const ics = declined.replace(
+      "END:VEVENT",
+      "COMMENT:Back\\\\nslash\r\nEND:VEVENT"
+    );
+    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+      "Back\\nslash"
+    );
+  });
+
   it("falls back to the ATTENDEE X-RESPONSE-COMMENT parameter", () => {
     const ics = declined.replace(
       "CN=Beth Round:",
@@ -1049,6 +1059,16 @@ describe("extractCalendarReplies", () => {
     expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
       "Sorry, conflict"
     );
+  });
+
+  it("keeps a colon inside a quoted parameter value scoped to the parameter section", () => {
+    const ics = declined.replace(
+      "CN=Beth Round:",
+      'CN=Beth Round;X-RESPONSE-COMMENT="Back by 3:00":'
+    );
+    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    expect(reply.comment).toBe("Back by 3:00");
+    expect(reply.attendeeEmail).toBe("beth@example.test");
   });
 
   it("falls back to the email body's quoted note", () => {

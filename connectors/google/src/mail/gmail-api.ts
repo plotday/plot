@@ -755,12 +755,23 @@ function normalizeMessageId(raw: string | null): string | null {
   return match ? match[0] : raw.trim();
 }
 
+/**
+ * Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and
+ * match one property line: group 1 is its parameter section (leading `;`
+ * included, or `""` when there are none), group 2 is its value. Shared by
+ * `icsProp` (value only) and `icsPropLine` (params + value), so the
+ * unfolding rule and line regex exist exactly once.
+ */
+function matchIcsLine(ics: string, name: string): RegExpMatchArray | null {
+  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
+  const re = new RegExp(`^${name}((?:;[^:\\r\\n]*)?):(.*)$`, "im");
+  return unfolded.match(re);
+}
+
 /** Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and read a property. */
 function icsProp(ics: string, name: string): string | null {
-  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
-  const re = new RegExp(`^${name}(?:;[^:\\r\\n]*)?:(.*)$`, "im");
-  const m = unfolded.match(re);
-  return m ? m[1].trim() : null;
+  const m = matchIcsLine(ics, name);
+  return m ? m[2].trim() : null;
 }
 
 /**
@@ -818,22 +829,26 @@ export type CalendarReply = {
   sourceCreatedAt: Date;
 };
 
-/** RFC 5545 text un-escaping: `\n`, `\,`, `\;`, `\\`. */
+/**
+ * RFC 5545 text un-escaping: `\n`/`\N` → newline, `\,` `\;` `\\` → the
+ * literal character. Single-pass so an escaped backslash immediately
+ * followed by a literal `n` (`\\n`) isn't misread as a newline escape — a
+ * two-pass `\n`-then-`\\` replacement would consume the second backslash of
+ * `\\` as if it started its own `\n` escape.
+ */
 function unescapeIcsText(value: string): string {
-  return value
-    .replace(/\\n/gi, "\n")
-    .replace(/\\([,;\\])/g, "$1");
+  return value.replace(/\\([nN,;\\])/g, (_, ch: string) =>
+    ch === "n" || ch === "N" ? "\n" : ch
+  );
 }
 
 /**
- * Read a property's raw line (parameters included) from an ICS body. Mirrors
- * `icsProp`'s unfolding but returns everything after the property name so
- * parameters can be parsed.
+ * Read a property's raw line (parameters included) from an ICS body. Shares
+ * `icsProp`'s unfolding and line regex via `matchIcsLine`, but returns
+ * everything after the property name so parameters can be parsed.
  */
 function icsPropLine(ics: string, name: string): string | null {
-  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
-  const re = new RegExp(`^${name}((?:;[^:\\r\\n]*)?):(.*)$`, "im");
-  const m = unfolded.match(re);
+  const m = matchIcsLine(ics, name);
   return m ? `${m[1]}:${m[2]}` : null;
 }
 
