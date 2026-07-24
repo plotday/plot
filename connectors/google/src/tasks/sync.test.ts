@@ -19,6 +19,7 @@ import {
   syncBatchFn,
   periodicSyncBatchFn,
   onLinkUpdatedFn,
+  onCreateLinkFn,
   transformTask,
   type SyncState,
   type PeriodicSyncState,
@@ -32,6 +33,17 @@ const NOT_FOUND_BODY = JSON.stringify({
     code: 404,
     message: "Task list not found.",
     errors: [{ message: "Task list not found.", domain: "global", reason: "notFound" }],
+  },
+});
+
+// `tasks.insert` (create) is inconsistent with the other list-scoped
+// endpoints: instead of a 404 it returns this 400 shape for a deleted/invalid
+// list id.
+const INVALID_LIST_BODY = JSON.stringify({
+  error: {
+    code: 400,
+    message: "Invalid task list ID",
+    errors: [{ message: "Invalid task list ID", domain: "global", reason: "invalid" }],
   },
 });
 
@@ -174,6 +186,149 @@ describe("onLinkUpdatedFn — deleted task/list (404)", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
     ).rejects.toThrow(/500/);
+  });
+});
+
+describe("onCreateLinkFn — deleted/invalid task list on create (400)", () => {
+  it("aborts (returns null) instead of throwing when the list is gone", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockRejectedValue(
+      new GoogleTasksApiError(400, INVALID_LIST_BODY)
+    );
+
+    const result = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: LIST_ID,
+      title: "Buy milk",
+      status: "open",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result).toBeNull();
+  });
+
+  it("still throws on a non-matching 400 (genuine validation failure)", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockRejectedValue(
+      new GoogleTasksApiError(
+        400,
+        JSON.stringify({ error: { code: 400, message: "Invalid due date" } })
+      )
+    );
+
+    await expect(
+      onCreateLinkFn(host, {
+        type: "task",
+        channelId: LIST_ID,
+        title: "Buy milk",
+        status: "open",
+        noteContent: null,
+        contacts: [],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+    ).rejects.toThrow(/Invalid due date/);
+  });
+
+  it("still throws on a non-404/400 (genuine) failure", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockRejectedValue(
+      new GoogleTasksApiError(500, "Internal Server Error")
+    );
+
+    await expect(
+      onCreateLinkFn(host, {
+        type: "task",
+        channelId: LIST_ID,
+        title: "Buy milk",
+        status: "open",
+        noteContent: null,
+        contacts: [],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+    ).rejects.toThrow(/500/);
+  });
+
+  it("returns the created task link on success", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "task-99",
+      title: "Buy milk",
+      status: "needsAction",
+      updated: "2026-07-24T00:00:00.000Z",
+      position: "0001",
+      selfLink: "https://tasks.googleapis.com/tasks/v1/task-99",
+    });
+
+    const result = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: LIST_ID,
+      title: "Buy milk",
+      status: "open",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result?.source).toBe("google-tasks:task:task-99");
+    expect(result?.channelId).toBe(LIST_ID);
+  });
+});
+
+describe("onCreateLinkFn — to-do default on create", () => {
+  it("marks the created task as to-do when created open", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "task-100",
+      title: "Buy milk",
+      status: "needsAction",
+      updated: "2026-07-24T00:00:00.000Z",
+      position: "0001",
+      selfLink: "https://tasks.googleapis.com/tasks/v1/task-100",
+    });
+
+    const result = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: LIST_ID,
+      title: "Buy milk",
+      status: "open",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result?.todo).toBe(true);
+  });
+
+  it("does not mark the created task as to-do when composed as done", async () => {
+    const { host } = makeHost();
+
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "task-101",
+      title: "Buy milk",
+      status: "needsAction",
+      updated: "2026-07-24T00:00:00.000Z",
+      position: "0001",
+      selfLink: "https://tasks.googleapis.com/tasks/v1/task-101",
+    });
+
+    const result = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: LIST_ID,
+      title: "Buy milk",
+      status: "done",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result?.todo).toBeUndefined();
   });
 });
 

@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { mapTaskStatus, resolveCollaboratorContact } from "./todoist";
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
+  return { ...actual, createTask: vi.fn() };
+});
+
+import { mapTaskStatus, resolveCollaboratorContact, Todoist } from "./todoist";
+import * as api from "./api";
 import type { TodoistCollaborator } from "./api";
 
 describe("mapTaskStatus", () => {
@@ -53,5 +59,73 @@ describe("resolveCollaboratorContact", () => {
   it("returns undefined when no id is present", () => {
     expect(resolveCollaboratorContact(collaborators, null)).toBeUndefined();
     expect(resolveCollaboratorContact(collaborators, undefined)).toBeUndefined();
+  });
+});
+
+describe("Todoist.onCreateLink — to-do default", () => {
+  function fakeThis() {
+    return { getToken: async () => "tok" } as unknown as Todoist;
+  }
+
+  it("marks the created task as to-do when created open", async () => {
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "task-1",
+      content: "Buy milk",
+      description: "",
+      checked: false,
+      project_id: "proj-1",
+      section_id: null,
+      parent_id: null,
+      priority: 1,
+      due: null,
+      url: "https://app.todoist.com/app/task/task-1",
+      responsible_uid: null,
+      added_by_uid: null,
+      added_at: "2026-07-24T00:00:00.000Z",
+      labels: [],
+    });
+
+    const result = await Todoist.prototype.onCreateLink.call(fakeThis(), {
+      type: "task",
+      channelId: "proj-1",
+      status: "open",
+      title: "Buy milk",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result?.todo).toBe(true);
+  });
+
+  it("does not mark the created task as to-do when composed as done", async () => {
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "task-2",
+      content: "Buy milk",
+      description: "",
+      checked: false,
+      project_id: "proj-1",
+      section_id: null,
+      parent_id: null,
+      priority: 1,
+      due: null,
+      url: "https://app.todoist.com/app/task/task-2",
+      responsible_uid: null,
+      added_by_uid: null,
+      added_at: "2026-07-24T00:00:00.000Z",
+      labels: [],
+    });
+
+    const result = await Todoist.prototype.onCreateLink.call(fakeThis(), {
+      type: "task",
+      channelId: "proj-1",
+      status: "done",
+      title: "Buy milk",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(result?.todo).toBeUndefined();
   });
 });
