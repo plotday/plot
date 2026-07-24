@@ -519,6 +519,50 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     expect(send).not.toHaveBeenCalled();
     expect(res).toBeUndefined();
   });
+
+  it("sends nothing when the curated recipient is entirely the organizer's own Gmail alias variant", async () => {
+    // The picker resolved the reply's sole curated recipient to a contact
+    // record for "krisbraun@gmail.com" — a dot-variant of the organizer's own
+    // connected mailbox "kris.braun@gmail.com" that hadn't been merged into
+    // their primary contact. resolveOutboundReplyRecipients' curated-path
+    // self-filter (Case 1) still recognizes it as self via baseEmail and
+    // drops it, so the reply resolves to zero recipients rather than being
+    // sent back to the organizer. Because this is a curated (non-empty
+    // accessContacts) send with no deliverable recipient, the connector
+    // surfaces a deliveryError instead of silently no-op'ing.
+    const send = vi.spyOn(GmailApi.prototype, "sendNewMessage");
+    const sendReply = vi.spyOn(GmailApi.prototype, "sendMessage");
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const { host } = makeHost();
+
+    const res = await onNoteCreatedFn(
+      host,
+      replyNote(
+        [{ externalAccountId: "krisbraun@gmail.com", role: null }],
+        { accessContacts: ["c-alias"] }
+      ),
+      calThread({
+        accessContacts: [
+          { id: "c-me", email: "kris.braun@gmail.com" },
+          { id: "c-alias", email: "krisbraun@gmail.com" },
+        ],
+      })
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(sendReply).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      deliveryError: {
+        code: "no_recipients",
+        message: "This reply had no deliverable recipients.",
+      },
+    });
+  });
 });
 
 /** A plain (non-calendar) Gmail thread whose sole message addressed the

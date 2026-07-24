@@ -18,6 +18,7 @@
  */
 import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 import {
+  baseEmail,
   type CreateLinkDraft,
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
@@ -46,7 +47,6 @@ import {
   buildNewEmailMessage,
   buildReactionMessage,
   buildReplyMessage,
-  canonicalizeGmailAddress,
   classifyCalendarThread,
   collectAttachments,
   extractBody,
@@ -1779,9 +1779,8 @@ export async function sendReactionEmailFn(
   // Reply-all recipients: everyone on the reacted message minus the reactor.
   const profile = await api.getProfile();
   const selfEmails = new Set<string>([profile.emailAddress.toLowerCase()]);
-  const selfCanonical = new Set(Array.from(selfEmails, canonicalizeGmailAddress));
-  const isSelf = (email: string) =>
-    selfEmails.has(email) || selfCanonical.has(canonicalizeGmailAddress(email));
+  const selfBases = new Set(Array.from(selfEmails, baseEmail));
+  const isSelf = (email: string) => selfBases.has(baseEmail(email));
 
   const toCandidates = new Set<string>();
   for (const e of parseEmailAddresses(getHeader(target, "From")))
@@ -1909,14 +1908,11 @@ export async function onNoteCreatedFn(
   // Gmail ignores dots and anything after "+" in the local part, so a header
   // may address the user via a variant that never string-matches selfEmails
   // (e.g. "krisbraun@gmail.com" vs the connected "kris.braun@gmail.com").
-  // Compare header candidates against the canonical form of every self
-  // address, in addition to the exact-match `selfEmails` set the shared
-  // helper below still uses for the access-contact/reply-all cases.
-  const selfCanonical = new Set(
-    Array.from(selfEmails, canonicalizeGmailAddress)
-  );
-  const isSelfAddress = (email: string) =>
-    selfEmails.has(email) || selfCanonical.has(canonicalizeGmailAddress(email));
+  // Compare header candidates against the base form of every self address,
+  // in addition to the exact-match `selfEmails` set the shared helper below
+  // still uses for the access-contact/reply-all cases.
+  const selfBases = new Set(Array.from(selfEmails, baseEmail));
+  const isSelfAddress = (email: string) => selfBases.has(baseEmail(email));
 
   // Fallback access constraint (used only when the runtime didn't resolve
   // note.recipients): resolve the note's access list to lowercased emails.
