@@ -322,9 +322,19 @@ async function runInitialBackfill(
   // connection-level pass. `transformMessages` now expresses initial-ness and
   // the home channel PER THREAD ROOT, but this per-channel pass still has a
   // single channel and a batch-wide "everything is initial", so it projects
-  // those flat values onto every root. Behaviour is unchanged. `sentMailbox`
-  // is deliberately not passed: the Sent-only title/unread rule belongs to the
-  // merged pass, where a thread's other folders are actually in the batch.
+  // those flat values onto every root. Behaviour is unchanged FOR THE
+  // PER-ROOT INPUTS this call was already producing (channelId, initial-ness,
+  // new-message set) — but three things DO change for this existing
+  // per-channel path, all strict improvements riding along from `transform.ts`:
+  // Sent uids are now mailbox-qualified (an unseen Archive message can no
+  // longer inherit "new" status from an unrelated same-uid Sent message); an
+  // INBOX+Sent duplicate of one message (real on iCloud whenever the owner
+  // cc's themselves) now collapses to a single note instead of two colliding
+  // ones; and same-timestamp messages from different mailboxes now have a
+  // deterministic order tie-break instead of depending on fetch order.
+  // `sentMailbox` is deliberately not passed: the Sent-only title/unread rule
+  // belongs to the merged pass, where a thread's other folders are actually
+  // in the batch.
   const roots = rootsOf(merged);
   const links = transformMessages(merged, {
     appleId: host.appleId,

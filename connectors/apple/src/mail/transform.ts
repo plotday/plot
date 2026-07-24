@@ -102,9 +102,21 @@ function noteKeyOf(m: MailMessage): string {
  *     the resolved channel) — that folder is where the thread "lives";
  *  2. otherwise the first by (INBOX-first, mailbox name, uid).
  *
- * Messages with no Message-ID are keyed `uid-<uid>` and are deliberately NOT
- * deduped across mailboxes here beyond that key — they are vanishingly rare
- * and there is no reliable identity to match them on.
+ * Rule 1 only discriminates when EXACTLY ONE of the two copies is in the
+ * home mailbox. When both are (duplicate delivery into the same folder) or
+ * neither is, it can't pick a winner — those cases fall through to rule 2's
+ * `compareCopies` tie-break, which is itself order-independent, so the
+ * result still doesn't depend on fetch order.
+ *
+ * Messages with no Message-ID fall back to a `uid-<uid>` key (see
+ * `noteKeyOf`) that is NOT mailbox-qualified. Such messages ARE deduped by
+ * this function — just on a key that can collide: two genuinely DIFFERENT
+ * Message-ID-less messages in different mailboxes that happen to share a uid
+ * AND a thread root are treated as one message, and one is silently
+ * dropped — it contributes no note of its own, and its participants and
+ * flags are absent from the union/`allSeen`. Known residual: Message-ID-less
+ * mail reaching this path at all is vanishingly rare, and closing it would
+ * mean widening the note-key shape itself, which is out of scope here.
  */
 function dedupeCopies(msgs: MailMessage[], homeMailbox: string | null): MailMessage[] {
   const byKey = new Map<string, MailMessage>();
@@ -115,8 +127,19 @@ function dedupeCopies(msgs: MailMessage[], homeMailbox: string | null): MailMess
       byKey.set(key, m);
       continue;
     }
-    if (held.mailbox === homeMailbox) continue;
-    if (m.mailbox === homeMailbox || compareCopies(m, held) < 0) byKey.set(key, m);
+    const heldIsHome = held.mailbox === homeMailbox;
+    const mIsHome = m.mailbox === homeMailbox;
+    if (heldIsHome !== mIsHome) {
+      // Exactly one copy is in the home mailbox — it wins outright,
+      // regardless of which was seen first.
+      if (mIsHome) byKey.set(key, m);
+      continue;
+    }
+    // Both (or neither) copy is in the home mailbox, so rule 1 can't
+    // discriminate — this is precisely the case that used to fall through to
+    // "whichever was first in `msgs`" (order-dependent). Use the
+    // order-independent tie-break instead.
+    if (compareCopies(m, held) < 0) byKey.set(key, m);
   }
   return [...byKey.values()];
 }
@@ -387,11 +410,29 @@ export function transformMessages(
     // Sent-only rule (see TransformCtx.sentMailbox): this pass saw nothing of
     // the thread but the owner's own outbound copies, so it knows neither the
     // real subject nor the read state. Omit both keys rather than assert a
-    // value derived from half the conversation. `initialRoots` still wins for
-    // a root Plot has never seen: `unread: false` on a thread that has never
-    // been surfaced cannot hide anything, whereas omitting the key on INSERT
-    // falls through to the database default and notifies.
-    const sentOnly = sentMailbox !== null && msgs.every((m) => m.mailbox === sentMailbox);
+    // value derived from half the conversation — UNLESS the root is in
+    // `initialRoots`, in which case `initialRoots` wins for BOTH `unread` AND
+    // `title`. Same reasoning both times: omitting a key only *preserves* a
+    // value when the row already exists. On INSERT (a root Plot has never
+    // seen) an omitted key falls through to the runtime's own default —
+    // `unread` defaults to true (spam; closed below by `initialRoots` taking
+    // precedence over `sentOnly`), and `title` has NO default at all: the
+    // runtime substitutes the literal placeholder "Untitled",
+    // PERMANENTLY, since every later pass for a still-Sent-only thread would
+    // also omit the key (`thread-helpers.ts`'s
+    // `cleanTitle(activity.title?.trim() || "Untitled")`). A degraded
+    // "Re: …" subject from the Sent copy is strictly better than "Untitled",
+    // and gets overwritten with the real subject the moment an inbound
+    // message enters the window. See `sync.test.ts`'s "never 'Untitled'"
+    // assertion for the same trap on the calendar-bundle path.
+    //
+    // Computed over `allCopies` (the pre-dedupe set), not `msgs`: dedupe's
+    // home-mailbox preference could otherwise flip this in the (currently
+    // unreachable, but not yet impossible) case where the resolved home
+    // mailbox is itself a Sent folder — defensive, no behavioural difference
+    // today.
+    const sentOnly = sentMailbox !== null && allCopies.every((m) => m.mailbox === sentMailbox);
+    const sentOnlyKnown = sentOnly && !ctx.initialRoots.has(root);
     const readState: { unread?: boolean; archived?: boolean } = ctx.initialRoots.has(root)
       ? { unread: false, archived: false }
       : sentOnly
@@ -423,6 +464,10 @@ export function transformMessages(
     //    mail pass would keep omitting the key. A later calendar sync (if
     //    one ever happens) still sets the real title unconditionally, so
     //    this never causes a stale title to stick around.
+    //
+    // `sentOnlyKnown` (not `sentOnly`) gates the OTHER `title` omission below,
+    // for the identical "never leave an INSERT titleless" reason — see the
+    // Sent-only rule comment above `sentOnly`'s declaration.
     const calendarBundle = ctx.calendarBundles?.get(root);
     const link: NewLinkWithNotes = {
       source: mailSource(root),
@@ -443,7 +488,7 @@ export function transformMessages(
       author: originatorFrom ? toContact(originatorFrom) : null,
       ...readState,
       ...(calendarBundle ? { sources: [`icaluid:${calendarBundle.uid}`] } : {}),
-      ...(calendarBundle?.eventKnown || sentOnly
+      ...(calendarBundle?.eventKnown || sentOnlyKnown
         ? {}
         : { title: originator.subject ?? "" }),
     };

@@ -745,6 +745,42 @@ describe("transformMessages — duplicate copies across folders", () => {
     expect(link.notes).toHaveLength(1);
   });
 
+  it("resolves order-independently when BOTH copies are in the home mailbox (duplicate delivery)", () => {
+    // Regression guard: the home-mailbox short-circuit used to fire on the
+    // FIRST copy found to be in the home mailbox, without checking whether
+    // the incoming copy was ALSO in the home mailbox — so two copies BOTH
+    // delivered to the home folder (a duplicate-delivery case, distinct from
+    // "one copy in home, one elsewhere") picked whichever came first in the
+    // input array, contradicting dedupeCopies' own "must not depend on fetch
+    // order" contract.
+    const older = msg({
+      uid: 7,
+      mailbox: "INBOX",
+      messageId: "<homedup@example.com>",
+      flags: ["\\Seen"],
+    });
+    const newer = msg({
+      uid: 9,
+      mailbox: "INBOX",
+      messageId: "<homedup@example.com>",
+      flags: [],
+    });
+    const forward = transformMessages(
+      [older, newer],
+      incrementalCtxFor([older, newer], { channelId: "mail:INBOX" })
+    )[0];
+    const reversed = transformMessages(
+      [newer, older],
+      incrementalCtxFor([newer, older], { channelId: "mail:INBOX" })
+    )[0];
+    expect(forward).toEqual(reversed);
+    expect(forward.notes).toHaveLength(1);
+    // The deterministic tie-break (lower uid) picks `older`, which is
+    // \Seen — proves which copy actually won, not just that the two runs
+    // agree with each other.
+    expect(forward.unread).toBe(false);
+  });
+
   it("keeps the copy in the thread's home mailbox regardless of input order", () => {
     const ref = (msgs: MailMessage[]) => {
       const link = transformMessages(
@@ -852,14 +888,46 @@ describe("transformMessages — Sent-only roots", () => {
   it("still marks a never-before-seen Sent-only root read, so a backfill cannot notify", () => {
     // `initialRoots` wins over the omit rule for `unread`: omitting the key on
     // INSERT falls through to the database default (unread) and notifies for a
-    // thread the user has never been shown. `title` stays omitted either way.
+    // thread the user has never been shown.
     const link = transformMessages(
       [sentOnly],
       ctxFor([sentOnly], { sentMailbox: "Sent Messages" })
     )[0];
     expect(link.unread).toBe(false);
     expect(link.archived).toBe(false);
+  });
+
+  it("an INITIAL Sent-only root gets a title from the subject, never 'Untitled' — CRITICAL", () => {
+    // `initialRoots` must win for `title` too, exactly like it does for
+    // `unread` above — NOT just for `unread`. This is an INSERT (the root
+    // has never been synced before), and `title` is the one field the
+    // runtime has NO fallback default for: an omitted key on INSERT makes
+    // the runtime substitute the literal placeholder "Untitled", and every
+    // later pass for a still-Sent-only thread would keep omitting the key
+    // too — so it stays "Untitled" PERMANENTLY. A degraded "Re: …" subject
+    // from the Sent copy is strictly better, and gets overwritten with the
+    // real subject the moment an inbound message enters the window.
+    //
+    // DO NOT "fix" this back to omitting `title` here — that reintroduces
+    // the permanent-Untitled regression. See `sync.test.ts`'s "never
+    // 'Untitled'" assertion for the analogous calendar-bundle trap.
+    const link = transformMessages(
+      [sentOnly],
+      ctxFor([sentOnly], { sentMailbox: "Sent Messages" })
+    )[0];
+    expect(link.title).toBe("Re: something older than the window");
+  });
+
+  it("a NON-initial (already-known) Sent-only root still omits title, unlike the initial case", () => {
+    // Once Plot already has this thread, omitting `title` PRESERVES the
+    // existing (possibly real, non-degraded) title instead of clobbering it
+    // with a Sent-copy subject the batch can't be sure is authoritative.
+    const link = transformMessages(
+      [sentOnly],
+      incrementalCtxFor([sentOnly], { sentMailbox: "Sent Messages" })
+    )[0];
     expect("title" in link).toBe(false);
+    expect("unread" in link).toBe(false);
   });
 
   it("does not apply the rule when the caller passes no Sent mailbox", () => {
