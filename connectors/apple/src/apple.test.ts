@@ -1873,48 +1873,361 @@ describe("Apple.prepareEvent — cancellation note vs mail cancel-email marker",
   });
 });
 
-describe("Apple.onMailChannelDisabled — mail:cancel-email: marker sweep", () => {
-  function privateMethod<T>(name: string): T {
+describe("Apple mail teardown — onMailChannelDisabled + upgrade", () => {
+  const INBOX = "mail:INBOX";
+  const ARCHIVE = "mail:Archive";
+
+  function priv<T>(name: string): T {
     return (Apple.prototype as unknown as Record<string, T>)[name];
   }
 
-  const onMailChannelDisabled = privateMethod<
+  const onMailChannelDisabled = priv<
     (channel: { id: string }) => Promise<void>
   >("onMailChannelDisabled");
 
-  it("sweeps leftover mail:cancel-email: markers alongside compose/writeback/flagged, on disable", async () => {
-    const cleared: string[] = [];
-    const listedPrefixes: string[] = [];
+  /**
+   * Fake self for `onMailChannelDisabled` / `upgrade`. Copies the real
+   * (private) `enabledMailChannels`, `teardownMailConnection` and
+   * `scheduleMailPoll` onto a plain object (the same technique the
+   * connection-level scheduling block above uses) and lets them run against a
+   * real in-memory store, so a test observes the ACTUAL downstream effects —
+   * which mailbox cursor got pruned, whether `mail:state` survived, whether a
+   * connection-level drain was cancelled — rather than asserting against
+   * stubbed spies. `channels` seeds the `mail:enabled_<id>` markers the
+   * teardown enumerates to decide "is this the last enabled folder".
+   */
+  function makeSelf(opts: {
+    channels?: string[];
+    initialStore?: Record<string, unknown>;
+  }) {
+    const enabled = opts.channels ?? [INBOX];
+    const store = new Map<string, unknown>(
+      Object.entries({
+        ...Object.fromEntries(enabled.map((id) => [`mail:enabled_${id}`, true])),
+        ...opts.initialStore,
+      })
+    );
+    const cancelScheduledTaskCalls: string[] = [];
+    const cancelDrainCalls: string[] = [];
+    const releaseLockCalls: string[] = [];
+    const unwatchCalls: string[] = [];
+    const deleteCallbackCalls: unknown[] = [];
+    const archiveLinksCalls: unknown[] = [];
+    const scheduleRecurringCalls: Array<{
+      key: string;
+      cb: unknown;
+      options: unknown;
+    }> = [];
+    const callbackCalls: unknown[][] = [];
+
+    const list = vi.fn(async (prefix: string) =>
+      [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
+
     const self = {
-      cancelScheduledTask: vi.fn(async () => {}),
-      cancelDrain: vi.fn(async () => {}),
-      deleteCallback: vi.fn(async () => {}),
-      get: async () => null,
+      enabledMailChannels: priv<() => Promise<unknown>>("enabledMailChannels"),
+      teardownMailConnection: priv<() => Promise<void>>(
+        "teardownMailConnection"
+      ),
+      scheduleMailPoll: priv<() => Promise<void>>("scheduleMailPoll"),
+      mailPoll: Apple.prototype.mailPoll,
+      cancelScheduledTask: vi.fn(async (k: string) => {
+        cancelScheduledTaskCalls.push(k);
+      }),
+      cancelDrain: vi.fn(async (k: string) => {
+        cancelDrainCalls.push(k);
+      }),
+      deleteCallback: vi.fn(async (cb: unknown) => {
+        deleteCallbackCalls.push(cb);
+      }),
+      callback: vi.fn(async (...args: unknown[]) => {
+        callbackCalls.push(args);
+        return { __callbackToken: true };
+      }),
+      scheduleRecurring: vi.fn(
+        async (key: string, cb: unknown, options: unknown) => {
+          scheduleRecurringCalls.push({ key, cb, options });
+        }
+      ),
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      setMany: async (entries: [string, unknown][]) => {
+        for (const [k, v] of entries) store.set(k, v);
+      },
       clear: async (key: string) => {
-        cleared.push(key);
+        store.delete(key);
       },
       tools: {
-        imap: { unwatch: vi.fn(async () => {}) },
-        store: {
-          releaseLock: vi.fn(async () => {}),
-          list: vi.fn(async (prefix: string) => {
-            listedPrefixes.push(prefix);
-            if (prefix === "mail:cancel-email:") {
-              return ["mail:cancel-email:evt-1", "mail:cancel-email:evt-2"];
-            }
-            return [];
+        imap: {
+          unwatch: vi.fn(async (id: string) => {
+            unwatchCalls.push(id);
           }),
         },
-        integrations: { archiveLinks: vi.fn(async () => {}) },
+        integrations: {
+          archiveLinks: vi.fn(async (arg: unknown) => {
+            archiveLinksCalls.push(arg);
+          }),
+        },
+        store: {
+          list,
+          releaseLock: vi.fn(async (k: string) => {
+            releaseLockCalls.push(k);
+          }),
+        },
       },
     } as unknown as Apple;
 
-    await onMailChannelDisabled.call(self, { id: "mail:default" });
+    return {
+      self,
+      store,
+      cancelScheduledTaskCalls,
+      cancelDrainCalls,
+      releaseLockCalls,
+      unwatchCalls,
+      deleteCallbackCalls,
+      archiveLinksCalls,
+      scheduleRecurringCalls,
+      callbackCalls,
+    };
+  }
 
-    expect(listedPrefixes).toContain("mail:cancel-email:");
-    expect(cleared).toEqual(
-      expect.arrayContaining(["mail:cancel-email:evt-1", "mail:cancel-email:evt-2"])
-    );
+  describe("onMailChannelDisabled — one of several folders", () => {
+    it("unwatches only the disabled channel, prunes only its cursor + homes, and leaves every connection-level primitive alone", async () => {
+      const {
+        self,
+        store,
+        cancelScheduledTaskCalls,
+        cancelDrainCalls,
+        releaseLockCalls,
+        unwatchCalls,
+        archiveLinksCalls,
+      } = makeSelf({
+        channels: [INBOX, ARCHIVE],
+        initialStore: {
+          "mail:state": {
+            version: 2,
+            boxes: {
+              INBOX: { uidValidity: 1, lastUid: 10 },
+              Archive: { uidValidity: 1, lastUid: 5 },
+              "Sent Messages": { uidValidity: 1, lastUid: 0 },
+            },
+            syncHistoryMin: "2026-01-01T00:00:00.000Z",
+          },
+          // Homed to Archive (the disabled folder) -> re-home, keep bundle.
+          "mail:thread:root-a@x.com": {
+            channelId: ARCHIVE,
+            bundle: { classified: null },
+          },
+          // Homed to INBOX (still enabled) -> untouched.
+          "mail:thread:root-b@x.com": { channelId: INBOX },
+          "mail:push_cb_mail:Archive": { __cb: true },
+          // Connection-scoped sweep targets that MUST survive a non-last disable.
+          "mail:compose:h1": {},
+          "mail:writeback:read:root-b@x.com": { flag: "\\Seen", operation: "add" },
+          "mail:flagged:root-b@x.com": true,
+          "mail:cancel-email:evt-1": { at: "2026-01-01T00:00:00.000Z" },
+        },
+      });
+
+      await onMailChannelDisabled.call(self, { id: ARCHIVE });
+
+      // Only the disabled channel's watch is torn down.
+      expect(unwatchCalls).toEqual([ARCHIVE]);
+      expect(store.has("mail:push_cb_mail:Archive")).toBe(false);
+      expect(store.has(`mail:enabled_${ARCHIVE}`)).toBe(false);
+      expect(store.has(`mail:enabled_${INBOX}`)).toBe(true);
+
+      // Only the disabled mailbox's cursor is pruned; the rest of the shared
+      // document (INBOX + Sent cursors) is preserved and a full rescan armed.
+      const state = store.get("mail:state") as {
+        boxes: Record<string, unknown>;
+        pendingFullRescan?: boolean;
+      };
+      expect(Object.keys(state.boxes).sort()).toEqual(["INBOX", "Sent Messages"]);
+      expect(state.pendingFullRescan).toBe(true);
+
+      // The thread homed to the disabled folder loses only its channelId,
+      // keeping its bundle decision AND its presence (so the next pass re-homes
+      // it without treating it as brand-new and clobbering read/archive state).
+      expect(store.get("mail:thread:root-a@x.com")).toEqual({
+        bundle: { classified: null },
+      });
+      // A thread homed to a still-enabled folder is untouched.
+      expect(store.get("mail:thread:root-b@x.com")).toEqual({ channelId: INBOX });
+
+      // NONE of the connection-level machinery is torn down.
+      expect(cancelScheduledTaskCalls).not.toContain("mailpoll");
+      expect(cancelDrainCalls).not.toContain("mail-push");
+      expect(cancelDrainCalls).not.toContain("mail-sync");
+      expect(cancelDrainCalls).not.toContain("mail-writeback");
+      expect(releaseLockCalls).not.toContain("mail_sync");
+
+      // NONE of the connection-scoped sweeps run.
+      expect(store.has("mail:compose:h1")).toBe(true);
+      expect(store.has("mail:writeback:read:root-b@x.com")).toBe(true);
+      expect(store.has("mail:flagged:root-b@x.com")).toBe(true);
+      expect(store.has("mail:cancel-email:evt-1")).toBe(true);
+
+      // Archiving is precisely scoped to the disabled folder.
+      expect(archiveLinksCalls).toEqual([
+        {
+          channelId: ARCHIVE,
+          meta: { syncProvider: "apple-mail", syncableId: ARCHIVE },
+        },
+      ]);
+    });
+
+    it("does NOT resurrect a cleared to-do: a queued \\Flagged write-back + flagged marker on an INBOX thread survive disabling Archive", async () => {
+      // The reported data-loss bug: the old teardown cancelled the shared
+      // mail-writeback drain and wiped mail:flagged:* on ANY folder's disable.
+      // With INBOX still enabled, a pending write-back and its echo-break
+      // marker for an INBOX thread must be untouched — otherwise the next pass
+      // reads wasFlagged=undefined, sees IMAP \Flagged still set, and re-marks
+      // the thread a to-do (resurrecting a to-do the user just cleared).
+      const { self, store, cancelDrainCalls } = makeSelf({
+        channels: [INBOX, ARCHIVE],
+        initialStore: {
+          "mail:flagged:inbox-root@x.com": true,
+          "mail:writeback:todo:inbox-root@x.com": {
+            flag: "\\Flagged",
+            operation: "remove",
+          },
+        },
+      });
+
+      await onMailChannelDisabled.call(self, { id: ARCHIVE });
+
+      expect(store.get("mail:flagged:inbox-root@x.com")).toBe(true);
+      expect(store.get("mail:writeback:todo:inbox-root@x.com")).toEqual({
+        flag: "\\Flagged",
+        operation: "remove",
+      });
+      expect(cancelDrainCalls).not.toContain("mail-writeback");
+    });
+  });
+
+  describe("onMailChannelDisabled — the last folder", () => {
+    it("tears down every connection-level primitive, deletes mail:state, and sweeps per-connection markers — but keeps auth_actor_id and the granted history floor", async () => {
+      const {
+        self,
+        store,
+        cancelScheduledTaskCalls,
+        cancelDrainCalls,
+        releaseLockCalls,
+        unwatchCalls,
+        archiveLinksCalls,
+      } = makeSelf({
+        channels: [INBOX],
+        initialStore: {
+          "mail:state": {
+            version: 2,
+            boxes: { INBOX: { uidValidity: 1, lastUid: 10 } },
+          },
+          "mail:push_cb_mail:INBOX": { __cb: true },
+          "mail:compose:h1": {},
+          "mail:forward:h2": {},
+          "mail:writeback:read:r": { flag: "\\Seen", operation: "add" },
+          "mail:flagged:r": true,
+          "mail:cancel-email:evt-1": { at: "2026-01-01T00:00:00.000Z" },
+          "mail:thread:r": { channelId: INBOX },
+          // Connection-scoped facts that MUST survive a full disable so a later
+          // reconnect/re-enable finds them again.
+          "mail:auth_actor_id": "actor-123",
+          "mail:granted_history_min": "2025-07-01T00:00:00.000Z",
+        },
+      });
+
+      await onMailChannelDisabled.call(self, { id: INBOX });
+
+      expect(unwatchCalls).toEqual([INBOX]);
+      expect(cancelScheduledTaskCalls).toContain("mailpoll");
+      expect(cancelDrainCalls).toEqual(
+        expect.arrayContaining(["mail-push", "mail-sync", "mail-writeback"])
+      );
+      expect(releaseLockCalls).toContain("mail_sync");
+
+      // The whole cursor document is reclaimed (it's the only place Sent's
+      // channel-less cursor could be freed).
+      expect(store.has("mail:state")).toBe(false);
+
+      // Every per-connection marker is swept.
+      for (const key of [
+        "mail:compose:h1",
+        "mail:forward:h2",
+        "mail:writeback:read:r",
+        "mail:flagged:r",
+        "mail:cancel-email:evt-1",
+        "mail:thread:r",
+      ]) {
+        expect(store.has(key)).toBe(false);
+      }
+
+      // Connection-scoped facts survive.
+      expect(store.get("mail:auth_actor_id")).toBe("actor-123");
+      expect(store.get("mail:granted_history_min")).toBe(
+        "2025-07-01T00:00:00.000Z"
+      );
+
+      expect(archiveLinksCalls).toEqual([
+        {
+          channelId: INBOX,
+          meta: { syncProvider: "apple-mail", syncableId: INBOX },
+        },
+      ]);
+    });
+  });
+
+  describe("upgrade — migrate off the legacy per-channel state shape", () => {
+    it("clears legacy state, cancels legacy per-channel scheduling, migrates the widest floor, seeds thread homes from flagged roots, and arms the connection poll", async () => {
+      const { self, store, cancelScheduledTaskCalls, cancelDrainCalls, releaseLockCalls, scheduleRecurringCalls } =
+        makeSelf({
+          channels: [INBOX, ARCHIVE],
+          initialStore: {
+            "mail:state_mail:INBOX": { uidValidity: 1, lastUid: 10 },
+            "mail:sync_history_min_mail:INBOX": "2025-01-01T00:00:00.000Z",
+            "mail:sync_history_min_mail:Archive": "2024-06-01T00:00:00.000Z",
+            "mail:bundle:root-x@x.com": { classified: null },
+            "mail:flagged:root-x@x.com": true,
+            "mail:flagged:root-y@x.com": false,
+          },
+        });
+
+      await Apple.prototype.upgrade.call(self);
+
+      // Legacy per-channel cursor + history + bundle keys are gone.
+      expect(store.has("mail:state_mail:INBOX")).toBe(false);
+      expect(store.has("mail:sync_history_min_mail:INBOX")).toBe(false);
+      expect(store.has("mail:sync_history_min_mail:Archive")).toBe(false);
+      expect(store.has("mail:bundle:root-x@x.com")).toBe(false);
+
+      // The widest (earliest) legacy floor is carried into mail:state.
+      const state = store.get("mail:state") as { syncHistoryMin?: string };
+      expect(state.syncHistoryMin).toBe("2024-06-01T00:00:00.000Z");
+
+      // Every previously-synced root (enumerated by mail:flagged:) is seeded as
+      // "known" so the first merged pass doesn't treat it as an initial ingest
+      // and mass mark-read / un-archive it.
+      expect(store.has("mail:thread:root-x@x.com")).toBe(true);
+      expect(store.has("mail:thread:root-y@x.com")).toBe(true);
+
+      // Legacy per-channel scheduling is cancelled for every enabled channel.
+      expect(cancelScheduledTaskCalls).toEqual(
+        expect.arrayContaining(["mailpoll:mail:INBOX", "mailpoll:mail:Archive"])
+      );
+      expect(cancelDrainCalls).toEqual(
+        expect.arrayContaining(["mail-push:mail:INBOX", "mail-push:mail:Archive"])
+      );
+      expect(releaseLockCalls).toEqual(
+        expect.arrayContaining(["mail_sync_mail:INBOX", "mail_sync_mail:Archive"])
+      );
+
+      // The connection-level poll is armed exactly once.
+      expect(
+        scheduleRecurringCalls.filter((c) => c.key === "mailpoll")
+      ).toHaveLength(1);
+    });
   });
 });
 

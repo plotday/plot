@@ -57,8 +57,14 @@ import { composeChannels } from "./compose";
 import { downloadAttachmentFn } from "./mail/attachments";
 import { getMailChannels } from "./mail/channels";
 import { connectIcloud, ICLOUD_IMAP, resolveThreadMessages } from "./mail/imap-fetch";
-import type { MailHost } from "./mail/mail-host";
-import { DEFAULT_HISTORY_MS, mailSync, widestFloor, type MailChannel } from "./mail/sync";
+import type { MailHost, MailSyncState } from "./mail/mail-host";
+import {
+  DEFAULT_HISTORY_MS,
+  mailSync,
+  widestFloor,
+  type MailChannel,
+  type ThreadMeta,
+} from "./mail/sync";
 import {
   onCreateLinkFn,
   onNoteCreatedFn,
@@ -778,102 +784,202 @@ export class Apple extends Connector<Apple> {
   }
 
   /**
-   * Called when the mail channel is disabled. Cancels the recurring poll,
-   * clears all persisted mail state for this channel, and archives its
-   * synced links. Scoped to `syncProvider: "apple-mail"` (distinct from
-   * calendar's `"apple"`) so disabling mail never touches calendar links.
+   * Called when a mail channel is disabled. Splits into "always, for this
+   * channel" and "only when this was the LAST enabled mail folder", because
+   * the sync machinery is now connection-level (one `mailpoll` task, one
+   * `mail-push`/`mail-sync`/`mail-writeback` drain, one `mail_sync` lock, one
+   * `mail:state` cursor document) rather than per channel.
    *
-   * NOT YET UPDATED for connection-level scheduling. The poll, push drain and
-   * sync lock are now keyed for the whole connection (`mailpoll`, `mail-push`,
-   * `mail_sync`), so the three per-channel teardown calls below no longer
-   * match anything. Splitting this method into "always per channel" and "only
-   * when the LAST channel is disabled" halves — and pruning the disabled
-   * mailbox's cursor out of the shared `mail:state` document — is deliberately
-   * left as its own change: cancelling the connection-level poll or releasing
-   * the connection-level lock while other folders are still enabled would
-   * break a legitimately in-flight pass. Until then, disabling one of several
-   * folders correctly leaves the shared machinery alone, and disabling the
-   * last one leaves a poll running that immediately no-ops (it finds no
-   * enabled channels).
+   * Disabling one of several folders must NOT tear that shared machinery down:
+   * cancelling the poll, releasing the `mail_sync` lock, or sweeping the
+   * connection-scoped marker keys (`mail:compose:`, `mail:writeback:`,
+   * `mail:flagged:`, `mail:cancel-email:`, `mail:thread:`) while other folders
+   * are still enabled would break a legitimately in-flight pass and — worse —
+   * drop live state. Concretely: wiping `mail:flagged:<root>` for a thread that
+   * lives in a still-enabled folder makes the next pass read `wasFlagged =
+   * undefined`, see the IMAP `\Flagged` still set, and re-mark a to-do the user
+   * just cleared. So those actions run ONLY on the last-folder branch.
+   *
+   * Scoped to `syncProvider: "apple-mail"` (distinct from calendar's
+   * `"apple"`) so disabling mail never touches calendar links.
    */
   private async onMailChannelDisabled(channel: Channel): Promise<void> {
-    await this.cancelScheduledTask(`mailpoll:${channel.id}`);
+    const rawMailbox = parse(channel.id).rawId;
+
+    // --- Always, for this channel ---
+    // The IMAP IDLE watch is genuinely per mailbox.
     await this.tools.imap.unwatch(channel.id);
-    await this.cancelDrain(`mail-push:${channel.id}`);
-    // Legacy per-channel lock key; the live lock is connection-level and must
-    // NOT be released here while other folders may still be syncing under it.
-    await this.tools.store.releaseLock(`mail_sync_${channel.id}`);
-    // Not channel-scoped (single shared drain key, like `mail-writeback`'s
-    // producer side in buildMailHost()) — there is a single mail channel in
-    // v1, so tearing down the one drain on disable is correct.
-    await this.cancelDrain("mail-writeback");
     const pushCb = await this.get<Callback>(`mail:push_cb_${channel.id}`);
     if (pushCb) {
       await this.deleteCallback(pushCb);
       await this.clear(`mail:push_cb_${channel.id}`);
     }
+    // Clear THIS channel's enabled marker FIRST — the emptiness check below
+    // must count only the folders that REMAIN. Ordering is load-bearing:
+    // scanning before clearing would always find at least this channel and the
+    // count could never reach zero.
     await this.clear(`mail:enabled_${channel.id}`);
-    await this.clear(`mail:state_${channel.id}`);
+    // Legacy per-channel history-floor key; harmless no-op if absent (the live
+    // floor is `mail:state.syncHistoryMin` / `mail:granted_history_min`).
     await this.clear(`mail:sync_history_min_${channel.id}`);
-    // Sweep the compose-dedup guard keys (`mail:compose:<hash>`). They are
-    // written on each Plot-initiated compose and never expire on their own, so
-    // clear them on disable to avoid unbounded accumulation. Not channel-scoped
-    // (there is a single mail channel in v1), so all `mail:compose:*` are ours.
-    const composeKeys = await this.tools.store.list("mail:compose:");
-    for (const key of composeKeys) {
-      await this.clear(key);
+
+    const remaining = await this.enabledMailChannels();
+
+    if (remaining.length === 0) {
+      // This was the last enabled folder: tear down everything the connection
+      // owned.
+      await this.teardownMailConnection();
+    } else {
+      // One of several folders disabled: keep every connection-level primitive
+      // alive for the folders that remain; adjust only this channel's
+      // footprint in the shared documents.
+      const state = await this.get<MailSyncState>("mail:state");
+      if (state) {
+        // Prune only this mailbox's cursor; leave the others (and Sent's) in
+        // the single document.
+        if (state.boxes) delete state.boxes[rawMailbox];
+        // Force the next pass to search every remaining mailbox from the
+        // history floor (not the 30-day recent window), so a thread that was
+        // archived just now but still lives in another enabled folder is
+        // re-homed (§3.2) and re-upserted with normal incremental semantics.
+        state.pendingFullRescan = true;
+        await this.set("mail:state", state);
+      }
+      // Re-home every thread this folder owned: clear ONLY the `channelId`
+      // field, keeping the root's `bundle` decision and — crucially — its
+      // PRESENCE. The next pass re-resolves the home from live messages
+      // without re-fetching/re-classifying ICS attachments, and without
+      // treating the root as brand-new (which would clobber the user's
+      // read/archive state via the initial-root rule).
+      const threadKeys = await this.tools.store.list("mail:thread:");
+      for (const key of threadKeys) {
+        const meta = await this.get<ThreadMeta>(key);
+        if (meta?.channelId === channel.id) {
+          const { channelId: _drop, ...rest } = meta;
+          await this.set(key, rest);
+        }
+      }
     }
-    // Sweep any write-back retry payloads left behind by `cancelDrain` above
-    // (which clears the drain's pending-id set, not these payload keys).
-    // Harmless if left (only read by a drain that will no longer fire), but
-    // tidier to clear — mirrors the compose sweep just above.
-    const writebackKeys = await this.tools.store.list("mail:writeback:");
-    for (const key of writebackKeys) {
-      await this.clear(key);
-    }
-    // Sweep the to-do↔\Flagged echo-dedup markers (`mail:flagged:<rootId>`,
-    // written by `onThreadToDoFn`/`reconcileTodoFlags`). Never expire on
-    // their own, so clear them on disable — mirrors the compose and
-    // write-back sweeps above. Not channel-scoped (single mail channel in
-    // v1), so all `mail:flagged:*` are ours. Deliberately NOT sweeping
-    // `mail:auth_actor_id` here: that key is connection-scoped, re-set by
-    // `activate()` on connect, and must survive a channel re-enable.
-    const flaggedKeys = await this.tools.store.list("mail:flagged:");
-    for (const key of flaggedKeys) {
-      await this.clear(key);
-    }
-    // Sweep any `mail:cancel-email:<uid>` markers left behind by
-    // `detectCalendarBundles` (`src/mail/sync.ts`). The calendar side
-    // (`prepareEvent` in this file) consumes and clears its own marker as
-    // soon as it observes the matching cancellation, so this is only a
-    // backstop for markers that never get consumed that way — e.g. the
-    // event was removed from CalDAV outright (rather than left CANCELLED)
-    // before the calendar sync ever saw it, or it belongs to a calendar the
-    // user never enabled. Not channel-scoped, like the sweeps above (single
-    // mail channel in v1), so all `mail:cancel-email:*` are ours.
-    const cancelEmailKeys = await this.tools.store.list("mail:cancel-email:");
-    for (const key of cancelEmailKeys) {
-      await this.clear(key);
-    }
-    // Sweep the legacy calendar-bundle classification cache
-    // (`mail:bundle:<rootId>`). The decision now lives on the per-root
-    // `mail:thread:<rootId>` document alongside the thread's home channel, so
-    // this sweep only clears leftovers from before that move — sweeping
-    // `mail:thread:` belongs with the rest of the disable teardown and is not
-    // wired up yet. Neither cache expires on its own, and either would
-    // otherwise persist across a disable/re-enable cycle — a fresh
-    // re-enable's backfill must re-classify from scratch, not inherit a
-    // decision cached before the gap (e.g. a calendar event that has since
-    // synced). Not channel-scoped, like the sweeps above (single mail channel
-    // in v1), so all `mail:bundle:*` are ours.
-    const bundleKeys = await this.tools.store.list("mail:bundle:");
-    for (const key of bundleKeys) {
-      await this.clear(key);
-    }
+
+    // Archive this folder's synced links. Already precisely channel-scoped, and
+    // with per-thread home channels (§3.2) it now matches exactly the threads
+    // homed to this folder. Runs on BOTH branches.
     await this.tools.integrations.archiveLinks({
       channelId: channel.id,
       meta: { syncProvider: "apple-mail", syncableId: channel.id },
     });
+  }
+
+  /**
+   * Last-folder teardown: cancel the connection-level poll, drains and lock,
+   * delete the whole `mail:state` cursor document, and sweep the
+   * connection-scoped marker keys. Every sweep target below is written per
+   * connection (never per channel), so with no folders left they are all
+   * unambiguously reclaimable.
+   *
+   * Deliberately NOT swept: `mail:auth_actor_id` (re-set by `activate()` on
+   * connect) and `mail:granted_history_min` (the widest floor any plan ever
+   * granted). Both are connection-level facts that must survive a
+   * disable/re-enable cycle — see those keys' docs.
+   */
+  private async teardownMailConnection(): Promise<void> {
+    await this.cancelScheduledTask(MAIL_POLL_TASK);
+    await this.cancelDrain(MAIL_PUSH_DRAIN);
+    await this.cancelDrain(MAIL_SYNC_DRAIN);
+    await this.cancelDrain("mail-writeback");
+    await this.tools.store.releaseLock(MAIL_SYNC_LOCK);
+    // The whole cursor document, including Sent's channel-less cursor — this is
+    // the only place Sent's entry can be reclaimed.
+    await this.clear("mail:state");
+
+    // Sweep the connection-scoped marker keys. None expire on their own, and
+    // each must be gone before a re-enable so a fresh backfill re-derives
+    // everything (bundle classification, thread homes, echo-break markers)
+    // rather than inheriting a decision cached before the gap.
+    //
+    //  - `mail:compose:` / `mail:forward:`   — Plot-initiated compose/forward dedup guards.
+    //  - `mail:writeback:`                   — flag write-back retry payloads.
+    //  - `mail:flagged:`                     — to-do↔\Flagged echo-break markers.
+    //  - `mail:cancel-email:`                — calendar-cancellation hints (backstop
+    //                                          for markers the calendar side never consumed).
+    //  - `mail:thread:`                      — per-root home channel + bundle cache
+    //                                          (supersedes the legacy `mail:bundle:`).
+    for (const prefix of [
+      "mail:compose:",
+      "mail:forward:",
+      "mail:writeback:",
+      "mail:flagged:",
+      "mail:cancel-email:",
+      "mail:thread:",
+    ]) {
+      const keys = await this.tools.store.list(prefix);
+      for (const key of keys) await this.clear(key);
+    }
+  }
+
+  /**
+   * Runs once per active instance when a new connector version deploys.
+   * Migrates connections off the legacy per-channel mail-sync state onto the
+   * connection-level shape (`mail:state` + per-root `mail:thread:`), and off
+   * the legacy per-channel scheduling onto the single connection-level poll.
+   * Every step is idempotent and runs outside the `mail_sync` lock.
+   */
+  override async upgrade(): Promise<void> {
+    // Legacy per-channel cursors (`mail:state_<channelId>`) — superseded by the
+    // single `mail:state` document. Drop them.
+    for (const key of await this.tools.store.list("mail:state_")) {
+      await this.clear(key);
+    }
+    // Legacy per-channel history floors (`mail:sync_history_min_<channelId>`) —
+    // fold the WIDEST (earliest) into the connection-level `mail:state`, then
+    // drop them, so the newly-granted history isn't silently narrowed.
+    let widest: string | undefined;
+    for (const key of await this.tools.store.list("mail:sync_history_min_")) {
+      const floor = await this.get<string>(key);
+      widest = widestFloor(widest, floor ?? undefined);
+      await this.clear(key);
+    }
+    // Legacy calendar-bundle cache (`mail:bundle:<rootId>`) — superseded by
+    // `mail:thread:<rootId>.bundle`. Drop it.
+    for (const key of await this.tools.store.list("mail:bundle:")) {
+      await this.clear(key);
+    }
+
+    // Seed a `mail:thread:<rootId>` document (channel-less, bundle-less) for
+    // every previously-synced root. `mail:flagged:<rootId>` is written for
+    // EVERY root the prior backfill ingested (see `reconcileTodoFlags`), so it
+    // enumerates them. Seeding marks each root "already known to Plot" so the
+    // first merged pass does NOT treat it as an initial ingest and mass
+    // mark-read / un-archive the whole mailbox (`mail:thread:` would otherwise
+    // be empty, making every root look brand-new). The next pass re-homes each
+    // from live messages and re-classifies bundles as needed.
+    const flaggedKeys = await this.tools.store.list("mail:flagged:");
+    const seed: [string, ThreadMeta][] = flaggedKeys.map((key) => [
+      `mail:thread:${key.slice("mail:flagged:".length)}`,
+      {},
+    ]);
+    if (seed.length > 0) await this.setMany(seed);
+
+    // Persist the migrated connection-level state document.
+    const existing = await this.get<MailSyncState>("mail:state");
+    const floor = widestFloor(existing?.syncHistoryMin, widest);
+    const migrated: MailSyncState = {
+      version: 2,
+      boxes: existing?.boxes ?? {},
+      ...(floor !== undefined ? { syncHistoryMin: floor } : {}),
+      ...(existing?.pendingFullRescan ? { pendingFullRescan: true } : {}),
+    };
+    await this.set("mail:state", migrated);
+
+    // Cancel legacy per-channel scheduling for every currently-enabled mail
+    // channel (`mailpoll:<channelId>`, `mail-push:<channelId>`,
+    // `mail_sync_<channelId>`), then arm the connection-level poll once.
+    for (const { channelId } of await this.enabledMailChannels()) {
+      await this.cancelScheduledTask(`mailpoll:${channelId}`);
+      await this.cancelDrain(`mail-push:${channelId}`);
+      await this.tools.store.releaseLock(`mail_sync_${channelId}`);
+    }
+    await this.scheduleMailPoll();
   }
 
   /**
