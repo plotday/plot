@@ -11,28 +11,48 @@ const BASE_URL = "https://tasks.googleapis.com/tasks/v1";
  * Error thrown by the Google Tasks REST client. Carries the HTTP `status` so
  * callers can distinguish a permanent "resource gone" (404) — e.g. the user
  * deleted a task list while its Plot channel was still enabled — from
- * transient 5xx/429 failures worth retrying.
+ * transient 5xx/429 failures worth retrying. `body` is kept as the raw
+ * response text (rather than only baked into `message`) so callers can parse
+ * it to distinguish error shapes sharing the same status code.
  *
  * The message format is preserved verbatim (`Google Tasks API error
  * <status>: <body>`) for backwards compatibility with existing logs/grouping.
  */
 export class GoogleTasksApiError extends Error {
   readonly status: number;
+  readonly body: string;
 
   constructor(status: number, body: string) {
     super(`Google Tasks API error ${status}: ${body}`);
     this.name = "GoogleTasksApiError";
     this.status = status;
+    this.body = body;
   }
 }
 
 /**
- * True when the error indicates the target task list (or task) no longer
- * exists on Google's side. A 404 from a list-scoped endpoint is permanent:
- * retrying or reporting it to error tracking is pure noise.
+ * True when the error indicates the target task list no longer exists (or is
+ * no longer valid) on Google's side. This is permanent: retrying or
+ * reporting it to error tracking is pure noise.
+ *
+ * List-scoped read/write endpoints (`tasks.list`, `tasks.patch`, ...) return a
+ * plain 404 for a deleted list. `tasks.insert` (create) is inconsistent and
+ * instead returns a 400 with the literal top-level message "Invalid task
+ * list ID" — both shapes mean the same underlying thing and must be
+ * recognized here so every call site can treat them identically.
  */
-export function isNotFoundError(error: unknown): boolean {
-  return error instanceof GoogleTasksApiError && error.status === 404;
+export function isTaskListGoneError(error: unknown): boolean {
+  if (!(error instanceof GoogleTasksApiError)) return false;
+  if (error.status === 404) return true;
+  if (error.status === 400) {
+    try {
+      const parsed = JSON.parse(error.body) as { error?: { message?: string } };
+      return parsed.error?.message === "Invalid task list ID";
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 export type GoogleTaskList = {

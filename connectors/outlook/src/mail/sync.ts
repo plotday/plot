@@ -20,6 +20,8 @@
  */
 
 import {
+  type Addressee,
+  canonicalizeEmail,
   type CreateLinkDraft,
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
@@ -1450,10 +1452,9 @@ export async function processConversationsFn(
       }
       plotThread.notes = filtered;
       if (plotThread.notes.length === 0) continue;
-
       const isUnread = isConversationUnread(item.messages);
       if (initialSync) {
-        plotThread.unread = false;
+        plotThread.unread = isUnread;
         plotThread.archived = false;
         await host.set(`unread:${conversationId}`, isUnread);
       } else {
@@ -1706,7 +1707,10 @@ export async function onNoteCreatedFn(
     }
   }
 
-  // Original-message participants: From ∪ To → To, Cc → Cc.
+  // Original-message participants: From ∪ To → To, Cc → Cc. Self-address
+  // exclusion happens inside the shared recipient resolver below, which
+  // filters `selfEmails` (including Gmail dot/+tag variants) uniformly
+  // across all its cases.
   const fromToCandidates = new Set<string>();
   for (const email of recipientEmails(
     targetMessage.from ? [targetMessage.from] : []
@@ -1728,12 +1732,32 @@ export async function onNoteCreatedFn(
   // pre-resolved note.recipients (curated, self-excluded, role-aware), else
   // narrow/augment the original participants by the access constraint, else
   // reply-all. Identical logic to every other email-style connector.
+
+  // Raw original sender(s) — drives the shared helper's self-reply fallback so
+  // a reply in a self-email thread addresses the original sender instead of
+  // resolving to nobody. Not self-filtered. Withheld only for a genuinely
+  // private note (access list explicitly = the author only) so it never
+  // becomes an outbound self-email; a default/uncurated reply (accessContacts
+  // null) is a normal reply and still sends.
+  const choseOthers = (note.accessContacts ?? []).some(
+    (id) => id !== note.author.id
+  );
+  const isPrivateToSelfOnly =
+    note.accessContacts != null &&
+    note.accessContacts.every((id) => id === note.author.id);
+  const headerFrom = isPrivateToSelfOnly
+    ? []
+    : recipientEmails(targetMessage.from ? [targetMessage.from] : []).map(
+        (email) => email.toLowerCase()
+      );
+
   const { to, cc, bcc } = resolveOutboundReplyRecipients({
     recipients: note.recipients ?? null,
     accessContactEmails,
     headerTo: toCandidates,
     headerCc: Array.from(ccCandidates),
     selfEmails,
+    headerFrom,
   });
 
   if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
@@ -1741,9 +1765,6 @@ export async function onNoteCreatedFn(
     // and none are deliverable, surface it instead of dropping silently. A
     // private note (access list = the author only) or an empty reply-all just
     // skips quietly.
-    const choseOthers = (note.accessContacts ?? []).some(
-      (id) => id !== note.author.id
-    );
     if (choseOthers) {
       return {
         deliveryError: {
@@ -1764,7 +1785,9 @@ export async function onNoteCreatedFn(
   // PATCHing the body replaces Outlook's quoted-history block — Plot
   // threads carry the history as notes, and Gmail replies are likewise
   // unquoted.
-  const addr = (address: string) => ({ emailAddress: { address } });
+  const addr = (a: Addressee) => ({
+    emailAddress: { address: a.address, ...(a.name ? { name: a.name } : {}) },
+  });
   await api.updateMessage(draft.id, {
     // Send rendered HTML rather than raw Markdown as plain text, so the
     // recipient sees clean formatting and Outlook doesn't hard-wrap prose.
@@ -1879,7 +1902,9 @@ export async function sendCalendarEventReplyFn(
     return; // private note or empty roster
   }
 
-  const addr = (address: string) => ({ emailAddress: { address } });
+  const addr = (a: Addressee) => ({
+    emailAddress: { address: a.address, ...(a.name ? { name: a.name } : {}) },
+  });
   const bodyHtml = { contentType: "html", content: markdownToHtml(note.content ?? "") };
   const stateKey = `cal-reply:${iCalUID}`;
   const prior = await host.get<{ conversationId: string; lastMessageId: string }>(stateKey);
@@ -1963,28 +1988,30 @@ export async function onCreateLinkFn(
   if (draft.type !== "email") return null;
 
   const seenEmails = new Set<string>();
-  const toEmails: string[] = [];
-  const ccEmails: string[] = [];
-  const bccEmails: string[] = [];
+  const toEmails: Addressee[] = [];
+  const ccEmails: Addressee[] = [];
+  const bccEmails: Addressee[] = [];
   const addRecipient = (
     raw: string | null | undefined,
-    role: string | null
+    role: string | null,
+    name: string | null
   ) => {
     if (!raw) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const key = trimmed.toLowerCase();
+    const key = canonicalizeEmail(trimmed);
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
-    if (role === "cc") ccEmails.push(trimmed);
-    else if (role === "bcc") bccEmails.push(trimmed);
-    else toEmails.push(trimmed);
+    const addressee: Addressee = { address: trimmed, name };
+    if (role === "cc") ccEmails.push(addressee);
+    else if (role === "bcc") bccEmails.push(addressee);
+    else toEmails.push(addressee);
   };
 
   for (const r of draft.recipients ?? []) {
-    addRecipient(r.externalAccountId, r.role);
+    addRecipient(r.externalAccountId, r.role, r.name);
   }
-  for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
+  for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (toEmails.length + ccEmails.length + bccEmails.length === 0) {
     console.error(
@@ -2029,15 +2056,17 @@ export async function onCreateLinkFn(
     },
   });
 
-  // Idempotency: dedupe on a content hash within the retry window.
+  // Idempotency: dedupe on a content hash within the retry window. Keyed on
+  // the raw addresses only (not display names) so the same recipient set
+  // dedupes regardless of name resolution differences between retries.
   const dedupKey = `compose:${fnv1aHex(
     JSON.stringify([
       draft.type,
       subject,
       body,
-      [...toEmails].sort(),
-      [...ccEmails].sort(),
-      [...bccEmails].sort(),
+      toEmails.map((a) => a.address).sort(),
+      ccEmails.map((a) => a.address).sort(),
+      bccEmails.map((a) => a.address).sort(),
     ])
   )}`;
   const prior = await host.get<{ conversationId: string; at: number }>(
@@ -2053,7 +2082,9 @@ export async function onCreateLinkFn(
     return linkFor(prior.conversationId);
   }
 
-  const addr = (address: string) => ({ emailAddress: { address } });
+  const addr = (a: Addressee) => ({
+    emailAddress: { address: a.address, ...(a.name ? { name: a.name } : {}) },
+  });
   const created = await api.createDraft({
     subject,
     // Send rendered HTML rather than raw Markdown as plain text, so the

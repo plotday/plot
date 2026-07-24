@@ -533,6 +533,14 @@ export async function prepareEventInstanceFn(
       meta: { syncProvider: "google", syncableId: calendarId },
       scheduleOccurrences: [cancelledOccurrence],
       notes: [cancelNote],
+      // A cancelled occurrence is only meaningful as an annotation on the
+      // recurring master the user already has. When Plot never imported that
+      // master (e.g. a newly split series whose confirmed master hasn't synced
+      // yet, so only its cancelled future occurrences arrived), creating a
+      // thread here would surface a titleless, scheduleless "cancelled" thread
+      // for an event the user never saw. `updateOnly` makes the platform apply
+      // this only if the master's thread already exists, and skip it otherwise.
+      updateOnly: true,
       // Don't flip the thread unread when the user cancelled the occurrence
       // themselves. Cancelled instances are usually sparse (no organizer /
       // attendees), so this rarely fires — best-effort, never over-suppresses.

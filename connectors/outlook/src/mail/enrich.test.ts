@@ -123,7 +123,7 @@ describe("enrichLinkContactsFromOutlook", () => {
       enrichLinkContactsFromOutlook(
         [link],
         "tok",
-        ["https://graph.microsoft.com/mail.readwrite"]
+        ["https://graph.microsoft.com/Mail.ReadWrite"]
       )
     ).resolves.toBeUndefined();
 

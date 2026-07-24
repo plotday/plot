@@ -15,7 +15,10 @@ import {
   type GmailSyncHost,
   onCreateLinkFn,
   onNoteCreatedFn,
+  onNoteReactionChangedFn,
   processEmailThreadsFn,
+  REACTION_SEND_DELAY_MS,
+  sendReactionEmailFn,
 } from "./sync";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
@@ -103,6 +106,7 @@ function makeHost(): { host: GmailSyncHost; store: Map<string, unknown> } {
       scheduleMailboxRenewal: vi.fn(async () => {}),
       scheduleSelfHealCheck: vi.fn(async () => {}),
       cancelScheduledTask: vi.fn(async () => {}),
+      scheduleReactionSend: vi.fn(async () => {}),
       queueIncrementalSync: vi.fn(async () => {}),
       queueWriteBackRetry: vi.fn(async () => {}),
     },
@@ -282,8 +286,8 @@ describe("onCreateLinkFn — draft.forward", () => {
     );
 
     const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
-    expect(raw).toContain("Bcc: eve@example.com");
-    expect(raw).toContain("To: bob@example.com");
+    expect(raw).toContain('Bcc: "Eve" <eve@example.com>');
+    expect(raw).toContain('To: "Bob" <bob@example.com>');
     expect(raw).not.toContain("To: bob@example.com, eve@example.com");
   });
 
@@ -361,6 +365,99 @@ describe("onCreateLinkFn — draft.forward", () => {
   });
 });
 
+/** A plain (non-forward) compose draft: `draft.forward` unset, so onCreateLinkFn
+ *  takes the toEmails/ccEmails/bccEmails addRecipient branch rather than
+ *  delegating to onCreateLinkForwardFn. */
+function composeDraft(overrides: Partial<CreateLinkDraft> = {}): CreateLinkDraft {
+  return {
+    channelId: "INBOX",
+    type: "email",
+    status: null,
+    title: "Q3 planning",
+    noteContent: "Let's sync on this",
+    contacts: [],
+    recipients: [],
+    inviteEmails: [],
+    ...overrides,
+  } as CreateLinkDraft;
+}
+
+describe("onCreateLinkFn — plain compose (no draft.forward)", () => {
+  it("carries a curated recipient's display name into the To header", async () => {
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-compose-1", threadId: "sent-thread-compose-1" });
+    const { host } = makeHost();
+
+    const link = await onCreateLinkFn(
+      host,
+      composeDraft({
+        recipients: [
+          {
+            id: "c-dana" as Uuid,
+            name: "Robin Fielder",
+            externalAccountId: "dana@example.com",
+            role: null,
+          },
+        ],
+      })
+    );
+
+    expect(sendNewMessage).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    expect(raw).toContain('To: "Robin Fielder" <dana@example.com>');
+    expect(link?.type).toBe("email");
+  });
+
+  it("does not send two copies to the same Gmail mailbox reached via a dot variant", async () => {
+    // A picker-resolved recipient ("dana@gmail.com") and a separately typed
+    // invite address ("d.ana@gmail.com") are the same Gmail mailbox — Gmail
+    // ignores dots in the local part. The dedupe key must recognize this
+    // ROW-identity (canonicalizeEmail), not just an exact lowercase match,
+    // or the compose sends the same person two copies.
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-compose-2", threadId: "sent-thread-compose-2" });
+    const { host } = makeHost();
+
+    await onCreateLinkFn(
+      host,
+      composeDraft({
+        recipients: [
+          {
+            id: "c-dana" as Uuid,
+            name: null,
+            externalAccountId: "dana@gmail.com",
+            role: null,
+          },
+        ],
+        inviteEmails: ["d.ana@gmail.com"],
+      })
+    );
+
+    expect(sendNewMessage).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    const toHeaderLine = raw
+      .split("\r\n")
+      .find((line) => line.startsWith("To:"));
+    expect(toHeaderLine).toBe("To: dana@gmail.com");
+  });
+});
+
 function calThread(over: Record<string, unknown> = {}) {
   return {
     id: "T",
@@ -374,12 +471,12 @@ function calThread(over: Record<string, unknown> = {}) {
     ...over,
   } as unknown as import("@plotday/twister").Thread;
 }
-function replyNote(recipients: Array<{ externalAccountId: string; role: string | null }>, over: Record<string, unknown> = {}) {
+function replyNote(recipients: Array<{ externalAccountId: string; role: string | null; name?: string | null }>, over: Record<string, unknown> = {}) {
   return {
     id: "n1",
     author: { id: "c-me" },
     content: "See you there",
-    recipients: recipients.map((r) => ({ id: r.externalAccountId, name: null, externalAccountId: r.externalAccountId, role: r.role })),
+    recipients: recipients.map((r) => ({ id: r.externalAccountId, name: r.name ?? null, externalAccountId: r.externalAccountId, role: r.role })),
     accessContacts: null,
     actions: [],
     ...over,
@@ -431,6 +528,25 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     expect(raw).toContain("X-Plot-Event-UID: uid-123");
   });
 
+  it("carries the recipient's display name into the To header", async () => {
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-named", threadId: "gt-named" });
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({ emailAddress: "me@example.com" });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({ email: "me@example.com", name: "Me" });
+    const { host } = makeHost();
+
+    await onNoteCreatedFn(
+      host,
+      replyNote([{ externalAccountId: "org@x.com", role: null, name: "Org Person" }]),
+      calThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain('To: "Org Person" <org@x.com>');
+  });
+
   it("private note (no deliverable recipients) sends nothing", async () => {
     const send = vi.spyOn(GmailApi.prototype, "sendNewMessage").mockResolvedValue({ id: "x", threadId: "y" });
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({ emailAddress: "me@example.com" });
@@ -443,6 +559,238 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     );
     expect(send).not.toHaveBeenCalled();
     expect(res).toBeUndefined();
+  });
+
+  it("sends nothing when the curated recipient is entirely the organizer's own Gmail alias variant", async () => {
+    // The picker resolved the reply's sole curated recipient to a contact
+    // record for "krisbraun@gmail.com" — a dot-variant of the organizer's own
+    // connected mailbox "kris.braun@gmail.com" that hadn't been merged into
+    // their primary contact. resolveOutboundReplyRecipients' curated-path
+    // self-filter (Case 1) still recognizes it as self via baseEmail and
+    // drops it, so the reply resolves to zero recipients rather than being
+    // sent back to the organizer. Because this is a curated (non-empty
+    // accessContacts) send with no deliverable recipient, the connector
+    // surfaces a deliveryError instead of silently no-op'ing.
+    const send = vi.spyOn(GmailApi.prototype, "sendNewMessage");
+    const sendReply = vi.spyOn(GmailApi.prototype, "sendMessage");
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const { host } = makeHost();
+
+    const res = await onNoteCreatedFn(
+      host,
+      replyNote(
+        [{ externalAccountId: "krisbraun@gmail.com", role: null }],
+        { accessContacts: ["c-alias"] }
+      ),
+      calThread({
+        accessContacts: [
+          { id: "c-me", email: "kris.braun@gmail.com" },
+          { id: "c-alias", email: "krisbraun@gmail.com" },
+        ],
+      })
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(sendReply).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      deliveryError: {
+        code: "no_recipients",
+        message: "This reply had no deliverable recipients.",
+      },
+    });
+  });
+});
+
+/** A plain (non-calendar) Gmail thread whose sole message addressed the
+ *  connected mailbox via a dot-variant of its own address. */
+function gmailAliasReplyThread(): GmailThread {
+  const message: GmailMessage = {
+    id: "msg-orig-1",
+    threadId: "gmail-thread-1",
+    labelIds: ["INBOX"],
+    snippet: "Hi Kris",
+    historyId: "1",
+    internalDate: "1700000000000",
+    sizeEstimate: 100,
+    payload: {
+      mimeType: "text/plain",
+      headers: [
+        { name: "Message-ID", value: "<orig@mail.gmail.com>" },
+        { name: "From", value: "Hilary Collier <hilary.collier@example.com>" },
+        { name: "To", value: "krisbraun@gmail.com" },
+        { name: "Cc", value: "annie@example.com" },
+        { name: "Subject", value: "Surprise Tribute Video" },
+      ],
+      body: { size: 10, data: b64url("Hi Kris") },
+    },
+  };
+  return { id: "gmail-thread-1", historyId: "1", messages: [message] };
+}
+
+function plainThread(over: Record<string, unknown> = {}) {
+  return {
+    id: "T2",
+    title: "Surprise Tribute Video",
+    meta: { channelId: "INBOX", threadId: "gmail-thread-1" },
+    accessContacts: [
+      { id: "c-me", email: "kris.braun@gmail.com" },
+      { id: "c-hilary", email: "hilary.collier@example.com" },
+      { id: "c-annie", email: "annie@example.com" },
+    ],
+    ...over,
+  } as unknown as import("@plotday/twister").Thread;
+}
+
+function plainReplyNote(over: Record<string, unknown> = {}) {
+  return {
+    id: "n2",
+    author: { id: "c-me" },
+    content: "Sounds good!",
+    recipients: null,
+    accessContacts: null,
+    actions: [],
+    ...over,
+  } as unknown as import("@plotday/twister").Note;
+}
+
+describe("onNoteCreatedFn — plain Gmail thread reply-all", () => {
+  it("excludes the connected mailbox's own dot-variant alias address from the outbound recipients", async () => {
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(
+      gmailAliasReplyThread()
+    );
+    // The account's canonical/connected address (with dot) never literally
+    // matches the alias form the original message was addressed to
+    // (krisbraun@gmail.com) — Gmail treats both as the same mailbox.
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "sent-9", threadId: "gmail-thread-1" });
+    const { host } = makeHost();
+
+    await onNoteCreatedFn(host, plainReplyNote(), plainThread());
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).not.toContain("krisbraun@gmail.com");
+    expect(raw).toContain("hilary.collier@example.com");
+  });
+
+  it("carries a curated (platform-resolved) recipient's display name into the To header", async () => {
+    // note.recipients non-null is Case 1 (curated) in resolveOutboundReplyRecipients
+    // — the only case that carries a display name — as opposed to the header-driven
+    // fallback cases exercised by the test above, which always resolve to name: null.
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(
+      gmailAliasReplyThread()
+    );
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "sent-10", threadId: "gmail-thread-1" });
+    const { host } = makeHost();
+
+    await onNoteCreatedFn(
+      host,
+      plainReplyNote({
+        recipients: [
+          {
+            id: "c-hilary",
+            name: "Hilary Collier",
+            externalAccountId: "hilary.collier@example.com",
+            role: null,
+          },
+        ],
+      }),
+      plainThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain('To: "Hilary Collier" <hilary.collier@example.com>');
+  });
+});
+
+/** A Gmail thread the user sent between two of their own linked addresses:
+ *  From = their other linked identity, To = the connected mailbox. Both are
+ *  the same person, so a reply must fall back to the original sender. */
+function selfEmailReplyThread(): GmailThread {
+  const message: GmailMessage = {
+    id: "msg-self-1",
+    threadId: "gmail-self-thread-1",
+    labelIds: ["INBOX"],
+    snippet: "note to self",
+    historyId: "1",
+    internalDate: "1700000000000",
+    sizeEstimate: 100,
+    payload: {
+      mimeType: "text/plain",
+      headers: [
+        { name: "Message-ID", value: "<self-orig@mail.gmail.com>" },
+        { name: "From", value: "kris.work@example.com" },
+        { name: "To", value: "kris.braun@gmail.com" },
+        { name: "Subject", value: "Note to self" },
+      ],
+      body: { size: 12, data: b64url("note to self") },
+    },
+  };
+  return { id: "gmail-self-thread-1", historyId: "1", messages: [message] };
+}
+
+function selfThread(over: Record<string, unknown> = {}) {
+  return {
+    id: "T-self",
+    title: "Note to self",
+    meta: { channelId: "INBOX", threadId: "gmail-self-thread-1" },
+    accessContacts: [
+      { id: "c-me", email: "kris.braun@gmail.com" },
+      { id: "c-work", email: "kris.work@example.com" },
+    ],
+    ...over,
+  } as unknown as import("@plotday/twister").Thread;
+}
+
+describe("onNoteCreatedFn — self-email thread reply", () => {
+  it("addresses the original sender when a default (uncurated) reply resolves to only self", async () => {
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(
+      selfEmailReplyThread()
+    );
+    // Connected mailbox = one linked identity; the note is authored as the
+    // OTHER linked identity, so both original participants are self.
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "sent-self", threadId: "gmail-self-thread-1" });
+    const { host } = makeHost();
+
+    // Default reply: accessContacts null (uncurated), authored as the work identity.
+    await onNoteCreatedFn(
+      host,
+      plainReplyNote({ author: { id: "c-work" }, accessContacts: null }),
+      selfThread()
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain("kris.work@example.com");
   });
 });
 
@@ -680,5 +1028,139 @@ describe("processEmailThreadsFn — archived/trashed in Gmail", () => {
     );
 
     expect(setThreadToDoOf(host)).not.toHaveBeenCalled();
+  });
+});
+
+// A plain Gmail thread for reaction round-trips: message "msg-orig-1" from
+// Hilary, addressed to the connected mailbox (self) with Annie on Cc.
+function reactionThread(): GmailThread {
+  return gmailAliasReplyThread();
+}
+
+function reactionNote(over: Record<string, unknown> = {}) {
+  return {
+    id: "n-react",
+    key: "msg-orig-1",
+    author: { id: "c-me" },
+    ...over,
+  } as unknown as import("@plotday/twister").Note;
+}
+
+describe("onNoteReactionChangedFn", () => {
+  it("schedules a deferred send when a reaction is added (send-undo window)", async () => {
+    const { host } = makeHost();
+    const schedule = host.scheduler.scheduleReactionSend as ReturnType<
+      typeof vi.fn
+    >;
+    const before = Date.now();
+
+    await onNoteReactionChangedFn(host, reactionNote(), plainThread(), "💖", true);
+
+    expect(schedule).toHaveBeenCalledTimes(1);
+    const [key, threadId, channelId, noteKey, emoji, runAt] =
+      schedule.mock.calls[0];
+    expect(key).toBe("mail:reaction-send:msg-orig-1:💖");
+    expect(threadId).toBe("gmail-thread-1");
+    expect(channelId).toBe("INBOX");
+    expect(noteKey).toBe("msg-orig-1");
+    expect(emoji).toBe("💖");
+    expect((runAt as Date).getTime()).toBeGreaterThanOrEqual(
+      before + REACTION_SEND_DELAY_MS - 50
+    );
+  });
+
+  it("cancels a still-pending send when the reaction is removed before it fires", async () => {
+    const { host } = makeHost();
+    const trash = vi.spyOn(GmailApi.prototype, "trashMessage");
+
+    await onNoteReactionChangedFn(host, reactionNote(), plainThread(), "💖", false);
+
+    expect(host.scheduler.cancelScheduledTask).toHaveBeenCalledWith(
+      "mail:reaction-send:msg-orig-1:💖"
+    );
+    // Nothing was sent, so nothing is trashed.
+    expect(trash).not.toHaveBeenCalled();
+  });
+
+  it("retracts an already-sent reaction by trashing our reaction email", async () => {
+    const { host, store } = makeHost();
+    store.set("reaction-msg:msg-orig-1:💖", "reaction-sent-1");
+    const trash = vi
+      .spyOn(GmailApi.prototype, "trashMessage")
+      .mockResolvedValue(undefined);
+
+    await onNoteReactionChangedFn(host, reactionNote(), plainThread(), "💖", false);
+
+    expect(host.scheduler.cancelScheduledTask).toHaveBeenCalled();
+    expect(trash).toHaveBeenCalledWith("reaction-sent-1");
+    expect(store.has("reaction-msg:msg-orig-1:💖")).toBe(false);
+  });
+
+  it("ignores workspace custom-emoji reactions (no Gmail equivalent)", async () => {
+    const { host } = makeHost();
+    await onNoteReactionChangedFn(
+      host,
+      reactionNote(),
+      plainThread(),
+      "slack:T0/party_parrot",
+      true
+    );
+    expect(host.scheduler.scheduleReactionSend).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-Gmail threads (no threadId in meta)", async () => {
+    const { host } = makeHost();
+    await onNoteReactionChangedFn(
+      host,
+      reactionNote(),
+      plainThread({ meta: { calendarId: "primary" } }),
+      "💖",
+      true
+    );
+    expect(host.scheduler.scheduleReactionSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendReactionEmailFn", () => {
+  it("sends a reaction email reply-all to the other participants, threaded on the reacted message", async () => {
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(reactionThread());
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "kris.braun@gmail.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "kris.braun@gmail.com",
+      name: "Kris",
+    });
+    const send = vi
+      .spyOn(GmailApi.prototype, "sendMessage")
+      .mockResolvedValue({ id: "reaction-sent-1", threadId: "gmail-thread-1" });
+    const { host, store } = makeHost();
+
+    await sendReactionEmailFn(host, "gmail-thread-1", "INBOX", "msg-orig-1", "💖");
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(send.mock.calls[0][0]);
+    expect(raw).toContain("In-Reply-To: <orig@mail.gmail.com>");
+    expect(raw).toContain("Content-Type: text/vnd.google.email-reaction+json");
+    expect(JSON.parse(decodeMimePart(raw, "text/vnd.google.email-reaction+json"))).toEqual(
+      { version: 1, emoji: "💖" }
+    );
+    // Reply-all: original sender + Cc, excluding the connected mailbox (self).
+    expect(raw).toContain("hilary.collier@example.com");
+    expect(raw).toContain("annie@example.com");
+    expect(raw).not.toContain("krisbraun@gmail.com");
+    // Sent id is recorded for later retraction + echo suppression.
+    expect(store.get("reaction-msg:msg-orig-1:💖")).toBe("reaction-sent-1");
+    expect(store.get("sent:reaction-sent-1")).toBe(true);
+  });
+
+  it("is idempotent: a re-dispatched task does not send a second email", async () => {
+    const { host, store } = makeHost();
+    store.set("reaction-msg:msg-orig-1:💖", "reaction-sent-1");
+    const send = vi.spyOn(GmailApi.prototype, "sendMessage");
+
+    await sendReactionEmailFn(host, "gmail-thread-1", "INBOX", "msg-orig-1", "💖");
+
+    expect(send).not.toHaveBeenCalled();
   });
 });

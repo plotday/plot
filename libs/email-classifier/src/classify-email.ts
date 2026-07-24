@@ -54,6 +54,16 @@ const NOTIFICATION_MAX_BODY = 700;
 const NOREPLY_LOCALPART =
   /^(no-?reply|do-?not-?reply|donotreply|notifications?|notify|mailer-daemon|bounce|postmaster|automated|auto|alerts?|updates?)\b/;
 
+// Automation signals in the sender DISPLAY NAME (anywhere in the name, not just
+// the start). Bulk / marketing / phishing senders routinely omit List-* headers
+// and use an ordinary local-part, so the address heuristics miss them — but the
+// display name ("… NOTIFICATION SYSTEM", "Acme (do not reply)") gives them away.
+// Kept narrower than NOREPLY_LOCALPART: names are noisier than local-parts, so
+// generic tokens (auto, alerts, updates, bounce) are excluded to avoid flagging
+// real people ("Auto Desk", "Sales Updates").
+const NOREPLY_NAME =
+  /\b(no[-\s]?reply|do[-\s]?not[-\s]?reply|donotreply|notifications?|notify|mailer(?:[-\s]?daemon)?|postmaster|automated|auto[-\s]?(?:reply|responder))\b/i;
+
 // Calendar invitation-response notification emails (Google/Outlook). The
 // subject is prefixed with the responder's verdict, e.g. "Accepted: <event>".
 const CAL_RESPONSE_RE = /^\s*(accepted|declined|tentative(?:ly accepted)?):\s/i;
@@ -106,6 +116,7 @@ function computeAutomation(s: EmailSignals): Automation {
   // discussion list is the rare exception we accept under best-effort.)
   if (s.listId || s.listUnsubscribe) return "automated";
   if (NOREPLY_LOCALPART.test(localPart(s.fromAddress))) return "automated";
+  if (s.fromName && NOREPLY_NAME.test(s.fromName)) return "automated";
   return "human";
 }
 

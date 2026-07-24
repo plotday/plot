@@ -16,12 +16,15 @@
  * references back to the concrete connector's spied instance methods — or it
  * returns a descriptor and lets the caller own the scheduling.
  */
-
+import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 import {
+  baseEmail,
+  canonicalizeEmail,
   type CreateLinkDraft,
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
 } from "@plotday/twister";
+import type { Cta } from "@plotday/twister/facets";
 import { ActionType } from "@plotday/twister/plot";
 import type {
   Actor,
@@ -32,20 +35,18 @@ import type {
   Thread,
 } from "@plotday/twister/plot";
 import type { WebhookRequest } from "@plotday/twister/tools/network";
-import type { Cta } from "@plotday/twister/facets";
-
-import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 
 import {
+  type AttachmentData,
   GmailApi,
   GmailApiError,
-  UserInfoError,
   type GmailMessage,
   type GmailThread,
-  type AttachmentData,
   type SyncState,
+  UserInfoError,
   buildForwardMessage,
   buildNewEmailMessage,
+  buildReactionMessage,
   buildReplyMessage,
   classifyCalendarThread,
   collectAttachments,
@@ -53,6 +54,7 @@ import {
   formatFromHeader,
   getHeader,
   isGmailRateLimitError,
+  isSendableGmailReaction,
   mapWithConcurrency,
   parseEmailAddresses,
   syncGmailChannel,
@@ -60,7 +62,10 @@ import {
   transformGmailThread,
 } from "./gmail-api";
 import { gmailFacets } from "./gmail-facets";
-import { classifySendError, type ClassifiedSendError } from "./gmail-send-errors";
+import {
+  type ClassifiedSendError,
+  classifySendError,
+} from "./gmail-send-errors";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
@@ -341,8 +346,22 @@ export interface GmailSyncHost {
     scheduleMailboxRenewal(expiration: Date): Promise<void>;
     /** (Re)schedule the durable mailbox-self-heal recurring task. */
     scheduleSelfHealCheck(): Promise<void>;
-    /** Cancel a durable recurring task by key. */
+    /** Cancel a durable recurring task by key (also cancels a pending reaction send). */
     cancelScheduledTask(key: string): Promise<void>;
+    /**
+     * Schedule the deferred emoji-reaction send as a keyed one-shot task at
+     * `runAt`. Keyed on `(message, emoji)` so a quick remove/change cancels or
+     * replaces the pending send before it fires (send-undo style). Fires
+     * {@link sendReactionEmailFn} via {@link Google.mailSendReaction}.
+     */
+    scheduleReactionSend(
+      key: string,
+      threadId: string,
+      channelId: string,
+      noteKey: string,
+      emoji: string,
+      runAt: Date
+    ): Promise<void>;
     /** Queue the mailbox-wide incremental sync as a task. */
     queueIncrementalSync(): Promise<void>;
     /**
@@ -491,7 +510,9 @@ export function mergePendingThreads(
     const attempts = (attemptsById.get(id) ?? 0) + 1;
     if (attempts > MAX_THREAD_FETCH_ATTEMPTS) {
       console.error(
-        `[gmail] giving up on thread ${id} after ${attempts - 1} failed fetch attempts; its change may be lost`
+        `[gmail] giving up on thread ${id} after ${
+          attempts - 1
+        } failed fetch attempts; its change may be lost`
       );
       continue;
     }
@@ -631,7 +652,9 @@ export async function findChannelForMessageFn(
       if (!token?.token) continue;
       const api = new GmailApi(token.token);
       // Probe with minimal format (just confirms the message exists for this auth)
-      await api.call(`/messages/${messageId}`, { params: { format: "minimal" } });
+      await api.call(`/messages/${messageId}`, {
+        params: { format: "minimal" },
+      });
       // Found it — cache and return
       await host.set(`gmail:msg-channel:${messageId}`, channelId);
       return channelId;
@@ -660,7 +683,7 @@ export async function findChannelForMessageFn(
  */
 export async function sendWithRetry(
   send: () => Promise<{ id: string; threadId: string }>,
-  label: "reply" | "compose" | "forward" | "cal-reply"
+  label: "reply" | "compose" | "forward" | "cal-reply" | "reaction"
 ): Promise<
   | { ok: true; result: { id: string; threadId: string } }
   | { ok: false; error: ClassifiedSendError }
@@ -823,8 +846,9 @@ export async function setupMailboxWebhookFn(
   // Seed the incremental cursor so the first webhook has somewhere to
   // start. Gmail's watch returns the current historyId; any change after
   // this point will appear in history.list from this seed.
-  const existingIncremental =
-    await host.get<{ historyId?: string }>("incremental_state");
+  const existingIncremental = await host.get<{ historyId?: string }>(
+    "incremental_state"
+  );
   if (!existingIncremental?.historyId) {
     await host.set("incremental_state", {
       historyId: watchResult.historyId,
@@ -1419,12 +1443,10 @@ export async function processEmailThreadsFn(
   // message (hundreds per pass), which dominated the pass's wall-clock time.
   const messageChannelEntries: [string, unknown][] = transformed.flatMap(
     ({ thread, channelId }) =>
-      (thread.messages ?? []).map(
-        (message): [string, unknown] => [
-          `gmail:msg-channel:${message.id}`,
-          channelId,
-        ]
-      )
+      (thread.messages ?? []).map((message): [string, unknown] => [
+        `gmail:msg-channel:${message.id}`,
+        channelId,
+      ])
   );
   if (messageChannelEntries.length > 0) {
     await host.setMany(messageChannelEntries);
@@ -1476,7 +1498,7 @@ async function saveTransformedThread(
       thread.messages?.some((m) => m.labelIds?.includes("UNREAD")) ?? false;
 
     if (initialSync) {
-      plotThread.unread = false;
+      plotThread.unread = isUnread;
       plotThread.archived = false;
       await host.set(`unread:${thread.id}`, isUnread);
     } else {
@@ -1620,6 +1642,196 @@ async function getFromHeaderFn(api: GmailApi, email: string): Promise<string> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Outbound emoji reactions
+// ---------------------------------------------------------------------------
+
+/**
+ * Delay between a user adding a reaction in Plot and the reaction email
+ * actually going out. During the window a remove (or a change, which arrives
+ * as remove-old + add-new) cancels the still-pending send, so a quickly
+ * undone/changed reaction never emails anyone — the same idea as undo-send.
+ */
+export const REACTION_SEND_DELAY_MS = 12_000;
+
+/**
+ * Durable task key for a pending reaction send. This is a raw `scheduleTask`
+ * key (passed straight to the connector's scheduleTask/cancelScheduledTask, NOT
+ * through host.set's `mail:` storage namespace); the literal `mail:` prefix here
+ * is just a hand-written namespace to keep it distinct from other product task
+ * keys (e.g. Calendar's `calendar:watch-renewal:*`).
+ */
+function reactionSendTaskKey(noteKey: string, emoji: string): string {
+  return `mail:reaction-send:${noteKey}:${emoji}`;
+}
+
+/** Storage key mapping a sent reaction to its Gmail message id (for retraction). */
+function reactionMsgStoreKey(noteKey: string, emoji: string): string {
+  return `reaction-msg:${noteKey}:${emoji}`;
+}
+
+/**
+ * Dispatched when a user adds or removes an emoji reaction on a Gmail message
+ * note. Runs on the reacting user's own connector instance, so the sent email
+ * is attributed to them.
+ *
+ * Add → schedule a deferred send (see {@link REACTION_SEND_DELAY_MS}). Remove →
+ * cancel a still-pending send, and if it already went out, best-effort trash our
+ * own reaction email so the sender's mailbox reconverges. Non-Gmail notes
+ * (no `threadId`/message-id key) and non-Unicode reactions are ignored.
+ */
+export async function onNoteReactionChangedFn(
+  host: GmailSyncHost,
+  note: Note,
+  thread: Thread,
+  emoji: string,
+  added: boolean
+): Promise<void> {
+  const meta = thread.meta ?? {};
+  const threadId = meta.threadId as string | undefined;
+  const channelId = (meta.channelId ?? meta.syncableId) as string | undefined;
+  const noteKey = note.key ?? undefined;
+
+  // Only Gmail message notes are reactable here: they carry a Gmail threadId in
+  // meta and a message-id note key. Calendar/other threads and keyless notes
+  // have no reacted message to attach to.
+  if (!threadId || !channelId || !noteKey) return;
+  // Custom workspace emoji have no Gmail equivalent — leave them Plot-only.
+  if (!isSendableGmailReaction(emoji)) return;
+
+  const taskKey = reactionSendTaskKey(noteKey, emoji);
+
+  if (added) {
+    // Defer the send; re-scheduling under the same key replaces any pending
+    // send for this (message, emoji), so a rapid change collapses to one.
+    await host.scheduler.scheduleReactionSend(
+      taskKey,
+      threadId,
+      channelId,
+      noteKey,
+      emoji,
+      new Date(Date.now() + REACTION_SEND_DELAY_MS)
+    );
+    return;
+  }
+
+  // Removed: cancel a still-pending send so it never goes out.
+  await host.scheduler.cancelScheduledTask(taskKey);
+
+  // If it already went out, best-effort trash our own reaction email. On the
+  // sender's next thread resync the reaction email is gone, so the inbound fold
+  // reconstructs the note's reactions without it and the sender's view
+  // converges. Recipients already delivered the reaction keep it — an inherent
+  // limit of email (Gmail's own reaction removal shares it).
+  const storeKey = reactionMsgStoreKey(noteKey, emoji);
+  const sentId = await host.get<string>(storeKey);
+  if (!sentId) return;
+  const api = await tryGetApiFn(host, channelId);
+  if (api) {
+    try {
+      await api.trashMessage(sentId);
+    } catch (error) {
+      console.warn(`[gmail] failed to trash reaction email ${sentId}:`, error);
+    }
+  }
+  await host.clear(storeKey);
+}
+
+/**
+ * Deferred reaction send (fires from the scheduled task in
+ * {@link onNoteReactionChangedFn}). Builds and sends a Gmail emoji-reaction
+ * email on the reacted message's thread, reply-all to the other participants so
+ * Gmail recipients see a native reaction and everyone else gets the fallback
+ * email. Best-effort: reactions are low-stakes, so failures log and stop
+ * rather than surfacing a "Failed to send" affordance.
+ */
+export async function sendReactionEmailFn(
+  host: GmailSyncHost,
+  threadId: string,
+  channelId: string,
+  noteKey: string,
+  emoji: string
+): Promise<void> {
+  const storeKey = reactionMsgStoreKey(noteKey, emoji);
+  // Idempotency: a re-dispatched task must not send a second email.
+  if (await host.get<string>(storeKey)) return;
+
+  // Lapsed/revoked auth → leave the reaction Plot-only (surfaced in the
+  // connections UI); don't page on a best-effort reaction.
+  const api = await tryGetApiFn(host, channelId);
+  if (!api) return;
+
+  const gmailThread = await api.getThread(threadId);
+  const target = gmailThread.messages?.find((m) => m.id === noteKey);
+  if (!target) {
+    console.warn(
+      `[gmail] reaction target ${noteKey} not found in thread ${threadId}; skipping`
+    );
+    return;
+  }
+  const messageId = getHeader(target, "Message-ID");
+  if (!messageId) {
+    console.warn(`[gmail] reaction target ${noteKey} has no Message-ID; skipping`);
+    return;
+  }
+  const references = getHeader(target, "References") ?? "";
+  const subject = getHeader(target, "Subject") ?? "Email";
+
+  // Reply-all recipients: everyone on the reacted message minus the reactor.
+  const profile = await api.getProfile();
+  const selfEmails = new Set<string>([profile.emailAddress.toLowerCase()]);
+  const selfBases = new Set(Array.from(selfEmails, baseEmail));
+  const isSelf = (email: string) => selfBases.has(baseEmail(email));
+
+  const toCandidates = new Set<string>();
+  for (const e of parseEmailAddresses(getHeader(target, "From")))
+    toCandidates.add(e.toLowerCase());
+  for (const e of parseEmailAddresses(getHeader(target, "To")))
+    toCandidates.add(e.toLowerCase());
+  const ccCandidates = new Set<string>();
+  for (const e of parseEmailAddresses(getHeader(target, "Cc")))
+    ccCandidates.add(e.toLowerCase());
+  const to = Array.from(toCandidates).filter(
+    (e) => !ccCandidates.has(e) && !isSelf(e)
+  );
+  const cc = Array.from(ccCandidates).filter((e) => !isSelf(e));
+  if (to.length === 0 && cc.length === 0) {
+    console.log(
+      `[gmail] reaction on ${noteKey} resolved to no other recipients; skipping`
+    );
+    return;
+  }
+
+  const raw = buildReactionMessage({
+    to,
+    cc,
+    from: await getFromHeaderFn(api, profile.emailAddress),
+    subject,
+    emoji,
+    messageId,
+    references,
+  });
+
+  const sent = await sendWithRetry(
+    () => api.sendMessage(raw, threadId),
+    "reaction"
+  );
+  if (!sent.ok) {
+    // Leave no store key so a later change can retry via a fresh add.
+    console.warn(
+      `[gmail] reaction send failed: ${sent.error.code} ${sent.error.message}`
+    );
+    return;
+  }
+  // Echo-suppress the self-copy (belt-and-braces: inbound the reaction email is
+  // folded onto the note, not turned into a note) and record the sent id so a
+  // later removal can retract it.
+  await host.setMany([
+    [`sent:${sent.result.id}`, true],
+    [storeKey, sent.result.id],
+  ]);
+}
+
 export async function onNoteCreatedFn(
   host: GmailSyncHost,
   note: Note,
@@ -1707,7 +1919,10 @@ export async function onNoteCreatedFn(
     }
   }
 
-  // Original-message participants: From ∪ To → To, Cc → Cc.
+  // Original-message participants: From ∪ To → To, Cc → Cc. Self-address
+  // exclusion happens inside the shared recipient resolver below, which
+  // filters `selfEmails` (including Gmail dot/+tag variants) uniformly
+  // across all its cases.
   const fromToCandidates = new Set<string>();
   for (const email of parseEmailAddresses(fromHeader)) {
     fromToCandidates.add(email.toLowerCase());
@@ -1727,12 +1942,31 @@ export async function onNoteCreatedFn(
   // pre-resolved `note.recipients` (curated, self-excluded, role-aware), else
   // narrow/augment the original participants by the access constraint, else
   // reply-all. This is the same logic every email-style connector runs.
+
+  // Raw original sender(s) — drives the shared helper's self-reply fallback so
+  // a reply in a self-email thread addresses the original sender instead of
+  // resolving to nobody. Not self-filtered: the helper needs to see that the
+  // sender is self. Withheld only for a genuinely private note (access list
+  // explicitly = the author only) so it never becomes an outbound self-email;
+  // a default/uncurated reply (accessContacts null) is a normal reply and
+  // still sends.
+  const choseOthers = (note.accessContacts ?? []).some(
+    (id) => id !== note.author.id
+  );
+  const isPrivateToSelfOnly =
+    note.accessContacts != null &&
+    note.accessContacts.every((id) => id === note.author.id);
+  const headerFrom = isPrivateToSelfOnly
+    ? []
+    : parseEmailAddresses(fromHeader).map((email) => email.toLowerCase());
+
   const { to, cc, bcc } = resolveOutboundReplyRecipients({
     recipients: note.recipients ?? null,
     accessContactEmails,
     headerTo: toCandidates,
     headerCc: Array.from(ccCandidates),
     selfEmails,
+    headerFrom,
   });
 
   if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
@@ -1740,9 +1974,6 @@ export async function onNoteCreatedFn(
     // and none are deliverable, surface it instead of dropping silently. A
     // private note (access list = the author only) or an empty reply-all just
     // skips quietly.
-    const choseOthers = (note.accessContacts ?? []).some(
-      (id) => id !== note.author.id
-    );
     if (choseOthers) {
       return {
         deliveryError: {
@@ -1780,9 +2011,9 @@ export async function onNoteCreatedFn(
 
   // Build and send the reply (with attachments if any)
   const raw = buildReplyMessage({
-    to,
-    cc,
-    bcc,
+    to: to.map((a) => formatFromHeader(a.address, a.name)),
+    cc: cc.map((a) => formatFromHeader(a.address, a.name)),
+    bcc: bcc.map((a) => formatFromHeader(a.address, a.name)),
     from: await getFromHeaderFn(api, profile.emailAddress),
     subject,
     body: note.content ?? "",
@@ -1791,7 +2022,10 @@ export async function onNoteCreatedFn(
     attachments: attachments.length > 0 ? attachments : undefined,
   });
 
-  const sent = await sendWithRetry(() => api.sendMessage(raw, threadId), "reply");
+  const sent = await sendWithRetry(
+    () => api.sendMessage(raw, threadId),
+    "reply"
+  );
   if (!sent.ok) {
     // Surface the failure to the user (thread goes unread + "Failed to send"
     // affordance). Do NOT set the idempotency guard, so an explicit retry
@@ -1853,7 +2087,8 @@ export async function sendCalendarEventReplyFn(
     const allowed = new Set<ActorId>(note.accessContacts);
     accessContactEmails = new Set<string>();
     for (const c of thread.accessContacts ?? []) {
-      if (allowed.has(c.id) && c.email) accessContactEmails.add(c.email.toLowerCase());
+      if (allowed.has(c.id) && c.email)
+        accessContactEmails.add(c.email.toLowerCase());
     }
   }
 
@@ -1866,9 +2101,16 @@ export async function sendCalendarEventReplyFn(
   });
 
   if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
-    const choseOthers = (note.accessContacts ?? []).some((id) => id !== note.author.id);
+    const choseOthers = (note.accessContacts ?? []).some(
+      (id) => id !== note.author.id
+    );
     if (choseOthers) {
-      return { deliveryError: { code: "no_recipients", message: "This reply had no deliverable recipients." } };
+      return {
+        deliveryError: {
+          code: "no_recipients",
+          message: "This reply had no deliverable recipients.",
+        },
+      };
     }
     return; // private note or empty roster
   }
@@ -1877,8 +2119,18 @@ export async function sendCalendarEventReplyFn(
   const from = await getFromHeaderFn(api, profile.emailAddress);
   const uidHeader = `X-Plot-Event-UID: ${iCalUID}`;
 
+  // Format addressees into "Name" <email> header strings once — both the
+  // fresh-conversation and threaded-reply branches below consume the same
+  // formatted lists.
+  const toHeaders = to.map((a) => formatFromHeader(a.address, a.name));
+  const ccHeaders = cc.map((a) => formatFromHeader(a.address, a.name));
+  const bccHeaders = bcc.map((a) => formatFromHeader(a.address, a.name));
+
   const stateKey = `cal-reply:${iCalUID}`;
-  const prior = await host.get<{ gmailThreadId: string; seedMessageId: string }>(stateKey);
+  const prior = await host.get<{
+    gmailThreadId: string;
+    seedMessageId: string;
+  }>(stateKey);
 
   let sentId: string;
   if (!prior) {
@@ -1887,24 +2139,53 @@ export async function sendCalendarEventReplyFn(
     // one in verbatim produces a double-`@` malformed Message-ID. The
     // X-Plot-Event-UID header below still carries the raw iCalUID unchanged
     // — only this synthetic Message-ID needs to be token-safe.
-    const seedMessageId = `<plot-cal-${iCalUID.replace(/[^A-Za-z0-9._-]/g, "-")}-${note.id}@plot.day>`;
+    const seedMessageId = `<plot-cal-${iCalUID.replace(
+      /[^A-Za-z0-9._-]/g,
+      "-"
+    )}-${note.id}@plot.day>`;
     const raw = buildNewEmailMessage({
-      to, cc, bcc, from, subject, body: note.content ?? "",
+      to: toHeaders,
+      cc: ccHeaders,
+      bcc: bccHeaders,
+      from,
+      subject,
+      body: note.content ?? "",
       extraHeaders: [`Message-ID: ${seedMessageId}`, uidHeader],
     });
-    const sent = await sendWithRetry(() => api.sendNewMessage(raw), "cal-reply");
-    if (!sent.ok) return { deliveryError: { code: sent.error.code, message: sent.error.message } };
+    const sent = await sendWithRetry(
+      () => api.sendNewMessage(raw),
+      "cal-reply"
+    );
+    if (!sent.ok)
+      return {
+        deliveryError: { code: sent.error.code, message: sent.error.message },
+      };
     sentId = sent.result.id;
-    await host.set(stateKey, { gmailThreadId: sent.result.threadId, seedMessageId });
+    await host.set(stateKey, {
+      gmailThreadId: sent.result.threadId,
+      seedMessageId,
+    });
     await host.set(`sent:${sentId}`, true);
   } else {
     const raw = buildReplyMessage({
-      to, cc, bcc, from, subject, body: note.content ?? "",
-      messageId: prior.seedMessageId, references: prior.seedMessageId,
+      to: toHeaders,
+      cc: ccHeaders,
+      bcc: bccHeaders,
+      from,
+      subject,
+      body: note.content ?? "",
+      messageId: prior.seedMessageId,
+      references: prior.seedMessageId,
       extraHeaders: [uidHeader],
     });
-    const sent = await sendWithRetry(() => api.sendMessage(raw, prior.gmailThreadId), "cal-reply");
-    if (!sent.ok) return { deliveryError: { code: sent.error.code, message: sent.error.message } };
+    const sent = await sendWithRetry(
+      () => api.sendMessage(raw, prior.gmailThreadId),
+      "cal-reply"
+    );
+    if (!sent.ok)
+      return {
+        deliveryError: { code: sent.error.code, message: sent.error.message },
+      };
     sentId = sent.result.id;
     await host.set(`sent:${sentId}`, true);
   }
@@ -2171,7 +2452,11 @@ async function fetchOriginalAttachments(
       const binary = atob(padded);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      attachments.push({ fileName: part.fileName, mimeType: part.mimeType, data: bytes });
+      attachments.push({
+        fileName: part.fileName,
+        mimeType: part.mimeType,
+        data: bytes,
+      });
     } catch (err) {
       console.error(
         `[gmail] onCreateLink(forward): failed to fetch attachment ${part.partId} on message ${messageId}:`,
@@ -2218,19 +2503,25 @@ async function onCreateLinkForwardFn(
   const to: string[] = [];
   const cc: string[] = [];
   const bcc: string[] = [];
-  const addRecipient = (raw: string | null | undefined, role: string | null) => {
+  const addRecipient = (
+    raw: string | null | undefined,
+    role: string | null,
+    name: string | null
+  ) => {
     if (!raw) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const key = trimmed.toLowerCase();
+    const key = canonicalizeEmail(trimmed);
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
-    if (role === "cc") cc.push(trimmed);
-    else if (role === "bcc") bcc.push(trimmed);
-    else to.push(trimmed);
+    const formatted = formatFromHeader(trimmed, name ?? null);
+    if (role === "cc") cc.push(formatted);
+    else if (role === "bcc") bcc.push(formatted);
+    else to.push(formatted);
   };
-  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role);
-  for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
+  for (const r of draft.recipients ?? [])
+    addRecipient(r.externalAccountId, r.role, r.name);
+  for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (to.length + cc.length + bcc.length === 0) {
     console.error(
@@ -2405,21 +2696,24 @@ export async function onCreateLinkFn(
   const bccEmails: string[] = [];
   const addRecipient = (
     raw: string | null | undefined,
-    role: string | null
+    role: string | null,
+    name: string | null
   ) => {
     if (!raw) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const key = trimmed.toLowerCase();
+    const key = canonicalizeEmail(trimmed);
     if (seenEmails.has(key)) return;
     seenEmails.add(key);
-    if (role === "cc") ccEmails.push(trimmed);
-    else if (role === "bcc") bccEmails.push(trimmed);
-    else toEmails.push(trimmed);
+    const formatted = formatFromHeader(trimmed, name ?? null);
+    if (role === "cc") ccEmails.push(formatted);
+    else if (role === "bcc") bccEmails.push(formatted);
+    else toEmails.push(formatted);
   };
 
-  for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role);
-  for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
+  for (const r of draft.recipients ?? [])
+    addRecipient(r.externalAccountId, r.role, r.name);
+  for (const email of draft.inviteEmails ?? []) addRecipient(email, null, null);
 
   if (toEmails.length + ccEmails.length + bccEmails.length === 0) {
     console.error(

@@ -1,4 +1,8 @@
 import type { ResolvedRecipient } from "../plot";
+import { baseEmail, canonicalizeEmail } from "./canonical-email";
+
+/** A resolved outbound recipient: address plus optional display name. */
+export type Addressee = { address: string; name: string | null };
 
 /**
  * Outbound recipient lists for a reply, split by header role. `bcc` recipients
@@ -6,9 +10,9 @@ import type { ResolvedRecipient } from "../plot";
  * they are never exposed to the To/Cc recipients.
  */
 export type ReplyRecipients = {
-  to: string[];
-  cc: string[];
-  bcc: string[];
+  to: Addressee[];
+  cc: Addressee[];
+  bcc: Addressee[];
   /**
    * True when the note carried an explicit, user-curated recipient set (either
    * platform-resolved `recipients` or a connector-resolved access-contact
@@ -27,17 +31,32 @@ function roleOf(role: string | null | undefined, fallback: Role): Role {
   return role === "cc" || role === "bcc" || role === "to" ? role : fallback;
 }
 
-/** Case-insensitive de-dupe preserving first-seen order. */
-function dedupe(addresses: string[]): string[] {
+/** Case- and alias-insensitive de-dupe preserving first-seen order. */
+function dedupe(addressees: Addressee[]): Addressee[] {
   const seen = new Set<string>();
-  const out: string[] = [];
-  for (const a of addresses) {
-    const key = a.toLowerCase();
+  const out: Addressee[] = [];
+  for (const a of addressees) {
+    const key = canonicalizeEmail(a.address);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(a);
   }
   return out;
+}
+
+/**
+ * Build a self-address predicate that recognizes Gmail alias variants.
+ *
+ * A header (or a curated recipient) may address the user through a dot or
+ * `+tag` variant that never string-matches the connected mailbox. Comparing on
+ * {@link baseEmail} folds every such variant onto one key, so all of the user's
+ * own aliases are recognized as self. Non-Gmail domains are unaffected: their
+ * base form is just the lowercased address.
+ */
+function selfMatcher(selfEmails: Set<string>): (email: string) => boolean {
+  const bases = new Set<string>();
+  for (const e of selfEmails) bases.add(baseEmail(e));
+  return (email: string) => bases.has(baseEmail(email));
 }
 
 /**
@@ -50,26 +69,31 @@ function dedupe(addresses: string[]): string[] {
  *
  * 1. **Platform-resolved recipients** (`recipients` non-null): the note carried
  *    a curated recipient set and the runtime resolved it to addresses + roles,
- *    with the acting user's own identities already removed. This is
- *    authoritative — the message headers are NOT consulted, so a recipient the
- *    user added who was never on the original message is still addressed, and a
- *    participant the user dropped is excluded. Roles place each address in
- *    To/Cc/Bcc.
- *
+ *    with the acting user's own identities already removed. Authoritative. This
+ *    is the only case that can carry a display `name` — it comes from the
+ *    resolved contact — so connectors relying on the other cases get `name: null`.
  * 2. **Access-contact fallback** (`recipients` null, `accessContactEmails`
- *    non-null): the runtime didn't populate `recipients` (e.g. an older
- *    platform) but the connector resolved the note's access list to emails.
- *    Header participants are narrowed to that set, and curated addresses not on
- *    the message are folded into `To`. Self is excluded via `selfEmails`.
- *
+ *    non-null): header participants are narrowed to that set; curated addresses
+ *    not on the message are folded into `To`. Self is excluded via `selfEmails`.
  * 3. **Reply-all** (`recipients` null, `accessContactEmails` null): reply to the
- *    original message's participants (From ∪ To → To, Cc → Cc), minus self.
+ *    original participants (From ∪ To → To, Cc → Cc), minus self.
+ *
+ * **Self-reply fallback:** a self-email thread — a message you sent to your own
+ * or another linked address — otherwise resolves to no recipients, because
+ * every original participant is you and each case above removes self. When the
+ * result is empty AND the original message had no non-self To/Cc participant
+ * (i.e. this is a genuine self-thread, not a mixed thread narrowed to self) AND
+ * every original sender is self, the reply is addressed back to the original
+ * sender (`headerFrom`) so it stays deliverable. The connector still sends as
+ * its own mailbox — for the copy you received in, that mailbox is the original
+ * recipient.
  *
  * @param recipients platform-resolved curated recipients (`note.recipients`), or null
  * @param accessContactEmails note access list resolved to lowercased emails, or null (fallback only)
- * @param headerTo original message From ∪ To addresses (any case)
- * @param headerCc original message Cc addresses (any case)
- * @param selfEmails the acting user's own addresses (lowercased) — excluded in the header-driven cases
+ * @param headerTo original message From ∪ To addresses (any case); may include self, which the header-driven cases exclude
+ * @param headerCc original message Cc addresses (any case); may include self, which the header-driven cases exclude
+ * @param selfEmails the acting user's own addresses (any case) — compared via baseEmail, so Gmail dot/+tag variants of them are recognized and excluded
+ * @param headerFrom original message From address(es) (any case), NOT self-filtered — drives the self-reply fallback
  * @param defaultRole role for recipients whose `role` is null (defaults to `"to"`)
  */
 export function resolveOutboundReplyRecipients(args: {
@@ -78,6 +102,7 @@ export function resolveOutboundReplyRecipients(args: {
   headerTo: string[];
   headerCc: string[];
   selfEmails: Set<string>;
+  headerFrom?: string[];
   defaultRole?: Role;
 }): ReplyRecipients {
   const {
@@ -86,48 +111,105 @@ export function resolveOutboundReplyRecipients(args: {
     headerTo,
     headerCc,
     selfEmails,
+    headerFrom = [],
     defaultRole = "to",
   } = args;
 
-  // Case 1: platform-resolved curated recipients (authoritative).
-  if (recipients !== null) {
-    const to: string[] = [];
-    const cc: string[] = [];
-    const bcc: string[] = [];
-    for (const r of recipients) {
-      if (!r.externalAccountId) continue;
-      const bucket = roleOf(r.role, defaultRole);
-      (bucket === "bcc" ? bcc : bucket === "cc" ? cc : to).push(
-        r.externalAccountId
+  const isSelf = selfMatcher(selfEmails);
+
+  const base = resolveBase();
+
+  // Self-reply fallback: a self-email thread — a message you sent to your own
+  // or another linked address — otherwise resolves to no recipients, because
+  // every original participant is you and each case above removes self. When
+  // the result is empty AND the original message had no non-self To/Cc
+  // participant (i.e. a genuine self-thread, not a mixed thread the user
+  // narrowed to themselves) AND every original sender is self, address the
+  // reply back to the original sender (`headerFrom`) so it stays deliverable.
+  // The connector still sends as its own mailbox — for the copy you received
+  // in, that mailbox is the original recipient. Self is judged by `selfEmails`
+  // here (not by assuming the connector pre-filtered the headers), so this
+  // works whether or not a given connector strips self before calling.
+  const hasNonSelfHeaderParticipant =
+    headerTo.some((email) => !isSelf(email)) ||
+    headerCc.some((email) => !isSelf(email));
+  if (
+    base.to.length === 0 &&
+    base.cc.length === 0 &&
+    base.bcc.length === 0 &&
+    !hasNonSelfHeaderParticipant &&
+    headerFrom.length > 0 &&
+    headerFrom.every(isSelf)
+  ) {
+    const fallbackTo: Addressee[] = headerFrom.map((address) => ({
+      address,
+      name: null,
+    }));
+    return splitPrecedence(dedupe(fallbackTo), [], [], base.curated);
+  }
+
+  return base;
+
+  function resolveBase(): ReplyRecipients {
+    // Case 1: platform-resolved curated recipients (authoritative). Names come
+    // from the platform-resolved contact, so they're carried through.
+    //
+    // Self is filtered HERE as well as in the header-driven cases below. The
+    // runtime removes the user's linked identities, but it can only remove
+    // contacts it knows are the user — an alias that resolved to its own
+    // contact row survives that pass and would otherwise be sent a copy of the
+    // user's own reply.
+    if (recipients !== null) {
+      const to: Addressee[] = [];
+      const cc: Addressee[] = [];
+      const bcc: Addressee[] = [];
+      for (const r of recipients) {
+        if (!r.externalAccountId) continue;
+        if (isSelf(r.externalAccountId)) continue;
+        const bucket = roleOf(r.role, defaultRole);
+        const addressee: Addressee = { address: r.externalAccountId, name: r.name };
+        (bucket === "bcc" ? bcc : bucket === "cc" ? cc : to).push(addressee);
+      }
+      return splitPrecedence(to, cc, bcc, true);
+    }
+
+    // Case 2: access-contact constraint resolved by the connector (fallback).
+    // Addresses come from message headers, which carry no display name.
+    if (accessContactEmails !== null) {
+      const allow = (email: string) =>
+        !isSelf(email) && accessContactEmails.has(email.toLowerCase());
+      const to: Addressee[] = headerTo
+        .filter(allow)
+        .map((address) => ({ address, name: null }));
+      const cc: Addressee[] = headerCc
+        .filter(allow)
+        .map((address) => ({ address, name: null }));
+      // Fold in curated addresses that weren't on the original message.
+      const headerEmails = new Set(
+        [...headerTo, ...headerCc].map((e) => e.toLowerCase())
       );
+      const already = new Set(
+        [...to, ...cc].map((a) => a.address.toLowerCase())
+      );
+      for (const email of accessContactEmails) {
+        if (isSelf(email)) continue;
+        if (headerEmails.has(email)) continue;
+        if (already.has(email)) continue;
+        to.push({ address: email, name: null });
+      }
+      return splitPrecedence(to, cc, [], true);
     }
-    return splitPrecedence(to, cc, bcc, true);
-  }
 
-  // Case 2: access-contact constraint resolved by the connector (fallback).
-  if (accessContactEmails !== null) {
-    const allow = (email: string) =>
-      !selfEmails.has(email.toLowerCase()) &&
-      accessContactEmails.has(email.toLowerCase());
-    const to = headerTo.filter(allow);
-    const cc = headerCc.filter(allow);
-    // Fold in curated addresses that weren't on the original message.
-    const headerEmails = new Set(
-      [...headerTo, ...headerCc].map((e) => e.toLowerCase())
+    // Case 3: reply-all — every original participant except self. Addresses
+    // come from message headers, which carry no display name.
+    const notSelf = (email: string) => !isSelf(email);
+    return splitPrecedence(
+      headerTo.filter(notSelf).map((address) => ({ address, name: null })),
+      headerCc.filter(notSelf).map((address) => ({ address, name: null })),
+      [],
+      false
     );
-    const already = new Set([...to, ...cc].map((e) => e.toLowerCase()));
-    for (const email of accessContactEmails) {
-      if (selfEmails.has(email)) continue;
-      if (headerEmails.has(email)) continue;
-      if (already.has(email)) continue;
-      to.push(email);
-    }
-    return splitPrecedence(to, cc, [], true);
   }
-
-  // Case 3: reply-all — every original participant except self.
-  const notSelf = (email: string) => !selfEmails.has(email.toLowerCase());
-  return splitPrecedence(headerTo.filter(notSelf), headerCc.filter(notSelf), [], false);
 }
 
 /**
@@ -136,18 +218,18 @@ export function resolveOutboundReplyRecipients(args: {
  * never leaks (a Bcc address must not also sit in To/Cc).
  */
 function splitPrecedence(
-  to: string[],
-  cc: string[],
-  bcc: string[],
+  to: Addressee[],
+  cc: Addressee[],
+  bcc: Addressee[],
   curated: boolean
 ): ReplyRecipients {
-  const bccSet = new Set(bcc.map((e) => e.toLowerCase()));
-  const ccSet = new Set(cc.map((e) => e.toLowerCase()));
+  const bccSet = new Set(bcc.map((a) => a.address.toLowerCase()));
+  const ccSet = new Set(cc.map((a) => a.address.toLowerCase()));
   return {
     to: dedupe(to).filter(
-      (e) => !bccSet.has(e.toLowerCase()) && !ccSet.has(e.toLowerCase())
+      (a) => !bccSet.has(a.address.toLowerCase()) && !ccSet.has(a.address.toLowerCase())
     ),
-    cc: dedupe(cc).filter((e) => !bccSet.has(e.toLowerCase())),
+    cc: dedupe(cc).filter((a) => !bccSet.has(a.address.toLowerCase())),
     bcc: dedupe(bcc),
     curated,
   };

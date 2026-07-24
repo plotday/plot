@@ -81,7 +81,6 @@ describe("processConversationsFn — calendar-thread bundling", () => {
       messages: [
         baseMessage({
           meetingMessageType: "meetingRequest",
-          meetingRequestType: "fullUpdate",
           event: { iCalUId: "uid-1" },
         }),
       ],

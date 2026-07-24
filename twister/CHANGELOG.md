@@ -1,5 +1,27 @@
 # @plotday/twister
 
+## 0.84.0
+
+### Added
+
+- `canonicalizeEmail()` and `baseEmail()` for Gmail-scoped address
+
+## 0.83.0
+
+### Changed
+
+- resolveOutboundReplyRecipients now returns recipients as { address, name } objects instead of bare address strings, so email connectors can include display names in outbound To/Cc/Bcc headers. ([#332](https://github.com/plotday/plot/pull/332) [`e12bb04`](https://github.com/plotday/plot/commit/e12bb04cf294fd200478b0d677aa272d0f087b1c))
+
+## 0.82.0
+
+### Added
+
+- `NewLink.updateOnly` — save a link only as an update to a thread that already exists for its `source`/`sources`, never creating a new one. When no matching thread is found the link is skipped and `saveLink()` returns `null`. Use it for signals that only make sense as an update to an item the user already has (e.g. a calendar cancellation), so they never materialize a standalone thread for something that was never imported. ([#329](https://github.com/plotday/plot/pull/329) [`aa0ccdc`](https://github.com/plotday/plot/commit/aa0ccdcb12fbb74b79fcdbb0c6915ab24bb0aa8d))
+
+### Fixed
+
+- a reply in a self-addressed thread (every participant is one of the sender's own linked addresses) resolved to no recipients and failed to send. `resolveOutboundReplyRecipients` now accepts an optional `headerFrom` input and, when the result would otherwise be empty only because every participant is self, addresses the reply back to the original sender so it stays deliverable. ([#328](https://github.com/plotday/plot/pull/328) [`c517c4e`](https://github.com/plotday/plot/commit/c517c4e85627c3eec197075df3941446a8c0a81a))
+
 ## 0.81.0
 
 ### Added

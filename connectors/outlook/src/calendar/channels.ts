@@ -8,7 +8,7 @@ import { GraphApi } from "./graph-api";
 // ---------------------------------------------------------------------------
 
 export const OUTLOOK_CALENDAR_SCOPE =
-  "https://graph.microsoft.com/calendars.readwrite";
+  "https://graph.microsoft.com/Calendars.ReadWrite";
 
 // ---------------------------------------------------------------------------
 // Calendar type

@@ -64,8 +64,8 @@ export interface Product {
 }
 
 export const CONTACTS_SCOPES = [
-  "https://graph.microsoft.com/people.read",
-  "https://graph.microsoft.com/contacts.read",
+  "https://graph.microsoft.com/People.Read",
+  "https://graph.microsoft.com/Contacts.Read",
 ];
 
 const SYNTHETIC_CONTACTS_CHANNEL: Channel = {

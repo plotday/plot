@@ -1099,6 +1099,22 @@ export enum ActorType {
  * ```
  */
 /**
+ * How much authority a connector's observed display name carries.
+ *
+ * A name is only as trustworthy as its source. The name a person puts on their
+ * own outgoing mail is a self-assertion; the name a third party typed into a
+ * To/Cc header is a guess that may be a nickname, a company, a role, or an
+ * unsubstituted mail-merge placeholder. Plot lets a higher tier replace a lower
+ * one, and within a tier only accepts a strict refinement of the stored name.
+ *
+ * - `"self"` — observed in the From header of a message sent BY this contact.
+ * - `"third-party"` — observed in To/Cc, an attendee list, or any other place
+ *   where someone else supplied the name. **This is the default.**
+ * - `"directory"` — bulk import from an address book or workspace directory.
+ */
+export type NameTier = "self" | "third-party" | "directory";
+
+/**
  * Common fields shared by all NewContact variants.
  */
 type NewContactBase = {
@@ -1155,6 +1171,12 @@ type NewContactBase = {
    * treated as false (normal identity trust).
    */
   automated?: boolean;
+  /**
+   * Authority of `name`. Omitted ⇒ `"third-party"`, the safe default: an
+   * un-updated connector can never over-claim and overwrite a better name.
+   * Set `"self"` only when the name came from the contact's own From header.
+   */
+  nameTier?: NameTier;
 };
 
 /**
@@ -1366,6 +1388,19 @@ export type NewLink = Partial<
      * {@link Connector.autoThreading}.
      */
     autoThread?: AutoThreadConfig | null;
+    /**
+     * Apply this link only as an UPDATE to a thread that already exists for its
+     * `source`/`sources`; never CREATE a new thread. When no matching thread is
+     * found, `saveLink()`/`saveLinks()` skip the link entirely and return
+     * `null` for it.
+     *
+     * Use for signals that are only meaningful as an update to an item the user
+     * already has — most notably a calendar cancellation, which should annotate
+     * an event that was imported, never materialize a standalone "cancelled"
+     * thread for an occurrence the user never saw. Leave undefined/false for
+     * normal links, which create the thread when absent.
+     */
+    updateOnly?: boolean;
   };
 
 /**

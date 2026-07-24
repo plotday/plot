@@ -3,6 +3,7 @@ import {
   resolveOutboundReplyRecipients,
   type Action,
   type Actor,
+  type Addressee,
   type CreateLinkDraft,
   type NewContact,
   type NoteWriteBackResult,
@@ -68,10 +69,13 @@ export function mailChannelRawId(thread: Thread): string {
 /**
  * Display names for the addresses a reply might go to, keyed by lowercased
  * email: the resolved message's own headers first, then the thread's roster.
- * `resolveOutboundReplyRecipients` works in bare addresses (every email
- * connector shares it), so names are re-attached here rather than lost — a
- * reply addressed to `Jane Doe <jane@…>` reads the same as one sent from
- * Apple Mail.
+ * `resolveOutboundReplyRecipients` only attaches a display name for its
+ * curated-recipient case (`note.recipients` resolved from a Plot contact) —
+ * its header-driven cases take bare address strings in and return `name:
+ * null`, by design (see that function's JSDoc). This fills that gap for the
+ * header-derived cases so a reply addressed to `Jane Doe <jane@…>` still
+ * reads the same as one sent from Apple Mail; the helper's own resolved name
+ * (when present) always wins over this fallback.
  */
 function displayNames(
   latest: Pick<ImapMessage, "from" | "to" | "cc"> | null,
@@ -90,10 +94,13 @@ function displayNames(
   return names;
 }
 
-/** Pair an address with its display name when one is known. */
-function withName(address: string, names: Map<string, string>): SmtpAddress {
-  const name = names.get(address.toLowerCase());
-  return name ? { address, name } : { address };
+/**
+ * Convert a resolved `Addressee` to the SMTP tool's address shape, falling
+ * back to `names` (header/contact-derived) when the helper returned no name.
+ */
+function toSmtpAddress(a: Addressee, names: Map<string, string>): SmtpAddress {
+  const name = a.name ?? names.get(a.address.toLowerCase()) ?? null;
+  return name ? { address: a.address, name } : { address: a.address };
 }
 
 /** File ids of a note's `ActionType.file` actions, for outbound attachment collection. */
@@ -187,9 +194,9 @@ export async function onNoteCreatedFn(
   });
   const names = displayNames(latest, thread);
   const recipients: OutboundRecipients = {
-    to: resolvedRecipients.to.map((e) => withName(e, names)),
-    cc: resolvedRecipients.cc.map((e) => withName(e, names)),
-    bcc: resolvedRecipients.bcc.map((e) => withName(e, names)),
+    to: resolvedRecipients.to.map((a) => toSmtpAddress(a, names)),
+    cc: resolvedRecipients.cc.map((a) => toSmtpAddress(a, names)),
+    bcc: resolvedRecipients.bcc.map((a) => toSmtpAddress(a, names)),
   };
   if (isEmpty(recipients)) {
     // Under the message sharing model a user can write a note on a mail

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ResolvedRecipient } from "../plot";
+import { type ResolvedRecipient, Uuid } from "../plot";
 import { resolveOutboundReplyRecipients } from "./reply-recipients";
 
 const rcpt = (
@@ -29,10 +29,38 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin, beth]);
+      expect(r.to).toEqual([
+        { address: tobin, name: null },
+        { address: beth, name: null },
+      ]);
       expect(r.cc).toEqual([]);
       expect(r.bcc).toEqual([]);
       expect(r.curated).toBe(true);
+    });
+
+    it("carries platform-resolved recipient names (Case 1)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          {
+            id: Uuid.Generate(),
+            name: "Casey Morgan",
+            externalAccountId: "dw@x.com",
+            role: "to",
+          },
+          {
+            id: Uuid.Generate(),
+            name: null,
+            externalAccountId: "no-name@x.com",
+            role: "cc",
+          },
+        ],
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set(),
+      });
+      expect(result.to).toEqual([{ address: "dw@x.com", name: "Casey Morgan" }]);
+      expect(result.cc).toEqual([{ address: "no-name@x.com", name: null }]);
     });
 
     it("ignores the message headers entirely — a dropped participant is not re-added", () => {
@@ -44,7 +72,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [anthropic],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin]);
+      expect(r.to).toEqual([{ address: tobin, name: null }]);
       expect(r.cc).toEqual([]);
     });
 
@@ -56,9 +84,9 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin]);
-      expect(r.cc).toEqual([beth]);
-      expect(r.bcc).toEqual(["x@y.com"]);
+      expect(r.to).toEqual([{ address: tobin, name: null }]);
+      expect(r.cc).toEqual([{ address: beth, name: null }]);
+      expect(r.bcc).toEqual([{ address: "x@y.com", name: null }]);
     });
 
     it("defaults null role to To (or the provided default)", () => {
@@ -70,7 +98,7 @@ describe("resolveOutboundReplyRecipients", () => {
           headerCc: [],
           selfEmails: new Set(),
         }).to
-      ).toEqual([tobin]);
+      ).toEqual([{ address: tobin, name: null }]);
     });
 
     it("a bcc address never also appears in To/Cc (no leak)", () => {
@@ -81,7 +109,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set(),
       });
-      expect(r.bcc).toEqual([tobin]);
+      expect(r.bcc).toEqual([{ address: tobin, name: null }]);
       expect(r.to).toEqual([]);
     });
 
@@ -107,7 +135,10 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox, workEmail]),
       });
-      expect(r.to).toEqual([tobin, beth]);
+      expect(r.to).toEqual([
+        { address: tobin, name: null },
+        { address: beth, name: null },
+      ]);
       expect(r.curated).toBe(true);
     });
 
@@ -119,7 +150,7 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([tobin]);
+      expect(r.to).toEqual([{ address: tobin, name: null }]);
     });
 
     it("private note (self only) yields no recipients but stays curated", () => {
@@ -145,9 +176,20 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [beth],
         selfEmails: new Set([mailbox]),
       });
-      expect(r.to).toEqual([anthropic]);
-      expect(r.cc).toEqual([beth]);
+      expect(r.to).toEqual([{ address: anthropic, name: null }]);
+      expect(r.cc).toEqual([{ address: beth, name: null }]);
       expect(r.curated).toBe(false);
+    });
+
+    it("header-fallback recipients have null names (Case 3 reply-all)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: null,
+        headerTo: ["bob@x.com"],
+        headerCc: [],
+        selfEmails: new Set(),
+      });
+      expect(result.to).toEqual([{ address: "bob@x.com", name: null }]);
     });
 
     it("de-dupes an address that appears in both To and Cc (kept in Cc precedence... actually To wins order)", () => {
@@ -159,8 +201,164 @@ describe("resolveOutboundReplyRecipients", () => {
         headerCc: [tobin],
         selfEmails: new Set(),
       });
-      expect(r.cc).toEqual([tobin]);
+      expect(r.cc).toEqual([{ address: tobin, name: null }]);
       expect(r.to).toEqual([]);
+    });
+  });
+
+  describe("self-reply fallback (headerFrom all self)", () => {
+    it("self→self single address addresses the original sender", () => {
+      // Note-to-self: connector strips the self From/To, leaving empty headers;
+      // headerFrom carries the raw original sender (still self).
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: null,
+        headerFrom: [mailbox],
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(r.to).toEqual([{ address: mailbox, name: null }]);
+      expect(r.cc).toEqual([]);
+      expect(r.bcc).toEqual([]);
+    });
+
+    it("A→B both linked (curated) addresses the original sender", () => {
+      // Cross-connector self-email: both identities are self, so the curated
+      // resolution empties out; fall back to the original sender.
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox, workEmail]),
+        headerFrom: [workEmail],
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([{ address: workEmail, name: null }]);
+      expect(r.curated).toBe(true);
+    });
+
+    it("does NOT fall back when the original sender is external (private note)", () => {
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([workEmail]),
+        headerFrom: [anthropic],
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([]);
+      expect(r.curated).toBe(true);
+    });
+
+    it("does NOT fall back when a non-self participant was narrowed out", () => {
+      // You emailed yourself AND an external contact, then restricted the note
+      // to just yourself: stays private, must not email your own address.
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox]),
+        headerFrom: [mailbox],
+        headerTo: [anthropic],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(r.to).toEqual([]);
+    });
+
+    it("without headerFrom, an all-self result stays empty (unchanged)", () => {
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([workEmail]),
+        headerTo: [anthropic, mailbox],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([]);
+    });
+
+    it("fires even when headerTo/headerCc still contain self (unfiltered, Outlook shape)", () => {
+      // Outlook passes raw headers (self not pre-stripped); the fallback must
+      // still recognize a self-only thread via selfEmails.
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox, workEmail]),
+        headerFrom: [workEmail],
+        headerTo: [mailbox, workEmail],
+        headerCc: [],
+        selfEmails: new Set([mailbox, workEmail]),
+      });
+      expect(r.to).toEqual([{ address: workEmail, name: null }]);
+      expect(r.curated).toBe(true);
+    });
+
+    it("still does NOT fire when an unfiltered header holds a non-self participant", () => {
+      const r = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: new Set([mailbox]),
+        headerFrom: [mailbox],
+        headerTo: [mailbox, anthropic],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(r.to).toEqual([]);
+    });
+  });
+
+  describe("self-exclusion across Gmail alias variants", () => {
+    const mailbox = "kris.braun@gmail.com";
+
+    it("drops a dot-variant of self from curated recipients (Case 1)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          { externalAccountId: "krisbraun@gmail.com", name: "Kris", role: "to" },
+          { externalAccountId: "annie@example.com", name: "Annie", role: "to" },
+        ] as never,
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(result.to.map((a) => a.address)).toEqual(["annie@example.com"]);
+      expect(result.curated).toBe(true);
+    });
+
+    it("drops a +tag variant of self from curated recipients (Case 1)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          { externalAccountId: "kris.braun+plot@gmail.com", name: "Kris", role: "cc" },
+          { externalAccountId: "annie@example.com", name: "Annie", role: "to" },
+        ] as never,
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(result.cc).toEqual([]);
+      expect(result.to.map((a) => a.address)).toEqual(["annie@example.com"]);
+    });
+
+    it("keeps a non-gmail +tag address that merely resembles self", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          { externalAccountId: "finance+ap@acme.com", name: "AP", role: "to" },
+        ] as never,
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set(["finance@acme.com"]),
+      });
+      expect(result.to.map((a) => a.address)).toEqual(["finance+ap@acme.com"]);
+    });
+
+    it("excludes a dot-variant of self in reply-all (Case 3)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: null,
+        headerTo: ["krisbraun@gmail.com", "annie@example.com"],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(result.to.map((a) => a.address)).toEqual(["annie@example.com"]);
     });
   });
 });
