@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImapMessage } from "@plotday/twister/tools/imap";
 
-// Mocked so mailInitialSyncTask/mailPoll/mailPushDrain tests below never
-// attempt a real IMAP session — only the mail sync lock's decision logic
-// (acquire/skip/release) is under test here, not the merged sync pass itself
-// (covered by sync.test.ts). Hoisted by vitest above the imports below
-// regardless of source position.
+// Mocked so the mailSyncTask/mailSyncDrain/mailPoll/mailPushDrain tests below
+// never attempt a real IMAP session — what's under test here is the
+// connection-level scheduling (which channels a pass covers, which lock/drain/
+// poll keys it uses), not the merged sync pass itself (covered by
+// mail/sync.test.ts). Hoisted by vitest above the imports below regardless of
+// source position.
 vi.mock("./mail/sync", () => ({
   mailSync: vi.fn(),
 }));
@@ -409,49 +410,65 @@ describe("Apple.mailWritebackDrain", () => {
   });
 });
 
-describe("Apple mail sync lock", () => {
-  const channelId = "mail:INBOX";
-  const lockKey = `mail_sync_${channelId}`;
+describe("Apple mail sync — connection-level scheduling", () => {
+  const INBOX = "mail:INBOX";
+  const ARCHIVE = "mail:Archive";
+  // ONE lock for the whole connection, not one per channel: two overlapping
+  // passes would each read-modify-write the single `mail:state` document and
+  // the later writer would restore the other mailbox's pre-pass cursor.
+  const LOCK_KEY = "mail_sync";
 
   beforeEach(() => {
     vi.mocked(mailSync).mockReset().mockResolvedValue(undefined);
   });
 
   /**
-   * Fake self for `mailInitialSyncTask`/`mailPoll`/`mailPushDrain`. Copies
-   * the real (private) `buildMailHost`, `armMailWatch`, and
-   * `scheduleMailPoll` onto a plain object the same way other describe
-   * blocks above copy `buildMailHost` — these aren't inherited by a bare
-   * object literal, so we pull them off `Apple.prototype` and let them run
-   * for real against stubbed primitives (`get`/`set`/`clear`, `callback`,
+   * Fake self for `mailSyncTask`/`mailSyncDrain`/`mailPoll`/`mailPushed`/
+   * `mailPushDrain`. Copies the real (private) `buildMailHost`,
+   * `enabledMailChannels`, `armMailWatches`, and `scheduleMailPoll` onto a
+   * plain object the same way other describe blocks above copy
+   * `buildMailHost` — these aren't inherited by a bare object literal, so we
+   * pull them off `Apple.prototype` and let them run for real against stubbed
+   * primitives (`get`/`set`/`clear`, `tools.store.list`, `callback`,
    * `scheduleRecurring`, `scheduleDrain`, `tools.imap.watch`,
-   * `tools.options`). This lets the tests below observe the REAL
-   * downstream effects of "scheduleMailPoll/armMailWatch still ran" (a
-   * `scheduleRecurring` call under the `mailpoll:` key, an `imap.watch`
-   * call) rather than asserting against a stubbed-out spy standing in for
-   * those helpers. `mailSync` is mocked at the module level (see top of
-   * file) so no real IMAP session is opened.
+   * `tools.options`). This lets the tests below observe the REAL downstream
+   * effects of "scheduleMailPoll/armMailWatches still ran" (a
+   * `scheduleRecurring` call under the `mailpoll` key, one `imap.watch` call
+   * per enabled channel) rather than asserting against stubbed-out spies.
+   * `mailSync` is mocked at the module level (see top of file) so no real IMAP
+   * session is opened.
+   *
+   * `channels` seeds the `mail:enabled_<channelId>` markers the connector
+   * enumerates to build the connection's channel list.
    */
   function makeSelf(opts: {
-    enabled?: boolean;
+    channels?: string[];
     acquireLockResult?: boolean;
     initialStore?: Record<string, unknown>;
   }) {
+    const enabled = opts.channels ?? [INBOX];
     const store = new Map<string, unknown>(
       Object.entries({
-        [`mail:enabled_${channelId}`]: opts.enabled ?? true,
+        ...Object.fromEntries(enabled.map((id) => [`mail:enabled_${id}`, true])),
         ...opts.initialStore,
       })
     );
+    // Ordered log of the lock acquire and every watch arm, so a test can prove
+    // the poll re-arms watches BEFORE it consults the lock.
+    const order: string[] = [];
     const acquireLockCalls: Array<{ key: string; ttlMs: number }> = [];
     const releaseLockCalls: string[] = [];
     const acquireLock = vi.fn(async (key: string, ttlMs: number) => {
+      order.push(`acquireLock:${key}`);
       acquireLockCalls.push({ key, ttlMs });
       return opts.acquireLockResult ?? true;
     });
     const releaseLock = vi.fn(async (key: string) => {
       releaseLockCalls.push(key);
     });
+    const list = vi.fn(async (prefix: string) =>
+      [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
 
     const scheduleDrainCalls: Array<{
       key: string;
@@ -475,50 +492,55 @@ describe("Apple mail sync lock", () => {
       }
     );
 
-    const callback = vi.fn(async (..._args: unknown[]) => ({
-      __callbackToken: true,
-    }));
+    const callbackCalls: unknown[][] = [];
+    const callback = vi.fn(async (...args: unknown[]) => {
+      callbackCalls.push(args);
+      return { __callbackToken: true };
+    });
+    const runTaskCalls: unknown[] = [];
+    const runTask = vi.fn(async (cb: unknown) => {
+      runTaskCalls.push(cb);
+    });
 
     const watchCalls: Array<{ channelId: string; config: unknown }> = [];
     const imapWatch = vi.fn(async (id: string, config: unknown) => {
+      order.push(`watch:${id}`);
       watchCalls.push({ channelId: id, config });
     });
 
-    const buildMailHost = (
-      Apple.prototype as unknown as { buildMailHost: () => unknown }
-    ).buildMailHost;
-    const armMailWatch = (
-      Apple.prototype as unknown as {
-        armMailWatch: (id: string) => Promise<void>;
-      }
-    ).armMailWatch;
-    const scheduleMailPoll = (
-      Apple.prototype as unknown as {
-        scheduleMailPoll: (id: string) => Promise<void>;
-      }
-    ).scheduleMailPoll;
+    function priv<T>(name: string): T {
+      return (Apple.prototype as unknown as Record<string, T>)[name];
+    }
 
     const self = {
-      buildMailHost,
-      armMailWatch,
-      scheduleMailPoll,
+      buildMailHost: priv<() => unknown>("buildMailHost"),
+      enabledMailChannels: priv<() => Promise<unknown>>("enabledMailChannels"),
+      armMailWatches: priv<(c: unknown) => Promise<void>>("armMailWatches"),
+      scheduleMailPoll: priv<() => Promise<void>>("scheduleMailPoll"),
+      mailSyncTask: Apple.prototype.mailSyncTask,
       mailPushDrain: Apple.prototype.mailPushDrain,
+      mailSyncDrain: Apple.prototype.mailSyncDrain,
+      mailPushed: Apple.prototype.mailPushed,
       tools: {
         options: { appleId: "me@icloud.com", appPassword: "pw" },
         imap: { watch: imapWatch },
         smtp: {},
         integrations: {},
         files: {},
-        store: { acquireLock, releaseLock },
+        store: { acquireLock, releaseLock, list },
       },
       get: async (key: string) => store.get(key),
       set: async (key: string, value: unknown) => {
         store.set(key, value);
       },
+      setMany: async (entries: [string, unknown][]) => {
+        for (const [key, value] of entries) store.set(key, value);
+      },
       clear: async (key: string) => {
         store.delete(key);
       },
       callback,
+      runTask,
       scheduleDrain,
       scheduleRecurring,
     } as unknown as Apple;
@@ -526,71 +548,114 @@ describe("Apple mail sync lock", () => {
     return {
       self,
       store,
+      order,
       acquireLockCalls,
       releaseLockCalls,
       scheduleDrainCalls,
       scheduleRecurringCalls,
+      callbackCalls,
+      runTaskCalls,
       watchCalls,
     };
   }
 
+  /** The channel list `mailSync` should receive, in its deterministic order. */
+  const BOTH_CHANNELS = [
+    { channelId: ARCHIVE, mailbox: "Archive" },
+    { channelId: INBOX, mailbox: "INBOX" },
+  ];
+
   describe("mailPoll", () => {
-    it("acquires the lock, runs the incremental sync once, and releases it", async () => {
+    it("takes ONE connection-level lock and hands mailSync every enabled channel", async () => {
       const { self, acquireLockCalls, releaseLockCalls } = makeSelf({
+        channels: [INBOX, ARCHIVE],
         acquireLockResult: true,
       });
 
-      await Apple.prototype.mailPoll.call(self, channelId);
+      await Apple.prototype.mailPoll.call(self);
 
+      // One lock key regardless of how many channels are enabled — two
+      // concurrent passes would clobber each other's `mail:state` cursors.
       expect(acquireLockCalls).toEqual([
-        { key: lockKey, ttlMs: 30 * 60 * 1000 },
+        { key: LOCK_KEY, ttlMs: 30 * 60 * 1000 },
       ]);
       expect(mailSync).toHaveBeenCalledTimes(1);
-      // The merged pass takes the list of channels to read, each carrying its
-      // raw IMAP mailbox (`parse(channelId).rawId`).
       expect(mailSync).toHaveBeenCalledWith(
         expect.anything(),
-        [{ channelId, mailbox: "INBOX" }],
+        BOTH_CHANNELS,
         undefined
       );
-      expect(releaseLockCalls).toEqual([lockKey]);
+      expect(releaseLockCalls).toEqual([LOCK_KEY]);
     });
 
-    it("re-arms the watch but skips the sync when another pass holds the lock", async () => {
-      const { self, watchCalls, releaseLockCalls } = makeSelf({
+    it("ignores the legacy per-channel argument deployed callbacks still carry", async () => {
+      const { self } = makeSelf({ channels: [INBOX, ARCHIVE] });
+
+      // A `mailpoll:mail:INBOX` task scheduled before this version still
+      // resolves by method name and passes its channel id. The pass must
+      // cover the whole connection anyway.
+      await Apple.prototype.mailPoll.call(self, INBOX);
+
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        BOTH_CHANNELS,
+        undefined
+      );
+    });
+
+    it("re-arms EVERY enabled channel's watch BEFORE consulting the lock", async () => {
+      const { self, order, watchCalls, releaseLockCalls } = makeSelf({
+        channels: [INBOX, ARCHIVE],
         acquireLockResult: false,
       });
 
-      await Apple.prototype.mailPoll.call(self, channelId);
+      await Apple.prototype.mailPoll.call(self);
 
       expect(mailSync).not.toHaveBeenCalled();
       // No lock we didn't take should be released.
       expect(releaseLockCalls).toEqual([]);
-      // The watch re-arm runs BEFORE the lock check, so it must still fire.
+      // A dropped IDLE watch must self-heal even while another pass holds the
+      // lock, so every watch arm precedes the acquire.
+      expect(order).toEqual([
+        `watch:${ARCHIVE}`,
+        `watch:${INBOX}`,
+        `acquireLock:${LOCK_KEY}`,
+      ]);
+      expect(watchCalls.map((c) => c.channelId)).toEqual([ARCHIVE, INBOX]);
+    });
+
+    it("watches each channel's own raw mailbox", async () => {
+      const { self, watchCalls } = makeSelf({ channels: [INBOX, ARCHIVE] });
+
+      await Apple.prototype.mailPoll.call(self);
+
       expect(watchCalls).toEqual([
-        expect.objectContaining({ channelId }),
+        expect.objectContaining({
+          channelId: ARCHIVE,
+          config: expect.objectContaining({ mailbox: "Archive" }),
+        }),
+        expect.objectContaining({
+          channelId: INBOX,
+          config: expect.objectContaining({ mailbox: "INBOX" }),
+        }),
       ]);
     });
 
-    it("releases the lock even when the incremental sync throws", async () => {
+    it("releases the lock even when the merged pass throws", async () => {
       const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
-      vi.mocked(mailSync).mockRejectedValueOnce(
-        new Error("IMAP timeout")
+      vi.mocked(mailSync).mockRejectedValueOnce(new Error("IMAP timeout"));
+
+      await expect(Apple.prototype.mailPoll.call(self)).rejects.toThrow(
+        "IMAP timeout"
       );
 
-      await expect(
-        Apple.prototype.mailPoll.call(self, channelId)
-      ).rejects.toThrow("IMAP timeout");
-
-      expect(releaseLockCalls).toEqual([lockKey]);
+      expect(releaseLockCalls).toEqual([LOCK_KEY]);
     });
 
-    it("does nothing when the channel is disabled", async () => {
-      const { self, acquireLockCalls, watchCalls } = makeSelf({
-        enabled: false,
-      });
+    it("does nothing when no mail channel is enabled", async () => {
+      const { self, acquireLockCalls, watchCalls } = makeSelf({ channels: [] });
 
-      await Apple.prototype.mailPoll.call(self, channelId);
+      await Apple.prototype.mailPoll.call(self);
 
       expect(acquireLockCalls).toEqual([]);
       expect(watchCalls).toEqual([]);
@@ -598,116 +663,315 @@ describe("Apple mail sync lock", () => {
     });
   });
 
+  describe("mailPushed", () => {
+    it("schedules the SINGLE connection-level drain whichever channel pushed", async () => {
+      const { self, scheduleDrainCalls } = makeSelf({
+        channels: [INBOX, ARCHIVE],
+      });
+
+      await Apple.prototype.mailPushed.call(self, INBOX);
+      await Apple.prototype.mailPushed.call(self, ARCHIVE);
+
+      // Both pushes coalesce onto one drain key, so a burst spanning folders
+      // folds into one merged pass.
+      expect(scheduleDrainCalls).toEqual([
+        {
+          key: "mail-push",
+          handler: Apple.prototype.mailPushDrain,
+          options: { delayMs: 2000, handlerArgs: [] },
+        },
+        {
+          key: "mail-push",
+          handler: Apple.prototype.mailPushDrain,
+          options: { delayMs: 2000, handlerArgs: [] },
+        },
+      ]);
+    });
+
+    it("ignores a push for a channel that was disabled since the watch was armed", async () => {
+      const { self, scheduleDrainCalls } = makeSelf({ channels: [] });
+
+      await Apple.prototype.mailPushed.call(self, INBOX);
+
+      expect(scheduleDrainCalls).toEqual([]);
+    });
+  });
+
   describe("mailPushDrain", () => {
-    it("acquires the lock, runs the incremental sync once, and releases it", async () => {
+    it("takes the connection-level lock and hands mailSync every enabled channel", async () => {
       const { self, acquireLockCalls, releaseLockCalls } = makeSelf({
+        channels: [INBOX, ARCHIVE],
         acquireLockResult: true,
       });
 
-      await Apple.prototype.mailPushDrain.call(self, [], channelId);
+      await Apple.prototype.mailPushDrain.call(self, []);
 
       expect(acquireLockCalls).toEqual([
-        { key: lockKey, ttlMs: 30 * 60 * 1000 },
+        { key: LOCK_KEY, ttlMs: 30 * 60 * 1000 },
       ]);
       expect(mailSync).toHaveBeenCalledTimes(1);
-      expect(releaseLockCalls).toEqual([lockKey]);
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        BOTH_CHANNELS,
+        undefined
+      );
+      expect(releaseLockCalls).toEqual([LOCK_KEY]);
     });
 
-    it("reschedules the drain instead of dropping it when another pass holds the lock", async () => {
+    it("reschedules the single drain instead of dropping it when another pass holds the lock", async () => {
       const { self, scheduleDrainCalls, releaseLockCalls } = makeSelf({
+        channels: [INBOX, ARCHIVE],
         acquireLockResult: false,
       });
 
-      await Apple.prototype.mailPushDrain.call(self, [], channelId);
+      await Apple.prototype.mailPushDrain.call(self, []);
 
       expect(mailSync).not.toHaveBeenCalled();
       expect(releaseLockCalls).toEqual([]);
       expect(scheduleDrainCalls).toEqual([
         {
-          key: `mail-push:${channelId}`,
+          key: "mail-push",
           handler: Apple.prototype.mailPushDrain,
-          options: { delayMs: 2000, handlerArgs: [channelId] },
+          options: { delayMs: 2000, handlerArgs: [] },
         },
       ]);
     });
 
-    it("releases the lock even when the incremental sync throws", async () => {
+    it("releases the lock even when the merged pass throws", async () => {
       const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
-      vi.mocked(mailSync).mockRejectedValueOnce(
-        new Error("IMAP timeout")
-      );
+      vi.mocked(mailSync).mockRejectedValueOnce(new Error("IMAP timeout"));
 
       await expect(
-        Apple.prototype.mailPushDrain.call(self, [], channelId)
+        Apple.prototype.mailPushDrain.call(self, [])
       ).rejects.toThrow("IMAP timeout");
 
-      expect(releaseLockCalls).toEqual([lockKey]);
+      expect(releaseLockCalls).toEqual([LOCK_KEY]);
     });
 
-    it("does nothing when the channel is disabled", async () => {
-      const { self, acquireLockCalls } = makeSelf({ enabled: false });
+    it("does nothing when no mail channel is enabled", async () => {
+      const { self, acquireLockCalls } = makeSelf({ channels: [] });
 
-      await Apple.prototype.mailPushDrain.call(self, [], channelId);
+      await Apple.prototype.mailPushDrain.call(self, []);
 
       expect(acquireLockCalls).toEqual([]);
       expect(mailSync).not.toHaveBeenCalled();
     });
   });
 
-  describe("mailInitialSyncTask", () => {
-    it("acquires the lock, runs the backfill, releases the lock, and still schedules the poll + watch", async () => {
-      const { self, acquireLockCalls, releaseLockCalls, scheduleRecurringCalls, watchCalls } =
-        makeSelf({ acquireLockResult: true });
+  describe("mailSyncTask", () => {
+    it("runs one merged pass over every enabled channel, then arms the connection-level poll and every watch", async () => {
+      const {
+        self,
+        acquireLockCalls,
+        releaseLockCalls,
+        scheduleRecurringCalls,
+        watchCalls,
+      } = makeSelf({ channels: [INBOX, ARCHIVE], acquireLockResult: true });
 
-      await Apple.prototype.mailInitialSyncTask.call(self, channelId);
+      await Apple.prototype.mailSyncTask.call(self, ARCHIVE);
 
       expect(acquireLockCalls).toEqual([
-        { key: lockKey, ttlMs: 30 * 60 * 1000 },
+        { key: LOCK_KEY, ttlMs: 30 * 60 * 1000 },
       ]);
       expect(mailSync).toHaveBeenCalledTimes(1);
       expect(mailSync).toHaveBeenCalledWith(
         expect.anything(),
-        [{ channelId, mailbox: "INBOX" }],
+        BOTH_CHANNELS,
         expect.any(String)
       );
-      expect(releaseLockCalls).toEqual([lockKey]);
-      // scheduleMailPoll's real effect: a scheduleRecurring call keyed
-      // `mailpoll:<channelId>`.
+      expect(releaseLockCalls).toEqual([LOCK_KEY]);
+      // scheduleMailPoll's real effect: ONE recurring task for the whole
+      // connection, with no channel suffix.
       expect(scheduleRecurringCalls).toEqual([
-        expect.objectContaining({ key: `mailpoll:${channelId}` }),
+        expect.objectContaining({ key: "mailpoll" }),
       ]);
-      // armMailWatch's real effect: an imap.watch call for this channel.
-      expect(watchCalls).toEqual([expect.objectContaining({ channelId })]);
+      // armMailWatches' real effect: one imap.watch per enabled channel.
+      expect(watchCalls.map((c) => c.channelId)).toEqual([ARCHIVE, INBOX]);
     });
 
-    it("skips the backfill but still schedules the poll + watch when another pass holds the lock", async () => {
-      const { self, scheduleRecurringCalls, watchCalls, releaseLockCalls } =
-        makeSelf({ acquireLockResult: false });
+    it("passes the granted history floor straight through to the merged pass", async () => {
+      const { self } = makeSelf({ acquireLockResult: true });
 
-      await Apple.prototype.mailInitialSyncTask.call(self, channelId);
+      await Apple.prototype.mailSyncTask.call(
+        self,
+        INBOX,
+        "2020-01-01T00:00:00.000Z"
+      );
+
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        [{ channelId: INBOX, mailbox: "INBOX" }],
+        "2020-01-01T00:00:00.000Z"
+      );
+    });
+
+    it("RESCHEDULES itself when another pass holds the lock, and still arms the poll + watches", async () => {
+      const {
+        self,
+        scheduleDrainCalls,
+        scheduleRecurringCalls,
+        watchCalls,
+        releaseLockCalls,
+      } = makeSelf({ channels: [INBOX, ARCHIVE], acquireLockResult: false });
+
+      await Apple.prototype.mailSyncTask.call(
+        self,
+        ARCHIVE,
+        "2020-01-01T00:00:00.000Z"
+      );
 
       expect(mailSync).not.toHaveBeenCalled();
-      // No lock we didn't take should be released.
       expect(releaseLockCalls).toEqual([]);
-      // A re-dispatch that lost the race must not leave the channel without
-      // scheduled work or a push watch.
-      expect(scheduleRecurringCalls).toEqual([
-        expect.objectContaining({ key: `mailpoll:${channelId}` }),
+      // An in-flight pass enumerated its channel list BEFORE this channel was
+      // marked enabled, so it cannot cover it — skipping would strand the
+      // channel's "syncing…" state forever. Retry instead, carrying the floor
+      // so the granted history isn't lost with the dropped attempt.
+      expect(scheduleDrainCalls).toEqual([
+        {
+          key: "mail-sync",
+          handler: Apple.prototype.mailSyncDrain,
+          options: {
+            delayMs: 5000,
+            handlerArgs: ["2020-01-01T00:00:00.000Z"],
+          },
+        },
       ]);
-      expect(watchCalls).toEqual([expect.objectContaining({ channelId })]);
+      expect(scheduleRecurringCalls).toEqual([
+        expect.objectContaining({ key: "mailpoll" }),
+      ]);
+      expect(watchCalls.map((c) => c.channelId)).toEqual([ARCHIVE, INBOX]);
     });
 
-    it("releases the lock even when the backfill throws", async () => {
+    it("releases the lock even when the merged pass throws", async () => {
       const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
       vi.mocked(mailSync).mockRejectedValueOnce(
         new Error("IMAP auth failure")
       );
 
       await expect(
-        Apple.prototype.mailInitialSyncTask.call(self, channelId)
+        Apple.prototype.mailSyncTask.call(self, INBOX)
       ).rejects.toThrow("IMAP auth failure");
 
-      expect(releaseLockCalls).toEqual([lockKey]);
+      expect(releaseLockCalls).toEqual([LOCK_KEY]);
+    });
+
+    it("schedules nothing when the last channel was disabled before the task ran", async () => {
+      const { self, acquireLockCalls, scheduleRecurringCalls, watchCalls } =
+        makeSelf({ channels: [] });
+
+      await Apple.prototype.mailSyncTask.call(self, INBOX);
+
+      expect(acquireLockCalls).toEqual([]);
+      expect(mailSync).not.toHaveBeenCalled();
+      expect(scheduleRecurringCalls).toEqual([]);
+      expect(watchCalls).toEqual([]);
+    });
+  });
+
+  describe("mailSyncDrain", () => {
+    it("re-enters the merged pass with the floor the dropped attempt carried", async () => {
+      const { self, acquireLockCalls, releaseLockCalls } = makeSelf({
+        channels: [INBOX, ARCHIVE],
+        acquireLockResult: true,
+      });
+
+      await Apple.prototype.mailSyncDrain.call(
+        self,
+        [],
+        "2020-01-01T00:00:00.000Z"
+      );
+
+      expect(acquireLockCalls).toEqual([
+        { key: LOCK_KEY, ttlMs: 30 * 60 * 1000 },
+      ]);
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        BOTH_CHANNELS,
+        "2020-01-01T00:00:00.000Z"
+      );
+      expect(releaseLockCalls).toEqual([LOCK_KEY]);
+    });
+
+    it("reschedules again when the lock is still held", async () => {
+      const { self, scheduleDrainCalls } = makeSelf({
+        acquireLockResult: false,
+      });
+
+      await Apple.prototype.mailSyncDrain.call(self, [], null);
+
+      expect(scheduleDrainCalls).toEqual([
+        expect.objectContaining({
+          key: "mail-sync",
+          handler: Apple.prototype.mailSyncDrain,
+        }),
+      ]);
+    });
+  });
+
+  describe("onMailChannelEnabled", () => {
+    function privateMethod<T>(name: string): T {
+      return (Apple.prototype as unknown as Record<string, T>)[name];
+    }
+    const onMailChannelEnabled = privateMethod<
+      (
+        channel: { id: string },
+        context?: { syncHistoryMin?: Date }
+      ) => Promise<void>
+    >("onMailChannelEnabled");
+
+    it("marks the channel enabled and queues the merged pass carrying the granted floor", async () => {
+      const { self, store, callbackCalls, runTaskCalls } = makeSelf({
+        channels: [INBOX],
+      });
+
+      await onMailChannelEnabled.call(self, { id: ARCHIVE }, {
+        syncHistoryMin: new Date("2020-01-01T00:00:00.000Z"),
+      });
+
+      expect(store.get(`mail:enabled_${ARCHIVE}`)).toBe(true);
+      expect(callbackCalls).toEqual([
+        [Apple.prototype.mailSyncTask, ARCHIVE, "2020-01-01T00:00:00.000Z"],
+      ]);
+      expect(runTaskCalls).toHaveLength(1);
+    });
+
+    it("is idempotent on re-dispatch: overwrites the marker and re-queues unconditionally", async () => {
+      const { self, store, callbackCalls, runTaskCalls } = makeSelf({
+        channels: [INBOX],
+      });
+
+      await onMailChannelEnabled.call(self, { id: INBOX });
+      await onMailChannelEnabled.call(self, { id: INBOX });
+
+      expect(store.get(`mail:enabled_${INBOX}`)).toBe(true);
+      expect(callbackCalls).toEqual([
+        [Apple.prototype.mailSyncTask, INBOX, null],
+        [Apple.prototype.mailSyncTask, INBOX, null],
+      ]);
+      expect(runTaskCalls).toHaveLength(2);
+    });
+  });
+
+  describe("enabledMailChannels", () => {
+    it("enumerates only mail markers, and never mistakes a folder name containing ':' for a product prefix", async () => {
+      const nested = "mail:Archive/2024";
+      const colon = "mail:Notes:Work";
+      const { self } = makeSelf({
+        channels: [INBOX, nested, colon],
+        initialStore: { "sync_enabled_calendar:/1/home/": true },
+      });
+
+      await Apple.prototype.mailPoll.call(self);
+
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        [
+          { channelId: nested, mailbox: "Archive/2024" },
+          { channelId: INBOX, mailbox: "INBOX" },
+          { channelId: colon, mailbox: "Notes:Work" },
+        ],
+        undefined
+      );
     });
   });
 });
@@ -718,7 +982,7 @@ describe("Apple calendar incremental sync", () => {
   const lockKey = `sync_${calendarHref}`;
 
   /** Pulls a private method off `Apple.prototype` for use against a plain
-   *  fake `self` — same rationale as `buildMailHost`/`armMailWatch`/
+   *  fake `self` — same rationale as `buildMailHost`/`armMailWatches`/
    *  `scheduleMailPoll` above (not inherited by a bare object literal), just
    *  factored into a helper since the incremental-sync chain touches many
    *  more private methods (`runFastIncrementalSync`,
