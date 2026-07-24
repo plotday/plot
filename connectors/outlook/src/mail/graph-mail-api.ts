@@ -290,10 +290,8 @@ export class GraphMailApi {
   }): Promise<{ messages: GraphMessage[]; nextLink: string | null }> {
     let data: any;
     if (args.nextLink) {
-      console.log("top ", args);
       data = await this.call("GET", args.nextLink);
     } else {
-      console.log("bottom ", args);
       const params: Record<string, string> = {
         $top: String(args.top ?? 20),
         $orderby: "receivedDateTime desc",
@@ -309,7 +307,6 @@ export class GraphMailApi {
       if (args.since) {
         params.$filter = `receivedDateTime ge ${args.since.toISOString()}`;
       }
-      console.log("params ", params);
       data = await this.call(
         "GET",
         `${GRAPH}/me/mailFolders/${encodeURIComponent(args.folderId!)}/messages`,

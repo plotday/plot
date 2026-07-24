@@ -117,19 +117,27 @@ export type OutlookEvent = {
 
 export type SyncState = {
   calendarId: string;
-  state?: string; // deltaToken or deltaLink
+  state?: string; // nextLink (listing mode) or deltaToken/deltaLink (delta mode)
   more?: boolean;
   min?: Date;
   max?: Date;
   sequence?: number;
   /**
    * Two-pass initial sync phase. `"quick"` walks `timeMin = now` to
-   * front-load upcoming meetings; `"full"` walks the 2-year historical
-   * backfill afterwards. Both phases share one sync lock; the
-   * quick→full transition swaps state without releasing. Absent for
-   * incremental syncs.
+   * front-load upcoming meetings; `"full"` walks the full event history
+   * afterwards to establish a real delta cursor (see `mode`). Both phases
+   * share one sync lock; the quick→full transition swaps state without
+   * releasing. Absent for incremental syncs.
    */
   phase?: "quick" | "full";
+  /**
+   * Which Graph resource `state` continues. Microsoft's `/events/delta`
+   * resource ("SyncEvents") rejects `$filter`/`$orderby`/`$select`/`$expand`/
+   * `$search` entirely — so any request bounded by `min`/`max` must use a
+   * plain, non-delta `/events` listing (`"listing"`) instead of the real
+   * delta chain (`"delta"`), which only an unfiltered request may use.
+   */
+  mode?: "listing" | "delta";
 };
 
 /**
@@ -139,7 +147,12 @@ export class GraphApi {
   constructor(public accessToken: string) {}
 
   /**
-   * Make a request to Microsoft Graph API
+   * Make a request to Microsoft Graph API. Retries once on 429/503, honoring
+   * a `Retry-After` header (seconds), capped at 15s — matches the retry
+   * behavior already in GraphMailApi.call (mail/graph-mail-api.ts). Without
+   * this, a transient rate limit during composeChannels (mail + calendar
+   * fetching channels concurrently at connect time) surfaces as a hard
+   * connect-time failure instead of a brief, self-healing delay.
    */
   public async call(
     method: string,
@@ -155,39 +168,52 @@ export class GraphApi {
       ...(body ? { "Content-Type": "application/json" } : {}),
     };
 
-    const response = await fetch(url + query, {
-      method,
-      headers,
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(url + query, {
+        method,
+        headers,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
 
-    switch (response.status) {
-      case 400:
-        const responseBody = await response.json();
-        throw new Error("Invalid request", { cause: responseBody });
-      case 401:
-        throw new Error("Authentication failed - token may be expired");
-      case 403:
-        throw new Error("Access denied - insufficient permissions");
-      case 404:
-        return null;
-      case 410:
-        // Gone - delta token expired, need full sync
-        return null;
-      case 429:
-        throw new Error("Rate limit exceeded - too many requests");
-      case 200:
-      case 201:
-      case 204:
-        if (response.status === 204) return {}; // No content
-        return await response.json();
-      case 500:
-      case 502:
-      case 503:
-      case 504:
-        throw new Error(`Server error: ${response.status}`);
-      default:
-        throw new Error(await response.text());
+      if (
+        (response.status === 429 || response.status === 503) &&
+        attempt === 0
+      ) {
+        const retryAfter = Number(response.headers.get("Retry-After") ?? "2");
+        await new Promise((r) =>
+          setTimeout(r, Math.min(isNaN(retryAfter) ? 2 : retryAfter, 15) * 1000)
+        );
+        continue;
+      }
+
+      switch (response.status) {
+        case 400:
+          const responseBody = await response.json();
+          throw new Error("Invalid request", { cause: responseBody });
+        case 401:
+          throw new Error("Authentication failed - token may be expired");
+        case 403:
+          throw new Error("Access denied - insufficient permissions");
+        case 404:
+          return null;
+        case 410:
+          // Gone - delta token expired, need full sync
+          return null;
+        case 429:
+          throw new Error("Rate limit exceeded - too many requests");
+        case 200:
+        case 201:
+        case 204:
+          if (response.status === 204) return {}; // No content
+          return await response.json();
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          throw new Error(`Server error: ${response.status}`);
+        default:
+          throw new Error(await response.text());
+      }
     }
   }
 
@@ -599,7 +625,15 @@ export function transformOutlookEvent(
 }
 
 /**
- * Sync calendar events using Microsoft Graph delta query
+ * Sync calendar events using Microsoft Graph.
+ *
+ * Microsoft's `/events/delta` resource ("SyncEvents") rejects
+ * `$filter`/`$orderby`/`$select`/`$expand`/`$search` outright — there is no
+ * way to bound a delta query by date. So any request with `min`/`max` set
+ * (the quick pass, or a manual start with an explicit window) uses a plain,
+ * non-delta `/events` listing instead; only a fully unfiltered request may
+ * use the real delta chain that yields a `deltaLink` for future incremental
+ * syncs.
  */
 export async function syncOutlookCalendar(
   api: GraphApi,
@@ -609,43 +643,37 @@ export async function syncOutlookCalendar(
   events: OutlookEvent[];
   state: SyncState;
 }> {
-  let url: string;
+  const resource =
+    calendarId === "primary"
+      ? "/me/events"
+      : `/me/calendars/${calendarId}/events`;
 
-  // If we have a delta link (full URL with token), use it directly
+  const bounded = !!(state.min || state.max);
+  const mode: "listing" | "delta" = bounded ? "listing" : "delta";
+
+  let url: string;
   if (state.state && state.state.startsWith("http")) {
+    // Continuing pagination via a full nextLink/deltaLink URL.
     url = state.state;
   } else if (state.state) {
-    // We have a delta token, append it to the URL
-    const resource =
-      calendarId === "primary"
-        ? "/me/events"
-        : `/me/calendars/${calendarId}/events`;
+    // Continuing a delta chain via a bare deltaToken.
     url = `https://graph.microsoft.com/v1.0${resource}/delta?$deltatoken=${state.state}`;
-  } else {
-    // Initial sync - use delta query without token
-    const resource =
-      calendarId === "primary"
-        ? "/me/events"
-        : `/me/calendars/${calendarId}/events`;
-
+  } else if (bounded) {
+    // Bounded request: plain (non-delta) filtered listing.
     const params: string[] = [];
-
-    // Add time filter if specified
     if (state.min && state.max) {
-      // Both min and max - use combined filter
       params.push(
         `$filter=start/dateTime ge '${state.min.toISOString()}' and start/dateTime lt '${state.max.toISOString()}'`
       );
     } else if (state.min) {
-      // Only min
       params.push(`$filter=start/dateTime ge '${state.min.toISOString()}'`);
     } else if (state.max) {
-      // Only max
       params.push(`$filter=start/dateTime lt '${state.max.toISOString()}'`);
     }
-
-    const queryString = params.length > 0 ? `?${params.join("&")}` : "";
-    url = `https://graph.microsoft.com/v1.0${resource}/delta${queryString}`;
+    url = `https://graph.microsoft.com/v1.0${resource}?${params.join("&")}`;
+  } else {
+    // Unbounded: real delta query, no query params allowed.
+    url = `https://graph.microsoft.com/v1.0${resource}/delta`;
   }
 
   const data = (await api.call("GET", url)) as {
@@ -655,7 +683,7 @@ export async function syncOutlookCalendar(
   } | null;
 
   if (!data) {
-    // Delta token expired or sync failed, need full sync
+    // Token expired (410) or resource missing (404) — restart from scratch.
     const newState: SyncState = {
       calendarId,
       min: state.min,
@@ -665,12 +693,14 @@ export async function syncOutlookCalendar(
     return syncOutlookCalendar(api, calendarId, newState);
   }
 
-  // Extract next link or delta link
+  // Extract next link (listing or mid-delta pagination) or delta link
+  // (delta chain complete for this page).
   const nextLink = data["@odata.nextLink"];
   const deltaLink = data["@odata.deltaLink"];
 
   const nextState: SyncState = {
     calendarId,
+    mode,
     state: nextLink || deltaLink,
     more: !!nextLink,
     min: state.min,

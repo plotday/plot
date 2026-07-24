@@ -1450,10 +1450,9 @@ export async function processConversationsFn(
       }
       plotThread.notes = filtered;
       if (plotThread.notes.length === 0) continue;
-
       const isUnread = isConversationUnread(item.messages);
       if (initialSync) {
-        plotThread.unread = false;
+        plotThread.unread = isUnread;
         plotThread.archived = false;
         await host.set(`unread:${conversationId}`, isUnread);
       } else {

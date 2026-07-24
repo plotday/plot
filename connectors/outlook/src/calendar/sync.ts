@@ -1120,10 +1120,13 @@ export async function initOutlookCalendarFn(
   }
 
   // Two-pass initial sync:
-  // - Quick pass (`phase: "quick"`) walks `timeMin = now` so upcoming
+  // - Quick pass (`phase: "quick"`) walks `timeMin = now` (a plain, non-delta
+  //   filtered /events listing — see syncOutlookCalendar) so upcoming
   //   meetings surface in the activity feed immediately.
-  // - Full pass (`phase: "full"`, queued at the terminal batch of the
-  //   quick pass) walks the 2-year historical backfill.
+  // - Full pass (`phase: "full"`, queued at the terminal batch of the quick
+  //   pass) walks the entire event history via an unfiltered /events/delta,
+  //   which is the only way to establish the deltaLink incremental syncs
+  //   reuse afterward.
   // Both passes share the sync lock acquired above. The quick→full
   // transition happens inside syncOutlookBatch without releasing.
   const initialState: SyncState = {
@@ -1314,20 +1317,20 @@ export async function syncOutlookBatchFn(
     }
 
     // Quick pass done: transition to full pass without releasing
-    // the lock. The full pass walks the historical range
-    // (timeMin = 2y ago) and picks up long-running recurring
-    // masters that timeMin = now excluded. Any exception
-    // instances the quick pass buffered into pending_occ: are
-    // carried across; they're only cleared when the full pass
+    // the lock. The full pass walks the entire event history and
+    // picks up long-running recurring masters that timeMin = now
+    // excluded. It's deliberately unbounded (no min/max): Microsoft
+    // Graph's /events/delta resource rejects $filter entirely, so a
+    // bounded historical window isn't possible on delta — this pass
+    // has to walk everything once to establish the deltaLink that
+    // startIncrementalSyncFn reuses for webhook-driven syncs going
+    // forward (see syncOutlookCalendar in graph-api.ts). Any
+    // exception instances the quick pass buffered into pending_occ:
+    // are carried across; they're only cleared when the full pass
     // completes below.
     if (syncState.phase === "quick") {
-      const historyMin = new Date();
-      historyMin.setFullYear(historyMin.getFullYear() - 2);
-      historyMin.setMonth(0, 1);
-      historyMin.setHours(0, 0, 0, 0);
       const fullState: SyncState = {
         calendarId,
-        min: historyMin,
         sequence: 1,
         phase: "full",
       };
