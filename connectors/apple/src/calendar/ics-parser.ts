@@ -44,7 +44,6 @@ export type ICSEvent = {
   url: string | null;
 };
 
-
 /**
  * Parse an ATTENDEE or ORGANIZER line to extract email and parameters.
  */

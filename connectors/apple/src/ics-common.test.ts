@@ -8,9 +8,19 @@ import {
 } from "./ics-common";
 
 describe("unfoldLines", () => {
-  it("joins a continuation line that starts with a space", () => {
-    const folded = "SUMMARY:Buy milk\n and eggs\nEND:VTODO";
+  it("strips the inserted fold marker (CRLF+one whitespace), preserving a real space that already existed at the fold point", () => {
+    // RFC 5545 folding INSERTS a synthetic CRLF+single-whitespace at an arbitrary
+    // split point without touching surrounding content. Here the fold landed right
+    // before the original real space in "milk and eggs" — so there are TWO spaces
+    // after the \n: the inserted fold marker (stripped) and the original real one
+    // (preserved).
+    const folded = "SUMMARY:Buy milk\n  and eggs\nEND:VTODO";
     expect(unfoldLines(folded)).toBe("SUMMARY:Buy milk and eggs\nEND:VTODO");
+  });
+
+  it("strips exactly the inserted fold whitespace when there was no original space at the fold point", () => {
+    const folded = "SUMMARY:Buy\n milk";
+    expect(unfoldLines(folded)).toBe("SUMMARY:Buymilk");
   });
 
   it("normalizes CRLF to LF", () => {

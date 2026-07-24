@@ -15,7 +15,7 @@ export type ICSDateTimeProp = {
  * Lines that begin with a space or tab are continuations of the previous line.
  */
 export function unfoldLines(ics: string): string {
-  return ics.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n[ \t]/g, " ");
+  return ics.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n[ \t]/g, "");
 }
 
 /**
