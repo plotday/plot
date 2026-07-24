@@ -138,7 +138,7 @@ export class Todoist extends Connector<Todoist> {
         { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: true,
-      compose: { status: "open" },
+      compose: { status: "open", todo: true },
     },
   ];
 
@@ -217,7 +217,7 @@ export class Todoist extends Connector<Todoist> {
               logoMono: "https://api.iconify.design/simple-icons/todoist.svg",
               statuses,
               supportsAssignee: true,
-              compose: { status: "open" },
+              compose: { status: "open", todo: true },
             },
           ],
         };
@@ -798,6 +798,10 @@ export class Todoist extends Connector<Todoist> {
         key: "description",
         externalContent: task.description ? task.description : undefined,
       },
+      // Todoist's create API cannot create a pre-completed task (see the
+      // doc comment above), but the user may still have composed with a
+      // "done" status picked in the UI — don't mark that to-do.
+      ...(draft.status !== "done" ? { todo: true } : {}),
     };
   }
 

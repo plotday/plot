@@ -31,7 +31,7 @@ export const TASKS_LINK_TYPES: LinkTypeConfig[] = [
       { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
     ],
     supportsAssignee: false,
-    compose: { status: "open" },
+    compose: { status: "open", todo: true },
   },
 ];
 

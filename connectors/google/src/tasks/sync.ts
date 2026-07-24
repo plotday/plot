@@ -29,7 +29,7 @@ import type { CreateLinkDraft } from "@plotday/twister/connector";
 
 import {
   createTask,
-  isNotFoundError,
+  isTaskListGoneError,
   listTasks,
   updateTask,
   type GoogleTask,
@@ -267,9 +267,9 @@ export async function syncBatchFn(
       updatedMin: state.syncHistoryMin ?? undefined,
     });
   } catch (error) {
-    if (isNotFoundError(error)) {
+    if (isTaskListGoneError(error)) {
       // The task list was deleted on Google's side while still enabled in
-      // Plot. A 404 here is permanent, so tear the channel down exactly like a
+      // Plot. This is permanent, so tear the channel down exactly like a
       // disable (cancel the poll, clear state, archive its links) instead of
       // throwing — otherwise every retry pages error tracking and the message
       // eventually dead-letters.
@@ -364,10 +364,10 @@ export async function periodicSyncBatchFn(
       maxResults: 50,
     });
   } catch (error) {
-    if (isNotFoundError(error)) {
+    if (isTaskListGoneError(error)) {
       // List deleted on Google's side — stop polling it for good. Tearing down
       // here (cancel poll, clear state, archive links) matches the disable path
-      // and prevents the hourly poll from re-throwing the same 404 forever.
+      // and prevents the hourly poll from re-throwing the same error forever.
       await onChannelDisabledFn(host, listId);
       return { done: true };
     }
@@ -567,11 +567,25 @@ export async function onCreateLinkFn(
   const token = await getTokenFn(host, draft.channelId);
   const authActorId = await host.get<ActorId>("auth_actor_id");
 
-  const task = await createTask(token, draft.channelId, {
-    title: draft.title,
-    ...(draft.noteContent ? { notes: draft.noteContent } : {}),
-    status: draft.status === "done" ? "completed" : "needsAction",
-  });
+  let task: GoogleTask;
+  try {
+    task = await createTask(token, draft.channelId, {
+      title: draft.title,
+      ...(draft.noteContent ? { notes: draft.noteContent } : {}),
+      status: draft.status === "done" ? "completed" : "needsAction",
+    });
+  } catch (error) {
+    if (isTaskListGoneError(error)) {
+      // The list the user composed into was deleted (or otherwise invalid)
+      // on Google's side by the time the create request went out — the
+      // create can never succeed. Abort per the documented onCreateLink
+      // contract (return null; the Plot thread is still saved with no link
+      // attached) instead of throwing, which would page error tracking for
+      // an expected external-state failure rather than a real bug.
+      return null;
+    }
+    throw error;
+  }
 
   const taskUrl =
     task.webViewLink ??
@@ -600,6 +614,10 @@ export async function onCreateLinkFn(
     actions,
     sourceUrl: taskUrl,
     assignee: authActorId ? { id: authActorId } : null,
+    // Mirrors transformTask's sync-in to-do default (see above): a task
+    // composed from Plot is the user's personal to-do the same way a
+    // synced-in open task is.
+    ...(draft.status !== "done" ? { todo: true } : {}),
   };
 }
 
@@ -624,9 +642,9 @@ export async function onLinkUpdatedFn(
     });
   } catch (error) {
     // The task or its list was deleted on Google's side — there is nothing to
-    // write back. A 404 is permanent, so swallow it rather than throwing
+    // write back. This is permanent, so swallow it rather than throwing
     // (which would retry on the queue and eventually page / dead-letter).
-    if (isNotFoundError(error)) return;
+    if (isTaskListGoneError(error)) return;
     throw error;
   }
 }
