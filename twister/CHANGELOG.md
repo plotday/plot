@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.84.0
+
+### Added
+
+- `canonicalizeEmail()` and `baseEmail()` for Gmail-scoped address
+
 ## 0.83.0
 
 ### Changed
