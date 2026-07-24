@@ -86,6 +86,19 @@ export async function fetchUidRange(
 /** Bounded look-back for resolving a thread's messages at write-back time. */
 const WRITE_BACK_WINDOW_MS = 180 * 24 * 60 * 60 * 1000; // 180 days
 
+/**
+ * TODO(write-back mailbox-awareness — follow-up task, not part of the merged
+ * mail sync pass): the `inbox`-prefixed field names below, the hardcoded
+ * `selectMailbox(session, "INBOX")` in `resolveThreadMessages`, and
+ * `fetchOriginalMessage`'s INBOX-then-Sent lookup order are a known,
+ * deliberately-deferred gap, not an oversight from the sync merge. Mail sync
+ * now resolves each thread a stable, always-enabled home mailbox
+ * (`ThreadMeta.channelId`, `sync.ts`), but write-back (flag toggles, forward
+ * source lookup) has not yet been updated to read/write that mailbox instead
+ * of always assuming INBOX. Until that follow-up lands, a thread homed to a
+ * non-INBOX folder with no INBOX copy resolves empty here and its
+ * read/to-do write-backs silently no-op.
+ */
 export type ResolvedThread = {
   /** The thread's INBOX messages (headers only), oldest→newest. */
   inboxMessages: ImapMessage[];
@@ -130,6 +143,8 @@ export async function resolveThreadMessages(
   subject: string | undefined,
   now: Date = new Date()
 ): Promise<ResolvedThread> {
+  // TODO(write-back mailbox-awareness): hardcoded to INBOX — see the TODO on
+  // `ResolvedThread` above. Should search the thread's own home mailbox.
   await host.imap.selectMailbox(session, "INBOX");
   const since = new Date(now.getTime() - WRITE_BACK_WINDOW_MS);
   const base = baseSubject(subject);
@@ -192,6 +207,9 @@ export async function fetchOriginalMessage(
     return full.length > 0 ? { mailbox, message: full[0] } : null;
   };
 
+  // TODO(write-back mailbox-awareness): INBOX-then-Sent is hardcoded — see
+  // the TODO on `ResolvedThread` above. Should also fall back to the
+  // thread's own home mailbox before giving up.
   const inboxHit = await resolve("INBOX");
   if (inboxHit) return inboxHit;
 

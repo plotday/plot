@@ -9,17 +9,18 @@ import type { MailHost } from "./mail-host";
  * `mailbox` is URI-component-encoded so a mailbox name containing ":" can't
  * corrupt the split, and IMAP part numbers ("2", "2.1") never contain ":".
  *
- * Deliberately omits UIDVALIDITY. This connector persists a UIDVALIDITY
- * cursor only for the synced INBOX channel (`MailSyncState.uidValidity`, see
- * mail-host.ts) — the Sent mailbox that also feeds `transformMessages` has
- * no stored cursor at all (sync.ts rescans it by date window on every pass),
- * so there is no single consistent value available to embed for every ref.
- * A UIDVALIDITY reset (mailbox recreated/reindexed server-side) therefore
+ * Deliberately omits UIDVALIDITY. `MailSyncState.boxes` (see mail-host.ts)
+ * now persists a per-mailbox `MailboxCursor` — including a UIDVALIDITY — for
+ * every enabled folder, and even for Sent (though Sent's `lastUid` goes
+ * unused there). But a ref is resolved independently of that cursor state:
+ * this function just SELECTs the ref's own mailbox and fetches by uid+part,
+ * with no lookup against the stored cursor for that mailbox. A UIDVALIDITY
+ * reset (mailbox recreated/reindexed server-side) therefore still
  * invalidates outstanding refs silently: `fetchAttachment` would address a
  * different (or missing) message and either return wrong bytes or throw a
  * not-found error from the IMAP tool. This is scoped to on-demand
  * attachment re-fetches — not sync correctness — and is an accepted
- * limitation until per-mailbox UIDVALIDITY tracking is worth the added
+ * limitation until per-ref UIDVALIDITY validation is worth the added
  * bookkeeping.
  */
 export function buildAttachmentRef(
