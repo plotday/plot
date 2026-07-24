@@ -6,6 +6,7 @@ import {
   isConversationFlagged,
   isConversationUnread,
   isViaRewrittenName,
+  MESSAGE_SELECT,
   odataQuote,
   recipientEmails,
   sortConversation,
@@ -232,7 +233,15 @@ describe("transformOutlookConversation sender classification", () => {
 });
 
 describe("GraphMailApi queries", () => {
-  it("getConversationMessages requests meeting fields + expands event", async () => {
+  it("getMessage's default select uses a bare meeting-field name (single-item GET needs no cast)", () => {
+    expect(MESSAGE_SELECT).toContain("meetingMessageType");
+    expect(MESSAGE_SELECT).not.toContain("microsoft.graph.eventMessage/");
+    // Not a real Graph property (that's EWS's MeetingRequestType) — never
+    // select it, cast or not.
+    expect(MESSAGE_SELECT).not.toContain("meetingRequestType");
+  });
+
+  it("getConversationMessages requests the meeting field + expands event", async () => {
     const calls: Array<Record<string, string> | undefined> = [];
     const api = new GraphMailApi("tok");
     api.call = async (
@@ -244,12 +253,19 @@ describe("GraphMailApi queries", () => {
       return { value: [] };
     };
     await api.getConversationMessages("conv-1");
-    expect(calls[0]?.$select).toContain("meetingMessageType");
-    expect(calls[0]?.$select).toContain("meetingRequestType");
-    expect(calls[0]?.$expand).toBe("event($select=iCalUId)");
+    // Cast, not bare — meetingMessageType lives on the eventMessage subtype,
+    // and once the $expand below needs a cast, Graph validates the whole
+    // query strictly and rejects a bare reference to it here too ("Could
+    // not find a property ... on type 'Microsoft.OutlookServices.Message'").
+    expect(calls[0]?.$select).toContain(
+      "microsoft.graph.eventMessage/meetingMessageType"
+    );
+    expect(calls[0]?.$expand).toBe(
+      "microsoft.graph.eventMessage/event($select=iCalUId)"
+    );
   });
 
-  it("getMessagesPage requests meeting fields + expands event on the non-nextLink branch", async () => {
+  it("getMessagesPage requests the meeting field + expands event on the non-nextLink branch", async () => {
     const calls: Array<Record<string, string> | undefined> = [];
     const api = new GraphMailApi("tok");
     api.call = async (
@@ -261,8 +277,12 @@ describe("GraphMailApi queries", () => {
       return { value: [] };
     };
     await api.getMessagesPage({ folderId: "f-inbox" });
-    expect(calls[0]?.$select).toContain("meetingMessageType");
-    expect(calls[0]?.$expand).toBe("event($select=iCalUId)");
+    expect(calls[0]?.$select).toContain(
+      "microsoft.graph.eventMessage/meetingMessageType"
+    );
+    expect(calls[0]?.$expand).toBe(
+      "microsoft.graph.eventMessage/event($select=iCalUId)"
+    );
   });
 });
 
@@ -295,34 +315,21 @@ describe("classifyOutlookCalendar", () => {
     ).toEqual({ uid: "uid-header", kind: "reply" });
   });
 
-  it("update: meetingRequest fullUpdate", () => {
+  it("update: meetingRequest", () => {
+    // Graph's meetingMessageType has no equivalent to EWS's
+    // MeetingRequestType (fullUpdate/informationalUpdate/newMeetingRequest)
+    // — every meetingRequest bundles onto its event's thread.
     expect(
       classifyOutlookCalendar(
         [
           msg({
             meetingMessageType: "meetingRequest",
-            meetingRequestType: "fullUpdate",
             event: { iCalUId: "uid-1" },
           }),
         ],
         null
       )
     ).toEqual({ uid: "uid-1", kind: "update" });
-  });
-
-  it("update: meetingRequest informationalUpdate", () => {
-    expect(
-      classifyOutlookCalendar(
-        [
-          msg({
-            meetingMessageType: "meetingRequest",
-            meetingRequestType: "informationalUpdate",
-            event: { iCalUId: "uid-2" },
-          }),
-        ],
-        null
-      )
-    ).toEqual({ uid: "uid-2", kind: "update" });
   });
 
   it("cancel: meetingCancelled", () => {
@@ -339,19 +346,7 @@ describe("classifyOutlookCalendar", () => {
     ).toEqual({ uid: "uid-1", kind: "cancel" });
   });
 
-  it("skips new invite + RSVP", () => {
-    expect(
-      classifyOutlookCalendar(
-        [
-          msg({
-            meetingMessageType: "meetingRequest",
-            meetingRequestType: "newMeetingRequest",
-            event: { iCalUId: "u" },
-          }),
-        ],
-        null
-      )
-    ).toBeNull();
+  it("skips RSVP responses (accept/decline/tentative)", () => {
     expect(
       classifyOutlookCalendar(
         [msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u" } })],

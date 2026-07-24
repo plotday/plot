@@ -16,8 +16,8 @@ import type {
 } from "@plotday/twister/plot";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
-const SCOPE_PEOPLE = "https://graph.microsoft.com/people.read";
-const SCOPE_CONTACTS = "https://graph.microsoft.com/contacts.read";
+const SCOPE_PEOPLE = "https://graph.microsoft.com/People.Read";
+const SCOPE_CONTACTS = "https://graph.microsoft.com/Contacts.Read";
 
 /** Scopes the enrichment helpers depend on. Merge into the connector's
  * `scopes` (via `Integrations.MergeScopes`) to enable enrichment. */
