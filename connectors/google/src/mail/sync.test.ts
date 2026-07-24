@@ -415,6 +415,47 @@ describe("onCreateLinkFn — plain compose (no draft.forward)", () => {
     expect(raw).toContain('To: "Robin Fielder" <dana@example.com>');
     expect(link?.type).toBe("email");
   });
+
+  it("does not send two copies to the same Gmail mailbox reached via a dot variant", async () => {
+    // A picker-resolved recipient ("dana@gmail.com") and a separately typed
+    // invite address ("d.ana@gmail.com") are the same Gmail mailbox — Gmail
+    // ignores dots in the local part. The dedupe key must recognize this
+    // ROW-identity (canonicalizeEmail), not just an exact lowercase match,
+    // or the compose sends the same person two copies.
+    vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
+      emailAddress: "me@example.com",
+    });
+    vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
+      email: "me@example.com",
+      name: "Me Myself",
+    });
+    const sendNewMessage = vi
+      .spyOn(GmailApi.prototype, "sendNewMessage")
+      .mockResolvedValue({ id: "sent-compose-2", threadId: "sent-thread-compose-2" });
+    const { host } = makeHost();
+
+    await onCreateLinkFn(
+      host,
+      composeDraft({
+        recipients: [
+          {
+            id: "c-dana" as Uuid,
+            name: null,
+            externalAccountId: "dana@gmail.com",
+            role: null,
+          },
+        ],
+        inviteEmails: ["d.ana@gmail.com"],
+      })
+    );
+
+    expect(sendNewMessage).toHaveBeenCalledTimes(1);
+    const raw = decodeRawMessage(sendNewMessage.mock.calls[0][0]);
+    const toHeaderLine = raw
+      .split("\r\n")
+      .find((line) => line.startsWith("To:"));
+    expect(toHeaderLine).toBe("To: dana@gmail.com");
+  });
 });
 
 function calThread(over: Record<string, unknown> = {}) {

@@ -21,7 +21,6 @@
 
 import {
   type Addressee,
-  baseEmail,
   canonicalizeEmail,
   type CreateLinkDraft,
   type NoteWriteBackResult,
@@ -1696,15 +1695,6 @@ export async function onNoteCreatedFn(
   )?.email;
   if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
 
-  // Gmail ignores dots and anything after "+" in the local part, so a header
-  // may address the user via a variant that never string-matches selfEmails
-  // (e.g. "krisbraun@gmail.com" vs the connected "kris.braun@gmail.com").
-  // Compare header candidates against the base form of every self address,
-  // in addition to the exact-match `selfEmails` set the shared helper below
-  // still uses for the access-contact/reply-all cases.
-  const selfBases = new Set(Array.from(selfEmails, baseEmail));
-  const isSelfAddress = (email: string) => selfBases.has(baseEmail(email));
-
   // Fallback access constraint (used only when the runtime didn't resolve
   // note.recipients): resolve the note's access list to lowercased emails.
   let accessContactEmails: Set<string> | null = null;
@@ -1719,8 +1709,9 @@ export async function onNoteCreatedFn(
   }
 
   // Original-message participants: From ∪ To → To, Cc → Cc. Self-address
-  // variants (see isSelfAddress above) are dropped here so they never reach
-  // the shared recipient resolver below.
+  // exclusion happens inside the shared recipient resolver below, which
+  // filters `selfEmails` (including Gmail dot/+tag variants) uniformly
+  // across all its cases.
   const fromToCandidates = new Set<string>();
   for (const email of recipientEmails(
     targetMessage.from ? [targetMessage.from] : []
@@ -1735,7 +1726,7 @@ export async function onNoteCreatedFn(
     ccCandidates.add(email.toLowerCase());
   }
   const toCandidates = Array.from(fromToCandidates).filter(
-    (email) => !ccCandidates.has(email) && !isSelfAddress(email)
+    (email) => !ccCandidates.has(email)
   );
 
   // Resolve the outbound recipients via the shared helper: prefer the runtime's
@@ -1765,7 +1756,7 @@ export async function onNoteCreatedFn(
     recipients: note.recipients ?? null,
     accessContactEmails,
     headerTo: toCandidates,
-    headerCc: Array.from(ccCandidates).filter((email) => !isSelfAddress(email)),
+    headerCc: Array.from(ccCandidates),
     selfEmails,
     headerFrom,
   });
