@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ImapMessage } from "@plotday/twister/tools/imap";
+import type { ImapMailbox, ImapMessage } from "@plotday/twister/tools/imap";
 
-import { fetchOriginalMessage, resolveThreadMessages } from "./imap-fetch";
+import { fetchOriginalMessage, isSentMailbox, resolveSentMailbox, resolveThreadMessages } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 
 function mockHost(messagesByUid: Record<number, Partial<ImapMessage>>): {
@@ -162,5 +162,72 @@ describe("fetchOriginalMessage", () => {
     });
     const found = await fetchOriginalMessage(host, "session", "nope@x.com", "Lunch?");
     expect(found).toBeNull();
+  });
+});
+
+/** A MailHost whose imap.listMailboxes resolves to `boxes`, for exercising
+ *  resolveSentMailbox's mailbox-picking logic directly. */
+function mockListMailboxesHost(boxes: ImapMailbox[]): MailHost {
+  const imap = {
+    connect: async () => "session",
+    disconnect: async () => {},
+    listMailboxes: async () => boxes,
+    selectMailbox: async () => ({ name: "", exists: 0, recent: 0, uidValidity: 1, uidNext: 1 }),
+    search: async () => [],
+    fetchMessages: async () => [],
+    setFlags: async () => {},
+  };
+  return {
+    imap,
+    integrations: {} as never,
+    smtp: {} as never,
+    appleId: "me@icloud.com",
+    appPassword: "pw",
+    set: async () => {},
+    get: async () => undefined,
+    clear: async () => {},
+    channelSyncCompleted: async () => {},
+    queueWritebackDrain: async () => {},
+  } as unknown as MailHost;
+}
+
+function box(overrides: Partial<ImapMailbox> & { name: string }): ImapMailbox {
+  return { delimiter: "/", flags: [], ...overrides };
+}
+
+describe("resolveSentMailbox", () => {
+  it("finds a Sent mailbox by name when the server advertises no specialUse at all — the same mailbox getMailChannels excludes as Sent", async () => {
+    const host = mockListMailboxesHost([box({ name: "INBOX" }), box({ name: "Sent Messages" })]);
+    expect(await resolveSentMailbox(host, "session")).toBe("Sent Messages");
+  });
+
+  it("prefers a specialUse \\Sent mailbox over a mere name match, when both exist", async () => {
+    const host = mockListMailboxesHost([
+      box({ name: "INBOX" }),
+      box({ name: "Sent Items", specialUse: "\\Sent" }),
+      box({ name: "Sent Archive" }), // also matches /^sent/i, but isn't the real Sent box
+    ]);
+    expect(await resolveSentMailbox(host, "session")).toBe("Sent Items");
+  });
+
+  it("returns null when no mailbox is discoverable as Sent", async () => {
+    const host = mockListMailboxesHost([box({ name: "INBOX" }), box({ name: "Archive" })]);
+    expect(await resolveSentMailbox(host, "session")).toBeNull();
+  });
+});
+
+describe("isSentMailbox", () => {
+  it("matches on specialUse \\Sent regardless of name", () => {
+    expect(isSentMailbox({ name: "Elsewhere", specialUse: "\\Sent" })).toBe(true);
+  });
+
+  it("matches a plain \"Sent\"-prefixed name with no specialUse", () => {
+    expect(isSentMailbox({ name: "Sent Messages" })).toBe(true);
+    expect(isSentMailbox({ name: "sent" })).toBe(true);
+  });
+
+  it("does not match an unrelated mailbox", () => {
+    expect(isSentMailbox({ name: "Archive" })).toBe(false);
+    expect(isSentMailbox({ name: "INBOX", specialUse: "\\Archive" })).toBe(false);
   });
 });

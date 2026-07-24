@@ -1,4 +1,4 @@
-import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
+import type { ImapMailbox, ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
 import type { MailHost } from "./mail-host";
 import { baseSubject } from "./recipients";
@@ -14,15 +14,32 @@ export async function connectIcloud(host: MailHost): Promise<ImapSession> {
   });
 }
 
+/**
+ * Whether `box` is the account's Sent mailbox: declared via IMAP SPECIAL-USE
+ * (RFC 6154) when the server advertises it, or — on a server that doesn't —
+ * identified by name. This is the single predicate for "is this Sent",
+ * shared by `resolveSentMailbox` below (which mailbox sync reads Sent
+ * messages from) and `getMailChannels` (`channels.ts`, which mailboxes are
+ * offered as enable-able channels). Using one predicate in both places means
+ * they can never disagree: a server that omits SPECIAL-USE can't end up
+ * offering "Sent Messages" as an enable-able channel while sync separately
+ * reads mail from it under the hood.
+ */
+export function isSentMailbox(box: Pick<ImapMailbox, "name" | "specialUse">): boolean {
+  return box.specialUse === "\\Sent" || /^sent/i.test(box.name);
+}
+
 /** The account's Sent mailbox name, or null if none is discoverable. */
 export async function resolveSentMailbox(
   host: MailHost,
   session: ImapSession
 ): Promise<string | null> {
   const boxes = await host.imap.listMailboxes(session);
+  // Special-use priority: a genuine `\Sent` box always wins over a mere name
+  // match, so a folder like "Sent Archive" can't outrank the real one.
   const bySpecialUse = boxes.find((b) => b.specialUse === "\\Sent");
   if (bySpecialUse) return bySpecialUse.name;
-  const byName = boxes.find((b) => /^sent/i.test(b.name));
+  const byName = boxes.find(isSentMailbox);
   return byName ? byName.name : null;
 }
 

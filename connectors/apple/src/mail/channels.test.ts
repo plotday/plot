@@ -60,6 +60,15 @@ describe("getMailChannels", () => {
     expect(channels.map((c) => c.id)).toEqual(["INBOX"]);
   });
 
+  it("excludes a Sent mailbox identified only by name, when the server advertises no specialUse (matches resolveSentMailbox's fallback)", async () => {
+    const { host } = mockHost([
+      box({ name: "INBOX" }),
+      box({ name: "Sent Messages" }), // no specialUse — server omits SPECIAL-USE
+    ]);
+    const channels = await getMailChannels(host);
+    expect(channels.map((c) => c.id)).toEqual(["INBOX"]);
+  });
+
   it("keeps an \\Archive mailbox", async () => {
     const { host } = mockHost([
       box({ name: "INBOX" }),
@@ -86,6 +95,16 @@ describe("getMailChannels", () => {
     const channels = await getMailChannels(host);
     expect(channels[0].title).toBe("Inbox");
   });
+
+  it.each(["Inbox", "inbox"])(
+    "recognizes a mixed/lower-case mailbox name %j as Inbox (title + enabledByDefault)",
+    async (name) => {
+      const { host } = mockHost([box({ name })]);
+      const channels = await getMailChannels(host);
+      expect(channels[0].title).toBe("Inbox");
+      expect(channels[0].enabledByDefault).toBe(true);
+    }
+  );
 
   it("renders a nested folder's full path with \" / \", for a \"/\" delimiter", async () => {
     const { host } = mockHost([

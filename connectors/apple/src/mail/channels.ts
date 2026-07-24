@@ -1,7 +1,7 @@
 import type { Channel, LinkTypeConfig } from "@plotday/twister/tools/integrations";
 import type { ImapMailbox } from "@plotday/twister/tools/imap";
 
-import { connectIcloud } from "./imap-fetch";
+import { connectIcloud, isSentMailbox } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 
 /**
@@ -58,16 +58,21 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
 ];
 
 /**
- * Special-use attributes excluded from channel enumeration. Sent is excluded
- * because it is read implicitly during INBOX's sync pass (see sync.ts)
- * rather than synced as a channel of its own — offering it separately would
- * let a folder's pass see Sent messages in isolation, reintroducing the
- * split-recompute regression `transformMessages` guards against. Drafts,
- * Trash, and Junk have no sync value. Archive, All, and Flagged are
+ * Special-use attributes excluded from channel enumeration. Sent is NOT
+ * listed here — it is excluded via `isSentMailbox` below instead, the same
+ * predicate `resolveSentMailbox` (`imap-fetch.ts`) uses to find the mailbox
+ * sync reads Sent messages from, so the two can never disagree about which
+ * mailbox is Sent (see `isSentMailbox`'s docstring). A specialUse-only check
+ * here would miss a server that doesn't advertise SPECIAL-USE and only
+ * exposes Sent as a plainly-named "Sent Messages" folder — that folder would
+ * be offered as an enable-able channel while sync separately reads it as
+ * Sent, double-ingesting its mail. Drafts, Trash, and Junk have no sync
+ * value and have no such name-based counterpart to keep in sync with, so
+ * they stay a simple specialUse set. Archive, All, and Flagged are
  * deliberately NOT excluded — an Archive mailbox (or similar) is the whole
  * point of this feature.
  */
-const EXCLUDED_SPECIAL_USE = new Set(["\\Sent", "\\Drafts", "\\Trash", "\\Junk"]);
+const EXCLUDED_SPECIAL_USE = new Set(["\\Drafts", "\\Trash", "\\Junk"]);
 
 /** Render a mailbox's hierarchical `name` as a human-readable path, e.g. "Archive / 2024". */
 function mailboxTitle(box: ImapMailbox): string {
@@ -76,10 +81,14 @@ function mailboxTitle(box: ImapMailbox): string {
 }
 
 /**
- * Every selectable IMAP mailbox becomes its own channel. INBOX is the only one
- * enabled by default; the rest are opt-in. Sent is excluded because it is read
- * implicitly during INBOX's sync pass (see sync.ts) rather than synced as a
- * channel of its own — and Drafts/Trash/Junk have no sync value.
+ * Every selectable IMAP mailbox becomes its own channel, except Sent. INBOX
+ * is the only one enabled by default; the rest are opt-in. Sent is excluded
+ * by `isSentMailbox` (`imap-fetch.ts`) — the same predicate
+ * `resolveSentMailbox` uses to find the mailbox sync reads Sent messages
+ * from — so channel enumeration and Sent resolution can never disagree
+ * about which mailbox is Sent, even on a server that omits SPECIAL-USE and
+ * only exposes a plainly-named "Sent Messages" folder. Drafts, Trash, and
+ * Junk have no sync value and are excluded by specialUse alone.
  */
 export async function getMailChannels(host: MailHost): Promise<Channel[]> {
   const session = await connectIcloud(host);
@@ -87,6 +96,7 @@ export async function getMailChannels(host: MailHost): Promise<Channel[]> {
     const boxes = await host.imap.listMailboxes(session);
     return boxes
       .filter((b) => !b.flags.includes("\\Noselect"))
+      .filter((b) => !isSentMailbox(b))
       .filter((b) => !b.specialUse || !EXCLUDED_SPECIAL_USE.has(b.specialUse))
       .map((b) => ({
         id: b.name,
