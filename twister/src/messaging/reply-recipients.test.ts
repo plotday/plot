@@ -303,4 +303,62 @@ describe("resolveOutboundReplyRecipients", () => {
       expect(r.to).toEqual([]);
     });
   });
+
+  describe("self-exclusion across Gmail alias variants", () => {
+    const mailbox = "kris.braun@gmail.com";
+
+    it("drops a dot-variant of self from curated recipients (Case 1)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          { externalAccountId: "krisbraun@gmail.com", name: "Kris", role: "to" },
+          { externalAccountId: "annie@example.com", name: "Annie", role: "to" },
+        ] as never,
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(result.to.map((a) => a.address)).toEqual(["annie@example.com"]);
+      expect(result.curated).toBe(true);
+    });
+
+    it("drops a +tag variant of self from curated recipients (Case 1)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          { externalAccountId: "kris.braun+plot@gmail.com", name: "Kris", role: "cc" },
+          { externalAccountId: "annie@example.com", name: "Annie", role: "to" },
+        ] as never,
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(result.cc).toEqual([]);
+      expect(result.to.map((a) => a.address)).toEqual(["annie@example.com"]);
+    });
+
+    it("keeps a non-gmail +tag address that merely resembles self", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: [
+          { externalAccountId: "finance+ap@acme.com", name: "AP", role: "to" },
+        ] as never,
+        accessContactEmails: null,
+        headerTo: [],
+        headerCc: [],
+        selfEmails: new Set(["finance@acme.com"]),
+      });
+      expect(result.to.map((a) => a.address)).toEqual(["finance+ap@acme.com"]);
+    });
+
+    it("excludes a dot-variant of self in reply-all (Case 3)", () => {
+      const result = resolveOutboundReplyRecipients({
+        recipients: null,
+        accessContactEmails: null,
+        headerTo: ["krisbraun@gmail.com", "annie@example.com"],
+        headerCc: [],
+        selfEmails: new Set([mailbox]),
+      });
+      expect(result.to.map((a) => a.address)).toEqual(["annie@example.com"]);
+    });
+  });
 });

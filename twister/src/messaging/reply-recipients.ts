@@ -1,4 +1,5 @@
 import type { ResolvedRecipient } from "../plot";
+import { baseEmail, canonicalizeEmail } from "./canonical-email";
 
 /** A resolved outbound recipient: address plus optional display name. */
 export type Addressee = { address: string; name: string | null };
@@ -30,17 +31,32 @@ function roleOf(role: string | null | undefined, fallback: Role): Role {
   return role === "cc" || role === "bcc" || role === "to" ? role : fallback;
 }
 
-/** Case-insensitive de-dupe preserving first-seen order, keyed on address. */
+/** Case- and alias-insensitive de-dupe preserving first-seen order. */
 function dedupe(addressees: Addressee[]): Addressee[] {
   const seen = new Set<string>();
   const out: Addressee[] = [];
   for (const a of addressees) {
-    const key = a.address.toLowerCase();
+    const key = canonicalizeEmail(a.address);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(a);
   }
   return out;
+}
+
+/**
+ * Build a self-address predicate that recognizes Gmail alias variants.
+ *
+ * A header (or a curated recipient) may address the user through a dot or
+ * `+tag` variant that never string-matches the connected mailbox. Comparing on
+ * {@link baseEmail} folds every such variant onto one key, so all of the user's
+ * own aliases are recognized as self. Non-Gmail domains are unaffected: their
+ * base form is just the lowercased address.
+ */
+function selfMatcher(selfEmails: Set<string>): (email: string) => boolean {
+  const bases = new Set<string>();
+  for (const e of selfEmails) bases.add(baseEmail(e));
+  return (email: string) => bases.has(baseEmail(email));
 }
 
 /**
@@ -76,7 +92,7 @@ function dedupe(addressees: Addressee[]): Addressee[] {
  * @param accessContactEmails note access list resolved to lowercased emails, or null (fallback only)
  * @param headerTo original message From ∪ To addresses (any case); may include self, which the header-driven cases exclude
  * @param headerCc original message Cc addresses (any case); may include self, which the header-driven cases exclude
- * @param selfEmails the acting user's own addresses (lowercased) — excluded in the header-driven cases
+ * @param selfEmails the acting user's own addresses (any case) — compared via baseEmail, so Gmail dot/+tag variants of them are recognized and excluded
  * @param headerFrom original message From address(es) (any case), NOT self-filtered — drives the self-reply fallback
  * @param defaultRole role for recipients whose `role` is null (defaults to `"to"`)
  */
@@ -99,6 +115,8 @@ export function resolveOutboundReplyRecipients(args: {
     defaultRole = "to",
   } = args;
 
+  const isSelf = selfMatcher(selfEmails);
+
   const base = resolveBase();
 
   // Self-reply fallback: a self-email thread — a message you sent to your own
@@ -112,7 +130,6 @@ export function resolveOutboundReplyRecipients(args: {
   // in, that mailbox is the original recipient. Self is judged by `selfEmails`
   // here (not by assuming the connector pre-filtered the headers), so this
   // works whether or not a given connector strips self before calling.
-  const isSelf = (email: string) => selfEmails.has(email.toLowerCase());
   const hasNonSelfHeaderParticipant =
     headerTo.some((email) => !isSelf(email)) ||
     headerCc.some((email) => !isSelf(email));
@@ -136,12 +153,19 @@ export function resolveOutboundReplyRecipients(args: {
   function resolveBase(): ReplyRecipients {
     // Case 1: platform-resolved curated recipients (authoritative). Names come
     // from the platform-resolved contact, so they're carried through.
+    //
+    // Self is filtered HERE as well as in the header-driven cases below. The
+    // runtime removes the user's linked identities, but it can only remove
+    // contacts it knows are the user — an alias that resolved to its own
+    // contact row survives that pass and would otherwise be sent a copy of the
+    // user's own reply.
     if (recipients !== null) {
       const to: Addressee[] = [];
       const cc: Addressee[] = [];
       const bcc: Addressee[] = [];
       for (const r of recipients) {
         if (!r.externalAccountId) continue;
+        if (isSelf(r.externalAccountId)) continue;
         const bucket = roleOf(r.role, defaultRole);
         const addressee: Addressee = { address: r.externalAccountId, name: r.name };
         (bucket === "bcc" ? bcc : bucket === "cc" ? cc : to).push(addressee);
@@ -153,8 +177,7 @@ export function resolveOutboundReplyRecipients(args: {
     // Addresses come from message headers, which carry no display name.
     if (accessContactEmails !== null) {
       const allow = (email: string) =>
-        !selfEmails.has(email.toLowerCase()) &&
-        accessContactEmails.has(email.toLowerCase());
+        !isSelf(email) && accessContactEmails.has(email.toLowerCase());
       const to: Addressee[] = headerTo
         .filter(allow)
         .map((address) => ({ address, name: null }));
@@ -169,7 +192,7 @@ export function resolveOutboundReplyRecipients(args: {
         [...to, ...cc].map((a) => a.address.toLowerCase())
       );
       for (const email of accessContactEmails) {
-        if (selfEmails.has(email)) continue;
+        if (isSelf(email)) continue;
         if (headerEmails.has(email)) continue;
         if (already.has(email)) continue;
         to.push({ address: email, name: null });
@@ -179,7 +202,7 @@ export function resolveOutboundReplyRecipients(args: {
 
     // Case 3: reply-all — every original participant except self. Addresses
     // come from message headers, which carry no display name.
-    const notSelf = (email: string) => !selfEmails.has(email.toLowerCase());
+    const notSelf = (email: string) => !isSelf(email);
     return splitPrecedence(
       headerTo.filter(notSelf).map((address) => ({ address, name: null })),
       headerCc.filter(notSelf).map((address) => ({ address, name: null })),
