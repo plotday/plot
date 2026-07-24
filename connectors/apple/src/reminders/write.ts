@@ -67,6 +67,15 @@ export async function onCreateLinkFn(
       channelId: draft.channelId,
     },
     ...(draft.status !== "done" ? { todo: true } : {}),
+    // Binds the composed opening note to a key so the next sync-in
+    // recognizes it as the SAME note (transformTodo emits `key: "description"`
+    // whenever DESCRIPTION is non-empty) instead of appending a second,
+    // duplicate description note. externalContent must equal exactly what
+    // transformTodo will read back from DESCRIPTION — draft.noteContent
+    // round-trips through escapeICSText/unescapeText unchanged.
+    ...(draft.noteContent
+      ? { originatingNote: { key: "description", externalContent: draft.noteContent } }
+      : {}),
   };
 }
 
@@ -94,6 +103,18 @@ function setTodoStatus(icsData: string, done: boolean): string {
  * conflict (`PreconditionFailedError`), re-fetches and retries once —
  * mirrors the pattern `caldav.ts` already documents for calendar event
  * writes.
+ *
+ * `updateEventICS`'s boolean return is checked on BOTH the initial attempt
+ * and the retry: it only THROWS for a 412 (handled below as the retry
+ * trigger), but resolves to `false` for any other non-2xx response (a
+ * transient 5xx, the item having been deleted between the read and the
+ * write). Ignoring that `false` would silently drop the user's action —
+ * the next regular sync unconditionally re-derives `status` from iCloud's
+ * live VTODO (see `transformTodo`), so a swallowed failure gets invisibly
+ * reverted with no error surfaced anywhere. Throwing here instead lets it
+ * propagate like Google Tasks' equivalent write-back does (its REST client
+ * throws on failure rather than returning a boolean) — the runtime's normal
+ * unexpected-callback-error handling takes over from there.
  */
 export async function onLinkUpdatedFn(host: RemindersHost, link: Link): Promise<void> {
   const uid = link.meta?.todoUid as string | undefined;
@@ -107,24 +128,26 @@ export async function onLinkUpdatedFn(host: RemindersHost, link: Link): Promise<
   if (!current) return; // Deleted upstream — nothing to write back.
 
   const isDone = link.status === "done";
+  let ok: boolean;
 
   try {
-    await host.caldav.updateEventICS(
+    ok = await host.caldav.updateEventICS(
       href,
       setTodoStatus(current.icsData, isDone),
       current.etag ?? undefined
     );
   } catch (error) {
-    if (error instanceof PreconditionFailedError) {
-      const fresh = await host.caldav.fetchEventICS(href);
-      if (!fresh) return;
-      await host.caldav.updateEventICS(
-        href,
-        setTodoStatus(fresh.icsData, isDone),
-        fresh.etag ?? undefined
-      );
-      return;
-    }
-    throw error;
+    if (!(error instanceof PreconditionFailedError)) throw error;
+    const fresh = await host.caldav.fetchEventICS(href);
+    if (!fresh) return; // Deleted upstream between the conflict and the retry.
+    ok = await host.caldav.updateEventICS(
+      href,
+      setTodoStatus(fresh.icsData, isDone),
+      fresh.etag ?? undefined
+    );
+  }
+
+  if (!ok) {
+    throw new Error(`Failed to write back reminder status for ${href}`);
   }
 }

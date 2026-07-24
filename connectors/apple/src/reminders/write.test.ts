@@ -79,6 +79,18 @@ describe("onCreateLinkFn", () => {
     const host = makeHost({ updateEventICS: vi.fn().mockResolvedValue(false) });
     expect(await onCreateLinkFn(host, DRAFT)).toBeNull();
   });
+
+  it("binds the composed note via originatingNote so the next sync-in doesn't duplicate it", async () => {
+    const host = makeHost();
+    const link = await onCreateLinkFn(host, DRAFT);
+    expect(link?.originatingNote).toEqual({ key: "description", externalContent: "2%" });
+  });
+
+  it("omits originatingNote when the compose had no note content", async () => {
+    const host = makeHost();
+    const link = await onCreateLinkFn(host, { ...DRAFT, noteContent: null });
+    expect(link).not.toHaveProperty("originatingNote");
+  });
 });
 
 const BASE_LINK = {
@@ -156,5 +168,38 @@ describe("onLinkUpdatedFn", () => {
     expect(updateEventICS).toHaveBeenCalledTimes(2);
     const [, , secondEtag] = updateEventICS.mock.calls[1];
     expect(secondEtag).toBe("fresh-etag");
+  });
+
+  it("throws when the write-back PUT resolves false (not a 412), instead of silently swallowing it", async () => {
+    // A `false` return (as opposed to a thrown PreconditionFailedError) means
+    // the write genuinely failed — a swallowed failure here is invisible:
+    // the NEXT regular sync unconditionally re-derives status from iCloud's
+    // live VTODO (transformTodo), silently reverting the user's action with
+    // no error anywhere. Must throw so it surfaces like any other unexpected
+    // connector-callback failure.
+    const host = makeHost({
+      fetchEventICS: vi.fn().mockResolvedValue({
+        icsData: "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:abc-123\r\nSTATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR",
+        etag: "etag-1",
+      }),
+      updateEventICS: vi.fn().mockResolvedValue(false),
+    });
+
+    await expect(onLinkUpdatedFn(host, BASE_LINK)).rejects.toThrow();
+  });
+
+  it("throws when the retry-after-conflict PUT also resolves false", async () => {
+    const fetchEventICS = vi.fn().mockResolvedValue({
+      icsData: "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:abc-123\r\nSTATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR",
+      etag: "etag-1",
+    });
+    const updateEventICS = vi
+      .fn()
+      .mockRejectedValueOnce(new PreconditionFailedError())
+      .mockResolvedValueOnce(false);
+    const host = makeHost({ fetchEventICS, updateEventICS });
+
+    await expect(onLinkUpdatedFn(host, BASE_LINK)).rejects.toThrow();
+    expect(updateEventICS).toHaveBeenCalledTimes(2);
   });
 });
