@@ -795,6 +795,184 @@ export function classifyCalendarThread(
 }
 
 /**
+ * One attendee response parsed from a `METHOD:REPLY` calendar part. Google
+ * Calendar emails the organizer one of these per response ("Declined: <event>
+ * @ <when>"); Plot folds them onto the event's thread rather than importing
+ * them as standalone email threads.
+ */
+export type CalendarReply = {
+  /** Gmail message id. Used as the note key so a re-sync upserts. */
+  messageId: string;
+  /** ICS UID — the event thread is addressed as `icaluid:<uid>`. */
+  uid: string;
+  partstat: "DECLINED" | "ACCEPTED" | "TENTATIVE";
+  /** ATTENDEE `CN`, else the From display name, else null. */
+  attendeeName: string | null;
+  attendeeEmail: string;
+  /** RECURRENCE-ID; null when the response covers the whole series. */
+  occurrence: Date | null;
+  /** RECURRENCE-ID carried `VALUE=DATE` — affects date formatting only. */
+  allDay: boolean;
+  /** The responder's personal note, when they wrote one. */
+  comment: string | null;
+  sourceCreatedAt: Date;
+};
+
+/** RFC 5545 text un-escaping: `\n`, `\,`, `\;`, `\\`. */
+function unescapeIcsText(value: string): string {
+  return value
+    .replace(/\\n/gi, "\n")
+    .replace(/\\([,;\\])/g, "$1");
+}
+
+/**
+ * Read a property's raw line (parameters included) from an ICS body. Mirrors
+ * `icsProp`'s unfolding but returns everything after the property name so
+ * parameters can be parsed.
+ */
+function icsPropLine(ics: string, name: string): string | null {
+  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
+  const re = new RegExp(`^${name}((?:;[^:\\r\\n]*)?):(.*)$`, "im");
+  const m = unfolded.match(re);
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+
+/**
+ * Split an ICS property's parameter section into a map. Values may be quoted
+ * (`X-RESPONSE-COMMENT="a, b"`), and a quoted value may contain the `;` and
+ * `:` that otherwise delimit parameters — so scan rather than split.
+ */
+function parseIcsParams(paramSection: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const re = /;([A-Za-z0-9-]+)=("([^"]*)"|[^;:]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(paramSection)) !== null) {
+    params[m[1].toUpperCase()] = m[3] !== undefined ? m[3] : m[2];
+  }
+  return params;
+}
+
+/**
+ * Parse an ICS date-time into a UTC instant. Handles `20260804T140000Z`
+ * (UTC), `20260804T100000` (floating or TZID-qualified — read as UTC, since
+ * resolving a TZID needs a tz database the worker doesn't carry), and
+ * `20260804` (VALUE=DATE).
+ */
+function parseIcsDate(value: string): Date | null {
+  const m = value
+    .trim()
+    .match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
+  if (!m) return null;
+  const [, y, mo, d, h = "00", mi = "00", s = "00"] = m;
+  const ms = Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
+  return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+/**
+ * Google's response-notification body opens with "<name> has declined this
+ * invitation with a note:" followed by the quoted comment, before the Meet /
+ * When / Guests boilerplate. Used only when the ICS carried no comment.
+ *
+ * Deliberately narrow: anchored on the `note:` label, bounded to 2000
+ * characters, and stops at the first closing quote. Google localizes this
+ * wording, so a miss is expected and yields null rather than a wrong comment.
+ */
+function commentFromBody(message: GmailMessage): string | null {
+  const { content } = extractBody(message.payload);
+  if (!content) return null;
+  const text = content
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+  const m = text.match(/note:\s*["“]([\s\S]{1,2000}?)["”]/i);
+  return m ? m[1].trim().replace(/\s+/g, " ") || null : null;
+}
+
+/**
+ * Extract every attendee response carried by a Gmail conversation.
+ *
+ * A descriptor is produced for each message whose payload holds a
+ * `text/calendar` part with `METHOD:REPLY`, a `UID`, an `ATTENDEE` with a
+ * decided `PARTSTAT`, and a resolvable attendee address. `NEEDS-ACTION`
+ * yields nothing — there is no response to report.
+ *
+ * Every reply message is returned rather than only the first, so a
+ * conversation carrying a revised response stays correct.
+ */
+export function extractCalendarReplies(
+  messages: GmailMessage[]
+): CalendarReply[] {
+  const replies: CalendarReply[] = [];
+
+  for (const message of messages) {
+    const ics = findPartContent(message.payload, "text/calendar");
+    if (!ics) continue;
+    if ((icsProp(ics, "METHOD") ?? "").toUpperCase() !== "REPLY") continue;
+
+    const uid = icsProp(ics, "UID");
+    if (!uid) continue;
+
+    const attendeeLine = icsPropLine(ics, "ATTENDEE");
+    if (!attendeeLine) continue;
+    const sep = attendeeLine.lastIndexOf(":");
+    const params = parseIcsParams(attendeeLine.slice(0, sep));
+    const attendeeEmail = attendeeLine
+      .slice(sep + 1)
+      .trim()
+      .replace(/^mailto:/i, "");
+    if (!attendeeEmail) continue;
+
+    const partstat = (params.PARTSTAT ?? "").toUpperCase();
+    if (
+      partstat !== "DECLINED" &&
+      partstat !== "ACCEPTED" &&
+      partstat !== "TENTATIVE"
+    ) {
+      continue;
+    }
+
+    const recurrenceLine = icsPropLine(ics, "RECURRENCE-ID");
+    let occurrence: Date | null = null;
+    let allDay = false;
+    if (recurrenceLine) {
+      const rSep = recurrenceLine.lastIndexOf(":");
+      const rParams = parseIcsParams(recurrenceLine.slice(0, rSep));
+      allDay = (rParams.VALUE ?? "").toUpperCase() === "DATE";
+      occurrence = parseIcsDate(recurrenceLine.slice(rSep + 1));
+    }
+
+    const icsComment = icsProp(ics, "COMMENT");
+    const comment =
+      (icsComment ? unescapeIcsText(icsComment).trim() : "") ||
+      (params["X-RESPONSE-COMMENT"]
+        ? unescapeIcsText(params["X-RESPONSE-COMMENT"]).trim()
+        : "") ||
+      commentFromBody(message) ||
+      null;
+
+    const fromName =
+      parseEmailAddress(getHeader(message, "From") ?? "")?.name ?? null;
+
+    replies.push({
+      messageId: message.id,
+      uid,
+      partstat,
+      attendeeName: params.CN?.trim() || fromName || null,
+      attendeeEmail,
+      occurrence,
+      allDay,
+      comment,
+      sourceCreatedAt: new Date(Number(message.internalDate)),
+    });
+  }
+
+  return replies;
+}
+
+/**
  * Locates the start of an Outlook-style "From: / Sent: / To: / Subject:"
  * reply header even when the field labels are not wrapped in `<b>` or
  * `<strong>` — e.g. corporate Exchange / Outlook variants that put the

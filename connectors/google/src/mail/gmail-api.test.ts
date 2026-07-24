@@ -7,11 +7,13 @@ import {
   buildReactionMessage,
   buildReplyMessage,
   classifyCalendarThread,
+  extractCalendarReplies,
   formatFromHeader,
   isSendableGmailReaction,
   stripQuotedReply,
   transformGmailThread,
   type AttachmentData,
+  type CalendarReply,
   type GmailMessage,
   type GmailMessagePart,
   type GmailThread,
@@ -908,6 +910,188 @@ describe("classifyCalendarThread", () => {
 
   it("skips an RSVP (METHOD:REPLY)", () => {
     expect(classifyCalendarThread([msgWithIcs(icsReply)])).toBeNull();
+  });
+});
+
+describe("extractCalendarReplies", () => {
+  /** Minimal well-typed GmailMessage wrapping a text/calendar payload. */
+  function replyMessage(
+    ics: string,
+    opts: { id?: string; internalDate?: string; html?: string } = {}
+  ): GmailMessage {
+    const parts: GmailMessagePart[] = [part("text/calendar", { data: ics })];
+    if (opts.html) parts.unshift(part("text/html", { data: opts.html }));
+    return {
+      id: opts.id ?? "m1",
+      threadId: "t1",
+      labelIds: ["INBOX"],
+      snippet: "snippet",
+      historyId: "1",
+      internalDate: opts.internalDate ?? "1700000000000",
+      sizeEstimate: 500,
+      payload: part("multipart/mixed", { parts }),
+    };
+  }
+
+  const declined = [
+    "BEGIN:VCALENDAR",
+    "METHOD:REPLY",
+    "BEGIN:VEVENT",
+    "UID:uid-1@google.com",
+    "ATTENDEE;CUTYPE=INDIVIDUAL;PARTSTAT=DECLINED;CN=Beth Round:mailto:beth@example.test",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  it("extracts a decline", () => {
+    const [reply] = extractCalendarReplies([replyMessage(declined)]);
+    expect(reply).toMatchObject({
+      messageId: "m1",
+      uid: "uid-1@google.com",
+      partstat: "DECLINED",
+      attendeeName: "Beth Round",
+      attendeeEmail: "beth@example.test",
+      occurrence: null,
+      allDay: false,
+      comment: null,
+    });
+    expect(reply.sourceCreatedAt.getTime()).toBe(1700000000000);
+  });
+
+  it("extracts accepted and tentative", () => {
+    const accepted = declined.replace("PARTSTAT=DECLINED", "PARTSTAT=ACCEPTED");
+    const tentative = declined.replace("PARTSTAT=DECLINED", "PARTSTAT=TENTATIVE");
+    expect(extractCalendarReplies([replyMessage(accepted)])[0].partstat).toBe("ACCEPTED");
+    expect(extractCalendarReplies([replyMessage(tentative)])[0].partstat).toBe("TENTATIVE");
+  });
+
+  it("ignores NEEDS-ACTION", () => {
+    const pending = declined.replace("PARTSTAT=DECLINED", "PARTSTAT=NEEDS-ACTION");
+    expect(extractCalendarReplies([replyMessage(pending)])).toEqual([]);
+  });
+
+  it("ignores non-REPLY methods and messages with no ICS", () => {
+    const request = declined.replace("METHOD:REPLY", "METHOD:REQUEST");
+    expect(extractCalendarReplies([replyMessage(request)])).toEqual([]);
+    expect(
+      extractCalendarReplies([
+        { ...replyMessage(declined), payload: part("text/plain", { data: "hi" }) },
+      ])
+    ).toEqual([]);
+  });
+
+  it("reads a timed RECURRENCE-ID as a UTC instant", () => {
+    const ics = declined.replace(
+      "END:VEVENT",
+      "RECURRENCE-ID:20260804T140000Z\r\nEND:VEVENT"
+    );
+    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    expect(reply.occurrence?.toISOString()).toBe("2026-08-04T14:00:00.000Z");
+    expect(reply.allDay).toBe(false);
+  });
+
+  it("reads an all-day RECURRENCE-ID", () => {
+    const ics = declined.replace(
+      "END:VEVENT",
+      "RECURRENCE-ID;VALUE=DATE:20260804\r\nEND:VEVENT"
+    );
+    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    expect(reply.occurrence?.toISOString()).toBe("2026-08-04T00:00:00.000Z");
+    expect(reply.allDay).toBe(true);
+  });
+
+  it("reads a floating RECURRENCE-ID with a TZID as UTC", () => {
+    // No offset is recoverable without a tz database; treating it as UTC keeps
+    // the formatted date correct for every occurrence except late evening.
+    const ics = declined.replace(
+      "END:VEVENT",
+      "RECURRENCE-ID;TZID=America/Toronto:20260804T100000\r\nEND:VEVENT"
+    );
+    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    expect(reply.occurrence?.toISOString()).toBe("2026-08-04T10:00:00.000Z");
+  });
+
+  it("prefers the COMMENT property for the personal note", () => {
+    const ics = declined.replace(
+      "END:VEVENT",
+      "COMMENT:Could we move this to Thursday?\r\nEND:VEVENT"
+    );
+    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+      "Could we move this to Thursday?"
+    );
+  });
+
+  it("unfolds a COMMENT split across continuation lines", () => {
+    const ics = declined.replace(
+      "END:VEVENT",
+      "COMMENT:Could we move this\r\n  to Thursday?\r\nEND:VEVENT"
+    );
+    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+      "Could we move this to Thursday?"
+    );
+  });
+
+  it("unescapes RFC 5545 escapes in COMMENT", () => {
+    const ics = declined.replace(
+      "END:VEVENT",
+      "COMMENT:Line one\\nLine two\\, and more\r\nEND:VEVENT"
+    );
+    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+      "Line one\nLine two, and more"
+    );
+  });
+
+  it("falls back to the ATTENDEE X-RESPONSE-COMMENT parameter", () => {
+    const ics = declined.replace(
+      "CN=Beth Round:",
+      'CN=Beth Round;X-RESPONSE-COMMENT="Sorry, conflict":'
+    );
+    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+      "Sorry, conflict"
+    );
+  });
+
+  it("falls back to the email body's quoted note", () => {
+    const html =
+      "<div>Beth Round has declined this invitation with a note:<br>" +
+      '&quot;Could we move this to Thursday?&quot;</div>' +
+      '<div><a href="https://meet.google.com/abc">Join with Google Meet</a></div>';
+    expect(extractCalendarReplies([replyMessage(declined, { html })])[0].comment).toBe(
+      "Could we move this to Thursday?"
+    );
+  });
+
+  it("returns null comment when no source has one", () => {
+    const html = "<div>Beth Round has declined this invitation.</div>";
+    expect(extractCalendarReplies([replyMessage(declined, { html })])[0].comment).toBeNull();
+  });
+
+  it("falls back to the From display name when CN is absent", () => {
+    const ics = declined.replace(";CN=Beth Round:", ":");
+    const msg = replyMessage(ics);
+    msg.payload.headers = [{ name: "From", value: '"Beth Round" <beth@example.test>' }];
+    expect(extractCalendarReplies([msg])[0].attendeeName).toBe("Beth Round");
+  });
+
+  it("returns one descriptor per reply message in the conversation", () => {
+    const second = declined
+      .replace("PARTSTAT=DECLINED", "PARTSTAT=ACCEPTED")
+      .replace("beth@example.test", "sam@example.test");
+    const replies = extractCalendarReplies([
+      replyMessage(declined, { id: "m1" }),
+      replyMessage(second, { id: "m2" }),
+    ]);
+    expect(replies.map((r) => [r.messageId, r.partstat])).toEqual([
+      ["m1", "DECLINED"],
+      ["m2", "ACCEPTED"],
+    ]);
+  });
+
+  it("skips a reply with no resolvable UID or attendee email", () => {
+    const noUid = declined.replace("UID:uid-1@google.com\r\n", "");
+    const noAttendee = declined.replace(/^ATTENDEE.*\r\n/m, "");
+    expect(extractCalendarReplies([replyMessage(noUid)])).toEqual([]);
+    expect(extractCalendarReplies([replyMessage(noAttendee)])).toEqual([]);
   });
 });
 
