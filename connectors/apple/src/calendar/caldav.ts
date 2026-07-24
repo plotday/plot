@@ -22,6 +22,13 @@ export type CalDAVEvent = {
   icsData: string;
 };
 
+/**
+ * Alias for CalDAVEvent used where the resource isn't necessarily a VEVENT —
+ * identical {href, etag, icsData} shape, reused for VTODO resources so the
+ * type name at call sites doesn't imply "event".
+ */
+export type CalDAVResource = CalDAVEvent;
+
 /** A single added/modified item reported by a `sync-collection` REPORT. */
 export type CalDAVCollectionChange = {
   href: string;
@@ -224,6 +231,21 @@ export class CalDAVClient {
    * List all calendars in the calendar home.
    */
   async listCalendars(calendarHomeUrl: string): Promise<CalDAVCalendar[]> {
+    return this.listCalendarsByComponent(calendarHomeUrl, "VEVENT");
+  }
+
+  /**
+   * List collections in the calendar home whose
+   * `supported-calendar-component-set` includes `component`. Generalizes the
+   * VEVENT-only filtering `listCalendars` used to hardcode, so the same
+   * PROPFIND body/parsing serves both event calendars and VTODO reminders
+   * lists. A server that omits `supported-calendar-component-set` keeps the
+   * collection (assumed to match).
+   */
+  async listCalendarsByComponent(
+    calendarHomeUrl: string,
+    component: "VEVENT" | "VTODO"
+  ): Promise<CalDAVCalendar[]> {
     const body = `<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop>
@@ -245,20 +267,10 @@ export class CalDAVClient {
     const calendars: CalDAVCalendar[] = [];
     for (const entry of entries) {
       const resourceType = entry.props["resourcetype"] || "";
-      // Require a real CalDAV <calendar> ELEMENT in resourcetype. A plain
-      // substring test for "calendar" also matches the "calendarserver.org"
-      // namespace URL that iCloud stamps on system collections (e.g. the
-      // nameless `notification` collection), which would otherwise surface as
-      // an "Untitled Calendar". Match the tag itself instead. This also
-      // excludes the scheduling inbox/outbox and the account root, which are
-      // plain collections with no <calendar>.
       if (!/<(?:[a-z0-9]+:)?calendar[\s/>]/i.test(resourceType)) continue;
-      // Exclude non-event calendars: iCloud Reminders is a VTODO list, not an
-      // events calendar. iCloud returns supported-calendar-component-set, so
-      // require VEVENT; if a server omits the property, keep the calendar
-      // (assume it holds events).
+
       const compSet = entry.props["supported-calendar-component-set"];
-      if (compSet && !/VEVENT/i.test(compSet)) continue;
+      if (compSet && !new RegExp(component, "i").test(compSet)) continue;
 
       calendars.push({
         href: entry.href,
@@ -268,6 +280,68 @@ export class CalDAVClient {
     }
 
     return calendars;
+  }
+
+  /**
+   * Fetch every VTODO resource in a reminders list via a `calendar-query`
+   * REPORT with a VTODO comp-filter and NO time-range — unlike events, todos
+   * aren't windowed; a reminder either exists in the list or it doesn't.
+   */
+  async fetchTodos(calendarHref: string): Promise<CalDAVResource[]> {
+    const body = `<?xml version="1.0" encoding="UTF-8"?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:getetag/>
+    <c:calendar-data/>
+  </d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="VTODO"/>
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>`;
+
+    const xml = await this.request(
+      "REPORT",
+      this.resolveUrl(calendarHref),
+      body,
+      1
+    );
+    return parseEventResponses(xml);
+  }
+
+  /**
+   * Discover the default reminders (task) list href, if the server
+   * advertises one via `schedule-default-tasks-URL` (the VTODO analog of
+   * RFC 6638's `schedule-default-calendar-URL`).
+   *
+   * UNVERIFIED against a real account — there is no confirmed standard
+   * property for this. Returns `null` on absence or any request failure so
+   * callers degrade to opt-in-only (no default selection) instead of
+   * guessing wrong. Confirm/correct during live verification (Task 9).
+   */
+  async discoverDefaultTasksListHref(principalUrl: string): Promise<string | null> {
+    const body = `<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <c:schedule-default-tasks-URL/>
+  </d:prop>
+</d:propfind>`;
+
+    try {
+      const xml = await this.request(
+        "PROPFIND",
+        this.resolveUrl(principalUrl),
+        body,
+        0
+      );
+      const match = xml.match(
+        /<(?:[a-zA-Z][\w.-]*:)?schedule-default-tasks-URL[^>]*>\s*<(?:[a-zA-Z][\w.-]*:)?href[^>]*>([^<]+)</i
+      );
+      return match ? match[1].trim() : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

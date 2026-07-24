@@ -381,3 +381,147 @@ describe("CalDAVClient.fetchEventICS / updateEventICS — etag + If-Match", () =
     expect(await client.updateEventICS("/cal/evt-1.ics", "ICS")).toBe(true);
   });
 });
+
+describe("CalDAVClient.listCalendarsByComponent", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const HOME_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<multistatus xmlns="DAV:">
+<response>
+ <href>/289842362/calendars/work/</href>
+ <propstat><prop>
+  <displayname>Work</displayname>
+  <resourcetype><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+  <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name="VEVENT"/></supported-calendar-component-set>
+ </prop><status>HTTP/1.1 200 OK</status></propstat>
+</response>
+<response>
+ <href>/289842362/tasks/home/</href>
+ <propstat><prop>
+  <displayname>Reminders</displayname>
+  <resourcetype><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+  <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name="VTODO"/></supported-calendar-component-set>
+ </prop><status>HTTP/1.1 200 OK</status></propstat>
+</response>
+</multistatus>`;
+
+  it("returns only VTODO collections when filtering for VTODO", async () => {
+    fetchMock.mockResolvedValue(mockResponse(207, HOME_XML));
+    const client = makeClient();
+
+    const lists = await client.listCalendarsByComponent(
+      "/289842362/",
+      "VTODO"
+    );
+
+    expect(lists).toEqual([
+      { href: "/289842362/tasks/home/", displayName: "Reminders", ctag: null },
+    ]);
+  });
+
+  it("returns only VEVENT collections when filtering for VEVENT (existing listCalendars behavior)", async () => {
+    fetchMock.mockResolvedValue(mockResponse(207, HOME_XML));
+    const client = makeClient();
+
+    const calendars = await client.listCalendars("/289842362/");
+
+    expect(calendars).toEqual([
+      { href: "/289842362/calendars/work/", displayName: "Work", ctag: null },
+    ]);
+  });
+});
+
+describe("CalDAVClient.fetchTodos", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends a VTODO comp-filter with no time-range and parses the returned resources", async () => {
+    const REPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<multistatus xmlns="DAV:">
+<response>
+ <href>/289842362/tasks/home/abc-123.ics</href>
+ <propstat><prop>
+  <getetag>"etag-1"</getetag>
+  <calendar-data xmlns="urn:ietf:params:xml:ns:caldav">BEGIN:VCALENDAR
+END:VCALENDAR</calendar-data>
+ </prop><status>HTTP/1.1 200 OK</status></propstat>
+</response>
+</multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, REPORT_XML));
+    const client = makeClient();
+
+    const resources = await client.fetchTodos("/289842362/tasks/home/");
+
+    expect(resources).toEqual([
+      {
+        href: "/289842362/tasks/home/abc-123.ics",
+        etag: "etag-1",
+        icsData: "BEGIN:VCALENDAR\nEND:VCALENDAR",
+      },
+    ]);
+
+    const [, , sentBody] = fetchMock.mock.calls[0];
+    // sentBody is undefined here — fetch's signature is (url, init); assert on init.body instead:
+    const init = fetchMock.mock.calls[0][1] as { body: string };
+    expect(init.body).toContain('<c:comp-filter name="VTODO"/>');
+    expect(init.body).not.toContain("time-range");
+  });
+});
+
+describe("CalDAVClient.discoverDefaultTasksListHref", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns the href when the server advertises a default tasks list", async () => {
+    const XML = `<?xml version="1.0" encoding="UTF-8"?>
+<multistatus xmlns="DAV:">
+<response>
+ <href>/289842362/</href>
+ <propstat><prop>
+  <schedule-default-tasks-URL xmlns="urn:ietf:params:xml:ns:caldav"><href>/289842362/tasks/home/</href></schedule-default-tasks-URL>
+ </prop><status>HTTP/1.1 200 OK</status></propstat>
+</response>
+</multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, XML));
+    const client = makeClient();
+
+    const href = await client.discoverDefaultTasksListHref("/289842362/");
+    expect(href).toBe("/289842362/tasks/home/");
+  });
+
+  it("returns null when the property is absent (degrade to opt-in-only)", async () => {
+    const XML = `<?xml version="1.0" encoding="UTF-8"?>
+<multistatus xmlns="DAV:">
+<response><href>/289842362/</href><propstat><prop/><status>HTTP/1.1 404 Not Found</status></propstat></response>
+</multistatus>`;
+    fetchMock.mockResolvedValue(mockResponse(207, XML));
+    const client = makeClient();
+
+    expect(await client.discoverDefaultTasksListHref("/289842362/")).toBeNull();
+  });
+});
