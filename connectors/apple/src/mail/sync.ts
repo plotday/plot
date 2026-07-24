@@ -17,7 +17,13 @@ import {
   type MailMessage,
 } from "./transform";
 
-const DEFAULT_HISTORY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/**
+ * Fallback history floor when no explicit/granted floor is available.
+ * Exported so `apple.ts` uses this exact constant for its own fallback
+ * (`resolveMailHistoryMin`) instead of a second, independently-maintained
+ * copy that could silently drift out of sync with this one.
+ */
+export const DEFAULT_HISTORY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RECENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /** The connection-level cursor document (see `MailSyncState`). */
@@ -104,8 +110,14 @@ function resolveSinceFloor(syncHistoryMin: string | undefined): Date {
  * Widen the persisted history floor: the EARLIEST of the stored floor and an
  * incoming one. Never narrows — a plan downgrade must not erase history that
  * has already been synced. Invalid/absent values are ignored.
+ *
+ * Exported so `apple.ts` reuses this exact merge rule for
+ * `mail:granted_history_min` (the connection-level record of the widest
+ * floor any plan has ever granted, persisted independently of `mail:state` —
+ * see `Apple.persistGrantedHistoryMin`'s doc) instead of a second,
+ * independently-maintained copy of the same "earliest wins" logic.
  */
-function widestFloor(
+export function widestFloor(
   stored: string | undefined,
   incoming: string | undefined
 ): string | undefined {

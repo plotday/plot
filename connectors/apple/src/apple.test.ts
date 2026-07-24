@@ -7,9 +7,13 @@ import type { ImapMessage } from "@plotday/twister/tools/imap";
 // poll keys it uses), not the merged sync pass itself (covered by
 // mail/sync.test.ts). Hoisted by vitest above the imports below regardless of
 // source position.
-vi.mock("./mail/sync", () => ({
-  mailSync: vi.fn(),
-}));
+vi.mock("./mail/sync", async (importOriginal) => {
+  // Keep the real DEFAULT_HISTORY_MS/widestFloor exports — apple.ts's
+  // resolveMailHistoryMin/persistGrantedHistoryMin depend on both — and mock
+  // only mailSync itself.
+  const actual = await importOriginal<typeof import("./mail/sync")>();
+  return { ...actual, mailSync: vi.fn() };
+});
 
 import { Apple } from "./apple";
 import {
@@ -517,6 +521,10 @@ describe("Apple mail sync — connection-level scheduling", () => {
       enabledMailChannels: priv<() => Promise<unknown>>("enabledMailChannels"),
       armMailWatches: priv<(c: unknown) => Promise<void>>("armMailWatches"),
       scheduleMailPoll: priv<() => Promise<void>>("scheduleMailPoll"),
+      resolveMailHistoryMin: priv<() => Promise<string>>("resolveMailHistoryMin"),
+      persistGrantedHistoryMin: priv<(incoming: string) => Promise<string>>(
+        "persistGrantedHistoryMin"
+      ),
       mailSyncTask: Apple.prototype.mailSyncTask,
       mailPushDrain: Apple.prototype.mailPushDrain,
       mailSyncDrain: Apple.prototype.mailSyncDrain,
@@ -580,10 +588,13 @@ describe("Apple mail sync — connection-level scheduling", () => {
         { key: LOCK_KEY, ttlMs: 30 * 60 * 1000 },
       ]);
       expect(mailSync).toHaveBeenCalledTimes(1);
+      // Not `undefined`: a poll with no persisted granted floor still hands
+      // mailSync a computed (default) floor — see the "history floor"
+      // describe block below for the exact value.
       expect(mailSync).toHaveBeenCalledWith(
         expect.anything(),
         BOTH_CHANNELS,
-        undefined
+        expect.any(String)
       );
       expect(releaseLockCalls).toEqual([LOCK_KEY]);
     });
@@ -599,7 +610,7 @@ describe("Apple mail sync — connection-level scheduling", () => {
       expect(mailSync).toHaveBeenCalledWith(
         expect.anything(),
         BOTH_CHANNELS,
-        undefined
+        expect.any(String)
       );
     });
 
@@ -688,12 +699,32 @@ describe("Apple mail sync — connection-level scheduling", () => {
       ]);
     });
 
-    it("ignores a push for a channel that was disabled since the watch was armed", async () => {
+    it("does nothing when every mail channel is disabled", async () => {
       const { self, scheduleDrainCalls } = makeSelf({ channels: [] });
 
       await Apple.prototype.mailPushed.call(self, INBOX);
 
       expect(scheduleDrainCalls).toEqual([]);
+    });
+
+    it("still schedules the connection-level drain for the remaining channels when the push names a since-disabled channel", async () => {
+      // Per-channel push filtering no longer exists — a push arrives with
+      // the id of the mailbox that pushed, but `mailPushed` only checks
+      // whether ANY mail channel is enabled, never whether THIS one still
+      // is. INBOX is disabled here (absent from the enabled set) while
+      // ARCHIVE stays enabled, and a push naming the disabled INBOX must
+      // still schedule the merged pass that will cover ARCHIVE.
+      const { self, scheduleDrainCalls } = makeSelf({ channels: [ARCHIVE] });
+
+      await Apple.prototype.mailPushed.call(self, INBOX);
+
+      expect(scheduleDrainCalls).toEqual([
+        {
+          key: "mail-push",
+          handler: Apple.prototype.mailPushDrain,
+          options: { delayMs: 2000, handlerArgs: [] },
+        },
+      ]);
     });
   });
 
@@ -713,7 +744,7 @@ describe("Apple mail sync — connection-level scheduling", () => {
       expect(mailSync).toHaveBeenCalledWith(
         expect.anything(),
         BOTH_CHANNELS,
-        undefined
+        expect.any(String)
       );
       expect(releaseLockCalls).toEqual([LOCK_KEY]);
     });
@@ -805,7 +836,7 @@ describe("Apple mail sync — connection-level scheduling", () => {
       );
     });
 
-    it("RESCHEDULES itself when another pass holds the lock, and still arms the poll + watches", async () => {
+    it("RESCHEDULES itself when another pass holds the lock, still arms the watches, but does NOT re-arm the poll", async () => {
       const {
         self,
         scheduleDrainCalls,
@@ -836,10 +867,27 @@ describe("Apple mail sync — connection-level scheduling", () => {
           },
         },
       ]);
+      // A crashed lock holder is retried every 5s for up to the 30-minute
+      // TTL — re-arming the recurring poll on EVERY one of those ~360
+      // retries would push its next fire 15 minutes into the future every
+      // time, starving the poll's safety-net role for the whole window.
+      // Watches still self-heal on every retry; only the poll re-arm is
+      // deferred to the acquired branch (see the next test).
+      expect(scheduleRecurringCalls).toEqual([]);
+      expect(watchCalls.map((c) => c.channelId)).toEqual([ARCHIVE, INBOX]);
+    });
+
+    it("re-arms the recurring poll once the pass actually acquires the lock and runs", async () => {
+      const { self, scheduleRecurringCalls } = makeSelf({
+        channels: [INBOX],
+        acquireLockResult: true,
+      });
+
+      await Apple.prototype.mailSyncTask.call(self, INBOX);
+
       expect(scheduleRecurringCalls).toEqual([
         expect.objectContaining({ key: "mailpoll" }),
       ]);
-      expect(watchCalls.map((c) => c.channelId)).toEqual([ARCHIVE, INBOX]);
     });
 
     it("releases the lock even when the merged pass throws", async () => {
@@ -952,6 +1000,132 @@ describe("Apple mail sync — connection-level scheduling", () => {
     });
   });
 
+  // I1 fix: the granted history floor must survive even when BOTH carriers
+  // that would otherwise carry it are lost — the enabling task's own
+  // callback argument (queue exhaustion) and a coalesced drain's frozen
+  // `handlerArgs`. `MAIL_GRANTED_HISTORY_MIN_KEY` persists it independently
+  // of `mail:state`, and every entry point that can run with no explicit
+  // floor of its own (`mailSyncTask`'s fallback, `mailPoll`, `mailPushDrain`)
+  // reads it back via `resolveMailHistoryMin`.
+  describe("granted history floor persistence", () => {
+    function privateMethod<T>(name: string): T {
+      return (Apple.prototype as unknown as Record<string, T>)[name];
+    }
+    const onMailChannelEnabled = privateMethod<
+      (
+        channel: { id: string },
+        context?: { syncHistoryMin?: Date }
+      ) => Promise<void>
+    >("onMailChannelEnabled");
+
+    const GRANTED_KEY = "mail:granted_history_min";
+    const WIDE = "2020-01-01T00:00:00.000Z";
+    const NARROWER = "2025-06-01T00:00:00.000Z";
+
+    it("onMailChannelEnabled persists the granted floor to its own key, independent of mail:state", async () => {
+      const { self, store } = makeSelf({ channels: [INBOX] });
+
+      await onMailChannelEnabled.call(self, { id: ARCHIVE }, {
+        syncHistoryMin: new Date(WIDE),
+      });
+
+      expect(store.get(GRANTED_KEY)).toBe(WIDE);
+    });
+
+    it("never narrows the persisted granted floor on a later, narrower enable", async () => {
+      const { self, store, callbackCalls } = makeSelf({ channels: [INBOX] });
+
+      await onMailChannelEnabled.call(self, { id: INBOX }, {
+        syncHistoryMin: new Date(WIDE),
+      });
+      await onMailChannelEnabled.call(self, { id: ARCHIVE }, {
+        syncHistoryMin: new Date(NARROWER),
+      });
+
+      // The stored floor stays at the earlier (wider) value...
+      expect(store.get(GRANTED_KEY)).toBe(WIDE);
+      // ...and the second enable's queued task carries that same wide floor,
+      // not the narrower value its own plan happened to report.
+      expect(callbackCalls[1]).toEqual([
+        Apple.prototype.mailSyncTask,
+        ARCHIVE,
+        WIDE,
+      ]);
+    });
+
+    it("survives the enabling task being lost entirely: the next poll still uses the granted floor, not the 7-day default", async () => {
+      const { self, store } = makeSelf({ channels: [INBOX] });
+
+      // Enable persists the floor to its own key AND queues mailSyncTask —
+      // simulate the queued task exhausting its retries (or acking on a
+      // terminal auth error) by simply never invoking it. Only the
+      // independent key survives.
+      await onMailChannelEnabled.call(self, { id: INBOX }, {
+        syncHistoryMin: new Date(WIDE),
+      });
+      expect(store.get(GRANTED_KEY)).toBe(WIDE);
+
+      // The next scheduled connection-level poll runs with no floor of its
+      // own — this is the "next poll" the fix is required to protect.
+      await Apple.prototype.mailPoll.call(self);
+
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        [{ channelId: INBOX, mailbox: "INBOX" }],
+        WIDE
+      );
+    });
+
+    it("mailPushDrain also recovers the persisted granted floor when it carries no explicit one", async () => {
+      const { self } = makeSelf({
+        channels: [INBOX],
+        acquireLockResult: true,
+        initialStore: { [GRANTED_KEY]: WIDE },
+      });
+
+      await Apple.prototype.mailPushDrain.call(self, []);
+
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        [{ channelId: INBOX, mailbox: "INBOX" }],
+        WIDE
+      );
+    });
+
+    it("mailSyncTask falls back to the persisted granted floor, not the 7-day default, when its own argument is absent", async () => {
+      const { self } = makeSelf({
+        channels: [INBOX],
+        acquireLockResult: true,
+        initialStore: { [GRANTED_KEY]: WIDE },
+      });
+
+      await Apple.prototype.mailSyncTask.call(self, INBOX, null);
+
+      expect(mailSync).toHaveBeenCalledWith(
+        expect.anything(),
+        [{ channelId: INBOX, mailbox: "INBOX" }],
+        WIDE
+      );
+    });
+
+    it("falls back to the ~7-day default only when no floor was ever granted", async () => {
+      const { self } = makeSelf({ channels: [INBOX] });
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+      const before = Date.now();
+      await Apple.prototype.mailPoll.call(self);
+      const after = Date.now();
+
+      const [, , floorArg] = vi.mocked(mailSync).mock.calls.at(-1)!;
+      const floorMs = new Date(floorArg as string).getTime();
+      // Bounded by [before, after] minus exactly 7 days — proves the default
+      // really is ~7 days, not merely "some string" (a mutation to a
+      // different span would still pass a looser `expect.any(String)` check).
+      expect(floorMs).toBeGreaterThanOrEqual(before - sevenDaysMs);
+      expect(floorMs).toBeLessThanOrEqual(after - sevenDaysMs);
+    });
+  });
+
   describe("enabledMailChannels", () => {
     it("enumerates only mail markers, and never mistakes a folder name containing ':' for a product prefix", async () => {
       const nested = "mail:Archive/2024";
@@ -970,7 +1144,7 @@ describe("Apple mail sync — connection-level scheduling", () => {
           { channelId: INBOX, mailbox: "INBOX" },
           { channelId: colon, mailbox: "Notes:Work" },
         ],
-        undefined
+        expect.any(String)
       );
     });
   });

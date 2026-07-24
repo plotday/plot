@@ -58,7 +58,7 @@ import { downloadAttachmentFn } from "./mail/attachments";
 import { getMailChannels } from "./mail/channels";
 import { connectIcloud, ICLOUD_IMAP, resolveThreadMessages } from "./mail/imap-fetch";
 import type { MailHost } from "./mail/mail-host";
-import { mailSync, type MailChannel } from "./mail/sync";
+import { DEFAULT_HISTORY_MS, mailSync, widestFloor, type MailChannel } from "./mail/sync";
 import {
   onCreateLinkFn,
   onNoteCreatedFn,
@@ -105,8 +105,25 @@ const MAIL_POLL_TASK = "mailpoll";
 const MAIL_PUSH_DRAIN = "mail-push";
 const MAIL_SYNC_DRAIN = "mail-sync";
 
-/** Fallback history floor when the plan never granted one: 7 days. */
-const MAIL_DEFAULT_HISTORY_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Connection-level record of the WIDEST history floor any plan has ever
+ * granted this connection. Deliberately its own key, separate from
+ * `mail:state`: `mail:state` is read-at-start / replaced-wholesale by
+ * `mailSync` under the `mail_sync` lock (see MAIL_SYNC_LOCK's doc), so a
+ * lock-free write here would be silently discarded by an in-flight pass.
+ * This key is never touched by `mailSync` — only read as a fallback (see
+ * `resolveMailHistoryMin`) and written by `persistGrantedHistoryMin` — so
+ * writing it from `onMailChannelEnabled` outside the lock is race-free.
+ *
+ * This is what makes the granted floor durable even when BOTH carriers that
+ * would otherwise carry it can drop it: `mailSyncTask`'s callback/task
+ * argument (lost on queue exhaustion after repeated failures) and
+ * `scheduleDrain`'s coalesced `handlerArgs` (frozen at the first call of a
+ * burst, so a later wider floor scheduled inside the coalescing window is
+ * discarded). Not cleared on channel disable — like `mail:auth_actor_id`,
+ * it's a connection-level fact that must survive a disable/re-enable cycle.
+ */
+const MAIL_GRANTED_HISTORY_MIN_KEY = "mail:granted_history_min";
 
 /**
  * Build canonical identifiers for an Apple calendar (ICS) event. First
@@ -532,12 +549,19 @@ export class Apple extends Connector<Apple> {
    * a merged connection-level sync pass off the HTTP path, carrying whatever
    * history floor the plan granted.
    *
-   * The floor travels as a callback argument rather than being written here:
-   * `mail:state` is owned by `mailSync` under the `mail_sync` lock, and a
-   * read-modify-write from this (lock-free) path would be silently discarded
-   * by an in-flight pass replacing the document from its own earlier snapshot.
-   * `mailSync` widens the persisted floor with the value it is handed and
-   * never narrows it, so a plan downgrade can't erase history already synced.
+   * The floor is NOT written into `mail:state` here — that document is owned
+   * by `mailSync` under the `mail_sync` lock, and a read-modify-write from
+   * this (lock-free) path would be silently discarded by an in-flight pass
+   * replacing the document from its own earlier snapshot. But "don't write
+   * into `mail:state`" doesn't mean "don't persist at all": a granted floor
+   * that exists ONLY as this task's callback argument is lost for good if the
+   * task exhausts its retries (e.g. every attempt hits an IMAP timeout) or if
+   * a coalesced `scheduleDrain` burst freezes on an earlier, narrower call's
+   * args. So the floor is ALSO persisted here, widening-only, to its own
+   * connection-level key (`persistGrantedHistoryMin` — see that key's doc for
+   * why this write is race-free) — that's what lets `mailSyncTask` (and
+   * `mailPoll`/`mailPushDrain`, via `resolveMailHistoryMin`) recover the
+   * granted window even after the task that carried it is gone.
    *
    * Always queues the pass, even on re-dispatch (auto-enable / recovery):
    * `mailSync` upserts by `source`, so re-running it is a safe, idempotent
@@ -550,14 +574,46 @@ export class Apple extends Connector<Apple> {
   private async onMailChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     await this.set(`${MAIL_ENABLED_PREFIX}${channel.id}`, true);
 
+    const grantedFloor = context?.syncHistoryMin
+      ? await this.persistGrantedHistoryMin(context.syncHistoryMin.toISOString())
+      : ((await this.get<string>(MAIL_GRANTED_HISTORY_MIN_KEY)) ?? null);
+
     // Run the merged pass off the HTTP path. `null` (not `undefined`) for an
     // absent floor — callback arguments must be serializable.
-    const cb = await this.callback(
-      this.mailSyncTask,
-      channel.id,
-      context?.syncHistoryMin ? context.syncHistoryMin.toISOString() : null
-    );
+    const cb = await this.callback(this.mailSyncTask, channel.id, grantedFloor);
     await this.runTask(cb);
+  }
+
+  /**
+   * Persist the granted history floor to `MAIL_GRANTED_HISTORY_MIN_KEY`,
+   * widening-only (the earliest of the stored value and `incoming` — same
+   * "never narrows" rule `mailSync` applies to `mail:state.syncHistoryMin`,
+   * reused via `widestFloor` from `mail/sync.ts` rather than a second copy of
+   * the merge logic). Race-free because this key is never part of the
+   * document `mailSync` replaces wholesale under the `mail_sync` lock — see
+   * MAIL_GRANTED_HISTORY_MIN_KEY's doc.
+   */
+  private async persistGrantedHistoryMin(incoming: string): Promise<string> {
+    const stored = await this.get<string>(MAIL_GRANTED_HISTORY_MIN_KEY);
+    const widened = widestFloor(stored ?? undefined, incoming) ?? incoming;
+    await this.set(MAIL_GRANTED_HISTORY_MIN_KEY, widened);
+    return widened;
+  }
+
+  /**
+   * The floor to use for a mail pass that carries no explicit history-min of
+   * its own: the persisted granted floor if one was ever recorded, else the
+   * default fallback. Consulted by every entry point that can otherwise end
+   * up calling `mailSync` with no floor at all (`mailPoll`, `mailPushDrain`,
+   * and `mailSyncTask`'s own fallback for a lost/absent argument) — without
+   * this, a task lost to queue exhaustion or a coalesced drain would recover
+   * to a rolling `DEFAULT_HISTORY_MS` window on the very next poll instead of
+   * the floor the plan actually granted (see MAIL_GRANTED_HISTORY_MIN_KEY's
+   * doc for the two ways the argument-only carrier can be lost).
+   */
+  private async resolveMailHistoryMin(): Promise<string> {
+    const granted = await this.get<string>(MAIL_GRANTED_HISTORY_MIN_KEY);
+    return granted ?? new Date(Date.now() - DEFAULT_HISTORY_MS).toISOString();
   }
 
   /**
@@ -865,17 +921,17 @@ export class Apple extends Connector<Apple> {
    * delay can neither deadlock nor busy-loop; the holder releases within one
    * pass, and the lock's TTL bounds the worst case.
    *
-   * `scheduleMailPoll`/`armMailWatches` run either way (both idempotent and
-   * lock-free) so an attempt that lost the race never leaves the connection
-   * without scheduled work or push watches.
+   * `armMailWatches` runs either way (idempotent and lock-free) so an attempt
+   * that lost the race never leaves the connection without push watches.
+   * `scheduleMailPoll` only runs on the ACQUIRED branch — see this method's
+   * `else` branch for why re-arming it on every lost-lock retry would starve
+   * the recurring poll instead of protecting it.
    */
   async mailSyncTask(_channelId?: string, syncHistoryMin?: string | null): Promise<void> {
     const channels = await this.enabledMailChannels();
     if (channels.length === 0) return; // last channel disabled before we ran
 
-    const min =
-      syncHistoryMin ??
-      new Date(Date.now() - MAIL_DEFAULT_HISTORY_MS).toISOString();
+    const min = syncHistoryMin ?? (await this.resolveMailHistoryMin());
     const acquired = await this.tools.store.acquireLock(
       MAIL_SYNC_LOCK,
       Apple.MAIL_SYNC_LOCK_TTL_MS
@@ -886,16 +942,26 @@ export class Apple extends Connector<Apple> {
       } finally {
         await this.tools.store.releaseLock(MAIL_SYNC_LOCK);
       }
+      await this.scheduleMailPoll();
     } else {
       // Carry the granted floor with the retry: `mail:state` may be rewritten
       // by the in-flight pass from a snapshot that predates this enable, so
       // re-reading it later could silently narrow the window.
+      //
+      // Deliberately does NOT call `scheduleMailPoll` here. A crashed lock
+      // holder is retried every 5s for up to the 30-minute TTL (~360
+      // attempts); `scheduleRecurring` is a singleton delete+insert that
+      // re-arms `callAt` to `now + 15min` on every call, so calling it from
+      // this branch would push the recurring poll's next fire 15 minutes
+      // into the future on EVERY retry — starving the poll's safety-net role
+      // for the whole crashed-holder window, exactly when it's most needed.
+      // Leaving whatever poll schedule already exists untouched here is
+      // correct; the acquired branch re-arms it once the pass actually runs.
       await this.scheduleDrain(MAIL_SYNC_DRAIN, this.mailSyncDrain, {
         delayMs: 5000,
         handlerArgs: [min],
       });
     }
-    await this.scheduleMailPoll();
     await this.armMailWatches(channels);
   }
 
@@ -923,6 +989,14 @@ export class Apple extends Connector<Apple> {
    * current mailbox state, so this poll skips its own sync and relies on the
    * next 15-minute interval to retry.
    *
+   * Passes `resolveMailHistoryMin()` rather than `undefined`: if a prior
+   * `mailSyncTask` never completed (task exhaustion), `mail:state` never
+   * picked up the granted floor, so falling back to `undefined` here would
+   * let `mailSync` recompute its own hardcoded default every 15 minutes
+   * forever. Reading the persisted `MAIL_GRANTED_HISTORY_MIN_KEY` here is
+   * what lets this recurring poll self-heal that loss — see
+   * MAIL_GRANTED_HISTORY_MIN_KEY's doc.
+   *
    * `_channelId` is accepted and ignored so tasks scheduled by earlier,
    * per-channel versions still resolve; the poll is connection-level.
    */
@@ -937,7 +1011,7 @@ export class Apple extends Connector<Apple> {
     );
     if (!acquired) return;
     try {
-      await mailSync(this.buildMailHost(), channels, undefined);
+      await mailSync(this.buildMailHost(), channels, await this.resolveMailHistoryMin());
     } finally {
       await this.tools.store.releaseLock(MAIL_SYNC_LOCK);
     }
@@ -978,6 +1052,11 @@ export class Apple extends Connector<Apple> {
    *
    * `_channelId` is accepted and ignored so drains scheduled by earlier,
    * per-channel versions still resolve.
+   *
+   * Passes `resolveMailHistoryMin()` rather than `undefined` — same reason as
+   * `mailPoll`: falling back to `undefined` here would let a lost granted
+   * floor collapse to `mailSync`'s hardcoded default on every push instead of
+   * self-healing from the persisted `MAIL_GRANTED_HISTORY_MIN_KEY`.
    */
   async mailPushDrain(_ids: string[], _channelId?: string): Promise<void> {
     const channels = await this.enabledMailChannels();
@@ -995,7 +1074,7 @@ export class Apple extends Connector<Apple> {
       return;
     }
     try {
-      await mailSync(this.buildMailHost(), channels, undefined);
+      await mailSync(this.buildMailHost(), channels, await this.resolveMailHistoryMin());
     } finally {
       await this.tools.store.releaseLock(MAIL_SYNC_LOCK);
     }
@@ -1152,8 +1231,8 @@ export class Apple extends Connector<Apple> {
   //
   // None of the write-back/user-action handlers below (onNoteCreated,
   // onCreateLink, onThreadRead, onThreadToDo, downloadAttachment) or
-  // mailWritebackDrain/getMailChannels take the `mail_sync_<channelId>` lock
-  // used by mailInitialSyncTask/mailPoll/mailPushDrain. They're
+  // mailWritebackDrain/getMailChannels take the connection-level `mail_sync`
+  // lock used by mailSyncTask/mailPoll/mailPushDrain. They're
   // user-latency-sensitive (a reply, a read/to-do toggle, an attachment
   // download the user is waiting on) and/or open their own short-lived IMAP
   // session — gating them behind a possibly-long backfill would add
