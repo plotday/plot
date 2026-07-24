@@ -724,3 +724,97 @@ describe("Apple.prepareEvent — basics", () => {
     expect(link).toBeNull();
   });
 });
+
+/**
+ * `titled_uids_<calendarHref>` (FIX 1 support): a precise "this uid actually
+ * got a titled link saved" signal, distinct from `event_uids_<calendarHref>`
+ * (which records every href/uid CalDAV returned, REGARDLESS of whether
+ * `prepareEvent` produced a link — see the `uidMap` write in
+ * `processCalDAVEvents`, unconditional and BEFORE the `prepareEvent` call).
+ * `knownEventUids()` (consumed by mail's bundling title decision) reads
+ * `titled_uids_`, not `event_uids_` — using `event_uids_` directly would
+ * report a cancelled-during-initial-sync event as "known" even though
+ * `prepareEvent` returned null and no link/title was ever created for it,
+ * silently reintroducing the exact "Untitled" bug FIX 1 exists to fix (the
+ * review's own named "primary use case").
+ */
+describe("Apple.processCalDAVEvents — titled_uids_ tracking (FIX 1 support)", () => {
+  const cancelledDuringInitialIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:evt-cancelled-initial",
+    "DTSTAMP:20990101T120000Z",
+    "DTSTART:20990106T090000Z",
+    "DTEND:20990106T093000Z",
+    "SUMMARY:Cancelled Before Sync",
+    "STATUS:CANCELLED",
+    "SEQUENCE:1",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  const normalIcs = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:evt-normal",
+    "DTSTAMP:20990101T120000Z",
+    "DTSTART:20990106T090000Z",
+    "DTEND:20990106T093000Z",
+    "SUMMARY:Team Sync",
+    "STATUS:CONFIRMED",
+    "SEQUENCE:0",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  it("does NOT record a uid whose event was skipped (cancelled during initial sync — prepareEvent returns null)", async () => {
+    const { self, store } = makeSelf();
+    const event: CalDAVEvent = {
+      href: "/cal/evt-cancelled-initial.ics",
+      etag: "e1",
+      icsData: cancelledDuringInitialIcs,
+    };
+
+    await processCalDAVEvents.call(self, [event], calendarHref, true); // initialSync = true
+
+    // event_uids_ is unaffected by this fix — it still records every seen
+    // href/uid, regardless of whether a link was produced (existing
+    // behavior, needed for deletion archival by href — see FIX 3).
+    expect(store.get(`event_uids_${calendarHref}`)).toEqual({
+      "/cal/evt-cancelled-initial.ics": "evt-cancelled-initial",
+    });
+    // But titled_uids_ must be empty/absent — no titled link was ever
+    // created for this uid.
+    expect(store.get(`titled_uids_${calendarHref}`)).toBeUndefined();
+  });
+
+  it("DOES record a uid for a normal (non-cancelled) event that produces a titled link", async () => {
+    const { self, store } = makeSelf();
+    const event: CalDAVEvent = {
+      href: "/cal/evt-normal.ics",
+      etag: "e1",
+      icsData: normalIcs,
+    };
+
+    await processCalDAVEvents.call(self, [event], calendarHref, true);
+
+    expect(store.get(`titled_uids_${calendarHref}`)).toEqual({ "evt-normal": true });
+  });
+
+  it("DOES record a uid for a cancelled event on INCREMENTAL sync — it still produces a titled cancellation link", async () => {
+    const { self, store } = makeSelf();
+    const event: CalDAVEvent = {
+      href: "/cal/evt-cancelled-incremental.ics",
+      etag: "e1",
+      icsData: cancelledDuringInitialIcs.replace("evt-cancelled-initial", "evt-cancelled-incremental"),
+    };
+
+    await processCalDAVEvents.call(self, [event], calendarHref, false); // initialSync = false
+
+    expect(store.get(`titled_uids_${calendarHref}`)).toEqual({
+      "evt-cancelled-incremental": true,
+    });
+  });
+});

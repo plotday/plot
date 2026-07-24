@@ -41,6 +41,29 @@ export type CalDAVCollectionChanges = {
 };
 
 /**
+ * Thrown when a CalDAV request is rejected with `401 Unauthorized` (bad
+ * Apple ID / app-specific password), or a `403 Forbidden` that is NOT the
+ * RFC 6578 §3.7 invalid-sync-token precondition (see
+ * {@link InvalidSyncTokenError}) — i.e. a revoked or incorrect
+ * app-specific password. Distinguishable from a generic failure so
+ * `pollForChanges` can log-and-reschedule instead of re-throwing: this is
+ * an EXPECTED, user-visible failure (the connection's own auth-error UI
+ * already surfaces it), not an unexpected bug, and the repo's error-capture
+ * rule is explicit that expected auth failures the user will see must not
+ * be reported to error tracking — especially not on a 15-minute polling
+ * schedule, where an unclassified throw would page indefinitely for the
+ * life of a dead connection.
+ */
+export class AuthenticationError extends Error {
+  constructor(
+    message = "Authentication failed — check your Apple ID and app-specific password"
+  ) {
+    super(message);
+    this.name = "AuthenticationError";
+  }
+}
+
+/**
  * Thrown when a `sync-collection` REPORT is rejected because the sync token
  * is invalid or expired — RFC 6578 §3.7's `DAV:valid-sync-token`
  * precondition, which iCloud surfaces as an HTTP `403` whose body is
@@ -120,9 +143,7 @@ export class CalDAVClient {
     });
 
     if (response.status === 401) {
-      throw new Error(
-        "Authentication failed — check your Apple ID and app-specific password"
-      );
+      throw new AuthenticationError();
     }
     if (response.status === 403) {
       // A 403 is normally a revoked app-specific password, but
@@ -134,7 +155,9 @@ export class CalDAVClient {
       if (isInvalidSyncTokenResponse(text)) {
         throw new InvalidSyncTokenError();
       }
-      throw new Error("Access denied — app-specific password may be revoked");
+      throw new AuthenticationError(
+        "Access denied — app-specific password may be revoked"
+      );
     }
     if (!response.ok && response.status !== 207) {
       throw new Error(`CalDAV request failed: ${response.status} ${response.statusText}`);

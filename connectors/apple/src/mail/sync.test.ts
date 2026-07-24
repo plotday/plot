@@ -48,6 +48,15 @@ function buildFakeHost(opts: {
    * instead of silently returning garbage bytes.
    */
   attachments?: Record<string, Uint8Array>;
+  /**
+   * UIDs the calendar product has actually saved a titled link for —
+   * mirrors `MailHost.knownEventUids()`'s real backing
+   * (`titled_uids_<calendarHref>` in apple.ts). Defaults to none (nothing
+   * synced yet), which is the common case for these mail-only fixtures —
+   * see the eventKnown/title consequence tested in the "calendar thread
+   * bundling" describe blocks below.
+   */
+  knownEventUids?: string[];
 }) {
   const stored = new Map<string, unknown>();
   const savedLinks: NewLinkWithNotes[] = [];
@@ -151,6 +160,7 @@ function buildFakeHost(opts: {
     // satisfies MailHost's required `queueWritebackDrain` field. See
     // write.test.ts (Task 5) for the real write-back defer/drain coverage.
     queueWritebackDrain: async (): Promise<void> => {},
+    knownEventUids: async (): Promise<Set<string>> => new Set(opts.knownEventUids ?? []),
   };
 
   return { host, stored, savedLinks, searchCalls, fetchCalls, fetchAttachmentCalls, setThreadToDo };
@@ -812,8 +822,35 @@ describe("detectCalendarBundles", () => {
     const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
     const bundles = await detectCalendarBundles(host, "session-1", merged);
 
-    expect(bundles.get("invite@example.com")).toEqual({ uid: "evt-1", kind: "cancel" });
+    expect(bundles.get("invite@example.com")).toEqual({ uid: "evt-1", kind: "cancel", eventKnown: false });
     expect(stored.get("cancel-email:evt-1")).toBeTruthy();
+  });
+
+  it("marks eventKnown true when the calendar product has already synced an event for this UID (FIX 1)", async () => {
+    const m = msg({
+      uid: 50,
+      messageId: "<invite-known@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "invite.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const bytes = icsBytes(ics({ method: "CANCEL", uid: "evt-known" }));
+    const { host } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: { [buildAttachmentRef("INBOX", 50, "2")]: bytes },
+      knownEventUids: ["evt-known"],
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const bundles = await detectCalendarBundles(host, "session-1", merged);
+
+    expect(bundles.get("invite-known@example.com")).toEqual({
+      uid: "evt-known",
+      kind: "cancel",
+      eventKnown: true,
+    });
   });
 
   it("classifies a REQUEST/SEQUENCE>0 update, returns it, and writes NO cancel-email marker", async () => {
@@ -835,7 +872,7 @@ describe("detectCalendarBundles", () => {
     const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
     const bundles = await detectCalendarBundles(host, "session-1", merged);
 
-    expect(bundles.get("update@example.com")).toEqual({ uid: "evt-2", kind: "update" });
+    expect(bundles.get("update@example.com")).toEqual({ uid: "evt-2", kind: "update", eventKnown: false });
     expect(stored.get("cancel-email:evt-2")).toBeUndefined();
   });
 
@@ -917,7 +954,7 @@ describe("detectCalendarBundles", () => {
     ];
     const bundles = await detectCalendarBundles(host, "session-1", merged);
 
-    expect(bundles.get("root-multi@example.com")).toEqual({ uid: "evt-5", kind: "cancel" });
+    expect(bundles.get("root-multi@example.com")).toEqual({ uid: "evt-5", kind: "cancel", eventKnown: false });
   });
 
   it("a message with no calendar part is completely unaffected: no fetchAttachment call, no bundle", async () => {
@@ -997,12 +1034,113 @@ describe("detectCalendarBundles", () => {
     const bundles = await detectCalendarBundles(host, "session-1", merged);
 
     expect(fetchAttachmentCalls).toEqual([{ mailbox: "Sent Messages", uid: 58, partNumber: "2" }]);
-    expect(bundles.get("from-sent@example.com")).toEqual({ uid: "evt-6", kind: "cancel" });
+    expect(bundles.get("from-sent@example.com")).toEqual({ uid: "evt-6", kind: "cancel", eventKnown: false });
+  });
+
+  it("persists the classification and never re-fetches the same root's ICS on a later pass (FIX 4)", async () => {
+    const m = msg({
+      uid: 59,
+      messageId: "<cached@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "cancel.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const { host, fetchAttachmentCalls, stored } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: { [buildAttachmentRef("INBOX", 59, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-cached" })) },
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const first = await detectCalendarBundles(host, "session-1", merged);
+    expect(first.get("cached@example.com")).toEqual({ uid: "evt-cached", kind: "cancel", eventKnown: false });
+    expect(fetchAttachmentCalls).toHaveLength(1);
+    expect(stored.get("bundle:cached@example.com")).toEqual({
+      classified: { uid: "evt-cached", kind: "cancel" },
+    });
+
+    // A second pass over the SAME message set must reuse the persisted
+    // decision instead of re-fetching the ICS attachment.
+    const second = await detectCalendarBundles(host, "session-1", merged);
+    expect(second.get("cached@example.com")).toEqual({ uid: "evt-cached", kind: "cancel", eventKnown: false });
+    expect(fetchAttachmentCalls).toHaveLength(1); // still 1 — no re-fetch
+  });
+
+  it("keeps returning the bundle once the ICS-bearing message ages out of the recent window (FIX 4 correctness)", async () => {
+    const icsMsg = msg({
+      uid: 62,
+      messageId: "<root-aged@example.com>",
+      date: new Date("2026-06-01T09:00:00Z"),
+      attachments: [
+        { partNumber: "2", fileName: "cancel.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const followUp = msg({
+      uid: 63,
+      messageId: "<reply-aged@example.com>",
+      references: ["<root-aged@example.com>"],
+      date: new Date("2026-07-14T09:00:00Z"),
+    });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: { [buildAttachmentRef("INBOX", 62, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-aged" })) },
+    });
+
+    // Pass 1: both messages present, ICS-bearing message classified.
+    const first = await detectCalendarBundles(host, "session-1", [
+      { ...icsMsg, mailbox: "INBOX" },
+      { ...followUp, mailbox: "INBOX" },
+    ]);
+    expect(first.get("root-aged@example.com")).toEqual({ uid: "evt-aged", kind: "cancel", eventKnown: false });
+    expect(fetchAttachmentCalls).toHaveLength(1);
+
+    // Pass 2: simulates the ICS-bearing message aging out of the 30-day
+    // recent-window rescan — only the follow-up reply is in this pass's
+    // `messages`. Without the persisted decision, this root would find no
+    // calendar part at all and silently un-bundle — flipping the DB's
+    // primary `source` and creating a duplicate link row (see FIX 4's
+    // doc). The cached decision must still apply.
+    const second = await detectCalendarBundles(host, "session-1", [
+      { ...followUp, mailbox: "INBOX" },
+    ]);
+    expect(second.get("root-aged@example.com")).toEqual({ uid: "evt-aged", kind: "cancel", eventKnown: false });
+    expect(fetchAttachmentCalls).toHaveLength(1); // no re-fetch attempted
+  });
+
+  it("persists an explicit 'no bundle' decision for a bare invite so it is never re-classified (FIX 4)", async () => {
+    const m = msg({
+      uid: 64,
+      messageId: "<bare-cached@example.com>",
+      attachments: [
+        { partNumber: "2", fileName: "invite.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const { host, fetchAttachmentCalls, stored } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      sent: null,
+      attachments: {
+        [buildAttachmentRef("INBOX", 64, "2")]: icsBytes(ics({ method: "REQUEST", uid: "evt-bare", sequence: 0 })),
+      },
+    });
+
+    const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
+    const first = await detectCalendarBundles(host, "session-1", merged);
+    expect(first.has("bare-cached@example.com")).toBe(false);
+    expect(fetchAttachmentCalls).toHaveLength(1);
+    expect(stored.get("bundle:bare-cached@example.com")).toEqual({ classified: null });
+
+    const second = await detectCalendarBundles(host, "session-1", merged);
+    expect(second.has("bare-cached@example.com")).toBe(false);
+    expect(fetchAttachmentCalls).toHaveLength(1); // still 1 — reused the cached "no bundle" decision
   });
 });
 
 describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
-  it("bundles a CANCEL invite email's link onto the event thread and omits its title key", async () => {
+  it("bundles a CANCEL invite email onto an ALREADY-SYNCED event's thread and omits its title key", async () => {
     const cancelMsg = msg({
       uid: 60,
       messageId: "<cancel-e2e@example.com>",
@@ -1023,6 +1161,9 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
       attachments: {
         [buildAttachmentRef("INBOX", 60, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-e2e" })),
       },
+      // The calendar product has already synced an event for "evt-e2e" —
+      // the calendar owns the title, so it must be omitted here.
+      knownEventUids: ["evt-e2e"],
     });
 
     const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
@@ -1035,6 +1176,48 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
     expect(link!.sources).toEqual(["icaluid:evt-e2e"]);
     expect("title" in link!).toBe(false);
     expect(stored.get("cancel-email:evt-e2e")).toBeTruthy();
+  });
+
+  it("FIX 1: bundles a CANCEL invite email onto a NOT-YET-SYNCED event's thread and SETS the title from the subject — never 'Untitled'", async () => {
+    const cancelMsg = msg({
+      uid: 65,
+      messageId: "<cancel-unsynced@example.com>",
+      subject: "Cancelled: Offsite planning",
+      attachments: [
+        { partNumber: "2", fileName: "cancel.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const { host, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      inbox: {
+        name: "INBOX",
+        status: { name: "INBOX", exists: 1, recent: 1, uidValidity: 1, uidNext: 66, unseen: 1 },
+        searchUids: [65],
+        messagesByUid: new Map([[65, cancelMsg]]),
+      },
+      sent: null,
+      attachments: {
+        [buildAttachmentRef("INBOX", 65, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-unsynced" })),
+      },
+      // No knownEventUids — the calendar product (mail-only setup, disabled
+      // calendar, or an event cancelled before it ever synced) has never
+      // synced this UID. Before FIX 1 this thread would have shipped with
+      // its `title` key omitted, and the runtime's INSERT path would
+      // substitute the literal "Untitled" placeholder — permanently.
+    });
+
+    const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
+    await host.set(`state_${CHANNEL_ID}`, state);
+
+    await mailIncrementalSync(host, CHANNEL_ID);
+
+    const link = savedLinks.find((l) => l.source === "icloud-mail:thread:cancel-unsynced@example.com");
+    expect(link).toBeDefined();
+    // Still bundles — thread convergence with the calendar event is never
+    // skipped, even though the calendar hasn't synced it yet.
+    expect(link!.sources).toEqual(["icaluid:evt-unsynced"]);
+    // But `title` IS set — no "Untitled" fallback.
+    expect(link!.title).toBe("Cancelled: Offsite planning");
   });
 
   it("a plain reply with no calendar attachment is unaffected: no icaluid, title present, no attachment fetch", async () => {

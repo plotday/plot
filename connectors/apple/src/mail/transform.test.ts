@@ -174,9 +174,11 @@ describe("transformMessages", () => {
 });
 
 describe("transformMessages — calendar thread bundling", () => {
-  it("adds icaluid to sources and OMITS the title key when the thread's root has a cancel bundle", () => {
+  it("known UID: adds icaluid to sources and OMITS the title key when the thread's root has a cancel bundle for an already-synced event", () => {
     const m = msg({ uid: 30, messageId: "<invite@example.com>" });
-    const bundles = new Map([["invite@example.com", { uid: "evt-1", kind: "cancel" as const }]]);
+    const bundles = new Map([
+      ["invite@example.com", { uid: "evt-1", kind: "cancel" as const, eventKnown: true }],
+    ]);
     const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
 
     expect(link.sources).toEqual(["icaluid:evt-1"]);
@@ -187,18 +189,52 @@ describe("transformMessages — calendar thread bundling", () => {
     expect("title" in link).toBe(false);
   });
 
-  it("adds icaluid to sources and OMITS the title key when the thread's root has an update bundle", () => {
+  it("known UID: adds icaluid to sources and OMITS the title key when the thread's root has an update bundle for an already-synced event", () => {
     const m = msg({ uid: 31, messageId: "<invite2@example.com>" });
-    const bundles = new Map([["invite2@example.com", { uid: "evt-2", kind: "update" as const }]]);
+    const bundles = new Map([
+      ["invite2@example.com", { uid: "evt-2", kind: "update" as const, eventKnown: true }],
+    ]);
     const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
 
     expect(link.sources).toEqual(["icaluid:evt-2"]);
     expect("title" in link).toBe(false);
   });
 
+  it("unknown UID (FIX 1): still adds icaluid to sources, but SETS the title from the subject when no synced event exists yet for a cancel bundle", () => {
+    const m = msg({ uid: 34, messageId: "<invite-unsynced@example.com>", subject: "Cancelled: Offsite" });
+    const bundles = new Map([
+      ["invite-unsynced@example.com", { uid: "evt-4", kind: "cancel" as const, eventKnown: false }],
+    ]);
+    const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
+
+    // Thread convergence is never skipped — the icaluid alias is still
+    // present so a later-synced calendar event still bundles onto this
+    // same thread.
+    expect(link.sources).toEqual(["icaluid:evt-4"]);
+    // But the title key MUST be present — otherwise the runtime's INSERT
+    // path (no synced event yet to draw a title from) substitutes the
+    // literal "Untitled" placeholder, permanently.
+    expect("title" in link).toBe(true);
+    expect(link.title).toBe("Cancelled: Offsite");
+  });
+
+  it("unknown UID (FIX 1): still adds icaluid to sources, but SETS the title from the subject when no synced event exists yet for an update bundle", () => {
+    const m = msg({ uid: 35, messageId: "<update-unsynced@example.com>", subject: "Updated: Offsite" });
+    const bundles = new Map([
+      ["update-unsynced@example.com", { uid: "evt-5", kind: "update" as const, eventKnown: false }],
+    ]);
+    const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
+
+    expect(link.sources).toEqual(["icaluid:evt-5"]);
+    expect("title" in link).toBe(true);
+    expect(link.title).toBe("Updated: Offsite");
+  });
+
   it("leaves title and sources untouched when no bundle matches the thread's root", () => {
     const m = msg({ uid: 32, messageId: "<plain@example.com>" });
-    const bundles = new Map([["someone-elses-root@example.com", { uid: "evt-3", kind: "cancel" as const }]]);
+    const bundles = new Map([
+      ["someone-elses-root@example.com", { uid: "evt-3", kind: "cancel" as const, eventKnown: true }],
+    ]);
     const link = transformMessages([m], { ...ctx, calendarBundles: bundles })[0];
 
     expect(link.sources).toBeUndefined();
@@ -270,5 +306,53 @@ describe("transformMessages attachments", () => {
     const m = msg({ uid: 14 });
     const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
     expect(note.actions).toBeUndefined();
+  });
+
+  it("FIX 6: omits an inline calendar part whose fileName is the synthesized 'attachment' placeholder", () => {
+    const m = msg({
+      uid: 15,
+      attachments: [
+        { partNumber: "2", fileName: "attachment", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    // No real attachment to download — must not become an empty array either.
+    expect(note.actions).toBeUndefined();
+  });
+
+  it("FIX 6: keeps a genuinely-named calendar attachment (e.g. invite.ics) as a normal fileRef action", () => {
+    const m = msg({
+      uid: 16,
+      attachments: [
+        { partNumber: "2", fileName: "invite.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions).toHaveLength(1);
+    expect(note.actions![0].fileName).toBe("invite.ics");
+  });
+
+  it("FIX 6: keeps sibling non-calendar attachments alongside a suppressed synthesized calendar part", () => {
+    const m = msg({
+      uid: 17,
+      attachments: [
+        { partNumber: "2", fileName: "photo.png", mimeType: "image/png", size: 10, encoding: "base64" },
+        { partNumber: "3", fileName: "attachment", mimeType: "application/ics", size: 100, encoding: "8bit" },
+      ],
+    });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions).toHaveLength(1);
+    expect(note.actions![0].fileName).toBe("photo.png");
+  });
+
+  it("FIX 6: does NOT suppress a non-calendar attachment that happens to be literally named 'attachment'", () => {
+    const m = msg({
+      uid: 18,
+      attachments: [
+        { partNumber: "2", fileName: "attachment", mimeType: "application/pdf", size: 100, encoding: "base64" },
+      ],
+    });
+    const note = transformMessages([m], ctx)[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions).toHaveLength(1);
   });
 });

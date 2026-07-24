@@ -48,12 +48,14 @@ describe("buildAttachmentRef / parseAttachmentRef", () => {
 });
 
 /** A MailHost whose `imap.fetchAttachment` returns fixed bytes per partNumber,
- *  or throws for a partNumber in `failing`. Records every selectMailbox call. */
+ *  or throws for a partNumber in `failing`. Records every selectMailbox call
+ *  and every partNumber `fetchAttachment` was actually invoked for. */
 function mockAttachmentHost(opts: {
   bytes: Record<string, Uint8Array>;
   failing?: Set<string>;
-}): { host: MailHost; selected: string[] } {
+}): { host: MailHost; selected: string[]; fetchedParts: string[] } {
   const selected: string[] = [];
+  const fetchedParts: string[] = [];
   const imap = {
     connect: async () => "session",
     disconnect: async () => {},
@@ -66,6 +68,7 @@ function mockAttachmentHost(opts: {
     fetchMessages: async () => [],
     setFlags: async () => {},
     fetchAttachment: async (_s: string, _uid: number, partNumber: string) => {
+      fetchedParts.push(partNumber);
       if (opts.failing?.has(partNumber)) throw new Error(`fetch failed: ${partNumber}`);
       const bytes = opts.bytes[partNumber];
       if (!bytes) throw new Error(`no such part: ${partNumber}`);
@@ -84,7 +87,7 @@ function mockAttachmentHost(opts: {
     channelSyncCompleted: async () => {},
     queueWritebackDrain: async () => {},
   } as unknown as MailHost;
-  return { host, selected };
+  return { host, selected, fetchedParts };
 }
 
 function attachmentMessage(over: Partial<ImapMessage> = {}): ImapMessage {
@@ -129,5 +132,33 @@ describe("fetchOriginalAttachments", () => {
       attachmentMessage({ attachments: undefined })
     );
     expect(out).toEqual([]);
+  });
+
+  it("FIX 6: skips a synthesized-name calendar part ('attachment') without fetching or re-attaching it", async () => {
+    const photoData = new Uint8Array([1, 2, 3]);
+    const message = attachmentMessage({
+      attachments: [
+        { partNumber: "2", fileName: "photo.png", mimeType: "image/png", size: 3, encoding: "base64" },
+        { partNumber: "3", fileName: "attachment", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    } as never);
+    const { host, fetchedParts } = mockAttachmentHost({
+      bytes: { "2": photoData, "3": new Uint8Array([9]) },
+    });
+    const out = await fetchOriginalAttachments(host, "session", "INBOX", message);
+    expect(out).toEqual([{ fileName: "photo.png", mimeType: "image/png", data: photoData }]);
+    expect(fetchedParts).toEqual(["2"]); // part "3" (the synthesized calendar part) never fetched
+  });
+
+  it("FIX 6: keeps a genuinely-named calendar attachment (e.g. invite.ics)", async () => {
+    const icsData = new Uint8Array([7, 7]);
+    const message = attachmentMessage({
+      attachments: [
+        { partNumber: "2", fileName: "invite.ics", mimeType: "text/calendar", size: 100, encoding: "8bit" },
+      ],
+    } as never);
+    const { host } = mockAttachmentHost({ bytes: { "2": icsData } });
+    const out = await fetchOriginalAttachments(host, "session", "INBOX", message);
+    expect(out).toEqual([{ fileName: "invite.ics", mimeType: "text/calendar", data: icsData }]);
   });
 });

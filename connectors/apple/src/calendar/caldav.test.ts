@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CalDAVClient, InvalidSyncTokenError, PreconditionFailedError } from "./caldav";
+import {
+  AuthenticationError,
+  CalDAVClient,
+  InvalidSyncTokenError,
+  PreconditionFailedError,
+} from "./caldav";
 
 /** Minimal fetch Response stand-in — only the members CalDAVClient reads. */
 function mockResponse(status: number, body: string): Response {
@@ -148,13 +153,25 @@ describe("CalDAVClient.getCollectionChanges", () => {
     ).rejects.toBeInstanceOf(InvalidSyncTokenError);
   });
 
-  it("still throws a generic error for a 403 that is not a valid-sync-token rejection", async () => {
+  it("FIX 5: a 403 that is not a valid-sync-token rejection surfaces as AuthenticationError, not InvalidSyncTokenError", async () => {
     fetchMock.mockResolvedValue(mockResponse(403, ""));
     const client = makeClient();
 
     await expect(
       client.getCollectionChanges("/289842362/calendars/work/", "some-token")
     ).rejects.not.toBeInstanceOf(InvalidSyncTokenError);
+    await expect(
+      client.getCollectionChanges("/289842362/calendars/work/", "some-token")
+    ).rejects.toBeInstanceOf(AuthenticationError);
+  });
+
+  it("FIX 5: a 401 surfaces as AuthenticationError (distinguishable so pollForChanges can log-and-reschedule instead of paging)", async () => {
+    fetchMock.mockResolvedValue(mockResponse(401, ""));
+    const client = makeClient();
+
+    await expect(
+      client.getCollectionChanges("/289842362/calendars/work/", "some-token")
+    ).rejects.toBeInstanceOf(AuthenticationError);
   });
 
   it("sends an empty <A:sync-token/> element when the token is null (initial/reset sync)", async () => {

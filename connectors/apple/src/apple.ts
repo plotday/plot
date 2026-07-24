@@ -37,6 +37,7 @@ import { Smtp } from "@plotday/twister/tools/smtp";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 import {
+  AuthenticationError,
   CalDAVClient,
   type CalDAVEvent,
   InvalidSyncTokenError,
@@ -156,6 +157,21 @@ type IncrementalSyncTail =
        * that gap on the next poll.
        */
       syncToken: string;
+      /**
+       * Hrefs `getCollectionChanges` reported as deleted this pass —
+       * already archived (via `archiveDeletedHrefs`) by the time this tail
+       * is constructed, but their `event_uids_<calendarHref>`/
+       * `etags_<calendarHref>` entries are pruned only here, in
+       * `completeIncrementalSync`, after every chunk of `changed` hrefs has
+       * ALSO succeeded (see the crash-safety ordering note on
+       * `completeIncrementalSync`). Unlike the fallback tail's
+       * `newEtagMap` (a full authoritative snapshot the fast path never
+       * computes — it only ever sees a delta), this is a small, precise
+       * list of keys to remove. Without this, the fast path never prunes
+       * either map, and a long-lived connection's `event_uids_`/`etags_`
+       * grow by one stale entry per deleted event forever.
+       */
+      deletedHrefs: string[];
     }
   | {
       mode: "fallback";
@@ -402,7 +418,36 @@ export class Apple extends Connector<Apple> {
       },
       queueWritebackDrain: (id: string) =>
         this.scheduleDrain("mail-writeback", this.mailWritebackDrain, { ids: [id] }),
+      knownEventUids: () => this.knownEventUids(),
     };
+  }
+
+  /**
+   * Union of every iCalUID the calendar product has actually saved a titled
+   * link for, across every currently-enabled calendar. Enumerates enabled
+   * calendars via the same `sync_enabled_<channelId>` convention
+   * `onCalendarChannelEnabled`/`onCalendarChannelDisabled` already
+   * maintain (set on enable, cleared on disable — see those methods), then
+   * unions each one's `titled_uids_<channelId>` map's keys (see
+   * `processCalDAVEvents`'s doc for why this reads `titled_uids_` — a
+   * precise "link actually created" signal — rather than the broader
+   * `event_uids_`, which also includes hrefs CalDAV returned but
+   * `prepareEvent` skipped, e.g. a cancelled-during-initial-sync event).
+   * Backs `MailHost.knownEventUids` — see that doc for why the mail host
+   * can't read these unprefixed calendar keys directly.
+   */
+  private async knownEventUids(): Promise<Set<string>> {
+    const uids = new Set<string>();
+    const enabledKeys = await this.tools.store.list("sync_enabled_");
+    for (const key of enabledKeys) {
+      const calendarChannelId = key.slice("sync_enabled_".length);
+      const map = await this.get<Record<string, true>>(
+        `titled_uids_${calendarChannelId}`
+      );
+      if (!map) continue;
+      for (const uid of Object.keys(map)) uids.add(uid);
+    }
+    return uids;
   }
 
   // ---- Channel Lifecycle ----
@@ -495,6 +540,7 @@ export class Apple extends Connector<Apple> {
       await this.clear(`ctag_${channel.id}`);
       await this.clear(`etags_${channel.id}`);
       await this.clear(`event_uids_${channel.id}`);
+      await this.clear(`titled_uids_${channel.id}`);
       await this.clear(`sync_state_${channel.id}`);
       await this.clear(`synctoken_${channel.id}`);
       await this.clear(`incremental_state_${channel.id}`);
@@ -693,6 +739,18 @@ export class Apple extends Connector<Apple> {
     // mail channel in v1), so all `mail:cancel-email:*` are ours.
     const cancelEmailKeys = await this.tools.store.list("mail:cancel-email:");
     for (const key of cancelEmailKeys) {
+      await this.clear(key);
+    }
+    // Sweep the calendar-bundle classification cache (`mail:bundle:<rootId>`,
+    // written by `detectCalendarBundles` in `src/mail/sync.ts`). Never
+    // expires on its own and would otherwise persist across a disable/
+    // re-enable cycle — a fresh re-enable's backfill must re-classify from
+    // scratch, not inherit a decision cached before the gap (e.g. a
+    // calendar event that has since synced). Not channel-scoped, like the
+    // sweeps above (single mail channel in v1), so all `mail:bundle:*` are
+    // ours.
+    const bundleKeys = await this.tools.store.list("mail:bundle:");
+    for (const key of bundleKeys) {
       await this.clear(key);
     }
     await this.tools.integrations.archiveLinks({
@@ -923,6 +981,7 @@ export class Apple extends Connector<Apple> {
     await this.clear(`ctag_${channel.id}`);
     await this.clear(`etags_${channel.id}`);
     await this.clear(`event_uids_${channel.id}`);
+    await this.clear(`titled_uids_${channel.id}`);
     await this.clear(`synctoken_${channel.id}`);
     await this.clear(`incremental_state_${channel.id}`);
 
@@ -1419,13 +1478,41 @@ export class Apple extends Connector<Apple> {
   }
 
   /**
-   * Poll for changes using ctag comparison.
+   * Poll for changes.
+   *
+   * Once a sync token is stored, this goes STRAIGHT to `startIncrementalSync`
+   * — its fast path (an RFC 6578 `sync-collection` REPORT) already IS the
+   * cheap "did anything change?" check: one request, cost independent of
+   * delta size, and it always returns a fresh token to persist. Gating it
+   * behind a separate ctag PROPFIND first would just be a second O(1)
+   * request for no benefit — and worse, the fast path's tail never used to
+   * refresh `ctag_` (see FIX 2's history: the fallback tail wrote
+   * `ctag_`/`etags_`, but the fast tail wrote only `synctoken_`), so once
+   * ANY real change happened, `ctag_` froze at its initial-sync value
+   * forever — making this gate permanently "changed" and forcing a REPORT
+   * on every single poll regardless of whether anything actually changed
+   * since the last one. Removing the ctag pre-check for the steady state
+   * (a token exists on every poll after the first) sidesteps that
+   * staleness entirely rather than adding another PROPFIND to keep it
+   * fresh.
+   *
+   * The ctag comparison is kept ONLY for when no token is stored yet (first
+   * poll after enable/recovery, or the pass right after an invalid-token
+   * reset) — there, it's still a cheap way to avoid firing the expensive
+   * etag-diff fallback walk `startIncrementalSync` would otherwise run
+   * unconditionally on every idle 15-minute tick.
    */
   async pollForChanges(calendarHref: string): Promise<void> {
     const enabled = await this.get<boolean>(`sync_enabled_${calendarHref}`);
     if (!enabled) return;
 
     try {
+      const storedToken = await this.get<string>(`synctoken_${calendarHref}`);
+      if (storedToken) {
+        await this.startIncrementalSync(calendarHref);
+        return;
+      }
+
       const client = this.getCalDAV();
       const currentCtag = await client.getCalendarCtag(this.calDavHref(calendarHref));
       const storedCtag = await this.get<string>(`ctag_${calendarHref}`);
@@ -1438,16 +1525,30 @@ export class Apple extends Connector<Apple> {
         await this.schedulePoll(calendarHref);
       }
     } catch (error) {
+      if (error instanceof AuthenticationError) {
+        // Expected, user-visible failure (revoked/incorrect app-specific
+        // password) — per the repo's error-capture rule, expected auth
+        // failures the user will see must not be reported. Left
+        // unclassified, this would re-throw on EVERY 15-minute poll of
+        // EVERY calendar for the life of a dead connection
+        // (~96/day/calendar, plus queue retries) and page error tracking
+        // every time. Log locally for visibility, reschedule so the
+        // connection keeps retrying (the user may fix the password), and
+        // swallow rather than re-throw.
+        console.warn(`Apple Calendar poll auth failure for ${calendarHref}:`, error);
+        await this.schedulePoll(calendarHref);
+        return;
+      }
       console.error(`Poll failed for calendar ${calendarHref}:`, error);
       // Schedule next poll even on failure — a transient blip (network
       // hiccup, momentary iCloud outage) shouldn't kill the polling chain.
       await this.schedulePoll(calendarHref);
       // Re-throw so the runtime reports it (PostHog capture, etc.) — same
       // reasoning as every other calendar catch in this file (see the
-      // comment on syncBatch's catch). A failing ctag check is genuinely
-      // unexpected (revoked app password, iCloud outage, 401) and was
-      // previously invisible: this caught it, logged it, and swallowed it
-      // with no way to notice a persistent failure.
+      // comment on syncBatch's catch). A failing ctag check or incremental
+      // sync is genuinely unexpected (network blip, iCloud outage, a bug)
+      // and was previously invisible: this caught it, logged it, and
+      // swallowed it with no way to notice a persistent failure.
       throw error;
     }
   }
@@ -1579,12 +1680,13 @@ export class Apple extends Connector<Apple> {
 
     // Fetch and process changed events, chunked (see
     // processChangedHrefsChunked). Completes the pass — including
-    // persisting the new sync token — once every chunk has succeeded.
+    // persisting the new sync token and pruning event_uids_/etags_ for
+    // deletedHrefs (FIX 3) — once every chunk has succeeded.
     await this.processChangedHrefsChunked(
       client,
       calendarHref,
       changed.map((c) => c.href),
-      { mode: "fast", syncToken: token }
+      { mode: "fast", syncToken: token, deletedHrefs }
     );
   }
 
@@ -1851,6 +1953,35 @@ export class Apple extends Connector<Apple> {
     tail: IncrementalSyncTail
   ): Promise<void> {
     if (tail.mode === "fast") {
+      // Prune event_uids_/etags_ for hrefs reported deleted this pass
+      // (FIX 3) — the fallback tail below rebuilds its uid map wholesale
+      // from an authoritative snapshot, but the fast path only ever sees a
+      // delta, so precise per-href removal is the only option here. Only
+      // touch the maps (an extra get+set each) when there's actually
+      // something to prune — the common idle-poll case has none.
+      if (tail.deletedHrefs.length > 0) {
+        const uidMap =
+          (await this.get<Record<string, string>>(
+            `event_uids_${calendarHref}`
+          )) || {};
+        const etagMap =
+          (await this.get<Record<string, string>>(`etags_${calendarHref}`)) ||
+          {};
+        let uidMapDirty = false;
+        let etagMapDirty = false;
+        for (const href of tail.deletedHrefs) {
+          if (href in uidMap) {
+            delete uidMap[href];
+            uidMapDirty = true;
+          }
+          if (href in etagMap) {
+            delete etagMap[href];
+            etagMapDirty = true;
+          }
+        }
+        if (uidMapDirty) await this.set(`event_uids_${calendarHref}`, uidMap);
+        if (etagMapDirty) await this.set(`etags_${calendarHref}`, etagMap);
+      }
       await this.set(`synctoken_${calendarHref}`, tail.syncToken);
     } else {
       // Prune the uid map: drop entries whose href is no longer present in
@@ -1909,6 +2040,23 @@ export class Apple extends Connector<Apple> {
    * Recurrence-only entries (RECURRENCE-ID overrides) share the same uid
    * as their master, so the master entry already covers them — we record
    * uid once per href.
+   *
+   * Also maintains `titled_uids_<calendarHref>` — a Record<uid, true> of
+   * uids that actually got a titled link saved this batch (mirrors
+   * `event_uids_` in shape, but is written ONLY when `addLink` is actually
+   * called for that uid, i.e. `prepareEvent`/`prepareEventInstance`
+   * returned non-null). This is deliberately a SEPARATE signal from
+   * `event_uids_`: that map records every href/uid CalDAV returned,
+   * regardless of whether a link was produced (`uidMap[href] = uid` above
+   * is unconditional) — most notably, a master event that's
+   * `STATUS:CANCELLED` during INITIAL sync is skipped entirely
+   * (`prepareEvent` returns null) yet still gets recorded in `event_uids_`.
+   * `knownEventUids()` (backing `MailHost.knownEventUids`, consumed by
+   * `mail/sync.ts`'s FIX 1 title-omission decision) needs the precise
+   * "does a titled calendar thread actually exist for this uid" answer —
+   * using `event_uids_` there would report that skipped-cancelled uid as
+   * "known" and wrongly omit `title` on a bundled mail link, silently
+   * reintroducing the "Untitled" bug FIX 1 exists to fix.
    */
   private async processCalDAVEvents(
     events: CalDAVEvent[],
@@ -1925,8 +2073,13 @@ export class Apple extends Connector<Apple> {
       )) || {};
     const etagMap =
       (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
+    const titledUids =
+      (await this.get<Record<string, true>>(
+        `titled_uids_${calendarHref}`
+      )) || {};
     let uidMapDirty = false;
     let etagMapDirty = false;
+    let titledUidsDirty = false;
 
     // Coalesce everything keyed by canonical source so a master + any number
     // of its exception instances (and multiple exceptions of the same series
@@ -1992,7 +2145,13 @@ export class Apple extends Connector<Apple> {
               calendarHref,
               initialSync
             );
-            if (instanceLink) addLink(instanceLink as LinkWithSource);
+            if (instanceLink) {
+              addLink(instanceLink as LinkWithSource);
+              if (icsEvent.uid && !titledUids[icsEvent.uid]) {
+                titledUids[icsEvent.uid] = true;
+                titledUidsDirty = true;
+              }
+            }
           } else {
             const masterLink = await this.prepareEvent(
               icsEvent,
@@ -2000,7 +2159,13 @@ export class Apple extends Connector<Apple> {
               initialSync,
               caldavEvent.href
             );
-            if (masterLink) addLink(masterLink as LinkWithSource);
+            if (masterLink) {
+              addLink(masterLink as LinkWithSource);
+              if (icsEvent.uid && !titledUids[icsEvent.uid]) {
+                titledUids[icsEvent.uid] = true;
+                titledUidsDirty = true;
+              }
+            }
           }
         }
 
@@ -2083,6 +2248,9 @@ export class Apple extends Connector<Apple> {
     }
     if (etagMapDirty) {
       await this.set(`etags_${calendarHref}`, etagMap);
+    }
+    if (titledUidsDirty) {
+      await this.set(`titled_uids_${calendarHref}`, titledUids);
     }
   }
 

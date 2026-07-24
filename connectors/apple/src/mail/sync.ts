@@ -1,7 +1,12 @@
 import type { ActorId } from "@plotday/twister";
 import type { ImapMailboxStatus, ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
-import { classifyICS, isCalendarAttachment, type CalendarBundle } from "./calendar-bundle";
+import {
+  classifyICS,
+  isCalendarAttachment,
+  type CalendarBundle,
+  type ClassifiedICS,
+} from "./calendar-bundle";
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
 import type { MailHost, MailSyncState } from "./mail-host";
 import { mailSource, rootMessageId, transformMessages, type MailMessage } from "./transform";
@@ -89,6 +94,17 @@ export async function reconcileTodoFlags(
 }
 
 /**
+ * Persisted per-root calendar-bundle classification (see `detectCalendarBundles`'s
+ * caching doc below). Wrapped in an object — never a bare `ClassifiedICS |
+ * null` — because `MailHost.get`'s "mail:"-prefixed implementation
+ * normalizes a stored `null` back to `undefined` (see `buildMailHost` in
+ * apple.ts: `(value as T | null) ?? undefined`), which would make a
+ * persisted "evaluated, doesn't bundle" decision indistinguishable from
+ * "never evaluated" and defeat the whole point of caching it.
+ */
+type StoredBundleDecision = { classified: ClassifiedICS | null };
+
+/**
  * Detects mail↔calendar thread bundling for a sync pass: groups `messages`
  * by thread root, and for each thread fetches + classifies (via
  * `classifyICS`) every `text/calendar`/`application/ics` attachment found —
@@ -105,11 +121,40 @@ export async function reconcileTodoFlags(
  * prefer the cancellation email's own note over its generic "This event was
  * cancelled." text.
  *
- * Most mail carries no calendar attachment at all, so this only issues IMAP
- * round-trips (a `selectMailbox` + `fetchAttachment` per calendar part
- * encountered) for the rare thread that actually has one — an empty
- * `messages` array, or messages with no calendar-mime attachments, does no
- * I/O.
+ * Most mail carries no calendar attachment at all, so this never issues
+ * IMAP round-trips (a `selectMailbox` + `fetchAttachment` per calendar part
+ * encountered) for a thread that doesn't have one — an empty `messages`
+ * array, or messages with no calendar-mime attachments, does no IMAP I/O.
+ * It DOES do one cheap store lookup (`host.get`) per thread root every
+ * pass, unconditionally — see CACHING below for why that can't be skipped
+ * for calendar-less threads either.
+ *
+ * CACHING: once a root's calendar-bearing message(s) have been classified,
+ * the decision (bundle info, or explicitly "no bundle" for a bare
+ * invite/RSVP) is persisted to `bundle:<rootId>` and reused on every later
+ * pass instead of re-fetching. Two reasons this is required, not just an
+ * optimization:
+ *  - Cost: every poll otherwise re-fetches and re-classifies the same ICS
+ *    attachment for every invite thread still inside the 30-day recent
+ *    window — ~2 extra IMAP round-trips per thread, every 15 minutes,
+ *    against a ~1000-request execution budget.
+ *  - Correctness: the recent-window rescan only re-fetches messages dated
+ *    within the last 30 days. Once the ICS-bearing message ages out of that
+ *    window, a LATER pass's `messages` for this root may contain no
+ *    calendar-bearing message at all (just an in-window reply) — the
+ *    persisted decision must still apply, which is why the cache is
+ *    consulted BEFORE checking whether this pass's message set has a
+ *    calendar part, not gated behind it. Without this, re-classifying from
+ *    scratch would find nothing and flip the thread back to "not bundled" —
+ *    changing `sources`' sorted-minimum primary source (`"icaluid:…"` sorts
+ *    before `"icloud-mail:thread:…"`) and creating a SECOND link row on
+ *    `upsert_link`'s `(source, source_priority_root)` conflict target,
+ *    since the old primary source is still on file. Persisting the decision
+ *    once means the classification can never flip after the fact.
+ *
+ * `eventKnown` (see `CalendarBundle`'s doc) is resolved via
+ * `host.knownEventUids()` at most once per call — lazily, only once a
+ * bundle is actually found — never per message/thread.
  */
 export async function detectCalendarBundles(
   host: MailHost,
@@ -126,22 +171,59 @@ export async function detectCalendarBundles(
   }
 
   const bundles = new Map<string, CalendarBundle>();
+  let knownUids: Set<string> | null = null;
+  const resolveEventKnown = async (uid: string): Promise<boolean> => {
+    if (knownUids === null) knownUids = await host.knownEventUids();
+    return knownUids.has(uid);
+  };
+
   for (const [root, msgs] of byRoot.entries()) {
-    for (const m of msgs) {
-      const part = (m.attachments ?? []).find((a) => isCalendarAttachment(a.mimeType));
-      if (!part) continue;
+    // Reuse an earlier pass's decision before doing anything else — see the
+    // CACHING doc above for why this must not be gated behind "does THIS
+    // pass have a calendar part" (the ICS-bearing message may have aged out
+    // of the window while the thread itself is still active).
+    const persisted = await host.get<StoredBundleDecision>(`bundle:${root}`);
+    if (persisted) {
+      if (persisted.classified) {
+        bundles.set(root, {
+          ...persisted.classified,
+          eventKnown: await resolveEventKnown(persisted.classified.uid),
+        });
+      }
+      continue;
+    }
+
+    // Not yet classified. Cheap in-memory check (no I/O) — only
+    // calendar-bearing threads ever touch IMAP below, and only those get a
+    // decision persisted (a thread with no calendar part yet is simply
+    // re-checked next pass in case one arrives later).
+    const calendarMsgs = msgs.filter((m) =>
+      (m.attachments ?? []).some((a) => isCalendarAttachment(a.mimeType))
+    );
+    if (calendarMsgs.length === 0) continue;
+
+    let classified: ClassifiedICS | null = null;
+    for (const m of calendarMsgs) {
+      const part = (m.attachments ?? []).find((a) => isCalendarAttachment(a.mimeType))!;
 
       await host.imap.selectMailbox(session, m.mailbox);
       const bytes = await host.imap.fetchAttachment(session, m.uid, part.partNumber);
       const ics = new TextDecoder("utf-8").decode(bytes);
-      const classified = classifyICS(ics);
+      classified = classifyICS(ics);
       if (!classified) continue; // bare invite or RSVP — check the thread's other messages
 
-      bundles.set(root, classified);
       if (classified.kind === "cancel") {
         await host.set(`cancel-email:${classified.uid}`, { at: new Date().toISOString() });
       }
       break; // this thread is classified; stop scanning its remaining messages
+    }
+
+    // Persist the decision — including explicit "no bundle" — so this root
+    // is never re-evaluated on a later pass (see the caching doc above).
+    await host.set(`bundle:${root}`, { classified } satisfies StoredBundleDecision);
+
+    if (classified) {
+      bundles.set(root, { ...classified, eventKnown: await resolveEventKnown(classified.uid) });
     }
   }
   return bundles;

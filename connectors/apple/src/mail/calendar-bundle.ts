@@ -15,7 +15,22 @@
  * and hands the decoded text to `classifyICS`).
  */
 
-export type CalendarBundle = { uid: string; kind: "cancel" | "update" };
+/** Raw classification of one ICS blob, before the mail sync pass resolves
+ *  whether the calendar product has already synced an event for that UID. */
+export type ClassifiedICS = { uid: string; kind: "cancel" | "update" };
+
+/**
+ * A classified ICS bundle plus `eventKnown`: whether the calendar product
+ * has already synced an event for this UID (via `MailHost.knownEventUids`,
+ * resolved once per `detectCalendarBundles` pass — see `sync.ts`). Drives
+ * `transform.ts`'s title-omission decision: omit `title` (let the synced
+ * calendar event own it) only when `eventKnown` is true; otherwise set
+ * `title` from the email subject so the thread never falls back to the
+ * runtime's "Untitled" placeholder while waiting for the calendar side to
+ * sync (or when it never will — mail-only setups, a cancelled-before-sync
+ * event, an out-of-window/disabled calendar).
+ */
+export type CalendarBundle = ClassifiedICS & { eventKnown: boolean };
 
 const CALENDAR_MIME_TYPES = new Set(["text/calendar", "application/ics"]);
 
@@ -56,7 +71,7 @@ function icsProp(ics: string, name: string): string | null {
  * can uniformly treat every non-bundling case — RSVP, bare invite, or
  * unparseable text — the same way.
  */
-export function classifyICS(ics: string): CalendarBundle | null {
+export function classifyICS(ics: string): ClassifiedICS | null {
   const uid = icsProp(ics, "UID");
   if (!uid) return null;
 

@@ -51,4 +51,24 @@ export interface MailHost {
    * fires. See `setThreadFlag` in `write.ts`.
    */
   queueWritebackDrain(id: string): Promise<void>;
+  /**
+   * The set of iCalUIDs the calendar product has actually saved a TITLED
+   * link for, across every currently-enabled calendar (backed by
+   * `titled_uids_<calendarHref>` in `apple.ts` — deliberately NOT the
+   * broader `event_uids_<calendarHref>`, which also includes hrefs CalDAV
+   * returned but the calendar side skipped, e.g. a cancelled-during-
+   * initial-sync event with no link ever created — see the doc on
+   * `processCalDAVEvents` in apple.ts). The mail host's storage keys are
+   * namespaced with "mail:" (see `buildMailHost` in apple.ts), so mail-side
+   * code has no direct way to read the calendar side's unprefixed keys —
+   * this is the wired-through lookup. Used by `detectCalendarBundles`
+   * (`sync.ts`) to decide whether a bundled mail link should set `title`
+   * from the email subject (no titled event yet) or omit it (the synced
+   * calendar event owns it) — see `CalendarBundle`'s `eventKnown` doc in
+   * `calendar-bundle.ts`.
+   *
+   * Does real work (a store list plus one read per enabled calendar) —
+   * callers must resolve it at most once per sync pass, never per message.
+   */
+  knownEventUids(): Promise<Set<string>>;
 }

@@ -1,5 +1,6 @@
 import type { ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
 
+import { isCalendarAttachment } from "./calendar-bundle";
 import { connectIcloud } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 
@@ -117,6 +118,13 @@ export async function collectFileAttachments(
  * logged and skipped rather than failing the whole forward. `mailbox` must
  * already be resolved by the caller (e.g. from `fetchOriginalMessage`);
  * SELECTing it here is idempotent if it's already the selected mailbox.
+ *
+ * Skips an inline calendar part (text/calendar, application/ics) whose
+ * `fileName` is IMAP-parse's synthesized placeholder `"attachment"` — same
+ * rationale as `transform.ts`'s `attachmentActions` (see its doc): re-
+ * attaching it to a forward would produce a meaningless, extensionless
+ * "attachment" file. A genuinely named calendar attachment (e.g.
+ * `invite.ics`) is still re-attached normally.
  */
 export async function fetchOriginalAttachments(
   host: MailHost,
@@ -127,6 +135,7 @@ export async function fetchOriginalAttachments(
   await host.imap.selectMailbox(session, mailbox);
   const attachments: { fileName: string; mimeType: string; data: Uint8Array }[] = [];
   for (const part of message.attachments ?? []) {
+    if (isCalendarAttachment(part.mimeType) && part.fileName === "attachment") continue;
     try {
       const data = await host.imap.fetchAttachment(session, message.uid, part.partNumber);
       attachments.push({ fileName: part.fileName, mimeType: part.mimeType, data });

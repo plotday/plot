@@ -12,7 +12,11 @@ vi.mock("./mail/sync", () => ({
 }));
 
 import { Apple } from "./apple";
-import { InvalidSyncTokenError, PreconditionFailedError } from "./calendar/caldav";
+import {
+  AuthenticationError,
+  InvalidSyncTokenError,
+  PreconditionFailedError,
+} from "./calendar/caldav";
 import type { ICSEvent } from "./calendar/ics-parser";
 import type { NewLinkWithNotes } from "@plotday/twister";
 import { composeChannels } from "./compose";
@@ -105,6 +109,99 @@ describe("Apple.activate", () => {
     });
 
     expect(store.get("mail:auth_actor_id")).toBe("actor-123");
+  });
+});
+
+describe("Apple.knownEventUids (via buildMailHost) — FIX 1 support", () => {
+  /** Fake self exposing `this.tools.store.list` (for the `sync_enabled_`
+   *  scan) plus `this.get`/`this.set`/`this.clear`, matching the shape
+   *  `buildMailHost()`'s `knownEventUids` member needs. */
+  function makeSelf(initialStore: Record<string, unknown> = {}) {
+    const store = new Map<string, unknown>(Object.entries(initialStore));
+    const buildMailHost = (
+      Apple.prototype as unknown as { buildMailHost: () => unknown }
+    ).buildMailHost;
+    // `buildMailHost()`'s `knownEventUids` member calls `this.knownEventUids()`
+    // (a private method) — copy it onto the fake self the same way
+    // `buildMailHost` itself is copied, so that dispatch resolves.
+    const knownEventUids = (
+      Apple.prototype as unknown as { knownEventUids: () => Promise<Set<string>> }
+    ).knownEventUids;
+    const list = async (prefix: string) =>
+      Array.from(store.keys()).filter((k) => k.startsWith(prefix));
+    const self = {
+      buildMailHost,
+      knownEventUids,
+      tools: {
+        options: { appleId: "me@icloud.com", appPassword: "pw" },
+        imap: {},
+        smtp: {},
+        integrations: {},
+        files: {},
+        store: { list },
+      },
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      get: async (key: string) => store.get(key),
+      clear: async () => {},
+    } as unknown as Apple;
+    return { self, store };
+  }
+
+  it("unions titled_uids_ across every enabled calendar", async () => {
+    const { self } = makeSelf({
+      "sync_enabled_calendar:/home/": true,
+      "sync_enabled_calendar:/work/": true,
+      "titled_uids_calendar:/home/": { "evt-1": true },
+      "titled_uids_calendar:/work/": { "evt-2": true },
+    });
+
+    const host = (self as unknown as { buildMailHost: () => { knownEventUids: () => Promise<Set<string>> } }).buildMailHost();
+    const uids = await host.knownEventUids();
+
+    expect(uids).toEqual(new Set(["evt-1", "evt-2"]));
+  });
+
+  it("excludes a DISABLED calendar's titled_uids_ even if it's still stored", async () => {
+    const { self } = makeSelf({
+      "sync_enabled_calendar:/home/": true,
+      "titled_uids_calendar:/home/": { "evt-1": true },
+      // "calendar:/work/" was disabled — its sync_enabled_ key was cleared,
+      // but suppose a stray titled_uids_ entry lingered; it must not count.
+      "titled_uids_calendar:/work/": { "evt-2": true },
+    });
+
+    const host = (self as unknown as { buildMailHost: () => { knownEventUids: () => Promise<Set<string>> } }).buildMailHost();
+    const uids = await host.knownEventUids();
+
+    expect(uids).toEqual(new Set(["evt-1"]));
+  });
+
+  it("FIX 1 regression guard: does NOT report a uid known from event_uids_ alone — only titled_uids_ counts", async () => {
+    const { self } = makeSelf({
+      "sync_enabled_calendar:/home/": true,
+      // event_uids_ has the uid (CalDAV returned it — e.g. a cancelled
+      // event skipped during initial sync), but titled_uids_ does NOT
+      // (no link/title was ever created for it). knownEventUids() must
+      // report false here — using event_uids_ instead would silently
+      // reintroduce the "Untitled" bug FIX 1 exists to fix.
+      "event_uids_calendar:/home/": { "/cal/skipped.ics": "evt-skipped" },
+    });
+
+    const host = (self as unknown as { buildMailHost: () => { knownEventUids: () => Promise<Set<string>> } }).buildMailHost();
+    const uids = await host.knownEventUids();
+
+    expect(uids.has("evt-skipped")).toBe(false);
+  });
+
+  it("returns an empty set with no enabled calendars", async () => {
+    const { self } = makeSelf({});
+
+    const host = (self as unknown as { buildMailHost: () => { knownEventUids: () => Promise<Set<string>> } }).buildMailHost();
+    const uids = await host.knownEventUids();
+
+    expect(uids.size).toBe(0);
   });
 });
 
@@ -952,6 +1049,60 @@ describe("Apple calendar incremental sync", () => {
     ]);
   });
 
+  it("FIX 3: prunes event_uids_/etags_ entries for hrefs the fast path reported deleted, leaving other entries intact", async () => {
+    const getCollectionChanges = vi.fn(async () => ({
+      token: "new-token",
+      changed: [],
+      deletedHrefs: ["/cal/d1.ics"],
+    }));
+    const { self, store } = makeSelf({
+      storedToken: "old-token",
+      getCollectionChanges,
+      initialStore: {
+        [`event_uids_${calendarHref}`]: {
+          "/cal/d1.ics": "uid-1",
+          "/cal/keep.ics": "uid-2",
+        },
+        [`etags_${calendarHref}`]: {
+          "/cal/d1.ics": "etag-1",
+          "/cal/keep.ics": "etag-2",
+        },
+      },
+    });
+
+    await startIncrementalSync.call(self, calendarHref);
+
+    expect(store.get(`event_uids_${calendarHref}`)).toEqual({
+      "/cal/keep.ics": "uid-2",
+    });
+    expect(store.get(`etags_${calendarHref}`)).toEqual({
+      "/cal/keep.ics": "etag-2",
+    });
+  });
+
+  it("FIX 3: a fast-path pass with no deletions leaves event_uids_/etags_ untouched", async () => {
+    const getCollectionChanges = vi.fn(async () => ({
+      token: "new-token",
+      changed: [],
+      deletedHrefs: [],
+    }));
+    const initialUids = { "/cal/keep.ics": "uid-2" };
+    const initialEtags = { "/cal/keep.ics": "etag-2" };
+    const { self, store } = makeSelf({
+      storedToken: "old-token",
+      getCollectionChanges,
+      initialStore: {
+        [`event_uids_${calendarHref}`]: initialUids,
+        [`etags_${calendarHref}`]: initialEtags,
+      },
+    });
+
+    await startIncrementalSync.call(self, calendarHref);
+
+    expect(store.get(`event_uids_${calendarHref}`)).toEqual(initialUids);
+    expect(store.get(`etags_${calendarHref}`)).toEqual(initialEtags);
+  });
+
   it("chunks a >50 changed-href fast-path delta into multiple multigets and completes once, at the end", async () => {
     const hrefs = Array.from({ length: 120 }, (_, i) => `/cal/h${i}.ics`);
     const getCollectionChanges = vi.fn(async () => ({
@@ -1005,6 +1156,157 @@ describe("Apple calendar incremental sync", () => {
       "fallback-final-token"
     );
     expect(releaseLockCalls).toEqual([lockKey]);
+  });
+});
+
+describe("Apple.pollForChanges", () => {
+  const calendarHref = "calendar:/1234/calendars/home/";
+
+  /** Pulls a private method off `Apple.prototype` for use against a plain
+   *  fake `self` — same rationale as the incremental-sync describe block's
+   *  `privateMethod` above. */
+  function privateMethod<T>(name: string): T {
+    return (Apple.prototype as unknown as Record<string, T>)[name];
+  }
+
+  /**
+   * Fake self for `pollForChanges`. Unlike the incremental-sync describe
+   * block above, `startIncrementalSync` is REPLACED with a plain spy
+   * (never the real implementation) — these tests are about
+   * `pollForChanges`'s own gating/error-handling logic (FIX 2 / FIX 5), not
+   * the incremental-sync chain itself (already covered above), so a spy
+   * keeps them focused and lets a test simulate an error from "deep in the
+   * chain" without wiring up a full CalDAV fake.
+   */
+  function makeSelf(opts: {
+    syncEnabled?: boolean;
+    storedToken?: string;
+    storedCtag?: string;
+    getCalendarCtag?: (href: string) => Promise<string | null>;
+    startIncrementalSyncImpl?: (calendarHref: string) => Promise<void>;
+  }) {
+    const store = new Map<string, unknown>(
+      Object.entries({
+        [`sync_enabled_${calendarHref}`]: opts.syncEnabled ?? true,
+        ...(opts.storedToken !== undefined
+          ? { [`synctoken_${calendarHref}`]: opts.storedToken }
+          : {}),
+        ...(opts.storedCtag !== undefined
+          ? { [`ctag_${calendarHref}`]: opts.storedCtag }
+          : {}),
+      })
+    );
+
+    const getCalendarCtag = vi.fn(opts.getCalendarCtag ?? (async () => null));
+    const startIncrementalSyncCalls: string[] = [];
+    const startIncrementalSync = vi.fn(async (href: string) => {
+      startIncrementalSyncCalls.push(href);
+      if (opts.startIncrementalSyncImpl) await opts.startIncrementalSyncImpl(href);
+    });
+    const scheduleRecurringCalls: Array<{ key: string }> = [];
+    const scheduleRecurring = vi.fn(async (key: string) => {
+      scheduleRecurringCalls.push({ key });
+    });
+    const callback = vi.fn(async (fn: unknown, ...args: unknown[]) => ({ fn, args }));
+
+    const self = {
+      getCalDAV: () => ({ getCalendarCtag }),
+      calDavHref: privateMethod("calDavHref"),
+      startIncrementalSync,
+      schedulePoll: privateMethod("schedulePoll"),
+      callback,
+      scheduleRecurring,
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+      clear: async (key: string) => {
+        store.delete(key);
+      },
+    } as unknown as Apple;
+
+    return {
+      self,
+      store,
+      getCalendarCtag,
+      startIncrementalSync,
+      startIncrementalSyncCalls,
+      scheduleRecurringCalls,
+    };
+  }
+
+  it("FIX 2: with a stored sync token, goes straight to startIncrementalSync — never PROPFINDs the ctag", async () => {
+    const { self, getCalendarCtag, startIncrementalSyncCalls } = makeSelf({
+      storedToken: "tok-1",
+    });
+
+    await Apple.prototype.pollForChanges.call(self, calendarHref);
+
+    expect(getCalendarCtag).not.toHaveBeenCalled();
+    expect(startIncrementalSyncCalls).toEqual([calendarHref]);
+  });
+
+  it("with no stored token and an unchanged ctag, does NOT run incremental sync (fallback gate preserved)", async () => {
+    const { self, startIncrementalSync, scheduleRecurringCalls } = makeSelf({
+      storedCtag: "ctag-A",
+      getCalendarCtag: async () => "ctag-A",
+    });
+
+    await Apple.prototype.pollForChanges.call(self, calendarHref);
+
+    expect(startIncrementalSync).not.toHaveBeenCalled();
+    expect(scheduleRecurringCalls).toEqual([{ key: `poll:${calendarHref}` }]);
+  });
+
+  it("with no stored token and a changed ctag, runs incremental sync", async () => {
+    const { self, startIncrementalSyncCalls } = makeSelf({
+      storedCtag: "ctag-A",
+      getCalendarCtag: async () => "ctag-B",
+    });
+
+    await Apple.prototype.pollForChanges.call(self, calendarHref);
+
+    expect(startIncrementalSyncCalls).toEqual([calendarHref]);
+  });
+
+  it("bails without any work when the channel is disabled", async () => {
+    const { self, getCalendarCtag, startIncrementalSync } = makeSelf({
+      syncEnabled: false,
+      storedToken: "tok-1",
+    });
+
+    await Apple.prototype.pollForChanges.call(self, calendarHref);
+
+    expect(getCalendarCtag).not.toHaveBeenCalled();
+    expect(startIncrementalSync).not.toHaveBeenCalled();
+  });
+
+  it("FIX 5: swallows an AuthenticationError instead of re-throwing, and still reschedules the poll", async () => {
+    const { self, scheduleRecurringCalls } = makeSelf({
+      storedToken: "tok-1",
+      startIncrementalSyncImpl: async () => {
+        throw new AuthenticationError();
+      },
+    });
+
+    await expect(
+      Apple.prototype.pollForChanges.call(self, calendarHref)
+    ).resolves.toBeUndefined();
+
+    expect(scheduleRecurringCalls).toEqual([{ key: `poll:${calendarHref}` }]);
+  });
+
+  it("still re-throws a genuinely unexpected (non-auth) error", async () => {
+    const { self } = makeSelf({
+      storedToken: "tok-1",
+      startIncrementalSyncImpl: async () => {
+        throw new Error("network blip");
+      },
+    });
+
+    await expect(
+      Apple.prototype.pollForChanges.call(self, calendarHref)
+    ).rejects.toThrow("network blip");
   });
 });
 

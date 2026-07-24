@@ -2,7 +2,7 @@ import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
 import { ActionType, type Action, type NewContact, type NewLinkWithNotes } from "@plotday/twister";
 
 import { buildAttachmentRef } from "./attachments";
-import type { CalendarBundle } from "./calendar-bundle";
+import { isCalendarAttachment, type CalendarBundle } from "./calendar-bundle";
 import { looksLikeHtml } from "./html";
 
 /** Strip surrounding angle brackets and whitespace from a Message-ID. */
@@ -33,16 +33,29 @@ export function mailSource(rootId: string): string {
  */
 export type MailMessage = ImapMessage & { mailbox: string };
 
-/** Build this message's `fileRef` actions from its attachment parts, or undefined when none. */
+/**
+ * Build this message's `fileRef` actions from its attachment parts, or
+ * undefined when none. Skips an inline calendar part (text/calendar,
+ * application/ics) whose `fileName` is IMAP-parse's synthesized placeholder
+ * `"attachment"` (see `imap-parse.ts`'s `fileName ?? "attachment"`) — every
+ * meeting invite/update carries one of these, and mapping it to a fileRef
+ * action would render an extensionless, meaningless "attachment" download
+ * chip on emails that don't even bundle (bare invites). A genuinely named
+ * calendar attachment (e.g. a forwarded `invite.ics`) still appears
+ * normally — only the synthesized-name case is suppressed.
+ */
 function attachmentActions(m: MailMessage): Action[] | undefined {
   if (!m.attachments || m.attachments.length === 0) return undefined;
-  return m.attachments.map((a) => ({
-    type: ActionType.fileRef as ActionType.fileRef,
-    ref: buildAttachmentRef(m.mailbox, m.uid, a.partNumber),
-    fileName: a.fileName,
-    fileSize: a.size,
-    mimeType: a.mimeType,
-  }));
+  const actions = m.attachments
+    .filter((a) => !(isCalendarAttachment(a.mimeType) && a.fileName === "attachment"))
+    .map((a) => ({
+      type: ActionType.fileRef as ActionType.fileRef,
+      ref: buildAttachmentRef(m.mailbox, m.uid, a.partNumber),
+      fileName: a.fileName,
+      fileSize: a.size,
+      mimeType: a.mimeType,
+    }));
+  return actions.length > 0 ? actions : undefined;
 }
 
 export type TransformCtx = {
@@ -181,15 +194,30 @@ export function transformMessages(
         : {};
 
     // Calendar thread bundling (see TransformCtx.calendarBundles doc): when
-    // this thread's root was classified as a cancellation/update ICS, bundle
-    // onto the calendar event's thread via the shared `icaluid:<uid>` alias
-    // and — critically — OMIT `title` entirely. `title` is last-writer-wins
-    // on a bundled thread (unlike `author_id`, which is first-writer-wins),
-    // so setting it here (even to the correct-looking raw subject) would
-    // clobber the event's title back to the email subject on every mail
-    // sync pass that runs after a calendar pass. Per plot.ts's `NewLinkWithNotes.title`
-    // doc: "Omit to preserve the existing title." The key must be ABSENT,
-    // not `null`/`""` — a present key of any value still overwrites.
+    // this thread's root was classified as a cancellation/update ICS,
+    // ALWAYS bundle onto the calendar event's thread via the shared
+    // `icaluid:<uid>` alias — that convergence must never be skipped, or
+    // the mail and calendar sides would never share a thread. Whether
+    // `title` is also set depends on `calendarBundle.eventKnown` (see its
+    // doc in calendar-bundle.ts):
+    //  - eventKnown true (the calendar product has already synced an event
+    //    for this UID): OMIT `title` entirely. `title` is last-writer-wins
+    //    on a bundled thread (unlike `author_id`, which is first-writer-
+    //    wins), so setting it here (even to the correct-looking raw
+    //    subject) would clobber the event's title back to the email
+    //    subject on every mail sync pass that runs after a calendar pass.
+    //    Per plot.ts's `NewLinkWithNotes.title` doc: "Omit to preserve the
+    //    existing title." The key must be ABSENT, not `null`/`""` — a
+    //    present key of any value still overwrites.
+    //  - eventKnown false (no synced event yet — mail-only setup, a
+    //    cancelled-before-sync event, an out-of-window/disabled calendar,
+    //    or the calendar simply hasn't synced this pass yet): SET `title`
+    //    from the subject, same as an unbundled thread. Otherwise the
+    //    runtime's INSERT path has no title to fall back to and substitutes
+    //    the literal placeholder "Untitled" — permanently, since a later
+    //    mail pass would keep omitting the key. A later calendar sync (if
+    //    one ever happens) still sets the real title unconditionally, so
+    //    this never causes a stale title to stick around.
     const calendarBundle = ctx.calendarBundles?.get(root);
     const link: NewLinkWithNotes = {
       source: mailSource(root),
@@ -209,9 +237,8 @@ export function transformMessages(
       ...(ctx.initialSync
         ? { unread: false, archived: false }
         : incrementalRead),
-      ...(calendarBundle
-        ? { sources: [`icaluid:${calendarBundle.uid}`] }
-        : { title: originator.subject ?? "" }),
+      ...(calendarBundle ? { sources: [`icaluid:${calendarBundle.uid}`] } : {}),
+      ...(calendarBundle?.eventKnown ? {} : { title: originator.subject ?? "" }),
     };
     links.push(link);
   }
