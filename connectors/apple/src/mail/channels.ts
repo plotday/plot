@@ -18,7 +18,17 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
     // The connector's word for a note on this thread, so in-thread composer
     // copy reads "Add a reply" (matching Gmail) rather than "Add a note".
     noteLabel: "Reply",
-    sharingModel: "thread",
+    // Email addresses each message, not the conversation: every note carries
+    // its own recipient set (`transform.ts` populates one per message) and the
+    // thread roster is their union. So someone brought in halfway through sees
+    // the reply that added them and everything after it — not the exchange
+    // that preceded them.
+    sharingModel: "message",
+    // …and the flip side: recipients can be added or dropped on an existing
+    // thread. `write.ts` resolves each reply's recipients from the note's own
+    // access list (falling back to the original message's headers), so those
+    // mid-thread edits are honoured on the way out.
+    supportsContactChanges: true,
     // A mail mark so email threads don't fall back to the connector's
     // calendar logo. Served from plot.day rather than hotlinked from a
     // third-party wiki, so the artwork can't move or be rate-limited out

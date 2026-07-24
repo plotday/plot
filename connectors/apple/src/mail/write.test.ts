@@ -171,6 +171,135 @@ describe("onNoteCreatedFn", () => {
     expect(out).toMatchObject({ deliveryError: { code: "no_recipients" } });
   });
 
+  // Mid-thread recipient changes: the email link type declares
+  // `supportsContactChanges`, so the user can add or drop people on an
+  // existing thread. Those edits reach the connector as the note's access
+  // list, which the reply path must honour — deriving recipients from the
+  // latest message's headers alone silently drops whoever was just added.
+  it("addresses someone added mid-thread who is not on the latest message", async () => {
+    const { host, sent } = mockHost({
+      inboxMessages: [
+        { messageId: "<root@x.com>", from: [{ address: "jane@x.com", name: "Jane" }],
+          to: [{ address: "me@icloud.com" }], subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+    });
+    const note = replyNote({
+      // No curated `recipients` (older runtime): the access list is the only
+      // signal that Bob was added.
+      accessContacts: ["c-jane", "c-bob"] as never,
+      author: { id: "c-me" } as never,
+    });
+    const thread = mailThread({
+      accessContacts: [
+        { id: "c-jane", email: "jane@x.com", name: "Jane" },
+        { id: "c-bob", email: "bob@x.com", name: "Bob" },
+        { id: "c-me", email: "me@icloud.com", name: "Me" },
+      ] as never,
+    });
+
+    await onNoteCreatedFn(host, note, thread);
+
+    expect(sent[0].to.map((a) => a.address).sort()).toEqual(["bob@x.com", "jane@x.com"]);
+  });
+
+  it("drops a header participant the user removed from this note's access list", async () => {
+    const { host, sent } = mockHost({
+      inboxMessages: [
+        { messageId: "<root@x.com>", from: [{ address: "jane@x.com", name: "Jane" }],
+          to: [{ address: "me@icloud.com" }], cc: [{ address: "bob@x.com" }],
+          subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+    });
+    const note = replyNote({
+      accessContacts: ["c-jane"] as never,
+      author: { id: "c-me" } as never,
+    });
+    const thread = mailThread({
+      accessContacts: [
+        { id: "c-jane", email: "jane@x.com", name: "Jane" },
+        { id: "c-bob", email: "bob@x.com", name: "Bob" },
+        { id: "c-me", email: "me@icloud.com", name: "Me" },
+      ] as never,
+    });
+
+    await onNoteCreatedFn(host, note, thread);
+
+    expect(sent[0].to.map((a) => a.address)).toEqual(["jane@x.com"]);
+    expect(sent[0].cc ?? []).toEqual([]);
+  });
+
+  it("sends nothing, and reports no failure, for a note shared with nobody but its author", async () => {
+    // Under the message sharing model a user can write a note on a mail
+    // thread that is private to them. That isn't a send that failed — it's a
+    // note that was never addressed to anyone, so it must not surface
+    // "Failed to send".
+    const { host, sent } = mockHost({
+      inboxMessages: [
+        { messageId: "<root@x.com>", from: [{ address: "jane@x.com" }],
+          subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+    });
+    const note = replyNote({
+      accessContacts: ["c-me"] as never,
+      author: { id: "c-me" } as never,
+    });
+    const thread = mailThread({
+      accessContacts: [{ id: "c-me", email: "me@icloud.com", name: "Me" }] as never,
+    });
+
+    const out = await onNoteCreatedFn(host, note, thread);
+
+    expect(sent).toHaveLength(0);
+    expect(out).toBeUndefined();
+  });
+
+  it("still surfaces no_recipients when the user chose people but none are addressable", async () => {
+    const { host, sent } = mockHost({ inboxMessages: [] });
+    const note = replyNote({
+      accessContacts: ["c-me", "c-ghost"] as never,
+      author: { id: "c-me" } as never,
+    });
+    const thread = mailThread({
+      accessContacts: [
+        { id: "c-me", email: "me@icloud.com", name: "Me" },
+        // A contact with no email address — chosen, but not addressable.
+        { id: "c-ghost", email: null, name: "Ghost" },
+      ] as never,
+    });
+
+    const out = await onNoteCreatedFn(host, note, thread);
+
+    expect(sent).toHaveLength(0);
+    expect(out).toMatchObject({ deliveryError: { code: "no_recipients" } });
+  });
+
+  it("keeps display names on header-derived recipients", async () => {
+    const { host, sent } = mockHost({
+      inboxMessages: [
+        { messageId: "<root@x.com>", from: [{ address: "jane@x.com", name: "Jane Doe" }],
+          to: [{ address: "me@icloud.com" }], subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+    });
+
+    await onNoteCreatedFn(host, replyNote(), mailThread());
+
+    expect(sent[0].to).toEqual([{ address: "jane@x.com", name: "Jane Doe" }]);
+  });
+
+  it("never addresses the reply to the connection owner's own address", async () => {
+    const { host, sent } = mockHost({
+      inboxMessages: [
+        { messageId: "<root@x.com>", from: [{ address: "jane@x.com" }],
+          to: [{ address: "me@icloud.com" }, { address: "bob@x.com" }],
+          subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+    });
+
+    await onNoteCreatedFn(host, replyNote(), mailThread());
+
+    expect(sent[0].to.map((a) => a.address)).not.toContain("me@icloud.com");
+  });
+
   it("proceeds via the accessContacts + root-id fallback when IMAP resolve throws", async () => {
     const { host, sent } = mockHost({ searchError: new Error("connection refused") });
     const note = replyNote({

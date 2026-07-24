@@ -173,6 +173,109 @@ describe("transformMessages", () => {
   });
 });
 
+/**
+ * The email link type declares `sharingModel: "message"`, whose contract is
+ * that EVERY ingested note carries its own recipient set (never null) — the
+ * thread roster is then the union across messages. Without per-note access
+ * contacts the model degrades to thread-wide visibility, so someone added to
+ * a later reply would retroactively see the whole earlier conversation.
+ */
+describe("transformMessages — per-note access contacts (message sharing model)", () => {
+  type NoteLike = { key?: string; accessContacts?: Array<{ email?: string }> | null };
+  const emailsOf = (n: NoteLike | undefined) =>
+    (n?.accessContacts ?? []).map((c) => c.email).sort();
+
+  const notesByKey = (link: { notes?: unknown[] }) =>
+    Object.fromEntries((link.notes ?? []).map((n) => [(n as NoteLike).key, n as NoteLike]));
+
+  it("scopes each note to that message's own From/To/Cc, not the thread union", () => {
+    const first = msg({
+      uid: 1,
+      messageId: "<m1@example.com>",
+      from: [{ address: "jane@example.com", name: "Jane" }],
+      to: [{ address: "kris@icloud.com", name: "Kris" }],
+    });
+    // Bob is added to the conversation only on the second message.
+    const second = msg({
+      uid: 2,
+      messageId: "<m2@example.com>",
+      references: ["<m1@example.com>"],
+      from: [{ address: "jane@example.com", name: "Jane" }],
+      to: [{ address: "kris@icloud.com", name: "Kris" }],
+      cc: [{ address: "bob@example.com", name: "Bob" }],
+      date: new Date("2026-07-15T11:00:00Z"),
+    });
+
+    const byKey = notesByKey(transformMessages([first, second], ctx)[0]);
+
+    // Bob was not on the first message, so he must not see it.
+    expect(emailsOf(byKey["m1@example.com"])).toEqual([
+      "jane@example.com",
+      "kris@icloud.com",
+    ]);
+    expect(emailsOf(byKey["m2@example.com"])).toEqual([
+      "bob@example.com",
+      "jane@example.com",
+      "kris@icloud.com",
+    ]);
+  });
+
+  it("always includes the connection owner, even when the message doesn't name them", () => {
+    // Mailing-list / alias / Bcc delivery: the owner's own address appears in
+    // no header. Their own note must not be redacted from them.
+    const listMail = msg({
+      uid: 3,
+      messageId: "<list@example.com>",
+      from: [{ address: "news@list.example.com", name: "List" }],
+      to: [{ address: "everyone@list.example.com" }],
+      cc: undefined,
+    });
+
+    const byKey = notesByKey(transformMessages([listMail], ctx)[0]);
+
+    expect(emailsOf(byKey["list@example.com"])).toEqual([
+      "everyone@list.example.com",
+      "kris@icloud.com",
+      "news@list.example.com",
+    ]);
+  });
+
+  it("matches the owner's address case-insensitively rather than adding a duplicate", () => {
+    const mixedCase = msg({
+      uid: 4,
+      messageId: "<m4@example.com>",
+      from: [{ address: "jane@example.com", name: "Jane" }],
+      to: [{ address: "Kris@iCloud.com", name: "Kris" }],
+    });
+
+    const byKey = notesByKey(transformMessages([mixedCase], ctx)[0]);
+
+    expect(emailsOf(byKey["m4@example.com"])).toEqual([
+      "Kris@iCloud.com",
+      "jane@example.com",
+    ]);
+  });
+
+  it("still sets the thread roster to the union across every message", () => {
+    const first = msg({ uid: 1, messageId: "<m1@example.com>" });
+    const second = msg({
+      uid: 2,
+      messageId: "<m2@example.com>",
+      references: ["<m1@example.com>"],
+      cc: [{ address: "bob@example.com", name: "Bob" }],
+      date: new Date("2026-07-15T11:00:00Z"),
+    });
+
+    const link = transformMessages([first, second], ctx)[0];
+
+    expect((link.accessContacts ?? []).map((c) => c.email).sort()).toEqual([
+      "bob@example.com",
+      "jane@example.com",
+      "kris@icloud.com",
+    ]);
+  });
+});
+
 describe("transformMessages — calendar thread bundling", () => {
   it("known UID: adds icaluid to sources and OMITS the title key when the thread's root has a cancel bundle for an already-synced event", () => {
     const m = msg({ uid: 30, messageId: "<invite@example.com>" });

@@ -94,6 +94,32 @@ function isSeen(msg: ImapMessage): boolean {
   return msg.flags.includes("\\Seen");
 }
 
+/**
+ * The recipient set for ONE message: its own From/To/Cc, plus the connection
+ * owner. The email link type declares `sharingModel: "message"`, whose
+ * contract is that every ingested note carries its own non-null access list —
+ * so a person added to a later reply sees that reply and everything after it,
+ * but not the conversation that preceded them.
+ *
+ * The owner is added explicitly rather than relying on the runtime's
+ * account-contact injection: plenty of mail the owner receives names them in
+ * no header at all (mailing lists, aliases, Bcc), and under the message model
+ * a note without them in its access list is redacted FROM THEM. Their own
+ * address is the one participant this connector always knows, so we never
+ * make their own mail depend on identity resolution succeeding.
+ *
+ * Bcc recipients are deliberately absent — IMAP doesn't expose them on
+ * received mail, and inferring them would leak a blind copy to the thread.
+ */
+function messageContacts(msg: MailMessage, ownEmail: string): NewContact[] {
+  const byEmail = new Map<string, NewContact>();
+  for (const a of [...(msg.from ?? []), ...(msg.to ?? []), ...(msg.cc ?? [])]) {
+    byEmail.set(a.address.toLowerCase(), toContact(a));
+  }
+  if (!byEmail.has(ownEmail)) byEmail.set(ownEmail, { email: ownEmail, name: "" });
+  return [...byEmail.values()];
+}
+
 /** Pick body content + contentType for one message. */
 export function bodyOf(msg: ImapMessage): { content: string; contentType: "html" | "text" } | null {
   if (msg.bodyHtml && msg.bodyHtml.trim().length > 0) {
@@ -175,6 +201,7 @@ export function transformMessages(
           ? { authoredBySelf: true as const }
           : { author: from ? toContact(from) : null }),
         ...(actions ? { actions } : {}),
+        accessContacts: messageContacts(m, ownEmail),
       };
     });
 

@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ActorId, ResolvedRecipient, Uuid } from "@plotday/twister/plot";
+import type { ResolvedRecipient, Uuid } from "@plotday/twister/plot";
 
 import {
-  accessContactsToRecipients,
   baseSubject,
   composeRecipients,
-  deriveReplyAll,
   isEmpty,
   replySubject,
   splitByRole,
@@ -50,35 +48,6 @@ describe("composeRecipients", () => {
   it("appends free-form inviteEmails as To and dedups against recipients", () => {
     const out = composeRecipients([rcpt("a@x.com", "to")], ["b@x.com", "a@x.com"]);
     expect(out.to.map((a) => a.address)).toEqual(["a@x.com", "b@x.com"]);
-  });
-});
-
-describe("deriveReplyAll", () => {
-  it("folds From∪To into To, Cc into Cc, excluding self", () => {
-    const out = deriveReplyAll(
-      {
-        from: [{ address: "jane@x.com" }],
-        to: [{ address: "me@icloud.com" }, { address: "bob@x.com" }],
-        cc: [{ address: "carol@x.com" }],
-      },
-      new Set(["me@icloud.com"])
-    );
-    expect(out.to.map((a) => a.address)).toEqual(["jane@x.com", "bob@x.com"]);
-    expect(out.cc.map((a) => a.address)).toEqual(["carol@x.com"]);
-  });
-});
-
-describe("accessContactsToRecipients", () => {
-  it("maps non-self contact emails to To", () => {
-    const out = accessContactsToRecipients(
-      [
-        { id: "1" as ActorId, email: "jane@x.com", name: "Jane" },
-        { id: "2" as ActorId, email: "me@icloud.com", name: "Me" },
-        { id: "3" as ActorId, email: null, name: "No Email" },
-      ],
-      new Set(["me@icloud.com"])
-    );
-    expect(out.to.map((a) => a.address)).toEqual(["jane@x.com"]);
   });
 });
 

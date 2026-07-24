@@ -1,5 +1,6 @@
 import {
   ActionType,
+  resolveOutboundReplyRecipients,
   type Action,
   type Actor,
   type CreateLinkDraft,
@@ -9,7 +10,7 @@ import {
 } from "@plotday/twister";
 import type { CreateLinkResult, Note } from "@plotday/twister/plot";
 import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
-import type { SmtpMessage } from "@plotday/twister/tools/smtp";
+import type { SmtpAddress, SmtpMessage } from "@plotday/twister/tools/smtp";
 
 import { collectFileAttachments, fetchOriginalAttachments } from "./attachments";
 import {
@@ -20,13 +21,10 @@ import {
 } from "./imap-fetch";
 import type { MailHost } from "./mail-host";
 import {
-  accessContactsToRecipients,
   composeRecipients,
-  deriveReplyAll,
   isEmpty,
   type OutboundRecipients,
   replySubject,
-  splitByRole,
 } from "./recipients";
 import { sendViaSmtp, sendWithRetry } from "./smtp-send";
 import { bodyOf, mailSource, stripAngle } from "./transform";
@@ -50,6 +48,37 @@ export function mailRootId(thread: Thread): string | null {
   if (meta.syncProvider !== APPLE_MAIL) return null;
   const rootId = meta.rootMessageId;
   return typeof rootId === "string" && rootId.length > 0 ? rootId : null;
+}
+
+/**
+ * Display names for the addresses a reply might go to, keyed by lowercased
+ * email: the resolved message's own headers first, then the thread's roster.
+ * `resolveOutboundReplyRecipients` works in bare addresses (every email
+ * connector shares it), so names are re-attached here rather than lost — a
+ * reply addressed to `Jane Doe <jane@…>` reads the same as one sent from
+ * Apple Mail.
+ */
+function displayNames(
+  latest: Pick<ImapMessage, "from" | "to" | "cc"> | null,
+  thread: Thread
+): Map<string, string> {
+  const names = new Map<string, string>();
+  const add = (email: string | null | undefined, name: string | null | undefined) => {
+    if (!email || !name) return;
+    const key = email.toLowerCase();
+    if (!names.has(key)) names.set(key, name);
+  };
+  for (const a of [...(latest?.from ?? []), ...(latest?.to ?? []), ...(latest?.cc ?? [])]) {
+    add(a.address, a.name);
+  }
+  for (const c of thread.accessContacts ?? []) add(c.email, c.name);
+  return names;
+}
+
+/** Pair an address with its display name when one is known. */
+function withName(address: string, names: Map<string, string>): SmtpAddress {
+  const name = names.get(address.toLowerCase());
+  return name ? { address, name } : { address };
 }
 
 /** File ids of a note's `ActionType.file` actions, for outbound attachment collection. */
@@ -93,17 +122,63 @@ export async function onNoteCreatedFn(
   }
   const latest = resolved.latest;
 
-  // Recipients: curated set wins; else reply-all from the latest message; else
-  // the thread's access contacts; else give up with a delivery error.
-  let recipients: OutboundRecipients;
-  if (note.recipients != null) {
-    recipients = splitByRole(note.recipients);
-  } else if (latest) {
-    recipients = deriveReplyAll(latest, selfEmails);
-  } else {
-    recipients = accessContactsToRecipients(thread.accessContacts, selfEmails);
+  // The author may be a different linked identity than the connected mailbox
+  // (a second address of the same person). They must never receive their own
+  // reply either. `note.recipients`, when present, is already self-excluded
+  // across every linked identity by the runtime.
+  const authorEmail = (thread.accessContacts ?? []).find(
+    (c) => c.id === note.author?.id
+  )?.email;
+  if (authorEmail) selfEmails.add(authorEmail.toLowerCase());
+
+  // The note's own access list, resolved to addresses. Under
+  // `sharingModel: "message"` this is what carries mid-thread recipient
+  // changes: someone added to this reply isn't on the original message's
+  // headers, and someone the user dropped still is. Only used as the fallback
+  // constraint — `note.recipients`, when the runtime resolved it, is
+  // authoritative.
+  let accessContactEmails: Set<string> | null = null;
+  if (note.accessContacts != null) {
+    const allowed = new Set<string>(note.accessContacts);
+    accessContactEmails = new Set<string>();
+    for (const c of thread.accessContacts ?? []) {
+      if (allowed.has(c.id) && c.email) accessContactEmails.add(c.email.toLowerCase());
+    }
   }
+
+  // Original participants: From ∪ To → To, Cc → Cc. When the thread's
+  // messages couldn't be resolved (transient IMAP failure), fall back to the
+  // thread's roster so a reply still goes somewhere.
+  const headerTo = latest
+    ? [...(latest.from ?? []), ...(latest.to ?? [])].map((a) => a.address)
+    : (thread.accessContacts ?? []).map((c) => c.email).filter((e): e is string => !!e);
+  const headerCc = latest ? (latest.cc ?? []).map((a) => a.address) : [];
+
+  // Resolve via the shared helper every `sharingModel: "message"` connector
+  // uses, so recipient resolution isn't re-implemented (and re-broken) here.
+  const resolvedRecipients = resolveOutboundReplyRecipients({
+    recipients: note.recipients ?? null,
+    accessContactEmails,
+    headerTo,
+    headerCc,
+    selfEmails,
+  });
+  const names = displayNames(latest, thread);
+  const recipients: OutboundRecipients = {
+    to: resolvedRecipients.to.map((e) => withName(e, names)),
+    cc: resolvedRecipients.cc.map((e) => withName(e, names)),
+    bcc: resolvedRecipients.bcc.map((e) => withName(e, names)),
+  };
   if (isEmpty(recipients)) {
+    // Under the message sharing model a user can write a note on a mail
+    // thread that is private to them (access list set, but naming nobody
+    // else). That has nothing to send and nothing to report — flagging it
+    // "Failed to send" would be wrong. Every other empty outcome is a reply
+    // the user meant to go somewhere, so it still surfaces.
+    const keptPrivate =
+      note.accessContacts != null &&
+      !note.accessContacts.some((id) => id !== note.author?.id);
+    if (keptPrivate) return;
     return { deliveryError: { code: "no_recipients", message: "No one to reply to" } };
   }
 

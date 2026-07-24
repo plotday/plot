@@ -1,8 +1,7 @@
 // `ResolvedRecipient` is re-exported from both connector.ts and plot.ts, so it
 // is ambiguous under the root's `export *` and does NOT resolve from
 // "@plotday/twister" — import entity types from "@plotday/twister/plot".
-import type { Contact, ResolvedRecipient } from "@plotday/twister/plot";
-import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
+import type { ResolvedRecipient } from "@plotday/twister/plot";
 import type { SmtpAddress } from "@plotday/twister/tools/smtp";
 
 export type OutboundRecipients = {
@@ -65,47 +64,6 @@ export function composeRecipients(
     if (seen.has(key)) continue;
     seen.add(key);
     out.to.push({ address });
-  }
-  return out;
-}
-
-/**
- * Reply-all-minus-self from a message's headers: To = From ∪ To, Cc = Cc, with
- * the owner's own identities removed and cross-bucket dedup (a Cc already a To
- * candidate stays in To).
- */
-export function deriveReplyAll(
-  latest: Pick<ImapMessage, "from" | "to" | "cc">,
-  selfEmails: Set<string>
-): OutboundRecipients {
-  const out: OutboundRecipients = { to: [], cc: [], bcc: [] };
-  const seen = new Set<string>([...selfEmails].map(norm));
-  const push = (bucket: SmtpAddress[], a: ImapAddress) => {
-    const address = a.address?.trim();
-    if (!address) return;
-    const key = norm(address);
-    if (seen.has(key)) return;
-    seen.add(key);
-    bucket.push(a.name ? { address, name: a.name } : { address });
-  };
-  for (const a of [...(latest.from ?? []), ...(latest.to ?? [])]) push(out.to, a);
-  for (const a of latest.cc ?? []) push(out.cc, a);
-  return out;
-}
-
-/** Last-resort reply recipients from the thread's access contacts (all To). */
-export function accessContactsToRecipients(
-  contacts: Contact[] | undefined,
-  selfEmails: Set<string>
-): OutboundRecipients {
-  const out: OutboundRecipients = { to: [], cc: [], bcc: [] };
-  const seen = new Set<string>([...selfEmails].map(norm));
-  for (const c of contacts ?? []) {
-    if (!c.email) continue;
-    const key = norm(c.email);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.to.push(c.name ? { address: c.email, name: c.name } : { address: c.email });
   }
   return out;
 }
