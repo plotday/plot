@@ -548,8 +548,12 @@ describe("Apple mail sync lock", () => {
         { key: lockKey, ttlMs: 30 * 60 * 1000 },
       ]);
       expect(mailIncrementalSync).toHaveBeenCalledTimes(1);
+      // The channel's own IMAP mailbox (`parse(channelId).rawId`) is passed
+      // alongside the namespaced channel id — the sync selects the mailbox,
+      // the channel id keys the stored cursor.
       expect(mailIncrementalSync).toHaveBeenCalledWith(
         expect.anything(),
+        "INBOX",
         channelId
       );
       expect(releaseLockCalls).toEqual([lockKey]);

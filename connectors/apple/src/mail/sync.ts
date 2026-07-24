@@ -230,10 +230,25 @@ export async function detectCalendarBundles(
 }
 
 /**
- * Full backfill of INBOX plus the Sent mailbox (for the owner's own
- * in-thread replies) since a history floor, using an already-open IMAP
- * `session`. Persists a `MailSyncState` cursor for subsequent incremental
- * syncs and signals `channelSyncCompleted` once the backfill is saved.
+ * Whether this sync pass belongs to the INBOX channel — the only pass that
+ * also reads the Sent mailbox (see the "Sent is INBOX's pass only" guards in
+ * `runInitialBackfill` / `mailIncrementalSync`).
+ *
+ * Compared case-insensitively: RFC 3501 defines INBOX case-insensitively, so
+ * a server may report it in any case, and `channels.ts` already picks the
+ * default-enabled channel with the same normalization. Matching that here
+ * keeps the two from disagreeing about which channel is "the inbox".
+ */
+function isInboxPass(rawMailbox: string): boolean {
+  return rawMailbox.toUpperCase() === "INBOX";
+}
+
+/**
+ * Full backfill of this channel's mailbox (`rawMailbox`) — plus, for the
+ * INBOX channel only, the Sent mailbox (for the owner's own in-thread
+ * replies) — since a history floor, using an already-open IMAP `session`.
+ * Persists a `MailSyncState` cursor for subsequent incremental syncs and
+ * signals `channelSyncCompleted` once the backfill is saved.
  *
  * Shared by `mailInitialSync` (which opens its own session) and
  * `mailIncrementalSync`'s re-baseline paths (which reuse their already-open
@@ -243,18 +258,35 @@ export async function detectCalendarBundles(
 async function runInitialBackfill(
   host: MailHost,
   session: ImapSession,
+  rawMailbox: string,
   channelId: string,
   syncHistoryMin: string | undefined | null
 ): Promise<void> {
   const since = resolveSinceFloor(syncHistoryMin ?? undefined);
 
-  const status = await host.imap.selectMailbox(session, "INBOX");
-  const inboxUids = await host.imap.search(session, { since });
-  const inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
+  const status = await host.imap.selectMailbox(session, rawMailbox);
+  const primaryUids = await host.imap.search(session, { since });
+  const primary = await fetchUidRange(host, session, rawMailbox, primaryUids);
 
   let sent: ImapMessage[] = [];
   let sentStatus: ImapMailboxStatus | undefined;
-  const sentBox = await resolveSentMailbox(host, session);
+  // Sent is merged ONLY on the INBOX channel's pass. Every enabled mailbox
+  // runs its own independent pass, so without this guard each of them would
+  // also merge the same Sent messages and upsert them onto the SAME threads
+  // (the thread `source` is derived from the message's thread root, not from
+  // the mailbox). A folder that doesn't hold a thread's root would then
+  // rebuild that thread from the owner's Sent reply alone — recomputing
+  // title/author/unread from a partial message set — and the folders' passes
+  // would overwrite each other on every poll. See also `channels.ts`, which
+  // excludes Sent from channel enumeration for the same reason.
+  //
+  // Accepted residual (v1): a thread whose root lives in a non-INBOX folder
+  // but that has a recent owner reply in Sent can still be rebuilt from that
+  // reply alone during INBOX's own pass, because INBOX's pass can't tell
+  // which folder holds the root. Closing it needs search-by-Message-ID,
+  // which IMAP does not offer (see `imap-fetch.ts`'s note on the same
+  // limitation).
+  const sentBox = isInboxPass(rawMailbox) ? await resolveSentMailbox(host, session) : null;
   if (sentBox) {
     sentStatus = await host.imap.selectMailbox(session, sentBox);
     const sentUids = await host.imap.search(session, { since });
@@ -263,10 +295,10 @@ async function runInitialBackfill(
 
   // Tag each message with its originating mailbox — UIDs are only unique
   // within a single mailbox, so this is required to build correct
-  // attachment refs once INBOX and Sent are merged into one call. See
+  // attachment refs once this mailbox and Sent are merged into one call. See
   // transform.ts's `MailMessage` doc.
   const merged: MailMessage[] = [
-    ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
+    ...primary.map((m) => ({ ...m, mailbox: rawMailbox })),
     ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
   ];
   const calendarBundles = await detectCalendarBundles(host, session, merged);
@@ -282,14 +314,18 @@ async function runInitialBackfill(
   // reconcileTodoFlags's doc.
   await reconcileTodoFlags(host, merged, true);
 
-  const lastUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
+  const lastUid = primaryUids.reduce((m, u) => (u > m ? u : m), 0);
   const state: MailSyncState = {
     uidValidity: status.uidValidity,
     lastUid,
     syncHistoryMin: since.toISOString(),
     // Re-baselining (first sync, no-state, or UIDVALIDITY change) always
     // resets both modseq cursors from the fresh SELECT — correct, since a
-    // new UIDVALIDITY invalidates old mod-sequences too.
+    // new UIDVALIDITY invalidates old mod-sequences too. On a non-INBOX
+    // channel Sent is never read, so `sentLastModSeq` stays undefined in
+    // this channel's own `state_<channelId>` — self-consistent, since that
+    // channel's combined gate then rests entirely on its own mailbox (see
+    // `mailIncrementalSync`'s `sentUnchanged`).
     lastModSeq: status.highestModSeq,
     sentLastModSeq: sentStatus?.highestModSeq,
   };
@@ -299,10 +335,12 @@ async function runInitialBackfill(
 }
 
 /**
- * Full backfill of `rawMailbox` (INBOX) plus the Sent mailbox (for the
- * owner's own in-thread replies) since a history floor. Persists a
- * `MailSyncState` cursor for subsequent incremental syncs and signals
- * `channelSyncCompleted` once the backfill is saved.
+ * Full backfill of this channel's mailbox (`rawMailbox`, the un-namespaced
+ * IMAP mailbox name from `parse(channelId).rawId`) — plus, on the INBOX
+ * channel only, the Sent mailbox (for the owner's own in-thread replies) —
+ * since a history floor. Persists a `MailSyncState` cursor for subsequent
+ * incremental syncs and signals `channelSyncCompleted` once the backfill is
+ * saved.
  */
 export async function mailInitialSync(
   host: MailHost,
@@ -312,24 +350,30 @@ export async function mailInitialSync(
 ): Promise<void> {
   const session = await connectIcloud(host);
   try {
-    await runInitialBackfill(host, session, channelId, syncHistoryMin);
+    await runInitialBackfill(host, session, rawMailbox, channelId, syncHistoryMin);
   } finally {
     await host.imap.disconnect(session);
   }
 }
 
 /**
- * Incremental sync: new INBOX mail since the stored cursor, a recent-window
- * rescan to pick up `\Seen` flag changes, and a recent-window rescan of Sent
+ * Incremental sync of this channel's mailbox (`rawMailbox`, the
+ * un-namespaced IMAP mailbox name from `parse(channelId).rawId`): new mail
+ * since the stored cursor, a recent-window rescan to pick up `\Seen` flag
+ * changes, and — on the INBOX channel only — a recent-window rescan of Sent
  * for new owner replies (Sent has no separate cursor — the recent rescan
  * plus idempotent upsert by `source`/note key is intentional). Re-baselines
  * (via the shared `runInitialBackfill`, reusing this sync's already-open
  * IMAP session) when UIDVALIDITY has changed or no cursor exists yet.
  */
-export async function mailIncrementalSync(host: MailHost, channelId: string): Promise<void> {
+export async function mailIncrementalSync(
+  host: MailHost,
+  rawMailbox: string,
+  channelId: string
+): Promise<void> {
   const session = await connectIcloud(host);
   try {
-    const status = await host.imap.selectMailbox(session, "INBOX");
+    const status = await host.imap.selectMailbox(session, rawMailbox);
     const state = await host.get<MailSyncState>(`state_${channelId}`);
 
     if (!state) {
@@ -337,7 +381,7 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       // run a full initial sync instead of guessing a delta. Reuse this
       // already-open session (not `mailInitialSync`, which would open a
       // second concurrent IMAP session to the same account).
-      await runInitialBackfill(host, session, channelId, undefined);
+      await runInitialBackfill(host, session, rawMailbox, channelId, undefined);
       return;
     }
 
@@ -345,12 +389,12 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       // UIDVALIDITY changed (mailbox recreated/reindexed server-side) — old
       // UIDs are no longer meaningful. Re-baseline from the previously
       // stored history floor, reusing this already-open session.
-      await runInitialBackfill(host, session, channelId, state.syncHistoryMin);
+      await runInitialBackfill(host, session, rawMailbox, channelId, state.syncHistoryMin);
       return;
     }
 
-    // COMBINED CONDSTORE gate (RFC 7162). INBOX and Sent are always merged
-    // into a single transformMessages() call per pass (see
+    // COMBINED CONDSTORE gate (RFC 7162). This channel's mailbox and Sent
+    // are always merged into a single transformMessages() call per pass (see
     // runInitialBackfill's doc) so that a thread rooted in one mailbox is
     // never rebuilt from a partial message set — e.g. an INBOX-rooted
     // thread's title/author must never be recomputed from just a Sent
@@ -363,23 +407,31 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
     // CONDSTORE (`highestModSeq === undefined`) or no baseline cursor exists
     // yet for it (`lastModSeq`/`sentLastModSeq === undefined`, e.g. state
     // written before this cursor shipped).
-    const inboxUnchanged =
+    //
+    // On a non-INBOX channel Sent is not part of the pass at all, so
+    // `sentUnchanged` is trivially true and the combined gate reduces to
+    // this folder's own modseq — a correct per-folder gate, and each channel
+    // keeps its own cursors under its own `state_<channelId>`.
+    const mailboxUnchanged =
       status.highestModSeq !== undefined &&
       state.lastModSeq !== undefined &&
       status.highestModSeq === state.lastModSeq;
 
     // Read Sent's HIGHESTMODSEQ up front (before deciding whether to
     // rescan) so the combined decision below can see both mailboxes' state.
-    // This SELECTs Sent, moving the session's selected mailbox off INBOX.
-    const sentBox = await resolveSentMailbox(host, session);
+    // This SELECTs Sent, moving the session's selected mailbox off this
+    // channel's. Skipped entirely on a non-INBOX channel — see the guard's
+    // rationale (and its accepted residual) in `runInitialBackfill`.
+    const sentBox = isInboxPass(rawMailbox) ? await resolveSentMailbox(host, session) : null;
     let sentStatus: ImapMailboxStatus | undefined;
     if (sentBox) {
       sentStatus = await host.imap.selectMailbox(session, sentBox);
     }
-    // No Sent mailbox at all means there's nothing to gate on that side, so
-    // it can never block a rescan the INBOX side needs (and vice versa) —
-    // treat as "unchanged" so the combined decision rests on whichever
-    // mailbox actually exists.
+    // No Sent mailbox in this pass — either the account has none, or this is
+    // a non-INBOX channel that never reads it — means there's nothing to
+    // gate on that side, so it can never block a rescan this mailbox needs
+    // (and vice versa). Treat as "unchanged" so the combined decision rests
+    // on whichever mailbox the pass actually covers.
     const sentUnchanged =
       !sentBox ||
       (sentStatus!.highestModSeq !== undefined &&
@@ -391,18 +443,19 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
     const recentSince = new Date(Math.max(floor.getTime(), Date.now() - RECENT_WINDOW_MS));
 
     let newUids: number[] = [];
-    let inboxUids: number[] = [];
-    let inbox: ImapMessage[] = [];
+    let mailboxUids: number[] = [];
+    let primary: ImapMessage[] = [];
     let sent: ImapMessage[] = [];
 
-    if (!(inboxUnchanged && sentUnchanged)) {
+    if (!(mailboxUnchanged && sentUnchanged)) {
       // Either mailbox changed => rescan BOTH, exactly today's full-rescan
       // behavior, so any thread the change touches is rebuilt complete.
 
-      // Re-select INBOX first: the Sent SELECT above (used to read its
-      // HIGHESTMODSEQ) switched the session's currently-selected mailbox,
-      // and IMAP SEARCH always targets whatever's currently selected.
-      await host.imap.selectMailbox(session, "INBOX");
+      // Re-select this channel's mailbox first: the Sent SELECT above (used
+      // to read its HIGHESTMODSEQ) switched the session's currently-selected
+      // mailbox, and IMAP SEARCH always targets whatever's currently
+      // selected.
+      await host.imap.selectMailbox(session, rawMailbox);
 
       // New mail since the stored cursor, bounded by the plan floor so a
       // dormant account (stored lastUid: 0) can't fetch the entire mailbox.
@@ -413,8 +466,8 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
       // mail, also capped at the plan floor.
       const recentUids = await host.imap.search(session, { since: recentSince });
 
-      inboxUids = Array.from(new Set([...newUids, ...recentUids]));
-      inbox = await fetchUidRange(host, session, "INBOX", inboxUids);
+      mailboxUids = Array.from(new Set([...newUids, ...recentUids]));
+      primary = await fetchUidRange(host, session, rawMailbox, mailboxUids);
 
       if (sentBox) {
         await host.imap.selectMailbox(session, sentBox);
@@ -424,9 +477,9 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
     }
 
     // See runInitialBackfill: tag each message with its originating mailbox
-    // for correct attachment refs once INBOX and Sent are merged.
+    // for correct attachment refs once this mailbox and Sent are merged.
     const merged: MailMessage[] = [
-      ...inbox.map((m) => ({ ...m, mailbox: "INBOX" })),
+      ...primary.map((m) => ({ ...m, mailbox: rawMailbox })),
       ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
     ];
     const calendarBundles = await detectCalendarBundles(host, session, merged);
@@ -445,15 +498,18 @@ export async function mailIncrementalSync(host: MailHost, channelId: string): Pr
     // change (like the \Seen rescan above) shows up within this window.
     await reconcileTodoFlags(host, merged, false);
 
-    // When the INBOX gate skipped (inboxUids stays []), newMaxUid is 0 and
+    // When the gate skipped (mailboxUids stays []), newMaxUid is 0 and
     // Math.max preserves the prior lastUid unchanged.
-    const newMaxUid = inboxUids.reduce((m, u) => (u > m ? u : m), 0);
+    const newMaxUid = mailboxUids.reduce((m, u) => (u > m ? u : m), 0);
     const nextState: MailSyncState = {
       uidValidity: status.uidValidity,
       lastUid: Math.max(newMaxUid, state.lastUid),
       syncHistoryMin: state.syncHistoryMin,
       // Seed/update every pass: undefined (no CONDSTORE) correctly forces a
-      // full rescan next poll too.
+      // full rescan next poll too. On a non-INBOX channel `sentStatus` is
+      // always undefined (Sent is never read there), so this channel's own
+      // `sentLastModSeq` simply stays unset — nothing meaningful is being
+      // clobbered, since each channel has its own `state_<channelId>`.
       lastModSeq: status.highestModSeq,
       sentLastModSeq: sentStatus?.highestModSeq,
     };

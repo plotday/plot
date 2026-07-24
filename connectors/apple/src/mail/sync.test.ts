@@ -38,8 +38,21 @@ type FetchAttachmentCall = { mailbox: string; uid: number; partNumber: string };
 /** Minimal in-memory MailHost — no real IMAP. Captures search() calls and saveLinks() output. */
 function buildFakeHost(opts: {
   appleId: string;
-  inbox: MailboxFixture;
+  /**
+   * The mailbox the channel under test syncs — its `name` is the mailbox the
+   * pass is expected to SELECT/SEARCH/FETCH. "INBOX" for the default
+   * channel, but any name works, which is how the multi-folder tests drive a
+   * non-INBOX channel (`primary: { name: "Archive", … }`). Selecting a
+   * mailbox that isn't registered here throws, so a pass that reaches for
+   * the wrong mailbox fails loudly rather than silently returning nothing.
+   */
+  primary: MailboxFixture;
   sent?: (MailboxFixture & { specialUse?: string }) | null;
+  /**
+   * Additional mailboxes to register, for tests that drive more than one
+   * channel against the same account (e.g. per-folder gate independence).
+   */
+  extra?: MailboxFixture[];
   /**
    * Fixture attachment bytes for `imap.fetchAttachment`, keyed by
    * `buildAttachmentRef(mailbox, uid, partNumber)` — the same
@@ -63,11 +76,15 @@ function buildFakeHost(opts: {
   const searchCalls: SearchCall[] = [];
   const fetchCalls: FetchCall[] = [];
   const fetchAttachmentCalls: FetchAttachmentCall[] = [];
-  let selected = "INBOX";
+  /** Every mailbox SELECTed, in order — lets a test assert that a folder
+   *  channel's pass never even looks at the Sent mailbox. */
+  const selectCalls: string[] = [];
+  let selected = opts.primary.name;
 
   const mailboxes = new Map<string, MailboxFixture>();
-  mailboxes.set(opts.inbox.name, opts.inbox);
+  mailboxes.set(opts.primary.name, opts.primary);
   if (opts.sent) mailboxes.set(opts.sent.name, opts.sent);
+  for (const box of opts.extra ?? []) mailboxes.set(box.name, box);
 
   const imap = {
     connect: async (): Promise<ImapSession> => "session-1",
@@ -83,6 +100,7 @@ function buildFakeHost(opts: {
       ];
     },
     selectMailbox: async (_session: ImapSession, mailbox: string): Promise<ImapMailboxStatus> => {
+      selectCalls.push(mailbox);
       selected = mailbox;
       const fixture = mailboxes.get(mailbox);
       if (!fixture) throw new Error(`unexpected mailbox select: ${mailbox}`);
@@ -163,7 +181,16 @@ function buildFakeHost(opts: {
     knownEventUids: async (): Promise<Set<string>> => new Set(opts.knownEventUids ?? []),
   };
 
-  return { host, stored, savedLinks, searchCalls, fetchCalls, fetchAttachmentCalls, setThreadToDo };
+  return {
+    host,
+    stored,
+    savedLinks,
+    searchCalls,
+    fetchCalls,
+    fetchAttachmentCalls,
+    selectCalls,
+    setThreadToDo,
+  };
 }
 
 const CHANNEL_ID = "mail:INBOX";
@@ -208,7 +235,7 @@ describe("mailIncrementalSync", () => {
 
     const { host, savedLinks } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: {
+      primary: {
         name: "INBOX",
         status: {
           name: "INBOX",
@@ -239,7 +266,7 @@ describe("mailIncrementalSync", () => {
     const state: MailSyncState = { uidValidity: 1, lastUid: 5, syncHistoryMin: RECENT_ISO };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     const rootLinks = savedLinks.filter((l) => l.source === "icloud-mail:thread:root@icloud.com");
     expect(rootLinks).toHaveLength(1);
@@ -249,7 +276,7 @@ describe("mailIncrementalSync", () => {
   it("bounds the new-mail search by the plan floor instead of fetching the whole mailbox (Finding 2 guard)", async () => {
     const { host, searchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: {
+      primary: {
         name: "INBOX",
         status: {
           name: "INBOX",
@@ -269,7 +296,7 @@ describe("mailIncrementalSync", () => {
     const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(searchCalls.length).toBeGreaterThan(0);
     // The old bug searched `{ uid: [1..uidNext-1] }` — an unbounded whole-mailbox
@@ -317,7 +344,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("gate hit: both mailboxes unchanged — no fetch, no saveLinks, cursors preserved", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(100, 30),
+      primary: inboxFixture(100, 30),
       sent: sentFixture(50, 40),
     });
     const state: MailSyncState = {
@@ -329,7 +356,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(fetchCalls).toHaveLength(0);
     expect(savedLinks).toHaveLength(0);
@@ -342,7 +369,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("gate miss: INBOX modseq advanced — full rescan runs, nextState.lastModSeq updates", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(101, 30),
+      primary: inboxFixture(101, 30),
       sent: null,
     });
     const state: MailSyncState = {
@@ -353,7 +380,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(fetchCalls.length).toBeGreaterThan(0);
     expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
@@ -364,7 +391,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("no CONDSTORE support: highestModSeq undefined — always full rescan", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(undefined, 30),
+      primary: inboxFixture(undefined, 30),
       sent: null,
     });
     const state: MailSyncState = {
@@ -375,7 +402,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(fetchCalls.length).toBeGreaterThan(0);
     expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
@@ -386,7 +413,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("no baseline yet: state.lastModSeq undefined with a defined highestModSeq — full rescan this pass, cursor seeded for next time", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(55, 30),
+      primary: inboxFixture(55, 30),
       sent: null,
     });
     const state: MailSyncState = {
@@ -397,7 +424,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(fetchCalls.length).toBeGreaterThan(0);
     expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
@@ -435,7 +462,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
 
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: {
+      primary: {
         name: "INBOX",
         status: {
           name: "INBOX",
@@ -474,7 +501,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     // Proves INBOX was rescanned even though its own modseq didn't move.
     expect(fetchCalls.some((c) => c.mailbox === "INBOX")).toBe(true);
@@ -490,7 +517,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("combined gate: INBOX unchanged, Sent advanced — BOTH mailboxes are fetched", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(100, 30),
+      primary: inboxFixture(100, 30),
       sent: sentFixture(61, 40),
     });
     const state: MailSyncState = {
@@ -502,7 +529,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     // A change on either side must rescan both, so a thread rooted in the
     // unchanged mailbox is never rebuilt from a partial message set.
@@ -518,7 +545,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("combined gate: INBOX advanced, Sent unchanged — BOTH mailboxes are fetched", async () => {
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(101, 30),
+      primary: inboxFixture(101, 30),
       sent: sentFixture(50, 40),
     });
     const state: MailSyncState = {
@@ -530,7 +557,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     // A change on either side must rescan both, so a thread rooted in the
     // unchanged mailbox is never rebuilt from a partial message set.
@@ -546,7 +573,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("runInitialBackfill persists lastModSeq and sentLastModSeq", async () => {
     const { host } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(77, 30),
+      primary: inboxFixture(77, 30),
       sent: sentFixture(33, 40),
     });
 
@@ -560,7 +587,7 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
   it("runInitialBackfill persists lastModSeq without a Sent box (sentLastModSeq stays undefined)", async () => {
     const { host } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: inboxFixture(77, 30),
+      primary: inboxFixture(77, 30),
       sent: null,
     });
 
@@ -569,6 +596,276 @@ describe("mailIncrementalSync — CONDSTORE modseq gating", () => {
     const state = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
     expect(state?.lastModSeq).toBe(77);
     expect(state?.sentLastModSeq).toBeUndefined();
+  });
+});
+
+/**
+ * Multi-folder channels: every selectable IMAP mailbox is its own channel
+ * (see `channels.ts`), so a sync pass must operate on THAT channel's mailbox
+ * — `parse(channelId).rawId` — and only the INBOX channel's pass may also
+ * merge the Sent mailbox.
+ */
+describe("mailIncrementalSync — per-channel mailbox (multi-folder)", () => {
+  const SENT_BOX = "Sent Messages";
+  const ARCHIVE = "Archive";
+  const ARCHIVE_CHANNEL_ID = "mail:Archive";
+
+  /** A one-message fixture for an arbitrary mailbox, carrying a HIGHESTMODSEQ. */
+  function boxFixture(
+    name: string,
+    highestModSeq: number | undefined,
+    uid: number,
+    over: Partial<ImapMessage> = {}
+  ): MailboxFixture {
+    return {
+      name,
+      status: {
+        name,
+        exists: 1,
+        recent: 0,
+        uidValidity: 1,
+        uidNext: uid + 1,
+        unseen: 0,
+        ...(highestModSeq !== undefined ? { highestModSeq } : {}),
+      },
+      searchUids: [uid],
+      messagesByUid: new Map([
+        [uid, msg({ uid, messageId: `<${name.toLowerCase()}-${uid}@x.com>`, flags: [], ...over })],
+      ]),
+    };
+  }
+
+  function sentFixture(highestModSeq: number, uid: number): MailboxFixture & { specialUse?: string } {
+    return {
+      name: SENT_BOX,
+      specialUse: "\\Sent",
+      status: { name: SENT_BOX, exists: 1, recent: 0, uidValidity: 1, uidNext: uid + 1, highestModSeq },
+      searchUids: [uid],
+      messagesByUid: new Map([
+        [
+          uid,
+          msg({
+            uid,
+            messageId: `<sent-${uid}@icloud.com>`,
+            from: [{ address: "kris@icloud.com", name: "Kris" }],
+            flags: ["\\Seen"],
+          }),
+        ],
+      ]),
+    };
+  }
+
+  it("an Archive channel selects, searches and fetches Archive — never INBOX", async () => {
+    const { host, searchCalls, fetchCalls, selectCalls, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      // No INBOX fixture registered at all: a pass that reaches for INBOX
+      // throws "unexpected mailbox select" instead of quietly succeeding.
+      primary: boxFixture(ARCHIVE, 200, 70),
+      sent: sentFixture(50, 40),
+    });
+    await host.set(`state_${ARCHIVE_CHANNEL_ID}`, {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 199, // advanced → this folder rescans
+    } satisfies MailSyncState);
+
+    await mailIncrementalSync(host, ARCHIVE, ARCHIVE_CHANNEL_ID);
+
+    // Every SELECT in the pass is this channel's own mailbox (the initial
+    // one, the pre-search re-SELECT, and fetchUidRange's).
+    expect(selectCalls.length).toBeGreaterThan(0);
+    expect(selectCalls.every((m) => m === ARCHIVE)).toBe(true);
+    expect(searchCalls.length).toBeGreaterThan(0);
+    expect(searchCalls.every((c) => c.mailbox === ARCHIVE)).toBe(true);
+    expect(fetchCalls.length).toBeGreaterThan(0);
+    expect(fetchCalls.every((c) => c.mailbox === ARCHIVE)).toBe(true);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:archive-70@x.com")).toBe(true);
+  });
+
+  it("an Archive channel tags its merged batch `mailbox: Archive` (attachment refs are per-mailbox)", async () => {
+    // UIDs are only unique within one mailbox, so the merge tag is what makes
+    // an attachment ref resolvable later (see attachments.ts).
+    const { host, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      primary: boxFixture(ARCHIVE, 200, 70, {
+        attachments: [
+          { partNumber: "2", fileName: "invoice.pdf", mimeType: "application/pdf", size: 10, encoding: "base64" },
+        ],
+      }),
+      sent: sentFixture(50, 40),
+    });
+    await host.set(`state_${ARCHIVE_CHANNEL_ID}`, {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 199,
+    } satisfies MailSyncState);
+
+    await mailIncrementalSync(host, ARCHIVE, ARCHIVE_CHANNEL_ID);
+
+    const link = savedLinks.find((l) => l.source === "icloud-mail:thread:archive-70@x.com");
+    expect(link).toBeDefined();
+    const refs = (link!.notes ?? []).flatMap((n) =>
+      (n.actions ?? []).map((a) => (a as { ref?: string }).ref)
+    );
+    expect(refs).toContain(buildAttachmentRef(ARCHIVE, 70, "2"));
+  });
+
+  it("an Archive channel never selects, searches or fetches the Sent mailbox", async () => {
+    // Sent IS discoverable here (listMailboxes returns it) — the pass must
+    // still leave it alone, or two folder channels would each rebuild the
+    // same Sent-reply threads from partial message sets and race forever.
+    const { host, searchCalls, fetchCalls, selectCalls, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      primary: boxFixture(ARCHIVE, 200, 70),
+      sent: sentFixture(50, 40),
+    });
+    await host.set(`state_${ARCHIVE_CHANNEL_ID}`, {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 199,
+    } satisfies MailSyncState);
+
+    await mailIncrementalSync(host, ARCHIVE, ARCHIVE_CHANNEL_ID);
+
+    expect(selectCalls).not.toContain(SENT_BOX);
+    expect(searchCalls.some((c) => c.mailbox === SENT_BOX)).toBe(false);
+    expect(fetchCalls.some((c) => c.mailbox === SENT_BOX)).toBe(false);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:sent-40@icloud.com")).toBe(false);
+    // …and its own cursor never gains a Sent modseq.
+    const next = await host.get<MailSyncState>(`state_${ARCHIVE_CHANNEL_ID}`);
+    expect(next?.lastModSeq).toBe(200);
+    expect(next?.sentLastModSeq).toBeUndefined();
+  });
+
+  it("the INBOX channel still merges Sent exactly as before", async () => {
+    const { host, selectCalls, fetchCalls, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      primary: boxFixture("INBOX", 100, 30),
+      sent: sentFixture(61, 40),
+    });
+    await host.set(`state_${CHANNEL_ID}`, {
+      uidValidity: 1,
+      lastUid: 0,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100, // unchanged…
+      sentLastModSeq: 60, // …but Sent advanced, so the combined gate rescans both
+    } satisfies MailSyncState);
+
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
+
+    expect(selectCalls).toContain(SENT_BOX);
+    expect(fetchCalls.some((c) => c.mailbox === "INBOX")).toBe(true);
+    expect(fetchCalls.some((c) => c.mailbox === SENT_BOX)).toBe(true);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:inbox-30@x.com")).toBe(true);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:sent-40@icloud.com")).toBe(true);
+    const next = await host.get<MailSyncState>(`state_${CHANNEL_ID}`);
+    expect(next?.sentLastModSeq).toBe(61);
+  });
+
+  it("per-folder CONDSTORE gates are independent: INBOX skips while Archive rescans", async () => {
+    // One account, two enabled channels, one cursor each. INBOX's mailbox and
+    // Sent are both unchanged (it skips); Archive's advanced (it rescans).
+    const { host, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      primary: boxFixture("INBOX", 100, 30),
+      sent: sentFixture(50, 40),
+      extra: [boxFixture(ARCHIVE, 200, 70)],
+    });
+    await host.set(`state_${CHANNEL_ID}`, {
+      uidValidity: 1,
+      lastUid: 5,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 100,
+      sentLastModSeq: 50,
+    } satisfies MailSyncState);
+    await host.set(`state_${ARCHIVE_CHANNEL_ID}`, {
+      uidValidity: 1,
+      lastUid: 5,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 199,
+    } satisfies MailSyncState);
+
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
+    await mailIncrementalSync(host, ARCHIVE, ARCHIVE_CHANNEL_ID);
+
+    expect(fetchCalls.some((c) => c.mailbox === ARCHIVE)).toBe(true);
+    expect(fetchCalls.some((c) => c.mailbox === "INBOX")).toBe(false);
+    expect(fetchCalls.some((c) => c.mailbox === SENT_BOX)).toBe(false);
+  });
+
+  it("an Archive channel with an unchanged modseq skips its rescan without consulting Sent", async () => {
+    // Constraint check on the combined gate: with Sent out of the pass,
+    // `sentUnchanged` is trivially true, so the decision rests entirely on
+    // this folder's own HIGHESTMODSEQ — and Sent is never even SELECTed to
+    // read one.
+    const { host, selectCalls, searchCalls, fetchCalls, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      primary: boxFixture(ARCHIVE, 200, 70),
+      sent: sentFixture(50, 40),
+    });
+    await host.set(`state_${ARCHIVE_CHANNEL_ID}`, {
+      uidValidity: 1,
+      lastUid: 5,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 200, // unchanged
+    } satisfies MailSyncState);
+
+    await mailIncrementalSync(host, ARCHIVE, ARCHIVE_CHANNEL_ID);
+
+    expect(selectCalls).toEqual([ARCHIVE]);
+    expect(searchCalls).toHaveLength(0);
+    expect(fetchCalls).toHaveLength(0);
+    expect(savedLinks).toHaveLength(0);
+    const next = await host.get<MailSyncState>(`state_${ARCHIVE_CHANNEL_ID}`);
+    expect(next?.lastUid).toBe(5);
+    expect(next?.lastModSeq).toBe(200);
+    expect(next?.sentLastModSeq).toBeUndefined();
+  });
+
+  it("re-baseline with no stored cursor backfills Archive, not INBOX, and skips Sent", async () => {
+    const { host, searchCalls, fetchCalls, selectCalls, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      primary: boxFixture(ARCHIVE, 200, 70),
+      sent: sentFixture(50, 40),
+    });
+    // No `state_mail:Archive` at all → the "no cursor yet" re-baseline path.
+
+    await mailIncrementalSync(host, ARCHIVE, ARCHIVE_CHANNEL_ID);
+
+    expect(searchCalls.every((c) => c.mailbox === ARCHIVE)).toBe(true);
+    expect(fetchCalls.every((c) => c.mailbox === ARCHIVE)).toBe(true);
+    expect(selectCalls).not.toContain(SENT_BOX);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:archive-70@x.com")).toBe(true);
+    const next = await host.get<MailSyncState>(`state_${ARCHIVE_CHANNEL_ID}`);
+    expect(next?.uidValidity).toBe(1);
+    expect(next?.lastModSeq).toBe(200);
+    expect(next?.sentLastModSeq).toBeUndefined();
+  });
+
+  it("re-baseline on a UIDVALIDITY change backfills Archive, not INBOX, and skips Sent", async () => {
+    const { host, searchCalls, fetchCalls, selectCalls, savedLinks } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      primary: boxFixture(ARCHIVE, 200, 70),
+      sent: sentFixture(50, 40),
+    });
+    await host.set(`state_${ARCHIVE_CHANNEL_ID}`, {
+      uidValidity: 9, // stale — the mailbox was recreated server-side
+      lastUid: 5,
+      syncHistoryMin: RECENT_ISO,
+      lastModSeq: 200,
+    } satisfies MailSyncState);
+
+    await mailIncrementalSync(host, ARCHIVE, ARCHIVE_CHANNEL_ID);
+
+    expect(searchCalls.every((c) => c.mailbox === ARCHIVE)).toBe(true);
+    expect(fetchCalls.every((c) => c.mailbox === ARCHIVE)).toBe(true);
+    expect(selectCalls).not.toContain(SENT_BOX);
+    expect(savedLinks.some((l) => l.source === "icloud-mail:thread:archive-70@x.com")).toBe(true);
+    const next = await host.get<MailSyncState>(`state_${ARCHIVE_CHANNEL_ID}`);
+    expect(next?.uidValidity).toBe(1);
   });
 });
 
@@ -598,7 +895,7 @@ describe("mailIncrementalSync — to-do ⟷ \\Flagged wiring", () => {
   it("propagates a message newly flagged in Apple Mail to Plot's to-do state", async () => {
     const { host, stored, setThreadToDo } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: flaggedFixture(true),
+      primary: flaggedFixture(true),
       sent: null,
     });
     await host.set("auth_actor_id", "actor-1");
@@ -608,7 +905,7 @@ describe("mailIncrementalSync — to-do ⟷ \\Flagged wiring", () => {
       syncHistoryMin: RECENT_ISO,
     } satisfies MailSyncState);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(setThreadToDo).toHaveBeenCalledWith(
       "icloud-mail:thread:root@x.com",
@@ -622,7 +919,7 @@ describe("mailIncrementalSync — to-do ⟷ \\Flagged wiring", () => {
   it("does not re-propagate once the marker already matches (echo suppression)", async () => {
     const { host, setThreadToDo } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: flaggedFixture(true),
+      primary: flaggedFixture(true),
       sent: null,
     });
     await host.set("auth_actor_id", "actor-1");
@@ -633,7 +930,7 @@ describe("mailIncrementalSync — to-do ⟷ \\Flagged wiring", () => {
       syncHistoryMin: RECENT_ISO,
     } satisfies MailSyncState);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(setThreadToDo).not.toHaveBeenCalled();
   });
@@ -641,14 +938,14 @@ describe("mailIncrementalSync — to-do ⟷ \\Flagged wiring", () => {
   it("seeds the marker on initial sync without propagating a to-do", async () => {
     const { host, stored, setThreadToDo } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: flaggedFixture(true),
+      primary: flaggedFixture(true),
       sent: null,
     });
     await host.set("auth_actor_id", "actor-1");
     // No `state_<channelId>` cursor stored → mailIncrementalSync takes the
     // "no cursor yet" branch and runs a full initial backfill.
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(setThreadToDo).not.toHaveBeenCalled();
     expect(stored.get("flagged:root@x.com")).toBe(true);
@@ -657,7 +954,7 @@ describe("mailIncrementalSync — to-do ⟷ \\Flagged wiring", () => {
   it("skips reconciliation entirely with no stored auth_actor_id", async () => {
     const { host, stored, setThreadToDo } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: flaggedFixture(true),
+      primary: flaggedFixture(true),
       sent: null,
     });
     await host.set(`state_${CHANNEL_ID}`, {
@@ -666,7 +963,7 @@ describe("mailIncrementalSync — to-do ⟷ \\Flagged wiring", () => {
       syncHistoryMin: RECENT_ISO,
     } satisfies MailSyncState);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     expect(setThreadToDo).not.toHaveBeenCalled();
     expect(stored.get("flagged:root@x.com")).toBeUndefined();
@@ -814,7 +1111,7 @@ describe("detectCalendarBundles", () => {
     const bytes = icsBytes(ics({ method: "CANCEL", uid: "evt-1" }));
     const { host, stored } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: { [buildAttachmentRef("INBOX", 50, "2")]: bytes },
     });
@@ -837,7 +1134,7 @@ describe("detectCalendarBundles", () => {
     const bytes = icsBytes(ics({ method: "CANCEL", uid: "evt-known" }));
     const { host } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: { [buildAttachmentRef("INBOX", 50, "2")]: bytes },
       knownEventUids: ["evt-known"],
@@ -864,7 +1161,7 @@ describe("detectCalendarBundles", () => {
     const bytes = icsBytes(ics({ method: "REQUEST", uid: "evt-2", sequence: 1 }));
     const { host, stored } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: { [buildAttachmentRef("INBOX", 51, "2")]: bytes },
     });
@@ -887,7 +1184,7 @@ describe("detectCalendarBundles", () => {
     const bytes = icsBytes(ics({ method: "REQUEST", uid: "evt-3", sequence: 0 }));
     const { host } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: { [buildAttachmentRef("INBOX", 52, "2")]: bytes },
     });
@@ -909,7 +1206,7 @@ describe("detectCalendarBundles", () => {
     const bytes = icsBytes(ics({ method: "REPLY", uid: "evt-4", sequence: 1 }));
     const { host } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: { [buildAttachmentRef("INBOX", 53, "2")]: bytes },
     });
@@ -940,7 +1237,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: {
         [buildAttachmentRef("INBOX", 54, "2")]: icsBytes(ics({ method: "REQUEST", uid: "evt-5", sequence: 0 })),
@@ -961,7 +1258,7 @@ describe("detectCalendarBundles", () => {
     const m = msg({ uid: 56, messageId: "<plain@example.com>" });
     const { host, fetchAttachmentCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
     });
 
@@ -982,7 +1279,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host, fetchAttachmentCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
     });
 
@@ -996,7 +1293,7 @@ describe("detectCalendarBundles", () => {
   it("returns an empty map for an empty message list (no I/O)", async () => {
     const { host, fetchAttachmentCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 0, recent: 0, uidValidity: 1, uidNext: 1 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 0, recent: 0, uidValidity: 1, uidNext: 1 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
     });
 
@@ -1017,7 +1314,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host, fetchAttachmentCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 0, recent: 0, uidValidity: 1, uidNext: 1 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 0, recent: 0, uidValidity: 1, uidNext: 1 }, searchUids: [], messagesByUid: new Map() },
       sent: {
         name: "Sent Messages",
         specialUse: "\\Sent",
@@ -1047,7 +1344,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host, fetchAttachmentCalls, stored } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: { [buildAttachmentRef("INBOX", 59, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-cached" })) },
     });
@@ -1084,7 +1381,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host, fetchAttachmentCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: { [buildAttachmentRef("INBOX", 62, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-aged" })) },
     });
@@ -1120,7 +1417,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host, fetchAttachmentCalls, stored } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
+      primary: { name: "INBOX", status: { name: "INBOX", exists: 1, recent: 0, uidValidity: 1, uidNext: 2 }, searchUids: [], messagesByUid: new Map() },
       sent: null,
       attachments: {
         [buildAttachmentRef("INBOX", 64, "2")]: icsBytes(ics({ method: "REQUEST", uid: "evt-bare", sequence: 0 })),
@@ -1151,7 +1448,7 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
     });
     const { host, savedLinks, stored } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: {
+      primary: {
         name: "INBOX",
         status: { name: "INBOX", exists: 1, recent: 1, uidValidity: 1, uidNext: 61, unseen: 1 },
         searchUids: [60],
@@ -1169,7 +1466,7 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
     const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     const link = savedLinks.find((l) => l.source === "icloud-mail:thread:cancel-e2e@example.com");
     expect(link).toBeDefined();
@@ -1189,7 +1486,7 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
     });
     const { host, savedLinks } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: {
+      primary: {
         name: "INBOX",
         status: { name: "INBOX", exists: 1, recent: 1, uidValidity: 1, uidNext: 66, unseen: 1 },
         searchUids: [65],
@@ -1209,7 +1506,7 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
     const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     const link = savedLinks.find((l) => l.source === "icloud-mail:thread:cancel-unsynced@example.com");
     expect(link).toBeDefined();
@@ -1224,7 +1521,7 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
     const plain = msg({ uid: 61, messageId: "<plain-e2e@example.com>", subject: "Just chatting" });
     const { host, savedLinks, fetchAttachmentCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
-      inbox: {
+      primary: {
         name: "INBOX",
         status: { name: "INBOX", exists: 1, recent: 1, uidValidity: 1, uidNext: 62, unseen: 1 },
         searchUids: [61],
@@ -1236,7 +1533,7 @@ describe("mailIncrementalSync — calendar thread bundling end-to-end", () => {
     const state: MailSyncState = { uidValidity: 1, lastUid: 0, syncHistoryMin: RECENT_ISO };
     await host.set(`state_${CHANNEL_ID}`, state);
 
-    await mailIncrementalSync(host, CHANNEL_ID);
+    await mailIncrementalSync(host, "INBOX", CHANNEL_ID);
 
     const link = savedLinks.find((l) => l.source === "icloud-mail:thread:plain-e2e@example.com");
     expect(link).toBeDefined();

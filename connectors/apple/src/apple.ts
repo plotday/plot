@@ -762,7 +762,9 @@ export class Apple extends Connector<Apple> {
   /**
    * Runs the mail initial backfill as a queued task (dispatched callback).
    * Resolves the plan-based history floor (falling back to 7 days), runs
-   * `mailInitialSync` against INBOX, then schedules the recurring poll.
+   * `mailInitialSync` against this channel's own IMAP mailbox
+   * (`parse(channelId).rawId` — every enabled mailbox is its own channel),
+   * then schedules the recurring poll.
    *
    * Guarded by the `mail_sync_<channelId>` lock: `onMailChannelEnabled`
    * always re-queues this task, even on re-dispatch (auto-enable/recovery),
@@ -788,7 +790,7 @@ export class Apple extends Connector<Apple> {
         const min =
           (await host.get<string>(`sync_history_min_${channelId}`)) ??
           new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        await mailInitialSync(host, "INBOX", channelId, min);
+        await mailInitialSync(host, parse(channelId).rawId, channelId, min);
       } finally {
         await this.tools.store.releaseLock(lockKey);
       }
@@ -824,7 +826,7 @@ export class Apple extends Connector<Apple> {
     );
     if (!acquired) return;
     try {
-      await mailIncrementalSync(this.buildMailHost(), channelId);
+      await mailIncrementalSync(this.buildMailHost(), parse(channelId).rawId, channelId);
     } finally {
       await this.tools.store.releaseLock(lockKey);
     }
@@ -876,7 +878,7 @@ export class Apple extends Connector<Apple> {
       return;
     }
     try {
-      await mailIncrementalSync(this.buildMailHost(), channelId);
+      await mailIncrementalSync(this.buildMailHost(), parse(channelId).rawId, channelId);
     } finally {
       await this.tools.store.releaseLock(lockKey);
     }
