@@ -58,7 +58,7 @@ import { downloadAttachmentFn } from "./mail/attachments";
 import { getMailChannels } from "./mail/channels";
 import { connectIcloud, ICLOUD_IMAP, resolveThreadMessages } from "./mail/imap-fetch";
 import type { MailHost } from "./mail/mail-host";
-import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
+import { mailSync, type MailChannel } from "./mail/sync";
 import {
   onCreateLinkFn,
   onNoteCreatedFn,
@@ -75,6 +75,20 @@ import { appleProducts } from "./products";
  * of `@plotday/twister`'s public export surface.
  */
 type DrainResult = { retry?: string[] } | void;
+
+/**
+ * TEMPORARY ADAPTER — the mail channel list handed to `mailSync`.
+ *
+ * `mailSync` is a CONNECTION-level pass: it wants every currently-enabled mail
+ * channel so a thread whose messages are spread across folders is rebuilt from
+ * all of them in one call. The scheduling around it (lock, poll, push drain,
+ * watches) is still keyed per channel, so each entry point can only name
+ * itself here. Replaced by an `enabledMailChannels()` enumeration over the
+ * `mail:enabled_` markers when the scheduling becomes connection-level.
+ */
+function mailChannelOf(channelId: string): MailChannel {
+  return { channelId, mailbox: parse(channelId).rawId };
+}
 
 /**
  * Build canonical identifiers for an Apple calendar (ICS) event. First
@@ -389,10 +403,10 @@ export class Apple extends Connector<Apple> {
 
   /**
    * Adapter the mail/* pure sync functions depend on. Storage keys are
-   * namespaced with a "mail:" prefix here so mail's per-channel cursors can
-   * never collide with calendar's `sync_state_<id>` etc. keys — callers in
-   * `src/mail/*` pass bare keys (e.g. `state_<channelId>`) and rely on this
-   * prefixing, never adding "mail:" themselves.
+   * namespaced with a "mail:" prefix here so mail's cursors can never collide
+   * with calendar's `sync_state_<id>` etc. keys — callers in `src/mail/*` pass
+   * bare keys (e.g. `state`, `thread:<rootId>`) and rely on this prefixing,
+   * never adding "mail:" themselves.
    */
   private buildMailHost(): MailHost {
     const mailKey = (key: string) => `mail:${key}`;
@@ -741,8 +755,12 @@ export class Apple extends Connector<Apple> {
     for (const key of cancelEmailKeys) {
       await this.clear(key);
     }
-    // Sweep the calendar-bundle classification cache (`mail:bundle:<rootId>`,
-    // written by `detectCalendarBundles` in `src/mail/sync.ts`). Never
+    // Sweep the legacy calendar-bundle classification cache
+    // (`mail:bundle:<rootId>`). The decision now lives on the per-root
+    // `mail:thread:<rootId>` document alongside the thread's home channel, so
+    // this sweep only clears leftovers from before that move — the
+    // `mail:thread:` sweep belongs with the rest of the disable teardown.
+    // Never
     // expires on its own and would otherwise persist across a disable/
     // re-enable cycle — a fresh re-enable's backfill must re-classify from
     // scratch, not inherit a decision cached before the gap (e.g. a
@@ -760,11 +778,9 @@ export class Apple extends Connector<Apple> {
   }
 
   /**
-   * Runs the mail initial backfill as a queued task (dispatched callback).
+   * Runs the mail sync pass as a queued task (dispatched callback).
    * Resolves the plan-based history floor (falling back to 7 days), runs
-   * `mailInitialSync` against this channel's own IMAP mailbox
-   * (`parse(channelId).rawId` — every enabled mailbox is its own channel),
-   * then schedules the recurring poll.
+   * `mailSync`, then schedules the recurring poll.
    *
    * Guarded by the `mail_sync_<channelId>` lock: `onMailChannelEnabled`
    * always re-queues this task, even on re-dispatch (auto-enable/recovery),
@@ -790,7 +806,7 @@ export class Apple extends Connector<Apple> {
         const min =
           (await host.get<string>(`sync_history_min_${channelId}`)) ??
           new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        await mailInitialSync(host, parse(channelId).rawId, channelId, min);
+        await mailSync(host, [mailChannelOf(channelId)], min);
       } finally {
         await this.tools.store.releaseLock(lockKey);
       }
@@ -826,7 +842,7 @@ export class Apple extends Connector<Apple> {
     );
     if (!acquired) return;
     try {
-      await mailIncrementalSync(this.buildMailHost(), parse(channelId).rawId, channelId);
+      await mailSync(this.buildMailHost(), [mailChannelOf(channelId)], undefined);
     } finally {
       await this.tools.store.releaseLock(lockKey);
     }
@@ -878,7 +894,7 @@ export class Apple extends Connector<Apple> {
       return;
     }
     try {
-      await mailIncrementalSync(this.buildMailHost(), parse(channelId).rawId, channelId);
+      await mailSync(this.buildMailHost(), [mailChannelOf(channelId)], undefined);
     } finally {
       await this.tools.store.releaseLock(lockKey);
     }

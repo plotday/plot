@@ -52,15 +52,24 @@ export async function resolveSentMailbox(
   return byName ? byName.name : null;
 }
 
-/** Select `mailbox` and fetch the given UIDs (headers + body), chunked by 50. */
+/**
+ * Select `mailbox` and fetch the given UIDs (headers + body), chunked by 50.
+ *
+ * Pass `alreadySelected` when the caller has just SELECTed this mailbox for
+ * its own SEARCHes and nothing has moved the session's selection since — the
+ * merged sync pass does exactly that for every mailbox it reads, so the
+ * default would cost one redundant round-trip per folder per pass. Every
+ * other caller leaves it false and keeps the self-contained behaviour.
+ */
 export async function fetchUidRange(
   host: MailHost,
   session: ImapSession,
   mailbox: string,
-  uids: number[]
+  uids: number[],
+  alreadySelected = false
 ): Promise<ImapMessage[]> {
   if (uids.length === 0) return [];
-  await host.imap.selectMailbox(session, mailbox);
+  if (!alreadySelected) await host.imap.selectMailbox(session, mailbox);
   const out: ImapMessage[] = [];
   for (let i = 0; i < uids.length; i += 50) {
     const chunk = uids.slice(i, i + 50);

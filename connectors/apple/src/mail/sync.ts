@@ -1,5 +1,5 @@
 import type { ActorId } from "@plotday/twister";
-import type { ImapMailboxStatus, ImapMessage, ImapSession } from "@plotday/twister/tools/imap";
+import type { ImapMailboxStatus, ImapSession } from "@plotday/twister/tools/imap";
 
 import {
   classifyICS,
@@ -8,7 +8,7 @@ import {
   type ClassifiedICS,
 } from "./calendar-bundle";
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
-import type { MailHost, MailSyncState } from "./mail-host";
+import type { MailboxCursor, MailHost, MailSyncState } from "./mail-host";
 import {
   mailSource,
   messageKey,
@@ -20,21 +20,72 @@ import {
 const DEFAULT_HISTORY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RECENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-/** Distinct thread roots present in a message batch. */
-function rootsOf(messages: MailMessage[]): Set<string> {
-  const roots = new Set<string>();
+/** The connection-level cursor document (see `MailSyncState`). */
+const STATE_KEY = "state";
+
+/**
+ * Soft ceilings for one merged pass, warned about (never enforced) so the
+ * dev instance surfaces a runaway account before a user does. See the cost
+ * model in `mailSync`'s docstring: memory, not the request budget, is the
+ * tighter limit, because every fetched message is held with both bodies.
+ */
+const WARN_MESSAGE_COUNT = 1500;
+const WARN_ROOT_COUNT = 400;
+
+/** One enabled mail channel and the raw IMAP mailbox it maps to. */
+export type MailChannel = {
+  /** Namespaced channel id, e.g. `"mail:Archive"`. */
+  channelId: string;
+  /** Raw IMAP mailbox name, i.e. `parse(channelId).rawId`. */
+  mailbox: string;
+};
+
+/**
+ * Per-thread-root metadata, stored at `mail:thread:<rootId>`. One store read
+ * per root per pass serves BOTH the home-channel resolution and the
+ * calendar-bundle cache, which is why they share a document rather than
+ * living under two keys.
+ */
+export type ThreadMeta = {
+  /**
+   * The namespaced mail channel this thread is homed to (resolved in
+   * `mailSync`). Always a channel that was ENABLED at the time it was
+   * written, and deliberately persisted rather than recomputed each pass:
+   * the merged batch is window-dependent, so a derived value transitions as
+   * old messages age out of the rescan window, rewriting `link.channel_id`
+   * and changing what disable-time archiving matches.
+   */
+  channelId: string;
+  /**
+   * Persisted calendar-bundle classification. Absent = never evaluated;
+   * `{ classified: null }` = evaluated, does not bundle. Wrapped in an object
+   * — never a bare `ClassifiedICS | null` — so the two states stay
+   * distinguishable (see `detectCalendarBundles`'s CACHING doc).
+   */
+  bundle?: { classified: ClassifiedICS | null };
+};
+
+function threadMetaKey(rootId: string): string {
+  return `thread:${rootId}`;
+}
+
+/** Group messages by thread root, dropping messages with no id to thread on. */
+function groupByRoot(messages: MailMessage[]): Map<string, MailMessage[]> {
+  const byRoot = new Map<string, MailMessage[]>();
   for (const m of messages) {
     const root = rootMessageId(m);
-    if (root) roots.add(root);
+    if (!root) continue;
+    const list = byRoot.get(root) ?? [];
+    list.push(m);
+    byRoot.set(root, list);
   }
-  return roots;
+  return byRoot;
 }
 
 /**
- * Resolve the initial-sync history floor. Uses `syncHistoryMin` when it
- * parses to a valid date; otherwise defaults to 7 days ago. Guards against
- * `mailIncrementalSync`'s re-baseline path, where the stored
- * `state.syncHistoryMin` may be absent (older/first-poll state).
+ * Resolve the history floor. Uses `syncHistoryMin` when it parses to a valid
+ * date; otherwise defaults to 7 days ago (a connection whose plan window was
+ * never recorded still gets a bounded backfill rather than the whole mailbox).
  */
 function resolveSinceFloor(syncHistoryMin: string | undefined): Date {
   if (syncHistoryMin) {
@@ -45,22 +96,59 @@ function resolveSinceFloor(syncHistoryMin: string | undefined): Date {
 }
 
 /**
+ * Widen the persisted history floor: the EARLIEST of the stored floor and an
+ * incoming one. Never narrows — a plan downgrade must not erase history that
+ * has already been synced. Invalid/absent values are ignored.
+ */
+function widestFloor(
+  stored: string | undefined,
+  incoming: string | undefined
+): string | undefined {
+  const valid = [stored, incoming].filter(
+    (v): v is string => v !== undefined && !Number.isNaN(new Date(v).getTime())
+  );
+  if (valid.length === 0) return undefined;
+  return valid.reduce((a, b) => (new Date(a) <= new Date(b) ? a : b));
+}
+
+/**
+ * Deterministic "which folder does this thread live in" ordering: oldest
+ * message first, then INBOX before any other folder, then mailbox name, then
+ * uid. Mirrors `transform.ts`'s message ordering so the thread's home channel
+ * and its originator message agree about which copy comes first.
+ */
+function compareForHome(a: MailMessage, b: MailMessage): number {
+  const byDate = (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0);
+  if (byDate !== 0) return byDate;
+  const rank = (m: MailMessage) => (m.mailbox.toUpperCase() === "INBOX" ? 0 : 1);
+  const byRank = rank(a) - rank(b);
+  if (byRank !== 0) return byRank;
+  if (a.mailbox !== b.mailbox) return a.mailbox < b.mailbox ? -1 : 1;
+  return a.uid - b.uid;
+}
+
+/**
  * Read-direction half of the to-do ↔ \Flagged loop (write direction is
  * `onThreadToDoFn` in write.ts). Groups `messages` by thread root
  * (`rootMessageId`), computes whether any message in the thread carries
  * `\Flagged`, and diffs that against the stored `flagged:<rootId>` marker:
  *
- *  - On `initialSync`, the marker is SEEDED from the current \Flagged state
- *    for every thread, but `setThreadToDo` is never called — a message
- *    flagged years before the connection ever existed must not spam a
- *    fresh to-do on first connect (mirrors the initial-sync unread
- *    discipline in `transformMessages`).
- *  - Otherwise (incremental), a state change since the marker propagates
- *    once via `integrations.setThreadToDo` and updates the marker. An
- *    unchanged state — including the write path's own just-set marker (see
- *    `onThreadToDoFn` in write.ts) — is a no-op. That "no-op on no change"
- *    is what breaks the echo loop: our own Plot→\Flagged write is
- *    indistinguishable here from "nothing changed since we last looked".
+ *  - For a root in `initialRoots` (this pass is ingesting it from history for
+ *    the first time), the marker is SEEDED from the current \Flagged state but
+ *    `setThreadToDo` is never called — a message flagged years before the
+ *    connection ever existed must not spam a fresh to-do on first connect
+ *    (mirrors the initial-sync unread discipline in `transformMessages`).
+ *  - Otherwise, a state change since the marker propagates once via
+ *    `integrations.setThreadToDo` and updates the marker. An unchanged state —
+ *    including the write path's own just-set marker (see `onThreadToDoFn` in
+ *    write.ts) — is a no-op. That "no-op on no change" is what breaks the echo
+ *    loop: our own Plot→\Flagged write is indistinguishable here from "nothing
+ *    changed since we last looked".
+ *
+ * `initialRoots` is a SET, not a batch-wide flag: one merged pass can be
+ * backfilling a newly-enabled folder's history while incrementally syncing
+ * folders that already have a cursor, so seeding and propagating both happen
+ * within a single call.
  *
  * Requires a stored `auth_actor_id` (set by `Apple.activate()` on connect)
  * to know who to attribute the to-do to. Older connections that predate
@@ -79,24 +167,15 @@ function resolveSinceFloor(syncHistoryMin: string | undefined): Date {
 export async function reconcileTodoFlags(
   host: MailHost,
   messages: MailMessage[],
-  initialSync: boolean
+  initialRoots: Set<string>
 ): Promise<void> {
   const actorId = await host.get<ActorId>("auth_actor_id");
   if (!actorId) return;
 
-  const byRoot = new Map<string, MailMessage[]>();
-  for (const m of messages) {
-    const root = rootMessageId(m);
-    if (!root) continue;
-    const list = byRoot.get(root) ?? [];
-    list.push(m);
-    byRoot.set(root, list);
-  }
-
-  for (const [root, msgs] of byRoot.entries()) {
+  for (const [root, msgs] of groupByRoot(messages).entries()) {
     const isFlagged = msgs.some((m) => m.flags.includes("\\Flagged"));
 
-    if (initialSync) {
+    if (initialRoots.has(root)) {
       await host.set(`flagged:${root}`, isFlagged);
       continue;
     }
@@ -108,17 +187,6 @@ export async function reconcileTodoFlags(
     }
   }
 }
-
-/**
- * Persisted per-root calendar-bundle classification (see `detectCalendarBundles`'s
- * caching doc below). Wrapped in an object — never a bare `ClassifiedICS |
- * null` — because `MailHost.get`'s "mail:"-prefixed implementation
- * normalizes a stored `null` back to `undefined` (see `buildMailHost` in
- * apple.ts: `(value as T | null) ?? undefined`), which would make a
- * persisted "evaluated, doesn't bundle" decision indistinguishable from
- * "never evaluated" and defeat the whole point of caching it.
- */
-type StoredBundleDecision = { classified: ClassifiedICS | null };
 
 /**
  * Detects mail↔calendar thread bundling for a sync pass: groups `messages`
@@ -141,15 +209,12 @@ type StoredBundleDecision = { classified: ClassifiedICS | null };
  * IMAP round-trips (a `selectMailbox` + `fetchAttachment` per calendar part
  * encountered) for a thread that doesn't have one — an empty `messages`
  * array, or messages with no calendar-mime attachments, does no IMAP I/O.
- * It DOES do one cheap store lookup (`host.get`) per thread root every
- * pass, unconditionally — see CACHING below for why that can't be skipped
- * for calendar-less threads either.
  *
  * CACHING: once a root's calendar-bearing message(s) have been classified,
  * the decision (bundle info, or explicitly "no bundle" for a bare
- * invite/RSVP) is persisted to `bundle:<rootId>` and reused on every later
- * pass instead of re-fetching. Two reasons this is required, not just an
- * optimization:
+ * invite/RSVP) is recorded on that root's `ThreadMeta.bundle` and reused on
+ * every later pass instead of re-fetching. Two reasons this is required, not
+ * just an optimization:
  *  - Cost: every poll otherwise re-fetches and re-classifies the same ICS
  *    attachment for every invite thread still inside the 30-day recent
  *    window — ~2 extra IMAP round-trips per thread, every 15 minutes,
@@ -164,9 +229,16 @@ type StoredBundleDecision = { classified: ClassifiedICS | null };
  *    scratch would find nothing and flip the thread back to "not bundled" —
  *    changing `sources`' sorted-minimum primary source (`"icaluid:…"` sorts
  *    before `"icloud-mail:thread:…"`) and creating a SECOND link row on
- *    `upsert_link`'s `(source, source_priority_root)` conflict target,
- *    since the old primary source is still on file. Persisting the decision
- *    once means the classification can never flip after the fact.
+ *    `upsert_link`'s conflict target, since the old primary source is still
+ *    on file. Persisting the decision once means the classification can never
+ *    flip after the fact.
+ *
+ * The caller owns the store I/O: `meta` arrives pre-loaded (one read per root
+ * for the pass, shared with home-channel resolution) and is MUTATED in place
+ * with any new decision, with the root added to `changed` so the caller
+ * persists it once. A root missing from `meta` is still classified and
+ * returned, but its decision isn't recorded — `mailSync` guarantees an entry
+ * for every root in `messages`.
  *
  * `eventKnown` (see `CalendarBundle`'s doc) is resolved via
  * `host.knownEventUids()` at most once per call — lazily, only once a
@@ -175,17 +247,10 @@ type StoredBundleDecision = { classified: ClassifiedICS | null };
 export async function detectCalendarBundles(
   host: MailHost,
   session: ImapSession,
-  messages: MailMessage[]
+  messages: MailMessage[],
+  meta: Map<string, ThreadMeta>,
+  changed: Set<string>
 ): Promise<Map<string, CalendarBundle>> {
-  const byRoot = new Map<string, MailMessage[]>();
-  for (const m of messages) {
-    const root = rootMessageId(m);
-    if (!root) continue;
-    const list = byRoot.get(root) ?? [];
-    list.push(m);
-    byRoot.set(root, list);
-  }
-
   const bundles = new Map<string, CalendarBundle>();
   let knownUids: Set<string> | null = null;
   const resolveEventKnown = async (uid: string): Promise<boolean> => {
@@ -193,12 +258,12 @@ export async function detectCalendarBundles(
     return knownUids.has(uid);
   };
 
-  for (const [root, msgs] of byRoot.entries()) {
+  for (const [root, msgs] of groupByRoot(messages).entries()) {
     // Reuse an earlier pass's decision before doing anything else — see the
     // CACHING doc above for why this must not be gated behind "does THIS
     // pass have a calendar part" (the ICS-bearing message may have aged out
     // of the window while the thread itself is still active).
-    const persisted = await host.get<StoredBundleDecision>(`bundle:${root}`);
+    const persisted = meta.get(root)?.bundle;
     if (persisted) {
       if (persisted.classified) {
         bundles.set(root, {
@@ -211,7 +276,7 @@ export async function detectCalendarBundles(
 
     // Not yet classified. Cheap in-memory check (no I/O) — only
     // calendar-bearing threads ever touch IMAP below, and only those get a
-    // decision persisted (a thread with no calendar part yet is simply
+    // decision recorded (a thread with no calendar part yet is simply
     // re-checked next pass in case one arrives later).
     const calendarMsgs = msgs.filter((m) =>
       (m.attachments ?? []).some((a) => isCalendarAttachment(a.mimeType))
@@ -234,9 +299,13 @@ export async function detectCalendarBundles(
       break; // this thread is classified; stop scanning its remaining messages
     }
 
-    // Persist the decision — including explicit "no bundle" — so this root
-    // is never re-evaluated on a later pass (see the caching doc above).
-    await host.set(`bundle:${root}`, { classified } satisfies StoredBundleDecision);
+    // Record the decision — including explicit "no bundle" — so this root is
+    // never re-evaluated on a later pass (see the caching doc above).
+    const entry = meta.get(root);
+    if (entry) {
+      entry.bundle = { classified };
+      changed.add(root);
+    }
 
     if (classified) {
       bundles.set(root, { ...classified, eventKnown: await resolveEventKnown(classified.uid) });
@@ -245,321 +314,307 @@ export async function detectCalendarBundles(
   return bundles;
 }
 
+/** How one mailbox is being read this pass. */
+type BoxPlan = {
+  /** Raw IMAP mailbox name. */
+  mailbox: string;
+  /** True for the account's Sent mailbox (read on every pass, never a channel). */
+  isSent: boolean;
+  /** SELECT status read during the gate phase. */
+  status: ImapMailboxStatus;
+  /** The stored cursor, if it exists AND its UIDVALIDITY still matches. */
+  cursor: MailboxCursor | undefined;
+  /** No usable cursor → read the whole history floor, contribute no new mail. */
+  backfill: boolean;
+  /** No cursor at all (as opposed to a UIDVALIDITY reset) → first-ever backfill. */
+  firstBackfill: boolean;
+};
+
 /**
- * Whether this sync pass belongs to the INBOX channel — the only pass that
- * also reads the Sent mailbox (see the "Sent is INBOX's pass only" guards in
- * `runInitialBackfill` / `mailIncrementalSync`).
+ * ONE merged sync pass for the whole connection: reads every enabled mailbox
+ * plus Sent on a single IMAP session and rebuilds every touched thread from
+ * its COMPLETE visible message set in exactly one `transformMessages()` call.
  *
- * Compared case-insensitively: RFC 3501 defines INBOX case-insensitively, so
- * a server may report it in any case, and `channels.ts` already picks the
- * default-enabled channel with the same normalization. Matching that here
- * keeps the two from disagreeing about which channel is "the inbox".
- */
-function isInboxPass(rawMailbox: string): boolean {
-  return rawMailbox.toUpperCase() === "INBOX";
-}
-
-/**
- * Full backfill of this channel's mailbox (`rawMailbox`) — plus, for the
- * INBOX channel only, the Sent mailbox (for the owner's own in-thread
- * replies) — since a history floor, using an already-open IMAP `session`.
- * Persists a `MailSyncState` cursor for subsequent incremental syncs and
- * signals `channelSyncCompleted` once the backfill is saved.
+ * That single call is the invariant this function exists to protect. A mail
+ * thread's `link.source` comes from its root Message-ID, which is
+ * mailbox-independent, so a conversation with messages in two enabled folders
+ * is ONE Plot thread that both folders address. `transformMessages` derives
+ * `title`, `unread` and the thread author from only the messages handed to one
+ * call, so splitting the pass per mailbox makes each folder rewrite the shared
+ * thread from a partial view and the passes overwrite each other forever.
+ * Never call `transformMessages` (or `saveLinks`) per mailbox, per chunk, or
+ * per root.
  *
- * Shared by `mailInitialSync` (which opens its own session) and
- * `mailIncrementalSync`'s re-baseline paths (which reuse their already-open
- * session) so at most one IMAP session to the account is ever open at once —
- * iCloud enforces a per-account connection cap.
+ * There is no separate "initial" entry point: initial-ness is decided PER
+ * MAILBOX (one without a cursor gets a backfill) and PER THREAD ROOT (one Plot
+ * has never seen, arriving from history rather than as new mail, gets
+ * `unread: false, archived: false`).
+ *
+ * `channels` is passed in rather than read from the host so this stays a pure
+ * function of its inputs; the connector enumerates its enabled mail channels
+ * and hands them over. An empty list means nothing is enabled — there is
+ * correctly no pass.
+ *
+ * COST MODEL (budget: ~1000 requests and ~128 MB per execution). With `N`
+ * enabled folders, `M` messages fetched, `R` distinct thread roots and `C`
+ * newly calendar-classified roots, one pass costs roughly
+ * `4N + ceil(M/50) + 2R (+ writes) + 2C + ~10` tool calls — the dominant term
+ * is `R`, not `N`, so merging folders raises the message/root count rather
+ * than the per-folder overhead. A fully-skipped pass (CONDSTORE gate hit)
+ * costs only `N + 7`. Memory is the tighter limit: every fetched message is
+ * held with both bodies, so the thresholds below warn well before the ceiling.
+ * If the ceiling is ever hit for real, the correct escalation is a two-phase
+ * fetch (headers-only across all mailboxes to build the root partition, then
+ * bodies per root-slice, each root completed within its slice) — which keeps
+ * the merge invariant, unlike splitting the pass by mailbox.
  */
-async function runInitialBackfill(
+export async function mailSync(
   host: MailHost,
-  session: ImapSession,
-  rawMailbox: string,
-  channelId: string,
-  syncHistoryMin: string | undefined | null
-): Promise<void> {
-  const since = resolveSinceFloor(syncHistoryMin ?? undefined);
-
-  const status = await host.imap.selectMailbox(session, rawMailbox);
-  const primaryUids = await host.imap.search(session, { since });
-  const primary = await fetchUidRange(host, session, rawMailbox, primaryUids);
-
-  let sent: ImapMessage[] = [];
-  let sentStatus: ImapMailboxStatus | undefined;
-  // Sent is merged ONLY on the INBOX channel's pass. Every enabled mailbox
-  // runs its own independent pass, so without this guard each of them would
-  // also merge the same Sent messages and upsert them onto the SAME threads
-  // (the thread `source` is derived from the message's thread root, not from
-  // the mailbox). A folder that doesn't hold a thread's root would then
-  // rebuild that thread from the owner's Sent reply alone — recomputing
-  // title/author/unread from a partial message set — and the folders' passes
-  // would overwrite each other on every poll. See also `channels.ts`, which
-  // excludes Sent from channel enumeration for the same reason.
-  //
-  // Accepted residual (v1): a thread whose root lives in a non-INBOX folder
-  // but that has a recent owner reply in Sent can still be rebuilt from that
-  // reply alone during INBOX's own pass, because INBOX's pass can't tell
-  // which folder holds the root. Closing it needs search-by-Message-ID,
-  // which IMAP does not offer (see `imap-fetch.ts`'s note on the same
-  // limitation).
-  const sentBox = isInboxPass(rawMailbox) ? await resolveSentMailbox(host, session) : null;
-  if (sentBox) {
-    sentStatus = await host.imap.selectMailbox(session, sentBox);
-    const sentUids = await host.imap.search(session, { since });
-    sent = await fetchUidRange(host, session, sentBox, sentUids);
-  }
-
-  // Tag each message with its originating mailbox — UIDs are only unique
-  // within a single mailbox, so this is required to build correct
-  // attachment refs once this mailbox and Sent are merged into one call. See
-  // transform.ts's `MailMessage` doc.
-  const merged: MailMessage[] = [
-    ...primary.map((m) => ({ ...m, mailbox: rawMailbox })),
-    ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
-  ];
-  const calendarBundles = await detectCalendarBundles(host, session, merged);
-  // TEMPORARY ADAPTER — replaced when this file becomes the merged
-  // connection-level pass. `transformMessages` now expresses initial-ness and
-  // the home channel PER THREAD ROOT, but this per-channel pass still has a
-  // single channel and a batch-wide "everything is initial", so it projects
-  // those flat values onto every root. Behaviour is unchanged FOR THE
-  // PER-ROOT INPUTS this call was already producing (channelId, initial-ness,
-  // new-message set) — but three things DO change for this existing
-  // per-channel path, all strict improvements riding along from `transform.ts`:
-  // Sent uids are now mailbox-qualified (an unseen Archive message can no
-  // longer inherit "new" status from an unrelated same-uid Sent message); an
-  // INBOX+Sent duplicate of one message (real on iCloud whenever the owner
-  // cc's themselves) now collapses to a single note instead of two colliding
-  // ones; and same-timestamp messages from different mailboxes now have a
-  // deterministic order tie-break instead of depending on fetch order.
-  // `sentMailbox` is deliberately not passed: the Sent-only title/unread rule
-  // belongs to the merged pass, where a thread's other folders are actually
-  // in the batch.
-  const roots = rootsOf(merged);
-  const links = transformMessages(merged, {
-    appleId: host.appleId,
-    channelByRoot: new Map([...roots].map((r) => [r, channelId])),
-    initialRoots: roots,
-    newMessages: new Set<string>(),
-    calendarBundles,
-  });
-  if (links.length > 0) await host.integrations.saveLinks(links);
-
-  // Seed the \Flagged↔to-do marker from history without propagating: see
-  // reconcileTodoFlags's doc.
-  await reconcileTodoFlags(host, merged, true);
-
-  const lastUid = primaryUids.reduce((m, u) => (u > m ? u : m), 0);
-  const state: MailSyncState = {
-    uidValidity: status.uidValidity,
-    lastUid,
-    syncHistoryMin: since.toISOString(),
-    // Re-baselining (first sync, no-state, or UIDVALIDITY change) always
-    // resets both modseq cursors from the fresh SELECT — correct, since a
-    // new UIDVALIDITY invalidates old mod-sequences too. On a non-INBOX
-    // channel Sent is never read, so `sentLastModSeq` stays undefined in
-    // this channel's own `state_<channelId>` — self-consistent, since that
-    // channel's combined gate then rests entirely on its own mailbox (see
-    // `mailIncrementalSync`'s `sentUnchanged`).
-    lastModSeq: status.highestModSeq,
-    sentLastModSeq: sentStatus?.highestModSeq,
-  };
-  await host.set(`state_${channelId}`, state);
-
-  await host.channelSyncCompleted(channelId);
-}
-
-/**
- * Full backfill of this channel's mailbox (`rawMailbox`, the un-namespaced
- * IMAP mailbox name from `parse(channelId).rawId`) — plus, on the INBOX
- * channel only, the Sent mailbox (for the owner's own in-thread replies) —
- * since a history floor. Persists a `MailSyncState` cursor for subsequent
- * incremental syncs and signals `channelSyncCompleted` once the backfill is
- * saved.
- */
-export async function mailInitialSync(
-  host: MailHost,
-  rawMailbox: string,
-  channelId: string,
+  channels: MailChannel[],
   syncHistoryMin: string | undefined
 ): Promise<void> {
+  if (channels.length === 0) return;
+
+  // Deterministic order so the fallback home channel (and every
+  // select/search/fetch sequence) is stable across passes.
+  const ordered = [...channels].sort((a, b) =>
+    a.channelId < b.channelId ? -1 : a.channelId > b.channelId ? 1 : 0
+  );
+  const enabledMailboxes = new Set(ordered.map((c) => c.mailbox));
+  const enabledChannelIds = new Set(ordered.map((c) => c.channelId));
+  const channelForMailbox = new Map(ordered.map((c) => [c.mailbox, c.channelId]));
+
   const session = await connectIcloud(host);
   try {
-    await runInitialBackfill(host, session, rawMailbox, channelId, syncHistoryMin);
-  } finally {
-    await host.imap.disconnect(session);
-  }
-}
-
-/**
- * Incremental sync of this channel's mailbox (`rawMailbox`, the
- * un-namespaced IMAP mailbox name from `parse(channelId).rawId`): new mail
- * since the stored cursor, a recent-window rescan to pick up `\Seen` flag
- * changes, and — on the INBOX channel only — a recent-window rescan of Sent
- * for new owner replies (Sent has no separate cursor — the recent rescan
- * plus idempotent upsert by `source`/note key is intentional). Re-baselines
- * (via the shared `runInitialBackfill`, reusing this sync's already-open
- * IMAP session) when UIDVALIDITY has changed or no cursor exists yet.
- */
-export async function mailIncrementalSync(
-  host: MailHost,
-  rawMailbox: string,
-  channelId: string
-): Promise<void> {
-  const session = await connectIcloud(host);
-  try {
-    const status = await host.imap.selectMailbox(session, rawMailbox);
-    const state = await host.get<MailSyncState>(`state_${channelId}`);
-
-    if (!state) {
-      // No cursor yet (first poll before an initial sync ever completed) —
-      // run a full initial sync instead of guessing a delta. Reuse this
-      // already-open session (not `mailInitialSync`, which would open a
-      // second concurrent IMAP session to the same account).
-      await runInitialBackfill(host, session, rawMailbox, channelId, undefined);
-      return;
-    }
-
-    if (status.uidValidity !== state.uidValidity) {
-      // UIDVALIDITY changed (mailbox recreated/reindexed server-side) — old
-      // UIDs are no longer meaningful. Re-baseline from the previously
-      // stored history floor, reusing this already-open session.
-      await runInitialBackfill(host, session, rawMailbox, channelId, state.syncHistoryMin);
-      return;
-    }
-
-    // COMBINED CONDSTORE gate (RFC 7162). This channel's mailbox and Sent
-    // are always merged into a single transformMessages() call per pass (see
-    // runInitialBackfill's doc) so that a thread rooted in one mailbox is
-    // never rebuilt from a partial message set — e.g. an INBOX-rooted
-    // thread's title/author must never be recomputed from just a Sent
-    // reply. That merge invariant means the two mailboxes' gates cannot be
-    // decided independently: if EITHER mailbox's HIGHESTMODSEQ advanced
-    // since the last successful poll, BOTH must be (re)fetched this pass so
-    // any thread the change touches is rebuilt from its complete message
-    // set. Only skip both when NEITHER advanced. Falls back to "assume
-    // changed" for a given mailbox when the server doesn't advertise
-    // CONDSTORE (`highestModSeq === undefined`) or no baseline cursor exists
-    // yet for it (`lastModSeq`/`sentLastModSeq === undefined`, e.g. state
-    // written before this cursor shipped).
-    //
-    // On a non-INBOX channel Sent is not part of the pass at all, so
-    // `sentUnchanged` is trivially true and the combined gate reduces to
-    // this folder's own modseq — a correct per-folder gate, and each channel
-    // keeps its own cursors under its own `state_<channelId>`.
-    const mailboxUnchanged =
-      status.highestModSeq !== undefined &&
-      state.lastModSeq !== undefined &&
-      status.highestModSeq === state.lastModSeq;
-
-    // Read Sent's HIGHESTMODSEQ up front (before deciding whether to
-    // rescan) so the combined decision below can see both mailboxes' state.
-    // This SELECTs Sent, moving the session's selected mailbox off this
-    // channel's. Skipped entirely on a non-INBOX channel — see the guard's
-    // rationale (and its accepted residual) in `runInitialBackfill`.
-    const sentBox = isInboxPass(rawMailbox) ? await resolveSentMailbox(host, session) : null;
-    let sentStatus: ImapMailboxStatus | undefined;
-    if (sentBox) {
-      sentStatus = await host.imap.selectMailbox(session, sentBox);
-    }
-    // No Sent mailbox in this pass — either the account has none, or this is
-    // a non-INBOX channel that never reads it — means there's nothing to
-    // gate on that side, so it can never block a rescan this mailbox needs
-    // (and vice versa). Treat as "unchanged" so the combined decision rests
-    // on whichever mailbox the pass actually covers.
-    const sentUnchanged =
-      !sentBox ||
-      (sentStatus!.highestModSeq !== undefined &&
-        state.sentLastModSeq !== undefined &&
-        sentStatus!.highestModSeq === state.sentLastModSeq);
-
-    // Pure date math, shared by both mailboxes' rescans below.
-    const floor = resolveSinceFloor(state.syncHistoryMin);
+    const stored = await host.get<MailSyncState>(STATE_KEY);
+    const historyMin = widestFloor(stored?.syncHistoryMin, syncHistoryMin);
+    const floor = resolveSinceFloor(historyMin);
     const recentSince = new Date(Math.max(floor.getTime(), Date.now() - RECENT_WINDOW_MS));
+    const pendingFullRescan = stored?.pendingFullRescan === true;
+    const boxes: Record<string, MailboxCursor> = { ...(stored?.boxes ?? {}) };
 
-    let newUids: number[] = [];
-    let mailboxUids: number[] = [];
-    let primary: ImapMessage[] = [];
-    let sent: ImapMessage[] = [];
+    // Sent is read on EVERY merged pass, not just when INBOX happens to be
+    // enabled, so the owner's own replies keep landing on their threads no
+    // matter which folders the user syncs. It is deliberately not an
+    // enable-able channel (`channels.ts`), but guard anyway: treating an
+    // enabled folder as Sent would double-read it and give it no home channel.
+    const resolvedSent = await resolveSentMailbox(host, session);
+    const sentBox = resolvedSent && !enabledMailboxes.has(resolvedSent) ? resolvedSent : null;
 
-    if (!(mailboxUnchanged && sentUnchanged)) {
-      // Either mailbox changed => rescan BOTH, exactly today's full-rescan
-      // behavior, so any thread the change touches is rebuilt complete.
+    // ---- Gate phase: one SELECT per mailbox, purely to read HIGHESTMODSEQ.
+    const plans: BoxPlan[] = [];
+    for (const mailbox of [...ordered.map((c) => c.mailbox), ...(sentBox ? [sentBox] : [])]) {
+      const status = await host.imap.selectMailbox(session, mailbox);
+      const stale = boxes[mailbox];
+      const usable = stale !== undefined && stale.uidValidity === status.uidValidity;
+      plans.push({
+        mailbox,
+        isSent: mailbox === sentBox,
+        status,
+        cursor: usable ? stale : undefined,
+        backfill: !usable,
+        firstBackfill: stale === undefined,
+      });
+    }
 
-      // Re-select this channel's mailbox first: the Sent SELECT above (used
-      // to read its HIGHESTMODSEQ) switched the session's currently-selected
-      // mailbox, and IMAP SEARCH always targets whatever's currently
-      // selected.
-      await host.imap.selectMailbox(session, rawMailbox);
+    // The CONDSTORE gate (RFC 7162), generalized over every mailbox in the
+    // pass. It is a single all-or-nothing decision: either every mailbox is
+    // re-searched and re-fetched, or none is. A PER-MAILBOX gate would be
+    // exactly the defect this pass exists to fix — skip INBOX because it
+    // didn't move, fetch Archive because it did, and a thread with messages in
+    // both gets rebuilt from Archive alone. A mailbox with no cursor, a
+    // changed UIDVALIDITY, or a server that doesn't advertise CONDSTORE is
+    // never "unchanged", so enabling a folder always forces the pass.
+    const unchanged = (p: BoxPlan): boolean =>
+      p.cursor !== undefined &&
+      p.status.highestModSeq !== undefined &&
+      p.cursor.lastModSeq !== undefined &&
+      p.status.highestModSeq === p.cursor.lastModSeq;
+    const skipFetch = !pendingFullRescan && plans.every(unchanged);
 
-      // New mail since the stored cursor, bounded by the plan floor so a
-      // dormant account (stored lastUid: 0) can't fetch the entire mailbox.
-      const windowUids = await host.imap.search(session, { since: floor });
-      newUids = windowUids.filter((u) => u > state.lastUid);
+    // ---- Fetch phase.
+    const merged: MailMessage[] = [];
+    /** Messages that are NEW this pass, mailbox-qualified (see `messageKey`). */
+    const newMessages = new Set<string>();
+    const nextBoxes: Record<string, MailboxCursor> = { ...boxes };
 
-      // Recent-window rescan to catch \Seen flag changes on already-synced
-      // mail, also capped at the plan floor.
-      const recentUids = await host.imap.search(session, { since: recentSince });
+    if (!skipFetch) {
+      for (const p of plans) {
+        // Re-SELECT: the gate loop above moved the session's selection, and
+        // IMAP SEARCH always targets whatever is currently selected.
+        await host.imap.selectMailbox(session, p.mailbox);
 
-      mailboxUids = Array.from(new Set([...newUids, ...recentUids]));
-      primary = await fetchUidRange(host, session, rawMailbox, mailboxUids);
+        let windowUids: number[];
+        let newUids: number[] = [];
+        if (p.isSent) {
+          // Sent is always window-shaped and NEVER contributes new-message
+          // signal: mail the owner sent must not mark their own thread unread.
+          // Its cursor exists only to carry uidValidity + lastModSeq for the
+          // gate. The full-floor window on a first pass (or after a
+          // UIDVALIDITY reset / a pending full rescan) is what puts the
+          // owner's historical replies on backfilled threads.
+          const since = p.backfill || pendingFullRescan ? floor : recentSince;
+          windowUids = await host.imap.search(session, { since });
+        } else if (p.backfill) {
+          // No usable cursor: read the whole history floor. Contributes no
+          // `newMessages`, so already-known roots keep their read state and
+          // never-seen roots fall into `initialRoots` below.
+          windowUids = await host.imap.search(session, { since: floor });
+        } else {
+          // Incremental. New mail is everything above the cursor, bounded by
+          // the floor so a dormant account can't fetch the entire mailbox.
+          const fromFloor = await host.imap.search(session, { since: floor });
+          newUids = fromFloor.filter((u) => u > p.cursor!.lastUid);
+          if (pendingFullRescan) {
+            // A channel was disabled while others stayed enabled: widen this
+            // pass to the whole floor so threads archived by that disable but
+            // still living in a remaining folder are re-homed and re-upserted.
+            windowUids = fromFloor;
+          } else {
+            // Recent-window rescan to catch \Seen / \Flagged changes on
+            // already-synced mail, also capped at the floor.
+            const recentUids = await host.imap.search(session, { since: recentSince });
+            windowUids = Array.from(new Set([...newUids, ...recentUids]));
+          }
+        }
 
-      if (sentBox) {
-        await host.imap.selectMailbox(session, sentBox);
-        const sentUids = await host.imap.search(session, { since: recentSince });
-        sent = await fetchUidRange(host, session, sentBox, sentUids);
+        // `alreadySelected`: this mailbox was SELECTed just above for its
+        // SEARCHes and nothing has moved the selection since.
+        const fetched = await fetchUidRange(host, session, p.mailbox, windowUids, true);
+        // Tag each message with its originating mailbox — UIDs are unique only
+        // within one mailbox, so the tag is what keeps messages identifiable
+        // once every folder is merged into one call (attachment refs,
+        // `messageKey`, the Sent-only rule).
+        const tagged = fetched.map((m) => ({ ...m, mailbox: p.mailbox }));
+        merged.push(...tagged);
+        if (newUids.length > 0) {
+          const isNew = new Set(newUids);
+          for (const m of tagged) if (isNew.has(m.uid)) newMessages.add(messageKey(m));
+        }
+
+        const maxUid = windowUids.reduce((acc, u) => (u > acc ? u : acc), 0);
+        nextBoxes[p.mailbox] = {
+          uidValidity: p.status.uidValidity,
+          // Sent's lastUid is never consulted (it contributes no new mail).
+          lastUid: p.isSent ? 0 : Math.max(maxUid, p.cursor?.lastUid ?? 0),
+          syncHistoryMin: p.cursor?.syncHistoryMin ?? floor.toISOString(),
+          // Seed/update every pass: undefined (no CONDSTORE) correctly forces
+          // a full rescan next pass too.
+          lastModSeq: p.status.highestModSeq,
+        };
       }
     }
 
-    // See runInitialBackfill: tag each message with its originating mailbox
-    // for correct attachment refs once this mailbox and Sent are merged.
-    const merged: MailMessage[] = [
-      ...primary.map((m) => ({ ...m, mailbox: rawMailbox })),
-      ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
-    ];
-    const calendarBundles = await detectCalendarBundles(host, session, merged);
-    // TEMPORARY ADAPTER — see the note in `runInitialBackfill`. Projects this
-    // per-channel pass's flat inputs onto the per-root shape
-    // `transformMessages` now takes. `newUids` are UIDs of THIS channel's
-    // mailbox only, so they are qualified with `rawMailbox` before becoming
-    // message keys — Sent messages can never be "new" (an owner's own reply
-    // must not mark their thread unread), which the old bare-uid set could not
-    // guarantee.
-    const newUidSet = new Set(newUids);
-    const newMessages = new Set(
-      merged.filter((m) => m.mailbox === rawMailbox && newUidSet.has(m.uid)).map(messageKey)
+    const byRoot = groupByRoot(merged);
+    if (merged.length > WARN_MESSAGE_COUNT || byRoot.size > WARN_ROOT_COUNT) {
+      console.warn(
+        `[Apple Mail] Large merged pass: ${merged.length} messages, ${byRoot.size} threads ` +
+          `across ${ordered.length} folders. Approaching the per-execution memory/request ` +
+          `budget — see mailSync's cost model.`
+      );
+    }
+
+    // ---- Per-root metadata: one read per root, serving BOTH the home-channel
+    // resolution and the calendar-bundle cache.
+    const storedMeta = new Map<string, ThreadMeta | undefined>();
+    for (const root of byRoot.keys()) {
+      storedMeta.set(root, await host.get<ThreadMeta>(threadMetaKey(root)));
+    }
+
+    // A thread with no message in any enabled folder this pass (a Sent-only
+    // conversation, or one whose home channel was just disabled) still needs a
+    // real, enabled channel: `null` would persist `channel_id = NULL`, which
+    // disable-time archiving can never match and which never seeds the
+    // thread's topic. INBOX when enabled, else the lowest-sorted channel.
+    const fallbackChannel =
+      ordered.find((c) => c.mailbox.toUpperCase() === "INBOX")?.channelId ??
+      ordered[0].channelId;
+
+    const channelByRoot = new Map<string, string>();
+    const nextMeta = new Map<string, ThreadMeta>();
+    const changedMeta = new Set<string>();
+    for (const [root, msgs] of byRoot.entries()) {
+      const prev = storedMeta.get(root);
+      let channelId: string;
+      if (prev && enabledChannelIds.has(prev.channelId)) {
+        // Stable: a thread never changes folders because its oldest message
+        // aged out of this pass's window.
+        channelId = prev.channelId;
+      } else {
+        const candidates = msgs
+          .filter((m) => enabledMailboxes.has(m.mailbox))
+          .sort(compareForHome);
+        channelId =
+          candidates.length > 0
+            ? channelForMailbox.get(candidates[0].mailbox)!
+            : fallbackChannel;
+      }
+      channelByRoot.set(root, channelId);
+      nextMeta.set(root, {
+        channelId,
+        ...(prev?.bundle ? { bundle: prev.bundle } : {}),
+      });
+      if (!prev || prev.channelId !== channelId) changedMeta.add(root);
+    }
+
+    // Per-root initial-ness: a root Plot has never seen (no stored metadata)
+    // AND that contributed no new mail this pass is being ingested from
+    // history, so it gets `unread: false, archived: false`. A root that is new
+    // to Plot but arrived as live mail is NOT initial — it must still notify.
+    const initialRoots = new Set<string>();
+    for (const [root, msgs] of byRoot.entries()) {
+      if (storedMeta.get(root) !== undefined) continue;
+      if (msgs.some((m) => newMessages.has(messageKey(m)))) continue;
+      initialRoots.add(root);
+    }
+
+    const calendarBundles = await detectCalendarBundles(
+      host,
+      session,
+      merged,
+      nextMeta,
+      changedMeta
     );
+
+    // THE single transformMessages call. See this function's docstring.
     const links = transformMessages(merged, {
       appleId: host.appleId,
-      channelByRoot: new Map([...rootsOf(merged)].map((r) => [r, channelId])),
-      initialRoots: new Set<string>(),
-      // Only these newly-arrived messages may (re)mark a thread unread; the
-      // recent-window rescan messages are read-state propagation only.
+      channelByRoot,
+      initialRoots,
       newMessages,
+      sentMailbox: sentBox,
       calendarBundles,
     });
     if (links.length > 0) await host.integrations.saveLinks(links);
 
-    // Same recent-window messages double as the \Flagged rescan — any flag
-    // change (like the \Seen rescan above) shows up within this window.
-    await reconcileTodoFlags(host, merged, false);
+    await reconcileTodoFlags(host, merged, initialRoots);
 
-    // When the gate skipped (mailboxUids stays []), newMaxUid is 0 and
-    // Math.max preserves the prior lastUid unchanged.
-    const newMaxUid = mailboxUids.reduce((m, u) => (u > m ? u : m), 0);
+    // Persisted AFTER the save: if `saveLinks` throws, the next pass still
+    // treats these roots as never-seen and re-runs the initial-sync
+    // discipline, rather than inserting them with no `unread` key and
+    // notifying for mail the user was never shown.
+    for (const root of changedMeta) {
+      await host.set(threadMetaKey(root), nextMeta.get(root)!);
+    }
+
     const nextState: MailSyncState = {
-      uidValidity: status.uidValidity,
-      lastUid: Math.max(newMaxUid, state.lastUid),
-      syncHistoryMin: state.syncHistoryMin,
-      // Seed/update every pass: undefined (no CONDSTORE) correctly forces a
-      // full rescan next poll too. On a non-INBOX channel `sentStatus` is
-      // always undefined (Sent is never read there), so this channel's own
-      // `sentLastModSeq` simply stays unset — nothing meaningful is being
-      // clobbered, since each channel has its own `state_<channelId>`.
-      lastModSeq: status.highestModSeq,
-      sentLastModSeq: sentStatus?.highestModSeq,
+      version: 2,
+      boxes: nextBoxes,
+      ...(historyMin ? { syncHistoryMin: historyMin } : {}),
+      // `pendingFullRescan` is consumed by this pass and cleared by omission.
     };
-    await host.set(`state_${channelId}`, nextState);
+    await host.set(STATE_KEY, nextState);
+
+    // Clear the "syncing…" spinner for each channel whose mailbox completed
+    // its FIRST backfill in this pass. A UIDVALIDITY re-baseline is not a
+    // first backfill — that channel already reported completion.
+    if (!skipFetch) {
+      for (const p of plans) {
+        if (p.isSent || !p.firstBackfill) continue;
+        const channelId = channelForMailbox.get(p.mailbox);
+        if (channelId) await host.channelSyncCompleted(channelId);
+      }
+    }
   } finally {
     await host.imap.disconnect(session);
   }

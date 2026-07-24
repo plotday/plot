@@ -3,12 +3,11 @@ import type { ImapMessage } from "@plotday/twister/tools/imap";
 
 // Mocked so mailInitialSyncTask/mailPoll/mailPushDrain tests below never
 // attempt a real IMAP session — only the mail sync lock's decision logic
-// (acquire/skip/release) is under test here, not the sync functions
-// themselves (covered by sync.test.ts). Hoisted by vitest above the imports
-// below regardless of source position.
+// (acquire/skip/release) is under test here, not the merged sync pass itself
+// (covered by sync.test.ts). Hoisted by vitest above the imports below
+// regardless of source position.
 vi.mock("./mail/sync", () => ({
-  mailInitialSync: vi.fn(),
-  mailIncrementalSync: vi.fn(),
+  mailSync: vi.fn(),
 }));
 
 import { Apple } from "./apple";
@@ -20,7 +19,7 @@ import {
 import type { ICSEvent } from "./calendar/ics-parser";
 import type { NewLinkWithNotes } from "@plotday/twister";
 import { composeChannels } from "./compose";
-import { mailIncrementalSync, mailInitialSync } from "./mail/sync";
+import { mailSync } from "./mail/sync";
 import { appleProducts } from "./products";
 import { parse } from "./product-channel";
 
@@ -415,8 +414,7 @@ describe("Apple mail sync lock", () => {
   const lockKey = `mail_sync_${channelId}`;
 
   beforeEach(() => {
-    vi.mocked(mailInitialSync).mockReset().mockResolvedValue(undefined);
-    vi.mocked(mailIncrementalSync).mockReset().mockResolvedValue(undefined);
+    vi.mocked(mailSync).mockReset().mockResolvedValue(undefined);
   });
 
   /**
@@ -431,8 +429,8 @@ describe("Apple mail sync lock", () => {
    * downstream effects of "scheduleMailPoll/armMailWatch still ran" (a
    * `scheduleRecurring` call under the `mailpoll:` key, an `imap.watch`
    * call) rather than asserting against a stubbed-out spy standing in for
-   * those helpers. `mailInitialSync`/`mailIncrementalSync` are mocked at
-   * the module level (see top of file) so no real IMAP session is opened.
+   * those helpers. `mailSync` is mocked at the module level (see top of
+   * file) so no real IMAP session is opened.
    */
   function makeSelf(opts: {
     enabled?: boolean;
@@ -547,14 +545,13 @@ describe("Apple mail sync lock", () => {
       expect(acquireLockCalls).toEqual([
         { key: lockKey, ttlMs: 30 * 60 * 1000 },
       ]);
-      expect(mailIncrementalSync).toHaveBeenCalledTimes(1);
-      // The channel's own IMAP mailbox (`parse(channelId).rawId`) is passed
-      // alongside the namespaced channel id — the sync selects the mailbox,
-      // the channel id keys the stored cursor.
-      expect(mailIncrementalSync).toHaveBeenCalledWith(
+      expect(mailSync).toHaveBeenCalledTimes(1);
+      // The merged pass takes the list of channels to read, each carrying its
+      // raw IMAP mailbox (`parse(channelId).rawId`).
+      expect(mailSync).toHaveBeenCalledWith(
         expect.anything(),
-        "INBOX",
-        channelId
+        [{ channelId, mailbox: "INBOX" }],
+        undefined
       );
       expect(releaseLockCalls).toEqual([lockKey]);
     });
@@ -566,7 +563,7 @@ describe("Apple mail sync lock", () => {
 
       await Apple.prototype.mailPoll.call(self, channelId);
 
-      expect(mailIncrementalSync).not.toHaveBeenCalled();
+      expect(mailSync).not.toHaveBeenCalled();
       // No lock we didn't take should be released.
       expect(releaseLockCalls).toEqual([]);
       // The watch re-arm runs BEFORE the lock check, so it must still fire.
@@ -577,7 +574,7 @@ describe("Apple mail sync lock", () => {
 
     it("releases the lock even when the incremental sync throws", async () => {
       const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
-      vi.mocked(mailIncrementalSync).mockRejectedValueOnce(
+      vi.mocked(mailSync).mockRejectedValueOnce(
         new Error("IMAP timeout")
       );
 
@@ -597,7 +594,7 @@ describe("Apple mail sync lock", () => {
 
       expect(acquireLockCalls).toEqual([]);
       expect(watchCalls).toEqual([]);
-      expect(mailIncrementalSync).not.toHaveBeenCalled();
+      expect(mailSync).not.toHaveBeenCalled();
     });
   });
 
@@ -612,7 +609,7 @@ describe("Apple mail sync lock", () => {
       expect(acquireLockCalls).toEqual([
         { key: lockKey, ttlMs: 30 * 60 * 1000 },
       ]);
-      expect(mailIncrementalSync).toHaveBeenCalledTimes(1);
+      expect(mailSync).toHaveBeenCalledTimes(1);
       expect(releaseLockCalls).toEqual([lockKey]);
     });
 
@@ -623,7 +620,7 @@ describe("Apple mail sync lock", () => {
 
       await Apple.prototype.mailPushDrain.call(self, [], channelId);
 
-      expect(mailIncrementalSync).not.toHaveBeenCalled();
+      expect(mailSync).not.toHaveBeenCalled();
       expect(releaseLockCalls).toEqual([]);
       expect(scheduleDrainCalls).toEqual([
         {
@@ -636,7 +633,7 @@ describe("Apple mail sync lock", () => {
 
     it("releases the lock even when the incremental sync throws", async () => {
       const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
-      vi.mocked(mailIncrementalSync).mockRejectedValueOnce(
+      vi.mocked(mailSync).mockRejectedValueOnce(
         new Error("IMAP timeout")
       );
 
@@ -653,7 +650,7 @@ describe("Apple mail sync lock", () => {
       await Apple.prototype.mailPushDrain.call(self, [], channelId);
 
       expect(acquireLockCalls).toEqual([]);
-      expect(mailIncrementalSync).not.toHaveBeenCalled();
+      expect(mailSync).not.toHaveBeenCalled();
     });
   });
 
@@ -667,11 +664,10 @@ describe("Apple mail sync lock", () => {
       expect(acquireLockCalls).toEqual([
         { key: lockKey, ttlMs: 30 * 60 * 1000 },
       ]);
-      expect(mailInitialSync).toHaveBeenCalledTimes(1);
-      expect(mailInitialSync).toHaveBeenCalledWith(
+      expect(mailSync).toHaveBeenCalledTimes(1);
+      expect(mailSync).toHaveBeenCalledWith(
         expect.anything(),
-        "INBOX",
-        channelId,
+        [{ channelId, mailbox: "INBOX" }],
         expect.any(String)
       );
       expect(releaseLockCalls).toEqual([lockKey]);
@@ -690,7 +686,7 @@ describe("Apple mail sync lock", () => {
 
       await Apple.prototype.mailInitialSyncTask.call(self, channelId);
 
-      expect(mailInitialSync).not.toHaveBeenCalled();
+      expect(mailSync).not.toHaveBeenCalled();
       // No lock we didn't take should be released.
       expect(releaseLockCalls).toEqual([]);
       // A re-dispatch that lost the race must not leave the channel without
@@ -703,7 +699,7 @@ describe("Apple mail sync lock", () => {
 
     it("releases the lock even when the backfill throws", async () => {
       const { self, releaseLockCalls } = makeSelf({ acquireLockResult: true });
-      vi.mocked(mailInitialSync).mockRejectedValueOnce(
+      vi.mocked(mailSync).mockRejectedValueOnce(
         new Error("IMAP auth failure")
       );
 
@@ -751,7 +747,7 @@ describe("Apple calendar incremental sync", () => {
    * copied onto `self` as an own property via `privateMethod` so runtime
    * dispatch resolves to the real implementation. `processCalDAVEvents` is
    * stubbed out entirely (mirrors how the mail-sync-lock tests above mock
-   * `mailInitialSync`/`mailIncrementalSync`): these tests cover the
+   * `mailSync`): these tests cover the
    * fast-path/fallback selection, chunking, deletion archiving, and sync-
    * cursor persistence ordering — not ICS parsing, which has its own
    * coverage elsewhere.

@@ -3,29 +3,60 @@ import type { Imap } from "@plotday/twister/tools/imap";
 import type { Integrations } from "@plotday/twister/tools/integrations";
 import type { Smtp } from "@plotday/twister/tools/smtp";
 
-/** Persisted per-channel cursor for incremental IMAP sync. */
-export type MailSyncState = {
-  /** UIDVALIDITY of the mailbox the cursor is valid for. */
+/**
+ * Per-mailbox cursor inside the connection-level `MailSyncState`. The
+ * PRESENCE of a cursor is what marks a mailbox as "already backfilled": a
+ * mailbox with no entry is read from the history floor on the next pass and
+ * contributes no new-message signal (see `mailSync` in `sync.ts`).
+ */
+export type MailboxCursor = {
+  /** UIDVALIDITY the rest of this cursor is valid for. */
   uidValidity: number;
-  /** Highest UID processed so far. */
+  /**
+   * Highest UID processed so far in this mailbox. Unused for the Sent entry
+   * (Sent is rescanned by date window only and never contributes new-message
+   * signal — an owner's own reply must not mark their thread unread), stored
+   * as 0 there.
+   */
   lastUid: number;
-  /** ISO date floor for the initial backfill (plan-based). */
+  /** ISO floor this mailbox was first backfilled from. */
   syncHistoryMin?: string;
   /**
-   * INBOX's HIGHESTMODSEQ (RFC 7162 CONDSTORE) as of the last successful
-   * poll. Absent when the server doesn't advertise CONDSTORE, or for state
-   * written before this cursor existed — either way, its absence forces a
-   * full rescan on the next incremental pass rather than a false "unchanged".
+   * This mailbox's HIGHESTMODSEQ (RFC 7162 CONDSTORE) as of the last
+   * successful pass. Absent when the server doesn't advertise CONDSTORE —
+   * either way, its absence means "assume changed", forcing a rescan on the
+   * next pass rather than a false "unchanged".
    */
   lastModSeq?: number;
+};
+
+/**
+ * Connection-level mail sync state — ONE store key (`mail:state`) for the
+ * whole connection, not one per channel.
+ *
+ * A mail thread's link `source` is derived from its root Message-ID, which is
+ * mailbox-independent, so two enabled folders holding messages of the same
+ * conversation address the SAME Plot thread. Per-channel cursors made each
+ * folder run its own pass and rebuild that thread from only its own messages,
+ * so title/unread/channel flip-flopped on every poll. One cursor document per
+ * connection is what lets a single merged pass read every enabled mailbox
+ * plus Sent and rebuild each thread from its complete visible message set.
+ */
+export type MailSyncState = {
+  /** Schema version. 2 = merged connection-level pass. */
+  version: 2;
+  /** Cursors keyed by RAW IMAP mailbox name (every enabled folder AND Sent). */
+  boxes: Record<string, MailboxCursor>;
+  /** Widest history floor granted so far (ISO). Never narrows. */
+  syncHistoryMin?: string;
   /**
-   * Same as `lastModSeq`, but for the Sent mailbox. The two cursors are
-   * stored per-mailbox, but `mailIncrementalSync` combines them into a single
-   * rescan decision — a change in EITHER mailbox rescans BOTH — so a thread is
-   * never rebuilt from a partial message set (e.g. a Sent-only reply must not
-   * re-title an INBOX-rooted thread). Do not gate the two independently.
+   * Set when a channel was disabled while others remained enabled. Makes the
+   * NEXT pass search every already-backfilled mailbox from `syncHistoryMin`
+   * instead of the 30-day recent window, so threads that were archived by the
+   * disable but still live in another enabled folder are re-homed and
+   * re-upserted. Cleared by that pass.
    */
-  sentLastModSeq?: number;
+  pendingFullRescan?: boolean;
 };
 
 /**
