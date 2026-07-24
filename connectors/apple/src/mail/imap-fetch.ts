@@ -87,24 +87,18 @@ export async function fetchUidRange(
 const WRITE_BACK_WINDOW_MS = 180 * 24 * 60 * 60 * 1000; // 180 days
 
 /**
- * TODO(write-back mailbox-awareness — follow-up task, not part of the merged
- * mail sync pass): the `inbox`-prefixed field names below, the hardcoded
- * `selectMailbox(session, "INBOX")` in `resolveThreadMessages`, and
- * `fetchOriginalMessage`'s INBOX-then-Sent lookup order are a known,
- * deliberately-deferred gap, not an oversight from the sync merge. Mail sync
- * now resolves each thread a stable, always-enabled home mailbox
- * (`ThreadMeta.channelId`, `sync.ts`), but write-back (flag toggles, forward
- * source lookup) has not yet been updated to read/write that mailbox instead
- * of always assuming INBOX. Until that follow-up lands, a thread homed to a
- * non-INBOX folder with no INBOX copy resolves empty here and its
- * read/to-do write-backs silently no-op.
+ * The messages of a Plot thread resolved from its own home mailbox (the
+ * mailbox `resolveThreadMessages` was asked to select — INBOX or any other
+ * enabled folder). Field names are mailbox-agnostic on purpose: write-back
+ * operates on whichever folder the thread lives in, so asserting "INBOX" here
+ * would misdescribe every non-INBOX thread.
  */
 export type ResolvedThread = {
-  /** The thread's INBOX messages (headers only), oldest→newest. */
-  inboxMessages: ImapMessage[];
-  /** INBOX UIDs of those messages (for setFlags). */
-  inboxUids: number[];
-  /** Newest INBOX message, or null when none resolved. */
+  /** The thread's messages (headers only) in the resolved mailbox, oldest→newest. */
+  messages: ImapMessage[];
+  /** UIDs of those messages in the resolved mailbox (for setFlags). */
+  uids: number[];
+  /** Newest resolved message, or null when none resolved. */
   latest: ImapMessage | null;
 };
 
@@ -128,24 +122,24 @@ export async function fetchHeaders(
 }
 
 /**
- * Resolve the INBOX messages belonging to the Plot thread whose root id is
- * `rootId`, at write-back time. IMAP SEARCH cannot query by References, so we
- * narrow by SUBJECT (a thread's members share a base subject) within a bounded
- * window, fetch headers only, and keep messages whose computed thread root
- * equals `rootId`. Threads older than the window (or whose subject changed)
- * resolve empty; callers then fall back to root-id-only threading / skip
- * flagging.
+ * Resolve the messages belonging to the Plot thread whose root id is `rootId`,
+ * at write-back time, from the thread's own home `mailbox` (INBOX or any other
+ * enabled folder — the caller derives it from `thread.meta.channelId`). IMAP
+ * SEARCH cannot query by References, so we narrow by SUBJECT (a thread's
+ * members share a base subject) within a bounded window, fetch headers only,
+ * and keep messages whose computed thread root equals `rootId`. Threads older
+ * than the window (or whose subject changed) resolve empty; callers then fall
+ * back to root-id-only threading / skip flagging.
  */
 export async function resolveThreadMessages(
   host: MailHost,
   session: ImapSession,
+  mailbox: string,
   rootId: string,
   subject: string | undefined,
   now: Date = new Date()
 ): Promise<ResolvedThread> {
-  // TODO(write-back mailbox-awareness): hardcoded to INBOX — see the TODO on
-  // `ResolvedThread` above. Should search the thread's own home mailbox.
-  await host.imap.selectMailbox(session, "INBOX");
+  await host.imap.selectMailbox(session, mailbox);
   const since = new Date(now.getTime() - WRITE_BACK_WINDOW_MS);
   const base = baseSubject(subject);
   const uids = await host.imap.search(
@@ -153,13 +147,13 @@ export async function resolveThreadMessages(
     base ? { subject: base, since } : { since }
   );
   const msgs = await fetchHeaders(host, session, uids);
-  const inboxMessages = msgs
+  const messages = msgs
     .filter((m) => rootMessageId(m) === rootId)
     .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
   return {
-    inboxMessages,
-    inboxUids: inboxMessages.map((m) => m.uid),
-    latest: inboxMessages.length > 0 ? inboxMessages[inboxMessages.length - 1] : null,
+    messages,
+    uids: messages.map((m) => m.uid),
+    latest: messages.length > 0 ? messages[messages.length - 1] : null,
   };
 }
 
@@ -174,12 +168,20 @@ export async function resolveThreadMessages(
  * owner sent, not just received mail). On a match, the full headers+body
  * are fetched for that one UID via `fetchUidRange`.
  *
- * Accepted v1 limitation: since this reuses the 180-day subject+since
- * window (same as reply threading), a source whose compose subject was
- * fully rewritten, or that is older than 180 days, may not resolve — the
- * caller surfaces a `not_found` delivery error in that case. A persistent
- * uid index was deliberately rejected (uidValidity invalidation + storage
- * growth).
+ * Accepted v1 limitations:
+ *
+ * 1. Window: since this reuses the 180-day subject+since window (same as reply
+ *    threading), a source whose compose subject was fully rewritten, or that
+ *    is older than 180 days, may not resolve — the caller surfaces a
+ *    `not_found` delivery error in that case. A persistent uid index was
+ *    deliberately rejected (uidValidity invalidation + storage growth).
+ * 2. Scope: the lookup stays INBOX-then-Sent even after write-back became
+ *    mailbox-aware elsewhere ({@link resolveThreadMessages} now selects the
+ *    thread's own folder). A forward draft carries no origin-thread channel,
+ *    so there is no per-message hint of which third folder the source lives
+ *    in; widening the search to every enabled mailbox is a deliberate,
+ *    separate scope increase. A forward whose source lives outside INBOX/Sent
+ *    surfaces the same `not_found` delivery error as case 1.
  */
 export async function fetchOriginalMessage(
   host: MailHost,
@@ -207,9 +209,9 @@ export async function fetchOriginalMessage(
     return full.length > 0 ? { mailbox, message: full[0] } : null;
   };
 
-  // TODO(write-back mailbox-awareness): INBOX-then-Sent is hardcoded — see
-  // the TODO on `ResolvedThread` above. Should also fall back to the
-  // thread's own home mailbox before giving up.
+  // INBOX-then-Sent is intentional and documented as accepted limitation #2
+  // in this function's docstring: a forward draft carries no origin-thread
+  // channel, so there's no per-message hint of a third folder to widen to.
   const inboxHit = await resolve("INBOX");
   if (inboxHit) return inboxHit;
 

@@ -1227,16 +1227,27 @@ export class Apple extends Connector<Apple> {
       const sep = id.indexOf(":");
       const kind = id.slice(0, sep);
       const rootId = id.slice(sep + 1);
-      const pending = await host.get<{ title?: string; flag: string; operation: "add" | "remove" }>(
-        `writeback:${kind}:${rootId}`
-      );
+      const pending = await host.get<{
+        title?: string;
+        mailbox?: string;
+        flag: string;
+        operation: "add" | "remove";
+      }>(`writeback:${kind}:${rootId}`);
       if (!pending) continue; // already resolved by a fresher direct call
       try {
         const session = await connectIcloud(host);
         try {
-          const { inboxUids } = await resolveThreadMessages(host, session, rootId, pending.title);
-          if (inboxUids.length > 0) {
-            await host.imap.setFlags(session, inboxUids, [pending.flag], pending.operation);
+          // `mailbox` may be absent on a payload persisted before write-back
+          // became mailbox-aware — fall back to INBOX, the historical target.
+          const { uids } = await resolveThreadMessages(
+            host,
+            session,
+            pending.mailbox ?? "INBOX",
+            rootId,
+            pending.title
+          );
+          if (uids.length > 0) {
+            await host.imap.setFlags(session, uids, [pending.flag], pending.operation);
           }
           await host.clear(`writeback:${kind}:${rootId}`);
         } finally {

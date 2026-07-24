@@ -12,6 +12,7 @@ import type { CreateLinkResult, Note } from "@plotday/twister/plot";
 import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
 import type { SmtpAddress, SmtpMessage } from "@plotday/twister/tools/smtp";
 
+import { parse } from "../product-channel";
 import { collectFileAttachments, fetchOriginalAttachments } from "./attachments";
 import {
   connectIcloud,
@@ -48,6 +49,20 @@ export function mailRootId(thread: Thread): string | null {
   if (meta.syncProvider !== APPLE_MAIL) return null;
   const rootId = meta.rootMessageId;
   return typeof rootId === "string" && rootId.length > 0 ? rootId : null;
+}
+
+/**
+ * The raw IMAP mailbox a thread's messages live in, read from
+ * `thread.meta.channelId` (the platform populates it from the link's persisted
+ * top-level channelId — see transform.ts). `channelId` is namespaced
+ * ("mail:<rawId>"); `parse` splits on the FIRST ':' so a mailbox name
+ * containing '/' or ':' round-trips unchanged. Falls back to "INBOX" for
+ * threads synced before multi-folder existed, whose links predate any other
+ * value.
+ */
+export function mailChannelRawId(thread: Thread): string {
+  const ns = thread.meta?.channelId;
+  return typeof ns === "string" && ns.length > 0 ? parse(ns).rawId : "INBOX";
 }
 
 /**
@@ -89,11 +104,12 @@ function fileActionIds(actions: Array<Action> | null | undefined): string[] {
 }
 
 /**
- * Reply write-back. Resolves the thread's latest INBOX message (best-effort,
- * for threading headers + reply-all recipients), sends via SMTP, and returns a
- * NoteWriteBackResult. Delivery failures return a `deliveryError` rather than
- * throwing. The reply note's key is set to the sent Message-ID so a Sent-mailbox
- * re-ingest upserts onto the same note (echo suppression by key idempotency).
+ * Reply write-back. Resolves the thread's latest message from its own home
+ * mailbox (`thread.meta.channelId`, best-effort, for threading headers +
+ * reply-all recipients), sends via SMTP, and returns a NoteWriteBackResult.
+ * Delivery failures return a `deliveryError` rather than throwing. The reply
+ * note's key is set to the sent Message-ID so a Sent-mailbox re-ingest upserts
+ * onto the same note (echo suppression by key idempotency).
  */
 export async function onNoteCreatedFn(
   host: MailHost,
@@ -105,15 +121,21 @@ export async function onNoteCreatedFn(
 
   const selfEmails = new Set<string>([host.appleId.toLowerCase()]);
 
-  // Resolve the thread's latest INBOX message for threading headers + reply-all
-  // recipients (best-effort). A transient IMAP failure (connection cap under
-  // IDLE pressure, network blip) must NOT abort the send or page — fall back to
-  // the accessContacts + root-id path.
-  let resolved: ResolvedThread = { inboxMessages: [], inboxUids: [], latest: null };
+  // Resolve the thread's latest message from its home mailbox for threading
+  // headers + reply-all recipients (best-effort). A transient IMAP failure
+  // (connection cap under IDLE pressure, network blip) must NOT abort the send
+  // or page — fall back to the accessContacts + root-id path.
+  let resolved: ResolvedThread = { messages: [], uids: [], latest: null };
   try {
     const session = await connectIcloud(host);
     try {
-      resolved = await resolveThreadMessages(host, session, rootId, thread.title);
+      resolved = await resolveThreadMessages(
+        host,
+        session,
+        mailChannelRawId(thread),
+        rootId,
+        thread.title
+      );
     } finally {
       await host.imap.disconnect(session);
     }
@@ -512,17 +534,19 @@ export async function onCreateLinkFn(
 }
 
 /**
- * Set/clear a flag on every INBOX message of the thread. A transient IMAP
- * failure (connection cap under IDLE pressure, network blip) must not page —
- * but it also must not silently drop the write. Instead, the desired flag
- * state is persisted under a small per-thread key and handed to the durable
- * write-back drain (`mailWritebackDrain` in apple.ts, via
- * `host.queueWritebackDrain`) to re-apply once IMAP is reachable again.
- * Re-notifying the same id before the drain fires (a fresh toggle) resets its
- * attempt counter and simply overwrites the stored payload — last-write-wins.
+ * Set/clear a flag on every message of the thread, in the thread's own home
+ * mailbox (`thread.meta.channelId`, resolved via `mailChannelRawId`). A
+ * transient IMAP failure (connection cap under IDLE pressure, network blip)
+ * must not page — but it also must not silently drop the write. Instead, the
+ * desired flag state (and the mailbox to write it to) is persisted under a
+ * small per-thread key and handed to the durable write-back drain
+ * (`mailWritebackDrain` in apple.ts, via `host.queueWritebackDrain`) to
+ * re-apply once IMAP is reachable again. Re-notifying the same id before the
+ * drain fires (a fresh toggle) resets its attempt counter and simply
+ * overwrites the stored payload — last-write-wins.
  *
  * Any direct call that resolves WITHOUT deferring — a successful IMAP write,
- * or a superseding no-op (no INBOX uids left to flag) — clears the
+ * or a superseding no-op (no uids left to flag in the mailbox) — clears the
  * `writeback:${kind}:${rootId}` payload. This is required, not cosmetic: the
  * drain (`mailWritebackDrain` in apple.ts) skips re-applying when the payload
  * is absent (`if (!pending) continue`), but nothing else ever clears it. If a
@@ -539,18 +563,19 @@ async function setThreadFlag(
   const rootId = mailRootId(thread);
   if (!rootId) return;
   const kind = flag === "\\Seen" ? "read" : "todo";
+  const mailbox = mailChannelRawId(thread);
 
   try {
     const session = await connectIcloud(host);
     try {
-      const { inboxUids } = await resolveThreadMessages(host, session, rootId, thread.title);
-      if (inboxUids.length === 0) {
+      const { uids } = await resolveThreadMessages(host, session, mailbox, rootId, thread.title);
+      if (uids.length === 0) {
         // Nothing to flag — not a failure, but still a superseding
         // resolution: drop any stale pending payload from a prior failure.
         await host.clear(`writeback:${kind}:${rootId}`);
         return;
       }
-      await host.imap.setFlags(session, inboxUids, [flag], operation);
+      await host.imap.setFlags(session, uids, [flag], operation);
       // This direct write succeeded — supersede any stale pending payload so
       // the queued drain (if one is still pending from an earlier failure)
       // skips instead of re-applying the old operation.
@@ -559,14 +584,14 @@ async function setThreadFlag(
       await host.imap.disconnect(session);
     }
   } catch {
-    await host.set(`writeback:${kind}:${rootId}`, { title: thread.title, flag, operation });
+    await host.set(`writeback:${kind}:${rootId}`, { title: thread.title, mailbox, flag, operation });
     await host.queueWritebackDrain(`${kind}:${rootId}`);
   }
 }
 
 /**
- * Read-state write-back: mark the thread's INBOX messages \Seen (read) or clear
- * it (unread). No echo guard is needed — the incremental read path only flips a
+ * Read-state write-back: mark the thread's messages (in its home mailbox)
+ * \Seen (read) or clear it (unread). No echo guard is needed — the incremental read path only flips a
  * thread unread on a genuinely-new unseen UID, so our own \Seen write can't
  * bounce back.
  */
@@ -580,8 +605,8 @@ export async function onThreadReadFn(
 }
 
 /**
- * To-do write-back: mark the thread's INBOX messages \Flagged (to-do) or
- * clear it. Bidirectional: the read path (`reconcileTodoFlags` in sync.ts)
+ * To-do write-back: mark the thread's messages (in its home mailbox) \Flagged
+ * (to-do) or clear it. Bidirectional: the read path (`reconcileTodoFlags` in sync.ts)
  * also ingests \Flagged into Plot's to-do state, so an echo-dedup marker is
  * required here. The marker is set to the desired state BEFORE the IMAP
  * write — mirroring Gmail's `starred:<id>` ordering (`onThreadToDoFn` in

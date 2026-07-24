@@ -332,14 +332,16 @@ describe("Apple.mailWritebackDrain", () => {
   }) {
     const store = new Map<string, unknown>(Object.entries(opts.initialStore ?? {}));
     const flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> = [];
+    const selectedMailboxes: string[] = [];
     const messages = opts.inboxMessages ?? [];
     const uids = messages.map((_m, i) => i + 1);
     const imap = {
       connect: async () => "session-1",
       disconnect: async () => {},
-      selectMailbox: async (_s: string, box: string) => ({
-        name: box, exists: 0, recent: 0, uidValidity: 1, uidNext: 99,
-      }),
+      selectMailbox: async (_s: string, box: string) => {
+        selectedMailboxes.push(box);
+        return { name: box, exists: 0, recent: 0, uidValidity: 1, uidNext: 99 };
+      },
       search: async () => {
         if (opts.searchError) throw opts.searchError;
         return uids;
@@ -371,7 +373,7 @@ describe("Apple.mailWritebackDrain", () => {
         store.delete(key);
       },
     } as unknown as Apple;
-    return { self, flagCalls, store };
+    return { self, flagCalls, store, selectedMailboxes };
   }
 
   const pendingRead = { title: "Lunch?", flag: "\\Seen", operation: "add" };
@@ -411,6 +413,38 @@ describe("Apple.mailWritebackDrain", () => {
 
     expect(flagCalls).toHaveLength(0);
     expect(result).toEqual({ retry: [] });
+  });
+
+  it("re-applies the deferred flag in the mailbox stored on the payload, not INBOX", async () => {
+    const { self, flagCalls, selectedMailboxes } = makeSelf({
+      inboxMessages: [
+        { messageId: "<root@x.com>", subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+      initialStore: {
+        "mail:writeback:read:root@x.com": {
+          title: "Lunch?", mailbox: "Archive", flag: "\\Seen", operation: "add",
+        },
+      },
+    });
+
+    await Apple.prototype.mailWritebackDrain.call(self, ["read:root@x.com"]);
+
+    expect(selectedMailboxes).toEqual(["Archive"]);
+    expect(flagCalls).toEqual([{ uids: [1], flags: ["\\Seen"], op: "add" }]);
+  });
+
+  it("falls back to INBOX for a payload persisted before write-back became mailbox-aware", async () => {
+    const { self, selectedMailboxes } = makeSelf({
+      inboxMessages: [
+        { messageId: "<root@x.com>", subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+      ],
+      // No `mailbox` field — a payload written by an older connector version.
+      initialStore: { "mail:writeback:read:root@x.com": pendingRead },
+    });
+
+    await Apple.prototype.mailWritebackDrain.call(self, ["read:root@x.com"]);
+
+    expect(selectedMailboxes).toEqual(["INBOX"]);
   });
 });
 

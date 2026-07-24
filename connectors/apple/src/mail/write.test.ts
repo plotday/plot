@@ -28,19 +28,22 @@ function mockHost(opts: {
   flagCalls: Array<{ uids: number[]; flags: string[]; op: string }>;
   fileReads: string[];
   queuedDrains: string[];
+  selectedMailboxes: string[];
 } {
   const sent: SmtpMessage[] = [];
   const flagCalls: Array<{ uids: number[]; flags: string[]; op: string }> = [];
   const fileReads: string[] = [];
   const queuedDrains: string[] = [];
+  const selectedMailboxes: string[] = [];
   const uids = (opts.inboxMessages ?? []).map((_m, i) => i + 1);
   const imap = {
     connect: async () => "s",
     disconnect: async () => {},
     listMailboxes: async () => [],
-    selectMailbox: async (_s: string, box: string) => ({
-      name: box, exists: 0, recent: 0, uidValidity: 1, uidNext: 99,
-    }),
+    selectMailbox: async (_s: string, box: string) => {
+      selectedMailboxes.push(box);
+      return { name: box, exists: 0, recent: 0, uidValidity: 1, uidNext: 99 };
+    },
     search: async () => {
       if (opts.searchError) throw opts.searchError;
       return uids;
@@ -96,7 +99,7 @@ function mockHost(opts: {
       queuedDrains.push(id);
     }),
   } as unknown as MailHost;
-  return { host, sent, flagCalls, fileReads, queuedDrains };
+  return { host, sent, flagCalls, fileReads, queuedDrains, selectedMailboxes };
 }
 
 function mailThread(over: Partial<Thread> = {}): Thread {
@@ -692,6 +695,7 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
     expect(flagCalls).toHaveLength(0);
     expect(host.set).toHaveBeenCalledWith("writeback:read:root@x.com", {
       title: "Lunch?",
+      mailbox: "INBOX",
       flag: "\\Seen",
       operation: "add",
     });
@@ -708,6 +712,7 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
     expect(flagCalls).toHaveLength(0);
     expect(host.set).toHaveBeenCalledWith("writeback:todo:root@x.com", {
       title: "Lunch?",
+      mailbox: "INBOX",
       flag: "\\Flagged",
       operation: "add",
     });
@@ -741,5 +746,74 @@ describe("onThreadReadFn / onThreadToDoFn", () => {
     await onThreadToDoFn(host, mailThread(), {} as never, true, {});
     expect(flagCalls).toHaveLength(0);
     expect(host.clear).toHaveBeenCalledWith("writeback:todo:root@x.com");
+  });
+});
+
+// Write-back operates on the thread's OWN mailbox, read from
+// `thread.meta.channelId`. Every fixture above homes to `"mail:INBOX"`; a
+// thread whose messages live in a non-INBOX folder (e.g. an Archive rule, a
+// Focus filter) must have its `\Seen`/`\Flagged` flags written to THAT folder
+// and its reply threaded from THAT folder's copy — not silently no-op'd or
+// degraded to the bare-root-id fallback because write-back looked only in
+// INBOX.
+describe("write-back mailbox awareness (thread.meta.channelId)", () => {
+  const archive = [
+    { messageId: "<root@x.com>", from: [{ address: "jane@x.com" }], to: [{ address: "me@icloud.com" }],
+      subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+    { messageId: "<r2@x.com>", references: ["<root@x.com>"], from: [{ address: "jane@x.com" }],
+      to: [{ address: "me@icloud.com" }], subject: "Re: Lunch?", date: new Date("2026-07-15T11:00:00Z") },
+  ];
+  const archiveThread = (over: Partial<Thread> = {}) =>
+    mailThread({
+      meta: { syncProvider: "apple-mail", rootMessageId: "root@x.com", channelId: "mail:Archive" } as never,
+      ...over,
+    });
+
+  it("read write-back selects the thread's Archive mailbox and writes \\Seen there", async () => {
+    const { host, flagCalls, selectedMailboxes } = mockHost({ inboxMessages: archive });
+    await onThreadReadFn(host, archiveThread(), {} as never, false);
+    expect(selectedMailboxes).toContain("Archive");
+    expect(selectedMailboxes).not.toContain("INBOX");
+    expect(flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Seen"], op: "add" }]);
+  });
+
+  it("to-do write-back selects the thread's Archive mailbox and writes \\Flagged there", async () => {
+    const { host, flagCalls, selectedMailboxes } = mockHost({ inboxMessages: archive });
+    await onThreadToDoFn(host, archiveThread(), {} as never, true, {});
+    expect(selectedMailboxes).toContain("Archive");
+    expect(selectedMailboxes).not.toContain("INBOX");
+    expect(flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Flagged"], op: "add" }]);
+  });
+
+  it("reply write-back resolves the latest message from Archive and threads from it (not the bare-root-id fallback)", async () => {
+    const { host, sent, selectedMailboxes } = mockHost({ inboxMessages: archive });
+    const out = await onNoteCreatedFn(host, replyNote(), archiveThread());
+    expect(selectedMailboxes).toContain("Archive");
+    expect(selectedMailboxes).not.toContain("INBOX");
+    expect(sent).toHaveLength(1);
+    // Threaded from the resolved latest message (<r2@x.com>), NOT the
+    // bare-root-id fallback (which would use <root@x.com>).
+    expect(sent[0].inReplyTo).toBe("<r2@x.com>");
+    expect(sent[0].references?.[sent[0].references.length - 1]).toBe("<r2@x.com>");
+    expect(out).toEqual({ key: "sent-123@plot.day", deliveryError: null });
+  });
+
+  it("falls back to INBOX for a pre-multi-folder thread with no meta.channelId", async () => {
+    const { host, flagCalls, selectedMailboxes } = mockHost({ inboxMessages: archive });
+    const thread = mailThread({
+      meta: { syncProvider: "apple-mail", rootMessageId: "root@x.com" } as never,
+    });
+    await onThreadReadFn(host, thread, {} as never, false);
+    expect(selectedMailboxes).toEqual(["INBOX"]);
+    expect(flagCalls).toEqual([{ uids: [1, 2], flags: ["\\Seen"], op: "add" }]);
+  });
+
+  it("resolves a mailbox whose name contains the hierarchy delimiter (parse splits on the first colon only)", async () => {
+    const { host, selectedMailboxes } = mockHost({ inboxMessages: archive });
+    const thread = mailThread({
+      meta: { syncProvider: "apple-mail", rootMessageId: "root@x.com", channelId: "mail:Archive/2024" } as never,
+    });
+    await onThreadReadFn(host, thread, {} as never, false);
+    expect(selectedMailboxes).toEqual(["Archive/2024"]);
   });
 });

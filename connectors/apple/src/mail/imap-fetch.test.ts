@@ -61,8 +61,8 @@ describe("resolveThreadMessages", () => {
         date: new Date("2026-07-15T09:00:00Z"),
       },
     });
-    const res = await resolveThreadMessages(host, "session", "root@x.com", "Re: Lunch?");
-    expect(res.inboxUids.sort()).toEqual([1, 2]);
+    const res = await resolveThreadMessages(host, "session", "INBOX", "root@x.com", "Re: Lunch?");
+    expect(res.uids.sort()).toEqual([1, 2]);
     expect(res.latest?.uid).toBe(2);
     expect(calls.selected).toContain("INBOX");
     // Subject is stripped to its base for the search.
@@ -73,9 +73,18 @@ describe("resolveThreadMessages", () => {
     const { host } = mockHost({
       1: { messageId: "<a@x.com>", subject: "Hi", date: new Date() },
     });
-    const res = await resolveThreadMessages(host, "session", "nope@x.com", "Hi");
-    expect(res.inboxUids).toEqual([]);
+    const res = await resolveThreadMessages(host, "session", "INBOX", "nope@x.com", "Hi");
+    expect(res.uids).toEqual([]);
     expect(res.latest).toBeNull();
+  });
+
+  it("selects the mailbox it is handed, not a hardcoded INBOX", async () => {
+    const { host, calls } = mockHost({
+      1: { messageId: "<root@x.com>", subject: "Lunch?", date: new Date("2026-07-15T10:00:00Z") },
+    });
+    const res = await resolveThreadMessages(host, "session", "Archive", "root@x.com", "Lunch?");
+    expect(calls.selected).toEqual(["Archive"]);
+    expect(res.uids).toEqual([1]);
   });
 });
 
