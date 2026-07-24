@@ -205,13 +205,36 @@ describe("resolveSentMailbox", () => {
     const host = mockListMailboxesHost([
       box({ name: "INBOX" }),
       box({ name: "Sent Items", specialUse: "\\Sent" }),
-      box({ name: "Sent Archive" }), // also matches /^sent/i, but isn't the real Sent box
+      box({ name: "Sent Mail" }), // also a known name, but isn't the real Sent box
     ]);
     expect(await resolveSentMailbox(host, "session")).toBe("Sent Items");
   });
 
   it("returns null when no mailbox is discoverable as Sent", async () => {
     const host = mockListMailboxesHost([box({ name: "INBOX" }), box({ name: "Archive" })]);
+    expect(await resolveSentMailbox(host, "session")).toBeNull();
+  });
+
+  it.each(["Sent", "Sent Messages", "Sent Items", "Sent Mail"])(
+    "finds a Sent mailbox by the known name %j when the server advertises no specialUse",
+    async (name) => {
+      const host = mockListMailboxesHost([box({ name: "INBOX" }), box({ name })]);
+      expect(await resolveSentMailbox(host, "session")).toBe(name);
+    }
+  );
+
+  it("finds a Sent mailbox by name case-insensitively and with surrounding whitespace", async () => {
+    const host = mockListMailboxesHost([box({ name: "INBOX" }), box({ name: "  SENT items  " })]);
+    expect(await resolveSentMailbox(host, "session")).toBe("  SENT items  ");
+  });
+
+  it("does not treat a near-miss name like \"Sentiment\" as Sent when no other candidate exists", async () => {
+    const host = mockListMailboxesHost([box({ name: "INBOX" }), box({ name: "Sentiment" })]);
+    expect(await resolveSentMailbox(host, "session")).toBeNull();
+  });
+
+  it("does not treat a near-miss name like \"Sent by client\" as Sent when no other candidate exists", async () => {
+    const host = mockListMailboxesHost([box({ name: "INBOX" }), box({ name: "Sent by client" })]);
     expect(await resolveSentMailbox(host, "session")).toBeNull();
   });
 });
@@ -221,13 +244,29 @@ describe("isSentMailbox", () => {
     expect(isSentMailbox({ name: "Elsewhere", specialUse: "\\Sent" })).toBe(true);
   });
 
-  it("matches a plain \"Sent\"-prefixed name with no specialUse", () => {
-    expect(isSentMailbox({ name: "Sent Messages" })).toBe(true);
+  it("matches specialUse \\Sent even when the name matches nothing at all", () => {
+    expect(isSentMailbox({ name: "Archive", specialUse: "\\Sent" })).toBe(true);
+  });
+
+  it.each(["Sent", "Sent Messages", "Sent Items", "Sent Mail"])(
+    "matches the known name %j with no specialUse",
+    (name) => {
+      expect(isSentMailbox({ name })).toBe(true);
+    }
+  );
+
+  it("matches a known name case-insensitively and with surrounding whitespace", () => {
+    expect(isSentMailbox({ name: "  SENT MESSAGES  " })).toBe(true);
     expect(isSentMailbox({ name: "sent" })).toBe(true);
   });
 
   it("does not match an unrelated mailbox", () => {
     expect(isSentMailbox({ name: "Archive" })).toBe(false);
     expect(isSentMailbox({ name: "INBOX", specialUse: "\\Archive" })).toBe(false);
+  });
+
+  it("does not match a mailbox whose name merely starts with \"sent\"", () => {
+    expect(isSentMailbox({ name: "Sentiment" })).toBe(false);
+    expect(isSentMailbox({ name: "Sent by client" })).toBe(false);
   });
 });

@@ -69,6 +69,33 @@ describe("getMailChannels", () => {
     expect(channels.map((c) => c.id)).toEqual(["INBOX"]);
   });
 
+  it.each(["Sent", "Sent Messages", "Sent Items", "Sent Mail"])(
+    "excludes the known Sent name %j when the server advertises no specialUse",
+    async (name) => {
+      const { host } = mockHost([box({ name: "INBOX" }), box({ name })]);
+      const channels = await getMailChannels(host);
+      expect(channels.map((c) => c.id)).toEqual(["INBOX"]);
+    }
+  );
+
+  it("excludes a Sent mailbox name case-insensitively and with surrounding whitespace", async () => {
+    const { host } = mockHost([box({ name: "INBOX" }), box({ name: "  SENT items  " })]);
+    const channels = await getMailChannels(host);
+    expect(channels.map((c) => c.id)).toEqual(["INBOX"]);
+  });
+
+  it("keeps a near-miss mailbox name like \"Sentiment\" selectable as a channel", async () => {
+    const { host } = mockHost([box({ name: "INBOX" }), box({ name: "Sentiment" })]);
+    const channels = await getMailChannels(host);
+    expect(channels.map((c) => c.id).sort()).toEqual(["INBOX", "Sentiment"]);
+  });
+
+  it("keeps a near-miss mailbox name like \"Sent by client\" selectable as a channel", async () => {
+    const { host } = mockHost([box({ name: "INBOX" }), box({ name: "Sent by client" })]);
+    const channels = await getMailChannels(host);
+    expect(channels.map((c) => c.id).sort()).toEqual(["INBOX", "Sent by client"]);
+  });
+
   it("keeps an \\Archive mailbox", async () => {
     const { host } = mockHost([
       box({ name: "INBOX" }),

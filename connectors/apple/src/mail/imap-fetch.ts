@@ -24,9 +24,18 @@ export async function connectIcloud(host: MailHost): Promise<ImapSession> {
  * they can never disagree: a server that omits SPECIAL-USE can't end up
  * offering "Sent Messages" as an enable-able channel while sync separately
  * reads mail from it under the hood.
+ *
+ * The name fallback matches a closed list of known Sent-mailbox names
+ * (case-insensitive, trimmed) rather than a "starts with sent" prefix.
+ * Because this same predicate also decides channel *selectability*, a prefix
+ * match would silently make any folder whose name merely starts with "sent"
+ * (e.g. "Sentiment", "Sent by client") permanently unselectable as a
+ * channel, with no error or indication why.
  */
 export function isSentMailbox(box: Pick<ImapMailbox, "name" | "specialUse">): boolean {
-  return box.specialUse === "\\Sent" || /^sent/i.test(box.name);
+  if (box.specialUse === "\\Sent") return true;
+  const name = box.name.trim().toLowerCase();
+  return name === "sent" || name === "sent messages" || name === "sent items" || name === "sent mail";
 }
 
 /** The account's Sent mailbox name, or null if none is discoverable. */
