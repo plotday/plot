@@ -3,6 +3,8 @@
  * Parses VCALENDAR/VEVENT data into structured event objects.
  */
 
+import { baseEmail } from "@plotday/twister";
+
 export type ICSDateTimeProp = {
   value: string;
   params: Record<string, string>;
@@ -450,6 +452,20 @@ export function parseRRuleCount(rrule: string | null): number | null {
 }
 
 /**
+ * True when an ICS ATTENDEE line refers to the connected account.
+ *
+ * Compares the extracted address as a whole rather than by substring — a
+ * substring test matches `mailto:kris@example.com` inside
+ * `mailto:kris@example.com.au` — and folds Gmail alias variants so an invite
+ * addressed to a dot or +tag form of the account is still recognized as the user.
+ */
+export function attendeeIsSelf(line: string, accountEmail: string): boolean {
+  const match = /mailto:([^\s;:,>"]+)/i.exec(line);
+  if (!match?.[1]) return false;
+  return baseEmail(match[1]) === baseEmail(accountEmail);
+}
+
+/**
  * Update an attendee's PARTSTAT in raw ICS data.
  * Finds the ATTENDEE line matching the given email and updates its PARTSTAT parameter.
  *
@@ -476,7 +492,7 @@ export function updateAttendeePartstat(
     // Match ATTENDEE lines containing this email
     if (
       line.toUpperCase().startsWith("ATTENDEE") &&
-      line.toLowerCase().includes(`mailto:${email.toLowerCase()}`)
+      attendeeIsSelf(line, email)
     ) {
       found = true;
 
